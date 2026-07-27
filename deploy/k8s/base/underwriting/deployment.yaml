@@ -18,8 +18,9 @@ spec:
         app.kubernetes.io/component: rust-engine
         app.kubernetes.io/part-of: nomarkup
       annotations:
-        prometheus.io/scrape: "false"
-        prometheus.io/port: "50060"
+        # Rust engines: metrics on gRPC port + 10000 (docs/operations/metrics.md)
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "60060"
         prometheus.io/path: "/metrics"
     spec:
       securityContext:
@@ -36,9 +37,14 @@ spec:
             - name: grpc
               containerPort: 50060
               protocol: TCP
+            - name: metrics
+              containerPort: 60060
+              protocol: TCP
           env:
             - name: UNDERWRITING_ENGINE_PORT
               value: "50060"
+            - name: UNDERWRITING_METRICS_PORT
+              value: "60060"
             - name: APP_VERSION
               valueFrom:
                 configMapKeyRef:

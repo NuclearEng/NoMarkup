@@ -20,18 +20,18 @@
 
 ## Summary dashboard
 
-**Recounted 2026-07-27 C2 + tracker honesty (MON-20/21/28, SEC-12/14/15, OPS-12)** (140 code/ops rows).
+**Recounted 2026-07-27 C3** (OPS-18/11, FE-11, QA-14/16, ARC-05/15; includes concurrent FE-08/09 ARC-06/18) (140 code/ops rows).
 
 | Section | Open | Partial | Done | Demoted | Founder-Action | Total |
 |---------|------|---------|------|---------|----------------|-------|
 | P0 — Money integrity | 0 | 0 | 27 | 1 | 0 | 28 |
 | P0 — Security fail-closed | 0 | 0 | 14 | 3 | 1 | 18 |
-| P0 — Production deploy / ops | 14 | 2 | 12 | 0 | 0 | 28 |
+| P0 — Production deploy / ops | 13 | 1 | 14 | 0 | 0 | 28 |
 | P1 — North Star performance | 7 | 0 | 4 | 5 | 0 | 16 |
-| P1 — CI / testing enforcers | 9 | 0 | 2 | 5 | 0 | 16 |
-| P1 — Frontend / a11y / honesty | 7 | 0 | 4 | 5 | 0 | 16 |
-| P2 — Architecture / polish | 12 | 0 | 0 | 6 | 0 | 18 |
-| **All** | **49** | **2** | **63** | **25** | **1** | **140** |
+| P1 — CI / testing enforcers | 7 | 0 | 4 | 5 | 0 | 16 |
+| P1 — Frontend / a11y / honesty | 4 | 0 | 7 | 5 | 0 | 16 |
+| P2 — Architecture / polish | 8 | 0 | 3 | 7 | 0 | 18 |
+| **All** | **39** | **1** | **73** | **26** | **1** | **140** |
 
 The separate **DOC** table (18 rows) is a cross-reference of the language-only demotions already
 reflected in the `Demoted` column above — it is not 18 additional items.
@@ -114,14 +114,14 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | OPS-08 | Production overlay `REPLACE_ME_*` / placeholder image tags | BLOCKER | k8s | production kustomization | Real image tags + Google client id | No REPLACE_ME in prod | Open | Founder-Action |
 | OPS-09 | OTel collector exports **debug only** (discards) | BLOCKER | k8s | otel-collector config | Export to real backend | Traces visible in backend | Open | |
 | OPS-10 | Prometheus/Grafana/Alertmanager not in k8s | BLOCKER | k8s | deploy/monitoring only | Deploy stack or drop claim | Alerts fire on test | Open | |
-| OPS-11 | Metrics scrape ports wrong; engine `*_METRICS_PORT` unset | BLOCKER | k8s | Deployments annotations | Scrape HTTP metrics ports; set engine env | Prometheus has bid/payment series | **Partial** 2026-07-25 — bidding/fraud/trust/imaging scrape true with real `*_METRICS_PORT`; pricing + underwriting still `scrape: "false"` (see OPS-18) | |
+| OPS-11 | Metrics scrape ports wrong; engine `*_METRICS_PORT` unset | BLOCKER | k8s | Deployments annotations | Scrape HTTP metrics ports; set engine env | Prometheus has bid/payment series | **Done** 2026-07-27 — pricing + underwriting scrape true + `PRICING_METRICS_PORT`/`UNDERWRITING_METRICS_PORT` on port+10000 (`deploy/k8s/base/{pricing,underwriting}/deployment.yaml`); metrics HTTP servers already in `engines/{pricing,underwriting}/src/metrics.rs` | |
 | OPS-12 | Payment failure alert P2/info @ 5% (not P0) | MAJOR | monitoring | alerts.yml | P0 on payment/webhook failure thresholds | Alert severity matches money risk | **Done** 2026-07-27 — `NoMarkupPaymentFailureSpike` + `NoMarkupPaymentPathDown` are severity critical / priority P0 | |
 | OPS-13 | Zero PodDisruptionBudgets | BLOCKER | k8s | manifests | PDB for gateway, payment, user, job, web, bidding | `kubectl get pdb` | **Done** 2026-07-25 — `deploy/k8s/base/pdb.yaml` (13 PDBs) | |
 | OPS-14 | HPA only gateway + bidding | MAJOR | k8s | production overlay | HPA for payment, user, job, web, chat | HPA objects exist | Open | |
 | OPS-15 | No K8s `securityContext` (runAsNonRoot etc.) | MAJOR | k8s | Deployments | Pod security context | Cannot run as root in cluster | **Done** 2026-07-25 — pod + container `securityContext: runAsNonRoot` across `deploy/k8s/base/*/deployment.yaml` | |
 | OPS-16 | `INTERNAL_WS_SECRET` / `APP_VERSION` not injected | BLOCKER | k8s | Deployments | Wire secrets + APP_VERSION for cache bust | Env present on pods | **Done** 2026-07-25 — `deploy/k8s/base/{gateway,chat}/deployment.yaml` inject `INTERNAL_WS_SECRET` + `APP_VERSION` | |
 | OPS-17 | Launch checklist ~1/~280 checked; migration count stale (18 vs 73) | BLOCKER | docs | launch-checklist.md | Rewrite against reality; track in this file | Checklist = live runbook | **Done** 2026-07-09 (truth pass: `no-markup.com`, migrations 073, demoted fiction) | |
-| OPS-18 | pricing/underwriting lack OTel | MAJOR | engines | pricing, underwriting | Add tracing like other engines | Spans exported | Open | |
+| OPS-18 | pricing/underwriting lack OTel | MAJOR | engines | pricing, underwriting | Add tracing like other engines | Spans exported | **Done** 2026-07-27 — both call `engine_telemetry::init` + `GrpcTraceLayer` + `shutdown` (`engines/pricing/src/main.rs:128-129,190,216`; `engines/underwriting/src/main.rs:129,194,220`); gRPC methods `#[tracing::instrument]` (`pricing/src/grpc.rs:48`, `underwriting/src/grpc.rs:56`); shared OTLP in `engines/telemetry/src/lib.rs` | |
 | OPS-19 | No egress NetworkPolicies | MAJOR | k8s | network-policy | Egress allowlist for Stripe, DB, Redis, S3 | Default-deny egress tested | Open | |
 | OPS-20 | Staging `namePrefix` breaks service DNS | MAJOR | k8s | staging overlay | Fix or document required overrides | Staging boots | Open | |
 | OPS-21 | Docker main “push” does not login/push | MAJOR | ci | ci.yml | docker login + push or rename step | Images in registry | Open | |
@@ -143,7 +143,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | PERF-02 | No Lighthouse CI / budget gates | BLOCKER | ci | workflows | Lighthouse CI on `/`, marketplace, jobs | PR fails over budget | Open | |
 | PERF-03 | Lab LCP ~3.8–4s fails North Star 1.5s | BLOCKER | web | layout, `/`, `/jobs` | RSC + perf work until measured under bar **or** demote North Star language | Field/lab under declared gate | **Demoted** language 2026-07-09; perf work still Open | |
 | PERF-04 | Service worker is kill-switch (anti-cache) | BLOCKER | web | `public/sw.js`, ServiceWorkerRegistrar | Real SW behind prod flag **or** remove PWA claims | SW caches or claim removed | **Demoted** claim 2026-07-09; real SW still Open | |
-| PERF-05 | Homepage `/` is full `'use client'` | MAJOR | web | `(public)/page.tsx` | RSC shell + islands | First paint HTML content | Open | |
+| PERF-05 | Homepage `/` is full `'use client'` | MAJOR | web | `(public)/page.tsx` | RSC shell + islands | First paint HTML content | **Done** 2026-07-27 (partial island) — async RSC `page.tsx` + metadata + server pricing seed → `LandingPageClient`; hero/demo still client. Residual: more static HTML above island if LCP needs it | |
 | PERF-06 | `/jobs` browse is full client page | MAJOR | web | `(public)/jobs/page.tsx` | RSC + seeded island (marketplace pattern) | Server HTML + initialData | Open | |
 | PERF-07 | No First Load / bundle size CI gate | MAJOR | ci | web build | Fail on shared >190kB / interactive >300kB (with documented exceptions) | CI enforces | Open | |
 | PERF-08 | Accepted overages `/jobs/[id]` 375kB, `/jobs/new` 309kB unenforced | MINOR | docs/ci | performance.md | Encode exceptions in CI allowlist | Regression only if new | Open | |
@@ -175,9 +175,9 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | QA-11 | Integration: chat/notification excluded | MAJOR | ci | go-integration-test | Add suites or document gap | Coverage map honest | Open | |
 | QA-12 | `-short` skips bid-race + payment idempotency live tests | MAJOR | ci | integration job | Run non-short for money races (dedicated job) | Race tests execute | **Done** 2026-07-25 — `fullstack-security-test` runs the live-stack `TestIdempotency_PaymentDoubleSubmit` non-short; `money-race-tests` now passes `-tags integration` so it at least compiles on every PR | |
 | QA-13 | payment `repository/` ~0 tests | MAJOR | payment | repository/ | Repo tests for money SQL | Coverage on repos | Open | |
-| QA-14 | Claude-only hooks not git-enforced | MINOR | tooling | .claude/hooks | Document scope; optional pre-commit | Team knows bypass | Open | |
+| QA-14 | Claude-only hooks not git-enforced | MINOR | tooling | .claude/hooks | Document scope; optional pre-commit | Team knows bypass | **Done** 2026-07-27 (docs) — `CLAUDE.md` §10: Claude Code hooks only, **no Husky**; DOC-07 already demoted husky claim; scope explicit so team knows git pre-commit is not the gate | |
 | QA-15 | npm audit high+ prod only | MINOR | ci | security-scan | Consider moderate / dev policy | Document residual | Open | |
-| QA-16 | MSW network-boundary testing overclaimed | DOC | docs | CLAUDE | Align test strategy docs | Docs = practice | Open | |
+| QA-16 | MSW network-boundary testing overclaimed | DOC | docs | CLAUDE | Align test strategy docs | Docs = practice | **Done** 2026-07-27 — `docs/conventions.md` no longer mandates MSW; documents `vi.mock` of API client/fetch as practice (no MSW server in `web/tests`) | |
 
 ---
 
@@ -192,10 +192,10 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | FE-05 | PWA manifest + install without working SW | MAJOR | web | pwa components | Wire SW or remove install UX | No dead PWA promise | **Done** 2026-07-27 — install UI is no-op (`InstallPrompt`); SW registrar only unregisters kill-switch `sw.js` (no offline PWA promise) | |
 | FE-06 | Goods spectate “LIVE” without WS / weak errors | MAJOR | web | marketplace spectate | WS + isError/retry; honest connection state | Live = real stream | **Done** 2026-07-27 — LIVE honesty on marketplace spectate, job spectate, and JobDetail (badge only when spectator/auction socket is open) | |
 | FE-07 | Sub-44px checkbox/select/slider | MAJOR | web | ui primitives | 44×44 hit areas | Touch audit | Open | |
-| FE-08 | Silent error rails (TrendingRail null) | MINOR | web | rails | Error/empty states | Retry UI | Open | |
-| FE-09 | Raw `<img>` for Mapbox/MFA | MINOR | web | map + MFA | Exception documented or next/image | Do-not list honest | Open | |
+| FE-08 | Silent error rails (TrendingRail null) | MINOR | web | rails | Error/empty states | Retry UI | **Done** 2026-07-27 — TrendingRail + SimilarListings show compact error + Retry (`data-testid=*-error`); empty still hidden | |
+| FE-09 | Raw `<img>` for Mapbox/MFA | MINOR | web | map + MFA | Exception documented or next/image | Do-not list honest | **Done** 2026-07-27 — CLAUDE.md §13 + `docs/design-system.md` document Mapbox Static + MFA QR raw `<img>` exceptions | |
 | FE-10 | ListingBidPanel `<a href="/login">` | MINOR | web | ListingBidPanel | Use `Link` | Client nav | **Done** 2026-07-27 — `web/src/components/marketplace/ListingBidPanel.tsx` uses `next/link` Link for /login | |
-| FE-11 | prefers-reduced-motion incomplete for utility animations | MINOR | web | globals + components | Cover pulse/spin utilities | reduced-motion test | Open | |
+| FE-11 | prefers-reduced-motion incomplete for utility animations | MINOR | web | globals + components | Cover pulse/spin utilities | reduced-motion test | **Done** 2026-07-27 — `web/src/styles/globals.css` `@media (prefers-reduced-motion: reduce)` kills Tailwind `.animate-pulse` + `.animate-spin` (main block ~1049 + page-enter block ~2434) | |
 | FE-12 | Win-probability bars are hard-coded cosmetics | MAJOR | product | BidCard | Real model **or** remove “intelligence” claim | UI labels honest | **Demoted** claim 2026-07-09; real model still Open | |
 | FE-13 | GPS check-in: no geo-fence vs job site | MAJOR | product | workspace | Server proximity check **or** demote “verified on-site” | Spoof rejected or claim gone | **Demoted** claim 2026-07-09; geo-fence still Open | |
 | FE-14 | Goods double-blind 8-dim reviews claim false | MAJOR | product | README + reviews | Implement goods reviews **or** kill claim | README true | **Demoted** claim 2026-07-09; goods reviews still Open | |
@@ -212,8 +212,8 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | ARC-02 | Imaging claimed libvips FFI; pure `image` crate | MAJOR | docs | CLAUDE/arch | Say `image` crate until libvips lands | Cargo.toml matches docs | **Demoted** 2026-07-09 | |
 | ARC-03 | Custom PostGIS C / Rust geo crate claimed | MAJOR | docs | architecture | Stock PostGIS + Go only | No false native claims | **Demoted** 2026-07-09 | |
 | ARC-04 | libsodium FFI / rust-argon2 claimed; pure Go | MINOR | docs | CLAUDE | Document golang.org/x/crypto + nacl | Docs true | **Demoted** 2026-07-09 | |
-| ARC-05 | ML/`ort` production path theater | MAJOR | ml/engines | ml/, pricing ort stub | Demote ml/README; keep heuristics honest | No ort in prod path | Open | |
-| ARC-06 | Goods bidding primary path is gateway SQL (not Rust engine) | DOC | docs | architecture | Clarify primary path | Docs true | Open | |
+| ARC-05 | ML/`ort` production path theater | MAJOR | ml/engines | ml/, pricing ort stub | Demote ml/README; keep heuristics honest | No ort in prod path | **Demoted** 2026-07-27 — `ml/README.md` rewritten: offline training only; prod = heuristics; `ort` optional/off-by-default placeholder (matches CLAUDE §2) | |
+| ARC-06 | Goods bidding primary path is gateway SQL (not Rust engine) | DOC | docs | architecture | Clarify primary path | Docs true | **Done** 2026-07-27 — dual-path table in `docs/architecture.md`; marketplace.md diagram no longer routes goods bids through Rust engine | |
 | ARC-07 | CLAUDE engines tree omits underwriting + pricing | DOC | docs | CLAUDE | Add real engines | Tree complete | **Demoted** 2026-07-09 | |
 | ARC-08 | Gateway does not dial underwriting/pricing (by design) | DOC | docs | architecture | Document payment/job dialers | Wiring diagram true | **Demoted** 2026-07-09 | |
 | ARC-09 | Listing gRPC proto without primary write path | MINOR | proto/gateway | listing proto | Implement or mark secondary | No dual truth | Open | |
@@ -222,10 +222,10 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | ARC-12 | Data flywheel / ML moat not real | P2 | ml | ml/ | Train + serve **or** stop moat language | Model in prod path | Open | |
 | ARC-13 | Insurance competition sample deductible / no carrier APIs | P2 | payment | insurance_competition | Real carrier integration or demote | Quotes realistic | Open | |
 | ARC-14 | Legal services flag-off scaffold | P2 | product | legal routes | Launch criteria + flag on | Legal GA checklist | Open | |
-| ARC-15 | Fair price index flag seed history | MINOR | flags | migrations | Ensure prod seed intent clear | Flag state documented | Open | |
+| ARC-15 | Fair price index flag seed history | MINOR | flags | migrations | Ensure prod seed intent clear | Flag state documented | **Done** 2026-07-27 — seed `false` in `database/migrations/013_feature_flags.up.sql:18`; intent documented in `docs/compliance/capability-matrix.md` / `app-review-notes.md` (`fair_price_index` false) + launch-checklist “do not enable without data” | |
 | ARC-16 | Search reindex durable retry TODO | MINOR | job | search | Durable queue | No silent drop | Open | |
 | ARC-17 | GDPR email “TODO real email” | MINOR | user | GDPR paths | Wire SendGrid | Email arrives | Open | |
-| ARC-18 | Spectator anonymization / delay — keep tested | — | chat | spectator | Preserve under load | Tests green | Open | |
+| ARC-18 | Spectator anonymization / delay — keep tested | — | chat | spectator | Preserve under load | Tests green | **Done** 2026-07-27 — code + tests green: `spectator_ws.go` / `marketplace_spectator_ws.go` (3s delay, PII strip); `spectator_anonymize_test.go` (`TestSpectatorEventDelayIsThreeSeconds`, `TestAnonymizeEvent_stripsPII`, `TestAnonymizeListingEvent_stripsPII`) | |
 
 ---
 
@@ -307,7 +307,9 @@ Do in this order for **CONDITIONAL-GO** (not full SOTA):
 | 2026-07-27 | **MON-18 Done** — `ClaimListingOrderForDispute` freezes listing_orders under FOR UPDATE (status=disputed + dispute_id); `ClaimListingOrderForRelease` stamps durable `pending:<orderID>` transfer claim under the same lock so dispute fails closed for the whole Stripe window; ConfirmPickup claims before release; unit tests cover both race directions. Dashboard: Open 65 / Partial 2 / Done 47 / Demoted 25 / FA 1. |
 | 2026-07-27 | **MON-15 Done** — BNPL charges customer first with keyed off-session PI (`bnpl-first:` / `bnpl-installment:attempt-N`); provider platform transfer only after success (`installment-provider-payout:`); empty off-session key rejected; resolveCustomerStripeID fail-closed; regression `charge_failure_does_not_pay_provider`. Dashboard: Open 63 / Partial 2 / Done 49. |
 | 2026-07-27 | **SEC-07 Done** — signed `has_session` HMAC (gateway sessionflag + web session-flag verify). **Live auction flag SSOT** — RequireFlag `live_auction` / `spectator_mode` + env kill switch. |
+| 2026-07-27 | **FE-08 Done** — TrendingRail + SimilarListings error/retry UI (no silent null on error). **FE-09 Done** — Mapbox/MFA raw img exceptions in CLAUDE.md §13 + design-system.md. **ARC-06 Done** — dual bidding paths documented (goods = gateway SQL). **ARC-18 Done** — spectator anonymize/delay tests green. |
 | 2026-07-25 | **MON-25 / QA-12 closed by CI change:** `.github/workflows/ci.yml` gains `fullstack-security-test`, which boots the docker-compose stack (`tests/integration/docker-compose.ci.yml` overlay) and runs the Tier-1 suites — 4 × `TestAuthBypass_*`, `TestDoubleSpend_ParallelAwardsCreateOneContract`, `TestOwnership_CrossAccountReadIsRejected` — plus the live-stack `TestIdempotency_PaymentDoubleSubmit`. Before this, every one of those tests was behind `//go:build integration` and ran in **no** CI job. Also fixes N11 and (partly) N7/N9's execution venue. |
+| 2026-07-27 | **C3 verification + small eng.** Grep-confirmed already Done: **OPS-18** pricing/underwriting `engine_telemetry::init` + `GrpcTraceLayer` + instrumented gRPC; **QA-14** CLAUDE §10 Claude-hooks-only (no Husky); **ARC-15** `fair_price_index` seed false + compliance docs. Implemented: **FE-11** reduce-motion kills `.animate-pulse`/`.animate-spin` in `globals.css`; **OPS-11** pricing/underwriting k8s scrape + `*_METRICS_PORT` (metrics servers already existed). Honesty: **QA-16** conventions.md drops MSW mandate; **ARC-05** demoted `ml/README.md` (heuristics in prod). Left Open (this pass focus): ARC-09 (listing gRPC dual path), PERF-13 (no CDN TTFB script — only LAN `api-p95-sample.sh`). Dashboard recount (parsed): Open 39 / Partial 1 / Done 73 / Demoted 26 / FA 1. |
 
 ---
 

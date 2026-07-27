@@ -47,7 +47,7 @@
 | API Gateway | Go | HTTP routing, auth, rate limiting, validation, public JSON edge cache headers | Excellent stdlib net/http, high concurrency |
 | User Service | Go | Registration, profiles, identity, roles, PII encrypt/decrypt | CRUD-heavy |
 | Job Service | Go | Jobs, listings lifecycle, categories, Meilisearch indexing coordination | Business logic, orchestration |
-| Bidding Engine | **Rust** | Services reverse-auction bid processing, timing, ranking hot path | Sub-ms latency under concurrency. **Goods listing bids** primarily go through gateway SQL (`FOR UPDATE`), not this engine. |
+| Bidding Engine | **Rust** | **Services only:** reverse-auction bid processing, timing, ranking hot path | Sub-ms latency under concurrency. **Does not own goods bids** — see dual-path note below. |
 | Payment Service | Go | Stripe Connect, escrow, BNPL, advances, insurance claims | Stripe SDK + webhooks; dials **underwriting** for credit limits |
 | Chat Service | Go | WebSocket connections, message persistence, presence | goroutine-per-connection |
 | Notification Service | Go | In-app + channel fan-out (email/push/SMS when configured) | Async delivery |
@@ -59,6 +59,15 @@
 | Search | **Meilisearch + Go** | Full-text search, autocomplete, similar | **No `engines/search` crate** |
 | Geo | **PostGIS + Go** | Proximity, markets, service areas | **No `engines/geo` crate**; no custom PostGIS C extensions |
 | Crypto | **Go** `nacl/secretbox` | Selected PII at rest (XSalsa20-Poly1305); argon2id passwords | Email plaintext by design for auth lookup |
+
+### Dual bidding paths (do not conflate)
+
+| Surface | Direction | Primary write path | Evidence |
+|---------|-----------|--------------------|----------|
+| **Services** (`/jobs`, provider bids) | Reverse (price descends) | **Rust bidding engine** via gRPC from gateway | `engines/bidding/`, job bid handlers |
+| **Goods** (`/marketplace`, buyer bids) | Forward (price ascends) | **Gateway SQL** — `ListingsHandler.PlaceListingBid` → `placeBidTx` locks `listings` with `SELECT … FOR UPDATE`, inserts into `listing_bids`, updates high bid / snipe extension in the same tx | `gateway/internal/handler/listings_bid.go` |
+
+Goods bids do **not** go through the Rust bidding engine on the happy path. The engine remains the services reverse-auction hot path. Listing lifecycle (create/update/cancel, Meilisearch index) is also gateway/job-service SQL, not the bidding crate. See `docs/marketplace.md` for the goods integration map (diagram matches this split).
 
 ## Project Structure
 

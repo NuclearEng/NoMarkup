@@ -1,9 +1,10 @@
 # NoMarkup Marketplace (Goods)
 
-> Status: **MVP** — schema (migration 034), bidding engine (forward auction
-> path), public marketplace UI (`/marketplace`, `/sell`, `/orders`), payment
-> escrow + pickup flow, admin moderation, and seed data are all landing in
-> parallel. This document is the integration map.
+> Status: **MVP** — schema (migration 034+), **gateway SQL forward-auction
+> path** for goods bids (`PlaceListingBid` / `FOR UPDATE` on `listings` — not
+> the Rust bidding engine), public marketplace UI (`/marketplace`, `/sell`,
+> `/orders`), payment escrow + pickup flow, admin moderation, and seed data.
+> This document is the integration map.
 
 ## Product Summary
 
@@ -50,17 +51,22 @@ the only places where goods has a separate code path.
                                      └──────────┬────────────┘
                                                 │
                           ┌─────────────────────┼─────────────────────┐
-                          ▼                     ▼                     ▼
-                  ┌──────────────┐     ┌──────────────┐     ┌─────────────────┐
-                  │ PostgreSQL    │     │  Bid Engine  │     │ Payment Service │
-                  │ + PostGIS     │     │  (Rust)      │     │  (Go + Stripe)  │
-                  ├──────────────┤     ├──────────────┤     ├─────────────────┤
-                  │ listings      │     │ Routes goods │     │ Holds escrow at │
-                  │ listing_bids  │     │ bids ascending│     │ pickup; releases│
-                  │ listing_photos│     │ (vs services │     │ on confirmation │
-                  │ listing_orders│     │ descending). │     │ or refunds on   │
-                  │ listing_reports│    │              │     │ dispute.        │
-                  └──────────────┘     └──────────────┘     └─────────────────┘
+                          ▼                                           ▼
+                  ┌──────────────────────────┐               ┌─────────────────┐
+                  │ PostgreSQL + PostGIS      │               │ Payment Service │
+                  │ (goods bid primary path)  │               │  (Go + Stripe)  │
+                  ├──────────────────────────┤               ├─────────────────┤
+                  │ listings  (FOR UPDATE)    │               │ Holds escrow at │
+                  │ listing_bids              │               │ pickup; releases│
+                  │ listing_photos            │               │ on confirmation │
+                  │ listing_orders            │               │ or refunds on   │
+                  │ listing_reports           │               │ dispute.        │
+                  └──────────────────────────┘               └─────────────────┘
+
+  Note: The Rust bidding engine (`engines/bidding`) owns **services** reverse-
+  auction bids only. Goods forward-auction place/retract/buy-it-now run in the
+  gateway against Postgres (`listings_bid.go`). Do not document goods bids as
+  engine-routed. See architecture.md “Dual bidding paths”.
 ```
 
 ### Schema (migration 034 + 035)

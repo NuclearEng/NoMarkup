@@ -16,13 +16,15 @@
  *  - Cards use Next.js <Link>, never <a>, per CLAUDE.md §13.
  *  - Photos use Next.js <Image> with fill; the rail is overflow-x:auto
  *    with snap points so touch flicking lands on a card edge.
+ *  - Error: compact alert + Retry (do not silently hide the rail).
  */
 
-import { Clock } from 'lucide-react';
+import { AlertCircle, Clock } from 'lucide-react';
 import Image from 'next/image';
 import type { Route } from 'next';
 import Link from 'next/link';
 
+import { Button } from '@/components/ui/button';
 import { useSimilarListings } from '@/hooks/useListings';
 import { canNextImageLoad, formatCents } from '@/lib/utils';
 import type { Listing } from '@/types';
@@ -39,14 +41,13 @@ export function SimilarListings({
   className,
   title = 'You may also like',
 }: SimilarListingsProps) {
-  const { data, isLoading, isError } = useSimilarListings(listingId);
-
-  // Hide entirely on error — this is a "nice to have" rail, not critical.
-  if (isError) return null;
+  const { data, isLoading, isError, refetch, isFetching } =
+    useSimilarListings(listingId);
 
   const listings = data?.listings ?? [];
 
-  if (!isLoading && listings.length === 0) return null;
+  // Empty success: hide so one-of-a-kind goods stay clean.
+  if (!isLoading && !isError && listings.length === 0) return null;
 
   return (
     <section
@@ -64,20 +65,55 @@ export function SimilarListings({
         </p>
       </header>
 
-      <ul className="rail-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
-        {isLoading
-          ? Array.from({ length: 4 }).map((_, i) => (
-              <li
-                key={`similar-skeleton-${String(i)}`}
-                className="glass animate-pulse w-44 shrink-0 snap-start rounded-lg border border-white/[0.06] p-2"
-              >
-                <div className="aspect-[4/3] w-full rounded-md bg-white/[0.06]" />
-                <div className="mt-2 h-3 w-3/4 rounded bg-white/[0.06]" />
-                <div className="mt-1 h-3 w-1/2 rounded bg-white/[0.06]" />
-              </li>
-            ))
-          : listings.map((l) => <SimilarCard key={l.id} listing={l} />)}
-      </ul>
+      {isError ? (
+        <div
+          role="alert"
+          className="glass flex flex-col items-start gap-3 rounded-lg border border-destructive/30 p-4 sm:flex-row sm:items-center sm:justify-between"
+          data-testid="similar-listings-error"
+        >
+          <div className="flex items-start gap-2">
+            <AlertCircle
+              className="mt-0.5 h-4 w-4 shrink-0 text-destructive"
+              aria-hidden="true"
+            />
+            <div>
+              <p className="text-sm font-medium text-zinc-200">
+                Couldn&apos;t load similar listings
+              </p>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                Check your connection and try again.
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-h-[44px] shrink-0"
+            disabled={isFetching}
+            onClick={() => {
+              void refetch();
+            }}
+          >
+            {isFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </div>
+      ) : (
+        <ul className="rail-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+          {isLoading
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <li
+                  key={`similar-skeleton-${String(i)}`}
+                  className="glass animate-pulse w-44 shrink-0 snap-start rounded-lg border border-white/[0.06] p-2"
+                >
+                  <div className="aspect-[4/3] w-full rounded-md bg-white/[0.06]" />
+                  <div className="mt-2 h-3 w-3/4 rounded bg-white/[0.06]" />
+                  <div className="mt-1 h-3 w-1/2 rounded bg-white/[0.06]" />
+                </li>
+              ))
+            : listings.map((l) => <SimilarCard key={l.id} listing={l} />)}
+        </ul>
+      )}
     </section>
   );
 }

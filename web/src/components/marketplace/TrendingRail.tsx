@@ -10,15 +10,16 @@
  *
  * Hide rules:
  *   - empty list  → render nothing (don't show an empty header)
- *   - error       → render nothing (this is a discovery enhancement, not load-bearing)
+ *   - error       → compact error + Retry (discovery rail still visible)
  *   - loading     → skeleton tiles (so the layout doesn't shift)
  */
 
-import { Flame, Users } from 'lucide-react';
+import { AlertCircle, Flame, Users } from 'lucide-react';
 import Image from 'next/image';
 import type { Route } from 'next';
 import Link from 'next/link';
 
+import { Button } from '@/components/ui/button';
 import { useTrendingListings } from '@/hooks/useListings';
 import { canNextImageLoad, formatCents } from '@/lib/utils';
 import type { Listing } from '@/types';
@@ -29,14 +30,14 @@ interface TrendingRailProps {
 }
 
 export function TrendingRail({ className, limit = 12 }: TrendingRailProps) {
-  const { data, isLoading, isError } = useTrendingListings(limit);
-
-  if (isError) return null;
+  const { data, isLoading, isError, refetch, isFetching } = useTrendingListings(limit);
 
   const listings = (data?.listings ?? []) as Array<
     Listing & { watcher_count?: number }
   >;
-  if (!isLoading && listings.length === 0) return null;
+
+  // Empty success: hide entirely so the browse page stays clean.
+  if (!isLoading && !isError && listings.length === 0) return null;
 
   return (
     <section
@@ -62,20 +63,55 @@ export function TrendingRail({ className, limit = 12 }: TrendingRailProps) {
         </p>
       </header>
 
-      <ul className="rail-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
-        {isLoading
-          ? Array.from({ length: 6 }).map((_, i) => (
-              <li
-                key={`trending-skeleton-${String(i)}`}
-                className="glass animate-pulse w-44 shrink-0 snap-start rounded-lg border border-white/[0.06] p-2"
-              >
-                <div className="aspect-[4/3] w-full rounded-md bg-white/[0.06]" />
-                <div className="mt-2 h-3 w-3/4 rounded bg-white/[0.06]" />
-                <div className="mt-1 h-3 w-1/2 rounded bg-white/[0.06]" />
-              </li>
-            ))
-          : listings.map((l) => <TrendingCard key={l.id} listing={l} />)}
-      </ul>
+      {isError ? (
+        <div
+          role="alert"
+          className="glass flex flex-col items-start gap-3 rounded-lg border border-destructive/30 p-4 sm:flex-row sm:items-center sm:justify-between"
+          data-testid="trending-rail-error"
+        >
+          <div className="flex items-start gap-2">
+            <AlertCircle
+              className="mt-0.5 h-4 w-4 shrink-0 text-destructive"
+              aria-hidden="true"
+            />
+            <div>
+              <p className="text-sm font-medium text-zinc-200">
+                Couldn&apos;t load trending auctions
+              </p>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                Check your connection and try again.
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-h-[44px] shrink-0"
+            disabled={isFetching}
+            onClick={() => {
+              void refetch();
+            }}
+          >
+            {isFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </div>
+      ) : (
+        <ul className="rail-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+          {isLoading
+            ? Array.from({ length: 6 }).map((_, i) => (
+                <li
+                  key={`trending-skeleton-${String(i)}`}
+                  className="glass animate-pulse w-44 shrink-0 snap-start rounded-lg border border-white/[0.06] p-2"
+                >
+                  <div className="aspect-[4/3] w-full rounded-md bg-white/[0.06]" />
+                  <div className="mt-2 h-3 w-3/4 rounded bg-white/[0.06]" />
+                  <div className="mt-1 h-3 w-1/2 rounded bg-white/[0.06]" />
+                </li>
+              ))
+            : listings.map((l) => <TrendingCard key={l.id} listing={l} />)}
+        </ul>
+      )}
     </section>
   );
 }

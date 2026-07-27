@@ -333,7 +333,13 @@ web 3000). Validate with a Zod schema at startup.
 - Use string interpolation in SQL (hook blocks this)
 - Hardcode secrets (hook blocks this)
 - Use CSS-in-JS, CSS modules, or inline styles (use Tailwind)
-- Use `<img>` tags (use Next.js `<Image>`)
+- Use `<img>` tags (use Next.js `<Image>`). **Documented exceptions** (raw
+  `<img>` is intentional — third-party dynamic URLs / non-allowlisted hosts that
+  `next/image` cannot optimize without config churn):
+  - **Mapbox Static Images API** previews (e.g. job detail location strip) —
+    signed query URL with access token; not a stable remotePatterns host shape
+  - **MFA setup QR** on security settings — `api.qrserver.com` encode of the
+    otpauth URI (dev/setup convenience; not product photo CDN)
 - Use `<a>` for internal links (use Next.js `<Link>`)
 - Use TypeScript `enum` (use const object + type extraction)
 - Use any database ORM (use pgx for Go, sqlx for Rust — raw SQL with type safety)

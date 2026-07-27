@@ -21,6 +21,7 @@ const mocks = {
   edgeConfigEvaluated: vi.fn(),
   validateServerEnv: vi.fn(),
   captureRequestError: vi.fn(),
+  registerNodeOtel: vi.fn().mockResolvedValue({ enabled: false, reason: 'unset' }),
 };
 
 const ORIGINAL_RUNTIME = process.env.NEXT_RUNTIME;
@@ -51,6 +52,9 @@ async function loadInstrumentation() {
   });
   vi.doMock('../../src/lib/server/env', () => ({
     validateServerEnv: mocks.validateServerEnv,
+  }));
+  vi.doMock('../../src/lib/otel/register-node', () => ({
+    registerNodeOtel: mocks.registerNodeOtel,
   }));
   vi.doMock('@sentry/nextjs', () => ({
     captureRequestError: mocks.captureRequestError,
@@ -86,6 +90,17 @@ describe('instrumentation register()', () => {
     expect(mocks.validateServerEnv).toHaveBeenCalledTimes(1);
   });
 
+  it('registers optional Node OpenTelemetry after Sentry on the nodejs runtime', async () => {
+    setEnv('nodejs');
+    const { register } = await loadInstrumentation();
+
+    await register();
+
+    expect(mocks.registerNodeOtel).toHaveBeenCalledTimes(1);
+    // Env validation still runs — OTel failures must not skip it.
+    expect(mocks.validateServerEnv).toHaveBeenCalledTimes(1);
+  });
+
   it('initializes the Sentry Edge SDK on the edge runtime and skips env validation', async () => {
     setEnv('edge');
     const { register } = await loadInstrumentation();
@@ -108,6 +123,7 @@ describe('instrumentation register()', () => {
     expect(mocks.serverConfigEvaluated).not.toHaveBeenCalled();
     expect(mocks.edgeConfigEvaluated).not.toHaveBeenCalled();
     expect(mocks.validateServerEnv).not.toHaveBeenCalled();
+    expect(mocks.registerNodeOtel).not.toHaveBeenCalled();
   });
 
   it('still initializes Sentry during the production build phase but skips env validation', async () => {
@@ -120,6 +136,8 @@ describe('instrumentation register()', () => {
     expect(mocks.serverConfigEvaluated).toHaveBeenCalledTimes(1);
     // ...but env validation is a runtime gate; build workers must not trip it.
     expect(mocks.validateServerEnv).not.toHaveBeenCalled();
+    // OTel must not open exporter sockets in build workers either.
+    expect(mocks.registerNodeOtel).not.toHaveBeenCalled();
   });
 
   it('propagates a fatal env validation failure instead of swallowing it', async () => {

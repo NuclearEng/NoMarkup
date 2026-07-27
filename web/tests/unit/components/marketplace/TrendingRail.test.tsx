@@ -107,14 +107,18 @@ describe('TrendingRail', () => {
     expect(screen.getByText('Trending now')).toBeDefined();
   });
 
-  it('hides the rail on error', async () => {
+  it('shows an error state with Retry on failure', async () => {
     api.getPublic.mockRejectedValue(new Error('500 boom'));
-    const { container } = render(<TrendingRail />, { wrapper: makeWrapper() });
+    render(<TrendingRail />, { wrapper: makeWrapper() });
     await waitFor(() => {
       expect(api.getPublic).toHaveBeenCalled();
     });
     await waitFor(() => {
-      expect(container.querySelector('[data-testid="trending-rail"]')).toBeNull();
+      expect(screen.getByTestId('trending-rail-error')).toBeDefined();
     });
+    expect(screen.getByText("Couldn't load trending auctions")).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined();
+    expect(screen.getByTestId('trending-rail')).toBeDefined();
   });
 });
+

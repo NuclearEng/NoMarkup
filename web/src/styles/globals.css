@@ -1045,8 +1045,13 @@ body {
   animation: auction-elapsed-fill 0.8s ease-out forwards;
 }
 
-/* Respect reduced motion preference */
+/* Respect reduced motion preference.
+   Tailwind utilities `.animate-pulse` / `.animate-spin` are used heavily for
+   skeletons and button pending states — FE-11: kill them under reduce so loaders
+   stay visible without continuous motion. */
 @media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-spin,
   .animate-digit-roll-up,
   .animate-digit-roll-down,
   .animate-digit-flash-green,
@@ -2430,7 +2435,7 @@ body {
   }
 }
 
-/* ─── Reduced-motion: disable all page-enter animations ─── */
+/* ─── Reduced-motion: page-enter + Tailwind utility animations ─── */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-fade-in-up,
@@ -2440,6 +2445,8 @@ body {
   .animate-gradient,
   .animate-auth-card-enter,
   .animate-confetti-fall,
+  .animate-pulse,
+  .animate-spin,
   .stagger-children > * {
     animation: none !important;
     transition: none !important;

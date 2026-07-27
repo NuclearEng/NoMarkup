@@ -24,6 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { MarketTickerStrip } from '@/components/landing/MarketTickerStrip';
 import { GradientMesh } from '@/components/landing/GradientMesh';
+import type { TickerItem } from '@/components/landing/ticker-items';
 
 // AuctionDemo is a heavy client-only widget. `ssr: false` avoids hydration
 // mismatches from Date.now() / rAF; aspect-ratio placeholder keeps CLS at 0.
@@ -192,8 +193,18 @@ const STATS = [
   },
 ] as const;
 
+export interface LandingPageClientProps {
+  /**
+   * RSC-seeded ticker rows from GET /api/v1/pricing. When defined (including
+   * an empty array when the index has no rows), the strip skips its client
+   * pricing request so the hero never flashes a skeleton on first paint.
+   * Omitted when the server fetch failed so the client can retry.
+   */
+  initialTickerItems?: TickerItem[];
+}
+
 /** Interactive landing island (animations, demo, IO). Seeded from the RSC page. */
-export function LandingPageClient() {
+export function LandingPageClient({ initialTickerItems }: LandingPageClientProps = {}) {
   const howItWorks = useInView<HTMLElement>();
   const statsSection = useInView<HTMLElement>();
   const categories = useInView<HTMLElement>();
@@ -209,7 +220,12 @@ export function LandingPageClient() {
         />
 
         <div className="relative z-[2]">
-          <MarketTickerStrip speed="normal" />
+          <MarketTickerStrip
+            speed="normal"
+            {...(initialTickerItems !== undefined
+              ? { items: initialTickerItems }
+              : {})}
+          />
         </div>
 
         <div className="relative z-[2] mx-auto max-w-7xl px-4 pt-12 pb-16 sm:px-6 sm:pt-24 sm:pb-32 lg:px-8 lg:pt-28 lg:pb-36">

@@ -25,11 +25,21 @@ export interface PricingOverviewCategory {
   avg_savings_cents: number | null;
 }
 
-export function usePricingOverview() {
+export interface UsePricingOverviewOptions {
+  /** When false, skip the network request (e.g. parent already seeded items). */
+  enabled?: boolean;
+  /** Server-seeded snapshot — first paint uses this instead of a loading skeleton. */
+  initialData?: { categories: PricingOverviewCategory[] };
+}
+
+export function usePricingOverview(options: UsePricingOverviewOptions = {}) {
+  const { enabled = true, initialData } = options;
   return useQuery<{ categories: PricingOverviewCategory[] }>({
     queryKey: ['pricing', 'overview'],
     queryFn: () => api.getPublic<{ categories: PricingOverviewCategory[] }>('/api/v1/pricing'),
     staleTime: 5 * 60 * 1000,
+    enabled,
+    ...(initialData !== undefined ? { initialData } : {}),
   });
 }
 

@@ -118,17 +118,20 @@ describe('SimilarListings', () => {
     expect(url).toContain('limit=12');
   });
 
-  it('renders nothing on error', async () => {
+  it('shows an error state with Retry on failure', async () => {
     api.getPublic.mockRejectedValue(new Error('network down'));
-    const { container } = render(<SimilarListings listingId="abc" />, {
+    render(<SimilarListings listingId="abc" />, {
       wrapper: makeWrapper(),
     });
-    // wait a tick for the rejected promise to resolve through react-query
     await waitFor(() => {
       expect(api.getPublic).toHaveBeenCalled();
     });
     await waitFor(() => {
-      expect(container.querySelector('[data-testid="similar-listings"]')).toBeNull();
+      expect(screen.getByTestId('similar-listings-error')).toBeDefined();
     });
+    expect(screen.getByText("Couldn't load similar listings")).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined();
+    expect(screen.getByTestId('similar-listings')).toBeDefined();
   });
 });
+

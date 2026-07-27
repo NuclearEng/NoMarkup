@@ -147,11 +147,6 @@ steps).
 `Authorization` or the `refresh_token` cookie is present. Needs CF account
 access; not doable from the repo alone.
 
-### C8. Web has zero OpenTelemetry
-Verified: no `@opentelemetry/*` anywhere in `web/`. The Go tier is instrumented
-and the Rust engines emit spans, so the trace starts at the gateway — the
-browser and server-rendered hops are missing.
-
 ### C11. Remaining small items (partially closed)
 - ~~`CreateInsurancePaymentIntent` empty idempotency key~~ — **closed** (empty
   key fails closed; `TestCreateInsurancePaymentIntent_requiresIdempotencyKey`).
@@ -221,16 +216,38 @@ optional HTTP server on `PRICING_METRICS_PORT` / `UNDERWRITING_METRICS_PORT`.
 Legacy no-arg still mints a fresh key — prefer always passing an operation key
 on new money call sites.
 
+### C8. Web OpenTelemetry — **shipped (lightweight)**
+Was: no `@opentelemetry/*` in `web/`; browser + RSC hops dark while Go/Rust
+emitted spans from the gateway onward.
+
+Shipped hybrid (A server OTLP + B Sentry/request-id bridge; full browser OTel
+SDK skipped for bundle budget):
+
+- Direct deps in `web/package.json`: `@opentelemetry/api`, `sdk-trace-node`,
+  `exporter-trace-otlp-http`, `resources`, `semantic-conventions`, `core`.
+- Node: `web/src/lib/otel/register-node.ts` — no-op unless
+  `OTEL_EXPORTER_OTLP_ENDPOINT` is set; rewrites `:4317` → `:4318` OTLP/HTTP;
+  wired from `web/src/instrumentation.ts` after Sentry (skipped on build phase).
+- Client bridge: `web/src/lib/otel/trace-context.ts` mints `X-Request-ID` +
+  W3C `traceparent`; `web/src/lib/api.ts` attaches on every hop (incl. refresh +
+  download); `web/src/lib/otel/sentry-bridge.ts` tags Sentry with `request_id` /
+  `otel_trace_id` and wraps calls in `http.client` spans.
+- Tests: `web/tests/unit/lib/otel/*`, api header assertion, instrumentation
+  register hook.
+- Enable: set `OTEL_EXPORTER_OTLP_ENDPOINT` (+ optional `OTEL_SERVICE_NAME`) on
+  the web process; collector OTLP/HTTP on 4318. Unset = boot unchanged.
+- Residual: raw RSC `fetch()` that bypasses `api.ts` still needs
+  `buildOutboundTraceHeaders()` when those paths are touched.
+
 ---
 
 ## Suggested order for the next session
 
-1. **C8** if tracing browser → gateway is a release gate.
-2. Optional: extend provider update for insurance_provider/expiry/coverage.
-3. Otherwise stay on **A** (human) and **B** (staging/Stripe/k6) — those gate
-   production claims more than residual C polish.
-4. **C7** only when someone has Cloudflare API access.
-5. Tracker residual: PERF/FE/QA and Founder-Action ops (cluster, CF, secrets).
+1. Optional: extend provider update for insurance_provider/expiry/coverage.
+2. Stay on **A** (human) and **B** (staging/Stripe/k6) — those gate production
+   claims more than residual C polish.
+3. **C7** only when someone has Cloudflare API access.
+4. Tracker residual: PERF/FE/QA and Founder-Action ops (cluster, CF, secrets).
 
 ---
 

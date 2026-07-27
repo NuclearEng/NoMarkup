@@ -1,4 +1,13 @@
 import { getAccessToken, setAccessToken, clearTokens } from '@/lib/auth';
+import {
+  attachTraceToSentry,
+  withClientApiSpan,
+} from '@/lib/otel/sentry-bridge';
+import {
+  HEADER_REQUEST_ID,
+  HEADER_TRACEPARENT,
+  buildOutboundTraceHeaders,
+} from '@/lib/otel/trace-context';
 import type { TokenPair } from '@/types';
 
 export class ApiError extends Error {
@@ -67,9 +76,15 @@ export async function attemptRefresh(): Promise<boolean> {
       // Next.js rewrite proxy (same-origin). This avoids CORS and ensures the
       // httpOnly refresh cookie (and has_session sentinel) are associated with
       // the web origin.
+      const traceHeaders = buildOutboundTraceHeaders();
       const response = await fetch(`/api/v1/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
+        headers: { ...traceHeaders },
+      });
+      attachTraceToSentry({
+        requestId: response.headers.get(HEADER_REQUEST_ID) ?? traceHeaders[HEADER_REQUEST_ID],
+        traceparent: traceHeaders[HEADER_TRACEPARENT],
       });
 
       if (!response.ok) return false;
@@ -94,8 +109,12 @@ async function request<T>(
   skipAuth = false,
   extraHeaders?: Record<string, string>,
 ): Promise<T> {
+  // Mint once per logical attempt so the 401 retry reuses the same request id
+  // (gateway logs stay joinable across the refresh hop).
+  const traceHeaders = buildOutboundTraceHeaders();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...traceHeaders,
     ...extraHeaders,
   };
 
@@ -104,67 +123,86 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  let response: Response;
-  try {
-    // Use the caller-supplied path (always starts with /api/v1...) directly.
-    // This goes through Next rewrites when API_BASE_URL would point elsewhere,
-    // giving us same-origin semantics, working cookies, and no CORS preflight
-    // for the main data surface.
-    response = await fetch(path, {
+  return withClientApiSpan(
+    {
       method,
-      headers,
-      credentials: 'include',
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new ApiError(503, 'Unable to reach the server. Please try again shortly.');
-  }
-
-  // On 401, attempt token refresh and retry once
-  if (response.status === 401 && !skipAuth) {
-    const refreshed = await attemptRefresh();
-    if (refreshed) {
-      const retryHeaders: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...extraHeaders,
-      };
-      const newToken = getAccessToken();
-      if (newToken) {
-        retryHeaders['Authorization'] = `Bearer ${newToken}`;
+      path,
+      requestId: traceHeaders[HEADER_REQUEST_ID],
+      traceparent: traceHeaders[HEADER_TRACEPARENT],
+    },
+    async () => {
+      let response: Response;
+      try {
+        // Use the caller-supplied path (always starts with /api/v1...) directly.
+        // This goes through Next rewrites when API_BASE_URL would point elsewhere,
+        // giving us same-origin semantics, working cookies, and no CORS preflight
+        // for the main data surface.
+        response = await fetch(path, {
+          method,
+          headers,
+          credentials: 'include',
+          body: body ? JSON.stringify(body) : undefined,
+        });
+      } catch {
+        throw new ApiError(503, 'Unable to reach the server. Please try again shortly.');
       }
 
-      response = await fetch(path, {
-        method,
-        headers: retryHeaders,
-        credentials: 'include',
-        body: body ? JSON.stringify(body) : undefined,
+      // On 401, attempt token refresh and retry once
+      if (response.status === 401 && !skipAuth) {
+        const refreshed = await attemptRefresh();
+        if (refreshed) {
+          const retryHeaders: Record<string, string> = {
+            'Content-Type': 'application/json',
+            // Same correlation headers — this is the same logical attempt.
+            ...traceHeaders,
+            ...extraHeaders,
+          };
+          const newToken = getAccessToken();
+          if (newToken) {
+            retryHeaders['Authorization'] = `Bearer ${newToken}`;
+          }
+
+          response = await fetch(path, {
+            method,
+            headers: retryHeaders,
+            credentials: 'include',
+            body: body ? JSON.stringify(body) : undefined,
+          });
+        } else {
+          clearTokens();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
+          throw new ApiError(401, 'Session expired');
+        }
+      }
+
+      // Prefer the gateway-echoed id (authoritative) for Sentry tags.
+      attachTraceToSentry({
+        requestId:
+          response.headers.get(HEADER_REQUEST_ID) ?? traceHeaders[HEADER_REQUEST_ID],
+        traceparent: traceHeaders[HEADER_TRACEPARENT],
       });
-    } else {
-      clearTokens();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
+
+      if (!response.ok) {
+        throw new ApiError(response.status, await response.text());
       }
-      throw new ApiError(401, 'Session expired');
-    }
-  }
 
-  if (!response.ok) {
-    throw new ApiError(response.status, await response.text());
-  }
-
-  // 204 No Content (and other empty-body successes, e.g. DELETE endpoints) have
-  // no JSON to parse. Calling response.json() on an empty body throws a
-  // SyntaxError — in WebKit/Safari the message is the cryptic "The string did
-  // not match the expected pattern." — which surfaced as a false "delete
-  // failed" toast even though the server succeeded. Return undefined instead.
-  if (response.status === 204 || response.headers.get('Content-Length') === '0') {
-    return undefined as T;
-  }
-  const text = await response.text();
-  if (text === '') {
-    return undefined as T;
-  }
-  return JSON.parse(text) as T;
+      // 204 No Content (and other empty-body successes, e.g. DELETE endpoints) have
+      // no JSON to parse. Calling response.json() on an empty body throws a
+      // SyntaxError — in WebKit/Safari the message is the cryptic "The string did
+      // not match the expected pattern." — which surfaced as a false "delete
+      // failed" toast even though the server succeeded. Return undefined instead.
+      if (response.status === 204 || response.headers.get('Content-Length') === '0') {
+        return undefined as T;
+      }
+      const text = await response.text();
+      if (text === '') {
+        return undefined as T;
+      }
+      return JSON.parse(text) as T;
+    },
+  );
 }
 
 export const api = {
@@ -243,8 +281,9 @@ export function __resetIdempotencyKeysForTests(): void {
 // <a href> can't attach the Authorization header — the gateway middleware
 // returns 401, leaving the user with a blank page / "nothing happened."
 export async function downloadAuthenticated(path: string, filename: string): Promise<void> {
+  const traceHeaders = buildOutboundTraceHeaders();
   const fetchOnce = async (): Promise<Response> => {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...traceHeaders };
     const token = getAccessToken();
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -268,6 +307,11 @@ export async function downloadAuthenticated(path: string, filename: string): Pro
       response = await fetchOnce();
     }
   }
+
+  attachTraceToSentry({
+    requestId: response.headers.get(HEADER_REQUEST_ID) ?? traceHeaders[HEADER_REQUEST_ID],
+    traceparent: traceHeaders[HEADER_TRACEPARENT],
+  });
 
   if (!response.ok) {
     throw new ApiError(response.status, await response.text());

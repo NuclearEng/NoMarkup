@@ -141,3 +141,8 @@ const config = {
 - Loading states: Skeleton components, never spinners (except full-page initial load).
 - Error states: every data-fetching component handles loading, error, and empty states.
 - Responsive: mobile-first. All layouts must work at 320px minimum width.
+- **Images:** prefer Next.js `<Image>` for app/CDN photos. **Allowed raw `<img>`**
+  (also listed under CLAUDE.md §13): Mapbox Static Images API map previews
+  (`JobDetailClient`, etc.) and MFA authenticator QR codes on
+  `settings/security` (`api.qrserver.com`). Do not expand raw `<img>` without
+  documenting the exception.

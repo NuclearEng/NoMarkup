@@ -188,9 +188,10 @@ export default defineConfig({
 chat); Accessibility (axe-core via `vitest-axe`).
 
 **Patterns:** test behavior not implementation ("displays bid amount when bid is placed", not
-"calls setBidAmount"). Mock at the network boundary (MSW), not the component boundary. Use
-`@testing-library/user-event`, not `fireEvent`. Every data-fetching component tested in loading /
-success / error / empty states.
+"calls setBidAmount"). Mock at the network/API boundary (prefer `vi.mock` of the API client /
+fetch helpers used by TanStack Query hooks — **MSW is not the current standard**; no MSW server
+is wired in `web/tests`). Use `@testing-library/user-event`, not `fireEvent`. Every data-fetching
+component tested in loading / success / error / empty states.
 
 ### Backend — Go
 ```go

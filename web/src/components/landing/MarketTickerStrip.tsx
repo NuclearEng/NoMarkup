@@ -2,25 +2,32 @@
 
 import { useMemo } from 'react';
 
-import { usePricingOverview } from '@/hooks/usePricing';
+import {
+  usePricingOverview,
+  type PricingOverviewCategory,
+} from '@/hooks/usePricing';
 import { cn } from '@/lib/utils';
 
-interface TickerItem {
-  category: string;
-  location: string;
-  currentPrice: number;
-  originalPrice?: number;
-  bidCount?: number;
-  timeRemaining?: string;
-  status: 'active' | 'completed' | 'ending-soon';
-}
+import {
+  pricingCategoriesToTickerItems,
+  type TickerItem,
+} from './ticker-items';
+
+export type { TickerItem } from './ticker-items';
+export { pricingCategoriesToTickerItems } from './ticker-items';
 
 interface MarketTickerStripProps {
   /**
-   * Optional pre-supplied items. When omitted, the strip fetches real
-   * category-level pricing data from /api/v1/pricing.
+   * Optional pre-supplied items (RSC seed or story fixtures). When provided,
+   * the strip skips the client pricing fetch so first paint is real ticker
+   * content with no skeleton.
    */
   items?: TickerItem[];
+  /**
+   * Server-seeded pricing overview. Used when `items` is omitted so the
+   * strip can hydrate from TanStack `initialData` without a loading flash.
+   */
+  initialPricing?: { categories: PricingOverviewCategory[] };
   speed?: 'slow' | 'normal' | 'fast';
   className?: string;
 }
@@ -119,39 +126,40 @@ function TickerSkeleton({ className }: { className?: string }) {
   );
 }
 
-export function MarketTickerStrip({ items, speed = 'normal', className }: MarketTickerStripProps) {
+export function MarketTickerStrip({
+  items,
+  initialPricing,
+  speed = 'normal',
+  className,
+}: MarketTickerStripProps) {
   const duration = SPEED_DURATION[speed];
 
-  // When items are not supplied, fetch real category-level pricing data.
-  const { data, isLoading, isError } = usePricingOverview();
+  // Skip the client fetch when the parent already supplied resolved items
+  // (RSC seed path). When only a raw pricing snapshot is seeded, still run
+  // the query with initialData so first paint is instant and background
+  // refresh stays available for other consumers of the same key.
+  const seededItems = items !== undefined;
+  const { data, isLoading, isError } = usePricingOverview({
+    enabled: !seededItems,
+    ...(initialPricing !== undefined && !seededItems
+      ? { initialData: initialPricing }
+      : {}),
+  });
 
   const resolvedItems = useMemo<TickerItem[]>(() => {
     if (items) return items;
     if (!data) return [];
-    return data.categories
-      .filter((c) => c.total_jobs > 0 && c.avg_median_cents > 0)
-      .map((c): TickerItem => {
-        const hasSavings = c.avg_savings_cents != null && c.avg_savings_cents > 0;
-        return {
-          category: c.category_name,
-          location: `${String(c.total_jobs)} jobs`,
-          currentPrice: c.avg_median_cents,
-          ...(hasSavings && c.avg_savings_cents != null
-            ? { originalPrice: c.avg_median_cents + c.avg_savings_cents }
-            : {}),
-          status: hasSavings ? ('completed' as const) : ('active' as const),
-        };
-      });
+    return pricingCategoriesToTickerItems(data.categories);
   }, [items, data]);
 
-  // When the parent didn't supply items and the API failed, hide the strip
-  // gracefully instead of crashing the landing hero.
-  if (!items && isError) {
+  // When the parent didn't supply items and the API failed (and we have no
+  // initialData), hide the strip gracefully instead of crashing the hero.
+  if (!seededItems && isError && !data) {
     return null;
   }
 
-  // While the hook is loading (parent didn't supply items), show a skeleton.
-  if (!items && isLoading) {
+  // Loading only when unseeded and no initialData has landed yet.
+  if (!seededItems && isLoading && !data) {
     return <TickerSkeleton className={className} />;
   }
 

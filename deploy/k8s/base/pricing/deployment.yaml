@@ -18,10 +18,9 @@ spec:
         app.kubernetes.io/component: rust-engine
         app.kubernetes.io/part-of: nomarkup
       annotations:
-        # No dedicated metrics listener yet — scrape disabled until
-        # PRICING_METRICS_PORT is instrumented (engines/pricing).
-        prometheus.io/scrape: "false"
-        prometheus.io/port: "50061"
+        # Rust engines: metrics on gRPC port + 10000 (docs/operations/metrics.md)
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "60061"
         prometheus.io/path: "/metrics"
     spec:
       securityContext:
@@ -38,9 +37,14 @@ spec:
             - name: grpc
               containerPort: 50061
               protocol: TCP
+            - name: metrics
+              containerPort: 60061
+              protocol: TCP
           env:
             - name: PRICING_ENGINE_PORT
               value: "50061"
+            - name: PRICING_METRICS_PORT
+              value: "60061"
             - name: APP_VERSION
               valueFrom:
                 configMapKeyRef:

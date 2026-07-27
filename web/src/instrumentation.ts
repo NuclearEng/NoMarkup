@@ -2,7 +2,7 @@
  * Next.js instrumentation hook — runs once when a server instance starts.
  * https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation
  *
- * Two jobs:
+ * Three jobs:
  *
  * 1. **Sentry server/edge initialization.** From @sentry/nextjs v9 onward the
  *    build plugin only auto-injects the *client* config file; the Node and Edge
@@ -13,7 +13,13 @@
  *    the package. Without the imports below, every Server Component / route
  *    handler / server action error is silently dropped.
  *
- * 2. **CLAUDE.md §12 startup env validation**: in production the server refuses
+ * 2. **OpenTelemetry (C8).** When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, register
+ *    a Node TracerProvider that exports to the collector over OTLP/HTTP. When
+ *    unset (dev default) this is a pure no-op — see `lib/otel/register-node.ts`.
+ *    Browser hops stay on the Sentry + X-Request-ID/traceparent bridge
+ *    (`lib/api.ts` + `lib/otel/sentry-bridge.ts`) to avoid a heavy browser SDK.
+ *
+ * 3. **CLAUDE.md §12 startup env validation**: in production the server refuses
  *    to boot when a required variable is missing; in development it logs a
  *    structured warning and continues.
  *
@@ -26,7 +32,8 @@
  *     skipped during the build phase. Sentry init is deliberately NOT gated on
  *     the build phase — that matches the SDK's documented contract, and it means
  *     failures during static generation are reported too. With no DSN configured
- *     (the CI case) `Sentry.init` is a no-op.
+ *     (the CI case) `Sentry.init` is a no-op. OTel is skipped in the build phase
+ *     so workers do not open exporter sockets.
  *   - Dynamic imports: no top-level `Sentry.init()`, no top-level throw at
  *     module-import time, and the server-only env module is never statically
  *     reachable from the edge or client bundles.
@@ -46,6 +53,10 @@ export async function register(): Promise<void> {
   await import('../sentry.server.config');
 
   if (process.env['NEXT_PHASE'] === 'phase-production-build') return;
+
+  // Optional OTLP export — never throws; unset endpoint is a silent no-op.
+  const { registerNodeOtel } = await import('./lib/otel/register-node');
+  await registerNodeOtel();
 
   const { validateServerEnv } = await import('./lib/server/env');
   validateServerEnv();

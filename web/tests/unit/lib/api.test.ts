@@ -1,12 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiError, api, downloadAuthenticated, getApiErrorMessage } from '@/lib/api';
+import { HEADER_REQUEST_ID, HEADER_TRACEPARENT, parseTraceparent } from '@/lib/otel/trace-context';
 
 // Mock auth helpers so we control the token state without touching localStorage.
 vi.mock('@/lib/auth', () => ({
   getAccessToken: vi.fn(),
   setAccessToken: vi.fn(),
   clearTokens: vi.fn(),
+}));
+
+// Sentry no-op so withClientApiSpan does not pull the full browser SDK graph.
+vi.mock('@sentry/nextjs', () => ({
+  getCurrentScope: () => ({
+    setTag: vi.fn(),
+    setContext: vi.fn(),
+  }),
+  startSpan: (_opts: unknown, fn: () => unknown) => fn(),
 }));
 
 const { getAccessToken, setAccessToken, clearTokens } = await import('@/lib/auth');
@@ -94,6 +104,24 @@ describe('api request methods', () => {
     const headers = init?.headers as Record<string, string>;
     expect(headers['Authorization']).toBe('Bearer token-1');
     expect(init?.credentials).toBe('include');
+  });
+
+  it('GET attaches X-Request-ID and W3C traceparent for gateway correlation (C8)', async () => {
+    vi.mocked(getAccessToken).mockReturnValue(null);
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { [HEADER_REQUEST_ID]: 'gateway-echo-id' },
+      }),
+    );
+
+    await api.get('/api/v1/jobs');
+
+    const call = vi.mocked(fetch).mock.calls[0];
+    if (!call) throw new Error('fetch was not called');
+    const headers = call[1]?.headers as Record<string, string>;
+    expect(headers[HEADER_REQUEST_ID]).toMatch(/^[0-9a-f]{16}$/);
+    expect(parseTraceparent(headers[HEADER_TRACEPARENT])).not.toBeNull();
   });
 
   it('POST serializes body as JSON', async () => {
