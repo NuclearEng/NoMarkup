@@ -265,6 +265,8 @@ struct ContractRecurringInstance: Codable, Sendable, Hashable, Identifiable {
     var amountCents: Int64?
     var autoApproved: Bool?
     var completedAt: String?
+    /// Customer approve timestamp (FR-18). Durable hide-Approve across reloads.
+    var approvedAt: String?
 
     var displayStatus: String {
         StatusChipStyle.displayLabel(status ?? "unknown")
@@ -284,10 +286,17 @@ struct ContractRecurringInstance: Codable, Sendable, Hashable, Identifiable {
         return s == "scheduled" || s == "in_progress"
     }
 
-    /// Completed visits may be approved by the customer. Server approve is idempotent
-    /// (proto has no `approved_at` on the wire — residual).
+    /// Completed visits may be approved by the customer. Server approve is idempotent.
+    /// Hide when auto-approved or `approved_at` is set (durable across reloads).
     var isApprovable: Bool {
-        (status ?? "").lowercased() == "completed" && completedAt != nil
+        guard (status ?? "").lowercased() == "completed" else { return false }
+        if autoApproved == true { return false }
+        if let approvedAt, !approvedAt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return false
+        }
+        // Prefer completed_at when present; status alone still allows approve if
+        // gateway omitted completed_at after complete.
+        return true
     }
 }
 

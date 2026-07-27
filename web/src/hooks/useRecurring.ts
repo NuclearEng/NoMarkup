@@ -289,12 +289,14 @@ export function isRecurringInstanceCompletable(instance: ContractRecurringInstan
 
 /**
  * Completed visits may be approved by the customer. Server approve is idempotent.
- * Auto-approved visits skip the manual approve button (Pay visit may still show).
- * completed_at is preferred when present but status alone is enough — the wire
- * sometimes omits completed_at after complete (proto residual).
+ * Auto-approved or already-approved visits hide the Approve CTA (Pay may remain).
+ * Prefer `approved_at` on the wire for durable hide across reloads.
  */
 export function isRecurringInstanceApprovable(instance: ContractRecurringInstance): boolean {
-  return (instance.status ?? '').toLowerCase() === 'completed';
+  if ((instance.status ?? '').toLowerCase() !== 'completed') return false;
+  if (instance.auto_approved === true) return false;
+  if (instance.approved_at?.trim()) return false;
+  return true;
 }
 
 export function hasPaymentRetryInfo(config: ContractRecurringConfig): boolean {

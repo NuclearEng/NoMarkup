@@ -600,6 +600,8 @@ export interface ContractRecurringInstance {
   amount_cents?: number;
   auto_approved?: boolean;
   completed_at?: string;
+  /** Customer approve timestamp — durable hide-Approve across reloads. */
+  approved_at?: string;
 }
 
 /**

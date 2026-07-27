@@ -148,6 +148,9 @@ message RecurringInstance {
   int64 amount_cents = 5;
   bool auto_approved = 6;
   google.protobuf.Timestamp completed_at = 7;
+  // Customer approve timestamp (FR-18). Status may stay "completed" after approve;
+  // clients use this for durable hide-Approve UI across reloads.
+  google.protobuf.Timestamp approved_at = 8;
 }
 
 // ============================================================

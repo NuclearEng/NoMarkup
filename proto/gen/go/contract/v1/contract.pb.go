@@ -773,8 +773,11 @@ type RecurringInstance struct {
 	AmountCents    int64                  `protobuf:"varint,5,opt,name=amount_cents,json=amountCents,proto3" json:"amount_cents,omitempty"`
 	AutoApproved   bool                   `protobuf:"varint,6,opt,name=auto_approved,json=autoApproved,proto3" json:"auto_approved,omitempty"`
 	CompletedAt    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Customer approve timestamp (FR-18). Status may stay "completed" after approve;
+	// clients use this for durable hide-Approve UI across reloads.
+	ApprovedAt    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=approved_at,json=approvedAt,proto3" json:"approved_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RecurringInstance) Reset() {
@@ -852,6 +855,13 @@ func (x *RecurringInstance) GetAutoApproved() bool {
 func (x *RecurringInstance) GetCompletedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CompletedAt
+	}
+	return nil
+}
+
+func (x *RecurringInstance) GetApprovedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ApprovedAt
 	}
 	return nil
 }
@@ -4007,7 +4017,7 @@ const file_contract_v1_contract_proto_rawDesc = "" +
 	"rate_cents\x18\x04 \x01(\x03R\trateCents\x12!\n" +
 	"\fauto_approve\x18\x05 \x01(\bR\vautoApprove\x12\x16\n" +
 	"\x06status\x18\x06 \x01(\tR\x06status\x12C\n" +
-	"\x0fnext_occurrence\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0enextOccurrence\"\xaa\x02\n" +
+	"\x0fnext_occurrence\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x0enextOccurrence\"\xe7\x02\n" +
 	"\x11RecurringInstance\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\frecurring_id\x18\x02 \x01(\tR\vrecurringId\x12C\n" +
@@ -4015,7 +4025,9 @@ const file_contract_v1_contract_proto_rawDesc = "" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12!\n" +
 	"\famount_cents\x18\x05 \x01(\x03R\vamountCents\x12#\n" +
 	"\rauto_approved\x18\x06 \x01(\bR\fautoApproved\x12=\n" +
-	"\fcompleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\"\xfd\x01\n" +
+	"\fcompleted_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12;\n" +
+	"\vapproved_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"approvedAt\"\xfd\x01\n" +
 	"\x1eCreateContractFromAwardRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x15\n" +
 	"\x06bid_id\x18\x02 \x01(\tR\x05bidId\x12\x1f\n" +
@@ -4429,110 +4441,111 @@ var file_contract_v1_contract_proto_depIdxs = []int32{
 	67, // 14: nomarkup.contract.v1.RecurringConfig.next_occurrence:type_name -> google.protobuf.Timestamp
 	67, // 15: nomarkup.contract.v1.RecurringInstance.occurrence_date:type_name -> google.protobuf.Timestamp
 	67, // 16: nomarkup.contract.v1.RecurringInstance.completed_at:type_name -> google.protobuf.Timestamp
-	66, // 17: nomarkup.contract.v1.CreateContractFromAwardRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
-	4,  // 18: nomarkup.contract.v1.CreateContractFromAwardResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	4,  // 19: nomarkup.contract.v1.GetContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	6,  // 20: nomarkup.contract.v1.GetContractResponse.change_orders:type_name -> nomarkup.contract.v1.ChangeOrder
-	4,  // 21: nomarkup.contract.v1.AcceptContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	4,  // 22: nomarkup.contract.v1.StartWorkResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	0,  // 23: nomarkup.contract.v1.ListContractsRequest.status_filter:type_name -> nomarkup.contract.v1.ContractStatus
-	69, // 24: nomarkup.contract.v1.ListContractsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	4,  // 25: nomarkup.contract.v1.ListContractsResponse.contracts:type_name -> nomarkup.contract.v1.Contract
-	70, // 26: nomarkup.contract.v1.ListContractsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	5,  // 27: nomarkup.contract.v1.SubmitMilestoneResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
-	5,  // 28: nomarkup.contract.v1.ApproveMilestoneResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
-	5,  // 29: nomarkup.contract.v1.RequestRevisionResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
-	4,  // 30: nomarkup.contract.v1.MarkCompleteResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	4,  // 31: nomarkup.contract.v1.ApproveCompletionResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	5,  // 32: nomarkup.contract.v1.ProposeChangeOrderRequest.added_milestones:type_name -> nomarkup.contract.v1.Milestone
-	6,  // 33: nomarkup.contract.v1.ProposeChangeOrderResponse.change_order:type_name -> nomarkup.contract.v1.ChangeOrder
-	6,  // 34: nomarkup.contract.v1.RespondToChangeOrderResponse.change_order:type_name -> nomarkup.contract.v1.ChangeOrder
-	4,  // 35: nomarkup.contract.v1.CancelContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	7,  // 36: nomarkup.contract.v1.GetRecurringConfigResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
-	7,  // 37: nomarkup.contract.v1.UpdateRecurringConfigResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
-	7,  // 38: nomarkup.contract.v1.PauseRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
-	7,  // 39: nomarkup.contract.v1.ResumeRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
-	7,  // 40: nomarkup.contract.v1.CancelRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
-	69, // 41: nomarkup.contract.v1.ListRecurringInstancesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	8,  // 42: nomarkup.contract.v1.ListRecurringInstancesResponse.instances:type_name -> nomarkup.contract.v1.RecurringInstance
-	70, // 43: nomarkup.contract.v1.ListRecurringInstancesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	8,  // 44: nomarkup.contract.v1.CompleteRecurringInstanceResponse.instance:type_name -> nomarkup.contract.v1.RecurringInstance
-	8,  // 45: nomarkup.contract.v1.ApproveRecurringInstanceResponse.instance:type_name -> nomarkup.contract.v1.RecurringInstance
-	2,  // 46: nomarkup.contract.v1.Dispute.dispute_type:type_name -> nomarkup.contract.v1.DisputeType
-	3,  // 47: nomarkup.contract.v1.Dispute.status:type_name -> nomarkup.contract.v1.DisputeStatus
-	67, // 48: nomarkup.contract.v1.Dispute.created_at:type_name -> google.protobuf.Timestamp
-	67, // 49: nomarkup.contract.v1.Dispute.resolved_at:type_name -> google.protobuf.Timestamp
-	2,  // 50: nomarkup.contract.v1.OpenDisputeRequest.dispute_type:type_name -> nomarkup.contract.v1.DisputeType
-	53, // 51: nomarkup.contract.v1.OpenDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
-	53, // 52: nomarkup.contract.v1.GetDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
-	3,  // 53: nomarkup.contract.v1.ListDisputesRequest.status_filter:type_name -> nomarkup.contract.v1.DisputeStatus
-	69, // 54: nomarkup.contract.v1.ListDisputesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
-	53, // 55: nomarkup.contract.v1.ListDisputesResponse.disputes:type_name -> nomarkup.contract.v1.Dispute
-	70, // 56: nomarkup.contract.v1.ListDisputesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
-	53, // 57: nomarkup.contract.v1.AdminResolveDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
-	4,  // 58: nomarkup.contract.v1.ReportNoShowResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	4,  // 59: nomarkup.contract.v1.ReportAbandonmentResponse.contract:type_name -> nomarkup.contract.v1.Contract
-	9,  // 60: nomarkup.contract.v1.ContractService.CreateContractFromAward:input_type -> nomarkup.contract.v1.CreateContractFromAwardRequest
-	11, // 61: nomarkup.contract.v1.ContractService.GetContract:input_type -> nomarkup.contract.v1.GetContractRequest
-	13, // 62: nomarkup.contract.v1.ContractService.AcceptContract:input_type -> nomarkup.contract.v1.AcceptContractRequest
-	15, // 63: nomarkup.contract.v1.ContractService.StartWork:input_type -> nomarkup.contract.v1.StartWorkRequest
-	17, // 64: nomarkup.contract.v1.ContractService.ExportContractPDF:input_type -> nomarkup.contract.v1.ExportContractPDFRequest
-	19, // 65: nomarkup.contract.v1.ContractService.ListContracts:input_type -> nomarkup.contract.v1.ListContractsRequest
-	21, // 66: nomarkup.contract.v1.ContractService.SubmitMilestone:input_type -> nomarkup.contract.v1.SubmitMilestoneRequest
-	23, // 67: nomarkup.contract.v1.ContractService.ApproveMilestone:input_type -> nomarkup.contract.v1.ApproveMilestoneRequest
-	25, // 68: nomarkup.contract.v1.ContractService.RequestRevision:input_type -> nomarkup.contract.v1.RequestRevisionRequest
-	27, // 69: nomarkup.contract.v1.ContractService.MarkComplete:input_type -> nomarkup.contract.v1.MarkCompleteRequest
-	29, // 70: nomarkup.contract.v1.ContractService.ApproveCompletion:input_type -> nomarkup.contract.v1.ApproveCompletionRequest
-	31, // 71: nomarkup.contract.v1.ContractService.ProposeChangeOrder:input_type -> nomarkup.contract.v1.ProposeChangeOrderRequest
-	33, // 72: nomarkup.contract.v1.ContractService.RespondToChangeOrder:input_type -> nomarkup.contract.v1.RespondToChangeOrderRequest
-	35, // 73: nomarkup.contract.v1.ContractService.CancelContract:input_type -> nomarkup.contract.v1.CancelContractRequest
-	37, // 74: nomarkup.contract.v1.ContractService.GetRecurringConfig:input_type -> nomarkup.contract.v1.GetRecurringConfigRequest
-	39, // 75: nomarkup.contract.v1.ContractService.UpdateRecurringConfig:input_type -> nomarkup.contract.v1.UpdateRecurringConfigRequest
-	41, // 76: nomarkup.contract.v1.ContractService.PauseRecurring:input_type -> nomarkup.contract.v1.PauseRecurringRequest
-	43, // 77: nomarkup.contract.v1.ContractService.ResumeRecurring:input_type -> nomarkup.contract.v1.ResumeRecurringRequest
-	45, // 78: nomarkup.contract.v1.ContractService.CancelRecurring:input_type -> nomarkup.contract.v1.CancelRecurringRequest
-	47, // 79: nomarkup.contract.v1.ContractService.ListRecurringInstances:input_type -> nomarkup.contract.v1.ListRecurringInstancesRequest
-	49, // 80: nomarkup.contract.v1.ContractService.CompleteRecurringInstance:input_type -> nomarkup.contract.v1.CompleteRecurringInstanceRequest
-	51, // 81: nomarkup.contract.v1.ContractService.ApproveRecurringInstance:input_type -> nomarkup.contract.v1.ApproveRecurringInstanceRequest
-	54, // 82: nomarkup.contract.v1.ContractService.OpenDispute:input_type -> nomarkup.contract.v1.OpenDisputeRequest
-	56, // 83: nomarkup.contract.v1.ContractService.GetDispute:input_type -> nomarkup.contract.v1.GetDisputeRequest
-	58, // 84: nomarkup.contract.v1.ContractService.ListDisputes:input_type -> nomarkup.contract.v1.ListDisputesRequest
-	60, // 85: nomarkup.contract.v1.ContractService.AdminResolveDispute:input_type -> nomarkup.contract.v1.AdminResolveDisputeRequest
-	62, // 86: nomarkup.contract.v1.ContractService.ReportNoShow:input_type -> nomarkup.contract.v1.ReportNoShowRequest
-	64, // 87: nomarkup.contract.v1.ContractService.ReportAbandonment:input_type -> nomarkup.contract.v1.ReportAbandonmentRequest
-	10, // 88: nomarkup.contract.v1.ContractService.CreateContractFromAward:output_type -> nomarkup.contract.v1.CreateContractFromAwardResponse
-	12, // 89: nomarkup.contract.v1.ContractService.GetContract:output_type -> nomarkup.contract.v1.GetContractResponse
-	14, // 90: nomarkup.contract.v1.ContractService.AcceptContract:output_type -> nomarkup.contract.v1.AcceptContractResponse
-	16, // 91: nomarkup.contract.v1.ContractService.StartWork:output_type -> nomarkup.contract.v1.StartWorkResponse
-	18, // 92: nomarkup.contract.v1.ContractService.ExportContractPDF:output_type -> nomarkup.contract.v1.ExportContractPDFResponse
-	20, // 93: nomarkup.contract.v1.ContractService.ListContracts:output_type -> nomarkup.contract.v1.ListContractsResponse
-	22, // 94: nomarkup.contract.v1.ContractService.SubmitMilestone:output_type -> nomarkup.contract.v1.SubmitMilestoneResponse
-	24, // 95: nomarkup.contract.v1.ContractService.ApproveMilestone:output_type -> nomarkup.contract.v1.ApproveMilestoneResponse
-	26, // 96: nomarkup.contract.v1.ContractService.RequestRevision:output_type -> nomarkup.contract.v1.RequestRevisionResponse
-	28, // 97: nomarkup.contract.v1.ContractService.MarkComplete:output_type -> nomarkup.contract.v1.MarkCompleteResponse
-	30, // 98: nomarkup.contract.v1.ContractService.ApproveCompletion:output_type -> nomarkup.contract.v1.ApproveCompletionResponse
-	32, // 99: nomarkup.contract.v1.ContractService.ProposeChangeOrder:output_type -> nomarkup.contract.v1.ProposeChangeOrderResponse
-	34, // 100: nomarkup.contract.v1.ContractService.RespondToChangeOrder:output_type -> nomarkup.contract.v1.RespondToChangeOrderResponse
-	36, // 101: nomarkup.contract.v1.ContractService.CancelContract:output_type -> nomarkup.contract.v1.CancelContractResponse
-	38, // 102: nomarkup.contract.v1.ContractService.GetRecurringConfig:output_type -> nomarkup.contract.v1.GetRecurringConfigResponse
-	40, // 103: nomarkup.contract.v1.ContractService.UpdateRecurringConfig:output_type -> nomarkup.contract.v1.UpdateRecurringConfigResponse
-	42, // 104: nomarkup.contract.v1.ContractService.PauseRecurring:output_type -> nomarkup.contract.v1.PauseRecurringResponse
-	44, // 105: nomarkup.contract.v1.ContractService.ResumeRecurring:output_type -> nomarkup.contract.v1.ResumeRecurringResponse
-	46, // 106: nomarkup.contract.v1.ContractService.CancelRecurring:output_type -> nomarkup.contract.v1.CancelRecurringResponse
-	48, // 107: nomarkup.contract.v1.ContractService.ListRecurringInstances:output_type -> nomarkup.contract.v1.ListRecurringInstancesResponse
-	50, // 108: nomarkup.contract.v1.ContractService.CompleteRecurringInstance:output_type -> nomarkup.contract.v1.CompleteRecurringInstanceResponse
-	52, // 109: nomarkup.contract.v1.ContractService.ApproveRecurringInstance:output_type -> nomarkup.contract.v1.ApproveRecurringInstanceResponse
-	55, // 110: nomarkup.contract.v1.ContractService.OpenDispute:output_type -> nomarkup.contract.v1.OpenDisputeResponse
-	57, // 111: nomarkup.contract.v1.ContractService.GetDispute:output_type -> nomarkup.contract.v1.GetDisputeResponse
-	59, // 112: nomarkup.contract.v1.ContractService.ListDisputes:output_type -> nomarkup.contract.v1.ListDisputesResponse
-	61, // 113: nomarkup.contract.v1.ContractService.AdminResolveDispute:output_type -> nomarkup.contract.v1.AdminResolveDisputeResponse
-	63, // 114: nomarkup.contract.v1.ContractService.ReportNoShow:output_type -> nomarkup.contract.v1.ReportNoShowResponse
-	65, // 115: nomarkup.contract.v1.ContractService.ReportAbandonment:output_type -> nomarkup.contract.v1.ReportAbandonmentResponse
-	88, // [88:116] is the sub-list for method output_type
-	60, // [60:88] is the sub-list for method input_type
-	60, // [60:60] is the sub-list for extension type_name
-	60, // [60:60] is the sub-list for extension extendee
-	0,  // [0:60] is the sub-list for field type_name
+	67, // 17: nomarkup.contract.v1.RecurringInstance.approved_at:type_name -> google.protobuf.Timestamp
+	66, // 18: nomarkup.contract.v1.CreateContractFromAwardRequest.payment_timing:type_name -> nomarkup.common.v1.PaymentTiming
+	4,  // 19: nomarkup.contract.v1.CreateContractFromAwardResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	4,  // 20: nomarkup.contract.v1.GetContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	6,  // 21: nomarkup.contract.v1.GetContractResponse.change_orders:type_name -> nomarkup.contract.v1.ChangeOrder
+	4,  // 22: nomarkup.contract.v1.AcceptContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	4,  // 23: nomarkup.contract.v1.StartWorkResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	0,  // 24: nomarkup.contract.v1.ListContractsRequest.status_filter:type_name -> nomarkup.contract.v1.ContractStatus
+	69, // 25: nomarkup.contract.v1.ListContractsRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	4,  // 26: nomarkup.contract.v1.ListContractsResponse.contracts:type_name -> nomarkup.contract.v1.Contract
+	70, // 27: nomarkup.contract.v1.ListContractsResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	5,  // 28: nomarkup.contract.v1.SubmitMilestoneResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
+	5,  // 29: nomarkup.contract.v1.ApproveMilestoneResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
+	5,  // 30: nomarkup.contract.v1.RequestRevisionResponse.milestone:type_name -> nomarkup.contract.v1.Milestone
+	4,  // 31: nomarkup.contract.v1.MarkCompleteResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	4,  // 32: nomarkup.contract.v1.ApproveCompletionResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	5,  // 33: nomarkup.contract.v1.ProposeChangeOrderRequest.added_milestones:type_name -> nomarkup.contract.v1.Milestone
+	6,  // 34: nomarkup.contract.v1.ProposeChangeOrderResponse.change_order:type_name -> nomarkup.contract.v1.ChangeOrder
+	6,  // 35: nomarkup.contract.v1.RespondToChangeOrderResponse.change_order:type_name -> nomarkup.contract.v1.ChangeOrder
+	4,  // 36: nomarkup.contract.v1.CancelContractResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	7,  // 37: nomarkup.contract.v1.GetRecurringConfigResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
+	7,  // 38: nomarkup.contract.v1.UpdateRecurringConfigResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
+	7,  // 39: nomarkup.contract.v1.PauseRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
+	7,  // 40: nomarkup.contract.v1.ResumeRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
+	7,  // 41: nomarkup.contract.v1.CancelRecurringResponse.config:type_name -> nomarkup.contract.v1.RecurringConfig
+	69, // 42: nomarkup.contract.v1.ListRecurringInstancesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	8,  // 43: nomarkup.contract.v1.ListRecurringInstancesResponse.instances:type_name -> nomarkup.contract.v1.RecurringInstance
+	70, // 44: nomarkup.contract.v1.ListRecurringInstancesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	8,  // 45: nomarkup.contract.v1.CompleteRecurringInstanceResponse.instance:type_name -> nomarkup.contract.v1.RecurringInstance
+	8,  // 46: nomarkup.contract.v1.ApproveRecurringInstanceResponse.instance:type_name -> nomarkup.contract.v1.RecurringInstance
+	2,  // 47: nomarkup.contract.v1.Dispute.dispute_type:type_name -> nomarkup.contract.v1.DisputeType
+	3,  // 48: nomarkup.contract.v1.Dispute.status:type_name -> nomarkup.contract.v1.DisputeStatus
+	67, // 49: nomarkup.contract.v1.Dispute.created_at:type_name -> google.protobuf.Timestamp
+	67, // 50: nomarkup.contract.v1.Dispute.resolved_at:type_name -> google.protobuf.Timestamp
+	2,  // 51: nomarkup.contract.v1.OpenDisputeRequest.dispute_type:type_name -> nomarkup.contract.v1.DisputeType
+	53, // 52: nomarkup.contract.v1.OpenDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
+	53, // 53: nomarkup.contract.v1.GetDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
+	3,  // 54: nomarkup.contract.v1.ListDisputesRequest.status_filter:type_name -> nomarkup.contract.v1.DisputeStatus
+	69, // 55: nomarkup.contract.v1.ListDisputesRequest.pagination:type_name -> nomarkup.common.v1.PaginationRequest
+	53, // 56: nomarkup.contract.v1.ListDisputesResponse.disputes:type_name -> nomarkup.contract.v1.Dispute
+	70, // 57: nomarkup.contract.v1.ListDisputesResponse.pagination:type_name -> nomarkup.common.v1.PaginationResponse
+	53, // 58: nomarkup.contract.v1.AdminResolveDisputeResponse.dispute:type_name -> nomarkup.contract.v1.Dispute
+	4,  // 59: nomarkup.contract.v1.ReportNoShowResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	4,  // 60: nomarkup.contract.v1.ReportAbandonmentResponse.contract:type_name -> nomarkup.contract.v1.Contract
+	9,  // 61: nomarkup.contract.v1.ContractService.CreateContractFromAward:input_type -> nomarkup.contract.v1.CreateContractFromAwardRequest
+	11, // 62: nomarkup.contract.v1.ContractService.GetContract:input_type -> nomarkup.contract.v1.GetContractRequest
+	13, // 63: nomarkup.contract.v1.ContractService.AcceptContract:input_type -> nomarkup.contract.v1.AcceptContractRequest
+	15, // 64: nomarkup.contract.v1.ContractService.StartWork:input_type -> nomarkup.contract.v1.StartWorkRequest
+	17, // 65: nomarkup.contract.v1.ContractService.ExportContractPDF:input_type -> nomarkup.contract.v1.ExportContractPDFRequest
+	19, // 66: nomarkup.contract.v1.ContractService.ListContracts:input_type -> nomarkup.contract.v1.ListContractsRequest
+	21, // 67: nomarkup.contract.v1.ContractService.SubmitMilestone:input_type -> nomarkup.contract.v1.SubmitMilestoneRequest
+	23, // 68: nomarkup.contract.v1.ContractService.ApproveMilestone:input_type -> nomarkup.contract.v1.ApproveMilestoneRequest
+	25, // 69: nomarkup.contract.v1.ContractService.RequestRevision:input_type -> nomarkup.contract.v1.RequestRevisionRequest
+	27, // 70: nomarkup.contract.v1.ContractService.MarkComplete:input_type -> nomarkup.contract.v1.MarkCompleteRequest
+	29, // 71: nomarkup.contract.v1.ContractService.ApproveCompletion:input_type -> nomarkup.contract.v1.ApproveCompletionRequest
+	31, // 72: nomarkup.contract.v1.ContractService.ProposeChangeOrder:input_type -> nomarkup.contract.v1.ProposeChangeOrderRequest
+	33, // 73: nomarkup.contract.v1.ContractService.RespondToChangeOrder:input_type -> nomarkup.contract.v1.RespondToChangeOrderRequest
+	35, // 74: nomarkup.contract.v1.ContractService.CancelContract:input_type -> nomarkup.contract.v1.CancelContractRequest
+	37, // 75: nomarkup.contract.v1.ContractService.GetRecurringConfig:input_type -> nomarkup.contract.v1.GetRecurringConfigRequest
+	39, // 76: nomarkup.contract.v1.ContractService.UpdateRecurringConfig:input_type -> nomarkup.contract.v1.UpdateRecurringConfigRequest
+	41, // 77: nomarkup.contract.v1.ContractService.PauseRecurring:input_type -> nomarkup.contract.v1.PauseRecurringRequest
+	43, // 78: nomarkup.contract.v1.ContractService.ResumeRecurring:input_type -> nomarkup.contract.v1.ResumeRecurringRequest
+	45, // 79: nomarkup.contract.v1.ContractService.CancelRecurring:input_type -> nomarkup.contract.v1.CancelRecurringRequest
+	47, // 80: nomarkup.contract.v1.ContractService.ListRecurringInstances:input_type -> nomarkup.contract.v1.ListRecurringInstancesRequest
+	49, // 81: nomarkup.contract.v1.ContractService.CompleteRecurringInstance:input_type -> nomarkup.contract.v1.CompleteRecurringInstanceRequest
+	51, // 82: nomarkup.contract.v1.ContractService.ApproveRecurringInstance:input_type -> nomarkup.contract.v1.ApproveRecurringInstanceRequest
+	54, // 83: nomarkup.contract.v1.ContractService.OpenDispute:input_type -> nomarkup.contract.v1.OpenDisputeRequest
+	56, // 84: nomarkup.contract.v1.ContractService.GetDispute:input_type -> nomarkup.contract.v1.GetDisputeRequest
+	58, // 85: nomarkup.contract.v1.ContractService.ListDisputes:input_type -> nomarkup.contract.v1.ListDisputesRequest
+	60, // 86: nomarkup.contract.v1.ContractService.AdminResolveDispute:input_type -> nomarkup.contract.v1.AdminResolveDisputeRequest
+	62, // 87: nomarkup.contract.v1.ContractService.ReportNoShow:input_type -> nomarkup.contract.v1.ReportNoShowRequest
+	64, // 88: nomarkup.contract.v1.ContractService.ReportAbandonment:input_type -> nomarkup.contract.v1.ReportAbandonmentRequest
+	10, // 89: nomarkup.contract.v1.ContractService.CreateContractFromAward:output_type -> nomarkup.contract.v1.CreateContractFromAwardResponse
+	12, // 90: nomarkup.contract.v1.ContractService.GetContract:output_type -> nomarkup.contract.v1.GetContractResponse
+	14, // 91: nomarkup.contract.v1.ContractService.AcceptContract:output_type -> nomarkup.contract.v1.AcceptContractResponse
+	16, // 92: nomarkup.contract.v1.ContractService.StartWork:output_type -> nomarkup.contract.v1.StartWorkResponse
+	18, // 93: nomarkup.contract.v1.ContractService.ExportContractPDF:output_type -> nomarkup.contract.v1.ExportContractPDFResponse
+	20, // 94: nomarkup.contract.v1.ContractService.ListContracts:output_type -> nomarkup.contract.v1.ListContractsResponse
+	22, // 95: nomarkup.contract.v1.ContractService.SubmitMilestone:output_type -> nomarkup.contract.v1.SubmitMilestoneResponse
+	24, // 96: nomarkup.contract.v1.ContractService.ApproveMilestone:output_type -> nomarkup.contract.v1.ApproveMilestoneResponse
+	26, // 97: nomarkup.contract.v1.ContractService.RequestRevision:output_type -> nomarkup.contract.v1.RequestRevisionResponse
+	28, // 98: nomarkup.contract.v1.ContractService.MarkComplete:output_type -> nomarkup.contract.v1.MarkCompleteResponse
+	30, // 99: nomarkup.contract.v1.ContractService.ApproveCompletion:output_type -> nomarkup.contract.v1.ApproveCompletionResponse
+	32, // 100: nomarkup.contract.v1.ContractService.ProposeChangeOrder:output_type -> nomarkup.contract.v1.ProposeChangeOrderResponse
+	34, // 101: nomarkup.contract.v1.ContractService.RespondToChangeOrder:output_type -> nomarkup.contract.v1.RespondToChangeOrderResponse
+	36, // 102: nomarkup.contract.v1.ContractService.CancelContract:output_type -> nomarkup.contract.v1.CancelContractResponse
+	38, // 103: nomarkup.contract.v1.ContractService.GetRecurringConfig:output_type -> nomarkup.contract.v1.GetRecurringConfigResponse
+	40, // 104: nomarkup.contract.v1.ContractService.UpdateRecurringConfig:output_type -> nomarkup.contract.v1.UpdateRecurringConfigResponse
+	42, // 105: nomarkup.contract.v1.ContractService.PauseRecurring:output_type -> nomarkup.contract.v1.PauseRecurringResponse
+	44, // 106: nomarkup.contract.v1.ContractService.ResumeRecurring:output_type -> nomarkup.contract.v1.ResumeRecurringResponse
+	46, // 107: nomarkup.contract.v1.ContractService.CancelRecurring:output_type -> nomarkup.contract.v1.CancelRecurringResponse
+	48, // 108: nomarkup.contract.v1.ContractService.ListRecurringInstances:output_type -> nomarkup.contract.v1.ListRecurringInstancesResponse
+	50, // 109: nomarkup.contract.v1.ContractService.CompleteRecurringInstance:output_type -> nomarkup.contract.v1.CompleteRecurringInstanceResponse
+	52, // 110: nomarkup.contract.v1.ContractService.ApproveRecurringInstance:output_type -> nomarkup.contract.v1.ApproveRecurringInstanceResponse
+	55, // 111: nomarkup.contract.v1.ContractService.OpenDispute:output_type -> nomarkup.contract.v1.OpenDisputeResponse
+	57, // 112: nomarkup.contract.v1.ContractService.GetDispute:output_type -> nomarkup.contract.v1.GetDisputeResponse
+	59, // 113: nomarkup.contract.v1.ContractService.ListDisputes:output_type -> nomarkup.contract.v1.ListDisputesResponse
+	61, // 114: nomarkup.contract.v1.ContractService.AdminResolveDispute:output_type -> nomarkup.contract.v1.AdminResolveDisputeResponse
+	63, // 115: nomarkup.contract.v1.ContractService.ReportNoShow:output_type -> nomarkup.contract.v1.ReportNoShowResponse
+	65, // 116: nomarkup.contract.v1.ContractService.ReportAbandonment:output_type -> nomarkup.contract.v1.ReportAbandonmentResponse
+	89, // [89:117] is the sub-list for method output_type
+	61, // [61:89] is the sub-list for method input_type
+	61, // [61:61] is the sub-list for extension type_name
+	61, // [61:61] is the sub-list for extension extendee
+	0,  // [0:61] is the sub-list for field type_name
 }
 
 func init() { file_contract_v1_contract_proto_init() }

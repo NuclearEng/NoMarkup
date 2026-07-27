@@ -1941,6 +1941,9 @@ func protoRecurringInstanceToJSON(inst *contractv1.RecurringInstance) map[string
 	if inst.GetCompletedAt() != nil {
 		result["completed_at"] = formatTimestamp(inst.GetCompletedAt())
 	}
+	if inst.GetApprovedAt() != nil {
+		result["approved_at"] = formatTimestamp(inst.GetApprovedAt())
+	}
 	return result
 }
 

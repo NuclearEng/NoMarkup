@@ -660,6 +660,9 @@ func domainRecurringInstanceToProto(inst *domain.RecurringInstance) *contractv1.
 	if inst.CompletedAt != nil {
 		pb.CompletedAt = timestamppb.New(*inst.CompletedAt)
 	}
+	if inst.ApprovedAt != nil {
+		pb.ApprovedAt = timestamppb.New(*inst.ApprovedAt)
+	}
 	return pb
 }
 

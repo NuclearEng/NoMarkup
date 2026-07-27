@@ -137,8 +137,7 @@ export function RecurringSchedule({
   const [pendingPay, setPendingPay] = useState<PendingVisitPay | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusIsError, setStatusIsError] = useState(false);
-  // Proto omits approved_at on the wire — track successful approves in-session
-  // so the Approve CTA hides after a durable approve (server is idempotent).
+  // Optimistic hide for Approve until the list refetch carries approved_at.
   const [approvedInstanceIds, setApprovedInstanceIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -652,7 +651,11 @@ export function RecurringSchedule({
                         </p>
                         <p className="text-zinc-300 mt-0.5 text-xs">
                           {formatRecurringStatus(instance.status)}
-                          {instance.auto_approved ? ' · Auto-approved' : ''}
+                          {instance.auto_approved
+                            ? ' · Auto-approved'
+                            : instance.approved_at || approvedInstanceIds.has(instance.id)
+                              ? ' · Approved'
+                              : ''}
                         </p>
                       </div>
                       <span className="text-sm font-bold tabular-nums text-[var(--brand-gold)]">
@@ -679,10 +682,9 @@ export function RecurringSchedule({
                         </Button>
                       ) : null}
 
-                      {/* Customer: Approve visit (not auto-approved / not already approved this session) */}
+                      {/* Customer: Approve visit (hide when auto/approved_at/session optimistic) */}
                       {isCustomer &&
                       isRecurringInstanceApprovable(instance) &&
-                      instance.auto_approved !== true &&
                       !approvedInstanceIds.has(instance.id) ? (
                         <Button
                           type="button"

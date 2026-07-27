@@ -20,9 +20,19 @@ describe('useRecurring helpers', () => {
     expect(isRecurringInstanceCompletable({ id: '1', status: 'cancelled' })).toBe(false);
   });
 
-  it('isRecurringInstanceApprovable for completed status', () => {
+  it('isRecurringInstanceApprovable for completed not yet approved', () => {
     expect(isRecurringInstanceApprovable({ id: '1', status: 'completed' })).toBe(true);
     expect(isRecurringInstanceApprovable({ id: '1', status: 'scheduled' })).toBe(false);
+    expect(
+      isRecurringInstanceApprovable({ id: '1', status: 'completed', auto_approved: true }),
+    ).toBe(false);
+    expect(
+      isRecurringInstanceApprovable({
+        id: '1',
+        status: 'completed',
+        approved_at: '2026-07-27T12:00:00Z',
+      }),
+    ).toBe(false);
   });
 
   it('hasPaymentRetryInfo when count > 0 or next_retry_at set', () => {
