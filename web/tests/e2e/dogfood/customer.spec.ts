@@ -2,7 +2,6 @@ import { test } from '@playwright/test';
 
 import {
   expect,
-  expectHasHeadings,
   expectNavSidebar,
   expectNotErrorPage,
   expectPageLoaded,
@@ -106,7 +105,7 @@ test.describe.serial('Customer: Job Creation Wizard', () => {
     }
 
     // Verify category was selected by ensuring a checkbox is checked (the UI indicator)
-    await expect(sharedPage.getByRole("checkbox").first()).toBeChecked({ timeout: 5000 });
+    await expect(sharedPage.getByRole('checkbox').first()).toBeChecked({ timeout: 5000 });
 
     // Click Next (exact match to avoid Next.js dev tools button)
     await sharedPage.getByRole('button', { name: 'Next', exact: true }).click();
@@ -179,8 +178,8 @@ test.describe.serial('Customer: Job Creation Wizard', () => {
     await expect(numberInputs.first()).toBeVisible();
     await numberInputs.first().fill('100');
 
-    // Verify slider is visible
-    expect(await sharedPage.getByRole('slider').count()).toBeGreaterThanOrEqual(1);
+    // Auction duration control must be present (QA-07: not count >= 1 alone)
+    await expect(sharedPage.getByRole('slider').first()).toBeVisible({ timeout: 10_000 });
 
     // Fill instant accept price (second number input)
     if ((await numberInputs.count()) >= 2) {
@@ -218,7 +217,7 @@ test.describe('Customer: My Jobs', () => {
     await loginAs(page, 'customer');
     await navigateTo(page, '/jobs/mine', 'customer');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /My Jobs/i);
     await expectNotErrorPage(page);
 
     // Job cards, tabs, or empty copy — not "any link" in chrome (QA-07).
@@ -231,7 +230,6 @@ test.describe('Customer: My Jobs', () => {
     ).toBeVisible({ timeout: 15_000 });
   });
 });
-
 
 test.describe('Customer: Contracts', () => {
   test('loads /contracts and shows heading and tabs', async ({ page }) => {
@@ -287,11 +285,11 @@ test.describe('Customer: Profile', () => {
     await expectNotErrorPage(page);
     await page.waitForTimeout(2_000);
 
-    // Verify email is displayed
-    expect(await page.getByText(/customer@nomarkup\.com/i).count()).toBeGreaterThanOrEqual(1);
-
-    // Verify role badge
-    expect(await page.getByText(/customer/i).count()).toBeGreaterThanOrEqual(1);
+    // Seed customer identity (QA-07: visible text, not count >= 1)
+    await expect(page.getByText(/customer@nomarkup\.com/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByText(/^customer$/i).first()).toBeVisible({ timeout: 10_000 });
 
     // Click "Edit Profile" and verify form appears
     const editBtn = page.getByRole('button', { name: /Edit Profile/i });
@@ -310,16 +308,28 @@ test.describe('Customer: Settings Pages', () => {
 
     await expectPageLoaded(page, /Payment Methods/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    // Customer payment-methods chrome: add control + saved methods section
+    await expect(
+      page
+        .getByRole('button', { name: /Add Method/i })
+        .or(page.getByText(/Saved Payment Methods/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('notification preferences page loads', async ({ page }) => {
     await loginAs(page, 'customer');
     await navigateTo(page, '/settings/notifications', 'customer');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Notification Preferences/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByRole('heading', { name: /Global Settings/i })
+        .or(page.getByText(/Email notifications/i))
+        .or(page.getByRole('switch').first())
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('security settings page loads', async ({ page }) => {
@@ -374,15 +384,21 @@ test.describe('Customer: Messages', () => {
   });
 });
 
-
 test.describe('Customer: Notifications', () => {
   test('loads /notifications and shows content', async ({ page }) => {
     await loginAs(page, 'customer');
     await navigateTo(page, '/notifications', 'customer');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Notifications/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    // Filter + mark-all chrome, list items, or empty state (QA-07)
+    await expect(
+      page
+        .getByRole('button', { name: /Mark all as read/i })
+        .or(page.getByRole('button', { name: /Unread only/i }))
+        .or(page.getByText(/no notifications|you're all caught up|nothing here/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -392,20 +408,25 @@ test.describe('Customer: Public Pages (while logged in)', () => {
     await navigateTo(page, '/jobs', 'customer');
 
     await expectNotErrorPage(page);
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Find\s+Jobs/i);
 
     await expect(
       page.getByPlaceholder(/search|find/i).or(page.getByRole('combobox')).first(),
     ).toBeVisible({ timeout: 10_000 });
   });
 
-
   test('providers page loads', async ({ page }) => {
     await loginAs(page, 'customer');
     await navigateTo(page, '/providers', 'customer');
 
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expectPageLoaded(page, /Find\s+Providers/i);
+    await expect(
+      page
+        .getByPlaceholder(/Search by name|business|category/i)
+        .or(page.getByRole('button', { name: /^Search$/i }))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('pricing page loads', async ({ page }) => {
@@ -413,6 +434,13 @@ test.describe('Customer: Public Pages (while logged in)', () => {
     await navigateTo(page, '/pricing', 'customer');
 
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expectPageLoaded(page, /Real prices|Fair Price Index/i);
+    await expect(
+      page
+        .getByLabel(/ZIP/i)
+        .or(page.getByPlaceholder(/ZIP|zip code/i))
+        .or(page.getByText(/Fair Price Index/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });

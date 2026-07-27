@@ -66,7 +66,9 @@ windows). The constant lives at
    `{reason, confirmation: "DELETE"}`. Service sets
    `users.deletion_requested_at = now()` and `users.deletion_reason`.
    Returns the grace deadline (request_time + 30 days). Sends a
-   confirmation email (currently a TODO stub — log only).
+   confirmation email via the notification service → SendGrid
+   (`GDPRMailer` / `cmd/server/gdpr_mailer.go`). Email failure is logged
+   at Error and does not roll back the request.
 2. **Grace window (30 days)** — the user can sign in and call
    `POST /api/v1/users/me/restore` to clear the request. Login is NOT
    blocked during this window (so users can rescind).
@@ -290,11 +292,34 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
      http://localhost:8080/api/v1/admin/users/$USER_ID/finalize-deletion
 ```
 
+## Email delivery (ARC-17)
+
+Lifecycle emails (request / cancel / finalize) are wired through
+`service.GDPRMailer` → `gdprMailerClient` → notification service
+`SendNotification` (email channel only) → SendGrid
+(`services/notification/internal/service/email.go`).
+
+| Event | Subject intent | Action URL |
+|-------|----------------|------------|
+| request | deletion scheduled + grace deadline | `{BASE_URL}/settings/account` (restore) |
+| cancel | deletion cancelled, account active | `{BASE_URL}/settings/account` |
+| finalize | account erased | `{BASE_URL}/privacy` (pre-wipe email captured before cascade) |
+
+**Residual / honesty rules:**
+- Email is best-effort relative to the legal act (DB write / cascade).
+  Delivery failure never rolls back request/cancel/finalize.
+- Failures and missing config are **never silent success**: `slog.Error`
+  with `event` + `user_id` when mailer is nil, email cannot be resolved,
+  or SendNotification fails. Success is `slog.Info` with the same keys.
+- Outside development the user service already refuses to start without
+  `NOTIFICATION_SERVICE_ADDR` (verification path). In that posture GDPR
+  mail always has a client. Dev-without-notification logs Error per event.
+- Actual SMTP delivery still requires `SENDGRID_API_KEY` on the
+  notification service; without it SendGrid runs in dev log mode (same
+  as password-reset / welcome mail).
+
 ## What's NOT in scope of this PR
 
-- **Real email delivery** at request / cancel / finalize time.
-  The hooks are in place (logged via slog with `TODO: real email`); the
-  notification-service template work is its own ticket.
 - **Sentry / Mixpanel / external analytics deletion.** Manual today.
   Add `AnalyticsDeleter` interface alongside `OAuthRevoker` when those
   providers are wired.

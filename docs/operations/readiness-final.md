@@ -140,7 +140,7 @@ These do not block beta / 1% rollout:
 3. **External secret-id rotation** — implement `external-secrets-operator` sidecar for Vault AppRole secret-id rotation in K8s.
 4. **Vault token renewal** — add a goroutine to renew Vault tokens before expiry (currently relies on AppRole login on each service start).
 5. **Production restore drill** — execute a full restore on staging quarterly per `docs/operations/backup-disaster-recovery.md`. Local drill (this report) only validates the procedure.
-6. **Email delivery for GDPR confirmation** — currently logs the intent; wire to real ESP (SendGrid / Resend / SES).
+6. **Email delivery for GDPR confirmation** — **SHIPPED (ARC-17)**: request/cancel/finalize via notification → SendGrid; residual is operational (`SENDGRID_API_KEY` on notification service), same as other transactional mail.
 7. **Stripe Connect + Customer cleanup on GDPR delete** — `StripeDeleter` interface exists with no-op default; payment-service team to wire the actual API calls.
 8. **PII audit follow-ups** — `provider_employees.phone`, `properties.address` (lat/lng kept for analytics), `company_employees.ssn_last_four` are in the same risk class as the encrypted columns; consider in next PII pass.
 

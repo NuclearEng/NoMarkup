@@ -43,6 +43,20 @@ type OAuthRevoker interface {
 	RevokeUserTokens(ctx context.Context, userID string) error
 }
 
+// GDPRMailer delivers lifecycle emails for account erasure (request, cancel,
+// finalize). Production wiring uses the notification service → SendGrid path
+// (see cmd/server/gdpr_mailer.go). Implementations MUST never panic.
+//
+// Email failures MUST NOT fail the deletion lifecycle itself (the legal act is
+// recording the request / cascade), but they MUST be loud: never log as
+// success when nothing was sent. A nil mailer on Erasure is treated as
+// "not configured" and emits slog.Error.
+type GDPRMailer interface {
+	SendDeletionRequested(ctx context.Context, userID, email string, graceDeadline time.Time) error
+	SendDeletionCancelled(ctx context.Context, userID, email string) error
+	SendDeletionFinalized(ctx context.Context, userID, email string) error
+}
+
 // noopStripeDeleter is the safe default when the user service has no Stripe
 // client wired (e.g. dev). Every call is recorded as skipped.
 type noopStripeDeleter struct{}
@@ -73,13 +87,15 @@ type Erasure struct {
 	stripe StripeDeleter
 	store  ObjectStoreDeleter
 	oauth  OAuthRevoker
+	mailer GDPRMailer
 	now    func() time.Time // injectable for tests
 }
 
 // NewErasure constructs the lifecycle service. Pass nil for optional
-// dependencies (stripe/store/oauth) — the service will skip those steps
-// instead of failing.
-func NewErasure(repo domain.UserRepository, stripe StripeDeleter, store ObjectStoreDeleter, oauth OAuthRevoker) *Erasure {
+// dependencies (stripe/store/oauth/mailer) — the service will skip those
+// steps instead of failing. A nil mailer is never silent success: request/
+// cancel/finalize log Error when confirmation email cannot be sent.
+func NewErasure(repo domain.UserRepository, stripe StripeDeleter, store ObjectStoreDeleter, oauth OAuthRevoker, mailer GDPRMailer) *Erasure {
 	if stripe == nil {
 		stripe = noopStripeDeleter{}
 	}
@@ -88,6 +104,7 @@ func NewErasure(repo domain.UserRepository, stripe StripeDeleter, store ObjectSt
 		stripe: stripe,
 		store:  store,
 		oauth:  oauth,
+		mailer: mailer,
 		now:    time.Now,
 	}
 }
@@ -111,25 +128,29 @@ func (e *Erasure) RequestAccountDeletion(ctx context.Context, userID, reason, co
 	}
 
 	requestedAt := e.now().UTC()
+	graceDeadline := requestedAt.Add(domain.DeletionGracePeriod)
 	err = e.repo.MarkDeletionRequested(ctx, userID, reason, requestedAt)
 	switch {
 	case err == nil:
-		// Newly recorded request. Send the confirmation email so the user
-		// has a one-click cancel link in their inbox.
-		// TODO: real email delivery via the notification service. For now
-		// this is a structured-log stub so the lifecycle is testable end
-		// to end without a notification dependency.
-		slog.Info("gdpr: deletion request received — TODO: real email",
+		// Newly recorded request. Confirm by email so the user has a path
+		// back to Account settings to cancel within the grace window.
+		// Email failure is logged loudly but does not roll back the request
+		// (the legal act is the DB write; mail is notification).
+		e.sendLifecycleEmail(ctx, "deletion_requested", userID, func(email string) error {
+			return e.mailer.SendDeletionRequested(ctx, userID, email, graceDeadline)
+		})
+		slog.Info("gdpr: deletion request received",
 			"user_id", userID,
 			"requested_at", requestedAt,
-			"grace_deadline", requestedAt.Add(domain.DeletionGracePeriod),
+			"grace_deadline", graceDeadline,
 			"reason", reason,
 		)
-		return requestedAt.Add(domain.DeletionGracePeriod), true, nil
+		return graceDeadline, true, nil
 
 	case errors.Is(err, domain.ErrDeletionAlreadyRequested):
 		// Idempotent: re-fetch the existing timestamp so the caller still
-		// gets a valid grace deadline to display.
+		// gets a valid grace deadline to display. No second email — the
+		// original confirmation already went out.
 		existing, _, stateErr := e.repo.GetUserDeletionState(ctx, userID)
 		if stateErr != nil {
 			return time.Time{}, false, fmt.Errorf("request deletion: re-read state: %w", stateErr)
@@ -152,7 +173,10 @@ func (e *Erasure) CancelAccountDeletion(ctx context.Context, userID string) (can
 	err = e.repo.ClearDeletionRequest(ctx, userID)
 	switch {
 	case err == nil:
-		slog.Info("gdpr: deletion request cancelled — TODO: real email",
+		e.sendLifecycleEmail(ctx, "deletion_cancelled", userID, func(email string) error {
+			return e.mailer.SendDeletionCancelled(ctx, userID, email)
+		})
+		slog.Info("gdpr: deletion request cancelled",
 			"user_id", userID,
 		)
 		return true, nil
@@ -189,6 +213,20 @@ func (e *Erasure) FinalizeAccountDeletion(ctx context.Context, userID string, fo
 		if e.now().UTC().Before(requested.Add(domain.DeletionGracePeriod)) {
 			return nil, fmt.Errorf("finalize deletion: %w", domain.ErrDeletionGracePeriodActive)
 		}
+	}
+
+	// Capture the real email BEFORE the cascade anonymizes it to
+	// deleted-{uuid}@deleted.local — the post-cascade confirmation email
+	// needs the pre-wipe address.
+	preWipeEmail, emailLookupErr := e.lookupUserEmail(ctx, userID)
+	if emailLookupErr != nil {
+		// Not fatal — cascade still runs. sendLifecycleEmail will also
+		// surface the miss if we re-lookup; with a pre-captured string we
+		// can still attempt delivery below.
+		slog.Error("gdpr: cannot resolve email before finalize",
+			"user_id", userID,
+			"error", emailLookupErr,
+		)
 	}
 
 	// Read pending row info BEFORE the cascade — once finalize runs, the
@@ -260,6 +298,12 @@ func (e *Erasure) FinalizeAccountDeletion(ctx context.Context, userID string, fo
 		}
 	}
 
+	// Post-cascade confirmation — use the pre-wipe email. Do not re-read
+	// the user row; it is now anonymized.
+	e.sendLifecycleEmailWithAddress(ctx, "deletion_finalized", userID, preWipeEmail, func(email string) error {
+		return e.mailer.SendDeletionFinalized(ctx, userID, email)
+	})
+
 	finalizedAt := e.now().UTC()
 	slog.Info("gdpr: account finalized",
 		"user_id", userID,
@@ -329,4 +373,76 @@ func (e *Erasure) ProcessPendingFinalizations(ctx context.Context, batchSize int
 	}
 
 	return processed, failed, nil
+}
+
+// sendLifecycleEmail resolves the user's email and hands it to sendFn when a
+// mailer is configured. Always honest: never logs success when nothing was
+// sent. Does not return errors to the caller — email is best-effort relative
+// to the legal deletion act, but failures are Error-level for ops.
+func (e *Erasure) sendLifecycleEmail(ctx context.Context, event, userID string, sendFn func(email string) error) {
+	if e.mailer == nil {
+		slog.Error("gdpr: lifecycle email not sent — mailer not configured",
+			"event", event,
+			"user_id", userID,
+		)
+		return
+	}
+	email, err := e.lookupUserEmail(ctx, userID)
+	if err != nil {
+		slog.Error("gdpr: lifecycle email not sent — cannot resolve email",
+			"event", event,
+			"user_id", userID,
+			"error", err,
+		)
+		return
+	}
+	e.sendLifecycleEmailWithAddress(ctx, event, userID, email, sendFn)
+}
+
+// sendLifecycleEmailWithAddress is the shared delivery path once an email
+// address is known (or known-missing). Used by request/cancel (fresh lookup)
+// and finalize (pre-cascade capture).
+func (e *Erasure) sendLifecycleEmailWithAddress(ctx context.Context, event, userID, email string, sendFn func(email string) error) {
+	if e.mailer == nil {
+		slog.Error("gdpr: lifecycle email not sent — mailer not configured",
+			"event", event,
+			"user_id", userID,
+		)
+		return
+	}
+	if strings.TrimSpace(email) == "" {
+		slog.Error("gdpr: lifecycle email not sent — empty email address",
+			"event", event,
+			"user_id", userID,
+		)
+		return
+	}
+	if err := sendFn(email); err != nil {
+		slog.Error("gdpr: lifecycle email failed",
+			"event", event,
+			"user_id", userID,
+			"error", err,
+		)
+		return
+	}
+	slog.Info("gdpr: lifecycle email sent",
+		"event", event,
+		"user_id", userID,
+	)
+}
+
+// lookupUserEmail loads the current email for a user. Empty email is an error
+// so callers never treat a missing address as a successful send.
+func (e *Erasure) lookupUserEmail(ctx context.Context, userID string) (string, error) {
+	user, err := e.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if user == nil {
+		return "", fmt.Errorf("%w", domain.ErrUserNotFound)
+	}
+	if strings.TrimSpace(user.Email) == "" {
+		return "", fmt.Errorf("user %s has empty email", userID)
+	}
+	return user.Email, nil
 }

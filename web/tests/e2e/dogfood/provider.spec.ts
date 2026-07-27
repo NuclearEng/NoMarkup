@@ -2,7 +2,6 @@ import { test } from '@playwright/test';
 
 import {
   expect,
-  expectHasHeadings,
   expectNavSidebar,
   expectNotErrorPage,
   expectPageLoaded,
@@ -62,9 +61,8 @@ test.describe('Provider: Provider Dashboard', () => {
         .first(),
     ).toBeVisible({ timeout: 10_000 });
 
-
-    // Trust Score section (may still be loading; just check page has headings)
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    // Trust Score section (provider-specific chrome — not "any heading")
+    await expect(page.getByText(/Trust Score/i).first()).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -73,7 +71,7 @@ test.describe('Provider: Onboarding', () => {
     await loginAs(page, 'provider');
     await navigateTo(page, '/provider/onboarding', 'provider');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Provider Setup/i);
     await expectNotErrorPage(page);
 
     // Step indicator
@@ -96,7 +94,7 @@ test.describe('Provider: Browse Jobs', () => {
     await loginAs(page, 'provider');
     await navigateTo(page, '/jobs', 'provider');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Find\s+Jobs/i);
     await expectNotErrorPage(page);
 
     await expect(
@@ -104,7 +102,6 @@ test.describe('Provider: Browse Jobs', () => {
     ).toBeVisible({ timeout: 10_000 });
   });
 });
-
 
 test.describe('Provider: My Bids', () => {
   test('loads /bids and shows tabs', async ({ page }) => {
@@ -170,9 +167,14 @@ test.describe('Provider: Team', () => {
     await loginAs(page, 'provider');
     await navigateTo(page, '/provider/team', 'provider');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Team Management/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByRole('button', { name: /Add Employee/i })
+        .or(page.getByText(/No team members yet|Manage your company employees/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -181,27 +183,42 @@ test.describe('Provider: Business Tools', () => {
     await loginAs(page, 'provider');
     await navigateTo(page, '/provider/business/invoices', 'provider');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Invoices/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByText(/No completed contracts|Completed Contracts|View and print invoices/i)
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('expenses page loads', async ({ page }) => {
     await loginAs(page, 'provider');
     await navigateTo(page, '/provider/business/expenses', 'provider');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Expense Tracking/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByRole('heading', { name: /Add Expense/i })
+        .or(page.getByLabel(/Amount|expense-amount|Date/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('tax page loads', async ({ page }) => {
     await loginAs(page, 'provider');
     await navigateTo(page, '/provider/business/tax', 'provider');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Tax Center/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByText(/Earnings Summary|Track earnings|tax year/i)
+        .or(page.getByLabel(/Select tax year/i))
+        .or(page.getByRole('combobox'))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -210,9 +227,13 @@ test.describe('Provider: Working Capital', () => {
     await loginAs(page, 'provider');
     await navigateTo(page, '/provider/advances', 'provider');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Working Capital/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByText(/Total Advanced|Outstanding Balance|Available Credit|Request Advance/i)
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -221,9 +242,14 @@ test.describe('Provider: Challenges', () => {
     await loginAs(page, 'provider');
     await navigateTo(page, '/provider/challenges', 'provider');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Challenges/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByRole('tab', { name: /Available|In Progress|Completed/i })
+        .or(page.getByText(/Complete challenges to earn rewards/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -247,7 +273,6 @@ test.describe('Provider: Analytics', () => {
   });
 });
 
-
 test.describe('Provider: Profile', () => {
   test('shows provider role badge and provider information', async ({ page }) => {
     await loginAs(page, 'provider');
@@ -257,18 +282,17 @@ test.describe('Provider: Profile', () => {
     await expectNotErrorPage(page);
     await page.waitForTimeout(2_000);
 
-    // Verify provider role badge
-    expect(await page.getByText(/provider/i).count()).toBeGreaterThanOrEqual(1);
+    // Seed provider identity + role badge (QA-07)
+    await expect(page.getByText(/provider@nomarkup\.com/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByText(/^provider$/i).first()).toBeVisible({ timeout: 10_000 });
 
-    // Verify Provider Information card (conditionally rendered after API loads)
+    // Provider Information card when profile API has loaded
     const providerInfo = page.getByText(/Provider Information/i);
-    // May not render if provider profile API is slow — check but don't fail hard
-    const hasProviderInfo = (await providerInfo.count()) > 0;
-    if (hasProviderInfo) {
+    if ((await providerInfo.count()) > 0) {
       await expect(providerInfo.first()).toBeVisible();
     }
-    // At minimum, the profile page should have loaded with headings
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -280,9 +304,10 @@ test.describe('Provider: Payment Methods', () => {
     await expectPageLoaded(page, /Payment Methods/i);
     await expectNotErrorPage(page);
 
-    // Verify Provider Payouts section (Stripe Connect)
-    const payoutSection = page.getByText(/Provider Payouts|Stripe|Payout/i);
-    expect(await payoutSection.count()).toBeGreaterThanOrEqual(1);
+    // Provider Payouts section (Stripe Connect) must be visible
+    await expect(page.getByText(/Provider Payouts|Stripe|Payout/i).first()).toBeVisible({
+      timeout: 15_000,
+    });
   });
 });
 
@@ -294,5 +319,11 @@ test.describe('Provider: Messages', () => {
     await expectPageLoaded(page, /Messages/i);
     await expectNotErrorPage(page);
     await expectNavSidebar(page);
+    await expect(
+      page
+        .getByText(/Select a conversation|No messages yet/i)
+        .or(page.getByRole('listitem'))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });

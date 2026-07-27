@@ -57,14 +57,12 @@ export async function loginAs(page: Page, persona: Persona) {
 /*  Assertion helpers                                                  */
 /* ------------------------------------------------------------------ */
 
-/** Wait for page to settle and verify heading exists */
-export async function expectPageLoaded(page: Page, headingPattern?: RegExp) {
+/** Wait for page to settle and verify a page-specific heading is visible. */
+export async function expectPageLoaded(page: Page, headingPattern: RegExp) {
   await page.waitForLoadState('domcontentloaded');
-  if (headingPattern) {
-    await expect(page.getByRole('heading', { name: headingPattern }).first()).toBeVisible({
-      timeout: 15_000,
-    });
-  }
+  await expect(page.getByRole('heading', { name: headingPattern }).first()).toBeVisible({
+    timeout: 15_000,
+  });
 }
 
 /**
@@ -97,16 +95,9 @@ export async function expectNotErrorPage(page: Page) {
   expect(errorCount, 'Page should not show a fatal error state').toBe(0);
 }
 
-/** Verify navigation sidebar is present */
+/** Verify navigation sidebar is present (role=navigation visible — not count >= 1 alone). */
 export async function expectNavSidebar(page: Page) {
-  const nav = page.getByRole('navigation');
-  expect(await nav.count()).toBeGreaterThanOrEqual(1);
-}
-
-/** Verify page has at least one heading */
-export async function expectHasHeadings(page: Page) {
-  const headings = page.getByRole('heading');
-  expect(await headings.count()).toBeGreaterThanOrEqual(1);
+  await expect(page.getByRole('navigation').first()).toBeVisible({ timeout: 10_000 });
 }
 
 export { EMAILS };

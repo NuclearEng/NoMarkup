@@ -20,18 +20,18 @@
 
 ## Summary dashboard
 
-**Recounted 2026-07-27** (OPS-22 + QA-11 closed) (140 code/ops rows).
+**Recounted 2026-07-27** (OPS-28 closed) (140 code/ops rows).
 
 | Section | Open | Partial | Done | Demoted | Founder-Action | Total |
 |---------|------|---------|------|---------|----------------|-------|
 | P0 — Money integrity | 0 | 0 | 27 | 1 | 0 | 28 |
 | P0 — Security fail-closed | 0 | 0 | 14 | 3 | 1 | 18 |
-| P0 — Production deploy / ops | 12 | 1 | 15 | 0 | 0 | 28 |
+| P0 — Production deploy / ops | 11 | 1 | 16 | 0 | 0 | 28 |
 | P1 — North Star performance | 5 | 1 | 5 | 5 | 0 | 16 |
 | P1 — CI / testing enforcers | 6 | 0 | 5 | 5 | 0 | 16 |
 | P1 — Frontend / a11y / honesty | 4 | 0 | 7 | 5 | 0 | 16 |
 | P2 — Architecture / polish | 7 | 0 | 4 | 7 | 0 | 18 |
-| **All** | **35** | **2** | **76** | **26** | **1** | **140** |
+| **All** | **34** | **2** | **77** | **26** | **1** | **140** |
 
 The separate **DOC** table (18 rows) is a cross-reference of the language-only demotions already
 reflected in the `Demoted` column above — it is not 18 additional items.
@@ -131,7 +131,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | OPS-25 | Vault client exists; no prod wiring | MAJOR | gateway | vault package | Wire ESO/Vault for secrets | Prod secrets not file-mounted only | Open | Founder-Action |
 | OPS-26 | 99.9% / 10k concurrent unproven | DOC/P1 | claims | README/PRD | Load proof + HA design or demote | k6/report artifacts | Open | |
 | OPS-27 | Gateway probes shallow (no DB/Redis ready) | MINOR | k8s | gateway probes | Optional deep ready | Fail unready on DB down | **Done** 2026-07-25 — gateway readinessProbe is `/readyz` (`deploy/k8s/base/gateway/deployment.yaml:127-131`) and `readinessHandler` pings Postgres + Redis (`router.go:147`) | |
-| OPS-28 | Go service metrics on +1000 port unused by probes | MINOR | k8s | probes | Align probes with /readyz where useful | Ready reflects DB | Open | |
+| OPS-28 | Go service metrics on +1000 port unused by probes | MINOR | k8s | probes | Align probes with /readyz where useful | Ready reflects DB | **Done** 2026-07-27 — user/job/payment/chat/notification readiness → `httpGet /readyz` on named `metrics` port (SERVICE_PORT+1000); liveness → `/healthz`. `/readyz` pings Postgres (+ Redis on user/chat). Gateway already `/readyz` (OPS-27). Rust engines remain `grpc:` (no HTTP deep health) — documented in `deploy/k8s/README.md` | |
 
 ---
 
@@ -168,7 +168,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | QA-04 | testcontainers claimed but zero deps | DOC | docs | CLAUDE, investor-faq | Remove claim; document GH Actions Postgres | Docs true | **Demoted** 2026-07-09 | |
 | QA-05 | Husky pre-commit claimed; none installed | DOC | web | package.json | Add husky **or** demote to Claude-hooks-only | Commit path enforced or claim gone | **Demoted** 2026-07-09 | |
 | QA-06 | E2E full funnel not in CI (backendless; dogfood excluded) | BLOCKER | ci | e2e-test job | Boot stack + SEED_PASSWORD dogfood **or** demote funnel claim | register→job→bid→pay→chat in CI | **Demoted** claim 2026-07-09; CI funnel still Open if desired | |
-| QA-07 | Vacuous E2E asserts (`expect(a\|\|b\|\|c)`) | MAJOR | web | e2e specs | Assert real outcomes | Fail on broken UI | **Partial** 2026-07-27 — Replaced always-true / `a\|\|b\|\|c` patterns in core smoke + dogfood: `bid`, `chat`, `payment`, `job`, `live-auction`, `admin`, `contract`, `marketplace` (bid UI + gap test→skip), `provider-business` (auth + expense), dogfood `admin`/`customer`/`provider`. Pattern now: login URL+form, page heading, or specific empty/content locators via `locator.or().toBeVisible()`; stack-gated live-auction UI no longer passes on "Job not found". Residual (not Done): dogfood still soft on some pages; no full re-audit of every early-return without assert; sealed/live seed job IDs still fictional for flag-on+stack runs | |
+| QA-07 | Vacuous E2E asserts (`expect(a\|\|b\|\|c)`) | MAJOR | web | e2e specs | Assert real outcomes | Fail on broken UI | **Done** 2026-07-27 — Vacuous / soft asserts removed across smoke + dogfood. Wave 1: always-true / `a\|\|b\|\|c` → login URL+form, named headings, or specific empty/content via `locator.or().toBeVisible()` (`bid`, `chat`, `payment`, `job`, `live-auction`, `admin`, `contract`, `marketplace`, `provider-business`). Wave 2 residual: dogfood dropped `heading.count() >= 1` / `expectHasHeadings` soft helpers; every dogfood page asserts a **named** h1 + page chrome (tabs, filters, table-or-empty, Add Method, Trust Score, etc.); `fixtures.expectPageLoaded` requires a heading pattern; nav uses visible `role=navigation`. Non-dogfood: `job` + `admin` a11y headings tightened to `/Find Jobs/` / `/Admin Overview/` / `/User Management/`. Honest early-returns only after prior assert (login form, empty-state, disabled submit). **Out of scope (not vacuous):** live-auction `/jobs/test-live-job` + sealed IDs still fictional in seed — stack+flag runs **fail** (not pass) until real UUIDs are seeded | |
 | QA-08 | Chromium-only E2E in CI | MINOR | ci | playwright | Optional webkit/firefox nightly | Cross-browser job | Open | |
 | QA-09 | `verify-proto` not in `build.needs` | MINOR | ci | ci.yml | Add needs edge | Proto drift blocks build | **Done** 2026-07-25 — `.github/workflows/ci.yml` `build.needs` includes `verify-proto` | |
 | QA-10 | security-scan not coupled to CI build | MAJOR | ci | branch protection | Require security jobs for merge | Proven required checks | Open | Founder-Action |
@@ -185,13 +185,13 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 
 | ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
 |----|-------|-----|------|----------|--------|--------|--------|-------|
-| FE-01 | axe-core only on HTML stubs; contrast disabled | BLOCKER | web | `tests/integration/axe.test.ts` + `tests/e2e/axe.spec.ts` | Playwright + axe on real routes; enable contrast | CI a11y gate | **Partial** 2026-07-27 — Playwright injects axe-core on `/` + `/marketplace` with color-contrast ON (serious/critical fail the test); backend/web unloadable → skip not greenwash. CookieConsent helper copy bumped zinc-500→400 so first real contrast hit is fixed. Residual (not Done): only 2 public routes; no auth/dashboard/admin surfaces; moderate/minor not gated; not full WCAG 2.2 AA cert; jsdom suite still disables contrast by design | |
+| FE-01 | axe-core only on HTML stubs; contrast disabled | BLOCKER | web | `tests/integration/axe.test.ts` + `tests/e2e/axe.spec.ts` | Playwright + axe on real routes; enable contrast | CI a11y gate | **Partial** 2026-07-27 — Playwright injects axe-core on `/` + `/marketplace` + `/jobs` with color-contrast ON (serious/critical fail the test); backend/web unloadable → skip not greenwash. CookieConsent helper copy bumped zinc-500→400 so first real contrast hit is fixed. Residual (not Done): only 3 public routes; no auth/dashboard/admin surfaces; moderate/minor not gated; not full WCAG 2.2 AA cert; jsdom suite still disables contrast by design | |
 | FE-02 | ~81/95 pages client — “RSC-first default” false | MAJOR | web | `app/**/page.tsx` | Convert public LCP routes; stop claiming default | Client page % drops; docs match | **Demoted** claim 2026-07-09; conversions still Open | |
 | FE-03 | Raw hex pervasive (~180 hits); “never hex” false | MAJOR | web | components + globals | Tokens + Tailwind brand colors; ban arbitrary hex in components | Lint rule / grep CI | Open | |
 | FE-04 | Loader2/spinners vs “Skeleton only” | MAJOR | web | many pages | Skeleton/ContentLoader for page load; spinner for button pending | Audit key routes | **Partial** 2026-07-27 — key public/dashboard initial loads converted: AuthGuard shell, provider layout, /jobs/map, /orders list+detail, /marketplace browse + map side panel, /contracts/[id] page+review section. Residual (not done): intentional button/action Loader2; /insurance/quotes full spinner; /disputes/new Suspense spinner; /contracts/[id]/review page spinner; admin tiny loaders; InstantAvailabilityCard fetch spinner; installment status icon spinner; /jobs browse still uses ad-hoc pulse divs (not Spinner, not shared Skeleton) | |
 | FE-05 | PWA manifest + install without working SW | MAJOR | web | pwa components | Wire SW or remove install UX | No dead PWA promise | **Done** 2026-07-27 — install UI is no-op (`InstallPrompt`); SW registrar only unregisters kill-switch `sw.js` (no offline PWA promise) | |
 | FE-06 | Goods spectate “LIVE” without WS / weak errors | MAJOR | web | marketplace spectate | WS + isError/retry; honest connection state | Live = real stream | **Done** 2026-07-27 — LIVE honesty on marketplace spectate, job spectate, and JobDetail (badge only when spectator/auction socket is open) | |
-| FE-07 | Sub-44px checkbox/select/slider | MAJOR | web | ui primitives | 44×44 hit areas | Touch audit | Open | |
+| FE-07 | Sub-44px checkbox/select/slider | MAJOR | web | ui primitives | 44×44 hit areas | Touch audit | **Done** 2026-07-27 — Checkbox root `min-h-11 min-w-11` with h-4 visual box; SelectTrigger + SelectItem `min-h-11`; Slider root `min-h-11` + Thumb `h-11 w-11` with ~16px visual via `::after`. Unit tests assert FE-07 class contracts. Residual: Switch still h-5/w-9 (out of FE-07 scope); menu/checkbox items in dropdown-menu not retargeted | |
 | FE-08 | Silent error rails (TrendingRail null) | MINOR | web | rails | Error/empty states | Retry UI | **Done** 2026-07-27 — TrendingRail + SimilarListings show compact error + Retry (`data-testid=*-error`); empty still hidden | |
 | FE-09 | Raw `<img>` for Mapbox/MFA | MINOR | web | map + MFA | Exception documented or next/image | Do-not list honest | **Done** 2026-07-27 — CLAUDE.md §13 + `docs/design-system.md` document Mapbox Static + MFA QR raw `<img>` exceptions | |
 | FE-10 | ListingBidPanel `<a href="/login">` | MINOR | web | ListingBidPanel | Use `Link` | Client nav | **Done** 2026-07-27 — `web/src/components/marketplace/ListingBidPanel.tsx` uses `next/link` Link for /login | |
@@ -224,7 +224,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | ARC-14 | Legal services flag-off scaffold | P2 | product | legal routes | Launch criteria + flag on | Legal GA checklist | Open | |
 | ARC-15 | Fair price index flag seed history | MINOR | flags | migrations | Ensure prod seed intent clear | Flag state documented | **Done** 2026-07-27 — seed `false` in `database/migrations/013_feature_flags.up.sql:18`; intent documented in `docs/compliance/capability-matrix.md` / `app-review-notes.md` (`fair_price_index` false) + launch-checklist “do not enable without data” | |
 | ARC-16 | Search reindex durable retry TODO | MINOR | job | search | Durable queue | No silent drop | **Done** 2026-07-27 — Redis ZSET `search:retry` + 30s worker + in-process 3-shot escalate; metrics `search_retry_*` + DEAD-LETTER log; listings parity; no Redis → dead-letter metric (not silent) | |
-| ARC-17 | GDPR email “TODO real email” | MINOR | user | GDPR paths | Wire SendGrid | Email arrives | Open | |
+| ARC-17 | GDPR email “TODO real email” | MINOR | user | GDPR paths | Wire SendGrid | Email arrives | **Done** 2026-07-27 — `GDPRMailer` on Erasure → notification/SendGrid (`gdpr_mailer.go`); request/cancel/finalize; Error (not silent) if mailer missing/fail; tests in `deletion_test.go` + `gdpr_mailer_test.go`; residual: needs `SENDGRID_API_KEY` on notification svc (same as other mail) | |
 | ARC-18 | Spectator anonymization / delay — keep tested | — | chat | spectator | Preserve under load | Tests green | **Done** 2026-07-27 — code + tests green: `spectator_ws.go` / `marketplace_spectator_ws.go` (3s delay, PII strip); `spectator_anonymize_test.go` (`TestSpectatorEventDelayIsThreeSeconds`, `TestAnonymizeEvent_stripsPII`, `TestAnonymizeListingEvent_stripsPII`) | |
 
 ---
@@ -314,6 +314,7 @@ Do in this order for **CONDITIONAL-GO** (not full SOTA):
 | 2026-07-27 | **ARC-09 Done** (doc honesty, no dual-write rewrite). Primary goods writes = gateway SQL (`listings_write.go`, `listings_bid.go`). `proto/listing/v1/listing.proto` header + `docs/architecture.md` + `docs/marketplace.md` mark listing gRPC secondary/unused (no job ListingServer, no gateway listing client). Dashboard: Open 38 / Partial 1 / Done 74 / Demoted 26 / FA 1. |
 | 2026-07-27 | **OPS-09 Partial** — OTel collector dual-export `debug` + `otlphttp/backend` with env from `otel-collector-backend` ConfigMap (`deploy/k8s/base/otel-collector/{configmap,backend-configmap,deployment}.yaml`); runbook `docs/operations/otel-collector.md`. No SaaS credentials; durable traces still need a real OTLP/HTTP URL at deploy. Dashboard: Open 36 / Partial 3 / Done 74 / Demoted 26 / FA 1. |
 | 2026-07-27 | **OPS-22 Done** — residual ingress/TLS runbook shipped: `docs/runbooks/10-ingress-tls.md` (symptoms, `nomarkup-tls`, Cloudflare SSL modes, nginx ingress, WS edge, gateway plain-HTTP). Linked from `docs/runbooks/README.md` + `alerts.yml` `runbook_edge`. Redis/Meili/migration already present. **QA-11 Done** (doc honesty) — chat/notification have no integration packages; conventions CI map + `ci.yml` comments; unit matrix unchanged. Dashboard: Open 35 / Partial 2 / Done 76 / Demoted 26 / FA 1. |
+| 2026-07-27 | **OPS-28 Done** — Go services user/job/payment/chat/notification k8s probes switched from static gRPC health to HTTP on metrics port: liveness `/healthz`, readiness `/readyz` (Postgres ping; +Redis for user/chat). Evidence: `deploy/k8s/base/{user,job,payment,chat,notification}/deployment.yaml`; handlers in each service `cmd/server/observability.go`. Gateway unchanged (OPS-27). Rust engines intentionally remain `grpc:` — no HTTP deep health; noted in `deploy/k8s/README.md`. Dashboard: Open 34 / Partial 2 / Done 77 / Demoted 26 / FA 1. |
 
 ---
 

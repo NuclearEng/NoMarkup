@@ -28,4 +28,13 @@ describe('Slider', () => {
     );
     expect((container.firstChild as HTMLElement).className).toContain('my-slider');
   });
+
+  it('exposes a min 44px hit target on root and thumb (FE-07)', () => {
+    const { container } = render(<Slider defaultValue={[40]} max={100} />);
+    const root = container.firstChild as HTMLElement;
+    const thumb = screen.getByRole('slider');
+    expect(root.className).toMatch(/min-h-11/);
+    expect(thumb.className).toMatch(/h-11/);
+    expect(thumb.className).toMatch(/w-11/);
+  });
 });

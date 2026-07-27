@@ -55,7 +55,8 @@ test.describe('Job flows', () => {
     test('renders jobs page', async ({ page }) => {
       await page.goto('/jobs');
       await expect(page).toHaveURL(/\/jobs/);
-      await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible({
+      // Page-specific h1 from JobsSearchClient — not "any level-1 heading" (QA-07).
+      await expect(page.getByRole('heading', { name: /Find\s+Jobs/i, level: 1 })).toBeVisible({
         timeout: 10_000,
       });
     });
@@ -105,7 +106,7 @@ test.describe('Job flows', () => {
   test.describe('Accessibility', () => {
     test('jobs page has proper heading hierarchy', async ({ page }) => {
       await page.goto('/jobs');
-      await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible({
+      await expect(page.getByRole('heading', { name: /Find\s+Jobs/i, level: 1 })).toBeVisible({
         timeout: 10_000,
       });
     });

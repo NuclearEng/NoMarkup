@@ -268,7 +268,19 @@ func main() {
 	} else {
 		slog.Warn("PAYMENT_SERVICE_ADDR not set; GDPR Stripe deletion will record skipped_no_client")
 	}
-	erasureService := service.NewErasure(repo, stripeDeleter, nil, nil)
+
+	// GDPR lifecycle emails (request / cancel / finalize) ride the same
+	// notification → SendGrid path as password-reset and verification mail.
+	// When notifClient is nil (dev without NOTIFICATION_SERVICE_ADDR) Erasure
+	// logs Error on every lifecycle event — never silent success (ARC-17).
+	var gdprMailer service.GDPRMailer
+	if notifClient != nil {
+		gdprMailer = newGDPRMailerClient(notifClient, baseURL)
+		slog.Info("GDPR lifecycle emails wired via notification service")
+	} else {
+		slog.Warn("notification client unavailable; GDPR lifecycle emails will log Error until NOTIFICATION_SERVICE_ADDR is set")
+	}
+	erasureService := service.NewErasure(repo, stripeDeleter, nil, nil, gdprMailer)
 	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService, erasureService, notifClient, baseURL)
 
 	// Start gRPC server.

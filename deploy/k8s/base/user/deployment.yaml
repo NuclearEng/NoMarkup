@@ -84,16 +84,22 @@ spec:
             capabilities:
               drop:
                 - ALL
+          # Probes hit the observability HTTP port (SERVICE_PORT+1000), not gRPC.
+          # gRPC health is process-only SERVING-at-boot and never reflects DB/Redis.
+          # /healthz is dependency-independent (no restart storms on blips).
+          # /readyz pings Postgres + Redis (1s) and 503s so the pod leaves endpoints.
           livenessProbe:
-            grpc:
-              port: 50051
+            httpGet:
+              path: /healthz
+              port: metrics
             initialDelaySeconds: 10
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
-            grpc:
-              port: 50051
+            httpGet:
+              path: /readyz
+              port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5

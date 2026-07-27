@@ -15,6 +15,7 @@ async function globalSetup() {
     '/reset-password?token=warmup',
     '/',
     '/marketplace',
+    '/jobs',
   ];
 
   const browser = await chromium.launch();

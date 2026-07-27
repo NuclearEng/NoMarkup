@@ -21,6 +21,7 @@ type fakeDeletionRepo struct {
 	requested         map[string]time.Time
 	finalized         map[string]time.Time
 	reason            map[string]string
+	emails            map[string]string
 	stripeCustomerID  map[string]string
 	stripeAccountID   map[string]string
 	finalizeImpl      func(ctx context.Context, userID string) (domain.ErasureCounts, error)
@@ -32,10 +33,23 @@ func newFakeDeletionRepo() *fakeDeletionRepo {
 		requested:         make(map[string]time.Time),
 		finalized:         make(map[string]time.Time),
 		reason:            make(map[string]string),
+		emails:            make(map[string]string),
 		stripeCustomerID:  make(map[string]string),
 		stripeAccountID:   make(map[string]string),
 		finalizeCallCount: make(map[string]int),
 	}
+}
+
+// GetUserByID returns a user with a default or configured email so lifecycle
+// email tests can resolve an address without a full profile mock.
+func (r *fakeDeletionRepo) GetUserByID(_ context.Context, id string) (*domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	email := r.emails[id]
+	if email == "" {
+		email = id + "@example.com"
+	}
+	return &domain.User{ID: id, Email: email}, nil
 }
 
 func (r *fakeDeletionRepo) MarkDeletionRequested(_ context.Context, userID, reason string, requestedAt time.Time) error {
@@ -181,7 +195,7 @@ func TestErasure_Request_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeDeletionRepo()
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
-	e := NewErasure(repo, nil, nil, nil).withClock(func() time.Time { return now })
+	e := NewErasure(repo, nil, nil, nil, nil).withClock(func() time.Time { return now })
 
 	deadline, created, err := e.RequestAccountDeletion(ctx, "user-1", "no longer using", "DELETE")
 	require.NoError(t, err)
@@ -194,7 +208,7 @@ func TestErasure_Request_ConfirmationRequired(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	repo := newFakeDeletionRepo()
-	e := NewErasure(repo, nil, nil, nil)
+	e := NewErasure(repo, nil, nil, nil, nil)
 
 	tests := []struct {
 		confirmation string
@@ -220,7 +234,7 @@ func TestErasure_Request_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeDeletionRepo()
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
-	e := NewErasure(repo, nil, nil, nil).withClock(func() time.Time { return now })
+	e := NewErasure(repo, nil, nil, nil, nil).withClock(func() time.Time { return now })
 
 	deadline1, created1, err := e.RequestAccountDeletion(ctx, "user-1", "first reason", "DELETE")
 	require.NoError(t, err)
@@ -242,7 +256,7 @@ func TestErasure_Cancel_WithinGrace(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeDeletionRepo()
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
-	e := NewErasure(repo, nil, nil, nil).withClock(func() time.Time { return now })
+	e := NewErasure(repo, nil, nil, nil, nil).withClock(func() time.Time { return now })
 
 	_, _, err := e.RequestAccountDeletion(ctx, "user-1", "", "DELETE")
 	require.NoError(t, err)
@@ -257,7 +271,7 @@ func TestErasure_Cancel_NoRequest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	repo := newFakeDeletionRepo()
-	e := NewErasure(repo, nil, nil, nil)
+	e := NewErasure(repo, nil, nil, nil, nil)
 
 	cancelled, err := e.CancelAccountDeletion(ctx, "user-1")
 	require.NoError(t, err)
@@ -271,7 +285,7 @@ func TestErasure_Finalize_GracePeriodGuard(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeDeletionRepo()
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
-	e := NewErasure(repo, nil, nil, nil).withClock(func() time.Time { return now })
+	e := NewErasure(repo, nil, nil, nil, nil).withClock(func() time.Time { return now })
 
 	_, _, err := e.RequestAccountDeletion(ctx, "user-1", "", "DELETE")
 	require.NoError(t, err)
@@ -293,7 +307,7 @@ func TestErasure_Finalize_AfterGracePeriod(t *testing.T) {
 	repo := newFakeDeletionRepo()
 	requestedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	now := requestedAt.Add(domain.DeletionGracePeriod + time.Hour)
-	e := NewErasure(repo, nil, nil, nil).withClock(func() time.Time { return now })
+	e := NewErasure(repo, nil, nil, nil, nil).withClock(func() time.Time { return now })
 
 	// Backdate the request so the grace window has elapsed.
 	repo.requested["user-1"] = requestedAt
@@ -308,7 +322,7 @@ func TestErasure_Finalize_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeDeletionRepo()
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
-	e := NewErasure(repo, nil, nil, nil).withClock(func() time.Time { return now })
+	e := NewErasure(repo, nil, nil, nil, nil).withClock(func() time.Time { return now })
 
 	repo.requested["user-1"] = now.Add(-domain.DeletionGracePeriod - time.Hour)
 
@@ -334,7 +348,7 @@ func TestErasure_Finalize_StripeOutcomes(t *testing.T) {
 		accountResult:  "skipped_balance", // open balance simulated
 	}
 	store := &fakeS3{count: 7}
-	e := NewErasure(repo, stripe, store, nil)
+	e := NewErasure(repo, stripe, store, nil, nil)
 
 	out, err := e.FinalizeAccountDeletion(ctx, "user-1", false)
 	require.NoError(t, err)
@@ -354,7 +368,7 @@ func TestErasure_Finalize_StripeErrorDoesNotRollBack(t *testing.T) {
 	repo.requested["user-1"] = time.Now().Add(-domain.DeletionGracePeriod - time.Hour)
 
 	stripe := &recordingStripe{customerErr: errors.New("stripe down")}
-	e := NewErasure(repo, stripe, nil, nil)
+	e := NewErasure(repo, stripe, nil, nil, nil)
 
 	out, err := e.FinalizeAccountDeletion(ctx, "user-1", false)
 	require.NoError(t, err, "stripe failure must not roll back the cascade")
@@ -370,7 +384,7 @@ func TestErasure_Cron_OnlyProcessesExpired(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeDeletionRepo()
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
-	e := NewErasure(repo, nil, nil, nil).withClock(func() time.Time { return now })
+	e := NewErasure(repo, nil, nil, nil, nil).withClock(func() time.Time { return now })
 
 	// user-old: requested 31 days ago — should be processed.
 	repo.requested["user-old"] = now.Add(-31 * 24 * time.Hour)
@@ -390,7 +404,7 @@ func TestErasure_Cron_ContinuesPastFailures(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeDeletionRepo()
 	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
-	e := NewErasure(repo, nil, nil, nil).withClock(func() time.Time { return now })
+	e := NewErasure(repo, nil, nil, nil, nil).withClock(func() time.Time { return now })
 
 	repo.requested["user-bad"] = now.Add(-31 * 24 * time.Hour)
 	repo.requested["user-good"] = now.Add(-31 * 24 * time.Hour)
@@ -410,4 +424,136 @@ func TestErasure_Cron_ContinuesPastFailures(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, processed)
 	assert.Equal(t, 1, failed)
+}
+
+// --- GDPR lifecycle email (ARC-17) ---
+
+// recordingMailer captures every lifecycle email call for assertions.
+type recordingMailer struct {
+	mu        sync.Mutex
+	requested []mailCall
+	cancelled []mailCall
+	finalized []mailCall
+	err       error
+}
+
+type mailCall struct {
+	userID        string
+	email         string
+	graceDeadline time.Time
+}
+
+func (m *recordingMailer) SendDeletionRequested(_ context.Context, userID, email string, graceDeadline time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.requested = append(m.requested, mailCall{userID: userID, email: email, graceDeadline: graceDeadline})
+	return m.err
+}
+
+func (m *recordingMailer) SendDeletionCancelled(_ context.Context, userID, email string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cancelled = append(m.cancelled, mailCall{userID: userID, email: email})
+	return m.err
+}
+
+func (m *recordingMailer) SendDeletionFinalized(_ context.Context, userID, email string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.finalized = append(m.finalized, mailCall{userID: userID, email: email})
+	return m.err
+}
+
+func TestErasure_Request_SendsConfirmationEmail(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repo := newFakeDeletionRepo()
+	repo.emails["user-1"] = "alice@example.com"
+	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
+	mailer := &recordingMailer{}
+	e := NewErasure(repo, nil, nil, nil, mailer).withClock(func() time.Time { return now })
+
+	deadline, created, err := e.RequestAccountDeletion(ctx, "user-1", "leaving", "DELETE")
+	require.NoError(t, err)
+	assert.True(t, created)
+	require.Len(t, mailer.requested, 1)
+	assert.Equal(t, "user-1", mailer.requested[0].userID)
+	assert.Equal(t, "alice@example.com", mailer.requested[0].email)
+	assert.Equal(t, deadline, mailer.requested[0].graceDeadline)
+
+	// Idempotent re-request must NOT re-send email.
+	_, created2, err := e.RequestAccountDeletion(ctx, "user-1", "again", "DELETE")
+	require.NoError(t, err)
+	assert.False(t, created2)
+	assert.Len(t, mailer.requested, 1, "idempotent re-request must not re-email")
+}
+
+func TestErasure_Cancel_SendsCancellationEmail(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repo := newFakeDeletionRepo()
+	repo.emails["user-1"] = "bob@example.com"
+	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
+	mailer := &recordingMailer{}
+	e := NewErasure(repo, nil, nil, nil, mailer).withClock(func() time.Time { return now })
+
+	_, _, err := e.RequestAccountDeletion(ctx, "user-1", "", "DELETE")
+	require.NoError(t, err)
+
+	cancelled, err := e.CancelAccountDeletion(ctx, "user-1")
+	require.NoError(t, err)
+	assert.True(t, cancelled)
+	require.Len(t, mailer.cancelled, 1)
+	assert.Equal(t, "bob@example.com", mailer.cancelled[0].email)
+}
+
+func TestErasure_Finalize_SendsFinalizedEmailWithPreWipeAddress(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repo := newFakeDeletionRepo()
+	repo.emails["user-1"] = "carol@example.com"
+	repo.requested["user-1"] = time.Now().Add(-domain.DeletionGracePeriod - time.Hour)
+	mailer := &recordingMailer{}
+	e := NewErasure(repo, nil, nil, nil, mailer)
+
+	out, err := e.FinalizeAccountDeletion(ctx, "user-1", false)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	require.Len(t, mailer.finalized, 1)
+	assert.Equal(t, "carol@example.com", mailer.finalized[0].email)
+	assert.Equal(t, "user-1", mailer.finalized[0].userID)
+}
+
+func TestErasure_MailerFailureDoesNotFailLifecycle(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repo := newFakeDeletionRepo()
+	repo.emails["user-1"] = "dave@example.com"
+	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
+	mailer := &recordingMailer{err: errors.New("sendgrid 500")}
+	e := NewErasure(repo, nil, nil, nil, mailer).withClock(func() time.Time { return now })
+
+	// Request still succeeds even when mail delivery fails.
+	deadline, created, err := e.RequestAccountDeletion(ctx, "user-1", "", "DELETE")
+	require.NoError(t, err)
+	assert.True(t, created)
+	assert.False(t, deadline.IsZero())
+	require.Len(t, mailer.requested, 1)
+
+	cancelled, err := e.CancelAccountDeletion(ctx, "user-1")
+	require.NoError(t, err)
+	assert.True(t, cancelled)
+}
+
+func TestErasure_NilMailerDoesNotFailLifecycle(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repo := newFakeDeletionRepo()
+	now := time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
+	// Explicit nil mailer — production logs Error; request must still land.
+	e := NewErasure(repo, nil, nil, nil, nil).withClock(func() time.Time { return now })
+
+	_, created, err := e.RequestAccountDeletion(ctx, "user-1", "", "DELETE")
+	require.NoError(t, err)
+	assert.True(t, created)
 }

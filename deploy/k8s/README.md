@@ -99,15 +99,42 @@ unauthenticated to anything that can reach the pod.
 ## Health vs readiness probes
 
 `livenessProbe` and `readinessProbe` are deliberately **not** the same endpoint
-on the gateway:
+where dependency-aware HTTP health exists:
 
-- liveness → `/health`, an unconditional 200. Dependency-**independent** on
-  purpose: a Postgres/Redis blip must not restart every pod at once.
-- readiness → `/readyz`, which pings Postgres + Redis with a 1s deadline and
-  returns 503 on failure, so an unhealthy pod leaves the Service endpoints
-  instead of serving errors.
+### Gateway (HTTP :8080)
 
-Never point liveness at `/readyz`, and never point readiness at `/health`.
+- liveness → `/health` (alias of `/healthz`), unconditional 200. Dependency-
+  **independent** on purpose: a Postgres/Redis blip must not restart every pod.
+- readiness → `/readyz`, pings Postgres + Redis (1s) and 503s on failure so the
+  pod leaves Service endpoints instead of serving errors.
+
+### Go services (HTTP metrics port = SERVICE_PORT+1000)
+
+user / job / payment / chat / notification expose the same contract on the
+observability listener (`docs/operations/metrics.md`):
+
+| Service      | Metrics port | Liveness   | Readiness checks        |
+|--------------|-------------:|------------|-------------------------|
+| user         | 51051        | `/healthz` | Postgres + Redis        |
+| job          | 51052        | `/healthz` | Postgres                |
+| payment      | 51054        | `/healthz` | Postgres                |
+| chat         | 51055        | `/healthz` | Postgres + Redis        |
+| notification | 51059        | `/healthz` | Postgres                |
+
+Probes use `httpGet` against the named `metrics` containerPort — **not** the
+gRPC `Health/Check` RPC. gRPC health is set to `SERVING` once at boot and never
+tracks DB/Redis, so a pod with a dead database would stay Ready forever under
+a gRPC readiness probe.
+
+### Rust engines (gRPC-only health — do not force HTTP)
+
+bidding / fraud / trust / imaging / underwriting / pricing have Prometheus on
+gRPC port + 10000 where wired, but **no** dependency-checking HTTP `/readyz`.
+They keep `grpc:` liveness + readiness probes. Do not point k8s at their
+metrics port for readiness — process-up is the available signal until a deep
+health path ships.
+
+Never point liveness at `/readyz`, and never point readiness at `/health(z)`.
 The `web` Deployment probes `/robots.txt` as an interim target because the
 Next.js app has no health route yet (see the TODO in `base/web/deployment.yaml`).
 

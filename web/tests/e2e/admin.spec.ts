@@ -127,7 +127,10 @@ test.describe('Admin flows', () => {
     test('admin pages have proper heading hierarchy', async ({ page }) => {
       const redirected = await gotoProtected(page, '/admin');
       if (await expectLoginOr(page, redirected)) return;
-      await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 10_000 });
+      // Page-specific heading — not "any heading" (QA-07).
+      await expect(
+        page.getByRole('heading', { name: /Admin Overview/i }).first(),
+      ).toBeVisible({ timeout: 10_000 });
     });
 
     test('admin tables have proper structure', async ({ page }) => {
@@ -137,7 +140,12 @@ test.describe('Admin flows', () => {
       const tables = page.getByRole('table');
       if ((await tables.count()) === 0) {
         // Empty / denied without a table — still must not be a blank shell.
-        await expect(page.getByRole('heading').first()).toBeVisible();
+        await expect(
+          page
+            .getByRole('heading', { name: /User Management/i })
+            .or(page.getByText(/access denied|unauthorized|forbidden/i))
+            .first(),
+        ).toBeVisible();
         return;
       }
       await expect(page.getByRole('columnheader').first()).toBeVisible();

@@ -63,6 +63,26 @@ describe('Select', () => {
     expect(screen.getByRole('combobox', { name: 'fruit' }).className).toMatch(/min-h-11/);
   });
 
+  it('exposes a min 44px hit target on select items (FE-07)', async () => {
+    const user = userEvent.setup();
+    render(
+      <Select>
+        <SelectTrigger aria-label="fruit">
+          <SelectValue placeholder="Choose" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="apple">Apple</SelectItem>
+          <SelectItem value="banana">Banana</SelectItem>
+        </SelectContent>
+      </Select>,
+    );
+    const trigger = screen.getByRole('combobox', { name: 'fruit' });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    const option = await screen.findByRole('option', { name: 'Apple' });
+    expect(option.className).toMatch(/min-h-11/);
+  });
+
   it('shows placeholder while no value selected', () => {
     render(
       <Select>
