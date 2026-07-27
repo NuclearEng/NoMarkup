@@ -868,6 +868,13 @@ struct AgeStatus: Codable, Sendable, Hashable {
     }
 }
 
+/// `PUT /api/v1/me/dob` → `{ "dob_verified": true }`.
+struct SetDOBResponse: Codable, Sendable, Hashable {
+    var dobVerified: Bool?
+
+    var isVerified: Bool { dobVerified == true }
+}
+
 // MARK: - Markets (city catalog)
 
 struct MarketRow: Codable, Sendable, Hashable, Identifiable {
@@ -1585,6 +1592,45 @@ struct EnableMFAResponse: Codable, Sendable, Hashable {
     var hasSetupMaterial: Bool {
         let s = secret?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return !s.isEmpty || !(backupCodes ?? []).isEmpty || resolvedQRCodeURL != nil
+    }
+
+    /// Codes to re-submit on verify-setup (gateway requires the same list from enable).
+    var resolvedBackupCodes: [String] {
+        (backupCodes ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+}
+
+/// `POST /mfa/verify-setup` and `DELETE /mfa/disable` → `{ "success": true }`.
+struct MFAActionResponse: Codable, Sendable, Hashable {
+    var success: Bool?
+
+    var isSuccess: Bool { success == true }
+}
+
+// MARK: - Age gate helpers
+
+enum AgeGateMath {
+    static let minimumAgeYears = 18
+
+    /// Calendar-age in full years for a DOB on `reference` (device local calendar).
+    static func ageYears(dob: Date, reference: Date = Date(), calendar: Calendar = .current) -> Int? {
+        let comps = calendar.dateComponents([.year], from: calendar.startOfDay(for: dob), to: calendar.startOfDay(for: reference))
+        return comps.year
+    }
+
+    /// Formats a date as gateway `YYYY-MM-DD` in the given calendar.
+    static func yyyyMMdd(_ date: Date, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        let y = c.year ?? 0
+        let m = c.month ?? 0
+        let d = c.day ?? 0
+        return String(format: "%04d-%02d-%02d", y, m, d)
+    }
+
+    /// Latest DOB that is still at least `minimumAgeYears` old on `reference`.
+    static func maximumEligibleDOB(reference: Date = Date(), calendar: Calendar = .current) -> Date {
+        calendar.date(byAdding: .year, value: -minimumAgeYears, to: calendar.startOfDay(for: reference))
+            ?? reference
     }
 }
 

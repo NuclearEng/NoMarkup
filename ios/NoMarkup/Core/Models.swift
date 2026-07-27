@@ -1080,18 +1080,43 @@ struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     var senderId: String?
     var messageType: String?
     var content: String?
+    /// Gateway projects proto `is_read`. Domain→proto currently does not populate it
+    /// (always false on the wire); iOS still honors `true` if a future path sets it.
     var isRead: Bool?
     var createdAt: String?
 
-    /// Normalized message_type from gateway (`text` | `image` | `file` | `system` | `contact_share`).
+    /// Normalized message_type from gateway (`text` | `image` | `file` | `system` |
+    /// `contact_share` | `proposed_terms`). Unknown values fall through to text rendering.
     var normalizedType: String {
         (messageType ?? "text").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     var isImageMessage: Bool { normalizedType == "image" }
 
+    var isSystemMessage: Bool { normalizedType == "system" }
+
+    /// Local-terms proposal (FR-8.9 / FR-5.4). Web encodes as a plain text body that
+    /// starts with `[Proposed Terms]`; chat service also has `message_type=proposed_terms`
+    /// (not on the REST enum yet — content prefix is the portable detector).
+    var isProposedTermsMessage: Bool {
+        if normalizedType == "proposed_terms" { return true }
+        let raw = content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return raw.hasPrefix("[Proposed Terms]")
+    }
+
+    /// Parsed local-terms fields when `isProposedTermsMessage` (web `parseProposedTerms` parity).
+    var parsedProposedTerms: ProposedTermsPayload? {
+        ProposedTermsPayload.parse(content: content)
+    }
+
     /// Inbox / accessibility body. Image/file never surface raw CDN URLs in lists.
     var displayBody: String {
+        if isProposedTermsMessage {
+            if let terms = parsedProposedTerms, !terms.amount.isEmpty {
+                return "Proposed terms · \(terms.amount)"
+            }
+            return "Proposed terms"
+        }
         switch normalizedType {
         case "image":
             return "Photo"
@@ -1184,6 +1209,62 @@ struct ChatChannelsResponse: Codable, Sendable {
 
 struct ChatMessagesResponse: Codable, Sendable {
     let messages: [ChatMessage]
+}
+
+/// Structured local-terms proposal embedded in a chat message body (web FR-8.9 shape).
+///
+/// Wire format (plain text, not JSON metadata on REST today):
+/// ```
+/// [Proposed Terms]
+/// Payment Type: milestone
+/// Amount: $1,500
+/// Milestones:
+/// Demo - $500
+/// Description: Roof patch
+/// ```
+struct ProposedTermsPayload: Equatable, Sendable {
+    var paymentType: String
+    var amount: String
+    var milestones: String?
+    var description: String
+
+    static func parse(content: String?) -> ProposedTermsPayload? {
+        let raw = content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard raw.hasPrefix("[Proposed Terms]") else { return nil }
+
+        var paymentType = ""
+        var amount = ""
+        var description = ""
+        var inMilestones = false
+        var milestoneLines: [String] = []
+
+        for line in raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if line.hasPrefix("Payment Type: ") {
+                paymentType = String(line.dropFirst("Payment Type: ".count))
+                inMilestones = false
+            } else if line.hasPrefix("Amount: ") {
+                amount = String(line.dropFirst("Amount: ".count))
+                inMilestones = false
+            } else if line.hasPrefix("Milestones:") {
+                inMilestones = true
+            } else if line.hasPrefix("Description: ") {
+                description = String(line.dropFirst("Description: ".count))
+                inMilestones = false
+            } else if inMilestones {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    milestoneLines.append(trimmed)
+                }
+            }
+        }
+
+        return ProposedTermsPayload(
+            paymentType: paymentType,
+            amount: amount,
+            milestones: milestoneLines.isEmpty ? nil : milestoneLines.joined(separator: "\n"),
+            description: description
+        )
+    }
 }
 
 // MARK: - Marketplace orders & payment (Rail A — Stripe / Apple Pay)

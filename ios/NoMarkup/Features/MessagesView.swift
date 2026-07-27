@@ -18,11 +18,23 @@ import UIKit
 /// - Live WS: connect / subscribe / receive / typing / reconnect + poll fallback
 /// - Photo attach via PhotosPicker → `ImageUploader` (job_photo context) →
 ///   `POST …/messages` with `message_type: image` + confirmed URL as content
-/// - Mark read on open / pull-to-refresh / after send
+/// - Mark read on open / pull-to-refresh / after send (`POST …/channels/{id}/read`)
 /// - Local in-thread search over loaded messages
-/// - **Residual:** read-receipts UI (server has no iOS-facing receipt frame
-///   beyond mark-read REST); inbox-level live unread badges without opening a
-///   thread; proposed-terms message type UI (FR-8.9)
+/// - **Read receipts (FR-8.2):** simple "Seen" under the caller’s last own message
+///   when the peer has read it. Signal = `message.is_read == true` **or** a later
+///   peer message (web `MessageThread` heuristic). Channel
+///   `customer_last_read_at` / `provider_last_read_at` exist in Postgres but are
+///   **not** projected on gateway channel/message JSON; WS has no live
+///   `read_receipt` frame in the current chat service — residual for true
+///   timestamp-based receipts without a reply.
+/// - **Local terms (FR-5.4 / FR-8.9):** render proposed-terms cards when content
+///   starts with `[Proposed Terms]` (web send shape) or `message_type` is
+///   `proposed_terms`. **Residual — Accept/Reject:** chat service has
+///   `RespondToTerms` / `SendProposedTerms` domain methods, but neither is on
+///   `chat.proto` nor gateway REST (`PUT /providers/me/terms` is global-only).
+///   No party-safe accept API to call from iOS without inventing a non-binding
+///   text ack. Contract local-terms override remains server residual.
+/// - **Residual (other):** inbox-level live unread badges without opening a thread
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -226,6 +238,11 @@ struct ChatThreadView: View {
     @State private var typingUserIDs: Set<String> = []
     @State private var typingClearTask: Task<Void, Never>?
     @State private var lastTypingSentAt: Date = .distantPast
+    @State private var showReportSheet = false
+    @State private var confirmBlock = false
+    @State private var isBlocking = false
+    @State private var safetyStatusMessage: String?
+    @State private var safetyStatusIsError = false
     #if canImport(UIKit)
     @State private var showCamera = false
     @State private var cameraImage: UIImage?
@@ -281,6 +298,61 @@ struct ChatThreadView: View {
         return messages.filter { $0.matchesSearch(q) }
     }
 
+    /// Other party for block/report — customer vs provider relative to JWT `sub`.
+    private var counterpartyUserID: String? {
+        let me = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let customer = channel.customerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let provider = channel.providerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !me.isEmpty {
+            if me == customer, !provider.isEmpty { return provider }
+            if me == provider, !customer.isEmpty { return customer }
+        }
+        // Fall back: first non-self participant id we know.
+        if !provider.isEmpty, provider != me { return provider }
+        if !customer.isEmpty, customer != me { return customer }
+        // Last resort: last message from someone else.
+        if !me.isEmpty {
+            for msg in messages.reversed() {
+                if let sender = msg.senderId?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !sender.isEmpty, sender != me {
+                    return sender
+                }
+            }
+        }
+        return nil
+    }
+
+    private var canMutateSafety: Bool {
+        canCompose
+            && counterpartyUserID != nil
+            && !(counterpartyUserID == currentUserID)
+    }
+
+    /// Latest own message id when the peer has read it (for the single "Seen" caption).
+    ///
+    /// Prefer explicit `is_read` when the wire ever sets it; otherwise treat a later
+    /// message from the other party as proof they opened the thread (web parity).
+    /// Auth/party: only evaluated against JWT `sub` vs `sender_id` — never trusts
+    /// client-supplied "read" state beyond the message list returned for this channel
+    /// (gateway enforces channel membership on list/mark-read).
+    private var lastSeenOwnMessageID: String? {
+        guard let me = currentUserID, !me.isEmpty else { return nil }
+        guard let lastOwnIndex = messages.lastIndex(where: { $0.senderId == me }) else {
+            return nil
+        }
+        let lastOwn = messages[lastOwnIndex]
+        if lastOwn.isRead == true {
+            return lastOwn.id
+        }
+        let after = messages.index(after: lastOwnIndex)
+        guard after < messages.endIndex else { return nil }
+        let peerRepliedAfter = messages[after...].contains { msg in
+            guard let sender = msg.senderId, !sender.isEmpty else { return false }
+            return sender != me
+        }
+        return peerRepliedAfter ? lastOwn.id : nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if showsLiveUpdateCaption {
@@ -304,12 +376,49 @@ struct ChatThreadView: View {
         .searchable(text: $searchText, prompt: "Search this conversation")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showWebSafari = true
+                Menu {
+                    if canMutateSafety {
+                        Button {
+                            showReportSheet = true
+                        } label: {
+                            Label("Report user", systemImage: "flag")
+                        }
+                        Button(role: .destructive) {
+                            confirmBlock = true
+                        } label: {
+                            Label("Block user", systemImage: "hand.raised.fill")
+                        }
+                        .disabled(isBlocking)
+                    }
+                    Button {
+                        showWebSafari = true
+                    } label: {
+                        Label("Open on web", systemImage: "safari")
+                    }
                 } label: {
-                    Label("Open on web", systemImage: "safari")
+                    Image(systemName: "ellipsis.circle")
+                        .frame(minWidth: 44, minHeight: 44)
                 }
-                .frame(minHeight: 44)
+                .accessibilityLabel("Conversation actions")
+                .accessibilityHint("Report or block the other person, or open this chat on the web")
+            }
+        }
+        .alert("Block this user?", isPresented: $confirmBlock) {
+            Button("Cancel", role: .cancel) {}
+            Button("Block", role: .destructive) {
+                Task { await blockCounterparty() }
+            }
+        } message: {
+            Text("They won’t be able to message you. You can unblock later from Account → Blocked users.")
+        }
+        .sheet(isPresented: $showReportSheet) {
+            if let target = counterpartyUserID {
+                ChatReportUserSheet(
+                    userID: target,
+                    channelID: channel.id,
+                    onDone: { showReportSheet = false }
+                )
+                .environmentObject(auth)
             }
         }
         .task {
@@ -564,7 +673,8 @@ struct ChatThreadView: View {
                         ForEach(displayedMessages) { message in
                             MessageBubbleRow(
                                 message: message,
-                                isMine: isMine(message)
+                                isMine: isMine(message),
+                                showSeen: message.id == lastSeenOwnMessageID
                             )
                             .id(message.id)
                         }
@@ -593,6 +703,13 @@ struct ChatThreadView: View {
 
     private var composerBar: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let safetyStatusMessage {
+                Text(safetyStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(safetyStatusIsError ? BrandTheme.destructive : BrandTheme.success)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isStaticText)
+            }
             if auth.isScaffoldSession {
                 Text("Browse-only mode can’t send messages. Sign out and sign in with a real account.")
                     .font(.caption)
@@ -702,6 +819,33 @@ struct ChatThreadView: View {
             return false
         }
         return me == sender
+    }
+
+    @MainActor
+    private func blockCounterparty() async {
+        safetyStatusMessage = nil
+        safetyStatusIsError = false
+        guard canMutateSafety, let target = counterpartyUserID else {
+            safetyStatusIsError = true
+            safetyStatusMessage = "Couldn’t determine the other person in this chat."
+            return
+        }
+
+        isBlocking = true
+        defer { isBlocking = false }
+
+        do {
+            try await APIClient.shared.blockUser(id: target, reason: "chat")
+            safetyStatusIsError = false
+            safetyStatusMessage = "User blocked. Manage blocks from Account → Blocked users."
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+            safetyStatusIsError = true
+            safetyStatusMessage = "Sign in required to block users."
+        } catch {
+            safetyStatusIsError = true
+            safetyStatusMessage = error.localizedDescription
+        }
     }
 
     @MainActor
@@ -873,53 +1017,358 @@ struct ChatThreadView: View {
     }
 }
 
+// MARK: - Chat report sheet (channel-scoped)
+
+private enum ChatUserReportReason: String, CaseIterable, Identifiable {
+    case harassment
+    case spam
+    case scam
+    case inappropriate
+    case other
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .harassment: return "Harassment"
+        case .spam: return "Spam"
+        case .scam: return "Scam"
+        case .inappropriate: return "Inappropriate"
+        case .other: return "Other"
+        }
+    }
+}
+
+/// Report the other party with optional `channel_id` for moderator context.
+private struct ChatReportUserSheet: View {
+    let userID: String
+    let channelID: String
+    var onDone: () -> Void
+
+    @EnvironmentObject private var auth: AuthViewModel
+
+    @State private var reason: ChatUserReportReason = .spam
+    @State private var descriptionText = ""
+    @State private var isSubmitting = false
+    @State private var statusMessage: String?
+    @State private var statusIsError = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Reason", selection: $reason) {
+                        ForEach(ChatUserReportReason.allCases) { item in
+                            Text(item.displayName).tag(item)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Report reason")
+                } header: {
+                    Text("Why are you reporting?").brandSectionHeader()
+                }
+
+                Section {
+                    TextEditor(text: $descriptionText)
+                        .frame(minHeight: 120)
+                        .accessibilityLabel("Additional details")
+                } header: {
+                    Text("Details (optional)").brandSectionHeader()
+                } footer: {
+                    Text("This report includes this conversation so moderators can review context. You can also block the user separately.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+
+                if let statusMessage {
+                    Section {
+                        Text(statusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(statusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Section {
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        if isSubmitting {
+                            ProgressView()
+                                .tint(BrandTheme.navy)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Text("Submit report")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.accent)
+                    .disabled(isSubmitting || !auth.isAuthenticated || auth.isScaffoldSession)
+                }
+            }
+            .brandListBackground()
+            .navigationTitle("Report user")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onDone() }
+                        .frame(minHeight: 44)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func submit() async {
+        statusMessage = nil
+        statusIsError = false
+        isSubmitting = true
+        defer { isSubmitting = false }
+
+        do {
+            let response = try await APIClient.shared.reportUser(
+                id: userID,
+                reason: reason.rawValue,
+                description: descriptionText.trimmingCharacters(in: .whitespacesAndNewlines),
+                channelId: channelID
+            )
+            statusIsError = false
+            if response.status == "already_reported" {
+                statusMessage = response.message
+                    ?? "You’ve already reported this — our team is reviewing it."
+            } else {
+                statusMessage = "Thanks — your report was submitted."
+            }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            onDone()
+        } catch let error as APIClientError where error.isUnauthorized {
+            statusIsError = true
+            statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+}
+
 // MARK: - Bubble
 
 private struct MessageBubbleRow: View {
     let message: ChatMessage
     let isMine: Bool
+    /// When true, render a simple "Seen" caption under this (own) bubble.
+    var showSeen: Bool = false
 
     var body: some View {
-        HStack {
-            if isMine { Spacer(minLength: 48) }
-
-            VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
-                bubbleContent
-
-                HStack(spacing: 6) {
-                    if let type = message.messageType,
-                       message.normalizedType != "text",
-                       !type.isEmpty {
-                        Text(type.replacingOccurrences(of: "_", with: " ").capitalized)
-                            .font(.caption2)
-                    }
-                    if let created = message.createdAt, !created.isEmpty {
-                        Text(CatalogDateFormat.friendlyDateTime(created))
-                            .font(.caption2)
-                    }
-                }
-                .foregroundStyle(isMine ? BrandTheme.navy.opacity(0.75) : BrandTheme.textSecondary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isMine ? BrandTheme.accent : BrandTheme.surfaceRaised)
-            )
-            .overlay {
-                if !isMine {
-                    // Incoming: subtle electric-blue border (not gold).
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(BrandTheme.chatIncomingBorder, lineWidth: 1)
-                }
-            }
-            .frame(maxWidth: 320, alignment: isMine ? .trailing : .leading)
-
-            if !isMine { Spacer(minLength: 48) }
+        if message.isSystemMessage {
+            systemRow
+        } else if message.isProposedTermsMessage {
+            proposedTermsRow
+        } else {
+            standardBubbleRow
         }
-        .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+    }
+
+    // MARK: System (centered pill)
+
+    private var systemRow: some View {
+        HStack {
+            Spacer(minLength: 24)
+            Text(message.displayBody)
+                .font(.caption)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(BrandTheme.surfaceRaised.opacity(0.9))
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(BrandTheme.gold.opacity(0.12), lineWidth: 1)
+                )
+            Spacer(minLength: 24)
+        }
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
+        .accessibilityLabel(message.displayBody)
+    }
+
+    // MARK: Proposed terms card (FR-8.9 render)
+    // Accept/Reject residual — `RespondToTerms` not on gateway REST / chat.proto.
+    // When that API ships: party-only (customer), auth required, bind contract local terms.
+
+    private var proposedTermsRow: some View {
+        VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
+            HStack {
+                if isMine { Spacer(minLength: 32) }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.text.fill")
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.goldBright)
+                            .accessibilityHidden(true)
+                        Text("Proposed Terms")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.goldBright)
+                            .textCase(.uppercase)
+                        Spacer(minLength: 0)
+                    }
+
+                    if let terms = message.parsedProposedTerms {
+                        proposedTermsFields(terms)
+                    } else {
+                        // Fallback: plain body if prefix matched but fields empty.
+                        Text(message.displayBody)
+                            .font(.body)
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    metaRow(onGold: false)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .frame(maxWidth: 320, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(BrandTheme.surfaceRaised)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(BrandTheme.gold.opacity(0.35), lineWidth: 1)
+                )
+
+                if !isMine { Spacer(minLength: 32) }
+            }
+            .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+
+            if showSeen, isMine {
+                Text("Seen")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(BrandTheme.teal.opacity(0.95))
+                    .padding(.trailing, 8)
+                    .accessibilityLabel("Seen by the other party")
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText + (showSeen && isMine ? ", Seen" : ""))
+    }
+
+    @ViewBuilder
+    private func proposedTermsFields(_ terms: ProposedTermsPayload) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !terms.paymentType.isEmpty {
+                termsFieldRow(
+                    label: "Payment",
+                    value: terms.paymentType.replacingOccurrences(of: "_", with: " ").capitalized
+                )
+            }
+            if !terms.amount.isEmpty {
+                termsFieldRow(label: "Amount", value: terms.amount, emphasize: true)
+            }
+            if let milestones = terms.milestones, !milestones.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Milestones")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                    Text(milestones)
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if !terms.description.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Scope")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                    Text(terms.description)
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func termsFieldRow(label: String, value: String, emphasize: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(BrandTheme.textSecondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(emphasize ? .subheadline.weight(.semibold) : .subheadline.weight(.medium))
+                .foregroundStyle(BrandTheme.textPrimary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    // MARK: Standard text / image bubble
+
+    private var standardBubbleRow: some View {
+        VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
+            HStack {
+                if isMine { Spacer(minLength: 48) }
+
+                VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
+                    bubbleContent
+                    metaRow(onGold: isMine)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(isMine ? BrandTheme.accent : BrandTheme.surfaceRaised)
+                )
+                .overlay {
+                    if !isMine {
+                        // Incoming: subtle electric-blue border (not gold).
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(BrandTheme.chatIncomingBorder, lineWidth: 1)
+                    }
+                }
+                .frame(maxWidth: 320, alignment: isMine ? .trailing : .leading)
+
+                if !isMine { Spacer(minLength: 48) }
+            }
+            .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+
+            // FR-8.2 read receipt — only under own last seen message.
+            if showSeen, isMine {
+                Text("Seen")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(BrandTheme.teal.opacity(0.95))
+                    .padding(.trailing, 8)
+                    .accessibilityLabel("Seen by the other party")
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText + (showSeen && isMine ? ", Seen" : ""))
+    }
+
+    private func metaRow(onGold: Bool) -> some View {
+        HStack(spacing: 6) {
+            if let type = message.messageType,
+               message.normalizedType != "text",
+               !message.isProposedTermsMessage,
+               !type.isEmpty {
+                Text(type.replacingOccurrences(of: "_", with: " ").capitalized)
+                    .font(.caption2)
+            }
+            if let created = message.createdAt, !created.isEmpty {
+                Text(CatalogDateFormat.friendlyDateTime(created))
+                    .font(.caption2)
+            }
+        }
+        .foregroundStyle(onGold ? BrandTheme.navy.opacity(0.75) : BrandTheme.textSecondary)
     }
 
     @ViewBuilder
@@ -962,8 +1411,14 @@ private struct MessageBubbleRow: View {
     }
 
     private var accessibilityText: String {
+        if message.isProposedTermsMessage {
+            return isMine ? "You proposed terms: \(message.displayBody)" : "Proposed terms: \(message.displayBody)"
+        }
         if message.isImageMessage {
             return isMine ? "You sent a photo" : "Photo"
+        }
+        if message.isSystemMessage {
+            return message.displayBody
         }
         return isMine ? "You: \(message.displayBody)" : message.displayBody
     }

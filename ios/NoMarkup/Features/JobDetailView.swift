@@ -62,12 +62,21 @@ struct JobDetailView: View {
     @State private var confirmRepost = false
     @State private var repostedRoute: JobRepostRoute?
 
-    /// Soft live-auction overlay (lowest bid / ends-at) from optional poll.
+    /// Owner re-request Instant match on an open job with accept-now price (web JobDetailClient parity).
+    @State private var isRequestingInstantMatch = false
+    @State private var instantMatchMessage: String?
+    @State private var instantMatchIsError = false
+
+    /// Soft live-auction overlay (lowest bid / ends-at) from optional poll / WS.
     @State private var liveLowestBidCents: Int64?
     /// True once `GET …/auction/state` succeeds (feature on + live job).
     @State private var liveAuctionStateAvailable = false
-    /// Recent activity from soft poll of `GET …/auction/events` (HTTP, not WS).
+    /// Recent activity from WS frames and/or HTTP poll of `GET …/auction/events`.
     @State private var auctionEvents: [AuctionEvent] = []
+    /// Authed auction floor WebSocket (`GET /ws/auction/{jobId}`); HTTP poll is fallback.
+    @StateObject private var auctionSocket = AuctionWebSocketClient()
+    /// Throttle ladder refetch when WS bid frames arrive in a burst.
+    @State private var lastLadderInvalidateAt: Date = .distantPast
 
     /// Showcase H1.4/H1.5 — FPI when usable (median savings); soft-fail otherwise.
     @State private var fairPrice: FairPriceResponse?
@@ -207,6 +216,22 @@ struct JobDetailView: View {
         }
     }
 
+    /// Owner can request Instant match on an active/open job when accept-now price is set.
+    /// Mirrors web `canRequestInstantMatch` (POST `/jobs/{id}/instant-match` requires `offer_accepted_cents`).
+    /// Security: owner only (`currentUserID == customerId`), authenticated, not scaffold.
+    private var canRequestInstantMatch: Bool {
+        guard isJobOwner, auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        let status = (detail?.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch status {
+        case "active", "open":
+            break
+        default:
+            return false
+        }
+        guard let offer = detail?.offerAcceptedCents, offer > 0 else { return false }
+        return true
+    }
+
     /// Owner can repost when the original auction is finished without an award (FR-3.5 / FR-3.10).
     /// Matches job service: closed | closed_zero_bids | expired | cancelled.
     private var canRepost: Bool {
@@ -273,8 +298,24 @@ struct JobDetailView: View {
         .task(id: auctionPollIdentity) {
             await pollLiveAuctionStateLoop()
         }
+        .task(id: auctionSocketIdentity) {
+            await runAuctionSocketLifecycle()
+        }
         .task(id: "\(jobID)|ladder|\(scenePhase == .active)") {
             await pollBidLadderLoop()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Pause auction WS when backgrounded; reconnect when active again.
+            if phase == .active {
+                guard shouldAttemptAuctionSocket else { return }
+                auctionSocket.connect(jobID: jobID)
+            } else {
+                auctionSocket.disconnect()
+            }
+        }
+        .onDisappear {
+            auctionSocket.onEvent = nil
+            auctionSocket.disconnect()
         }
         .refreshable { await load() }
         .confirmationDialog(
@@ -380,6 +421,7 @@ struct JobDetailView: View {
             acceptOfferSection(job)
             bidLadderSection(job)
             liveFeedSection
+            requestInstantMatchSection
             manageAuctionSection
             repostSection
             detailsSection(job)
@@ -519,6 +561,54 @@ struct JobDetailView: View {
             return "Leading bid"
         }
         return "Starting budget"
+    }
+
+    /// Owner CTA: re-request Instant match fan-out (web JobDetailClient parity).
+    @ViewBuilder
+    private var requestInstantMatchSection: some View {
+        if canRequestInstantMatch {
+            Section {
+                if let instantMatchMessage {
+                    Text(instantMatchMessage)
+                        .font(.footnote)
+                        .foregroundStyle(instantMatchIsError ? BrandTheme.destructive : BrandTheme.success)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(instantMatchMessage)
+                }
+
+                Button {
+                    Task { await requestInstantMatch() }
+                } label: {
+                    if isRequestingInstantMatch {
+                        ProgressView()
+                            .tint(BrandTheme.accent)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label("Request Instant match", systemImage: "bolt.fill")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                }
+                .disabled(isRequestingInstantMatch)
+                .accessibilityLabel(
+                    isRequestingInstantMatch ? "Requesting instant match" : "Request Instant match"
+                )
+                .accessibilityHint(
+                    "Notifies nearby Instant providers at your accept-now price. Auction stays open until a provider accepts."
+                )
+            } header: {
+                Text("Instant match").brandSectionHeader()
+            } footer: {
+                if let offer = detail?.offerAcceptedCents, offer > 0 {
+                    Text(
+                        "Notifies nearby providers at your Instant Accept price (\(MoneyFormat.usd(cents: offer))). Auction stays open until a provider accepts."
+                    )
+                    .foregroundStyle(BrandTheme.textSecondary)
+                } else {
+                    Text("Notifies nearby Instant providers. Auction stays open until a provider accepts.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -883,7 +973,11 @@ struct JobDetailView: View {
 
     /// Task identity: restart poll loop when job / active flag / foreground changes.
     private var auctionPollIdentity: String {
-        "\(jobID)|\(isAuctionActiveForPolling)|\(scenePhase == .active)"
+        "\(jobID)|\(isAuctionActiveForPolling)|\(isLiveAuctionType)|\(scenePhase == .active)|\(isAuctionSocketLive)"
+    }
+
+    private var auctionSocketIdentity: String {
+        "\(jobID)|\(auth.isAuthenticated)|\(auth.isScaffoldSession)|\(isAuctionActiveForPolling)|\(isLiveAuctionType)|\(liveAuctionStateAvailable)|\(scenePhase == .active)"
     }
 
     // MARK: - Bid ladder
@@ -985,7 +1079,33 @@ struct JobDetailView: View {
         return idx + 1
     }
 
-    // MARK: - Soft live feed (HTTP poll, not WebSocket)
+    // MARK: - Soft live feed (WebSocket + HTTP poll fallback)
+
+    /// Footer copy: WS live when connected; otherwise honest poll cadence.
+    private var liveFeedFooterCopy: String {
+        if isAuctionSocketLive {
+            return isLiveAuctionType
+                ? "Open floor · live over WebSocket while the auction is open."
+                : "Live over WebSocket while the auction is open."
+        }
+        if isLiveAuctionType {
+            return "Open floor · updates every few seconds while the auction is open."
+        }
+        return "Refreshes while the auction is open."
+    }
+
+    private var isAuctionSocketLive: Bool {
+        auctionSocket.status == .connected
+    }
+
+    /// Authed participant feed only — owner/bidder; others keep HTTP poll.
+    private var shouldAttemptAuctionSocket: Bool {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        guard scenePhase == .active else { return false }
+        // Prefer live-typed or known-live jobs; still try for open reverse auctions
+        // so owners/bidders get real-time ladder ticks when the feature is on.
+        return isAuctionActiveForPolling || isLiveAuctionType || liveAuctionStateAvailable
+    }
 
     @ViewBuilder
     private var liveFeedSection: some View {
@@ -1006,16 +1126,20 @@ struct JobDetailView: View {
                 HStack(spacing: 6) {
                     if isAuctionActiveForPolling {
                         Circle()
-                            .fill(BrandTheme.success)
+                            .fill(isAuctionSocketLive ? BrandTheme.accent : BrandTheme.success)
                             .frame(width: 6, height: 6)
                             .accessibilityHidden(true)
                     }
                     Text("Live feed").brandSectionHeader()
+                    if isAuctionSocketLive {
+                        Text("LIVE")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrandTheme.accent)
+                            .accessibilityLabel("WebSocket connected")
+                    }
                 }
             } footer: {
-                Text(isLiveAuctionType
-                    ? "Open floor · refreshes every few seconds while the auction is open."
-                    : "Refreshes while the auction is open.")
+                Text(liveFeedFooterCopy)
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
@@ -1665,6 +1789,48 @@ struct JobDetailView: View {
         }
     }
 
+    /// POST `/jobs/{id}/instant-match` — owner only; soft-fail message on error (does not crash UI).
+    @MainActor
+    private func requestInstantMatch() async {
+        instantMatchMessage = nil
+        instantMatchIsError = false
+        guard canRequestInstantMatch else { return }
+        guard !auth.isScaffoldSession else {
+            instantMatchIsError = true
+            instantMatchMessage =
+                "Browse-only mode has no API credentials. Sign in against a live gateway to request Instant match."
+            return
+        }
+        guard auth.isAuthenticated else {
+            instantMatchIsError = true
+            instantMatchMessage = "Sign in required to request Instant match."
+            return
+        }
+        isRequestingInstantMatch = true
+        defer { isRequestingInstantMatch = false }
+        do {
+            let response = try await APIClient.shared.createInstantMatch(jobId: jobID)
+            instantMatchIsError = false
+            if let expires = response.expiresAt?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !expires.isEmpty
+            {
+                let when = CatalogDateFormat.friendlyDateTime(expires)
+                instantMatchMessage = "Instant match sent. Offers expire \(when)."
+            } else {
+                instantMatchMessage = "Instant match requested. Nearby providers have been notified."
+            }
+        } catch let error as APIClientError where error.isUnauthorized {
+            // Soft-fail: surface toast-style inline error; keep auction UI usable.
+            instantMatchIsError = true
+            instantMatchMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            instantMatchIsError = true
+            instantMatchMessage = error.localizedDescription.isEmpty
+                ? "Failed to start instant match."
+                : error.localizedDescription
+        }
+    }
+
     @MainActor
     private func closeBidding() async {
         manageAuctionMessage = nil
@@ -2008,8 +2174,11 @@ struct JobDetailView: View {
         }
     }
 
-    /// Polls live auction state + events while the scene is active and the auction is open.
-    /// Open-floor (`auction_type=live`) polls every 3s; sealed/active polls every 10s.
+    /// Hybrid REST poll for live auction state + events.
+    ///
+    /// - **WS connected:** slow reconcile (~15s) so missed frames still surface.
+    /// - **WS down / unauth / non-participant:** fast poll for open-floor live (~1.5s)
+    ///   or known-live state (~2s); sealed/active stays ~10s.
     /// Decode/network failures are ignored (endpoints may be feature-gated → 404).
     private func pollLiveAuctionStateLoop() async {
         // Always try once so a live job surfaces the arena even if status parsing lags.
@@ -2017,9 +2186,16 @@ struct JobDetailView: View {
         await refreshLiveAuctionEvents()
         guard scenePhase == .active else { return }
         while !Task.isCancelled {
-            let interval: UInt64 = (isLiveAuctionType || liveAuctionStateAvailable)
-                ? 3_000_000_000
-                : 10_000_000_000
+            let interval: UInt64
+            if isAuctionSocketLive {
+                interval = 15_000_000_000
+            } else if isLiveAuctionType {
+                interval = 1_500_000_000
+            } else if liveAuctionStateAvailable {
+                interval = 2_000_000_000
+            } else {
+                interval = 10_000_000_000
+            }
             do {
                 try await Task.sleep(nanoseconds: interval)
             } catch {
@@ -2031,6 +2207,98 @@ struct JobDetailView: View {
             if !isAuctionActiveForPolling && !isLiveAuctionType { return }
             await refreshLiveAuctionState()
             await refreshLiveAuctionEvents()
+        }
+    }
+
+    /// Connect authed auction WS while this detail is foregrounded and eligible.
+    /// Tears down when the task is cancelled (leave job / identity change).
+    @MainActor
+    private func runAuctionSocketLifecycle() async {
+        guard shouldAttemptAuctionSocket else {
+            auctionSocket.disconnect()
+            return
+        }
+
+        auctionSocket.onEvent = { [jobID] event in
+            handleAuctionSocketEvent(event, expectedJobID: jobID)
+        }
+        auctionSocket.connect(jobID: jobID)
+
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            } catch {
+                break
+            }
+            if !shouldAttemptAuctionSocket {
+                break
+            }
+        }
+        auctionSocket.disconnect()
+    }
+
+    @MainActor
+    private func handleAuctionSocketEvent(
+        _ event: AuctionWebSocketClient.ServerEvent,
+        expectedJobID: String
+    ) {
+        switch event {
+        case .bidEvent(let bidEvent):
+            if let jid = bidEvent.jobId, !jid.isEmpty, jid != expectedJobID {
+                return
+            }
+            mergeAuctionEvent(bidEvent)
+            if let cents = bidEvent.amountCents, cents > 0 {
+                if liveLowestBidCents == nil || cents < (liveLowestBidCents ?? .max) {
+                    liveLowestBidCents = cents
+                }
+            }
+            // Keep owner ladder roughly live without hammering on bid storms.
+            let now = Date()
+            if now.timeIntervalSince(lastLadderInvalidateAt) >= 2.0 {
+                lastLadderInvalidateAt = now
+                Task { await loadBids() }
+            }
+        case .auctionState(let lowest, let bidCount, let endsAt, _):
+            liveAuctionStateAvailable = true
+            if let lowest, lowest > 0 {
+                liveLowestBidCents = lowest
+            }
+            if var job = detail {
+                if let bidCount {
+                    job.bidCount = bidCount
+                }
+                if let endsAt, !endsAt.isEmpty {
+                    job.auctionEndsAt = endsAt
+                }
+                detail = job
+            }
+        case .snipeExtended:
+            // Ends-at may have moved — refresh state once.
+            Task {
+                await refreshLiveAuctionState()
+            }
+        case .auctionEnded:
+            Task {
+                await refreshLiveAuctionState()
+                await refreshLiveAuctionEvents()
+                await loadBids()
+            }
+        case .error:
+            // Non-fatal; HTTP poll covers recovery (including non-participant).
+            break
+        }
+    }
+
+    @MainActor
+    private func mergeAuctionEvent(_ event: AuctionEvent) {
+        // De-dupe by stable id (when|type|amount|job).
+        if auctionEvents.contains(where: { $0.id == event.id }) {
+            return
+        }
+        auctionEvents.insert(event, at: 0)
+        if auctionEvents.count > 50 {
+            auctionEvents = Array(auctionEvents.prefix(50))
         }
     }
 
@@ -2067,7 +2335,15 @@ struct JobDetailView: View {
         if !isLiveAuctionType && !isAuctionActiveForPolling && !liveAuctionStateAvailable { return }
         do {
             let events = try await APIClient.shared.fetchJobAuctionEvents(jobId: jobID)
-            auctionEvents = events
+            // When WS is live, merge so a slightly-stale poll does not drop frames
+            // that arrived over the socket milliseconds earlier.
+            if isAuctionSocketLive, !auctionEvents.isEmpty {
+                for event in events {
+                    mergeAuctionEvent(event)
+                }
+            } else {
+                auctionEvents = events
+            }
         } catch {
             // Optional endpoint — soft-fail 404 / decode / network; keep last good feed.
         }

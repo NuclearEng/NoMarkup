@@ -50,6 +50,8 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: auth.isAuthenticated)
+        // 18+ age gate for signed-in sessions (server-authoritative DOB via PUT /me/dob).
+        .ageGateWhenNeeded()
         .safeAreaInset(edge: .top, spacing: 0) {
             if !network.isOnline {
                 OfflineNetworkBanner()

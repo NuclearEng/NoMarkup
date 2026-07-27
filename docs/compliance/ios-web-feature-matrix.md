@@ -54,7 +54,7 @@ Legend:
 | Admin | /admin/* | **out of scope** | |
 | StoreKit IAP (digital subscription purchase) | — | **out of scope** | Free-tier read-only; web for paid digital |
 | Google/Facebook OAuth | oauth | **not started** | SIWA + email |
-| Chat / auction WebSocket | /ws/* | **live** (chat REST poll) / **partial** (native WS) | |
+| Chat / auction WebSocket | /ws/* | **live** (chat native WS + hybrid poll; job auction native WS + hybrid poll) / spectator WS residual | |
 
 ---
 

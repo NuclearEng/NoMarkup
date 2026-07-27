@@ -3,9 +3,10 @@ import Foundation
 // MARK: - Consumer API extras
 //
 // Providers, properties, wishlist, blocks, follows/feed, reviews, referrals,
-// notification prefs, payment methods, Stripe Connect, age status, markets,
-// listing cancel, user report, similar listings. Reuses getJSON / postJSON /
-// putJSON / deleteEmpty / postEmpty + AuthMode from APIClient.
+// notification prefs, payment methods, Stripe Connect, age status / DOB,
+// MFA enable/confirm/disable, markets, listing cancel, user report (optional
+// chat context), similar listings. Reuses getJSON / postJSON / putJSON /
+// deleteJSON / deleteEmpty / postEmpty + AuthMode from APIClient.
 
 extension APIClient {
     // MARK: Providers
@@ -288,7 +289,7 @@ extension APIClient {
         )
     }
 
-    // MARK: MFA enable
+    // MARK: MFA enable / confirm / disable
 
     /// POST `/api/v1/auth/mfa/enable` — returns TOTP secret, QR URL, backup codes (setup not confirmed).
     @discardableResult
@@ -296,6 +297,34 @@ extension APIClient {
         try await postJSON(
             pathComponents: ["api", "v1", "auth", "mfa", "enable"],
             body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/auth/mfa/verify-setup` — confirms TOTP + persists backup codes; MFA becomes active.
+    @discardableResult
+    func confirmMFASetup(totpCode: String, backupCodes: [String]) async throws -> MFAActionResponse {
+        let code = totpCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Authenticator code is required.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "auth", "mfa", "verify-setup"],
+            body: ConfirmMFASetupBody(totpCode: code, backupCodes: backupCodes),
+            authorized: .required
+        )
+    }
+
+    /// DELETE `/api/v1/auth/mfa/disable` — body `{ "totp_code" }` required.
+    @discardableResult
+    func disableMFA(totpCode: String) async throws -> MFAActionResponse {
+        let code = totpCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Authenticator code is required.")
+        }
+        return try await deleteJSON(
+            pathComponents: ["api", "v1", "auth", "mfa", "disable"],
+            body: DisableMFABody(totpCode: code),
             authorized: .required
         )
     }
@@ -451,6 +480,29 @@ extension APIClient {
         )
     }
 
+    /// PUT `/api/v1/me/dob` — body `{ "dob": "YYYY-MM-DD" }`. Server validates ≥18; DOB never returned.
+    @discardableResult
+    func setDateOfBirth(_ dob: String) async throws -> SetDOBResponse {
+        let trimmed = dob.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Date of birth is required.")
+        }
+        // Client-side shape check only — age math is server-authoritative.
+        let parts = trimmed.split(separator: "-")
+        guard parts.count == 3,
+              parts[0].count == 4,
+              parts[1].count == 2,
+              parts[2].count == 2
+        else {
+            throw APIClientError.httpStatus(400, detail: "Date of birth must be YYYY-MM-DD.")
+        }
+        return try await putJSON(
+            pathComponents: ["api", "v1", "me", "dob"],
+            body: SetDOBBody(dob: trimmed),
+            authorized: .required
+        )
+    }
+
     // MARK: Markets
 
     /// GET `/api/v1/markets` — public launched city catalog.
@@ -478,12 +530,14 @@ extension APIClient {
 
     // MARK: Report user
 
-    /// POST `/api/v1/users/{id}/report` — body reason + description.
+    /// POST `/api/v1/users/{id}/report` — body reason + description + optional chat context.
     @discardableResult
     func reportUser(
         id: String,
         reason: String,
-        description: String
+        description: String,
+        channelId: String? = nil,
+        messageId: String? = nil
     ) async throws -> UserReportResponse {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -493,9 +547,13 @@ extension APIClient {
         guard !reasonTrimmed.isEmpty else {
             throw APIClientError.httpStatus(400, detail: "reason is required")
         }
+        let channel = channelId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let message = messageId?.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = ReportUserBody(
             reason: reasonTrimmed,
-            description: description.trimmingCharacters(in: .whitespacesAndNewlines)
+            description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+            channelId: (channel?.isEmpty == false) ? channel : nil,
+            messageId: (message?.isEmpty == false) ? message : nil
         )
         return try await postJSON(
             pathComponents: ["api", "v1", "users", trimmed, "report"],
@@ -760,6 +818,46 @@ private struct ChangePasswordBody: Encodable {
 private struct ReportUserBody: Encodable {
     let reason: String
     let description: String
+    var channelId: String?
+    var messageId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case reason
+        case description
+        case channelId = "channel_id"
+        case messageId = "message_id"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(reason, forKey: .reason)
+        try c.encode(description, forKey: .description)
+        // Always send keys so gateway sees empty-vs-set consistently (web sends "").
+        try c.encode(channelId ?? "", forKey: .channelId)
+        try c.encode(messageId ?? "", forKey: .messageId)
+    }
+}
+
+private struct ConfirmMFASetupBody: Encodable {
+    let totpCode: String
+    let backupCodes: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case totpCode = "totp_code"
+        case backupCodes = "backup_codes"
+    }
+}
+
+private struct DisableMFABody: Encodable {
+    let totpCode: String
+
+    enum CodingKeys: String, CodingKey {
+        case totpCode = "totp_code"
+    }
+}
+
+private struct SetDOBBody: Encodable {
+    let dob: String
 }
 
 private struct AcceptToSBody: Encodable {

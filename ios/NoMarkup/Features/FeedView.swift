@@ -6,9 +6,28 @@ struct FeedView: View {
 
     @State private var listings: [ListingSummary] = []
     @State private var pagination: PaginationMeta?
+    @State private var page = 1
     @State private var isLoading = false
+    @State private var isLoadingMore = false
     @State private var errorMessage: String?
     @State private var needsSignIn = false
+
+    private let pageSize = 40
+
+    private var canLoadMore: Bool {
+        guard let pagination else {
+            // Unknown total — allow another page only when last fetch was full.
+            return listings.count >= page * pageSize
+        }
+        if pagination.resolvedHasNext {
+            return true
+        }
+        let total = pagination.resolvedTotal
+        if total > 0 {
+            return listings.count < total
+        }
+        return listings.count >= page * pageSize
+    }
 
     var body: some View {
         Group {
@@ -37,8 +56,8 @@ struct FeedView: View {
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .task { await load() }
-        .refreshable { await load() }
+        .task { await load(reset: true) }
+        .refreshable { await load(reset: true) }
         .navigationDestination(for: ListingSummary.self) { listing in
             ListingDetailView(listingID: listing.id, preview: listing)
         }
@@ -59,7 +78,7 @@ struct FeedView: View {
                 message: errorMessage,
                 actionTitle: "Try again"
             ) {
-                Task { await load() }
+                Task { await load(reset: true) }
             }
         } else if listings.isEmpty {
             BrandEmptyState(
@@ -84,6 +103,22 @@ struct FeedView: View {
                         .frame(minHeight: 44)
                         .listRowBackground(BrandTheme.navyElevated)
                         .accessibilityHint("Opens listing detail")
+                        .onAppear {
+                            if listing.id == listings.last?.id, canLoadMore, !isLoadingMore {
+                                Task { await loadMore() }
+                            }
+                        }
+                    }
+
+                    if isLoadingMore {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .tint(BrandTheme.accent)
+                            Spacer()
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityLabel("Loading more listings")
                     }
                 } header: {
                     if let total = pagination?.resolvedTotal, total > 0 {
@@ -145,7 +180,7 @@ struct FeedView: View {
     }
 
     @MainActor
-    private func load() async {
+    private func load(reset: Bool) async {
         guard auth.isAuthenticated, !auth.isScaffoldSession else {
             needsSignIn = !auth.isAuthenticated || auth.isScaffoldSession
             listings = []
@@ -153,12 +188,15 @@ struct FeedView: View {
         }
 
         needsSignIn = false
-        isLoading = listings.isEmpty
-        errorMessage = nil
+        if reset {
+            page = 1
+            isLoading = listings.isEmpty
+            errorMessage = nil
+        }
         defer { isLoading = false }
 
         do {
-            let response = try await APIClient.shared.fetchFeed(page: 1, pageSize: 40)
+            let response = try await APIClient.shared.fetchFeed(page: page, pageSize: pageSize)
             listings = response.listings
             pagination = response.pagination
         } catch let error as APIClientError where error.isUnauthorized {
@@ -169,6 +207,27 @@ struct FeedView: View {
             if listings.isEmpty {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    @MainActor
+    private func loadMore() async {
+        guard canLoadMore, !isLoadingMore, !isLoading else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+
+        let nextPage = page + 1
+        do {
+            let response = try await APIClient.shared.fetchFeed(page: nextPage, pageSize: pageSize)
+            let existing = Set(listings.map(\.id))
+            let appended = response.listings.filter { !existing.contains($0.id) }
+            listings.append(contentsOf: appended)
+            pagination = response.pagination
+            page = nextPage
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch {
+            // Keep existing rows; user can pull to refresh.
         }
     }
 }

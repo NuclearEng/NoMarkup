@@ -118,7 +118,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 **Consumer iOS product surface for PRD MVP depth is largely implemented.** Remaining unchecked items are:
 1. **Human/ops-gated** (ASC, device smoke sign-off, always-on review API, Apple Pay domain file, Google iOS client IDs in Console)
 2. **Accepted risk / licenses** (MON-14–18, R6.2–R6.6, Checkr, mTLS, StoreKit B2)
-3. **Thin polish residuals** (read-receipts UI, auction spectator WS, FR-18 per-instance Stripe)
+3. **Thin polish residuals** (full receipt frames without peer reply; auction spectator WS; FR-18 per-instance Stripe; local-terms Accept/Reject needs gRPC REST)
 
 
 
@@ -158,7 +158,7 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 ### P2 — Growth, Instant, platform
 
 - [x] **§13 Instant** — Customer emergency CTA + provider offer accept/decline (iOS); web post + JobDetail re-request  
-- [x] **FR-1.1 / realtime** — Google native OAuth (PKCE+id_token) + chat WS; APNs registration already; auction WS optional residual  
+- [x] **FR-1.1 / realtime** — Google native OAuth (PKCE+id_token) + chat WS; APNs registration already; job auction native WS (`AuctionWebSocketClient` / `/ws/auction/{jobId}`) with HTTP poll fallback; spectator `/spectate` residual
 - [x] **§11 share cards** — Savings / review share cards via ShareLink  
 - [~] **Apple docs Phases 5–7** (process residual; 0–4 done) — Framework/ASC ops reviews + refresh stale `capability-matrix` / privacy inventory headers  
 - [~] **Deploy / mTLS** (ops/infra residual) — `DEPLOY_PROVISIONED` + gRPC mesh mTLS (S9.8 / SEC-GATE-09)  
@@ -214,3 +214,5 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | 2026-07-27 residual close | JobDetail Instant re-request; FR-18 roll-forward tests hardened; Apple Pay domain ops note; backlog marks ASC/smoke/PRE-05/domain as **ops-gated** not eng |
 
 | 2026-07-27 wave4 | Closed engineering residuals: chat WS+typing, Google OAuth native, share cards, free-tier FR-12 lock, job-bid durable idempotency (110), doc expiry UX, Instant JobDetail, ops docs honesty |
+
+| 2026-07-27 wave5 | Instant JobDetail iOS; chat Seen + proposed-terms card; auction WS on JobDetail; MFA setup complete; age gate; chat block/report; feed load-more |

@@ -1143,6 +1143,24 @@ actor APIClient {
         return try decodeFlexible(data)
     }
 
+    /// DELETE with a JSON body (e.g. `DELETE /auth/mfa/disable` requires `totp_code`).
+    func deleteJSON<Body: Encodable, T: Decodable>(
+        pathComponents: [String],
+        body: Body,
+        authorized: AuthMode,
+        headers: [String: String] = [:]
+    ) async throws -> T {
+        let data = try await perform(
+            method: "DELETE",
+            pathComponents: pathComponents,
+            query: [],
+            body: body,
+            auth: authorized,
+            headers: headers
+        )
+        return try decodeFlexible(data)
+    }
+
     /// DELETE that tolerates empty / 204 bodies (no JSON decode).
     func deleteEmpty(
         pathComponents: [String],
@@ -1690,6 +1708,10 @@ extension Notification.Name {
     /// App root observes this to re-fetch feature flags for the new session.
     /// Raw name: `NoMarkupAuthDidSucceed`.
     static let noMarkupAuthDidSucceed = Notification.Name("NoMarkupAuthDidSucceed")
+
+    /// Posted after a successful `PUT /me/dob` so the global age gate can dismiss.
+    /// Raw name: `noMarkupAgeVerified`.
+    static let noMarkupAgeVerified = Notification.Name("noMarkupAgeVerified")
 }
 
 enum APIClientError: Error, LocalizedError {

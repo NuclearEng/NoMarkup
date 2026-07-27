@@ -72,7 +72,7 @@
 |----|------------|--------|---------|----------|----------|------|------|
 | H1.1 | Reverse-auction positioning copy | `live` | web, ios | Home hero | n/a | n/a | — |
 | H1.2 | Live auction timer (countdown) | `live` | web, ios | Home `HomeJobCard` + `JobDetailView` countdown chips (`TimelineView` 1s); listing cards too. Product surface = home/detail (not investor single-hero widget by design) | public map coarsened | TimelineView 1s OK | — |
-| H1.3 | Live bid ladder / bid stream UI | `live` | web, ios | Job owner ladder; listing public ladder; sealed non-owner copy; **live feed** section polls `GET …/auction/state` + `…/events` every 10s (`JobDetailView.liveFeedSection`); dogfood 200 + events on live job `99c799e1-…` | owner-only job bids; public live events | 10s poll SLA | Native WS optional (S9.6) |
+| H1.3 | Live bid ladder / bid stream UI | `live` | web, ios | Job owner ladder; listing public ladder; sealed non-owner copy; **live feed** (`JobDetailView.liveFeedSection`): authed participants use native `GET /ws/auction/{jobId}` (`AuctionWebSocketClient`, same envelope as web) with HTTP `…/auction/state` + `…/events` hybrid poll fallback (live ~1.5s when WS down; ~15s reconcile when connected; sealed ~10s). Unauth / non-participant remain poll-only. Dogfood state/events 200 on live job `99c799e1-…` | owner-only job bids; public live events; WS participant-gated | 1.5s poll SLA when live+WS down | Spectator WS (`/spectate`) not wired on iOS job detail (residual) |
 | H1.4 | Market range (“147 data pts”) on job | `live` | web, ios | Job detail strip: FPI p25–p75 when usable → category sample → reverse-auction band; **home card** band caption via `MarketRangeMath.reverseAuctionBand`; create-form fair-price hint | public analytics | soft-fail fetch | Engine empty → honest band source labels |
 | H1.5 | Estimated savings vs starting/industry | `live` | web, ios | Job detail: savings vs **starting bid** when leading lower + vs **market median** when FPI usable; `SavingsView` account-level lifetime | auth savings | n/a | — |
 | H1.6 | Auction type live vs sealed | `live` | gateway, ios | Unified badge: `HomeJobCard` + `JobDetailView.reverseAuctionBadge`; sealed non-owner ladder copy; `ENABLE_LIVE_AUCTION=true` on local gateway; state/events 200 | authz on ladder | n/a | — |
@@ -190,7 +190,7 @@
 | S9.3 | Rust engines (bid/fraud/trust/…) | `live`/`partial` | engines | workspace members | no unsafe | criterion local | CI bench optional |
 | S9.4 | Postgres + PostGIS + Redis + Meilisearch | `live` | data | compose/prod path | PII encryption | query p95 | — |
 | S9.5 | Maps (Mapbox web · MapKit iOS) | `live` | web, ios | Web Mapbox; iOS `JobsMapView` MapKit only (accepted product surface) | token env | lazy load | — |
-| S9.6 | WebSocket real-time | `live` | web, gateway, ios | Web WS routes; iOS chat REST poll ~5s + auction HTTP live feed poll 10s (native WS optional enhancement) | auth WS | fan-out; poll only when active | Native `/ws` optional |
+| S9.6 | WebSocket real-time | `live` | web, gateway, ios | Web WS routes; iOS chat native WS + REST hybrid; iOS job auction native WS (`AuctionWebSocketClient` → `/ws/auction/{jobId}`) + HTTP poll fallback for live floor | auth WS (participants); public poll/spectate | fan-out; poll only when active | iOS spectator `/ws/auction/{id}/spectate` optional residual |
 | S9.7 | Stripe Connect | `live` | web, ios | `SellerPayoutsView` status/create/onboard + PI paths; PCI via Stripe | PCI via Stripe | n/a | Production onboarding dogfood optional |
 | S9.8 | K8s / OTel / Prometheus | `roadmap` | deploy | Manifests + scrape configs exist; full prod provision gated on `DEPLOY_PROVISIONED` | secrets Vault target | scrape auth | provisioning checklist |
 
@@ -223,7 +223,7 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | Catalog autocomplete / categories / drafts | `live` |
 | Trust tiers / plan limits / ToS | `live` (composite + 4-dim breakdown UI; plan = read-only) |
 | Seller exports / templates / docs | `live` (provider verification upload via `VerificationDocumentsView`) |
-| WebSocket chat/auction | `live` (chat REST poll SLA + auction HTTP live feed poll) / native WS optional |
+| WebSocket chat/auction | `live` (chat native WS + hybrid poll; job auction native WS for participants + hybrid poll; spectator WS residual) |
 | Regulated rails | `blocked-compliance` (BNPL / insurance / lending / lead-gen / instant payout — **server-flag gated**, `iOSHardOffKeys` empty; hub UI + gateway scaffolding; keep prod/review flags off until licenses — App Review risk if on) |
 | Admin | `n/a-client` |
 | StoreKit IAP | `blocked-compliance` |
