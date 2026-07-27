@@ -48,3 +48,24 @@ func TestNotifyInstantOfferToProviders_nilDB(t *testing.T) {
 		t.Fatalf("nil db want 0 notified, got %d", n)
 	}
 }
+
+func TestProviderMatchesInstantJob_nilDBFailOpen(t *testing.T) {
+	t.Parallel()
+	h := &InstantMatchHandler{}
+	if !h.providerMatchesInstantJob(t.Context(), "provider-1", instantJobMatchContext{
+		HasGeo:      true,
+		Lat:         47.6,
+		Lng:         -122.3,
+		CategoryIDs: []string{"11111111-1111-4111-8111-111111111111"},
+	}) {
+		t.Fatal("nil db must fail-open so schedule-only tests still list offers")
+	}
+}
+
+func TestProviderMatchesInstantJob_emptyProvider(t *testing.T) {
+	t.Parallel()
+	h := &InstantMatchHandler{}
+	if h.providerMatchesInstantJob(t.Context(), "", instantJobMatchContext{}) {
+		t.Fatal("empty provider must not match")
+	}
+}

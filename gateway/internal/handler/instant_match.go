@@ -243,8 +243,7 @@ func (h *InstantMatchHandler) CreateInstantMatch(w http.ResponseWriter, r *http.
 
 // ListProviderOffers handles GET /api/v1/provider/offers.
 // Requires auth — provider only. Scans Redis for all pending instant_match:* keys.
-// Fan-out respects provider instant eligibility (enabled + available_now OR
-// inside an instant_schedule window); ineligible providers get an empty list.
+// Gates: schedule/available_now, then per-job geo/category/trust (same as notify).
 func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -288,6 +287,9 @@ func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.
 		}
 	}
 
+	// Cache per-job match context so SCAN of many keys does not re-query jobs.
+	matchByJob := make(map[string]instantJobMatchContext)
+
 	offers := make([]map[string]interface{}, 0, len(keys))
 	for _, key := range keys {
 		// The SCAN pattern "instant_match:*" also matches the per-provider
@@ -316,11 +318,24 @@ func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.
 		if len(key) > len("instant_match:") {
 			jobID = key[len("instant_match:"):]
 		}
+		if jobID == "" {
+			continue
+		}
 
 		// Hide offers this provider has already responded to (accepted or
 		// declined) so a decline removes the offer for THIS provider only.
 		var resp instantMatchResponse
 		if h.cache.GetJSON(ctx, providerResponseKey(jobID, claims.UserID), &resp) {
+			continue
+		}
+
+		// Same geo/category/trust prefilter as notify — close list/notify skew.
+		matchCtx, ok := matchByJob[jobID]
+		if !ok {
+			matchCtx = h.loadInstantJobMatchContext(ctx, jobID, nil)
+			matchByJob[jobID] = matchCtx
+		}
+		if !h.providerMatchesInstantJob(ctx, claims.UserID, matchCtx) {
 			continue
 		}
 
@@ -336,8 +351,8 @@ func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.
 }
 
 // AcceptOffer handles POST /api/v1/provider/offers/{jobId}/accept.
-// Requires auth — provider only. Same instant eligibility as ListProviderOffers
-// so the schedule filter cannot be bypassed by calling accept directly.
+// Requires auth — provider only. Same schedule + geo/category/trust gates as
+// ListProviderOffers / notify so accept cannot bypass the prefilter.
 func (h *InstantMatchHandler) AcceptOffer(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -361,6 +376,15 @@ func (h *InstantMatchHandler) AcceptOffer(w http.ResponseWriter, r *http.Request
 	if !h.providerEligibleForInstantFanOut(ctx, claims.UserID) {
 		writeError(w, http.StatusForbidden,
 			"you are not currently available for instant match")
+		return
+	}
+
+	// Geo/category/trust match — same as notify + list (cannot accept a job
+	// outside service radius / category after learning the Redis key).
+	matchCtx := h.loadInstantJobMatchContext(ctx, jobID, nil)
+	if !h.providerMatchesInstantJob(ctx, claims.UserID, matchCtx) {
+		writeError(w, http.StatusForbidden,
+			"this instant offer is not available for your service area or categories")
 		return
 	}
 
@@ -588,8 +612,8 @@ type instantJobMatchContext struct {
 	CategoryIDs []string // non-empty UUIDs from job category tree
 }
 
-// loadInstantJobMatchContext loads job lat/lng from PostGIS and category IDs from
-// the already-fetched job proto (fail-soft on missing pieces).
+// loadInstantJobMatchContext loads job lat/lng from PostGIS and category IDs
+// (proto when present, else jobs table). Fail-soft on missing pieces.
 func (h *InstantMatchHandler) loadInstantJobMatchContext(
 	ctx context.Context,
 	jobID string,
@@ -611,15 +635,19 @@ func (h *InstantMatchHandler) loadInstantJobMatchContext(
 		return out
 	}
 	var lat, lng *float64
+	var catID, subID, typeID *string
 	err := h.db.QueryRow(ctx, `
 		SELECT ST_Y(COALESCE(service_location, approximate_location)),
-		       ST_X(COALESCE(service_location, approximate_location))
+		       ST_X(COALESCE(service_location, approximate_location)),
+		       category_id::text,
+		       subcategory_id::text,
+		       service_type_id::text
 		  FROM jobs
 		 WHERE id = $1 AND deleted_at IS NULL`,
 		jobID,
-	).Scan(&lat, &lng)
+	).Scan(&lat, &lng, &catID, &subID, &typeID)
 	if err != nil {
-		slog.WarnContext(ctx, "instant match: job geo lookup failed (fan-out without geo filter)",
+		slog.WarnContext(ctx, "instant match: job match-context lookup failed (filters fail-soft)",
 			"job_id", jobID,
 			"error", err,
 		)
@@ -630,7 +658,83 @@ func (h *InstantMatchHandler) loadInstantJobMatchContext(
 		out.Lat = *lat
 		out.Lng = *lng
 	}
+	// Prefer SQL categories when proto lacked them (List/Accept only have jobID).
+	if len(out.CategoryIDs) == 0 {
+		for _, id := range []*string{catID, subID, typeID} {
+			if id != nil && *id != "" {
+				out.CategoryIDs = append(out.CategoryIDs, *id)
+			}
+		}
+	}
 	return out
+}
+
+// providerMatchesInstantJob reports whether providerUserID would pass the same
+// geo/category/trust prefilter as Instant notify. Fail-open when db is nil
+// (dev/tests without Postgres still exercise schedule gates only).
+// Fail-closed for under_review trust when the row can be read.
+func (h *InstantMatchHandler) providerMatchesInstantJob(
+	ctx context.Context,
+	providerUserID string,
+	matchCtx instantJobMatchContext,
+) bool {
+	if providerUserID == "" {
+		return false
+	}
+	if h.db == nil {
+		return true
+	}
+	// No geo and no category constraints → any Instant-enabled provider is fine
+	// (notify SQL would only apply trust + enabled; schedule is separate).
+	// Still enforce under_review exclusion when we can.
+	q := `
+		SELECT EXISTS (
+		  SELECT 1
+		    FROM provider_profiles pp
+		    JOIN users u ON u.id = pp.user_id
+		    LEFT JOIN trust_scores ts
+		      ON ts.user_id = pp.user_id AND ts.role = 'provider'
+		   WHERE pp.user_id = $1
+		     AND pp.instant_enabled = true
+		     AND u.deleted_at IS NULL
+		     AND u.status = 'active'
+		     AND COALESCE(ts.tier, 'new') <> 'under_review'`
+	args := []interface{}{providerUserID}
+	argN := 2
+
+	if len(matchCtx.CategoryIDs) > 0 {
+		q += fmt.Sprintf(`
+		     AND EXISTS (
+		       SELECT 1 FROM provider_service_categories psc
+		       WHERE psc.provider_id = pp.id
+		         AND psc.category_id = ANY($%d::uuid[])
+		     )`, argN)
+		args = append(args, matchCtx.CategoryIDs)
+		argN++
+	}
+	if matchCtx.HasGeo {
+		q += fmt.Sprintf(`
+		     AND pp.service_location IS NOT NULL
+		     AND ST_DWithin(
+		       pp.service_location::geography,
+		       ST_SetSRID(ST_MakePoint($%d, $%d), 4326)::geography,
+		       COALESCE(pp.service_radius_km, 50) * 1000.0
+		     )`, argN, argN+1)
+		args = append(args, matchCtx.Lng, matchCtx.Lat)
+	}
+	q += `
+		)`
+
+	var ok bool
+	if err := h.db.QueryRow(ctx, q, args...).Scan(&ok); err != nil {
+		// Fail-open on SQL errors so a flaky PostGIS path does not blank the inbox.
+		slog.WarnContext(ctx, "instant match: provider job-match check failed (fail-open)",
+			"provider_id", providerUserID,
+			"error", err,
+		)
+		return true
+	}
+	return ok
 }
 
 // notifyInstantOfferToProviders fans out job_matched in-app notifications to
