@@ -93,22 +93,32 @@ struct HomeView: View {
 
     private var heroSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Eyebrow — showcase section-label voice
-            Text("REVERSE-AUCTION SERVICE MARKETPLACE")
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .tracking(1.6)
-                .foregroundStyle(BrandTheme.gold)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(BrandTheme.gold.opacity(0.12))
-                )
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(BrandTheme.gold.opacity(0.28), lineWidth: 1)
-                )
-                .padding(.bottom, 18)
+            // Brand tile — same champagne M↓ artwork as the SpringBoard App Icon.
+            HStack(alignment: .center, spacing: 14) {
+                NoMarkupIcon(showWordmark: false, size: 64)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("REVERSE-AUCTION SERVICE MARKETPLACE")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .tracking(1.2)
+                        .foregroundStyle(BrandTheme.gold)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    (
+                        Text("No")
+                            .foregroundColor(BrandTheme.textPrimary)
+                        + Text("Markup")
+                            .foregroundColor(BrandTheme.goldBright)
+                    )
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
+                    .accessibilityLabel("NoMarkup")
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.bottom, 18)
 
             // Showcase hero: "The Market Sets The Price. Not The Markup."
             (
