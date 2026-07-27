@@ -28,4 +28,30 @@ extension APIClient {
             authorized: false
         )
     }
+
+    /// POST `/api/v1/jobs/{id}/cancel` — owner cancels the job auction.
+    func cancelJob(id: String) async throws {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        try await postEmpty(
+            pathComponents: ["api", "v1", "jobs", trimmed, "cancel"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/jobs/{id}/close` — owner closes reverse auction (award window).
+    func closeJob(id: String) async throws {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        try await postEmpty(
+            pathComponents: ["api", "v1", "jobs", trimmed, "close"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
 }

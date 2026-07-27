@@ -64,7 +64,19 @@
 		A10000000000000000000057 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000057 /* UserNotifications.framework */; };
 		A10000000000000000000059 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000059 /* NetworkMonitor.swift */; };
 		A1000000000000000000005A /* Network.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B1000000000000000000005A /* Network.framework */; };
+		A10000000000000000000061 /* SecuritySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000061 /* SecuritySettingsView.swift */; };
+		A10000000000000000000062 /* NotificationPreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000062 /* NotificationPreferencesView.swift */; };
+		A10000000000000000000063 /* PaymentMethodsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000063 /* PaymentMethodsView.swift */; };
+		A10000000000000000000064 /* SellerPayoutsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000064 /* SellerPayoutsView.swift */; };
 		U10000000000000000000001 /* NoMarkupUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U10000000000000000000002 /* NoMarkupUITests.swift */; };
+		A10000000000000000000070 /* Models+Extras.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000070 /* Models+Extras.swift */; };
+		A10000000000000000000071 /* APIClient+Extras.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000071 /* APIClient+Extras.swift */; };
+		A10000000000000000000072 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000072 /* ProvidersView.swift */; };
+		A10000000000000000000073 /* ProviderDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000073 /* ProviderDetailView.swift */; };
+		A10000000000000000000074 /* PropertiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000074 /* PropertiesView.swift */; };
+		A10000000000000000000075 /* WishlistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000075 /* WishlistView.swift */; };
+		A10000000000000000000076 /* BlockedUsersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000076 /* BlockedUsersView.swift */; };
+		A10000000000000000000077 /* ReferralsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000077 /* ReferralsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -127,8 +139,20 @@
 		B10000000000000000000057 /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
 		B10000000000000000000059 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		B1000000000000000000005A /* Network.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
+		B10000000000000000000061 /* SecuritySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecuritySettingsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000062 /* NotificationPreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreferencesView.swift; sourceTree = "<group>"; };
+		B10000000000000000000063 /* PaymentMethodsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentMethodsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000064 /* SellerPayoutsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SellerPayoutsView.swift; sourceTree = "<group>"; };
 		U10000000000000000000002 /* NoMarkupUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupUITests.swift; sourceTree = "<group>"; };
 		U10000000000000000000003 /* NoMarkupUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000070 /* Models+Extras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+Extras.swift"; sourceTree = "<group>"; };
+		B10000000000000000000071 /* APIClient+Extras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Extras.swift"; sourceTree = "<group>"; };
+		B10000000000000000000072 /* ProvidersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersView.swift; sourceTree = "<group>"; };
+		B10000000000000000000073 /* ProviderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderDetailView.swift; sourceTree = "<group>"; };
+		B10000000000000000000074 /* PropertiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PropertiesView.swift; sourceTree = "<group>"; };
+		B10000000000000000000075 /* WishlistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WishlistView.swift; sourceTree = "<group>"; };
+		B10000000000000000000076 /* BlockedUsersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockedUsersView.swift; sourceTree = "<group>"; };
+		B10000000000000000000077 /* ReferralsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferralsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -245,6 +269,8 @@
 				B10000000000000000000052 /* PushRegistration.swift */,
 				B10000000000000000000053 /* ImageUploader.swift */,
 				B10000000000000000000059 /* NetworkMonitor.swift */,
+				B10000000000000000000071 /* APIClient+Extras.swift */,
+				B10000000000000000000070 /* Models+Extras.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -274,11 +300,21 @@
 				B1000000000000000000000C /* MessagesView.swift */,
 				B1000000000000000000000D /* AccountView.swift */,
 				B10000000000000000000054 /* ProfileSettingsView.swift */,
+				B10000000000000000000061 /* SecuritySettingsView.swift */,
+				B10000000000000000000062 /* NotificationPreferencesView.swift */,
+				B10000000000000000000063 /* PaymentMethodsView.swift */,
+				B10000000000000000000064 /* SellerPayoutsView.swift */,
 				B10000000000000000000022 /* MyOrdersView.swift */,
 				B10000000000000000000032 /* ContractsView.swift */,
 				B10000000000000000000033 /* ContractDetailView.swift */,
 				B10000000000000000000026 /* MyBidsView.swift */,
 				B10000000000000000000043 /* MyListingsView.swift */,
+				B10000000000000000000077 /* ReferralsView.swift */,
+				B10000000000000000000076 /* BlockedUsersView.swift */,
+				B10000000000000000000075 /* WishlistView.swift */,
+				B10000000000000000000074 /* PropertiesView.swift */,
+				B10000000000000000000073 /* ProviderDetailView.swift */,
+				B10000000000000000000072 /* ProvidersView.swift */,
 				B10000000000000000000027 /* NotificationsView.swift */,
 				B1000000000000000000002B /* WatchlistView.swift */,
 				B10000000000000000000041 /* SavedSearchesView.swift */,
@@ -453,6 +489,18 @@
 				A10000000000000000000053 /* ImageUploader.swift in Sources */,
 				A10000000000000000000054 /* ProfileSettingsView.swift in Sources */,
 				A10000000000000000000059 /* NetworkMonitor.swift in Sources */,
+				A10000000000000000000077 /* ReferralsView.swift in Sources */,
+				A10000000000000000000076 /* BlockedUsersView.swift in Sources */,
+				A10000000000000000000075 /* WishlistView.swift in Sources */,
+				A10000000000000000000074 /* PropertiesView.swift in Sources */,
+				A10000000000000000000073 /* ProviderDetailView.swift in Sources */,
+				A10000000000000000000072 /* ProvidersView.swift in Sources */,
+				A10000000000000000000071 /* APIClient+Extras.swift in Sources */,
+				A10000000000000000000070 /* Models+Extras.swift in Sources */,
+				A10000000000000000000061 /* SecuritySettingsView.swift in Sources */,
+				A10000000000000000000062 /* NotificationPreferencesView.swift in Sources */,
+				A10000000000000000000063 /* PaymentMethodsView.swift in Sources */,
+				A10000000000000000000064 /* SellerPayoutsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

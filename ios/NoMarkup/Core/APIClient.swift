@@ -813,6 +813,41 @@ actor APIClient {
         return try decodeFlexible(data)
     }
 
+    /// PUT JSON → decode response body (notification prefs, property updates, etc.).
+    func putJSON<Body: Encodable, T: Decodable>(
+        pathComponents: [String],
+        body: Body,
+        authorized: AuthMode,
+        headers: [String: String] = [:]
+    ) async throws -> T {
+        let data = try await perform(
+            method: "PUT",
+            pathComponents: pathComponents,
+            query: [],
+            body: body,
+            auth: authorized,
+            headers: headers
+        )
+        return try decodeFlexible(data)
+    }
+
+    /// PUT that tolerates empty / 204 bodies.
+    func putEmpty<Body: Encodable>(
+        pathComponents: [String],
+        body: Body,
+        authorized: AuthMode = .required,
+        headers: [String: String] = [:]
+    ) async throws {
+        _ = try await perform(
+            method: "PUT",
+            pathComponents: pathComponents,
+            query: [],
+            body: body,
+            auth: authorized,
+            headers: headers
+        )
+    }
+
     /// POST with no response body expected (treats empty 2xx as success).
     func postEmpty<Body: Encodable>(
         pathComponents: [String],

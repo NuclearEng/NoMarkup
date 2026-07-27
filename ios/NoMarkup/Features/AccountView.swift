@@ -65,6 +65,15 @@ struct AccountView: View {
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Edit display name and view account profile")
 
+                    NavigationLink {
+                        SecuritySettingsView()
+                    } label: {
+                        Label("Security", systemImage: "lock.shield")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Change password and view age verification status")
+
                     Button("Sign out", role: .destructive) {
                         PushRegistration.shared.resetSessionState()
                         auth.signOut()
@@ -156,6 +165,24 @@ struct AccountView: View {
                     .accessibilityHint("View sales revenue, sell-through, and top categories")
 
                     NavigationLink {
+                        SellerPayoutsView()
+                    } label: {
+                        Label("Seller payouts", systemImage: "banknote")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Connect Stripe and view payout readiness for providers")
+
+                    NavigationLink {
+                        PaymentMethodsView()
+                    } label: {
+                        Label("Payment methods", systemImage: "creditcard")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("View and remove saved cards used at checkout")
+
+                    NavigationLink {
                         NotificationsView()
                     } label: {
                         HStack {
@@ -175,11 +202,68 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .accessibilityHint("View account notifications and mark them read")
 
+                    NavigationLink {
+                        NotificationPreferencesView()
+                    } label: {
+                        Label("Notification preferences", systemImage: "bell.badge")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Choose push, email, and in-app channels per notification type")
+
                     Text("Jobs and local goods use Apple Pay / Stripe escrow (not App Store IAP). The market sets the price — not a platform markup.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } header: {
                     Text("Orders, bids & alerts").brandSectionHeader()
+                }
+
+                Section {
+                    NavigationLink {
+                        ProvidersView()
+                    } label: {
+                        Label("Providers", systemImage: "wrench.and.screwdriver")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Browse and follow service providers")
+
+                    NavigationLink {
+                        PropertiesView()
+                    } label: {
+                        Label("Properties", systemImage: "house")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Manage saved service addresses for jobs")
+
+                    NavigationLink {
+                        WishlistView()
+                    } label: {
+                        Label("Wishlist", systemImage: "star")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Goods you are watching or wishlisted")
+
+                    NavigationLink {
+                        BlockedUsersView()
+                    } label: {
+                        Label("Blocked users", systemImage: "hand.raised")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Review accounts you have blocked")
+
+                    NavigationLink {
+                        ReferralsView()
+                    } label: {
+                        Label("Referrals", systemImage: "gift")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Invite friends and track referral rewards")
+                } header: {
+                    Text("Network & safety").brandSectionHeader()
                 }
 
                 Section {

@@ -52,6 +52,11 @@ struct ListingDetailView: View {
     @State private var counterAmountText = ""
     @State private var counteringOfferID: String?
 
+    @State private var isCancellingListing = false
+    @State private var cancelListingMessage: String?
+    @State private var cancelListingIsError = false
+    @State private var confirmCancelListing = false
+
     init(listingID: String, preview: ListingSummary? = nil) {
         self.listingID = listingID
         self.preview = preview
@@ -195,6 +200,18 @@ struct ListingDetailView: View {
                     + "It’s released when you complete or lose the auction. Authorize a card, then your bid is placed."
             )
         }
+        .confirmationDialog(
+            "Cancel this listing?",
+            isPresented: $confirmCancelListing,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel listing", role: .destructive) {
+                Task { await cancelOwnedListing() }
+            }
+            Button("Keep listing", role: .cancel) {}
+        } message: {
+            Text("Ends this auction for buyers. Listings with active bids cannot be cancelled from the app.")
+        }
     }
 
     @ViewBuilder
@@ -236,6 +253,37 @@ struct ListingDetailView: View {
                 }
             }
 
+            if isViewerSeller(of: listing), canCancelListing(listing) {
+                Section {
+                    if let cancelListingMessage {
+                        Text(cancelListingMessage)
+                            .font(.footnote)
+                            .foregroundStyle(cancelListingIsError ? BrandTheme.destructive : BrandTheme.success)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Button(role: .destructive) {
+                        confirmCancelListing = true
+                    } label: {
+                        if isCancellingListing {
+                            ProgressView()
+                                .tint(BrandTheme.destructive)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Label("Cancel listing", systemImage: "xmark.circle")
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                    }
+                    .disabled(isCancellingListing)
+                    .accessibilityHint("Cancels your goods listing if there are no active bids")
+                } header: {
+                    Text("Manage listing").brandSectionHeader()
+                } footer: {
+                    Text("You own this listing. Cancel only works for draft/active auctions with no active bids.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+            }
+
             Section {
                 Button {
                     showReportSheet = true
@@ -253,6 +301,17 @@ struct ListingDetailView: View {
             }
         }
         .brandListBackground()
+    }
+
+    private func canCancelListing(_ listing: ListingDetail) -> Bool {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        let status = (listing.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch status {
+        case "active", "open", "draft", "scheduled":
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Auction hero (forward auction)
@@ -1042,6 +1101,32 @@ struct ListingDetailView: View {
     }
 
     // MARK: - Actions
+
+    @MainActor
+    private func cancelOwnedListing() async {
+        cancelListingMessage = nil
+        cancelListingIsError = false
+        guard !auth.isScaffoldSession else {
+            cancelListingIsError = true
+            cancelListingMessage =
+                "Browse-only mode has no API credentials. Sign in against a live gateway to cancel."
+            return
+        }
+        isCancellingListing = true
+        defer { isCancellingListing = false }
+        do {
+            try await APIClient.shared.cancelListing(id: listingID)
+            cancelListingIsError = false
+            cancelListingMessage = "Listing cancelled."
+            await load()
+        } catch let error as APIClientError where error.isUnauthorized {
+            cancelListingIsError = true
+            cancelListingMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            cancelListingIsError = true
+            cancelListingMessage = error.localizedDescription
+        }
+    }
 
     @MainActor
     private func buyNow() async {

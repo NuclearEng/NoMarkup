@@ -32,6 +32,12 @@ struct JobDetailView: View {
     @State private var withdrawStatusMessage: String?
     @State private var withdrawStatusIsError = false
 
+    @State private var isManagingAuction = false
+    @State private var manageAuctionMessage: String?
+    @State private var manageAuctionIsError = false
+    @State private var confirmCloseBidding = false
+    @State private var confirmCancelJob = false
+
     /// Soft live-auction overlay (lowest bid / ends-at) from optional poll.
     @State private var liveLowestBidCents: Int64?
 
@@ -97,6 +103,18 @@ struct JobDetailView: View {
         let status = (detail?.status ?? "").lowercased()
         switch status {
         case "active", "open", "closed", "bidding":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Owner can close bidding or cancel while the reverse auction is still open/active.
+    private var canManageAuction: Bool {
+        guard isJobOwner, auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        let status = (detail?.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch status {
+        case "active", "open", "bidding":
             return true
         default:
             return false
@@ -180,6 +198,30 @@ struct JobDetailView: View {
                 "This awards the job to \(entry.displayName) at \(entry.displayAmount) and starts the contract. Other bidders are notified they were not selected."
             )
         }
+        .confirmationDialog(
+            "Close bidding?",
+            isPresented: $confirmCloseBidding,
+            titleVisibility: .visible
+        ) {
+            Button("Close bidding", role: .destructive) {
+                Task { await closeBidding() }
+            }
+            Button("Keep open", role: .cancel) {}
+        } message: {
+            Text("Stops new reverse bids and opens the award window. You can still award a bid afterward.")
+        }
+        .confirmationDialog(
+            "Cancel this job?",
+            isPresented: $confirmCancelJob,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel job", role: .destructive) {
+                Task { await cancelOwnedJob() }
+            }
+            Button("Keep job", role: .cancel) {}
+        } message: {
+            Text("Cancels the auction and notifies bidders. This cannot be undone from the app.")
+        }
         .sheet(isPresented: $showWebSafari) {
             NavigationStack {
                 LegalWebView(title: "Job on web", url: webJobURL)
@@ -200,6 +242,7 @@ struct JobDetailView: View {
             auctionHeroSection(job)
             placeBidSection(job)
             bidLadderSection(job)
+            manageAuctionSection
             detailsSection(job)
 
             if let description = job.description?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -243,6 +286,49 @@ struct JobDetailView: View {
             }
         }
         .brandListBackground()
+    }
+
+    @ViewBuilder
+    private var manageAuctionSection: some View {
+        if canManageAuction {
+            Section {
+                if let manageAuctionMessage {
+                    Text(manageAuctionMessage)
+                        .font(.footnote)
+                        .foregroundStyle(manageAuctionIsError ? BrandTheme.destructive : BrandTheme.success)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button {
+                    confirmCloseBidding = true
+                } label: {
+                    if isManagingAuction {
+                        ProgressView()
+                            .tint(BrandTheme.accent)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label("Close bidding", systemImage: "lock.fill")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                }
+                .disabled(isManagingAuction)
+                .accessibilityHint("Stops new bids and opens the award window for this reverse auction")
+
+                Button(role: .destructive) {
+                    confirmCancelJob = true
+                } label: {
+                    Label("Cancel job", systemImage: "xmark.circle")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+                .disabled(isManagingAuction)
+                .accessibilityHint("Cancels this job auction and notifies bidders")
+            } header: {
+                Text("Manage auction").brandSectionHeader()
+            } footer: {
+                Text("You own this job. Close bidding to award, or cancel if you no longer need the work.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
     }
 
     // MARK: - Auction hero (reverse auction)
@@ -816,6 +902,58 @@ struct JobDetailView: View {
         } catch {
             bidStatusIsError = true
             bidStatusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func closeBidding() async {
+        manageAuctionMessage = nil
+        manageAuctionIsError = false
+        guard !auth.isScaffoldSession else {
+            manageAuctionIsError = true
+            manageAuctionMessage =
+                "Browse-only mode has no API credentials. Sign in against a live gateway to close bidding."
+            return
+        }
+        isManagingAuction = true
+        defer { isManagingAuction = false }
+        do {
+            try await APIClient.shared.closeJob(id: jobID)
+            manageAuctionIsError = false
+            manageAuctionMessage = "Bidding closed. You can award a bid from the ladder."
+            await load()
+        } catch let error as APIClientError where error.isUnauthorized {
+            manageAuctionIsError = true
+            manageAuctionMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            manageAuctionIsError = true
+            manageAuctionMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func cancelOwnedJob() async {
+        manageAuctionMessage = nil
+        manageAuctionIsError = false
+        guard !auth.isScaffoldSession else {
+            manageAuctionIsError = true
+            manageAuctionMessage =
+                "Browse-only mode has no API credentials. Sign in against a live gateway to cancel this job."
+            return
+        }
+        isManagingAuction = true
+        defer { isManagingAuction = false }
+        do {
+            try await APIClient.shared.cancelJob(id: jobID)
+            manageAuctionIsError = false
+            manageAuctionMessage = "Job cancelled."
+            await load()
+        } catch let error as APIClientError where error.isUnauthorized {
+            manageAuctionIsError = true
+            manageAuctionMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            manageAuctionIsError = true
+            manageAuctionMessage = error.localizedDescription
         }
     }
 
