@@ -298,6 +298,12 @@ struct RecurringInstanceEnvelope: Decodable, Sendable {
     var paymentError: String?
     /// Nested payment map when gateway embeds CreatePayment result.
     var payment: ContractPayment?
+    /// True when CreatePayment confirmed+captured off-session (default PM).
+    /// No `client_secret` in this case — PaymentSheet is not needed.
+    var offSessionCharged: Bool?
+    /// Residual when off-session was skipped/failed and on-session may remain
+    /// (e.g. `on_session_residual`, `not_attempted_create_failed`).
+    var offSessionChargeResidual: String?
 }
 
 /// Result of approve-visit or complete+auto-approve: status update plus optional escrow PI.
@@ -308,9 +314,16 @@ struct RecurringApproveResult: Sendable {
     var paymentResidual: String?
     var paymentError: String?
     var payment: ContractPayment?
+    /// Gateway `off_session_charged` — funds already held without PaymentSheet.
+    var offSessionCharged: Bool?
+    var offSessionChargeResidual: String?
 
     /// True when the gateway returned a confirmable (or dev) PaymentIntent secret.
+    /// False when already off-session charged (no secret needed / invent none).
     var hasPayCTA: Bool {
+        if offSessionCharged == true {
+            return false
+        }
         guard let secret = clientSecret?.trimmingCharacters(in: .whitespacesAndNewlines),
               !secret.isEmpty
         else {
@@ -320,6 +333,11 @@ struct RecurringApproveResult: Sendable {
             return true
         }
         return secret.hasPrefix("pi_") && secret.contains("_secret_")
+    }
+
+    /// True when gateway reported successful off-session charge for this visit.
+    var wasOffSessionCharged: Bool {
+        offSessionCharged == true
     }
 }
 

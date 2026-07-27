@@ -11,13 +11,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// recurringPaymentRetryPauseThreshold is FR-16.7 partial: pause the recurring
-// schedule after this many consecutive CreatePayment / setup failures for visit
-// escrow. One-shot off-session charge on CreatePayment (approve/auto-approve)
-// lives in payment service tryRecurringVisitOffSession. Day-0/3/7 *scheduled*
-// charge retries are not implemented here — we store payment_retry_count +
-// next_retry_at and pause at 3 strikes. A job-service ticker logs due rows only
-// (processRecurringPaymentRetries).
+// recurringPaymentRetryPauseThreshold is FR-16.7: pause the recurring schedule
+// after this many consecutive CreatePayment / setup failures for visit escrow.
+// One-shot off-session charge on CreatePayment (approve/auto-approve) lives in
+// payment service tryRecurringVisitOffSession. Day-3/day-7 *scheduled* charge
+// retries are orchestrated by ProcessDueRecurringPaymentRetries (gateway cron):
+// claim due next_retry_at rows → CreatePayment with attempt-N sticky key →
+// reset on success / increment (+ pause at threshold) on failure. Never cancels
+// the contract. Job-service processRecurringPaymentRetries remains discovery/
+// log-only (no payment client in the job mesh).
 const recurringPaymentRetryPauseThreshold = 3
 
 // FR-16.7 day-0 / day-3 / day-7 spacing after a recorded failure:

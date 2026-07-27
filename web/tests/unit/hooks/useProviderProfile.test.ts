@@ -277,4 +277,65 @@ describe('useSetAvailability', () => {
     expect(result.current.data?.schedule?.[0]?.day).toBe('mon');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['providerProfile'] });
   });
+
+  it('merges PUT schedule echo into providerProfile cache so hydrate does not blank', async () => {
+    // Keep inactive cache long enough to observe setQueryData before GC (test qc uses gcTime: 0).
+    client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 60_000 }, mutations: { retry: false } },
+    });
+    client.setQueryData(['providerProfile'], {
+      id: 'prof-1',
+      user_id: 'u-1',
+      business_name: 'Acme',
+      bio: null,
+      service_address: null,
+      service_location: null,
+      service_radius_km: 10,
+      default_payment_timing: 'upfront',
+      default_milestones: [],
+      cancellation_policy: null,
+      warranty_terms: null,
+      instant_enabled: false,
+      instant_available: false,
+      // Simulate PATCH-shaped cache (no schedule key) that would wipe the editor.
+      jobs_completed: 0,
+      avg_response_time_minutes: null,
+      on_time_rate: null,
+      profile_completeness: 0,
+      stripe_onboarding_complete: false,
+      service_categories: [],
+      portfolio: [],
+      member_since: '2026-01-01T00:00:00Z',
+    });
+    vi.mocked(api.put).mockResolvedValueOnce({
+      instant_enabled: true,
+      instant_available: true,
+      schedule: [{ day: 'tue', start_time: '08:00', end_time: '12:00' }],
+    });
+    // Block invalidate-driven refetch from overwriting the merge under test.
+    vi.mocked(api.get).mockImplementation(
+      () => new Promise(() => {
+        /* never settles */
+      }),
+    );
+
+    const { result } = renderHook(() => useSetAvailability(), { wrapper: wrap(client) });
+    result.current.mutate({
+      enabled: true,
+      available_now: true,
+      schedule: [{ day: 'tue', start_time: '08:00', end_time: '12:00' }],
+    });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    const cached = client.getQueryData<{
+      instant_enabled: boolean;
+      instant_available: boolean;
+      schedule?: { day: string }[];
+    }>(['providerProfile']);
+    expect(cached?.instant_enabled).toBe(true);
+    expect(cached?.instant_available).toBe(true);
+    expect(cached?.schedule?.[0]?.day).toBe('tue');
+  });
 });

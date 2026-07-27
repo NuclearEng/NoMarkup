@@ -361,10 +361,10 @@ type processPaymentRequest struct {
 // visit (recurring_instance_id set), FR-18.8 best-effort resumes a paused
 // recurring config so visits generate again after the customer pays. Resume
 // failures never fail the payment response (fail-soft residual fields only).
-// Off-session auto-charge remains residual. FR-16.7 next_retry_at is stored on
-// setup failure (gateway/migration 113); job-service processRecurringPaymentRetries
-// is log-only until charge is wired. CreatePayment failure counting (pause at 3)
-// is wired on approve/auto-approve; this path only resets the counter after capture.
+// FR-16.7: next_retry_at is stored on setup failure (migration 113); gateway
+// ProcessDueRecurringPaymentRetries re-runs CreatePayment with attempt-N when
+// due. CreatePayment failure counting (pause at 3) is wired on approve/
+// auto-approve and scheduled retry; this path only resets the counter after capture.
 func (h *PaymentHandler) ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.GetClaims(r.Context())
 	if !ok {

@@ -321,9 +321,9 @@ func main() {
 		envDuration("FAIR_PRICE_REFRESH_INITIAL_DELAY", 30*time.Second),
 	)
 
-	// FR-16.7 partial: scan recurring_configs.next_retry_at (migration 113) and
-	// log due payment retries. Log-only stub — off-session auto-charge residual.
-	// Gateway stamps next_retry_at on CreatePayment setup failure when count < 3.
+	// FR-16.7 discovery: scan recurring_configs.next_retry_at (migration 113)
+	// and log due rows. Real CreatePayment + off-session attempt-N is gateway
+	// ProcessDueRecurringPaymentRetries (job mesh has no payment client).
 	service.RunRecurringPaymentRetryCron(
 		sigCtx,
 		service.NewRecurringPaymentRetryWorker(pool),

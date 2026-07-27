@@ -43,6 +43,9 @@ type ContractHandler struct {
 	// incr returns (count, nextRetryAt); nextRetryAt is nil at/above threshold.
 	incrPaymentRetryFn  func(ctx context.Context, recurringID string) (int, *time.Time, error)
 	resetPaymentRetryFn func(ctx context.Context, recurringID string) error
+	// FR-16.7 scheduled retry hooks (unit tests); production uses SQL + payment client.
+	claimDueRecurringRetriesFn func(ctx context.Context, limit int) ([]dueRecurringRetry, error)
+	findUnpaidApprovedVisitFn  func(ctx context.Context, recurringID string) (*unpaidApprovedVisit, error)
 }
 
 // NewContractHandler creates a new ContractHandler.
@@ -1655,9 +1658,9 @@ func (h *ContractHandler) recordRecurringPaymentSetupFailure(
 
 	if count < recurringPaymentRetryPauseThreshold {
 		// Below threshold: leave schedule active; stamp next_retry_at for the
-		// day-3 / day-7 worker scan. Customer can still pay the visit manually.
-		// Automatic off-session charge on that schedule is residual (job cron
-		// processRecurringPaymentRetries currently logs only).
+		// day-3 / day-7 gateway worker (ProcessDueRecurringPaymentRetries →
+		// CreatePayment + off-session attempt-N). Customer can still pay the
+		// visit manually via PaymentSheet / POST /payments.
 		result["recurring_paused"] = false
 		logAttrs := []any{
 			"source", source,

@@ -516,6 +516,8 @@ extension APIClient {
     }
 
     /// Maps approve/complete envelope → result with optional real PI fields only.
+    /// Passes through `off_session_charged` so UI can skip PaymentSheet and
+    /// show residual messaging — never invents payment_id / client_secret.
     private static func recurringVisitMoneyResult(
         _ response: RecurringInstanceEnvelope,
         missingDetail: String
@@ -524,6 +526,7 @@ extension APIClient {
             throw APIClientError.httpStatus(502, detail: missingDetail)
         }
         // Prefer top-level client_secret; fall back to nested payment map if present.
+        // When off_session_charged is true, secret is intentionally absent.
         let secret = response.clientSecret
             ?? response.payment?.clientSecret
         let payId = response.paymentId ?? response.payment?.id
@@ -533,7 +536,9 @@ extension APIClient {
             clientSecret: secret,
             paymentResidual: response.paymentResidual,
             paymentError: response.paymentError,
-            payment: response.payment
+            payment: response.payment,
+            offSessionCharged: response.offSessionCharged,
+            offSessionChargeResidual: response.offSessionChargeResidual
         )
     }
 

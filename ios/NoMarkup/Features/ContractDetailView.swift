@@ -2023,15 +2023,30 @@ struct ContractDetailView: View {
             }
             statusIsError = false
             let autoApproved = result.instance.autoApproved == true
-            if result.hasPayCTA {
+            if result.wasOffSessionCharged {
+                // Off-session success: funds held; no PaymentSheet / invent no secret.
+                pendingRecurringPay = nil
+                if let payment = result.payment {
+                    upsertContractPayment(payment)
+                }
+                statusMessage = autoApproved
+                    ? "Visit complete and auto-approved. Saved card charged off-session — \(result.instance.displayAmount) held in escrow."
+                    : "Visit complete. Saved card charged off-session — \(result.instance.displayAmount) held in escrow."
+            } else if result.hasPayCTA {
                 // Gateway CreatePayment on auto-approve — real client_secret only.
                 pendingRecurringPay = result
                 if let payment = result.payment {
                     upsertContractPayment(payment)
                 }
+                let residualHint: String = {
+                    guard let r = result.offSessionChargeResidual?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !r.isEmpty
+                    else { return "" }
+                    return " (on-session residual: \(r))"
+                }()
                 statusMessage = autoApproved
-                    ? "Visit complete and auto-approved. Pay visit when ready to hold escrow (\(result.instance.displayAmount))."
-                    : "Visit marked complete. PaymentIntent ready for \(result.instance.displayAmount)."
+                    ? "Visit complete and auto-approved. Pay visit when ready to hold escrow (\(result.instance.displayAmount)).\(residualHint)"
+                    : "Visit marked complete. PaymentIntent ready for \(result.instance.displayAmount).\(residualHint)"
                 // Pay CTA is customer-only; auto-present if this session is the customer
                 // (unusual for complete, which is provider-only server-side).
                 if let contract, contract.isCustomer(userId: currentUserID) {
@@ -2142,14 +2157,29 @@ struct ContractDetailView: View {
                 recurringInstances[idx] = result.instance
             }
             statusIsError = false
-            if result.hasPayCTA {
+            if result.wasOffSessionCharged {
+                // Default PM already charged off-session — no PaymentSheet.
+                pendingRecurringPay = nil
+                if let payment = result.payment {
+                    upsertContractPayment(payment)
+                }
+                statusMessage =
+                    "Visit approved. Saved card charged off-session — \(result.instance.displayAmount) held in escrow."
+            } else if result.hasPayCTA {
                 // Keep pay CTA; auto-start PaymentSheet when secret is confirmable.
                 pendingRecurringPay = result
                 if let payment = result.payment {
                     upsertContractPayment(payment)
                 }
+                let residualHint: String = {
+                    guard let r = result.offSessionChargeResidual?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !r.isEmpty
+                    else { return "" }
+                    // e.g. on_session_residual after skip/decline/SCA — pay in-app.
+                    return " (on-session residual: \(r))"
+                }()
                 statusMessage =
-                    "Visit approved. Complete payment for \(result.instance.displayAmount) to hold escrow."
+                    "Visit approved. Complete payment for \(result.instance.displayAmount) to hold escrow.\(residualHint)"
                 // Present sheet immediately (CTA remains if user cancels).
                 if let contract {
                     await payRecurringInstanceEscrow(result, contract: contract)

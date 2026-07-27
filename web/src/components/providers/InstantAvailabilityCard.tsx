@@ -1,7 +1,8 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, Zap } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -81,8 +82,13 @@ function buildWindows(draft: Record<DayCode, DayDraft>): AvailabilityWindowInput
  * PUT `/providers/me/availability` with correct wire keys (`enabled`,
  * `available_now`, `schedule`). Always re-sends schedule so toggles do not
  * wipe saved windows.
+ *
+ * Hydration: owner GET `/providers/me` always includes `schedule` (possibly []).
+ * PATCH/terms omit the key. When the key is missing, re-invalidate GET and do
+ * **not** blank local day drafts (iOS parity).
  */
 export function InstantAvailabilityCard({ className }: { className?: string }) {
+  const queryClient = useQueryClient();
   const { data: profile, isLoading } = useProviderProfile();
   const setAvailability = useSetAvailability();
 
@@ -91,15 +97,31 @@ export function InstantAvailabilityCard({ className }: { className?: string }) {
   // Track last hydrated profile identity so we re-seed after query invalidation
   // without fighting in-progress local edits on every render.
   const [hydratedKey, setHydratedKey] = useState<string | null>(null);
+  // Avoid hammering invalidate when profile stays PATCH-shaped without schedule.
+  const scheduleRefetchRequested = useRef(false);
 
   useEffect(() => {
     if (!profile) return;
-    const key = `${profile.id}|${String(profile.instant_available)}|${JSON.stringify(profile.schedule ?? [])}`;
+
+    // Missing key (not empty array): re-GET so weekly windows can hydrate.
+    // Do not treat undefined as "no windows" — that would wipe a good draft.
+    if (profile.schedule === undefined) {
+      if (!scheduleRefetchRequested.current) {
+        scheduleRefetchRequested.current = true;
+        void queryClient.invalidateQueries({ queryKey: ['providerProfile'] });
+      }
+      // Still sync available-now; leave day drafts alone until schedule arrives.
+      setAvailableNow(Boolean(profile.instant_available));
+      return;
+    }
+
+    scheduleRefetchRequested.current = false;
+    const key = `${profile.id}|${String(profile.instant_available)}|${JSON.stringify(profile.schedule)}`;
     if (key === hydratedKey) return;
     setAvailableNow(Boolean(profile.instant_available));
     setDays(hydrateFromSchedule(profile.schedule));
     setHydratedKey(key);
-  }, [profile, hydratedKey]);
+  }, [profile, hydratedKey, queryClient]);
 
   const enabledDays = useMemo(
     () => WEEK_DAYS.filter((d) => days[d.code].enabled).length,

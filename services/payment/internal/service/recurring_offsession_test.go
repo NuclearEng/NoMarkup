@@ -315,7 +315,7 @@ func TestTryRecurringVisitOffSession_OneAttemptKey(t *testing.T) {
 	// Seed payment in repo for claim paths (won't be reached on decline).
 	require.NoError(t, repo.createPaymentFn(context.Background(), payment))
 
-	funded := svc.tryRecurringVisitOffSession(context.Background(), payment, "cust-1")
+	funded := svc.tryRecurringVisitOffSession(context.Background(), payment, "cust-1", 1)
 	assert.False(t, funded)
 
 	// Same attempt key replays decline (Stripe/DevStore semantics).

@@ -12,11 +12,11 @@ import (
 // RecurringPaymentRetryWorker scans recurring_configs due for an FR-16.7
 // scheduled payment retry (next_retry_at <= now, status active, count < 3).
 //
-// Residual: this worker only logs due rows. It does NOT create PaymentIntents,
-// charge off-session, or call CreatePayment. Full day-0/3/7 automatic charge
-// remains product residual until an off-session rail is wired. The durable
-// schedule lives in next_retry_at (migration 113); gateway increments the
-// counter and stamps next_retry_at on CreatePayment setup failures.
+// Discovery / ops visibility only. The job mesh has no payment gRPC client;
+// real CreatePayment + off-session attempt-N is owned by the gateway cron
+// ProcessDueRecurringPaymentRetries (see gateway/internal/handler/
+// recurring_payment_retry_worker.go). Gateway stamps next_retry_at on
+// CreatePayment setup failures (migration 113) and clears it on success.
 type RecurringPaymentRetryWorker struct {
 	pool *pgxpool.Pool
 }
@@ -35,13 +35,11 @@ type dueRecurringPaymentRetry struct {
 	NextRetryAt       time.Time
 }
 
-// ProcessRecurringPaymentRetries is the cron entrypoint. Selects a bounded
-// batch of active recurring configs whose next_retry_at is due and logs each
-// one. Returns the number of due rows observed (not acted on). Fail-soft on
-// DB errors so a tick never takes down the job service.
-//
-// STUB: no money movement. When off-session charge ships, replace the log body
-// with CreatePayment / ProcessPayment orchestration (idempotent per visit).
+// ProcessRecurringPaymentRetries is the job-service cron entrypoint. Selects a
+// bounded batch of active recurring configs whose next_retry_at is due and logs
+// each one for ops. Returns the number of due rows observed. Does not create
+// PaymentIntents or call CreatePayment — charge orchestration is gateway-side.
+// Fail-soft on DB errors so a tick never takes down the job service.
 func (w *RecurringPaymentRetryWorker) ProcessRecurringPaymentRetries(ctx context.Context, limit int) (int, error) {
 	if w == nil || w.pool == nil {
 		return 0, fmt.Errorf("recurring payment retry worker: database pool unwired")
@@ -81,24 +79,25 @@ func (w *RecurringPaymentRetryWorker) ProcessRecurringPaymentRetries(ctx context
 		return 0, nil
 	}
 
-	// Log-only residual: surface due work for ops without charging.
+	// Discovery log: gateway charge cron claims these rows; this scan is
+	// observability when gateway is down or lagging.
 	for _, r := range due {
-		slog.InfoContext(ctx, "FR-16.7 residual: due recurring payment retry (no auto-charge; log-only stub)",
+		slog.InfoContext(ctx, "FR-16.7: due recurring payment retry (job discovery; charge is gateway CreatePayment)",
 			"recurring_id", r.ID,
 			"contract_id", r.ContractID,
 			"payment_retry_count", r.PaymentRetryCount,
 			"next_retry_at", r.NextRetryAt.UTC().Format(time.RFC3339),
-			"action", "log_only_no_charge",
+			"action", "discovery_only_gateway_charges",
 		)
 	}
-	slog.InfoContext(ctx, "FR-16.7 processRecurringPaymentRetries tick complete (stub)",
+	slog.InfoContext(ctx, "FR-16.7 processRecurringPaymentRetries tick complete (job discovery)",
 		"due_count", len(due),
 		"limit", limit,
 	)
 	return len(due), nil
 }
 
-// RunRecurringPaymentRetryCron starts the FR-16.7 due-scan ticker (log-only).
+// RunRecurringPaymentRetryCron starts the FR-16.7 due-scan ticker (discovery).
 // Interval defaults to 1 hour — retries are day-scale so sub-hour ticks waste
 // cycles. Initial delay keeps deploy storms from hammering Postgres.
 // Stops when ctx is cancelled.
@@ -118,7 +117,7 @@ func RunRecurringPaymentRetryCron(ctx context.Context, w *RecurringPaymentRetryW
 	}
 
 	go func() {
-		slog.Info("FR-16.7 recurring payment retry cron starting (log-only stub; off-session charge residual)",
+		slog.Info("FR-16.7 job recurring payment retry cron starting (discovery only; charge is gateway)",
 			"interval", interval.String(),
 			"initial_delay", initialDelay.String(),
 			"batch_limit", batchLimit,
@@ -141,7 +140,7 @@ func RunRecurringPaymentRetryCron(ctx context.Context, w *RecurringPaymentRetryW
 				return
 			}
 			if n > 0 {
-				slog.Info("FR-16.7 processRecurringPaymentRetries: due rows logged (no charge)",
+				slog.Info("FR-16.7 processRecurringPaymentRetries: due rows logged (gateway charges)",
 					"due_count", n,
 				)
 			}

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -387,8 +389,12 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 	// a default payment method exists. Never invent money: success only after
 	// confirm (+ capture for manual-capture PIs) and status → escrow. On any
 	// skip/fail leave the on-session PI + client_secret for PaymentSheet.
+	// FR-16.7 scheduled retries pass attempt-N via IdempotencyKey suffix
+	// (recurring-instance-pay:{instance}:attempt-N) so Stripe does not replay
+	// a cached decline from attempt-1.
 	if input.RecurringInstanceID != nil && *input.RecurringInstanceID != "" {
-		if funded := s.tryRecurringVisitOffSession(ctx, payment, input.CustomerID); funded {
+		attempt := offSessionAttemptFromIdempotencyKey(input.IdempotencyKey)
+		if funded := s.tryRecurringVisitOffSession(ctx, payment, input.CustomerID, attempt); funded {
 			if updated, gerr := s.repo.GetPayment(ctx, payment.ID); gerr == nil && updated != nil {
 				payment = updated
 				if payment.StripePaymentIntentID == "" {
@@ -401,12 +407,28 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 				"payment_id", payment.ID,
 				"recurring_instance_id", *input.RecurringInstanceID,
 				"pi_id", piID,
+				"off_session_attempt", attempt,
 			)
 			return payment, "", nil
 		}
 	}
 
 	return payment, clientSecret, nil
+}
+
+// offSessionAttemptFromIdempotencyKey parses trailing ":attempt-N" from a
+// sticky CreatePayment key (FR-16.7). Missing / invalid → attempt 1 (day-0).
+func offSessionAttemptFromIdempotencyKey(key string) int {
+	const marker = ":attempt-"
+	i := strings.LastIndex(key, marker)
+	if i < 0 {
+		return 1
+	}
+	n, err := strconv.Atoi(key[i+len(marker):])
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
 }
 
 // tryRecurringVisitOffSession performs a single merchant-initiated charge
@@ -417,11 +439,14 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 //   - Returns false on missing instrument, SCA, decline, capture failure, or
 //     provisioner unwired — caller keeps the on-session client_secret residual.
 //   - Does not mark the payment failed (visit stays payable on-session).
-//   - One attempt only (attempt-1 idempotency key); soft-replay of CreatePayment
-//     does not re-enter this path.
-func (s *PaymentService) tryRecurringVisitOffSession(ctx context.Context, payment *domain.Payment, customerID string) bool {
+//   - Attempt-scoped Stripe idempotency (attempt-N). FR-16.7 scheduled retries
+//     pass N>1 so a prior decline is not cached forever under attempt-1.
+func (s *PaymentService) tryRecurringVisitOffSession(ctx context.Context, payment *domain.Payment, customerID string, attempt int) bool {
 	if payment == nil || payment.StripePaymentIntentID == "" || customerID == "" {
 		return false
+	}
+	if attempt < 1 {
+		attempt = 1
 	}
 	if s.customers == nil {
 		slog.InfoContext(ctx, "FR-18: off-session skip — customer provisioner unwired",
@@ -450,9 +475,9 @@ func (s *PaymentService) tryRecurringVisitOffSession(ctx context.Context, paymen
 		return false
 	}
 
-	// Attempt-scoped key: a future FR-16.7 scheduled retry can use attempt-N
-	// without Stripe replaying a cached decline from attempt-1.
-	idemKey := fmt.Sprintf("recurring-visit-offsession:%s:attempt-1", payment.ID)
+	// Attempt-scoped key: FR-16.7 scheduled retry uses attempt-N so Stripe does
+	// not replay a cached decline from attempt-1.
+	idemKey := fmt.Sprintf("recurring-visit-offsession:%s:attempt-%d", payment.ID, attempt)
 	status, confirmErr := s.stripe.ConfirmOffSessionPaymentIntent(ctx, payment.StripePaymentIntentID, paymentMethodID, idemKey)
 	if confirmErr != nil {
 		outcome, _ := classifyChargeError(confirmErr)
@@ -585,6 +610,24 @@ func (s *PaymentService) softReplayCreatePayment(ctx context.Context, input doma
 			)
 			return nil, "", fmt.Errorf("create payment soft-replay: %w", domain.ErrPaymentIntentMissing)
 		}
+		// FR-16.7: scheduled retry with attempt-N re-enters off-session on a
+		// still-pending visit PI (new Stripe confirm key; never invent money).
+		attempt := offSessionAttemptFromIdempotencyKey(input.IdempotencyKey)
+		if attempt > 1 && existing.Status == "pending" &&
+			input.RecurringInstanceID != nil && *input.RecurringInstanceID != "" {
+			if funded := s.tryRecurringVisitOffSession(ctx, existing, input.CustomerID, attempt); funded {
+				if updated, gerr := s.repo.GetPayment(ctx, existing.ID); gerr == nil && updated != nil {
+					existing = updated
+				} else {
+					existing.Status = "escrow"
+				}
+				slog.InfoContext(ctx, "FR-16.7: soft-replay re-off-session funded visit",
+					"payment_id", existing.ID,
+					"off_session_attempt", attempt,
+				)
+				return existing, "", nil
+			}
+		}
 		secret, secErr := s.stripe.GetPaymentIntentClientSecret(ctx, existing.StripePaymentIntentID)
 		if secErr != nil || secret == "" {
 			slog.WarnContext(ctx, "create payment soft-replay: could not re-read client_secret (fail closed)",
@@ -611,10 +654,136 @@ func (s *PaymentService) softReplayCreatePayment(ctx context.Context, input doma
 		)
 		return existing, "", nil
 
+	case "failed":
+		// FR-16.7: one payment row per recurring_instance (migration 111). A
+		// prior Stripe setup failure left status=failed; remint a new PI on
+		// the same row using the attempt-scoped IdempotencyKey. Never invent
+		// money — only succeeds after a real Stripe PI is created.
+		if input.RecurringInstanceID != nil && *input.RecurringInstanceID != "" {
+			return s.remintFailedRecurringVisitPayment(ctx, existing, input)
+		}
+		return nil, "", fmt.Errorf("create payment soft-replay: status %q not reusable: %w", existing.Status, domain.ErrInvalidStatus)
+
 	default:
-		// failed / refunded / disputed / etc. — not soft-replayable into a new charge.
+		// refunded / disputed / etc. — not soft-replayable into a new charge.
 		return nil, "", fmt.Errorf("create payment soft-replay: status %q not reusable: %w", existing.Status, domain.ErrInvalidStatus)
 	}
+}
+
+// remintFailedRecurringVisitPayment replaces a failed visit payment's Stripe PI
+// (same payments.id / recurring_instance_id) and optionally re-attempts off-session.
+// Fail-soft: on Stripe error the row stays failed (or is re-marked failed).
+func (s *PaymentService) remintFailedRecurringVisitPayment(
+	ctx context.Context,
+	existing *domain.Payment,
+	input domain.CreatePaymentInput,
+) (*domain.Payment, string, error) {
+	if existing == nil {
+		return nil, "", fmt.Errorf("remint failed recurring visit: %w", domain.ErrPaymentNotFound)
+	}
+	// Amount must still be valid vs contract (defense in depth).
+	if input.AmountCents <= 0 {
+		input.AmountCents = existing.AmountCents
+	}
+	if input.AmountCents <= 0 {
+		return nil, "", fmt.Errorf("remint failed recurring visit: %w", domain.ErrInvalidAmount)
+	}
+
+	providerAccountID, err := s.repo.GetStripeAccountID(ctx, existing.ProviderID)
+	if err != nil {
+		return nil, "", fmt.Errorf("remint failed recurring visit: %w", err)
+	}
+	breakdown, err := s.CalculateFees(ctx, input.AmountCents, input.CategoryID)
+	if err != nil {
+		return nil, "", fmt.Errorf("remint failed recurring visit: %w", err)
+	}
+	totalFee := breakdown.PlatformFeeCents + breakdown.GuaranteeFeeCents + breakdown.LeadGenFeeCents
+
+	idempotencyKey := input.IdempotencyKey
+	if idempotencyKey == "" {
+		idempotencyKey = fmt.Sprintf("recurring-instance-pay:%s:remint-%s", derefStr(input.RecurringInstanceID), uuid.New().String())
+	}
+
+	customerStripeID := ""
+	if s.customers != nil {
+		if cus, lookupErr := s.customers.Lookup(ctx, input.CustomerID); lookupErr == nil {
+			customerStripeID = cus
+		}
+	}
+
+	piID, clientSecret, err := s.stripe.CreatePaymentIntent(ctx, input.AmountCents, "usd", providerAccountID, totalFee, idempotencyKey, customerStripeID)
+	if err != nil {
+		slog.WarnContext(ctx, "FR-16.7: remint CreatePaymentIntent failed; payment stays failed",
+			"payment_id", existing.ID,
+			"error", err,
+		)
+		return nil, "", fmt.Errorf("remint failed recurring visit stripe: %w", err)
+	}
+
+	// Reactivate row: pending + new PI. Claim only from failed so concurrent remints
+	// do not clobber a concurrent capture path.
+	if claimErr := s.repo.ClaimPaymentStatus(ctx, existing.ID, "failed", "pending"); claimErr != nil {
+		// Concurrent success may have moved status — soft-reload.
+		if current, gerr := s.repo.GetPayment(ctx, existing.ID); gerr == nil && current != nil {
+			switch current.Status {
+			case "escrow", "released", "completed", "processing", "pending":
+				slog.InfoContext(ctx, "FR-16.7: remint claim lost; returning current payment",
+					"payment_id", existing.ID,
+					"status", current.Status,
+				)
+				if current.Status == "pending" || current.Status == "processing" {
+					if current.StripePaymentIntentID != "" {
+						if secret, secErr := s.stripe.GetPaymentIntentClientSecret(ctx, current.StripePaymentIntentID); secErr == nil {
+							return current, secret, nil
+						}
+					}
+				}
+				return current, "", nil
+			}
+		}
+		return nil, "", fmt.Errorf("remint failed recurring visit claim: %w", claimErr)
+	}
+	if err := s.repo.UpdateStripeFields(ctx, existing.ID, piID, "", ""); err != nil {
+		_ = s.repo.UpdatePaymentStatus(ctx, existing.ID, "failed")
+		return nil, "", fmt.Errorf("remint failed recurring visit update stripe: %w", err)
+	}
+
+	payment, err := s.repo.GetPayment(ctx, existing.ID)
+	if err != nil {
+		return nil, "", err
+	}
+	if payment.StripePaymentIntentID == "" {
+		payment.StripePaymentIntentID = piID
+	}
+
+	attempt := offSessionAttemptFromIdempotencyKey(idempotencyKey)
+	if funded := s.tryRecurringVisitOffSession(ctx, payment, input.CustomerID, attempt); funded {
+		if updated, gerr := s.repo.GetPayment(ctx, payment.ID); gerr == nil && updated != nil {
+			payment = updated
+		} else {
+			payment.Status = "escrow"
+		}
+		slog.InfoContext(ctx, "FR-16.7: reminted visit charged off-session",
+			"payment_id", payment.ID,
+			"pi_id", piID,
+			"off_session_attempt", attempt,
+		)
+		return payment, "", nil
+	}
+
+	slog.InfoContext(ctx, "FR-16.7: reminted visit PI; on-session residual",
+		"payment_id", payment.ID,
+		"pi_id", piID,
+		"off_session_attempt", attempt,
+	)
+	return payment, clientSecret, nil
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // loadPaymentForSoftReplay prefers recurring_instance_id (dual-key race between

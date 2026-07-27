@@ -154,7 +154,19 @@ export function useSetAvailability() {
           schedule: input.schedule ?? [],
         })
         .then((res) => res),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Merge PUT echo into cache so the weekly editor keeps windows even if a
+      // concurrent PATCH-shaped profile (no `schedule` key) lands before GET.
+      queryClient.setQueryData<ProviderProfile | null>(['providerProfile'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          instant_enabled: data.instant_enabled,
+          instant_available: data.instant_available,
+          // PUT always echoes schedule (possibly []); prefer it over missing key.
+          schedule: data.schedule ?? old.schedule ?? [],
+        };
+      });
       void queryClient.invalidateQueries({ queryKey: ['providerProfile'] });
     },
   });

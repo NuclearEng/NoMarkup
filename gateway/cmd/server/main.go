@@ -536,6 +536,17 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// FR-16.7: when next_retry_at is due, re-run CreatePayment with attempt-N
+	// sticky keys (off-session confirm inside payment service). Never cancels
+	// contracts; 3-strike pause via existing payment_retry_count helpers.
+	handler.RunRecurringPaymentRetryCron(
+		ctx,
+		contractHandler,
+		handler.RecurringPaymentRetryIntervalFromEnv(),
+		handler.RecurringPaymentRetryInitialDelayFromEnv(),
+		handler.RecurringPaymentRetryBatchFromEnv(),
+	)
+
 	go func() {
 		slog.Info("gateway starting", "port", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

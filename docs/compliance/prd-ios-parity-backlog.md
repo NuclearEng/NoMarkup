@@ -62,7 +62,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 | Security gate | PASS WITH GAPS — money races residual (ADR) |
 | Perf gate | Samples PASS; parent closed PASS from samples where marked |
 | iOS ↔ web matrix | Near-live core; OAuth social, native WS, StoreKit/admin intentionally incomplete |
-| **FR-18 per-instance Stripe pay** | Config/instances/pause/resume/cancel + lazy roll-forward **shipped**; **per-instance PaymentIntent/escrow still residual** (large surface) |
+| **FR-18 per-instance Stripe pay** | Config/instances/pause/resume/cancel + lazy roll-forward + approve/complete CreatePayment + one off-session attempt + FR-16.7 due-row gateway CreatePayment retry **shipped**; iOS shows `off_session_charged`. Residual: dogfood + webhook first-fail pause |
 
 ---
 
@@ -82,7 +82,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 
 | Strength | Weak / missing |
 |----------|----------------|
-| Contracts lifecycle, guarantee claim, notifications/prefs | **FR-18 per-instance payment** residual |
+| Contracts lifecycle, guarantee claim, notifications/prefs | FR-18 visit PI + off-session + FR-16.7 due-row CreatePayment retry shipped |
 | Properties CRUD + dashboard lite, referrals, FinServ hub (flagged) | Full FR-19 spend analytics depth |
 | Trust scores / verification upload | — |
 | Dual-rail goods + services shell | Instant AI/ETA Phase 2 |
@@ -103,9 +103,9 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 
 | Area | PRD | Gap |
 |------|-----|-----|
-| Chat | FR-8 | Poll + attachments/search shipped; native WS/typing/receipts residual |
-| Recurring | FR-18 | Lifecycle + roll-forward live; **Stripe per-instance pay residual** |
-| Instant | §13 | iOS + web Instant schedule GET/PUT shipped; JobDetail re-request; push/ETA/AI + **schedule consume on match fan-out** residual |
+| Chat | FR-8 | Attachments/search + native WS/typing shipped; receipts polish residual |
+| Recurring | FR-18 | Lifecycle + roll-forward + approve/complete CreatePayment + off-session + FR-16.7 due-row gateway retry **shipped**; iOS surfaces `off_session_charged` |
+| Instant | §13 | iOS + web Instant schedule GET/PUT + hydrate; ListProviderOffers/Accept **consume schedule** (wave12); push/ETA/AI Phase 2 residual |
 | Digital subs | FR-12 | Read-only tiers; StoreKit deferred |
 | Social OAuth | FR-1.1 | **Google native shipped** (ASWebAuth+PKCE → `/auth/google/native`); needs `GOOGLE_IOS_CLIENT_ID` + reverse URL scheme for dogfood. Facebook still not on iOS |
 | Admin / fraud UI | FR-7/13 | Correctly **web-only** |
@@ -114,14 +114,16 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 
 ## 4. Unified backlog (execute in order)
 
-### Engineering residual status (2026-07-27 wave4)
+### Engineering residual status (2026-07-27 wave13)
 
 **Consumer iOS product surface for PRD MVP depth is largely implemented.** Remaining unchecked items are:
 1. **Human/ops-gated** (ASC, device smoke sign-off, always-on review API, Apple Pay domain file, Google iOS client IDs in Console)
 2. **Accepted risk / licenses** (MON-14–18, R6.2–R6.6, Checkr, mTLS, StoreKit B2)
-3. **Thin polish residuals** (off-session auto-charge on FR-16.7 due rows; Instant match **consume** schedule when fan-out exists). next_retry_at + log-only job ticker shipped (wave12).
-
-
+3. **Thin polish residuals (honest, as of wave14):**
+   - **FR-16.7 due-row auto-charge** — **shipped (gateway)**: `ProcessDueRecurringPaymentRetries` claims due `next_retry_at` → CreatePayment with `attempt-N` sticky key; payment service remints failed rows + re-off-session with attempt-N. Job-service ticker remains discovery-only (no payment client). Residual: live Stripe dogfood of day-3/7 path; webhook first-failure still pauses immediately (FR-18.8) rather than joining the 3-strike schedule.
+   - **Instant AI / ETA / push polish** — schedule window **is** consumed on ListProviderOffers + Accept (wave12). Do not re-list “schedule consume on fan-out” as open.
+   - **Chat receipts polish** — WS + typing live; full receipt UX residual.
+   - **FR-18 per-instance pay** — approve/auto-approve CreatePayment + soft-replay + off-session + iOS/web pay CTAs + scheduled retry cron **shipped**. Edge residuals only.
 
 Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted residual · **`[~] ops`** = human/ops only (not an eng task)
 
@@ -134,11 +136,15 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 - [~] **ops** **ASC packaging** — Team signing, ASC app record, 1024 icon, 6.7" + 12.9" screenshots, privacy labels, age rating, free-tier Review Notes paste  
 - [~] **ops** **PRE-05 review backend** — Always-on review API + seed + `APPLE_NATIVE_CLIENT_ID` + Stripe `pk_` for Apple Pay dogfood  
 - [~] **ops** **Device smoke** — Human-execute `device-smoke-checklist.md` + sign `launch-board.md` (auto smoke ≠ signed)  
-- [~] **FR-18 recurring** — Config/instances/pause/resume/cancel + lazy roll-forward on list **+ tests**; **Stripe per-instance pay still residual** (leave open; not a quick close)  
-- [x] **GET Instant schedule** — Owner GET `/providers/me` returns `schedule`; iOS + web hydrate weekly editor  
+- [x] **FR-18 recurring** — Config/instances/pause/resume/cancel + lazy roll-forward **+ tests** + approve/complete CreatePayment + off-session attempt + iOS pay/`off_session_charged` + FR-16.7 scheduled due-row CreatePayment retry (gateway) **shipped**  
+
+- [x] **GET Instant schedule** — Owner GET `/providers/me` returns `schedule`; iOS + web hydrate weekly editor (web: re-GET when key missing; PUT merges schedule into cache)  
 - [x] **Web Instant schedule PUT** — Correct wire keys (`enabled`/`available_now`/`schedule`) + UI on provider dashboard/offers  
+- [x] **Instant schedule consume on fan-out** — ListProviderOffers/Accept gate by `available_now` OR in-window schedule (wave12)  
 - [x] **Marketplace retract parity** — Web listing detail + My Bids (iOS both); 60s leading-bid window  
-- [~] **FR-16.7 payment retries** — Migration 112 (`payment_retry_count`) + 113 (`next_retry_at` day-3/day-7 after setup fail when count < 3) + 3-strike pause; job-service `processRecurringPaymentRetries` **log-only** cron. **Residual: off-session auto-charge when due**  
+- [x] **FR-16.7 payment retries** — Migration 112/113 + 3-strike pause; gateway `ProcessDueRecurringPaymentRetries` claims due rows → CreatePayment `attempt-N` (off-session re-confirm + failed remint); success resets; fail increments/pauses at 3; never cancels contract. Job ticker discovery-only. Residual: Stripe dogfood; webhook charge-fail still pauses immediately (FR-18.8).  
+
+- [x] **iOS off_session_charged UX** — Decode + surface gateway `off_session_charged` / residual on approve + complete visit (no PaymentSheet when funded)  
 
 
 - [x] **FR-1.5–1.9 onboarding** — VerificationCenter + multi-step OnboardingWizardView (skip-friendly) shipped  
@@ -234,4 +240,6 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 
 | 2026-07-27 wave10 | Resume recurring on ProcessPayment; webhook payment_failed→pause; Instant weekly schedule iOS; local_terms + goods retract on MyBids |
 | 2026-07-27 wave11 | GET `/providers/me` `schedule` + iOS hydrate; web Instant schedule PUT+UI; listing detail retract; FR-16.7 setup-failure 3-strike pause (migration 112); contract local_terms verified on iOS |
-| 2026-07-27 wave12 | FR-16.7 `next_retry_at` (migration 113) on setup fail when count < 3; reset clears it; job-service `processRecurringPaymentRetries` log-only cron; off-session charge residual; iOS Instant schedule after GetMe re-verified |
+| 2026-07-27 wave12 | FR-16.7 `next_retry_at` (migration 113) on setup fail when count < 3; reset clears it; job-service `processRecurringPaymentRetries` log-only cron; approve-path off-session attempt; Instant schedule fan-out gate; iOS Instant schedule after GetMe re-verified |
+| 2026-07-27 wave13 | Web Instant schedule hydrate from GET when key missing + PUT cache merge; iOS `off_session_charged` messaging on contract visit pay; backlog thin-residuals honesty (schedule consume + approve off-session closed; due-row auto-charge still log-only) |
+| 2026-07-27 wave14 | FR-16.7 gateway `ProcessDueRecurringPaymentRetries` CreatePayment+attempt-N when `next_retry_at` due; payment remint failed + re-off-session; job ticker discovery-only; never cancel contract |
