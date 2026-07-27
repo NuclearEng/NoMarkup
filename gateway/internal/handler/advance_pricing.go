@@ -32,11 +32,15 @@ const (
 	// provider matches the term used to charge them.
 	defaultAdvanceTermDays = 30
 
-	// advanceServiceFeeRate mirrors domain.AdvanceServiceFeeRate (3% flat
+	// advanceServiceFeeBps mirrors domain.AdvanceServiceFeeBps (300 = 3% flat
 	// origination/service fee on principal). Kept here so the gateway can show
 	// an itemized quote without an extra round-trip.
-	advanceServiceFeeRate = 0.03
+	advanceServiceFeeBps int64 = 300
 )
+
+// advanceServiceFeeRate is the fractional form of advanceServiceFeeBps for API
+// display only (service_fee_rate JSON). Fee cents are never derived from this.
+const advanceServiceFeeRate = float64(advanceServiceFeeBps) / 10000.0
 
 // businessCreditScore: 0-100 from repayment history, completed-job volume, and
 // earnings. onTimeRate nil → neutral baseline (no advance history yet).
@@ -113,16 +117,40 @@ func dynamicAPRBps(score int) int {
 }
 
 // advanceServiceFeeCents mirrors domain.AdvanceServiceFeeCents — the flat 3%
-// origination/service fee on principal, rounded to the nearest cent.
+// origination/service fee on principal, half-up via integer basis points (MON-24).
 func advanceServiceFeeCents(amountCents int64) int64 {
-	return int64(math.Round(float64(amountCents) * advanceServiceFeeRate))
+	if amountCents <= 0 {
+		return 0
+	}
+	const scale int64 = 10000
+	bps := advanceServiceFeeBps
+	whole := (amountCents / scale) * bps
+	rem := (amountCents % scale) * bps
+	out := whole + rem/scale
+	if (rem%scale)*2 >= scale {
+		out++
+	}
+	return out
 }
 
 // advanceInterestCents mirrors computeAdvanceFeeCentsAPR in the payment service:
-// simple interest = principal × APR × (termDays / 365), to the nearest cent.
+// simple interest = principal × APR × (termDays / 365), half-up integer proration.
 func advanceInterestCents(amountCents int64, aprBps, termDays int) int64 {
 	if termDays <= 0 {
 		termDays = defaultAdvanceTermDays
 	}
-	return int64(math.Round(float64(amountCents) * float64(aprBps) / 10000.0 * float64(termDays) / 365.0))
+	if amountCents <= 0 || aprBps <= 0 || termDays <= 0 {
+		return 0
+	}
+	// (amount * bps * term) / (10000 * 365), half-up. Same rational as
+	// payment/service.prorateHalfUp for realistic principal/APR domains.
+	const scale int64 = 10000
+	const daysPerYear int64 = 365
+	num := amountCents * int64(aprBps) * int64(termDays)
+	den := scale * daysPerYear
+	out := num / den
+	if (num%den)*2 >= den {
+		out++
+	}
+	return out
 }

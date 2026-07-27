@@ -95,8 +95,11 @@ card fails must be told, or the 72h window is a countdown they cannot see.
 
 ## What this does not fix
 
-Bid bonds remain unusable as a payment instrument: the table has no
-payment-method column and the handler discards the `payment_method_id` it
-receives. They deter no-shows only in the sense that the bidder went through
-a card-setup flow — there is nothing capturable. Capture-on-no-show is still
-future work and is documented as such rather than implied.
+Bid bonds now persist a capturable PaymentMethod on authorize (migration
+`114_bid_bond_payment_method`, `bid_bonds.stripe_payment_method_id`;
+`ConfirmBidBond` requires a non-empty PM from `GetSetupIntentStatus` or sets
+`pm_dev_<bond_id>` in the development nil-client short-circuit; soft-replay of
+legacy authorized rows with NULL PM is unchanged). Capture-on-no-show is still
+future work (cron / state-machine) and is documented as such rather than
+implied — the column is the artifact that cron will charge, not the charge
+itself.

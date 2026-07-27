@@ -215,7 +215,8 @@ func (h *InstantMatchHandler) CreateInstantMatch(w http.ResponseWriter, r *http.
 	h.cache.SetJSON(r.Context(), redisKey, rec, instantMatchTTL)
 
 	// Fan-out in-app notifications to eligible Instant providers (fail-soft).
-	// Makes "providers notified" honest; providers still also poll the inbox.
+	// Geo/category/trust SQL prefilter + schedule gate. Providers still poll inbox.
+	matchCtx := h.loadInstantJobMatchContext(r.Context(), jobID, job)
 	notified := h.notifyInstantOfferToProviders(
 		r.Context(),
 		claims.UserID,
@@ -223,6 +224,7 @@ func (h *InstantMatchHandler) CreateInstantMatch(w http.ResponseWriter, r *http.
 		job.GetTitle(),
 		rec.AmountCents,
 		expiresAt,
+		matchCtx,
 	)
 
 	slog.Info("instant match created",
@@ -577,32 +579,128 @@ func (h *InstantMatchHandler) DeclineOffer(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "declined"})
 }
 
+// instantJobMatchContext is optional geo/category for Instant notify prefilter.
+// Missing geo/category fails soft (broader fan-out) rather than aborting Create.
+type instantJobMatchContext struct {
+	HasGeo      bool
+	Lat         float64
+	Lng         float64
+	CategoryIDs []string // non-empty UUIDs from job category tree
+}
+
+// loadInstantJobMatchContext loads job lat/lng from PostGIS and category IDs from
+// the already-fetched job proto (fail-soft on missing pieces).
+func (h *InstantMatchHandler) loadInstantJobMatchContext(
+	ctx context.Context,
+	jobID string,
+	job *jobv1.Job,
+) instantJobMatchContext {
+	out := instantJobMatchContext{}
+	if job != nil {
+		if cat := job.GetCategory(); cat != nil && cat.GetId() != "" {
+			out.CategoryIDs = append(out.CategoryIDs, cat.GetId())
+		}
+		if sub := job.GetSubcategory(); sub != nil && sub.GetId() != "" {
+			out.CategoryIDs = append(out.CategoryIDs, sub.GetId())
+		}
+		if st := job.GetServiceType(); st != nil && st.GetId() != "" {
+			out.CategoryIDs = append(out.CategoryIDs, st.GetId())
+		}
+	}
+	if h.db == nil || jobID == "" {
+		return out
+	}
+	var lat, lng *float64
+	err := h.db.QueryRow(ctx, `
+		SELECT ST_Y(COALESCE(service_location, approximate_location)),
+		       ST_X(COALESCE(service_location, approximate_location))
+		  FROM jobs
+		 WHERE id = $1 AND deleted_at IS NULL`,
+		jobID,
+	).Scan(&lat, &lng)
+	if err != nil {
+		slog.WarnContext(ctx, "instant match: job geo lookup failed (fan-out without geo filter)",
+			"job_id", jobID,
+			"error", err,
+		)
+		return out
+	}
+	if lat != nil && lng != nil && !(*lat == 0 && *lng == 0) {
+		out.HasGeo = true
+		out.Lat = *lat
+		out.Lng = *lng
+	}
+	return out
+}
+
 // notifyInstantOfferToProviders fans out job_matched in-app notifications to
 // Instant-eligible providers. Fail-soft; returns how many recipients were
-// attempted (preference suppression still counts as notified attempt at DB
-// layer only when insert happens — we count eligibility + emit call).
+// notified (eligibility + emit call).
 //
-// Eligibility: instant_enabled + (available_now OR in schedule window), same
-// gate as ListProviderOffers. Geo/category/trust filters remain Phase 2.
+// Prefilter (SQL): instant_enabled, active user, not under_review trust,
+// optional category match, optional geo radius (provider service_radius_km).
+// Then schedule gate via providerEligibleForInstantFanOut (same as List).
 func (h *InstantMatchHandler) notifyInstantOfferToProviders(
 	ctx context.Context,
 	customerID, jobID, jobTitle string,
 	amountCents int64,
 	expiresAt time.Time,
+	matchCtx instantJobMatchContext,
 ) int {
 	if h.db == nil || jobID == "" {
 		return 0
 	}
-	// Cap fan-out so a global Instant opt-in list cannot stall the HTTP request.
+	// Cap fan-out so Instant opt-in cannot stall the HTTP request.
 	const maxFanOut = 100
-	rows, err := h.db.Query(ctx, `
-		SELECT user_id::text
-		  FROM provider_profiles
-		 WHERE instant_enabled = true
-		 LIMIT $1`, maxFanOut)
+
+	// Build filtered candidate query. Category/geo clauses are optional fail-soft.
+	// provider_service_categories.provider_id = provider_profiles.id (not user_id).
+	q := `
+		SELECT pp.user_id::text
+		  FROM provider_profiles pp
+		  JOIN users u ON u.id = pp.user_id
+		  LEFT JOIN trust_scores ts
+		    ON ts.user_id = pp.user_id AND ts.role = 'provider'
+		 WHERE pp.instant_enabled = true
+		   AND u.deleted_at IS NULL
+		   AND u.status = 'active'
+		   AND COALESCE(ts.tier, 'new') <> 'under_review'`
+	args := []interface{}{}
+	argN := 1
+
+	if len(matchCtx.CategoryIDs) > 0 {
+		q += fmt.Sprintf(`
+		   AND EXISTS (
+		     SELECT 1 FROM provider_service_categories psc
+		     WHERE psc.provider_id = pp.id
+		       AND psc.category_id = ANY($%d::uuid[])
+		   )`, argN)
+		args = append(args, matchCtx.CategoryIDs)
+		argN++
+	}
+	if matchCtx.HasGeo {
+		q += fmt.Sprintf(`
+		   AND pp.service_location IS NOT NULL
+		   AND ST_DWithin(
+		     pp.service_location::geography,
+		     ST_SetSRID(ST_MakePoint($%d, $%d), 4326)::geography,
+		     COALESCE(pp.service_radius_km, 50) * 1000.0
+		   )`, argN, argN+1)
+		args = append(args, matchCtx.Lng, matchCtx.Lat)
+		argN += 2
+	}
+
+	q += fmt.Sprintf(`
+		 ORDER BY COALESCE(ts.overall_score, 50.0) DESC, pp.user_id
+		 LIMIT $%d`, argN)
+	args = append(args, maxFanOut)
+
+	rows, err := h.db.Query(ctx, q, args...)
 	if err != nil {
 		slog.WarnContext(ctx, "instant match: provider fan-out query failed",
 			"job_id", jobID,
+			"has_geo", matchCtx.HasGeo,
+			"category_count", len(matchCtx.CategoryIDs),
 			"error", err,
 		)
 		return 0
@@ -617,10 +715,7 @@ func (h *InstantMatchHandler) notifyInstantOfferToProviders(
 		body = fmt.Sprintf("Instant accept at $%.2f", float64(amountCents)/100)
 	}
 	actionURL := "/provider/offers"
-	if expiresAt.After(time.Now()) {
-		// keep short body; expiry is on the inbox card
-		_ = expiresAt
-	}
+	_ = expiresAt
 
 	notified := 0
 	for rows.Next() {
@@ -644,6 +739,12 @@ func (h *InstantMatchHandler) notifyInstantOfferToProviders(
 			"error", err,
 		)
 	}
+	slog.InfoContext(ctx, "instant match: notify fan-out complete",
+		"job_id", jobID,
+		"has_geo", matchCtx.HasGeo,
+		"category_count", len(matchCtx.CategoryIDs),
+		"providers_notified", notified,
+	)
 	return notified
 }
 

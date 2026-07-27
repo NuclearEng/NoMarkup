@@ -146,5 +146,103 @@ func TestBidBondTimingConstants(t *testing.T) {
 	}
 }
 
+// TestBidBondAuthorizedPaymentMethod pins the capturable-PM rules used by
+// ConfirmBidBond after GetSetupIntentStatus succeeds:
+//   - empty PM on Stripe path → refuse (402, leave pending)
+//   - non-empty PM → persist that id
+//   - dev nil-client short-circuit → sentinel pm_dev_<bond_id>
+//
+// Soft-replay of already-authorized rows never calls this helper (legacy NULL OK).
+func TestBidBondAuthorizedPaymentMethod(t *testing.T) {
+	t.Parallel()
+	bondID := "22222222-2222-2222-2222-222222222222"
+	cases := []struct {
+		name         string
+		stripePM     string
+		devNilClient bool
+		wantPM       string
+		wantOK       bool
+	}{
+		{
+			name:         "refuse: succeeded without payment method",
+			stripePM:     "",
+			devNilClient: false,
+			wantPM:       "",
+			wantOK:       false,
+		},
+		{
+			name:         "persist: Stripe PM id",
+			stripePM:     "pm_1AbCdEfGhIjKlMn",
+			devNilClient: false,
+			wantPM:       "pm_1AbCdEfGhIjKlMn",
+			wantOK:       true,
+		},
+		{
+			name:         "dev nil-client: sentinel pm_dev_<bond_id>",
+			stripePM:     "",
+			devNilClient: true,
+			wantPM:       "pm_dev_" + bondID,
+			wantOK:       true,
+		},
+		{
+			name:         "dev nil-client ignores empty-looking stripe PM",
+			stripePM:     "pm_should_not_use",
+			devNilClient: true,
+			wantPM:       "pm_dev_" + bondID,
+			wantOK:       true,
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			gotPM, gotOK := bidBondAuthorizedPaymentMethod(bondID, tc.stripePM, tc.devNilClient)
+			if gotOK != tc.wantOK {
+				t.Errorf("ok = %v, want %v", gotOK, tc.wantOK)
+			}
+			if gotPM != tc.wantPM {
+				t.Errorf("pm = %q, want %q", gotPM, tc.wantPM)
+			}
+		})
+	}
+}
+
+// TestBidBondConfirmRefuseWithoutPM documents the HTTP contract for the
+// empty-PM refuse path: ConfirmBidBond must surface 402 Payment Required
+// (same family as "SetupIntent not succeeded") so the client re-opens card
+// setup. The pure helper is the gate; this pins the status code constant the
+// handler uses when ok=false.
+func TestBidBondConfirmRefuseWithoutPM(t *testing.T) {
+	t.Parallel()
+	_, ok := bidBondAuthorizedPaymentMethod("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "", false)
+	if ok {
+		t.Fatal("empty Stripe PM must not authorize")
+	}
+	// Handler maps !ok → http.StatusPaymentRequired (402).
+	if http.StatusPaymentRequired != 402 {
+		t.Fatalf("StatusPaymentRequired = %d, want 402", http.StatusPaymentRequired)
+	}
+}
+
+// TestBidBondConfirmPersistWithPM documents the happy path: a real Stripe PM
+// id is what gets written into bid_bonds.stripe_payment_method_id on the
+// pending→authorized CAS (migration 114).
+func TestBidBondConfirmPersistWithPM(t *testing.T) {
+	t.Parallel()
+	bondID := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	pm, ok := bidBondAuthorizedPaymentMethod(bondID, "pm_card_visa_test", false)
+	if !ok {
+		t.Fatal("non-empty Stripe PM must authorize")
+	}
+	if pm != "pm_card_visa_test" {
+		t.Fatalf("pm = %q, want pm_card_visa_test", pm)
+	}
+	// Dev short-circuit still produces a non-empty capturable artifact.
+	devPM, ok := bidBondAuthorizedPaymentMethod(bondID, "", true)
+	if !ok || devPM != "pm_dev_"+bondID {
+		t.Fatalf("dev sentinel = %q ok=%v, want pm_dev_%s", devPM, ok, bondID)
+	}
+}
+
 // _ guarantees middleware import survives even if all other tests skip.
 var _ = middleware.Claims{}

@@ -127,12 +127,13 @@ func dynamicAPRBps(score int) int {
 }
 
 // computeAdvanceFeeCentsAPR prices a fee at an explicit APR (bps), prorated by
-// term, rounded to the nearest cent.
+// term, rounded half-up to the nearest cent via pure integer arithmetic (MON-24).
+// fee = principal × APR × (termDays / 365).
 func computeAdvanceFeeCentsAPR(amountCents int64, aprBps, termDays int) int64 {
 	if termDays <= 0 {
 		termDays = defaultAdvanceTermDays
 	}
-	return int64(math.Round(float64(amountCents) * float64(aprBps) / 10000.0 * float64(termDays) / 365.0))
+	return prorateHalfUp(amountCents, int64(aprBps), int64(termDays), 365)
 }
 
 // onTimeRateFromAdvances derives the share of resolved advances repaid on time.
@@ -173,26 +174,23 @@ func (s *PaymentService) providerCreditScore(ctx context.Context, providerID str
 	return businessCreditScore(onTimeRateFromAdvances(advances), len(payments), earnings), nil
 }
 
-// advanceFeeAPR is the annual percentage rate charged on working capital
-// advances (3% APR). Simple interest, prorated over the expected term (not
-// compounded):
-//
-//	fee = amount × APR × (termDays / 365)
-const advanceFeeAPR = 0.03
-
 // defaultAdvanceTermDays is the assumed time-to-repayment when the contract
 // itself doesn't expose a maturity date. 30 days matches typical short-term
 // advance products in the industry.
 const defaultAdvanceTermDays = 30
 
+// legacyAdvanceFeeAPRBps is the historical flat 3% APR used by the legacy
+// computeAdvanceFeeCents helper (pre risk-based pricing). Kept for tests and
+// any caller that still asks for the base rate without a score-derived APR.
+const legacyAdvanceFeeAPRBps int64 = 300
+
 // computeAdvanceFeeCents returns the prorated fee for an advance held for
-// termDays at advanceFeeAPR. Rounds to the nearest cent so the charged fee
-// matches the estimate shown to the provider (and never under-charges).
+// termDays at the legacy 3% APR (300 bps). Integer half-up proration (MON-24).
 func computeAdvanceFeeCents(amountCents int64, termDays int) int64 {
 	if termDays <= 0 {
 		termDays = defaultAdvanceTermDays
 	}
-	return int64(math.Round(float64(amountCents) * advanceFeeAPR * float64(termDays) / 365.0))
+	return prorateHalfUp(amountCents, legacyAdvanceFeeAPRBps, int64(termDays), 365)
 }
 
 // RequestAdvance creates a new working capital advance request.

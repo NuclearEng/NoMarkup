@@ -16,9 +16,10 @@ package handler
 //   POST /api/v1/listings/{id}/bid-bond/confirm   (auth)
 //
 // pending → authorized requires server-side confirmation from Stripe that
-// the SetupIntent succeeded with a payment method attached. The gate this
-// bond waives is an anti-fraud control, so it fails closed: if the payment
-// service cannot be reached, the bond stays pending.
+// the SetupIntent succeeded with a payment method attached; that PM id is
+// persisted on bid_bonds.stripe_payment_method_id. The gate this bond waives
+// is an anti-fraud control, so it fails closed: if the payment service cannot
+// be reached, or succeeded without a PM, the bond stays pending.
 //
 // State machine (also documented in migration 043):
 //   pending → authorized → captured (no-show forfeit, future cron)
@@ -82,6 +83,22 @@ func bidBondConfirmSoftReplayOutcome(status string) string {
 	default:
 		return "not_found"
 	}
+}
+
+// bidBondAuthorizedPaymentMethod resolves the PaymentMethod id to persist on
+// pending→authorized. Stripe path requires a non-empty id from
+// GetSetupIntentStatus (succeeded without a PM is not capturable — refuse).
+// Dev nil-client short-circuit uses a stable sentinel so authorized rows still
+// carry a non-NULL artifact for local stacks without Stripe.
+// ok=false means the caller must 402 and leave the bond pending.
+func bidBondAuthorizedPaymentMethod(bondID, stripePaymentMethodID string, devNilClient bool) (pmID string, ok bool) {
+	if devNilClient {
+		return "pm_dev_" + bondID, true
+	}
+	if stripePaymentMethodID == "" {
+		return "", false
+	}
+	return stripePaymentMethodID, true
 }
 
 // hasReleasedBond returns true if the user has at least one historical
@@ -382,6 +399,10 @@ func (h *BidBondHandler) ConfirmBidBond(w http.ResponseWriter, r *http.Request) 
 
 	// Verify with Stripe. Fail closed: no payment client outside development
 	// means we cannot verify, and an unverifiable bond must not be authorized.
+	// On success we also require a non-empty payment_method_id so the authorized
+	// row is capturable later (no-show forfeit). Soft-replay of already-
+	// authorized bonds above leaves legacy NULL PMs alone.
+	var paymentMethodID string
 	if h.paymentClient == nil {
 		if !isDevelopmentEnv() {
 			slog.ErrorContext(r.Context(), "bid-bond confirm: payment service unavailable, refusing to authorize")
@@ -391,6 +412,16 @@ func (h *BidBondHandler) ConfirmBidBond(w http.ResponseWriter, r *http.Request) 
 		slog.WarnContext(r.Context(), "bid-bond confirm: development short-circuit, no Stripe verification",
 			"bond_id", req.BondID,
 		)
+		var ok bool
+		paymentMethodID, ok = bidBondAuthorizedPaymentMethod(req.BondID, "", true)
+		if !ok {
+			// Defensive — dev sentinel path always returns ok.
+			writeJSON(w, http.StatusPaymentRequired, map[string]interface{}{
+				"requires_bid_bond": true,
+				"error":             "your payment method has not been confirmed yet — please complete card setup and try again",
+			})
+			return
+		}
 	} else {
 		resp, verr := h.paymentClient.GetSetupIntentStatus(r.Context(), &paymentv1.GetSetupIntentStatusRequest{
 			ClientSecret: clientSecret,
@@ -408,7 +439,22 @@ func (h *BidBondHandler) ConfirmBidBond(w http.ResponseWriter, r *http.Request) 
 			// The card was never confirmed. 402 so the client re-opens Stripe
 			// Elements rather than treating this as a permanent failure.
 			writeJSON(w, http.StatusPaymentRequired, map[string]interface{}{
-				"requires_bid_bond": true,
+				"requires_bid_bond":   true,
+				"setup_intent_status": resp.GetStatus(),
+				"error":               "your payment method has not been confirmed yet — please complete card setup and try again",
+			})
+			return
+		}
+		// Succeeded but no PM attached — not capturable. Refuse with 402.
+		var ok bool
+		paymentMethodID, ok = bidBondAuthorizedPaymentMethod(req.BondID, resp.GetPaymentMethodId(), false)
+		if !ok {
+			slog.WarnContext(r.Context(), "bid-bond confirm: setup intent succeeded without payment method",
+				"bond_id", req.BondID,
+				"setup_intent_status", resp.GetStatus(),
+			)
+			writeJSON(w, http.StatusPaymentRequired, map[string]interface{}{
+				"requires_bid_bond":   true,
 				"setup_intent_status": resp.GetStatus(),
 				"error":               "your payment method has not been confirmed yet — please complete card setup and try again",
 			})
@@ -417,16 +463,19 @@ func (h *BidBondHandler) ConfirmBidBond(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Flip only from 'pending', so a concurrent confirm cannot double-apply.
+	// Persist the capturable PaymentMethod id on the same CAS.
 	var updatedID string
 	err = h.db.QueryRow(r.Context(), `
 		UPDATE bid_bonds
-		   SET status = 'authorized', updated_at = now()
+		   SET status = 'authorized',
+		       stripe_payment_method_id = $4,
+		       updated_at = now()
 		 WHERE id = $1
 		   AND user_id = $2
 		   AND listing_id = $3
 		   AND status = 'pending'
 		 RETURNING id`,
-		req.BondID, claims.UserID, listingID,
+		req.BondID, claims.UserID, listingID, paymentMethodID,
 	).Scan(&updatedID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "bond not found or already finalized")

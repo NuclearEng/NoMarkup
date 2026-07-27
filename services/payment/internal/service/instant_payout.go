@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
 
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
@@ -145,8 +144,10 @@ func (s *PaymentService) InstantPayout(ctx context.Context, providerID string, a
 	}, nil
 }
 
+// computeInstantPayoutFee applies instantPayoutFeeBps with ceiling rounding
+// (feeFromBPS — platform take never under-collects) and enforces the $1 floor.
 func computeInstantPayoutFee(amountCents int64) int64 {
-	fee := int64(math.Round(float64(amountCents) * float64(instantPayoutFeeBps) / 10000.0))
+	fee := feeFromBPS(amountCents, instantPayoutFeeBps)
 	if fee < instantPayoutMinFeeCents {
 		fee = instantPayoutMinFeeCents
 	}

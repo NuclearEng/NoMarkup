@@ -154,9 +154,10 @@ browser and server-rendered hops are missing.
 - The licence read path 500s on an unopenable ciphertext, so a key rotation
   without `ENCRYPTION_KEY_PREVIOUS` takes out the public badge endpoint until
   the key is restored.
-- Bid bonds still have no capturable artifact — the table has no payment-method
-  column and the handler discards the `payment_method_id` it receives. Capture
-  on no-show remains unimplemented, not merely unwired.
+- Bid-bond capturable PM **persisted** (migration 114 + ConfirmBidBond CAS sets
+  `stripe_payment_method_id`; refuse 402 without PM; dev `pm_dev_<bond_id>`).
+  Capture-on-no-show cron / forfeit path remains unimplemented — only the
+  artifact is stored.
 - `provider_profiles.service_location` stays exact at rest. It is the indexed
   `ST_DWithin` target and backs the distance `ORDER BY`; ciphertext cannot be
   indexed and coarsening perturbs a 30%-weighted ranking term. Documented as a
