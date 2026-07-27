@@ -112,4 +112,35 @@ final class NoMarkupUITests: XCTestCase {
             "root.tabview should appear after successful login"
         )
     }
+
+    /// After auto-login, walk primary tabs that host the dual-rail product shell.
+    func testSignedInTabNavigation() throws {
+        let email = Self.testCredential("NOMARKUP_UI_TEST_EMAIL")
+        let password = Self.testCredential("NOMARKUP_UI_TEST_PASSWORD")
+        try XCTSkipIf(email.isEmpty || password.isEmpty, "Credentials required for signed-in tab smoke")
+
+        let tabView = app.descendants(matching: .any)["root.tabview"]
+        XCTAssertTrue(tabView.waitForExistence(timeout: 20), "Expected signed-in root.tabview")
+
+        // Tab bar labels from RootTabView
+        let tabIds = ["tab.home", "tab.marketplace", "tab.jobs", "tab.messages", "tab.account"]
+        for id in tabIds {
+            let tab = app.descendants(matching: .any)[id]
+            if tab.waitForExistence(timeout: 5) {
+                tab.tap()
+                // Brief settle so destination loads without flaking on network
+                RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+                XCTAssertTrue(tabView.exists, "Tab shell should remain after tapping \(id)")
+            } else {
+                // Fallback: system tab bar buttons by label
+                let labels = ["Home", "Marketplace", "Jobs", "Messages", "Account"]
+                let idx = tabIds.firstIndex(of: id) ?? 0
+                let button = app.tabBars.buttons[labels[idx]]
+                if button.waitForExistence(timeout: 3) {
+                    button.tap()
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+                }
+            }
+        }
+    }
 }
