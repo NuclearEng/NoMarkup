@@ -137,15 +137,31 @@
 | ID | Capability | Status | Clients | Evidence | Security | Perf | Next |
 |----|------------|--------|---------|----------|----------|------|------|
 | R6.1 | Marketplace take rate | `partial` | gateway, payment | fee calc paths | money integrity | n/a | Production fee config + audits |
-| R6.2 | Outcome lead-gen 10% | `blocked-compliance` | — | flag `lead_gen` hard-off iOS | SEC + product | n/a | Licenses + flag review |
-| R6.3 | Provider working capital | `blocked-compliance` | — | `working_capital` hard-off | lending rules | n/a | Licenses |
-| R6.4 | Customer BNPL | `blocked-compliance` | — | `customer_bnpl` hard-off | consumer credit | n/a | Licenses + 3.1.x |
-| R6.5 | Per-job insurance | `blocked-compliance` | — | insurance flags hard-off | insurance law | n/a | Licenses |
-| R6.6 | Instant payout | `blocked-compliance` | — | `instant_payout` hard-off | risk | n/a | Risk review |
+| R6.2 | Outcome lead-gen 10% | `blocked-compliance` | gateway, payment, web admin | Fee model + admin fee_config + breakdown line; flag key exists **without** `RequireFlag` on money routes; no consumer lead product CTA; iOS hard-off | fee stacking + dual-gate | n/a | See [path to live-flagged](#path-to-live-flagged-regulated-rails-r62r66) |
+| R6.3 | Provider working capital | `blocked-compliance` | gateway, web | **Scaffolding:** `/providers/me/advances*` + `RequireFlag`; web `/provider/advances` + admin; iOS hard-off + status list only | lending + money races | n/a | Path doc — not `live-flagged` until licenses + E2E + security |
+| R6.4 | Customer BNPL | `blocked-compliance` | gateway, web | **Scaffolding:** installment-plans API + `RequireFlag`; web contract selector + `/payments/installments/[id]`; iOS hard-off | consumer credit + 3.1.x | n/a | Path doc — residual money integrity before `live-flagged` |
+| R6.5 | Per-job insurance | `blocked-compliance` | gateway, web | **Scaffolding:** `/insurance/*` + quote-requests + `RequireFlag` (both flags); web selector/quotes/admin; iOS hard-off | insurance law | n/a | Path doc — carrier/license + claim prod readiness |
+| R6.6 | Instant payout | `blocked-compliance` | gateway, web | **Scaffolding:** summary + POST + ledger claim-first; web `InstantPayoutButton`; **live Stripe path fail-closes 503** (not wired); iOS hard-off | risk + no synthetic success | n/a | Wire Connect instant path + risk review before `live-flagged` |
 | R6.7 | Pro / Business digital subscription | `blocked-compliance` / `web-only` | web | free-tier iOS; no StoreKit | ASR 3.1.1 | n/a | StoreKit B2 or web-only permanent |
 | R6.8 | Business services (1099, expenses) | `roadmap` / `web-partial` | web | provider OS partial web | PII | n/a | Provider OS program |
 
-**Exit for blocked-compliance:** written legal/compliance sign-off + hard-off key removed + E2E + security review.
+**Exit for blocked-compliance → live-flagged:** product complete (no critical money stubs) + E2E + security review + legal path documented; production flag may stay **off**; iOS hard-off may remain.  
+**Exit for live-flagged → live:** licenses/partner live + production flag on + runbook. Removing an iOS hard-off key is a **separate** App Review decision.
+
+**Canonical inventory:** [`regulated-rails-live-flagged.md`](./regulated-rails-live-flagged.md) (gateway routes, web UI, hard-off proof, exit criteria, fail-closed rules).  
+**iOS App Review surface (read-only, no purchase deep links):** `ios/NoMarkup/Features/RegulatedRailsStatusView.swift` ← Account → Plan limits section.
+
+### Path to live-flagged (regulated rails R6.2–R6.6)
+
+| ID | Why not `live-flagged` yet | Minimum remaining work |
+|----|----------------------------|------------------------|
+| R6.2 | Fee knob + admin config only; not a full outcome lead-gen product; `lead_gen` flag not enforced via `RequireFlag` on charge path | Product definition; dual-gate fee vs flag; E2E fee-off when flag off; counsel on referral fees |
+| R6.3 | Substantial advances UI/API exist, but lending licenses + residual money/security gates open | Licenses/partner; credit-limit flag consistency; concurrency E2E; CSO review |
+| R6.4 | Installment scaffolding exists; consumer credit + schedule/escrow interaction not signed off | Licenses/partner; dunning/refund matrix; adversarial plan tests; E2E |
+| R6.5 | Insurance + competition scaffolding exists; binding authority / claim prod paths incomplete for go-live | Producer licenses; real claim evidence; multi-carrier rules; E2E quote→bind→claim |
+| R6.6 | Ledger + UI exist; **production Stripe instant payout not configured** (intentional 503) | Wire Connect instant; caps under load; risk sign-off; E2E with test Connect |
+
+**Honesty rule:** Do **not** mark these `live-flagged` for documentation or iOS status UI alone. Scaffolding ≠ complete product.
 
 ---
 
@@ -174,7 +190,7 @@
 | S9.3 | Rust engines (bid/fraud/trust/…) | `live`/`partial` | engines | workspace members | no unsafe | criterion local | CI bench optional |
 | S9.4 | Postgres + PostGIS + Redis + Meilisearch | `live` | data | compose/prod path | PII encryption | query p95 | — |
 | S9.5 | Mapbox | `partial` | web | web maps | token env | lazy load | iOS uses MapKit (acceptable) |
-| S9.6 | WebSocket real-time | `partial` | web, gateway | WS routes; iOS polls | auth WS | fan-out | Native WS optional |
+| S9.6 | WebSocket real-time | `live` (iOS chat REST poll SLA) / `partial` (native WS) | web, gateway, ios | Web WS routes; **iOS chat:** documented ~5s REST poll in open threads (`MessagesView` / `ChatThreadView`) + UI caption “Updates every few seconds” + inbox footer honesty — substitute for WS until native `/ws` | auth WS | fan-out; poll only when active | Native WS optional; auction stream still partial |
 | S9.7 | Stripe Connect | `live`/`partial` | web, ios | payouts UI + PI | PCI via Stripe | n/a | Onboarding E2E dogfood |
 | S9.8 | K8s / OTel / Prometheus | `partial` | deploy | manifests; deploy not full prod | secrets Vault target | scrape auth | provisioning checklist |
 
@@ -188,7 +204,7 @@
 | G10.2 | Bid bond | `live` | web, ios | SetupIntent flow | money | n/a | — |
 | G10.3 | Best offer | `live` | web, ios | offers API | auth | n/a | — |
 | G10.4 | Buy now + escrow orders | `live` | web, ios | orders | money | n/a | — |
-| G10.5 | Local pickup 25 mi | `partial` | product | model; geo UX | location purpose | n/a | Radius search polish |
+| G10.5 | Local pickup 25 mi | `live` | web, ios, gateway | Gateway `ListListings` `lat`/`lng`/`radius_km` (cap 40 km) + `distance_km`; iOS `AppConfig.browseCoordinate` → `fetchListings`; `MarketplaceView` row shows distance when present, else city/ZIP (`locationLabel` / `pickupZip`); CreateListing zip | location purpose strings | n/a | Optional device GPS browse center later |
 
 ---
 
@@ -207,8 +223,8 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | Catalog autocomplete / categories / drafts | `live` |
 | Trust tiers / plan limits / ToS | `live` (composite + 4-dim breakdown UI; plan = read-only) |
 | Seller exports / templates / docs | `live` (provider verification upload via `VerificationDocumentsView`) |
-| WebSocket chat/auction | `partial` |
-| Regulated rails | `blocked-compliance` (BNPL / insurance / lending / lead-gen / instant payout — hard-off) |
+| WebSocket chat/auction | `live` (chat REST poll SLA + UI caption) / `partial` (native WS + auction stream) |
+| Regulated rails | `blocked-compliance` (BNPL / insurance / lending / lead-gen / instant payout — hard-off; server+web scaffolding inventoried in `regulated-rails-live-flagged.md`; iOS status list only) |
 | Admin | `n/a-client` |
 | StoreKit IAP | `blocked-compliance` |
 
@@ -228,8 +244,8 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 ### P1 — Product depth
 
 7. Provider verification upload E2E — **done** (`VerificationDocumentsView` list + upload); admin review still open under C3.5  
-8. Native chat WS or documented poll SLA  
-9. Goods radius search polish  
+8. ~~Native chat WS or documented poll SLA~~ **done** — REST poll ~5s SLA documented + “Updates every few seconds” caption (`MessagesView` / `ChatThreadView`); native WS remains optional  
+9. ~~Goods radius search polish~~ **done** — distance on marketplace rows when `distance_km` present; optional `AppConfig` lat/lng → gateway radius; ZIP/city fallback  
 10. Web RSC/data-cache performance playbook on touched routes  
 
 ### P2 — After compliance exit
@@ -285,12 +301,16 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | 2026-07-26 | XCUITest sim | 3/3 | same |
 | 2026-07-26 | Device install customer/provider | OK | same |
 | 2026-07-26 | Living checklist created; P0 job market strip + sealed/live badges | BUILD OK | this file + `JobDetailView` |
+| 2026-07-26 | Wave: job-bid+bond Idempotency, live feed poll, FPI fallback, chat SLA, radius, regulated status UI | BUILD OK; E2E 72/0/1 | this commit |
 | 2026-07-26 | Trust breakdown UI (T4.1–T4.5) | **live** — composite + Feedback/Risk/Volume/Fraud dims | `ios/.../TrustScoreView.swift`; `APIClient+Extras.fetchUserTrustScore`; entry `ProviderDetailView`, `JobDetailView.trustChip`; GW `GET /users/{id}/trust-score` |
 | 2026-07-26 | Home + job LIVE/sealed badges (H1.2/H1.6) | **partial** — unified badge + countdown; not full live stream/widget | `HomeView` `HomeJobCard`; `JobDetailView.reverseAuctionBadge` |
+| 2026-07-26 | Regulated rails graduation docs + iOS status stub | R6.2–R6.6 stay **`blocked-compliance`** (honest); path-to-live-flagged documented; iOS hard-offs unchanged | `docs/compliance/regulated-rails-live-flagged.md`; `RegulatedRailsStatusView`; Account under Plan limits |
 | 2026-07-26 | Escrow release path (C3.4) | **live** — services release + goods mutual handshake next actions | `ContractDetailView.releasePayment`; `MyOrdersView` nextAction / confirm CTAs |
 | 2026-07-26 | Provider verification upload (C3.5 / P1#7) | **partial closer** — provider list+upload E2E path shipped; admin review open | `VerificationDocumentsView` |
 | 2026-07-26 | Perf gate — public catalog p95 | **PASS** (jobs/listings/flags/providers/search all p95 &lt; 200 ms @ 20 samples) | `perf-gate-2026-07-26.md` (+ samples block / `perf-gate-2026-07-26-samples.md`) |
 | 2026-07-26 | Security gate — money / idempotency | **PASS WITH GAPS** — web listing bid now sends `Idempotency-Key` (`useListings.ts` `usePlaceListingBid`); job-bid & bid-bond gateway still not enforced | `security-gate-2026-07-26.md` (update matrix: web listing bid **Yes**); `web/src/hooks/useListings.ts` |
+| 2026-07-26 | Chat REST poll SLA (S9.6 / P1#8) | **live** as WS substitute — ~5s open-thread poll + footer + caption | `ios/.../MessagesView.swift` (`pollIntervalNanoseconds`, `liveUpdateCaption`, inbox footer) |
+| 2026-07-26 | Goods radius polish (G10.5 / P1#9) | **live** — distance rows + optional browse lat/lng | `AppConfig.browseCoordinate`; `APIClient.fetchListings(lat/lng/radiusKm)`; `MarketplaceView` `ListingRowView` |
 
 ---
 

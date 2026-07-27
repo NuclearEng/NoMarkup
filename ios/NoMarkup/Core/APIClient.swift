@@ -216,12 +216,19 @@ actor APIClient {
 
     // MARK: - Public catalog (no auth)
 
-    /// GET `/api/v1/listings?page=&page_size=&q=&category_slug=`
+    /// GET `/api/v1/listings?page=&page_size=&q=&category_slug=&lat=&lng=&radius_km=`
+    ///
+    /// When `latitude` + `longitude` + `radiusKm` are all provided, the gateway
+    /// applies the local pickup radius (`ST_DWithin`, capped ~25 mi / 40 km) and
+    /// populates `distance_km` on each listing. Omit geo params for unscoped browse.
     func fetchListings(
         page: Int = 1,
         pageSize: Int = 20,
         q: String? = nil,
-        categorySlug: String? = nil
+        categorySlug: String? = nil,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        radiusKm: Double? = nil
     ) async throws -> ListingsResponse {
         var items = [
             URLQueryItem(name: "page", value: String(max(1, page))),
@@ -237,6 +244,18 @@ actor APIClient {
             let slug = categorySlug.trimmingCharacters(in: .whitespacesAndNewlines)
             if !slug.isEmpty {
                 items.append(URLQueryItem(name: "category_slug", value: slug))
+            }
+        }
+        // Gateway requires both center and radius for geo filter; lat/lng alone
+        // still projects distance_km when a center resolves.
+        if let latitude, let longitude,
+           latitude >= -90, latitude <= 90,
+           longitude >= -180, longitude <= 180
+        {
+            items.append(URLQueryItem(name: "lat", value: String(latitude)))
+            items.append(URLQueryItem(name: "lng", value: String(longitude)))
+            if let radiusKm, radiusKm > 0 {
+                items.append(URLQueryItem(name: "radius_km", value: String(radiusKm)))
             }
         }
         return try await getJSON(pathComponents: ["api", "v1", "listings"], query: items)
@@ -266,8 +285,14 @@ actor APIClient {
         return wrapped.listing
     }
 
-    /// GET `/api/v1/jobs?page=&page_size=&q=`
-    func fetchJobs(page: Int = 1, pageSize: Int = 20, q: String? = nil) async throws -> JobsResponse {
+    /// GET `/api/v1/jobs?page=&page_size=&q=&category_ids=`
+    /// - Parameter categoryIds: optional comma-joined filter (`category_ids` query; gateway splits on commas).
+    func fetchJobs(
+        page: Int = 1,
+        pageSize: Int = 20,
+        q: String? = nil,
+        categoryIds: [String]? = nil
+    ) async throws -> JobsResponse {
         var items = [
             URLQueryItem(name: "page", value: String(max(1, page))),
             URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
@@ -276,6 +301,14 @@ actor APIClient {
             let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 items.append(URLQueryItem(name: "q", value: trimmed))
+            }
+        }
+        if let categoryIds {
+            let cleaned = categoryIds
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if !cleaned.isEmpty {
+                items.append(URLQueryItem(name: "category_ids", value: cleaned.joined(separator: ",")))
             }
         }
         return try await getJSON(pathComponents: ["api", "v1", "jobs"], query: items)

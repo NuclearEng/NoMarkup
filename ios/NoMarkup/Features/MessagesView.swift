@@ -1,6 +1,14 @@
 import SwiftUI
 
 /// Chat channel inbox — `GET /api/v1/channels` (auth). Thread detail loads + sends messages.
+///
+/// ## Real-time SLA (REST poll substitute for WebSocket)
+/// Native iOS does **not** open a chat WebSocket. While a thread is open,
+/// `ChatThreadView` quietly re-fetches messages every **~5 seconds** (active
+/// app only; cancels on leave / sign-out / background). Inbox list loads on
+/// appear and pull-to-refresh — it does not auto-poll. Documented so product
+/// and compliance can treat REST polling as the supported live substitute
+/// until native `/ws` chat ships.
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -82,6 +90,11 @@ struct MessagesView: View {
                     } else {
                         Text("Inbox").brandSectionHeader()
                     }
+                } footer: {
+                    // Honesty: no native chat WebSocket — open threads poll REST ~5s.
+                    Text("Open a conversation for live updates every few seconds. Inbox refreshes when you pull down. Native WebSocket chat is not required for this substitute.")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
                 }
             }
             .brandListBackground()
@@ -195,6 +208,7 @@ struct ChatThreadView: View {
     @FocusState private var composerFocused: Bool
 
     /// Poll interval while the thread is open (cancelled when the view disappears).
+    /// Product SLA: ~5s REST refresh substitutes for chat WebSocket on iOS.
     private static let pollIntervalNanoseconds: UInt64 = 5_000_000_000
 
     private var webMessagesURL: URL {
@@ -211,8 +225,17 @@ struct ChatThreadView: View {
             && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Show the poll-SLA caption once the thread has content or is idle (not
+    /// full-screen loading / hard empty-error shells that already fill chrome).
+    private var showsLiveUpdateCaption: Bool {
+        !needsSignIn && !(isLoading && messages.isEmpty) && errorMessage == nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            if showsLiveUpdateCaption {
+                liveUpdateCaption
+            }
             threadBody
             Divider()
                 .overlay(BrandTheme.gold.opacity(0.15))
@@ -269,6 +292,26 @@ struct ChatThreadView: View {
                     }
             }
         }
+    }
+
+    /// Subtle honesty caption: open threads refresh on a quiet ~5s REST poll.
+    private var liveUpdateCaption: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.caption2)
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.85))
+                .accessibilityHidden(true)
+            Text("Updates every few seconds")
+                .font(.caption2)
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .background(BrandTheme.navyElevated.opacity(0.65))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Conversation updates every few seconds")
+        .accessibilityHint("Messages refresh automatically while this thread is open")
     }
 
     @ViewBuilder

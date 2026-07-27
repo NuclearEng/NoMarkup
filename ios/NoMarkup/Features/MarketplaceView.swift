@@ -279,12 +279,19 @@ struct MarketplaceView: View {
             return searchText
         }()
 
+        // Optional AppConfig browse center → gateway lat/lng + 25 mi radius
+        // (populates `distance_km` when PostGIS center resolves).
+        let center = AppConfig.browseCoordinate
+
         do {
             let response = try await APIClient.shared.fetchListings(
                 page: nextPage,
                 pageSize: pageSize,
                 q: qParam,
-                categorySlug: categorySlugFilter
+                categorySlug: categorySlugFilter,
+                latitude: center?.lat,
+                longitude: center?.lng,
+                radiusKm: center.map { _ in AppConfig.marketplaceRadiusKm }
             )
             if reset {
                 listings = response.listings
@@ -364,6 +371,14 @@ private struct ListingRowView: View {
             }
 
             HStack(spacing: 12) {
+                // Server `distance_km` when browse center was supplied (AppConfig lat/lng).
+                if let distance = listing.distanceLabel {
+                    Label(distance, systemImage: "location.fill")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(BrandTheme.teal)
+                        .lineLimit(1)
+                }
+                // City/state, else pickup ZIP (`locationLabel` already falls back to ZIP).
                 if let location = listing.locationLabel {
                     Label(location, systemImage: "mappin.and.ellipse")
                         .font(.caption)

@@ -127,4 +127,60 @@ enum AppConfig {
 
     /// ISO country code for Apple Pay (US marketplace MVP).
     static let applePayMerchantCountryCode = "US"
+
+    // MARK: - Goods browse center (optional radius search)
+
+    /// Optional marketplace search center latitude.
+    ///
+    /// When both `browseLatitude` and `browseLongitude` are set, `MarketplaceView`
+    /// passes `lat` / `lng` / `radius_km` to `GET /api/v1/listings` so the gateway
+    /// can filter to the local pickup radius and populate `distance_km`.
+    ///
+    /// Resolution:
+    /// 1. `NOMARKUP_BROWSE_LAT` env
+    /// 2. Info.plist `BrowseLatitude` (string or number)
+    /// 3. `nil` — list without geo filter; rows still show pickup ZIP / city when present
+    static var browseLatitude: Double? {
+        Self.optionalDouble(
+            envKey: "NOMARKUP_BROWSE_LAT",
+            plistKey: "BrowseLatitude"
+        )
+    }
+
+    /// Optional marketplace search center longitude (paired with `browseLatitude`).
+    static var browseLongitude: Double? {
+        Self.optionalDouble(
+            envKey: "NOMARKUP_BROWSE_LNG",
+            plistKey: "BrowseLongitude"
+        )
+    }
+
+    /// Goods local-pickup radius in km (~25 mi). Gateway caps at 40 km.
+    static let marketplaceRadiusKm: Double = 40
+
+    /// Resolved browse center when both coordinates are valid WGS84 values.
+    static var browseCoordinate: (lat: Double, lng: Double)? {
+        guard let lat = browseLatitude, let lng = browseLongitude else { return nil }
+        guard lat >= -90, lat <= 90, lng >= -180, lng <= 180 else { return nil }
+        return (lat, lng)
+    }
+
+    private static func optionalDouble(envKey: String, plistKey: String) -> Double? {
+        if let env = ProcessInfo.processInfo.environment[envKey] {
+            let trimmed = env.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let value = Double(trimmed) {
+                return value
+            }
+        }
+        if let number = Bundle.main.object(forInfoDictionaryKey: plistKey) as? NSNumber {
+            return number.doubleValue
+        }
+        if let string = Bundle.main.object(forInfoDictionaryKey: plistKey) as? String {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let value = Double(trimmed) {
+                return value
+            }
+        }
+        return nil
+    }
 }

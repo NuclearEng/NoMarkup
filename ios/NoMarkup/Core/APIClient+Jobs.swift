@@ -29,6 +29,20 @@ extension APIClient {
         )
     }
 
+    /// GET `/api/v1/jobs/{id}/auction/events` — recent live-auction activity (optional feature).
+    /// Accepts a bare JSON array or `{ "events": [...] }`. Soft-fail 404 / decode at the call site.
+    func fetchJobAuctionEvents(jobId: String) async throws -> [AuctionEvent] {
+        let trimmed = jobId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        let payload: AuctionEventsPayload = try await getJSON(
+            pathComponents: ["api", "v1", "jobs", trimmed, "auction", "events"],
+            authorized: false
+        )
+        return payload.events
+    }
+
     /// POST `/api/v1/jobs/{id}/cancel` — owner cancels the job auction.
     func cancelJob(id: String) async throws {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)

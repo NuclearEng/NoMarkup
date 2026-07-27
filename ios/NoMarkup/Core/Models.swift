@@ -236,6 +236,15 @@ struct ListingSummary: Codable, Sendable, Hashable, Identifiable {
         }
     }
 
+    /// Distance from the request browse center when the gateway returns `distance_km`.
+    var distanceLabel: String? {
+        guard let distanceKm else { return nil }
+        if distanceKm < 1 {
+            return String(format: "%.0f m away", distanceKm * 1000)
+        }
+        return String(format: "%.1f km away", distanceKm)
+    }
+
     var priceCaption: String {
         if currentBidCents != nil { return "Current bid" }
         return "Starting"
@@ -545,6 +554,143 @@ struct FairPriceResponse: Codable, Sendable {
             parts.append("· \(label)")
         }
         return parts.joined(separator: " ")
+    }
+}
+
+// MARK: - Market range intelligence (job detail H1.4 / H1.5)
+
+/// Provenance for the band shown when FPI may be empty — never claim index data we do not have.
+enum MarketRangeSource: String, Sendable, Equatable {
+    /// Fair-price index p25–p75 (or median) from the pricing analytics API.
+    case marketIndex
+    /// Client-side p25–p75 of recent public jobs' starting bids in the same category.
+    case categorySample
+    /// Heuristic 60%–100% of this job's starting bid (typical reverse-auction room).
+    case reverseAuctionBand
+
+    /// Strip title — honest about estimate vs index.
+    var titleLabel: String {
+        switch self {
+        case .marketIndex: return "Market index"
+        case .categorySample: return "Category sample (estimate)"
+        case .reverseAuctionBand: return "Typical reverse-auction band"
+        }
+    }
+}
+
+/// Resolved low/high (and optional median) for the job-detail market intelligence strip.
+struct MarketRangeEstimate: Sendable, Equatable {
+    var lowCents: Int64
+    var highCents: Int64
+    var medianCents: Int64?
+    var sampleCount: Int
+    var source: MarketRangeSource
+
+    /// e.g. "$80 – $160 · 12 jobs" or "$80 – $160 · 24 data pts".
+    var rangeCaption: String {
+        let band: String
+        if lowCents == highCents {
+            band = "Median ≈ \(MoneyFormat.usd(cents: lowCents))"
+        } else {
+            band = "\(MoneyFormat.usd(cents: lowCents)) – \(MoneyFormat.usd(cents: highCents))"
+        }
+        guard sampleCount > 0 else { return band }
+        switch source {
+        case .marketIndex:
+            return "\(band) · \(sampleCount) data pts"
+        case .categorySample:
+            return "\(band) · \(sampleCount) jobs"
+        case .reverseAuctionBand:
+            return band
+        }
+    }
+}
+
+/// Pure helpers for building a showcase-style range without the pricing engine.
+enum MarketRangeMath {
+    /// Linear-interpolation percentile on a non-empty ascending sample. `p` in 0…1.
+    static func percentileCents(sortedAscending values: [Int64], p: Double) -> Int64? {
+        guard !values.isEmpty else { return nil }
+        if values.count == 1 { return values[0] }
+        let clamped = min(1, max(0, p))
+        let idx = clamped * Double(values.count - 1)
+        let lo = Int(idx.rounded(.down))
+        let hi = Int(idx.rounded(.up))
+        guard lo >= 0, hi < values.count else { return values.last }
+        if lo == hi { return values[lo] }
+        let weight = idx - Double(lo)
+        let blended = Double(values[lo]) * (1 - weight) + Double(values[hi]) * weight
+        return Int64(blended.rounded())
+    }
+
+    /// FPI → estimate when `isUsable` (p25–p75 preferred, else CI, else median-as-point).
+    static func fromFairPrice(_ fair: FairPriceResponse) -> MarketRangeEstimate? {
+        guard fair.isUsable else { return nil }
+        let lo = fair.p25Cents ?? fair.ciLoCents
+        let hi = fair.p75Cents ?? fair.ciHiCents
+        let n = fair.nEff.map { Int($0.rounded()) } ?? 0
+        if let lo, let hi, lo > 0, hi >= lo {
+            return MarketRangeEstimate(
+                lowCents: lo,
+                highCents: hi,
+                medianCents: fair.priceCents.flatMap { $0 > 0 ? $0 : nil },
+                sampleCount: max(0, n),
+                source: .marketIndex
+            )
+        }
+        if let mid = fair.priceCents, mid > 0 {
+            return MarketRangeEstimate(
+                lowCents: mid,
+                highCents: mid,
+                medianCents: mid,
+                sampleCount: max(0, n),
+                source: .marketIndex
+            )
+        }
+        return nil
+    }
+
+    /// p25–p75 of public jobs' starting bids (same category). Needs ≥2 positive samples; caps at `maxSample`.
+    /// Input order is treated as recency (API page order); only then sorted for percentiles.
+    static func fromCategoryStartingBids(
+        _ bids: [Int64],
+        maxSample: Int = 20
+    ) -> MarketRangeEstimate? {
+        let positive = bids.filter { $0 > 0 }
+        guard positive.count >= 2 else { return nil }
+        let capped = Array(positive.prefix(max(2, maxSample)))
+        let sample = capped.sorted()
+        guard
+            let lo = percentileCents(sortedAscending: sample, p: 0.25),
+            let hi = percentileCents(sortedAscending: sample, p: 0.75),
+            lo > 0,
+            hi >= lo
+        else {
+            return nil
+        }
+        let mid = percentileCents(sortedAscending: sample, p: 0.5)
+        return MarketRangeEstimate(
+            lowCents: lo,
+            highCents: hi,
+            medianCents: mid,
+            sampleCount: sample.count,
+            source: .categorySample
+        )
+    }
+
+    /// Documented estimate: 60%–100% of starting bid (room for reverse-auction discovery).
+    static func reverseAuctionBand(startingBidCents: Int64) -> MarketRangeEstimate? {
+        guard startingBidCents > 0 else { return nil }
+        let high = startingBidCents
+        let low = max(1, (startingBidCents * 60) / 100)
+        guard low <= high else { return nil }
+        return MarketRangeEstimate(
+            lowCents: low,
+            highCents: high,
+            medianCents: nil,
+            sampleCount: 0,
+            source: .reverseAuctionBand
+        )
     }
 }
 
@@ -1670,7 +1816,135 @@ struct JobBidsResponse: Codable, Sendable {
     let bids: [JobBidEntry]
 }
 
-// MARK: - Live auction state (optional light poll)
+// MARK: - Live auction state / events (optional light poll)
+
+/// One bid-activity row from `GET …/auction/events` (or `recent_events` on state).
+/// All fields optional — gateway may emit snake_case, camelCase, or proto timestamps.
+struct AuctionEvent: Decodable, Sendable, Hashable, Identifiable {
+    var jobId: String?
+    var amountCents: Int64?
+    var eventType: String?
+    var createdAt: String?
+
+    /// Stable list identity when the wire payload has no `id` (proto omits it).
+    var id: String {
+        let type = eventType ?? ""
+        let amount = amountCents.map(String.init) ?? ""
+        let when = createdAt ?? ""
+        let job = jobId ?? ""
+        return "\(when)|\(type)|\(amount)|\(job)"
+    }
+
+    init(
+        jobId: String? = nil,
+        amountCents: Int64? = nil,
+        eventType: String? = nil,
+        createdAt: String? = nil
+    ) {
+        self.jobId = jobId
+        self.amountCents = amountCents
+        self.eventType = eventType
+        self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = try c.decodeIfPresent(String.self, forKey: .jobId)
+        amountCents = Self.decodeInt64(c, forKey: .amountCents)
+        eventType = try c.decodeIfPresent(String.self, forKey: .eventType)
+        createdAt = Self.decodeTimestampString(c, forKey: .createdAt)
+    }
+
+    /// Human label for `event_type` (`bid_placed`, `bid_updated`, `bid_withdrawn`, …).
+    var displayEventLabel: String {
+        let raw = (eventType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch raw {
+        case "bid_placed", "placed":
+            return "Bid placed"
+        case "bid_updated", "updated":
+            return "Bid updated"
+        case "bid_withdrawn", "withdrawn":
+            return "Bid withdrawn"
+        case "auction_ended", "ended":
+            return "Auction ended"
+        case "snipe_extension", "extended":
+            return "Time extended"
+        case "":
+            return "Activity"
+        default:
+            return raw
+                .replacingOccurrences(of: "_", with: " ")
+                .capitalized
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case jobId
+        case amountCents
+        case eventType
+        case createdAt
+    }
+
+    private static func decodeInt64(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> Int64? {
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: key) { return v }
+        if let v = try? c.decodeIfPresent(Int.self, forKey: key) { return Int64(v) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key), let v = Int64(s) { return v }
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return Int64(d) }
+        return nil
+    }
+
+    /// Accepts ISO-8601 string, unix seconds, or nested `{ "seconds": N }` protobuf JSON.
+    private static func decodeTimestampString(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> String? {
+        LiveAuctionJSON.decodeTimestampString(c, forKey: key)
+    }
+}
+
+/// Flexible wrapper for `GET /api/v1/jobs/{id}/auction/events`.
+/// Gateway currently writes a bare JSON array; also accepts `{ "events": [...] }`.
+struct AuctionEventsPayload: Decodable, Sendable {
+    var events: [AuctionEvent]
+
+    init(events: [AuctionEvent] = []) {
+        self.events = events
+    }
+
+    init(from decoder: Decoder) throws {
+        if var unkeyed = try? decoder.unkeyedContainer() {
+            var items: [AuctionEvent] = []
+            while !unkeyed.isAtEnd {
+                if let event = try? unkeyed.decode(AuctionEvent.self) {
+                    items.append(event)
+                } else if (try? unkeyed.decode(FlexibleJSONValue.self)) != nil {
+                    continue
+                } else {
+                    break
+                }
+            }
+            events = items
+            return
+        }
+
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let list = try? c.decodeIfPresent([AuctionEvent].self, forKey: .events) {
+            events = list
+        } else if let list = try? c.decodeIfPresent([AuctionEvent].self, forKey: .recentEvents) {
+            events = list
+        } else {
+            events = []
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case events
+        case recentEvents
+    }
+}
 
 /// Snapshot from `GET /api/v1/jobs/{id}/auction/state`.
 /// All fields optional — proto/JSON shapes vary and the endpoint may be gated.
@@ -1681,6 +1955,8 @@ struct LiveAuctionState: Decodable, Sendable, Hashable {
     var auctionEndsAt: String?
     var snipeExtensionCount: Int?
     var maxSnipeExtensions: Int?
+    /// Optional recent activity when the state payload includes it.
+    var recentEvents: [AuctionEvent]?
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -1690,6 +1966,7 @@ struct LiveAuctionState: Decodable, Sendable, Hashable {
         auctionEndsAt = Self.decodeTimestampString(c, forKey: .auctionEndsAt)
         snipeExtensionCount = Self.decodeInt(c, forKey: .snipeExtensionCount)
         maxSnipeExtensions = Self.decodeInt(c, forKey: .maxSnipeExtensions)
+        recentEvents = try? c.decodeIfPresent([AuctionEvent].self, forKey: .recentEvents)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1699,6 +1976,7 @@ struct LiveAuctionState: Decodable, Sendable, Hashable {
         case auctionEndsAt
         case snipeExtensionCount
         case maxSnipeExtensions
+        case recentEvents
     }
 
     private static func decodeInt64(
@@ -1728,6 +2006,23 @@ struct LiveAuctionState: Decodable, Sendable, Hashable {
         _ c: KeyedDecodingContainer<CodingKeys>,
         forKey key: CodingKeys
     ) -> String? {
+        LiveAuctionJSON.decodeTimestampString(c, forKey: key)
+    }
+}
+
+/// Nested protobuf-style timestamp object: `{ "seconds": ..., "nanos": ... }`.
+/// Top-level (not nested in a generic function) so Swift can form the type metadata.
+private struct LiveAuctionProtoTimestamp: Decodable {
+    var seconds: Int64?
+    var nanos: Int32?
+}
+
+/// Shared flexible timestamp decode helpers for live-auction JSON shapes.
+private enum LiveAuctionJSON {
+    static func decodeTimestampString<K: CodingKey>(
+        _ c: KeyedDecodingContainer<K>,
+        forKey key: K
+    ) -> String? {
         if let s = try? c.decodeIfPresent(String.self, forKey: key), !s.isEmpty {
             return s
         }
@@ -1739,12 +2034,7 @@ struct LiveAuctionState: Decodable, Sendable, Hashable {
             let date = Date(timeIntervalSince1970: TimeInterval(n))
             return ISO8601DateFormatter().string(from: date)
         }
-        // Nested protobuf-style object: { "seconds": ..., "nanos": ... }
-        struct ProtoTimestamp: Decodable {
-            var seconds: Int64?
-            var nanos: Int32?
-        }
-        if let ts = try? c.decodeIfPresent(ProtoTimestamp.self, forKey: key),
+        if let ts = try? c.decodeIfPresent(LiveAuctionProtoTimestamp.self, forKey: key),
            let seconds = ts.seconds {
             let date = Date(timeIntervalSince1970: TimeInterval(seconds))
             return ISO8601DateFormatter().string(from: date)

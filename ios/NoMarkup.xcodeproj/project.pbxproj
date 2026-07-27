@@ -89,6 +89,7 @@
 		A100000000000000000000A1 /* JobDraftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A1 /* JobDraftsView.swift */; };
 		A100000000000000000000A2 /* TrustTiersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A2 /* TrustTiersView.swift */; };
 		A100000000000000000000A3 /* PlanLimitsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A3 /* PlanLimitsView.swift */; };
+		A100000000000000000000AA /* RegulatedRailsStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AA /* RegulatedRailsStatusView.swift */; };
 		A100000000000000000000A4 /* TermsAcceptanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A4 /* TermsAcceptanceView.swift */; };
 		A100000000000000000000A5 /* SalesExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A5 /* SalesExportView.swift */; };
 		A100000000000000000000A6 /* CalendarExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A6 /* CalendarExportView.swift */; };
@@ -182,6 +183,7 @@
 		B10000000000000000000083 /* CategoryPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryPickerView.swift; sourceTree = "<group>"; };
 		B100000000000000000000A2 /* TrustTiersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustTiersView.swift; sourceTree = "<group>"; };
 		B100000000000000000000A3 /* PlanLimitsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanLimitsView.swift; sourceTree = "<group>"; };
+		B100000000000000000000AA /* RegulatedRailsStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegulatedRailsStatusView.swift; sourceTree = "<group>"; };
 		B100000000000000000000A4 /* TermsAcceptanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermsAcceptanceView.swift; sourceTree = "<group>"; };
 		B100000000000000000000A1 /* JobDraftsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobDraftsView.swift; sourceTree = "<group>"; };
 		B100000000000000000000A5 /* SalesExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SalesExportView.swift; sourceTree = "<group>"; };
@@ -363,6 +365,7 @@
 				B100000000000000000000A2 /* TrustTiersView.swift */,
 				B100000000000000000000A9 /* TrustScoreView.swift */,
 				B100000000000000000000A3 /* PlanLimitsView.swift */,
+				B100000000000000000000AA /* RegulatedRailsStatusView.swift */,
 				B100000000000000000000A4 /* TermsAcceptanceView.swift */,
 				B10000000000000000000027 /* NotificationsView.swift */,
 				B1000000000000000000002B /* WatchlistView.swift */,
@@ -560,6 +563,7 @@
 				A100000000000000000000A2 /* TrustTiersView.swift in Sources */,
 				A100000000000000000000A9 /* TrustScoreView.swift in Sources */,
 				A100000000000000000000A3 /* PlanLimitsView.swift in Sources */,
+				A100000000000000000000AA /* RegulatedRailsStatusView.swift in Sources */,
 				A100000000000000000000A4 /* TermsAcceptanceView.swift in Sources */,
 				A10000000000000000000071 /* APIClient+Extras.swift in Sources */,
 				A10000000000000000000078 /* APIClient+Provider.swift in Sources */,

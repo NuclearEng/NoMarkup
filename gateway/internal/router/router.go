@@ -253,7 +253,9 @@ func New(
 			Post("/{id}/close", jobHandler.Close)
 		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
 			Post("/{id}/cancel", jobHandler.Cancel)
-		r.With(authMW.Handler).Post("/{id}/bids", bidHandler.PlaceBid)
+		// MON-06/22: money-adjacent mutation requires Idempotency-Key (parity with listing bids).
+		r.With(authMW.Handler, middleware.RequireIdempotencyKey(cacheClient)).
+			Post("/{id}/bids", bidHandler.PlaceBid)
 		r.With(authMW.Handler).Post("/{id}/bids/accept-offer", bidHandler.AcceptOffer)
 		r.With(authMW.Handler).Post("/{id}/bids/{bidID}/award", bidHandler.AwardBid)
 
@@ -485,8 +487,11 @@ func New(
 		// their first bid is accepted. The bond is released the moment
 		// they complete OR lose the auction (released → trusted forever).
 		// Captured on confirmed no-show. eBay/Whatnot ship this; we now do too.
-		r.Post("/listings/{id}/bid-bond", bidBondHandler.CreateBidBond)
-		r.Post("/listings/{id}/bid-bond/confirm", bidBondHandler.ConfirmBidBond)
+		// MON-06/22: SetupIntent mint + confirm are money-adjacent — Idempotency-Key required.
+		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+			Post("/listings/{id}/bid-bond", bidBondHandler.CreateBidBond)
+		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+			Post("/listings/{id}/bid-bond/confirm", bidBondHandler.ConfirmBidBond)
 
 		// ── Followable seller (Whatnot retention mechanic) ──────────────
 		// Mirrors the watchlist surface in shape: per-target follow toggle

@@ -452,7 +452,20 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .accessibilityHint("Compare free and paid provider plan limits. Paid digital plans are not sold in this app.")
 
+                    NavigationLink {
+                        RegulatedRailsStatusView()
+                    } label: {
+                        Label("Regulated capabilities", systemImage: "shield.lefthalf.filled")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Read-only list of financial and insurance rails that are not available in this iOS build.")
+
                     Text("Paid digital plans are web-only / not sold in this app. StoreKit IAP is intentionally omitted.")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("BNPL, advances, insurance purchase, lead-gen, and instant payout stay off in this binary (compliance).")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -596,6 +609,8 @@ private struct ExportShareItem: Identifiable {
 #Preview {
     AccountView()
         .environmentObject(AuthViewModel())
+        .environmentObject(FeatureFlags())
+        .environmentObject(PushRegistration.shared)
         .preferredColorScheme(.dark)
         .tint(BrandTheme.accent)
 }

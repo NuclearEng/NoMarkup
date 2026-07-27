@@ -35,6 +35,10 @@ vi.mock('sonner', () => ({
 }));
 
 vi.mock('@/lib/api', () => ({
+  idempotencyHeader: (op?: string) => ({
+    'Idempotency-Key': op ? `key-for-${op}` : 'test-key',
+  }),
+  clearIdempotencyKey: () => undefined,
   api: {
     get: vi.fn(),
     post: vi.fn(),
@@ -277,9 +281,11 @@ describe('useCompliance', () => {
       await waitFor(() => {
         expect(result.current.isSuccess).toBe(true);
       });
-      expect(api.post).toHaveBeenCalledWith('/api/v1/listings/listing-1/bid-bond', {
-        intended_bid_cents: 10000,
-      });
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/v1/listings/listing-1/bid-bond',
+        { intended_bid_cents: 10000 },
+        { 'Idempotency-Key': 'key-for-bid-bond:listing-1:10000' },
+      );
     });
 
     it('useConfirmBidBond POSTs the bond id', async () => {
@@ -290,9 +296,11 @@ describe('useCompliance', () => {
       await waitFor(() => {
         expect(result.current.isSuccess).toBe(true);
       });
-      expect(api.post).toHaveBeenCalledWith('/api/v1/listings/listing-1/bid-bond/confirm', {
-        bond_id: 'bond-1',
-      });
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/v1/listings/listing-1/bid-bond/confirm',
+        { bond_id: 'bond-1' },
+        { 'Idempotency-Key': 'key-for-bid-bond-confirm:listing-1:bond-1' },
+      );
     });
   });
 

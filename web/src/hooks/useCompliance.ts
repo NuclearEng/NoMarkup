@@ -21,7 +21,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { ApiError, api, getApiErrorMessage } from '@/lib/api';
+import { ApiError, api, clearIdempotencyKey, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Types
@@ -209,8 +209,18 @@ export function useSetDOB() {
 
 export function useCreateBidBond() {
   return useMutation({
-    mutationFn: ({ listingId, input }: { listingId: string; input: CreateBidBondInput }) =>
-      api.post<CreateBidBondResponse>(`/api/v1/listings/${listingId}/bid-bond`, input),
+    mutationFn: ({ listingId, input }: { listingId: string; input: CreateBidBondInput }) => {
+      // Gateway RequireIdempotencyKey on POST /listings/{id}/bid-bond (MON-06/22).
+      const opKey = `bid-bond:${listingId}:${input.intended_bid_cents}`;
+      return api.post<CreateBidBondResponse>(
+        `/api/v1/listings/${listingId}/bid-bond`,
+        input,
+        idempotencyHeader(opKey),
+      );
+    },
+    onSuccess: (_data, variables) => {
+      clearIdempotencyKey(`bid-bond:${variables.listingId}:${variables.input.intended_bid_cents}`);
+    },
     onError: (err: unknown) => {
       toast.error(getApiErrorMessage(err, 'Failed to create bid bond'));
     },
@@ -219,10 +229,18 @@ export function useCreateBidBond() {
 
 export function useConfirmBidBond() {
   return useMutation({
-    mutationFn: ({ listingId, bondId }: { listingId: string; bondId: string }) =>
-      api.post<ConfirmBidBondResponse>(`/api/v1/listings/${listingId}/bid-bond/confirm`, {
-        bond_id: bondId,
-      }),
+    mutationFn: ({ listingId, bondId }: { listingId: string; bondId: string }) => {
+      // Gateway RequireIdempotencyKey on POST /listings/{id}/bid-bond/confirm (MON-06/22).
+      const opKey = `bid-bond-confirm:${listingId}:${bondId}`;
+      return api.post<ConfirmBidBondResponse>(
+        `/api/v1/listings/${listingId}/bid-bond/confirm`,
+        { bond_id: bondId },
+        idempotencyHeader(opKey),
+      );
+    },
+    onSuccess: (_data, variables) => {
+      clearIdempotencyKey(`bid-bond-confirm:${variables.listingId}:${variables.bondId}`);
+    },
     onError: (err: unknown) => {
       toast.error(getApiErrorMessage(err, 'Failed to confirm bid bond'));
     },

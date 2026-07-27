@@ -46,6 +46,10 @@ vi.mock('sonner', () => ({
 }));
 
 vi.mock('@/lib/api', () => ({
+  idempotencyHeader: (op?: string) => ({
+    'Idempotency-Key': op ? `key-for-${op}` : 'test-key',
+  }),
+  clearIdempotencyKey: () => undefined,
   api: {
     get: vi.fn(),
     getPublic: vi.fn(),
@@ -188,9 +192,11 @@ describe('usePlaceBid', () => {
 
     expect(result.current.data?.id).toBe('bid-1');
     expect(result.current.data?.amount_cents).toBe(5000);
-    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/jobs/job-1/bids', {
-      amount_cents: 5000,
-    });
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/jobs/job-1/bids',
+      { amount_cents: 5000 },
+      { 'Idempotency-Key': 'key-for-job-bid:job-1:5000' },
+    );
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['jobs', 'job-1'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bidCount', 'job-1'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bidsForJob', 'job-1'] });

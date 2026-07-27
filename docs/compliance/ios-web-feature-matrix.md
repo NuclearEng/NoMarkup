@@ -50,7 +50,7 @@ Legend:
 | Regulated rails | BNPL, insurance, advances, legal, instant payout | **out of scope** | Hard-off |
 | Full provider Business OS | team, tax, expenses, WC | **out of scope** | Lite only |
 | Google/Facebook OAuth | oauth | **not started** | SIWA + email |
-| Chat / auction WebSocket | /ws/* | **partial** | REST polling |
+| Chat / auction WebSocket | /ws/* | **live** (chat REST poll SLA) / **partial** (native WS) | Open-thread ~5s REST poll + “Updates every few seconds” UI; auction stream still poll/partial |
 
 ---
 

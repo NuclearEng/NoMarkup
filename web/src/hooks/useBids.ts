@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useShallow } from 'zustand/react/shallow';
 import { toast } from 'sonner';
 
-import { ApiError, api } from '@/lib/api';
+import { ApiError, api, clearIdempotencyKey, idempotencyHeader } from '@/lib/api';
 import { useAuctionStore } from '@/stores/auction-store';
 import { useCountdown } from '@/hooks/useCountdown';
 import { useAuthStore } from '@/stores/auth-store';
@@ -28,10 +28,11 @@ async function bidMutation(
   method: 'POST' | 'PATCH' | 'DELETE',
   path: string,
   input?: unknown,
+  extraHeaders?: Record<string, string>,
 ): Promise<Bid> {
   const raw =
     method === 'POST'
-      ? await api.post<Record<string, unknown>>(path, input)
+      ? await api.post<Record<string, unknown>>(path, input, extraHeaders)
       : method === 'PATCH'
         ? await api.patch<Record<string, unknown>>(path, input)
         : await api.delete<Record<string, unknown>>(path);
@@ -61,9 +62,19 @@ export function usePlaceBid() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ jobId, input }: { jobId: string; input: PlaceBidInput }) =>
-      bidMutation('POST', `/api/v1/jobs/${jobId}/bids`, input),
+    mutationFn: ({ jobId, input }: { jobId: string; input: PlaceBidInput }) => {
+      // Stable key per job+amount so double-tap / network retry cannot double-bid.
+      // Gateway RequireIdempotencyKey on POST /jobs/{id}/bids (MON-06/22).
+      const opKey = `job-bid:${jobId}:${input.amount_cents}`;
+      return bidMutation(
+        'POST',
+        `/api/v1/jobs/${jobId}/bids`,
+        input,
+        idempotencyHeader(opKey),
+      );
+    },
     onSuccess: (_data, variables) => {
+      clearIdempotencyKey(`job-bid:${variables.jobId}:${variables.input.amount_cents}`);
       toast.success('Bid placed successfully');
       void queryClient.invalidateQueries({ queryKey: ['jobs', variables.jobId] });
       void queryClient.invalidateQueries({ queryKey: ['bidCount', variables.jobId] });

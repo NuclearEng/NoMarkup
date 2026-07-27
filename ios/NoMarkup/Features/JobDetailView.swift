@@ -40,9 +40,15 @@ struct JobDetailView: View {
 
     /// Soft live-auction overlay (lowest bid / ends-at) from optional poll.
     @State private var liveLowestBidCents: Int64?
+    /// True once `GET …/auction/state` succeeds (feature on + live job).
+    @State private var liveAuctionStateAvailable = false
+    /// Recent activity from soft poll of `GET …/auction/events` (HTTP, not WS).
+    @State private var auctionEvents: [AuctionEvent] = []
 
-    /// Showcase H1.4/H1.5 — market range + savings strip (soft-fail if no FPI data).
+    /// Showcase H1.4/H1.5 — FPI when usable (median savings); soft-fail otherwise.
     @State private var fairPrice: FairPriceResponse?
+    /// Resolved band: FPI → category starting-bid sample → reverse-auction 60–100% estimate.
+    @State private var marketRange: MarketRangeEstimate?
 
     init(jobID: String, preview: JobSummary? = nil) {
         self.jobID = jobID
@@ -241,10 +247,11 @@ struct JobDetailView: View {
     @ViewBuilder
     private func detailContent(_ job: JobDetail) -> some View {
         List {
-            // Auction first — hero, place bid (dollars), then live ladder.
+            // Auction first — hero, place bid (dollars), live ladder, soft live feed.
             auctionHeroSection(job)
             placeBidSection(job)
             bidLadderSection(job)
+            liveFeedSection
             manageAuctionSection
             detailsSection(job)
 
@@ -399,40 +406,56 @@ struct JobDetailView: View {
         }
     }
 
-    /// Showcase market-range + savings strip (H1.4 / H1.5). Soft-fails when FPI has no data.
+    /// Showcase market-range + savings strip (H1.4 / H1.5). Soft-fails; never blocks load.
     @ViewBuilder
     private func marketIntelligenceStrip(_ job: JobDetail) -> some View {
-        let rangeText = marketRangeLabel(job: job)
-        let savingsText = savingsLabel(job: job)
-        if rangeText != nil || savingsText != nil {
+        let range = marketRange ?? Self.fallbackRange(for: job)
+        let savingsVsStart = savingsVsStartingLabel(job: job)
+        let savingsVsMarket = savingsVsMarketMedianLabel()
+        if range != nil || savingsVsStart != nil || savingsVsMarket != nil {
             VStack(alignment: .leading, spacing: 8) {
-                if let rangeText {
+                if let range {
                     HStack(alignment: .firstTextBaseline) {
-                        Text("Market range")
+                        Text(range.source.titleLabel)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(BrandTheme.textSecondary)
                             .textCase(.uppercase)
                         Spacer(minLength: 8)
-                        Text(rangeText)
+                        Text(range.rangeCaption)
                             .font(.subheadline.weight(.semibold).monospacedDigit())
                             .foregroundStyle(BrandTheme.goldBright)
+                            .multilineTextAlignment(.trailing)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Market range \(rangeText)")
+                    .accessibilityLabel("\(range.source.titleLabel) \(range.rangeCaption)")
                 }
-                if let savingsText {
+                if let savingsVsStart {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Est. savings vs starting")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(BrandTheme.textSecondary)
                             .textCase(.uppercase)
                         Spacer(minLength: 8)
-                        Text(savingsText)
+                        Text(savingsVsStart)
                             .font(.subheadline.weight(.bold).monospacedDigit())
                             .foregroundStyle(BrandTheme.success)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Estimated savings \(savingsText)")
+                    .accessibilityLabel("Estimated savings versus starting \(savingsVsStart)")
+                }
+                if let savingsVsMarket {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Est. savings vs market median")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .textCase(.uppercase)
+                        Spacer(minLength: 8)
+                        Text(savingsVsMarket)
+                            .font(.subheadline.weight(.bold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.success)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Estimated savings versus market median \(savingsVsMarket)")
                 }
             }
             .padding(12)
@@ -445,31 +468,25 @@ struct JobDetailView: View {
         }
     }
 
-    private func marketRangeLabel(job: JobDetail) -> String? {
-        if let fair = fairPrice, fair.isUsable {
-            let lo = fair.p25Cents ?? fair.ciLoCents
-            let hi = fair.p75Cents ?? fair.ciHiCents
-            if let lo, let hi, lo > 0, hi >= lo {
-                let n = fair.nEff.map { Int($0.rounded()) } ?? 0
-                let pts = n > 0 ? " · \(n) data pts" : ""
-                return "\(MoneyFormat.usd(cents: lo)) – \(MoneyFormat.usd(cents: hi))\(pts)"
-            }
-            if let mid = fair.priceCents, mid > 0 {
-                return "Median ≈ \(MoneyFormat.usd(cents: mid))"
-            }
-        }
-        // Fallback: starting bid is the reverse-auction ceiling (showcase budget anchor).
-        if let start = job.startingBidCents, start > 0 {
-            return "Budget ceiling \(MoneyFormat.usd(cents: start))"
-        }
-        return nil
+    /// Synchronous last-resort band so the strip can still show before async load finishes.
+    private static func fallbackRange(for job: JobDetail) -> MarketRangeEstimate? {
+        MarketRangeMath.reverseAuctionBand(startingBidCents: job.startingBidCents ?? 0)
     }
 
-    private func savingsLabel(job: JobDetail) -> String? {
+    private func savingsVsStartingLabel(job: JobDetail) -> String? {
         guard let start = job.startingBidCents, start > 0 else { return nil }
         guard let leading = leadingBidCents, leading > 0, leading < start else { return nil }
         let saved = start - leading
         let pct = Int((Double(saved) / Double(start) * 100.0).rounded())
+        return "\(MoneyFormat.usd(cents: saved)) (\(pct)%)"
+    }
+
+    /// Only when FPI is usable — compare leading bid to market median (not category-sample estimate).
+    private func savingsVsMarketMedianLabel() -> String? {
+        guard let fair = fairPrice, fair.isUsable, let median = fair.priceCents, median > 0 else { return nil }
+        guard let leading = leadingBidCents, leading > 0, leading < median else { return nil }
+        let saved = median - leading
+        let pct = Int((Double(saved) / Double(median) * 100.0).rounded())
         return "\(MoneyFormat.usd(cents: saved)) (\(pct)%)"
     }
 
@@ -481,6 +498,29 @@ struct JobDetailView: View {
     private var isLiveAuctionType: Bool {
         let t = (detail?.auctionType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return t == "live"
+    }
+
+    /// Soft Live feed when the job is live-typed or the state endpoint already answered.
+    private var shouldShowLiveFeed: Bool {
+        guard isLiveAuctionType || liveAuctionStateAvailable else { return false }
+        return isAuctionActiveForPolling || !auctionEvents.isEmpty
+    }
+
+    /// Public amounts for live auctions / owners; sealed non-owners only see activity labels.
+    private var canShowPublicEventAmounts: Bool {
+        if isLiveAuctionType { return true }
+        if isJobOwner { return true }
+        return !isSealedAuction
+    }
+
+    /// Newest-first, capped for a compact soft feed.
+    private var displayAuctionEvents: [AuctionEvent] {
+        let sorted = auctionEvents.sorted { lhs, rhs in
+            let left = CatalogDateFormat.parseISO(lhs.createdAt ?? "") ?? .distantPast
+            let right = CatalogDateFormat.parseISO(rhs.createdAt ?? "") ?? .distantPast
+            return left > right
+        }
+        return Array(sorted.prefix(20))
     }
 
     private var reverseAuctionBadge: some View {
@@ -657,6 +697,81 @@ struct JobDetailView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
+    }
+
+    // MARK: - Soft live feed (HTTP poll, not WebSocket)
+
+    @ViewBuilder
+    private var liveFeedSection: some View {
+        if shouldShowLiveFeed {
+            Section {
+                if displayAuctionEvents.isEmpty {
+                    Text("No recent bid activity yet.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .accessibilityLabel("No recent bid activity yet")
+                } else {
+                    ForEach(displayAuctionEvents) { event in
+                        liveFeedRow(event)
+                    }
+                }
+            } header: {
+                HStack(spacing: 6) {
+                    if isAuctionActiveForPolling {
+                        Circle()
+                            .fill(BrandTheme.success)
+                            .frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
+                    }
+                    Text("Live feed").brandSectionHeader()
+                }
+            } footer: {
+                Text("Refreshes every 10 seconds while the auction is open.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func liveFeedRow(_ event: AuctionEvent) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.displayEventLabel)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                if let created = event.createdAt, !created.isEmpty {
+                    Text(CatalogDateFormat.friendlyDateTime(created))
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+            }
+            Spacer(minLength: 8)
+            if canShowPublicEventAmounts,
+               let cents = event.amountCents,
+               cents > 0 {
+                Text(MoneyFormat.usd(cents: cents))
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+            }
+        }
+        .padding(.vertical, 2)
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(liveFeedAccessibilityLabel(event))
+    }
+
+    private func liveFeedAccessibilityLabel(_ event: AuctionEvent) -> String {
+        var parts: [String] = [event.displayEventLabel]
+        if canShowPublicEventAmounts,
+           let cents = event.amountCents,
+           cents > 0 {
+            parts.append(MoneyFormat.usd(cents: cents))
+        }
+        if let created = event.createdAt, !created.isEmpty {
+            parts.append(CatalogDateFormat.friendlyDateTime(created))
+        }
+        return parts.joined(separator: ", ")
     }
 
     @ViewBuilder
@@ -1198,25 +1313,73 @@ struct JobDetailView: View {
         }
 
         await loadBids()
-        // Soft live-state refresh (ignore failures).
+        // Soft live-state + events refresh (ignore failures / 404).
         await refreshLiveAuctionState()
-        await loadFairPrice()
+        await refreshLiveAuctionEvents()
+        await loadMarketIntelligence()
     }
 
-    /// Soft market-range fetch for showcase intelligence strip (never blocks hero).
+    /// Soft market-range for the intelligence strip (H1.4 / H1.5). Never throws / never blocks hero.
+    /// Hierarchy: FPI p25–p75 → client category starting-bid sample → reverse-auction 60–100% band.
     @MainActor
-    private func loadFairPrice() async {
+    private func loadMarketIntelligence() async {
         let categoryId = detail?.categoryId?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !categoryId.isEmpty else {
+        let starting = detail?.startingBidCents ?? 0
+
+        // (a) Fair-price index when the engine has data.
+        if !categoryId.isEmpty {
+            do {
+                let price = try await APIClient.shared.fetchFairPrice(categoryId: categoryId, side: 1)
+                if let estimate = MarketRangeMath.fromFairPrice(price) {
+                    fairPrice = price
+                    marketRange = estimate
+                    return
+                }
+                fairPrice = nil
+            } catch {
+                fairPrice = nil
+            }
+        } else {
             fairPrice = nil
-            return
         }
+
+        // (b) Category sample: p25–p75 of recent public jobs' starting bids (max 20).
+        if !categoryId.isEmpty {
+            if let sample = await loadCategorySampleRange(categoryId: categoryId) {
+                marketRange = sample
+                return
+            }
+        }
+
+        // (c) Documented reverse-auction band from this job's starting bid.
+        marketRange = MarketRangeMath.reverseAuctionBand(startingBidCents: starting)
+    }
+
+    /// Public jobs in the same category → client-side p25/p75 of starting bids (honest estimate).
+    @MainActor
+    private func loadCategorySampleRange(categoryId: String) async -> MarketRangeEstimate? {
         do {
-            let price = try await APIClient.shared.fetchFairPrice(categoryId: categoryId, side: 1)
-            fairPrice = price.isUsable ? price : nil
+            let response = try await APIClient.shared.fetchJobs(
+                page: 1,
+                pageSize: 20,
+                categoryIds: [categoryId]
+            )
+            // Include this job's starting bid — it is a public category anchor.
+            let bids: [Int64] = response.jobs.compactMap { job in
+                // Prefer server filter; still match client-side if the API returns broader results.
+                if let jobCat = job.categoryId?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !jobCat.isEmpty,
+                   jobCat.caseInsensitiveCompare(categoryId) != .orderedSame
+                {
+                    return nil
+                }
+                guard let cents = job.startingBidCents, cents > 0 else { return nil }
+                return cents
+            }
+            return MarketRangeMath.fromCategoryStartingBids(bids, maxSample: 20)
         } catch {
-            fairPrice = nil
+            return nil
         }
     }
 
@@ -1250,12 +1413,13 @@ struct JobDetailView: View {
         }
     }
 
-    /// Polls live auction state every 10s while the scene is active and the auction is open.
-    /// Decode/network failures are ignored (endpoint may be feature-gated).
+    /// Polls live auction state + events every 10s while the scene is active and the auction is open.
+    /// Decode/network failures are ignored (endpoints may be feature-gated → 404).
     private func pollLiveAuctionStateLoop() async {
         guard isAuctionActiveForPolling, scenePhase == .active else { return }
         // Immediate soft refresh, then every 10s until cancelled.
         await refreshLiveAuctionState()
+        await refreshLiveAuctionEvents()
         while !Task.isCancelled {
             do {
                 try await Task.sleep(nanoseconds: 10_000_000_000)
@@ -1265,6 +1429,7 @@ struct JobDetailView: View {
             guard !Task.isCancelled else { return }
             guard scenePhase == .active, isAuctionActiveForPolling else { return }
             await refreshLiveAuctionState()
+            await refreshLiveAuctionEvents()
         }
     }
 
@@ -1296,7 +1461,19 @@ struct JobDetailView: View {
     }
 
     @MainActor
+    private func refreshLiveAuctionEvents() async {
+        guard isAuctionActiveForPolling || isLiveAuctionType || liveAuctionStateAvailable else { return }
+        do {
+            let events = try await APIClient.shared.fetchJobAuctionEvents(jobId: jobID)
+            auctionEvents = events
+        } catch {
+            // Optional endpoint — soft-fail 404 / decode / network; keep last good feed.
+        }
+    }
+
+    @MainActor
     private func applyLiveAuctionState(_ state: LiveAuctionState) {
+        liveAuctionStateAvailable = true
         if let lowest = state.lowestBidCents, lowest > 0 {
             liveLowestBidCents = lowest
         }
@@ -1308,6 +1485,10 @@ struct JobDetailView: View {
                 job.auctionEndsAt = ends
             }
             detail = job
+        }
+        // Seed the soft feed from state when events poll is empty / lagged.
+        if let recent = state.recentEvents, !recent.isEmpty, auctionEvents.isEmpty {
+            auctionEvents = recent
         }
     }
 }

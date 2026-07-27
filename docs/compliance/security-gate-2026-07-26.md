@@ -11,14 +11,14 @@
 
 | Check | Result |
 |-------|--------|
-| 1. Idempotency-Key on listed money mutations | **PARTIAL** — listing bid / buy-now / order pay enforced on gateway + sent by iOS; **job bid & bid-bond not gateway-enforced**; **web listing bid omits header** |
+| 1. Idempotency-Key on listed money mutations | **PASS (middleware)** — job bid, listing bid, buy-now, order pay, bid-bond create/confirm: gateway enforces + web/iOS send headers. Residual: handler durable dedup for job bid/bond; iOS job-bid key UUID-per-call (SEC-GATE-07) |
 | 2. No force-unwraps in iOS money paths | **PASS** |
 | 3. `iOSHardOffKeys` still enforced | **PASS** |
 | 4. Amounts are `Int64` cents in API bodies | **PASS** (iOS encode + gateway decode) |
 | 5. confirm-pickup / seller-confirm exist + auth-gated | **PASS** |
 | Residual money races (MON-14–18 etc.) | **Open** — tracked; not closed by this gate |
 
-**Gate overall:** **PASS WITH GAPS** — ship-blocking only if web goods bid or production money races are in scope for this binary; iOS regulated rails remain hard-off.
+**Gate overall:** **PASS WITH GAPS** — middleware Idempotency-Key gaps closed same day; production money races (MON-14–18) and iOS hard-off rails remain separate.
 
 ---
 
@@ -28,12 +28,12 @@
 
 | Mutation | Gateway route | `RequireIdempotencyKey` | iOS sends header | Web sends header |
 |----------|---------------|-------------------------|------------------|------------------|
-| Job bid | `POST /api/v1/jobs/{id}/bids` | **No** — auth only | **Yes** | **No** |
-| Listing bid | `POST /api/v1/listings/{id}/bids` | **Yes** | **Yes** | **No** (will 400) |
+| Job bid | `POST /api/v1/jobs/{id}/bids` | **Yes** (+ auth) | **Yes** | **Yes** |
+| Listing bid | `POST /api/v1/listings/{id}/bids` | **Yes** | **Yes** | **Yes** |
 | Buy-now | `POST /api/v1/listings/{id}/buy-now` | **Yes** | **Yes** | **Yes** |
 | Pay order | `POST /api/v1/orders/{id}/pay` | **Yes** | **Yes** | **Yes** |
-| Bid bond create | `POST /api/v1/listings/{id}/bid-bond` | **No** | **No** | **No** |
-| Bid bond confirm | `POST /api/v1/listings/{id}/bid-bond/confirm` | **No** | **No** | **No** |
+| Bid bond create | `POST /api/v1/listings/{id}/bid-bond` | **Yes** | **Yes** | **Yes** |
+| Bid bond confirm | `POST /api/v1/listings/{id}/bid-bond/confirm` | **Yes** | **Yes** | **Yes** |
 
 ### Gateway — middleware contract
 
@@ -423,10 +423,10 @@ UI: `ios/NoMarkup/Features/MyOrdersView.swift` (`confirmPickup` / `sellerConfirm
 
 | ID | Gap | Evidence | Exit |
 |----|-----|----------|------|
-| **SEC-GATE-04** | Job bid: gateway does **not** require / consume Idempotency-Key | `router.go:256`; `bid.go` no idempotency | Mount `RequireIdempotencyKey` + durable dedup (parity with listing bids) |
-| **SEC-GATE-05** | Web job bid omits Idempotency-Key | `useBids.ts:64–65` | Send header once gateway enforces (or for optional replay safety) |
-| **SEC-GATE-06** | Bid bond create/confirm: no gateway idempotency middleware; clients send no key | `router.go:488–489`; iOS `APIClient+Commerce.swift:220–253`; web `useCompliance.ts:210–229` | Require key; unique constraint / SetupIntent reuse on double-tap |
-| **SEC-GATE-07** | iOS job-bid key includes UUID per call → retries of the *same* intentional bid are not sticky | `APIClient.swift:394` | Stable key per logical attempt (like web `idempotencyHeader(operationKey)`) if gateway starts enforcing |
+| **SEC-GATE-04** | ~~Job bid: gateway does not require Idempotency-Key~~ **CLOSED** middleware | `router.go` job place bid now `authMW` + `RequireIdempotencyKey` | Residual: durable SQL dedup in `bid.go` (listing parity) |
+| **SEC-GATE-05** | ~~Web job bid omits Idempotency-Key~~ **CLOSED** | `useBids.ts` `usePlaceBid` + `idempotencyHeader` | — |
+| **SEC-GATE-06** | ~~Bid bond create/confirm no middleware / clients~~ **CLOSED** middleware + clients | gateway + iOS Commerce + web useCompliance | Residual: SetupIntent reuse / unique constraint on double-tap |
+| **SEC-GATE-07** | iOS job-bid key includes UUID per call → retries of the *same* intentional bid are not sticky | `APIClient.swift` placeJobBid | Stable key per logical attempt (like web `idempotencyHeader(operationKey)`) |
 | **SEC-GATE-08** | MON-19…23, MON-26 residual money integrity (award lock, fee policy, tip rail, concurrent refund tests) | adversarial tracker | Next money-integrity sprint |
 | **SEC-GATE-09** | gRPC mesh still insecure credentials on private network | Claude.md §6 TLS note | mTLS when provisioning completes |
 
@@ -469,3 +469,15 @@ rg -n 'idempotencyHeader|Idempotency-Key|/bids|buy-now|bid-bond' web/src/hooks
 ## Update — web listing bid Idempotency-Key (same day)
 
 `web/src/hooks/useListings.ts` `usePlaceListingBid` now sends `idempotencyHeader('listing-bid:{listingId}:{amount}')` and clears on success. Closes the P0 gap that web omitted the header while gateway required it.
+
+## Update — job bid + bid-bond Idempotency-Key (same day)
+
+Closed **SEC-GATE-04 / 05 / 06** (gateway enforce + client headers):
+
+| Mutation | Gateway | Clients |
+|----------|---------|---------|
+| Job bid `POST /jobs/{id}/bids` | `authMW` + `RequireIdempotencyKey(cacheClient)` | Web `usePlaceBid` + iOS `placeJobBid` (already sent) |
+| Bid bond create | `RequireIdempotencyKey` under auth subtree | Web `useCreateBidBond` + iOS `createListingBidBond` |
+| Bid bond confirm | `RequireIdempotencyKey` under auth subtree | Web `useConfirmBidBond` + iOS `confirmListingBidBond` |
+
+Residual: handler-level durable dedup for job bids / bonds (middleware only rejects missing key; listing bids already dedup in SQL). iOS job-bid key still UUID-per-call (SEC-GATE-07).
