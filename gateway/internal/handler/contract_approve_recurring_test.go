@@ -38,13 +38,16 @@ type mockApproveContractClient struct {
 	getFn             func(ctx context.Context, req *contractv1.GetContractRequest) (*contractv1.GetContractResponse, error)
 	getRecurringFn    func(ctx context.Context, req *contractv1.GetRecurringConfigRequest) (*contractv1.GetRecurringConfigResponse, error)
 	pauseRecurringFn  func(ctx context.Context, req *contractv1.PauseRecurringRequest) (*contractv1.PauseRecurringResponse, error)
+	resumeRecurringFn func(ctx context.Context, req *contractv1.ResumeRecurringRequest) (*contractv1.ResumeRecurringResponse, error)
 	calls             int
 	lastReq           *contractv1.ApproveRecurringInstanceRequest
 	completeN         int
 	getN              int
 	getRecurringN     int
 	pauseN            int
+	resumeN           int
 	lastPauseReq      *contractv1.PauseRecurringRequest
+	lastResumeReq     *contractv1.ResumeRecurringRequest
 	lastGetRecurring  *contractv1.GetRecurringConfigRequest
 }
 
@@ -119,6 +122,22 @@ func (m *mockApproveContractClient) PauseRecurring(ctx context.Context, req *con
 			Id:         req.GetRecurringId(),
 			ContractId: testContractID,
 			Status:     "paused",
+			RateCents:  7500,
+		},
+	}, nil
+}
+
+func (m *mockApproveContractClient) ResumeRecurring(ctx context.Context, req *contractv1.ResumeRecurringRequest, _ ...grpc.CallOption) (*contractv1.ResumeRecurringResponse, error) {
+	m.resumeN++
+	m.lastResumeReq = req
+	if m.resumeRecurringFn != nil {
+		return m.resumeRecurringFn(ctx, req)
+	}
+	return &contractv1.ResumeRecurringResponse{
+		Config: &contractv1.RecurringConfig{
+			Id:         req.GetRecurringId(),
+			ContractId: testContractID,
+			Status:     "active",
 			RateCents:  7500,
 		},
 	}, nil
@@ -865,4 +884,73 @@ func TestApproveRecurringInstance_loadExistingPaymentNoSecretFailClosed(t *testi
 	assert.Equal(t, 2, pc.calls)
 	assert.Equal(t, 1, pc.listN)
 	assert.Equal(t, 0, cc.pauseN, "existing payment ⇒ do not FR-18.8 pause")
+}
+
+// --- HTTP pause / resume: party identity from JWT claims (never body) ---
+
+func pauseResumeRecurringRouter(h *ContractHandler) http.Handler {
+	r := chi.NewRouter()
+	r.Post("/api/v1/contracts/{id}/recurring/pause", h.PauseRecurring)
+	r.Post("/api/v1/contracts/{id}/recurring/resume", h.ResumeRecurring)
+	return r
+}
+
+func pauseResumeHTTPRequest(t *testing.T, path, userID string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, nil)
+	if userID != "" {
+		req = addClaimsToRequest(req, userID, "party@example.com", []string{"customer"})
+	}
+	return req
+}
+
+// TestPauseRecurring_forwardsClaimsUserID: gateway must pass JWT user id to
+// PauseRecurring so job requireContractParty can refuse non-parties. Never trusts body.
+func TestPauseRecurring_forwardsClaimsUserID(t *testing.T) {
+	t.Parallel()
+	cc := &mockApproveContractClient{}
+	h := NewContractHandler(cc, nil, nil)
+
+	path := "/api/v1/contracts/" + testContractID + "/recurring/pause"
+	rec := httptest.NewRecorder()
+	pauseResumeRecurringRouter(h).ServeHTTP(rec, pauseResumeHTTPRequest(t, path, testCustomerID))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	require.Equal(t, 1, cc.pauseN)
+	require.NotNil(t, cc.lastPauseReq)
+	assert.Equal(t, testRecurringID, cc.lastPauseReq.GetRecurringId())
+	assert.Equal(t, testCustomerID, cc.lastPauseReq.GetUserId(), "UserId must be claims.UserID")
+	assert.Equal(t, 1, cc.getRecurringN, "resolveRecurringConfig must load config by contract")
+}
+
+// TestResumeRecurring_forwardsClaimsUserID: same party gate for resume.
+func TestResumeRecurring_forwardsClaimsUserID(t *testing.T) {
+	t.Parallel()
+	cc := &mockApproveContractClient{}
+	h := NewContractHandler(cc, nil, nil)
+
+	path := "/api/v1/contracts/" + testContractID + "/recurring/resume"
+	rec := httptest.NewRecorder()
+	// Provider is also a party; job service requireContractParty admits either.
+	pauseResumeRecurringRouter(h).ServeHTTP(rec, pauseResumeHTTPRequest(t, path, testProviderID))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	require.Equal(t, 1, cc.resumeN)
+	require.NotNil(t, cc.lastResumeReq)
+	assert.Equal(t, testRecurringID, cc.lastResumeReq.GetRecurringId())
+	assert.Equal(t, testProviderID, cc.lastResumeReq.GetUserId(), "UserId must be claims.UserID")
+}
+
+// TestPauseRecurring_missingClaimsUnauthorized: unauthenticated pause is 401.
+func TestPauseRecurring_missingClaimsUnauthorized(t *testing.T) {
+	t.Parallel()
+	cc := &mockApproveContractClient{}
+	h := NewContractHandler(cc, nil, nil)
+
+	path := "/api/v1/contracts/" + testContractID + "/recurring/pause"
+	rec := httptest.NewRecorder()
+	pauseResumeRecurringRouter(h).ServeHTTP(rec, pauseResumeHTTPRequest(t, path, ""))
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, 0, cc.pauseN)
 }

@@ -208,18 +208,20 @@ func main() {
 	// events (customer.subscription.*, invoice.*) to the subscription service.
 	paymentSvc.SetSubscriptionWebhookHandler(subscriptionSvc)
 
-	// FR-18.8: on payment_intent.payment_failed for a payment with
-	// recurring_instance_id, pause the recurring config via job ContractService.
-	// Dial is lazy; a missing job mesh only means pause residual (payment still
-	// flips to failed). Never cancel the contract from this path.
+	// FR-16.7 + FR-18.8: on payment_intent.payment_failed for a payment with
+	// recurring_instance_id, increment recurring_configs.payment_retry_count
+	// (shared SQL, same as gateway CreatePayment setup-fail) and only
+	// PauseRecurring via job ContractService when count >= 3. Dial residual
+	// only means strike/pause residual (payment still flips to failed).
+	// Never cancel the contract from this path.
 	jobAddr := envOrDefault("JOB_SERVICE_ADDR", "localhost:50052")
-	if contractClient, err := paymentclient.NewContractClient(jobAddr); err != nil {
-		slog.Error("failed to create contract client; FR-18.8 pause-on-payment-failed residual until job mesh reachable",
+	if contractClient, err := paymentclient.NewContractClient(jobAddr, pool); err != nil {
+		slog.Error("failed to create contract client; FR-16.7/FR-18.8 payment_failed residual until job mesh reachable",
 			"error", err, "addr", jobAddr)
 	} else {
 		paymentSvc.SetRecurringPaymentFailureHandler(contractClient)
 		defer func() { _ = contractClient.Close() }()
-		slog.Info("FR-18.8 recurring payment-failure pause wired", "addr", jobAddr)
+		slog.Info("FR-16.7/FR-18.8 recurring payment-failure 3-strike wired", "addr", jobAddr)
 	}
 
 	// Installment (BNPL) and insurance live under the same PaymentService proto

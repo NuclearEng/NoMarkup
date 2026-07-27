@@ -279,6 +279,15 @@ func TestParseHHMM(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, 15*60+4, mins)
 
+	// Single-digit hour (H:MM) accepted for schedule editor drift.
+	mins, ok = parseHHMM("9:30")
+	require.True(t, ok)
+	assert.Equal(t, 9*60+30, mins)
+
+	mins, ok = parseHHMM("9:05:00")
+	require.True(t, ok)
+	assert.Equal(t, 9*60+5, mins)
+
 	_, ok = parseHHMM("")
 	assert.False(t, ok)
 	_, ok = parseHHMM("25:00")

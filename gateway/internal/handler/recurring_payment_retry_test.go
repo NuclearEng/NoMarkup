@@ -54,3 +54,40 @@ func TestNextRetryAtAfterCount(t *testing.T) {
 	assert.Nil(t, nextRetryAtAfterCount(0, now), "pre-failure: nothing scheduled")
 	assert.Nil(t, nextRetryAtAfterCount(4, now))
 }
+
+func TestLoadRecurringPaymentRetryFields_nilDB(t *testing.T) {
+	t.Parallel()
+	count, next, ok := loadRecurringPaymentRetryFields(context.Background(), nil, testRecurringID)
+	assert.False(t, ok)
+	assert.Equal(t, 0, count)
+	assert.Nil(t, next)
+}
+
+func TestLoadRecurringPaymentRetryFields_emptyID(t *testing.T) {
+	t.Parallel()
+	count, next, ok := loadRecurringPaymentRetryFields(context.Background(), nil, "")
+	assert.False(t, ok)
+	assert.Equal(t, 0, count)
+	assert.Nil(t, next)
+}
+
+func TestAttachPaymentRetryFieldsToConfig_nilDBNoOp(t *testing.T) {
+	t.Parallel()
+	cfg := map[string]interface{}{
+		"id":     testRecurringID,
+		"status": "active",
+	}
+	attachPaymentRetryFieldsToConfig(context.Background(), nil, cfg)
+	_, hasCount := cfg["payment_retry_count"]
+	_, hasNext := cfg["next_retry_at"]
+	assert.False(t, hasCount, "nil db must not invent payment_retry_count")
+	assert.False(t, hasNext, "nil db must not invent next_retry_at")
+}
+
+func TestAttachPaymentRetryFieldsToConfig_nilAndEmptySafe(t *testing.T) {
+	t.Parallel()
+	// Must not panic.
+	attachPaymentRetryFieldsToConfig(context.Background(), nil, nil)
+	attachPaymentRetryFieldsToConfig(context.Background(), nil, map[string]interface{}{})
+	attachPaymentRetryFieldsToConfig(context.Background(), nil, map[string]interface{}{"id": ""})
+}

@@ -213,6 +213,10 @@ func (h *ContractHandler) GetContract(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := protoContractToJSON(resp.GetContract())
+	// FR-16.7: enrich nested recurring with payment_retry fields when present.
+	if rec, ok := result["recurring"].(map[string]interface{}); ok {
+		attachPaymentRetryFieldsToConfig(r.Context(), h.db, rec)
+	}
 	if id := resp.GetContract().GetId(); id != "" {
 		result["tip_amount_cents"] = h.tipAmountsByContract(r.Context(), []string{id})[id]
 		// FR-5.4: surface chat/award-bound local terms for the contract detail UI.
@@ -1038,8 +1042,11 @@ func (h *ContractHandler) GetRecurringConfig(w http.ResponseWriter, r *http.Requ
 		writeGRPCError(w, err)
 		return
 	}
+	cfgJSON := protoRecurringConfigToJSON(resp.GetConfig())
+	// FR-16.7: surface payment_retry_count / next_retry_at for client UX (not on proto).
+	attachPaymentRetryFieldsToConfig(r.Context(), h.db, cfgJSON)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"config": protoRecurringConfigToJSON(resp.GetConfig()),
+		"config": cfgJSON,
 	})
 }
 
@@ -1086,8 +1093,10 @@ func (h *ContractHandler) UpdateRecurringConfig(w http.ResponseWriter, r *http.R
 		writeGRPCError(w, err)
 		return
 	}
+	cfgJSON := protoRecurringConfigToJSON(resp.GetConfig())
+	attachPaymentRetryFieldsToConfig(r.Context(), h.db, cfgJSON)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"config": protoRecurringConfigToJSON(resp.GetConfig()),
+		"config": cfgJSON,
 	})
 }
 
@@ -1116,8 +1125,10 @@ func (h *ContractHandler) PauseRecurring(w http.ResponseWriter, r *http.Request)
 		writeGRPCError(w, err)
 		return
 	}
+	cfgJSON := protoRecurringConfigToJSON(resp.GetConfig())
+	attachPaymentRetryFieldsToConfig(r.Context(), h.db, cfgJSON)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"config": protoRecurringConfigToJSON(resp.GetConfig()),
+		"config": cfgJSON,
 	})
 }
 
@@ -1146,8 +1157,10 @@ func (h *ContractHandler) ResumeRecurring(w http.ResponseWriter, r *http.Request
 		writeGRPCError(w, err)
 		return
 	}
+	cfgJSON := protoRecurringConfigToJSON(resp.GetConfig())
+	attachPaymentRetryFieldsToConfig(r.Context(), h.db, cfgJSON)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"config": protoRecurringConfigToJSON(resp.GetConfig()),
+		"config": cfgJSON,
 	})
 }
 
@@ -1176,8 +1189,10 @@ func (h *ContractHandler) CancelRecurring(w http.ResponseWriter, r *http.Request
 		writeGRPCError(w, err)
 		return
 	}
+	cfgJSON := protoRecurringConfigToJSON(resp.GetConfig())
+	attachPaymentRetryFieldsToConfig(r.Context(), h.db, cfgJSON)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"config": protoRecurringConfigToJSON(resp.GetConfig()),
+		"config": cfgJSON,
 	})
 }
 
@@ -1387,12 +1402,13 @@ func (h *ContractHandler) resolveContractCustomerID(ctx context.Context, contrac
 // On CreatePayment failure, FR-16.7 partial + FR-18.8: increment
 // recurring_configs.payment_retry_count (migration 112) and only PauseRecurring
 // when count >= 3 (contract stays intact; config pauses only). Charge-failure
-// pause after Stripe payment_intent.payment_failed is owned by the payment
-// service (still immediate pause — day-0/3/7 scheduled charge retries residual).
-// Resume on successful visit pay lives on PaymentHandler.ProcessPayment
-// (FR-18.8) and resets the retry counter. Residual: FR-16.7 day-0/3/7
-// scheduled retries (not wired); webhook-only capture without ProcessPayment
-// does not resume (services use manual capture + POST /payments/{id}/process).
+// after Stripe payment_intent.payment_failed is owned by the payment service
+// and uses the same 3-strike counter + next_retry_at (shared SQL). Day-3/day-7
+// auto-charge is ProcessDueRecurringPaymentRetries. Resume on successful visit
+// pay lives on PaymentHandler.ProcessPayment (FR-18.8) and resets the retry
+// counter. Residual: live Stripe dogfood of the full day-0/3/7 path; webhook-only
+// capture without ProcessPayment does not resume (services use manual capture +
+// POST /payments/{id}/process).
 func (h *ContractHandler) attachRecurringInstancePayment(
 	ctx context.Context,
 	result map[string]interface{},

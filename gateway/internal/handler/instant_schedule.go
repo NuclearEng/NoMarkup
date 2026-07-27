@@ -119,16 +119,21 @@ func parseHHMM(s string) (int, bool) {
 	if s == "" {
 		return 0, false
 	}
-	// Accept "15:04" and tolerate a trailing ":ss" by taking the first five
-	// chars when length is 8 ("15:04:00") — common JSONB drift.
-	if len(s) >= 8 && s[2] == ':' && s[5] == ':' {
-		s = s[:5]
+	// Accept "15:04" and tolerate a trailing ":ss" by taking HH:MM when the
+	// third colon-separated part looks like seconds ("15:04:00") — common JSONB drift.
+	// Also accept single-digit hours ("9:30") used by some schedule editors.
+	if parts := strings.Split(s, ":"); len(parts) >= 3 {
+		// Rebuild as HH:MM from hour + minute only.
+		s = parts[0] + ":" + parts[1]
 	}
-	t, err := time.Parse("15:04", s)
-	if err != nil {
-		return 0, false
+	// Prefer zero-padded layout; fall back to H:MM.
+	if t, err := time.Parse("15:04", s); err == nil {
+		return t.Hour()*60 + t.Minute(), true
 	}
-	return t.Hour()*60 + t.Minute(), true
+	if t, err := time.Parse("3:04", s); err == nil {
+		return t.Hour()*60 + t.Minute(), true
+	}
+	return 0, false
 }
 
 // loadInstantScheduleAndLocation loads the provider's weekly windows and the

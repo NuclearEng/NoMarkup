@@ -558,6 +558,30 @@ struct ContractDetailView: View {
                 if config.autoApprove == true {
                     LabeledContent("Auto-approve", value: "On")
                 }
+                // FR-16.7: only when gateway projects payment_retry_count / next_retry_at.
+                if config.hasPaymentRetryInfo {
+                    if let count = config.paymentRetryCount, count > 0 {
+                        let threshold = config.paymentRetryThreshold ?? 3
+                        LabeledContent("Payment retries") {
+                            Text("\(count) of \(threshold)")
+                                .font(.subheadline.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(
+                                    count >= threshold ? BrandTheme.destructive : BrandTheme.warning
+                                )
+                        }
+                        .accessibilityLabel("Payment retries \(count) of \(threshold)")
+                    }
+                    if let retryAt = config.nextRetryAt, !retryAt.isEmpty {
+                        LabeledContent("Next auto-retry") {
+                            Text(CatalogDateFormat.friendlyDateTime(retryAt))
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.warning)
+                        }
+                        .accessibilityLabel(
+                            "Next automatic payment retry \(CatalogDateFormat.friendlyDateTime(retryAt))"
+                        )
+                    }
+                }
 
                 if !config.isCancelled {
                     if config.isActive {
@@ -608,8 +632,12 @@ struct ContractDetailView: View {
             } header: {
                 Text("Recurring schedule").brandSectionHeader()
             } footer: {
-                Text("Pause stops new visits; cancel ends the schedule after the next occurrence notice. Approving a visit may open PaymentSheet for that visit’s server amount (held escrow). Money is never invented client-side.")
-                    .foregroundStyle(BrandTheme.textSecondary)
+                Text(
+                    config.hasPaymentRetryInfo
+                        ? "Payment setup failed previously; the platform retries CreatePayment on a day-3/day-7 schedule (pauses at 3 failures). Pause stops new visits; cancel ends after the next occurrence notice. Money is never invented client-side."
+                        : "Pause stops new visits; cancel ends the schedule after the next occurrence notice. Approving a visit may open PaymentSheet for that visit’s server amount (held escrow). Money is never invented client-side."
+                )
+                .foregroundStyle(BrandTheme.textSecondary)
             }
             .listRowBackground(BrandTheme.navyElevated)
             .confirmationDialog(

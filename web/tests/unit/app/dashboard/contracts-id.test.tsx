@@ -604,4 +604,41 @@ describe('ContractDetailPage', () => {
     // The onSuccess closes the confirm panel.
     expect(screen.queryByText(/Are you sure you want to cancel/i)).toBeNull();
   });
+
+  it('shows FR-5.4 local terms award residual badge and messaging', () => {
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({
+        status: 'active',
+        local_terms: {
+          payment_timing: 'completion',
+          amount: 'Match bid total',
+          bound_at: 'award',
+          accepted_at: '2026-04-01T12:00:00Z',
+        },
+      }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByText('Agreed local terms')).toBeDefined();
+    expect(screen.getByText('Applied at award')).toBeDefined();
+    expect(screen.getByText(/award residual bind/i)).toBeDefined();
+    expect(screen.getByText('Match bid total')).toBeDefined();
+  });
+
+  it('shows honest empty-snapshot residual when local_terms has only metadata', () => {
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({
+        status: 'active',
+        local_terms: {
+          bound_at: 'award',
+          source: 'chat_accept',
+        },
+      }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByText(/no payment-type or notes fields/i)).toBeDefined();
+  });
 });

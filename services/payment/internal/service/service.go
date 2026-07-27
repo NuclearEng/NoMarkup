@@ -46,18 +46,20 @@ type MarketplacePaymentHandler interface {
 	HandleListingPaymentIntentSucceeded(ctx context.Context, paymentIntentID string) error
 }
 
-// RecurringPaymentFailureHandler pauses a recurring schedule when a
-// recurring-instance PaymentIntent fails (FR-18.8). Never cancels the contract
-// or the recurring config — pause only. Fail-soft: the payment webhook
-// always acks Stripe even if pause fails.
+// RecurringPaymentFailureHandler records FR-16.7 strikes when a
+// recurring-instance PaymentIntent fails (webhook path). Increments
+// payment_retry_count, schedules next_retry_at when count < 3, and pauses only
+// at threshold (>= 3) per FR-18.8. Never cancels the contract. Fail-soft: the
+// payment webhook always acks Stripe even if strike/pause fails.
 //
-// Concrete implementation: payment/internal/client.ContractClient (job service
-// GetRecurringConfig + PauseRecurring).
+// Concrete implementation: payment/internal/client.ContractClient (shared SQL
+// for strikes + job service GetRecurringConfig / PauseRecurring at threshold).
 type RecurringPaymentFailureHandler interface {
-	// PauseOnPaymentFailed looks up the contract's recurring config and pauses
-	// it when status is active. Idempotent for already-paused configs.
+	// PauseOnPaymentFailed records an FR-16.7 strike on the contract's active
+	// recurring config and PauseRecurring only when payment_retry_count >= 3.
+	// Idempotent for already-paused configs; non-active left alone.
 	// contractID / customerID come from the payments row; recurringInstanceID
-	// is for logging/correlation only (pause is per config, not per instance).
+	// is for logging/correlation only (strikes are per config, not per instance).
 	PauseOnPaymentFailed(ctx context.Context, contractID, customerID, recurringInstanceID, paymentID string) error
 }
 
@@ -78,9 +80,9 @@ type PaymentService struct {
 	subHook          SubscriptionWebhookHandler
 	installmentHook  InstallmentPaymentHandler
 	marketplaceHook  MarketplacePaymentHandler
-	// recurringFailHook pauses recurrence after payment_intent.payment_failed
-	// for payments with recurring_instance_id (FR-18.8). Optional: when nil,
-	// status still flips to failed and a residual is logged.
+	// recurringFailHook records FR-16.7 strikes (+ FR-18.8 pause at threshold)
+	// after payment_intent.payment_failed for payments with recurring_instance_id.
+	// Optional: when nil, status still flips to failed and a residual is logged.
 	recurringFailHook RecurringPaymentFailureHandler
 	webhookValidator  WebhookEventValidator
 	underwriter       Underwriter
@@ -134,9 +136,10 @@ func (s *PaymentService) SetMarketplaceHandler(h MarketplacePaymentHandler) {
 	s.marketplaceHook = h
 }
 
-// SetRecurringPaymentFailureHandler wires FR-18.8 pause-on-charge-failure.
-// When nil, payment_intent.payment_failed still marks the payment failed but
-// does not pause recurrence (honest residual until job mesh is dialable).
+// SetRecurringPaymentFailureHandler wires FR-16.7 3-strike + FR-18.8 pause
+// on charge failure. When nil, payment_intent.payment_failed still marks the
+// payment failed but does not record strikes (honest residual until job mesh
+// + DB are dialable).
 func (s *PaymentService) SetRecurringPaymentFailureHandler(h RecurringPaymentFailureHandler) {
 	s.recurringFailHook = h
 }

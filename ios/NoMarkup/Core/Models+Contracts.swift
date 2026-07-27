@@ -213,6 +213,13 @@ struct ContractRecurringConfig: Codable, Sendable, Hashable, Identifiable {
     var autoApprove: Bool?
     var status: String?
     var nextOccurrence: String?
+    /// FR-16.7: consecutive CreatePayment setup failures (gateway DB enrichment).
+    /// Omitted on the wire when zero / happy path.
+    var paymentRetryCount: Int?
+    /// FR-16.7: when the gateway will re-attempt CreatePayment (RFC3339).
+    var nextRetryAt: String?
+    /// FR-16.7 pause threshold (usually 3). Present with retry count.
+    var paymentRetryThreshold: Int?
 
     var displayFrequency: String {
         let f = frequency?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -237,6 +244,15 @@ struct ContractRecurringConfig: Codable, Sendable, Hashable, Identifiable {
 
     var isCancelled: Bool {
         (status ?? "").lowercased() == "cancelled"
+    }
+
+    /// True when gateway stamped FR-16.7 retry metadata worth showing.
+    var hasPaymentRetryInfo: Bool {
+        if let c = paymentRetryCount, c > 0 { return true }
+        if let n = nextRetryAt?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty {
+            return true
+        }
+        return false
     }
 }
 

@@ -415,3 +415,47 @@ func TestPaymentService_CreatePayment_SoftReplayAlreadyEscrowEmptySecret(t *test
 	assert.Equal(t, "pay-held", payment.ID)
 	assert.Empty(t, secret, "already-held payment has no confirmable secret — never invent one")
 }
+
+// Soft-replay refuses cross-contract reuse even if recurring_instance unique
+// somehow pointed at a row for another contract (defense in depth).
+func TestPaymentService_CreatePayment_SoftReplayContractMismatchFailClosed(t *testing.T) {
+	t.Parallel()
+	instanceID := "inst-xcontract"
+	existing := &domain.Payment{
+		ID:                    "pay-other-contract",
+		ContractID:            "contract-ORIGINAL",
+		RecurringInstanceID:   &instanceID,
+		CustomerID:            "cust-1",
+		ProviderID:            "prov-real",
+		AmountCents:           5000,
+		Status:                "pending",
+		StripePaymentIntentID: "pi_dev_xcontract",
+		IdempotencyKey:        "k-x",
+	}
+	repo := reconcileRepo(70000)
+	repo.getContractForPaymentFn = func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+		return &domain.ContractForPayment{
+			ID: contractID, CustomerID: "cust-1", ProviderID: "prov-real",
+			AmountCents: 70000, Status: "active",
+		}, nil
+	}
+	repo.createPaymentFn = func(_ context.Context, _ *domain.Payment) error {
+		return domain.ErrRecurringInstancePaymentExists
+	}
+	repo.getPaymentByRecurringInstanceIDFn = func(_ context.Context, _ string) (*domain.Payment, error) {
+		return existing, nil
+	}
+	svc := newTestPaymentService(repo, nil)
+
+	payment, secret, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:          "contract-ATTACKER",
+		CustomerID:          "cust-1",
+		AmountCents:         5000,
+		RecurringInstanceID: &instanceID,
+		IdempotencyKey:      "attacker-xcontract",
+	})
+	require.Error(t, err)
+	assert.Nil(t, payment)
+	assert.Empty(t, secret, "must never invent client_secret on contract mismatch")
+	assert.True(t, errors.Is(err, domain.ErrInvalidStatus), "got %v", err)
+}

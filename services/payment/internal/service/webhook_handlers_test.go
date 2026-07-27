@@ -105,8 +105,9 @@ func TestHandleWebhook_PaymentIntentFailed(t *testing.T) {
 		assert.False(t, updateCalled)
 	})
 
-	// FR-18.8: recurring_instance_id payments pause the schedule on charge fail.
-	t.Run("pauses_recurring_when_instance_linked", func(t *testing.T) {
+	// FR-16.7 + FR-18.8: recurring_instance_id payments record a strike (hook
+	// owns increment + pause-at-threshold). Webhook only asserts the hook runs.
+	t.Run("records_strike_when_instance_linked", func(t *testing.T) {
 		t.Parallel()
 		event := newEvent(t, "evt_failed_recurring_1", "payment_intent.payment_failed", stripe.PaymentIntent{
 			ID: "pi_recurring_fail",
@@ -168,10 +169,10 @@ func TestHandleWebhook_PaymentIntentFailed(t *testing.T) {
 
 		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
 		require.NoError(t, err)
-		assert.Empty(t, hook.calls, "non-recurring payments must not trigger FR-18.8 pause")
+		assert.Empty(t, hook.calls, "non-recurring payments must not trigger FR-16.7 strike")
 	})
 
-	t.Run("pause_error_is_fail_soft_webhook_still_acks", func(t *testing.T) {
+	t.Run("strike_error_is_fail_soft_webhook_still_acks", func(t *testing.T) {
 		t.Parallel()
 		event := newEvent(t, "evt_failed_recurring_soft", "payment_intent.payment_failed", stripe.PaymentIntent{
 			ID: "pi_recurring_soft",

@@ -107,6 +107,55 @@ func TestProcessDueRecurringPaymentRetries_successResetsCounter(t *testing.T) {
 	assert.Equal(t, "recurring-instance-pay:"+testInstanceID+":attempt-2", lastKey)
 }
 
+// TestProcessDueRecurringPaymentRetries_attemptNFromStrikeCount: strike count 2
+// → CreatePayment sticky key attempt-3 (FR-16.7 scheduled retry scope).
+func TestProcessDueRecurringPaymentRetries_attemptNFromStrikeCount(t *testing.T) {
+	t.Parallel()
+
+	var lastKey string
+	pc := &mockApprovePaymentClient{
+		createFn: func(_ context.Context, req *paymentv1.CreatePaymentRequest) (*paymentv1.CreatePaymentResponse, error) {
+			lastKey = req.GetIdempotencyKey()
+			return &paymentv1.CreatePaymentResponse{
+				Payment: &paymentv1.Payment{
+					Id:                  "pay-retry-3",
+					ContractId:          req.GetContractId(),
+					RecurringInstanceId: req.GetRecurringInstanceId(),
+					CustomerId:          req.GetCustomerId(),
+					AmountCents:         req.GetAmountCents(),
+					Status:              paymentv1.PaymentStatus_PAYMENT_STATUS_PENDING,
+				},
+				ClientSecret: "pi_secret_attempt3",
+			}, nil
+		},
+	}
+	h := NewContractHandler(&mockApproveContractClient{}, nil, nil)
+	h.SetPaymentClient(pc)
+	h.claimDueRecurringRetriesFn = func(_ context.Context, _ int) ([]dueRecurringRetry, error) {
+		return []dueRecurringRetry{{
+			ID:                testRecurringID,
+			ContractID:        testContractID,
+			PaymentRetryCount: 2,
+		}}, nil
+	}
+	h.findUnpaidApprovedVisitFn = func(_ context.Context, _ string) (*unpaidApprovedVisit, error) {
+		return &unpaidApprovedVisit{
+			InstanceID:  testInstanceID,
+			ContractID:  testContractID,
+			CustomerID:  testCustomerID,
+			AmountCents: 7500,
+		}, nil
+	}
+	h.resetPaymentRetryFn = func(_ context.Context, _ string) error { return nil }
+
+	claimed, succeeded, failed, err := h.ProcessDueRecurringPaymentRetries(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, claimed)
+	assert.Equal(t, 1, succeeded)
+	assert.Equal(t, 0, failed)
+	assert.Equal(t, "recurring-instance-pay:"+testInstanceID+":attempt-3", lastKey)
+}
+
 func TestProcessDueRecurringPaymentRetries_createFailureIncrementsStrike(t *testing.T) {
 	t.Parallel()
 

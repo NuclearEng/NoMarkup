@@ -375,13 +375,18 @@ export default function ContractDetailPage() {
       {contract.local_terms && Object.keys(contract.local_terms).length > 0 ? (
         <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
-            <h3 className="gold-text text-sm font-medium">Agreed local terms</h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="gold-text text-sm font-medium">Agreed local terms</h3>
+              {contract.local_terms.bound_at === 'award' ? (
+                <Badge variant="outline" className="border-[var(--brand-gold)]/40 text-[var(--brand-gold)]">
+                  Applied at award
+                </Badge>
+              ) : null}
+            </div>
             <p className="text-xs text-zinc-400">
-              Payment terms accepted in chat
               {contract.local_terms.bound_at === 'award'
-                ? ' and applied when the contract was created'
-                : ''}
-              .
+                ? 'Payment terms accepted in chat and applied when the contract was created (award residual bind).'
+                : 'Payment terms accepted in chat.'}
             </p>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -446,6 +451,18 @@ export default function ContractDetailPage() {
                   </span>
                 </div>
               </>
+            ) : null}
+            {/* Residual honesty: empty display fields still leave a note when only metadata bound. */}
+            {!contract.local_terms.payment_timing &&
+            !contract.local_terms.payment_type &&
+            !contract.local_terms.amount &&
+            !contract.local_terms.milestones &&
+            !contract.local_terms.description &&
+            !contract.local_terms.accepted_at ? (
+              <p className="text-sm text-zinc-400">
+                Local terms were bound for this contract, but no payment-type or notes fields were
+                stored on the snapshot.
+              </p>
             ) : null}
           </CardContent>
         </Card>

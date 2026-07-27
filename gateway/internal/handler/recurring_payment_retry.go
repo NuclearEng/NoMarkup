@@ -83,6 +83,61 @@ func incrRecurringPaymentRetryCount(ctx context.Context, db *pgxpool.Pool, recur
 	return count, nextRetryAt, nil
 }
 
+// loadRecurringPaymentRetryFields reads FR-16.7 payment_retry_count + next_retry_at
+// for client projection (not on RecurringConfig proto). Fail-soft: ok=false when
+// db/id missing or row not found — callers leave JSON unenriched.
+func loadRecurringPaymentRetryFields(ctx context.Context, db *pgxpool.Pool, recurringID string) (count int, nextRetryAt *time.Time, ok bool) {
+	if db == nil || recurringID == "" {
+		return 0, nil, false
+	}
+	err := db.QueryRow(ctx, `
+		SELECT payment_retry_count, next_retry_at
+		  FROM recurring_configs
+		 WHERE id = $1`, recurringID).Scan(&count, &nextRetryAt)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.DebugContext(ctx, "FR-16.7: payment_retry fields load failed (config JSON unenriched)",
+				"recurring_id", recurringID,
+				"error", err,
+			)
+		}
+		return 0, nil, false
+	}
+	return count, nextRetryAt, true
+}
+
+// attachPaymentRetryFieldsToConfig mutates a protoRecurringConfigToJSON map with
+// payment_retry_count / next_retry_at when the DB row is readable. No-op when
+// fields cannot be loaded (tests without db, missing row). Always sets count
+// when ok so clients can show "0" only when intentionally present with next.
+func attachPaymentRetryFieldsToConfig(ctx context.Context, db *pgxpool.Pool, cfg map[string]interface{}) {
+	if cfg == nil {
+		return
+	}
+	id, _ := cfg["id"].(string)
+	if id == "" {
+		return
+	}
+	count, next, ok := loadRecurringPaymentRetryFields(ctx, db, id)
+	if !ok {
+		return
+	}
+	// Project whenever the counter is non-zero or a retry is scheduled so the
+	// UI can explain FR-16.7 status. Zero/null is omitted (noise-free happy path).
+	if count > 0 {
+		cfg["payment_retry_count"] = count
+		cfg["payment_retry_threshold"] = recurringPaymentRetryPauseThreshold
+	}
+	if next != nil {
+		cfg["next_retry_at"] = next.UTC().Format(time.RFC3339)
+		if count == 0 {
+			// Defensive: next set without count still surfaces the timestamp.
+			cfg["payment_retry_count"] = count
+			cfg["payment_retry_threshold"] = recurringPaymentRetryPauseThreshold
+		}
+	}
+}
+
 // resetRecurringPaymentRetryCount clears the FR-16.7 partial counter and
 // next_retry_at after a successful visit payment setup or capture. No-op when
 // already zero/null or the row is missing (fail-soft: money/status path already

@@ -276,20 +276,22 @@ func (s *PaymentService) handlePaymentIntentFailed(ctx context.Context, event st
 	}
 	slog.Info("payment failed", "payment_id", payment.ID, "reason", failureReason)
 
-	// FR-18.8: charge failure on a recurring-instance payment pauses the
-	// recurring config (never cancels the contract). Fail-soft so a job-mesh
-	// blip does not make Stripe retry a payment status update that already
-	// committed. FR-16.7 multi-retry schedule + auto-resume on later success
-	// remain residual (this pauses on first terminal PI failure signal).
-	s.pauseRecurringAfterChargeFailure(ctx, payment)
+	// FR-16.7 + FR-18.8: charge failure on a recurring-instance payment
+	// increments payment_retry_count and only pauses at threshold (>= 3).
+	// Never cancels the contract. Fail-soft so a job-mesh / SQL blip does not
+	// make Stripe retry a payment status update that already committed.
+	// Day-3/day-7 auto-charge is gateway ProcessDueRecurringPaymentRetries.
+	s.recordRecurringChargeFailure(ctx, payment)
 
 	return nil
 }
 
-// pauseRecurringAfterChargeFailure implements FR-18.8 for the webhook path.
-// No-op when the payment is not tied to a recurring instance. Never returns
-// an error to the caller — pause failure is residual, not a webhook fault.
-func (s *PaymentService) pauseRecurringAfterChargeFailure(ctx context.Context, payment *domain.Payment) {
+// recordRecurringChargeFailure implements FR-16.7 (3-strike + next_retry_at)
+// and FR-18.8 (pause at threshold) for the webhook path. No-op when the
+// payment is not tied to a recurring instance. Never returns an error to the
+// caller — strike/pause failure is residual, not a webhook fault. Never
+// cancels the contract.
+func (s *PaymentService) recordRecurringChargeFailure(ctx context.Context, payment *domain.Payment) {
 	if payment == nil {
 		return
 	}
@@ -302,7 +304,7 @@ func (s *PaymentService) pauseRecurringAfterChargeFailure(ctx context.Context, p
 	}
 
 	if s.recurringFailHook == nil {
-		slog.WarnContext(ctx, "FR-18.8 residual: recurring payment failed but pause hook unwired (contract not cancelled)",
+		slog.WarnContext(ctx, "FR-16.7 residual: recurring payment failed but strike/pause hook unwired (contract not cancelled)",
 			"payment_id", payment.ID,
 			"contract_id", payment.ContractID,
 			"recurring_instance_id", instanceID,
@@ -320,7 +322,7 @@ func (s *PaymentService) pauseRecurringAfterChargeFailure(ctx context.Context, p
 	); err != nil {
 		// Fail-soft: status already failed; do not cancel contract; do not
 		// fail the webhook (would cause Stripe retry storms).
-		slog.WarnContext(ctx, "FR-18.8: PauseRecurring after payment_failed failed (contract not cancelled; payment stays failed)",
+		slog.WarnContext(ctx, "FR-16.7/FR-18.8: strike/pause after payment_failed failed (contract not cancelled; payment stays failed)",
 			"payment_id", payment.ID,
 			"contract_id", payment.ContractID,
 			"recurring_instance_id", instanceID,
@@ -330,7 +332,7 @@ func (s *PaymentService) pauseRecurringAfterChargeFailure(ctx context.Context, p
 		return
 	}
 
-	slog.InfoContext(ctx, "FR-18.8: recurring paused after payment_intent.payment_failed (contract not cancelled)",
+	slog.InfoContext(ctx, "FR-16.7/FR-18.8: recurring charge failure recorded after payment_intent.payment_failed (contract not cancelled)",
 		"payment_id", payment.ID,
 		"contract_id", payment.ContractID,
 		"recurring_instance_id", instanceID,

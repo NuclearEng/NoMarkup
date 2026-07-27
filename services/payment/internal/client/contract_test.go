@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"testing"
+	"time"
 
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	"github.com/stretchr/testify/assert"
@@ -83,7 +84,22 @@ func dialFakeContract(t *testing.T, srv *fakeContractServer) *ContractClient {
 	return &ContractClient{conn: conn, client: contractv1.NewContractServiceClient(conn)}
 }
 
-func TestContractClient_PauseOnPaymentFailed_ActivePauses(t *testing.T) {
+// withStrikeCount injects FR-16.7 durable counter (nil db in unit tests).
+func withStrikeCount(c *ContractClient, count int) *ContractClient {
+	c.incrPaymentRetryFn = func(_ context.Context, _ string) (int, *time.Time, error) {
+		var next *time.Time
+		if count < recurringPaymentRetryPauseThreshold {
+			t := time.Now().UTC().Add(72 * time.Hour)
+			next = &t
+		}
+		return count, next, nil
+	}
+	return c
+}
+
+// TestContractClient_PauseOnPaymentFailed_BelowThresholdNoPause: FR-16.7
+// first/second charge fail only increments strike; never PauseRecurring.
+func TestContractClient_PauseOnPaymentFailed_BelowThresholdNoPause(t *testing.T) {
 	t.Parallel()
 	srv := &fakeContractServer{
 		cfg: &contractv1.RecurringConfig{
@@ -92,13 +108,50 @@ func TestContractClient_PauseOnPaymentFailed_ActivePauses(t *testing.T) {
 			Status:     "active",
 		},
 	}
-	c := dialFakeContract(t, srv)
+	c := withStrikeCount(dialFakeContract(t, srv), 1)
+
+	err := c.PauseOnPaymentFailed(context.Background(), "ctr-1", "cust-1", "inst-1", "pmt-1")
+	require.NoError(t, err)
+	assert.Equal(t, 0, srv.pauseCalls, "below threshold must not pause")
+}
+
+// TestContractClient_PauseOnPaymentFailed_AtThresholdPauses: third strike
+// PauseRecurring as payment customer (party check).
+func TestContractClient_PauseOnPaymentFailed_AtThresholdPauses(t *testing.T) {
+	t.Parallel()
+	srv := &fakeContractServer{
+		cfg: &contractv1.RecurringConfig{
+			Id:         "rec-1",
+			ContractId: "ctr-1",
+			Status:     "active",
+		},
+	}
+	c := withStrikeCount(dialFakeContract(t, srv), recurringPaymentRetryPauseThreshold)
 
 	err := c.PauseOnPaymentFailed(context.Background(), "ctr-1", "cust-1", "inst-1", "pmt-1")
 	require.NoError(t, err)
 	assert.Equal(t, 1, srv.pauseCalls)
-	assert.Equal(t, "cust-1", srv.lastPauseUserID)
+	assert.Equal(t, "cust-1", srv.lastPauseUserID, "UserId must be payment customer for party check")
 	assert.Equal(t, "rec-1", srv.lastPauseRecID)
+}
+
+// TestContractClient_PauseOnPaymentFailed_NoCounterNoPause: without durable
+// strike tracking, fail closed — do not invent a pause.
+func TestContractClient_PauseOnPaymentFailed_NoCounterNoPause(t *testing.T) {
+	t.Parallel()
+	srv := &fakeContractServer{
+		cfg: &contractv1.RecurringConfig{
+			Id:         "rec-1",
+			ContractId: "ctr-1",
+			Status:     "active",
+		},
+	}
+	// No incrPaymentRetryFn and nil db → increment errors → no pause.
+	c := dialFakeContract(t, srv)
+
+	err := c.PauseOnPaymentFailed(context.Background(), "ctr-1", "cust-1", "inst-1", "pmt-1")
+	require.Error(t, err)
+	assert.Equal(t, 0, srv.pauseCalls, "must not pause without durable strike count")
 }
 
 func TestContractClient_PauseOnPaymentFailed_AlreadyPausedIsNoop(t *testing.T) {
@@ -156,6 +209,6 @@ func TestContractClient_PauseOnPaymentFailed_GetErrorPropagates(t *testing.T) {
 
 func TestNewContractClient_EmptyAddr(t *testing.T) {
 	t.Parallel()
-	_, err := NewContractClient("")
+	_, err := NewContractClient("", nil)
 	require.Error(t, err)
 }
