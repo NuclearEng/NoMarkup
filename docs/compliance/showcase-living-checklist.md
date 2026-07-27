@@ -71,11 +71,11 @@
 | ID | Capability | Status | Clients | Evidence | Security | Perf | Next |
 |----|------------|--------|---------|----------|----------|------|------|
 | H1.1 | Reverse-auction positioning copy | `live` | web, ios | Home hero | n/a | n/a | — |
-| H1.2 | Live auction timer (countdown) | `partial` | web, ios | Job/listing countdown chips; not always “live widget” | public map coarsened | TimelineView 1s OK | Unify home LIVE cards + job detail |
-| H1.3 | Live bid ladder / bid stream UI | `partial` | web, ios | Job ladder (owner); listing public ladder; sealed non-owner | owner-only job bids | 10s poll | Sealed public stats + live type |
+| H1.2 | Live auction timer (countdown) | `partial` | web, ios | Home `HomeJobCard` + `JobDetailView` countdown chips; listing cards too — not a single hero “live widget” | public map coarsened | TimelineView 1s OK | Optional hero widget; home/detail countdowns shipped |
+| H1.3 | Live bid ladder / bid stream UI | `partial` | web, ios | Job ladder (owner); listing public ladder; sealed non-owner; home shows bid counts not stream | owner-only job bids | 10s poll | Sealed public stats + true live stream / WS |
 | H1.4 | Market range (“147 data pts”) on job | `partial` | web, ios | Job detail strip: FPI p25–p75 when `has_data`, else budget ceiling; create-form hint | public analytics | soft-fail fetch | Seed FPI data / backfill n_eff for full fidelity |
 | H1.5 | Estimated savings vs starting/industry | `partial` | web, ios | Job detail: savings vs **starting bid** when leading lower; SavingsView account-level | auth savings | n/a | Industry-average baseline when FPI usable |
-| H1.6 | Auction type live vs sealed | `partial` | gateway, ios | Badge: LIVE sealed / LIVE reverse / sealed; sealed copy for non-owner ladder | authz on ladder | n/a | Enable `ENABLE_LIVE_AUCTION` in staging for state API |
+| H1.6 | Auction type live vs sealed | `partial` | gateway, ios | Unified badge copy: `HomeView` `HomeJobCard` + `JobDetailView.reverseAuctionBadge` (`LIVE · reverse` / `LIVE · sealed reverse` / sealed); sealed non-owner ladder copy | authz on ladder | n/a | Badge fidelity shipped; enable `ENABLE_LIVE_AUCTION` in staging for live state API + full live path |
 
 ---
 
@@ -86,7 +86,7 @@
 | W2.1 | Post job | `live` | web, ios | PostJobView, categories tree | auth + validation | photo 10MB | — |
 | W2.2 | Market pricing before bids | `partial` | web, ios | fair-price hint | public | n/a | H1.4 |
 | W2.3 | Providers submit sealed/competitive bids | `live` | web, ios | placeJobBid; dollars UI | role provider; idempotency | retries | — |
-| W2.4 | Trust scores / badges on bids | `partial` | ios | trust_score object decode + display | no client trust invent | n/a | Surface 4 dimensions if API exposes |
+| W2.4 | Trust scores / badges on bids | `live` | ios | Bid trust chip → `TrustScoreView` (`JobDetailView.trustChip`); composite + 4 dims via `fetchUserTrustScore` | no client trust invent; server scores | n/a | — |
 | W2.5 | Choose provider / award | `live` | web, ios | award bid | owner only | n/a | — |
 | W2.6 | Milestone tracking + guarantee | `partial` | web, ios | contracts milestones; guarantee claim UI | actor rules escrow | n/a | Guarantee fund ops + copy fidelity |
 | W2.7 | Verified reviews after completion | `live` | web, ios | contract reviews | auth parties | n/a | — |
@@ -100,8 +100,8 @@
 | C3.1 | Reverse auction pricing | `live` | web, ios | jobs dual path | authz | bid engine | — |
 | C3.2 | Market pricing intelligence | `partial` | web, ios | fair-price, savings | public + auth | cache | Expand fair-price UX |
 | C3.3 | On-platform payments | `live` | web, ios | Stripe PI / Apple Pay Rail A | no PAN; webhooks | n/a | — |
-| C3.4 | Milestone & escrow | `partial` | web, ios | contracts + listing orders | actor rules | n/a | Contract completion → release gaps |
-| C3.5 | Identity & license verification | `partial` | web, ios | docs list, licenses | PII | n/a | Provider submit + admin review UX |
+| C3.4 | Milestone & escrow | `live` | web, ios | Services: `ContractDetailView` customer `releasePayment` (`POST /payments/{id}/release` + Idempotency-Key). Goods: `MyOrdersView` next-action CTAs (pay / confirm-pickup / seller-confirm → mutual release) | actor rules; provider cannot self-release; no client money math | n/a | Web toast still may say “payment released” on approve-completion (contract-only) — copy polish |
+| C3.5 | Identity & license verification | `partial` | web, ios | iOS provider upload E2E: `VerificationDocumentsView` (list + PhotosPicker → imaging `document` → `POST /providers/me/documents`); licenses list | PII; 10 MB; server MIME | n/a | Admin review UX + status fidelity; web provider upload parity if needed |
 | C3.6 | AI fraud detection | `partial` | engines | heuristics v1; ML reserved | server-only | p99 budget | Keep honest copy until ONNX |
 | C3.7 | Transaction-verified reviews | `live` | web, ios | reviews on contracts | auth | n/a | — |
 | C3.8 | Work completion guarantee | `partial` | web, ios | claim UI | auth | n/a | Fund + payout path |
@@ -112,11 +112,11 @@
 
 | ID | Capability | Status | Clients | Evidence | Security | Perf | Next |
 |----|------------|--------|---------|----------|----------|------|------|
-| T4.1 | Composite trust score 0–100 | `partial` | engines, gateway | trust service; iOS tier list + bid trust | server computed | trust p99 &lt; 5ms | Expose composite in UI |
-| T4.2 | Feedback 35% | `partial` | engines | scoring code | server | n/a | UI breakdown |
-| T4.3 | Risk 25% | `partial` | engines | scoring code | server | n/a | UI breakdown |
-| T4.4 | Volume 20% | `partial` | engines | scoring code | server | n/a | UI breakdown |
-| T4.5 | Fraud 20% | `partial` | engines | fraud heuristics | server | fraud p99 | UI breakdown |
+| T4.1 | Composite trust score 0–100 | `live` | engines, gateway, ios | Engine + `GET /users/{id}/trust-score`; iOS `TrustScoreView` + `APIClient.fetchUserTrustScore`; entry from `ProviderDetailView`, `JobDetailView.trustChip` | server computed; auth on route | trust p99 &lt; 5ms | — |
+| T4.2 | Feedback 35% | `live` | engines, ios | Scoring + UI dim bar (`TrustScoreWeights.feedback` / `UserTrustScore.dimensions`) | server | n/a | — |
+| T4.3 | Risk 25% | `live` | engines, ios | Scoring + UI dim bar (`TrustScoreWeights.risk`) | server | n/a | — |
+| T4.4 | Volume 20% | `live` | engines, ios | Scoring + UI dim bar (`TrustScoreWeights.volume`) | server | n/a | — |
+| T4.5 | Fraud 20% | `live` | engines, ios | Fraud heuristics + UI dim bar (`TrustScoreWeights.fraud`) | server | fraud p99 | ONNX ML remains roadmap (C3.6 / M5.3) |
 | T4.6 | NoMarkup Guarantee card | `partial` | web, ios | claim + copy | claim authz | n/a | Fund metrics honest |
 | T4.7 | Guarantee only on-platform | `live` | product | policy + claim routes | n/a | n/a | — |
 
@@ -199,16 +199,16 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | Area | Status |
 |------|--------|
 | Auth / session / offline | `live` |
-| Dual-rail create/browse/bid/award | `live` / `partial` live-auction fidelity |
-| Contracts advanced | `live` / `partial` tip 501 possible |
+| Dual-rail create/browse/bid/award | `live` / `partial` live-auction fidelity (badges + countdown on home/detail; live state API / stream still partial) |
+| Contracts advanced | `live` (escrow release CTA + goods handshake next actions) / `partial` tip 501 possible |
 | Social (follow/feed/reviews) | `live` |
-| Provider workspace lite | `live` |
+| Provider workspace lite | `live` (verification doc upload path shipped; admin review still partial) |
 | Growth (NPS, referrals, markets, savings) | `live` |
 | Catalog autocomplete / categories / drafts | `live` |
-| Trust tiers / plan limits / ToS | `live` (plan = read-only) |
-| Seller exports / templates / docs | `live` |
+| Trust tiers / plan limits / ToS | `live` (composite + 4-dim breakdown UI; plan = read-only) |
+| Seller exports / templates / docs | `live` (provider verification upload via `VerificationDocumentsView`) |
 | WebSocket chat/auction | `partial` |
-| Regulated rails | `blocked-compliance` |
+| Regulated rails | `blocked-compliance` (BNPL / insurance / lending / lead-gen / instant payout — hard-off) |
 | Admin | `n/a-client` |
 | StoreKit IAP | `blocked-compliance` |
 
@@ -219,40 +219,61 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 ### P0 — Core showcase fidelity (no compliance block)
 
 1. **H1.4 / H1.5** — Job detail (and home card) market-range + savings strip from fair-price / starting bid  
-2. **H1.6** — Sealed vs LIVE labeling + auction state when enabled  
-3. **T4.1–T4.5** — Trust breakdown UI when gateway exposes components  
-4. **C3.4** — Escrow release/completion path dogfood + fix gaps  
-5. **Perf** — Catalog list image budgets; Instruments scroll; API p95 sample  
-6. **Sec** — `/security-review` on money paths; idempotency audit remaining gaps  
+2. **H1.6** — ~~Sealed vs LIVE labeling~~ **done** (home + job badges); remaining: live auction state API (`ENABLE_LIVE_AUCTION`) + stream fidelity (ties H1.3)  
+3. **T4.1–T4.5** — ~~Trust breakdown UI~~ **done** (`TrustScoreView` + `fetchUserTrustScore`; Provider/Job entry points)  
+4. **C3.4** — ~~Escrow release/completion path~~ **done** (iOS `releasePayment` + goods `MyOrdersView` next actions); optional web approve-completion toast copy  
+5. **Perf** — ~~Catalog API p95 sample~~ **done** (`perf-gate-2026-07-26.md` overall catalog **PASS**); remaining: Instruments scroll / image budgets on device  
+6. **Sec** — Money-path gate logged (`security-gate-2026-07-26.md`); **web listing bid `Idempotency-Key` FIXED** (`useListings.ts` `usePlaceListingBid` + `idempotencyHeader`); remaining: job-bid/bid-bond gateway enforce, residual MON races  
 
 ### P1 — Product depth
 
-7. Provider verification upload E2E  
+7. Provider verification upload E2E — **done** (`VerificationDocumentsView` list + upload); admin review still open under C3.5  
 8. Native chat WS or documented poll SLA  
 9. Goods radius search polish  
 10. Web RSC/data-cache performance playbook on touched routes  
 
 ### P2 — After compliance exit
 
-11. R6.2–R6.6 regulated rails (only with licenses)  
+11. R6.2–R6.6 regulated rails (only with licenses) — **still blocked-compliance; do not ship**  
 12. R6.7 StoreKit or permanent web-only digital  
 
 ### P3 — Narrative
 
-13. Expansion verticals E7.*  
-14. KPI dashboards K8.*  
+13. Expansion verticals E7.* — narrative/roadmap only  
+14. KPI dashboards K8.* — narrative-only + ops  
 
 ---
 
 ## Definition of “fully implemented, secure, performant”
 
-All of the following are true:
+**Mandate (non-negotiable):** Every **product** row must become **`live`** with **security + performance gates** met.  
+`partial` is temporary only while work is in flight — never a resting state.
 
-1. **Every row** in §0–§11 is `live`, `narrative-only`, `n/a-client`, or `blocked-compliance` with documented exit.  
-2. **Zero `partial`** on P0 IDs.  
-3. **Security:** last `/security-review` (or equivalent) on auth + payments + PII with no open P0.  
-4. **Performance:** budgets in Global gates measured on device + gateway within last 30 days; results linked below.  
-5. **E2E:** `scripts/ios-full-feature-e2e.sh` green; web critical path green; device dogfood dated.
+### Status allowed at program end
+
+| Status | When allowed |
+|--------|----------------|
+| **`live`** | Required for all product capabilities (core marketplace, dual-rail, trust UI, escrow, etc.) — **with** security + perf evidence |
+| **`live-flagged`** | Full implementation + E2E + security exist; production enablement gated by compliance exit (regulated rails). iOS hard-off may remain until exit. |
+| **`narrative-only`** | Investor copy with **no** product surface by design (e.g. multi-year TAM story). Must not claim product features. |
+| **`n/a-client`** | Consumer app must never ship this (admin). Web/admin may be `live` separately. |
+
+**`blocked-compliance` is not an end state.** It is a queue item that must graduate to **`live-flagged`** (complete secure implementation, flag off until licenses) then **`live`** (flag on).
+
+### Gates for every `live` / `live-flagged` row
+
+1. **Security:** authn/authz, money cents + idempotency where applicable, no secrets in client, PII rules, Stripe PCI path, hard-offs fail closed.  
+2. **Performance:** global budgets (API p95, list scroll, cold paint) measured ≤30 days; no known P0 jank on the surface.  
+3. **E2E:** covered by `scripts/ios-full-feature-e2e.sh` and/or dedicated tests; device dogfood dated.  
+4. **Evidence:** path or command in this file’s row.
+
+### Program complete when
+
+1. **Zero `partial`** rows in §0–§11 (product).  
+2. **Zero open P0** security findings on money/auth/PII.  
+3. **Performance log** current.  
+4. **E2E green.**  
+5. All regulated rails at least **`live-flagged`** (code complete + tests + hard-off) or permanently re-scoped out of product with product-owner sign-off.
 
 ---
 
@@ -264,6 +285,12 @@ All of the following are true:
 | 2026-07-26 | XCUITest sim | 3/3 | same |
 | 2026-07-26 | Device install customer/provider | OK | same |
 | 2026-07-26 | Living checklist created; P0 job market strip + sealed/live badges | BUILD OK | this file + `JobDetailView` |
+| 2026-07-26 | Trust breakdown UI (T4.1–T4.5) | **live** — composite + Feedback/Risk/Volume/Fraud dims | `ios/.../TrustScoreView.swift`; `APIClient+Extras.fetchUserTrustScore`; entry `ProviderDetailView`, `JobDetailView.trustChip`; GW `GET /users/{id}/trust-score` |
+| 2026-07-26 | Home + job LIVE/sealed badges (H1.2/H1.6) | **partial** — unified badge + countdown; not full live stream/widget | `HomeView` `HomeJobCard`; `JobDetailView.reverseAuctionBadge` |
+| 2026-07-26 | Escrow release path (C3.4) | **live** — services release + goods mutual handshake next actions | `ContractDetailView.releasePayment`; `MyOrdersView` nextAction / confirm CTAs |
+| 2026-07-26 | Provider verification upload (C3.5 / P1#7) | **partial closer** — provider list+upload E2E path shipped; admin review open | `VerificationDocumentsView` |
+| 2026-07-26 | Perf gate — public catalog p95 | **PASS** (jobs/listings/flags/providers/search all p95 &lt; 200 ms @ 20 samples) | `perf-gate-2026-07-26.md` (+ samples block / `perf-gate-2026-07-26-samples.md`) |
+| 2026-07-26 | Security gate — money / idempotency | **PASS WITH GAPS** — web listing bid now sends `Idempotency-Key` (`useListings.ts` `usePlaceListingBid`); job-bid & bid-bond gateway still not enforced | `security-gate-2026-07-26.md` (update matrix: web listing bid **Yes**); `web/src/hooks/useListings.ts` |
 
 ---
 

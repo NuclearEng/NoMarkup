@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import type { UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { ApiError, api } from '@/lib/api';
+import { ApiError, api, clearIdempotencyKey, idempotencyHeader } from '@/lib/api';
 import { saveDraft } from '@/lib/offline-drafts';
 import type {
   AutocompleteResponse,
@@ -309,8 +309,16 @@ export function useDeleteListingDraft() {
 export function usePlaceListingBid() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ listingId, input }: { listingId: string; input: PlaceListingBidInput }) =>
-      api.post<PlaceListingBidResponse>(`/api/v1/listings/${listingId}/bids`, input),
+    mutationFn: ({ listingId, input }: { listingId: string; input: PlaceListingBidInput }) => {
+      // Stable key per listing+amount so double-tap / network retry cannot double-bid.
+      // Gateway RequireIdempotencyKey on POST /listings/{id}/bids (MON-06/22).
+      const opKey = `listing-bid:${listingId}:${input.amount_cents}`;
+      return api.post<PlaceListingBidResponse>(
+        `/api/v1/listings/${listingId}/bids`,
+        input,
+        idempotencyHeader(opKey),
+      );
+    },
     // Optimistic UI: snapshot the current cache, write the optimistic
     // bid amount immediately, and roll back if the mutation errors.
     // Cuts perceived latency on the bid action — the new top bid renders
@@ -335,6 +343,7 @@ export function usePlaceListingBid() {
       explainListingFailure('Failed to place bid')(err);
     },
     onSuccess: (data, variables) => {
+      clearIdempotencyKey(`listing-bid:${variables.listingId}:${variables.input.amount_cents}`);
       if (data.snipe_extension_applied) {
         toast.success('Bid placed — auction extended due to last-minute bid');
       } else {

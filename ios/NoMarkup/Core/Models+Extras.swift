@@ -24,13 +24,27 @@ struct ProviderReviewSummary: Codable, Sendable, Hashable {
 }
 
 /// Nested trust card on provider profile / search (when present).
+/// May include dimension scores when the gateway expands the payload.
 struct ProviderTrustSummary: Codable, Sendable, Hashable {
     var overallScore: Double?
     var tier: String?
+    var feedbackScore: Double?
+    var riskScore: Double?
+    var volumeScore: Double?
+    var fraudScore: Double?
+    var dataPoints: Int?
+    var computedAt: String?
 
     var displayTier: String {
-        let t = tier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return t.isEmpty ? "—" : t.replacingOccurrences(of: "_", with: " ").capitalized
+        TrustScoreScale.displayTier(tier)
+    }
+
+    var displayOverallPoints: String {
+        TrustScoreScale.displayPoints(overallScore)
+    }
+
+    var hasDimensionBreakdown: Bool {
+        feedbackScore != nil || riskScore != nil || volumeScore != nil || fraudScore != nil
     }
 }
 

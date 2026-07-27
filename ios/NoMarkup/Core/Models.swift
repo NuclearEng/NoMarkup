@@ -956,6 +956,47 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
             return raw.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
+
+    /// Primary next step for the signed-in party (goods escrow is released only
+    /// after mutual pickup confirm on the server — not via `/payments/.../release`).
+    func nextActionCaption(userId: String?) -> String? {
+        if needsPayment {
+            return "Next: pay with Apple Pay (or card). Funds are held in escrow until pickup."
+        }
+        if canConfirmPickupAsBuyer(userId: userId) {
+            return "Next: confirm pickup after you receive the goods."
+        }
+        if canSellerConfirm(userId: userId) {
+            if normalizedEscrow == "pickup_confirmed" {
+                return "Next: seller confirm to finish the handshake and release escrow."
+            }
+            return "Next: seller confirm when the buyer takes possession (or wait for buyer confirm)."
+        }
+        guard let userId, !userId.isEmpty else { return nil }
+        switch normalizedEscrow {
+        case "held":
+            if buyerId == userId {
+                return "Next: confirm pickup after you receive the goods."
+            }
+            if sellerId == userId {
+                return "Waiting for buyer pickup confirmation — you can also seller-confirm."
+            }
+        case "pickup_confirmed":
+            if buyerId == userId {
+                return "Waiting for the seller to confirm handoff. Escrow releases when both sides confirm."
+            }
+            if sellerId == userId {
+                return "Next: seller confirm to release escrow to you."
+            }
+        case "released":
+            return "Escrow released — mutual pickup confirmed on the server."
+        case "disputed":
+            return "Order is under dispute. Support reviews escrow."
+        default:
+            break
+        }
+        return nil
+    }
 }
 
 /// Response from confirm-pickup / seller-confirm (flexible shape).
@@ -1225,19 +1266,274 @@ struct JobBidCore: Codable, Sendable, Hashable {
     var updatedAt: String?
 }
 
-/// Gateway returns `trust_score` as `{ overall_score, tier }`, not a bare double.
+/// Nested `trust_score` on bid ladder / provider cards.
+/// Full endpoint returns all four dimensions; ladder may send overall + tier only.
 struct ProviderTrustScore: Codable, Sendable, Hashable {
     var overallScore: Double?
     var tier: String?
+    var feedbackScore: Double?
+    var riskScore: Double?
+    var volumeScore: Double?
+    var fraudScore: Double?
+    var dataPoints: Int?
+    var computedAt: String?
+    var userId: String?
 
-    /// 0…1 overall score when present.
+    init(
+        overallScore: Double? = nil,
+        tier: String? = nil,
+        feedbackScore: Double? = nil,
+        riskScore: Double? = nil,
+        volumeScore: Double? = nil,
+        fraudScore: Double? = nil,
+        dataPoints: Int? = nil,
+        computedAt: String? = nil,
+        userId: String? = nil
+    ) {
+        self.overallScore = overallScore
+        self.tier = tier
+        self.feedbackScore = feedbackScore
+        self.riskScore = riskScore
+        self.volumeScore = volumeScore
+        self.fraudScore = fraudScore
+        self.dataPoints = dataPoints
+        self.computedAt = computedAt
+        self.userId = userId
+    }
+
+    /// 0…1 overall score when present (clamps values already on a 0…100 scale).
     var normalizedScore: Double? {
-        overallScore
+        TrustScoreScale.normalized(overallScore)
     }
 
     var displayTier: String {
+        TrustScoreScale.displayTier(tier)
+    }
+
+    /// Composite 0–100 label for compact chips (e.g. bid ladder).
+    var displayOverallPoints: String {
+        TrustScoreScale.displayPoints(overallScore)
+    }
+
+    /// True when any of the four weighted dimensions arrived on the wire.
+    var hasDimensionBreakdown: Bool {
+        feedbackScore != nil || riskScore != nil || volumeScore != nil || fraudScore != nil
+    }
+}
+
+// MARK: - Full user trust score (GET /users/{id}/trust-score)
+
+/// Showcase weights: Feedback 35%, Risk 25%, Volume 20%, Fraud 20%.
+enum TrustScoreWeights {
+    static let feedback: Double = 0.35
+    static let risk: Double = 0.25
+    static let volume: Double = 0.20
+    static let fraud: Double = 0.20
+
+    static let feedbackPercentLabel = "35%"
+    static let riskPercentLabel = "25%"
+    static let volumePercentLabel = "20%"
+    static let fraudPercentLabel = "20%"
+}
+
+/// Shared 0…1 ↔ 0…100 display helpers for trust scores.
+enum TrustScoreScale {
+    /// Normalize a raw score to 0…1. Values already on 0…100 are divided by 100.
+    static func normalized(_ raw: Double?) -> Double? {
+        guard let raw else { return nil }
+        if raw.isNaN || raw.isInfinite { return nil }
+        if raw > 1.0 {
+            return min(1.0, max(0.0, raw / 100.0))
+        }
+        return min(1.0, max(0.0, raw))
+    }
+
+    /// Display as integer points on a 0–100 scale.
+    static func displayPoints(_ raw: Double?) -> String {
+        guard let n = normalized(raw) else { return "—" }
+        let points = (n * 100.0).rounded()
+        return String(format: "%.0f", points)
+    }
+
+    /// Display as "78" or "78/100" style label.
+    static func displayPointsOutOf100(_ raw: Double?) -> String {
+        let pts = displayPoints(raw)
+        return pts == "—" ? "—" : "\(pts)"
+    }
+
+    static func displayTier(_ tier: String?) -> String {
         let t = tier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return t.isEmpty ? "—" : t.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+}
+
+/// Full breakdown from `GET /api/v1/users/{id}/trust-score`.
+/// Scores are 0…1 on the wire; UI shows 0–100.
+struct UserTrustScore: Codable, Sendable, Hashable {
+    var userId: String?
+    var overallScore: Double?
+    var feedbackScore: Double?
+    var riskScore: Double?
+    var volumeScore: Double?
+    var fraudScore: Double?
+    var tier: String?
+    var computedAt: String?
+    var dataPoints: Int?
+
+    var displayTier: String {
+        TrustScoreScale.displayTier(tier)
+    }
+
+    var displayOverall: String {
+        TrustScoreScale.displayPoints(overallScore)
+    }
+
+    var displayFeedback: String {
+        TrustScoreScale.displayPoints(feedbackScore)
+    }
+
+    var displayRisk: String {
+        TrustScoreScale.displayPoints(riskScore)
+    }
+
+    var displayVolume: String {
+        TrustScoreScale.displayPoints(volumeScore)
+    }
+
+    var displayFraud: String {
+        TrustScoreScale.displayPoints(fraudScore)
+    }
+
+    var normalizedOverall: Double {
+        TrustScoreScale.normalized(overallScore) ?? 0
+    }
+
+    var normalizedFeedback: Double {
+        TrustScoreScale.normalized(feedbackScore) ?? 0
+    }
+
+    var normalizedRisk: Double {
+        TrustScoreScale.normalized(riskScore) ?? 0
+    }
+
+    var normalizedVolume: Double {
+        TrustScoreScale.normalized(volumeScore) ?? 0
+    }
+
+    var normalizedFraud: Double {
+        TrustScoreScale.normalized(fraudScore) ?? 0
+    }
+
+    var computedAtLabel: String? {
+        guard let computedAt, !computedAt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return CatalogDateFormat.friendlyDateTime(computedAt)
+    }
+
+    /// Four showcase dimensions in display order with weights.
+    var dimensions: [TrustScoreDimension] {
+        [
+            TrustScoreDimension(
+                id: "feedback",
+                title: "Feedback",
+                weightLabel: TrustScoreWeights.feedbackPercentLabel,
+                weight: TrustScoreWeights.feedback,
+                normalized: normalizedFeedback,
+                displayPoints: displayFeedback,
+                systemImage: "star.bubble"
+            ),
+            TrustScoreDimension(
+                id: "risk",
+                title: "Risk",
+                weightLabel: TrustScoreWeights.riskPercentLabel,
+                weight: TrustScoreWeights.risk,
+                normalized: normalizedRisk,
+                displayPoints: displayRisk,
+                systemImage: "shield.lefthalf.filled"
+            ),
+            TrustScoreDimension(
+                id: "volume",
+                title: "Volume",
+                weightLabel: TrustScoreWeights.volumePercentLabel,
+                weight: TrustScoreWeights.volume,
+                normalized: normalizedVolume,
+                displayPoints: displayVolume,
+                systemImage: "chart.bar.fill"
+            ),
+            TrustScoreDimension(
+                id: "fraud",
+                title: "Fraud",
+                weightLabel: TrustScoreWeights.fraudPercentLabel,
+                weight: TrustScoreWeights.fraud,
+                normalized: normalizedFraud,
+                displayPoints: displayFraud,
+                systemImage: "exclamationmark.shield"
+            ),
+        ]
+    }
+}
+
+/// One weighted dimension row for the trust breakdown UI.
+struct TrustScoreDimension: Identifiable, Sendable, Hashable {
+    let id: String
+    let title: String
+    let weightLabel: String
+    let weight: Double
+    let normalized: Double
+    let displayPoints: String
+    let systemImage: String
+}
+
+/// Snapshot from `GET /api/v1/users/{id}/trust-history`.
+struct UserTrustHistorySnapshot: Codable, Sendable, Hashable, Identifiable {
+    var changeReason: String?
+    var recordedAt: String?
+    var score: UserTrustScore?
+    var previousOverall: Double?
+    var previousTier: String?
+
+    var id: String {
+        let at = recordedAt ?? ""
+        let reason = changeReason ?? ""
+        let overall = score.flatMap { $0.overallScore.map { String($0) } } ?? ""
+        let key = "\(at)|\(reason)|\(overall)"
+        return key == "||" ? "snapshot" : key
+    }
+
+    var recordedAtLabel: String {
+        guard let recordedAt, !recordedAt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "—"
+        }
+        return CatalogDateFormat.friendlyDateTime(recordedAt)
+    }
+
+    var displayReason: String {
+        let r = changeReason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return r.isEmpty ? "Score update" : r.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var displayOverall: String {
+        if let score {
+            return score.displayOverall
+        }
+        return "—"
+    }
+}
+
+struct UserTrustHistoryResponse: Codable, Sendable {
+    var snapshots: [UserTrustHistorySnapshot]
+    var pagination: PaginationMeta?
+
+    enum CodingKeys: String, CodingKey {
+        case snapshots
+        case pagination
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        snapshots = try c.decodeIfPresent([UserTrustHistorySnapshot].self, forKey: .snapshots) ?? []
+        pagination = try c.decodeIfPresent(PaginationMeta.self, forKey: .pagination)
     }
 }
 
@@ -1268,10 +1564,17 @@ struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
 
     var displayTrust: String {
         if let tier = trustScore?.tier, !tier.isEmpty {
-            return trustScore?.displayTier ?? tier
+            let tierLabel = trustScore?.displayTier ?? tier
+            if let points = trustScore?.displayOverallPoints, points != "—" {
+                return "\(points) · \(tierLabel)"
+            }
+            return tierLabel
         }
-        if let v = trustScore?.overallScore ?? trustScoreValue {
-            return String(format: "%.0f%%", v * 100)
+        if let points = trustScore?.displayOverallPoints, points != "—" {
+            return points
+        }
+        if let v = trustScoreValue {
+            return TrustScoreScale.displayPoints(v)
         }
         return "—"
     }

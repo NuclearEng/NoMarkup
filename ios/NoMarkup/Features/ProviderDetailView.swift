@@ -193,6 +193,64 @@ struct ProviderDetailView: View {
             .listRowBackground(BrandTheme.navyElevated)
 
             Section {
+                NavigationLink {
+                    TrustScoreView(userId: blockTargetID, displayName: profile.displayLabel)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .foregroundStyle(BrandTheme.goldBright)
+                            .accessibilityHidden(true)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Trust score")
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                            if let trust = profile.trustScore {
+                                Text(trustSubtitle(trust))
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            } else {
+                                Text("Full breakdown · Feedback, Risk, Volume, Fraud")
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                        }
+
+                        Spacer(minLength: 8)
+
+                        if let trust = profile.trustScore {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                if trust.displayOverallPoints != "—" {
+                                    Text(trust.displayOverallPoints)
+                                        .font(.title3.weight(.bold).monospacedDigit())
+                                        .foregroundStyle(BrandTheme.goldBright)
+                                }
+                                Text(trust.displayTier)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(BrandTheme.navy)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(BrandTheme.goldBright, in: Capsule())
+                            }
+                        } else {
+                            Text("View")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(BrandTheme.goldBright)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 44)
+                }
+                .accessibilityHint("Opens full trust score breakdown with four weighted dimensions")
+            } header: {
+                Text("Trust").brandSectionHeader()
+            } footer: {
+                Text("Composite score is weighted Feedback 35%, Risk 25%, Volume 20%, Fraud 20%.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            .listRowBackground(BrandTheme.navyElevated)
+
+            Section {
                 LabeledContent("Jobs completed") {
                     Text("\(profile.jobsCompleted ?? 0)")
                         .foregroundStyle(BrandTheme.textPrimary)
@@ -310,6 +368,20 @@ struct ProviderDetailView: View {
             .listRowBackground(BrandTheme.navyElevated)
         }
         .brandListBackground()
+    }
+
+    private func trustSubtitle(_ trust: ProviderTrustSummary) -> String {
+        var parts: [String] = []
+        if trust.displayOverallPoints != "—" {
+            parts.append("\(trust.displayOverallPoints)/100")
+        }
+        if trust.displayTier != "—" {
+            parts.append(trust.displayTier)
+        }
+        if parts.isEmpty {
+            return "Full breakdown · Feedback, Risk, Volume, Fraud"
+        }
+        return parts.joined(separator: " · ") + " · open breakdown"
     }
 
     @MainActor

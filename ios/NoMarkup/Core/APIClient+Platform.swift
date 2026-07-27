@@ -58,7 +58,7 @@ extension APIClient {
     // MARK: Image upload pipeline
 
     /// POST `/api/v1/images/upload-url` — mint a presigned PUT URL (Bearer required).
-    /// Context wire values: `job_photo` | `listing` (imaging engine allow-list).
+    /// Context wire values: `job_photo` | `listing` | `document` (imaging engine allow-list).
     func requestImageUploadURL(
         filename: String,
         mimeType: String,
@@ -232,12 +232,15 @@ enum ImageUploadContext: String, Sendable, Hashable {
     case job
     /// Goods listing photos.
     case listing
+    /// Provider verification documents (ID, license, insurance) — S3 prefix `documents/{userID}/…`.
+    case document
 
     /// Wire value for `context` on upload-url / confirm.
     var apiValue: String {
         switch self {
         case .job: return "job_photo"
         case .listing: return "listing"
+        case .document: return "document"
         }
     }
 }

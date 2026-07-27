@@ -259,7 +259,7 @@ struct ProviderWorkspaceView: View {
                     Label("Verification documents", systemImage: "checkmark.shield")
                 }
                 .frame(minHeight: 44)
-                .accessibilityHint("View insurance and ID verification status")
+                .accessibilityHint("View status and upload insurance, license, or ID documents")
 
                 NavigationLink {
                     CalendarExportView()

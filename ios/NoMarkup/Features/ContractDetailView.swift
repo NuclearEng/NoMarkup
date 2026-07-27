@@ -5,7 +5,14 @@ import UIKit
 #endif
 
 /// Contract detail — status, amount, parties, role-gated lifecycle actions,
-/// milestones, change orders, tip, reports, guarantee claim, open dispute / review.
+/// milestones, change orders, tip, reports, guarantee claim, open dispute / review,
+/// and customer escrow release (`POST /payments/{id}/release`).
+///
+/// Services escrow (not automatic on approve-completion):
+/// 1. Payment held with status `escrow` after process/capture
+/// 2. Provider mark complete → customer approve-completion (contract → completed)
+/// 3. Customer `POST /api/v1/payments/{id}/release` (Idempotency-Key) — provider cannot self-release
+/// Goods use mutual pickup on listing orders instead (see MyOrdersView).
 struct ContractDetailView: View {
     let contractID: String
 
@@ -14,6 +21,8 @@ struct ContractDetailView: View {
     @State private var contract: ContractDetail?
     @State private var changeOrders: [ContractChangeOrder] = []
     @State private var guaranteeClaim: GuaranteeClaim?
+    /// Payments linked to this contract (loaded via GET /payments, filtered client-side).
+    @State private var contractPayments: [ContractPayment] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
@@ -24,6 +33,7 @@ struct ContractDetailView: View {
     @State private var pendingConfirmActionTitle: String?
     @State private var actingMilestoneID: String?
     @State private var actingChangeOrderID: String?
+    @State private var releasingPaymentID: String?
     @State private var currentUserID: String?
     @State private var showCancelConfirm = false
     @State private var showMarkCompleteConfirm = false
@@ -31,6 +41,7 @@ struct ContractDetailView: View {
     @State private var showNoShowConfirm = false
     @State private var showAbandonmentConfirm = false
     @State private var pendingMilestoneApproveID: String?
+    @State private var pendingReleasePayment: ContractPayment?
     @State private var showDisputeSheet = false
     @State private var showReviewSheet = false
     @State private var showGuaranteeClaimSheet = false
@@ -45,6 +56,14 @@ struct ContractDetailView: View {
     // Tip form
     @State private var tipAmountText = ""
     @State private var isSubmittingTip = false
+
+    private var heldEscrowPayments: [ContractPayment] {
+        contractPayments.filter(\.isHeldInEscrow)
+    }
+
+    private var releasedEscrowPayments: [ContractPayment] {
+        contractPayments.filter(\.isReleased)
+    }
 
     var body: some View {
         contractBody
@@ -74,6 +93,7 @@ struct ContractDetailView: View {
                 showNoShowConfirm: $showNoShowConfirm,
                 showAbandonmentConfirm: $showAbandonmentConfirm,
                 pendingMilestoneApproveID: $pendingMilestoneApproveID,
+                pendingReleasePayment: $pendingReleasePayment,
                 onCancel: {
                     Task {
                         await runAction(title: pendingConfirmActionTitle ?? "Cancel contract") {
@@ -90,7 +110,10 @@ struct ContractDetailView: View {
                 },
                 onApproveCompletion: {
                     Task {
-                        await runAction(title: pendingConfirmActionTitle ?? "Approve completion") {
+                        await runAction(
+                            title: pendingConfirmActionTitle ?? "Approve completion",
+                            successMessage: "Completion approved. If funds are still held, release escrow next to pay the provider."
+                        ) {
                             try await APIClient.shared.approveContractCompletion(id: contractID)
                         }
                     }
@@ -115,6 +138,9 @@ struct ContractDetailView: View {
                             try await APIClient.shared.approveMilestone(id: mid)
                         }
                     }
+                },
+                onReleaseEscrow: { payment in
+                    Task { await releaseEscrow(payment) }
                 }
             ))
     }
@@ -260,6 +286,8 @@ struct ContractDetailView: View {
 
             actionsSection(contract)
 
+            escrowSection(contract)
+
             milestonesSection(contract)
 
             changeOrdersSection(contract)
@@ -372,11 +400,16 @@ struct ContractDetailView: View {
                         }
                     }
                     if isProvider && contract.hasCompletedMark {
-                        Text("Waiting for customer to approve completion.")
+                        Text("Waiting for customer to approve completion. Escrow release is a separate customer step after approval.")
                             .font(.footnote)
                             .foregroundStyle(BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     if isCustomer && contract.hasCompletedMark {
+                        Text("Next: approve completion to finalize the job, then release escrow if funds are still held.")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(BrandTheme.goldBright.opacity(0.95))
+                            .fixedSize(horizontal: false, vertical: true)
                         actionButton(
                             title: "Approve completion",
                             systemImage: "hand.thumbsup",
@@ -407,6 +440,12 @@ struct ContractDetailView: View {
                 }
 
                 if status == "completed" {
+                    if isCustomer && !heldEscrowPayments.isEmpty {
+                        Text("Next: release escrow below to pay the provider. Approve-completion does not move money by itself.")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(BrandTheme.goldBright.opacity(0.95))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     actionButton(
                         title: "Leave review",
                         systemImage: "star",
@@ -433,10 +472,119 @@ struct ContractDetailView: View {
             } header: {
                 Text("Actions").brandSectionHeader()
             } footer: {
-                Text("Actions depend on your role (customer vs provider) and contract status. Escrow release follows mutual completion on the server.")
+                Text("Approve completion finalizes the contract status. Releasing held escrow is a separate customer action (POST /payments/{id}/release). Providers cannot self-release. Amounts are server-side only.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
             .listRowBackground(BrandTheme.navyElevated)
+        }
+    }
+
+    // MARK: Escrow / payment release
+
+    @ViewBuilder
+    private func escrowSection(_ contract: ContractDetail) -> some View {
+        let isCustomer = contract.isCustomer(userId: currentUserID)
+        let isProvider = contract.isProvider(userId: currentUserID)
+        let held = heldEscrowPayments
+        let released = releasedEscrowPayments
+
+        // Surface when there are payment rows, or when completion is in play
+        // (customer may still need to release after approve-completion).
+        let relevantStage = contract.normalizedStatus == "completed"
+            || contract.normalizedStatus == "active"
+            || contract.hasCompletedMark
+        let hasRows = !held.isEmpty || !released.isEmpty
+        if (isCustomer || isProvider) && (hasRows || relevantStage) {
+            Section {
+                if held.isEmpty && released.isEmpty {
+                    Text(
+                        isCustomer
+                            ? "No held escrow payment found for this contract yet. When a payment is in escrow, you can release it here after work is approved."
+                            : "No held escrow payment found for this contract yet. When funds are held, only the customer can release them to you."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .listRowBackground(BrandTheme.navyElevated)
+                }
+
+                ForEach(held) { payment in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(payment.displayAmount)
+                                .font(.body.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(BrandTheme.goldBright)
+                            Spacer()
+                            Text("Held in escrow")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(BrandTheme.warning)
+                        }
+                        if let payout = payment.displayProviderPayout {
+                            Text("Provider payout (server): \(payout)")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                        Text("Payment \(String(payment.id.prefix(8)))…")
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .textSelection(.enabled)
+
+                        if isCustomer && payment.canReleaseAsCustomer(userId: currentUserID) {
+                            Button {
+                                pendingReleasePayment = payment
+                            } label: {
+                                if releasingPaymentID == payment.id {
+                                    ProgressView()
+                                        .tint(BrandTheme.navy)
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                } else {
+                                    Label("Release escrow · \(payment.displayAmount)", systemImage: "lock.open")
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(BrandTheme.success)
+                            .disabled(
+                                releasingPaymentID != nil
+                                    || actingActionTitle != nil
+                                    || actingMilestoneID != nil
+                            )
+                            .accessibilityHint("Calls POST /payments/{id}/release with Idempotency-Key; pays the provider from held escrow")
+                        } else if isProvider {
+                            Text("Waiting for the customer to release escrow. You cannot release your own payout.")
+                                .font(.footnote)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .listRowBackground(BrandTheme.navyElevated)
+                }
+
+                ForEach(released) { payment in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(payment.displayAmount)
+                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(BrandTheme.goldBright)
+                            Text(payment.displayStatus)
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.success)
+                        }
+                        Spacer()
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundStyle(BrandTheme.success)
+                            .accessibilityHidden(true)
+                    }
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("Escrow").brandSectionHeader()
+            } footer: {
+                Text("Customer releases via real endpoint POST /api/v1/payments/{id}/release (auth + Idempotency-Key). Display amounts are server fields only — no client fee math. Goods orders release via pickup handshake, not this control.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
         }
     }
 
@@ -463,7 +611,12 @@ struct ContractDetailView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(tint)
-        .disabled(actingActionTitle != nil || actingMilestoneID != nil || actingChangeOrderID != nil)
+        .disabled(
+            actingActionTitle != nil
+                || actingMilestoneID != nil
+                || actingChangeOrderID != nil
+                || releasingPaymentID != nil
+        )
         .accessibilityHint(title)
     }
 
@@ -947,14 +1100,16 @@ struct ContractDetailView: View {
             contract = detail
 
             // Prefer dedicated list endpoint; fall back to embedded change_orders.
-            // Fetch change orders + claim in parallel after the detail is known.
+            // Fetch change orders + claim + escrow payments in parallel after detail.
             async let ordersResult = Self.loadChangeOrders(
                 contractId: contractID,
                 fallback: detail.changeOrders ?? []
             )
             async let claimResult = Self.loadGuaranteeClaim(contractId: contractID)
+            async let paymentsResult = Self.loadContractPayments(contractId: contractID)
             changeOrders = await ordersResult
             guaranteeClaim = await claimResult
+            contractPayments = await paymentsResult
         } catch {
             if contract == nil {
                 errorMessage = error.localizedDescription
@@ -980,8 +1135,35 @@ struct ContractDetailView: View {
         try? await APIClient.shared.fetchGuaranteeClaim(contractId: contractId)
     }
 
+    /// Load held + released payments for this contract. Fail-soft on list errors.
+    private static func loadContractPayments(contractId: String) async -> [ContractPayment] {
+        // Two status filters (escrow + released) so the CTA and “already paid”
+        // states both work without pulling the full history.
+        async let escrow = (try? await APIClient.shared.fetchPaymentsForContract(
+            contractId: contractId,
+            status: "escrow"
+        )) ?? []
+        async let released = (try? await APIClient.shared.fetchPaymentsForContract(
+            contractId: contractId,
+            status: "released"
+        )) ?? []
+        let held = await escrow
+        let done = await released
+        var byID: [String: ContractPayment] = [:]
+        for payment in held + done {
+            byID[payment.id] = payment
+        }
+        return Array(byID.values).sorted { lhs, rhs in
+            (lhs.createdAt ?? "") > (rhs.createdAt ?? "")
+        }
+    }
+
     @MainActor
-    private func runAction(title: String, _ work: () async throws -> ContractDetail) async {
+    private func runAction(
+        title: String,
+        successMessage: String = "Updated.",
+        _ work: () async throws -> ContractDetail
+    ) async {
         actingActionTitle = title
         pendingConfirmActionTitle = nil
         statusMessage = nil
@@ -990,9 +1172,40 @@ struct ContractDetailView: View {
         do {
             contract = try await work()
             statusIsError = false
-            statusMessage = "Updated."
-            // Refresh side data (change orders / claim) after lifecycle mutations.
+            statusMessage = successMessage
+            // Refresh side data (change orders / claim / escrow) after lifecycle mutations.
             await refreshSideData()
+        } catch let error as APIClientError where error.isUnauthorized {
+            statusIsError = true
+            statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func releaseEscrow(_ payment: ContractPayment) async {
+        releasingPaymentID = payment.id
+        statusMessage = nil
+        statusIsError = false
+        defer { releasingPaymentID = nil }
+        do {
+            let updated = try await APIClient.shared.releasePayment(
+                paymentId: payment.id,
+                reason: "customer approved completion"
+            )
+            if let idx = contractPayments.firstIndex(where: { $0.id == payment.id }) {
+                contractPayments[idx] = updated
+            } else {
+                contractPayments.insert(updated, at: 0)
+            }
+            statusIsError = false
+            statusMessage = "Escrow released — \(updated.displayAmount) payout path advanced on the server."
+            await refreshSideData()
+        } catch let error as APIClientError where error.isUnauthorized {
+            statusIsError = true
+            statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
         } catch {
             statusIsError = true
             statusMessage = error.localizedDescription
@@ -1023,8 +1236,10 @@ struct ContractDetailView: View {
             fallback: contract?.changeOrders ?? []
         )
         async let claim = Self.loadGuaranteeClaim(contractId: contractID)
+        async let payments = Self.loadContractPayments(contractId: contractID)
         changeOrders = await orders
         guaranteeClaim = await claim
+        contractPayments = await payments
     }
 
     @MainActor
@@ -1172,12 +1387,14 @@ private struct ContractConfirmationsModifier: ViewModifier {
     @Binding var showNoShowConfirm: Bool
     @Binding var showAbandonmentConfirm: Bool
     @Binding var pendingMilestoneApproveID: String?
+    @Binding var pendingReleasePayment: ContractPayment?
     let onCancel: () -> Void
     let onMarkComplete: () -> Void
     let onApproveCompletion: () -> Void
     let onReportNoShow: () -> Void
     let onReportAbandonment: () -> Void
     let onApproveMilestone: (String) -> Void
+    let onReleaseEscrow: (ContractPayment) -> Void
 
     func body(content: Content) -> some View {
         content
@@ -1199,17 +1416,17 @@ private struct ContractConfirmationsModifier: ViewModifier {
                 Button("Mark complete", action: onMarkComplete)
                 Button("Not yet", role: .cancel) {}
             } message: {
-                Text("The customer will be asked to approve completion before funds move.")
+                Text("The customer will be asked to approve completion. Escrow release is a separate customer step after approval.")
             }
             .confirmationDialog(
-                "Approve completion and release work?",
+                "Approve completion?",
                 isPresented: $showApproveCompletionConfirm,
                 titleVisibility: .visible
             ) {
                 Button("Approve completion", action: onApproveCompletion)
                 Button("Not yet", role: .cancel) {}
             } message: {
-                Text("Confirm the work is done as agreed. This advances escrow / payout per platform rules.")
+                Text("Finalizes the contract as completed. This does not by itself transfer escrow — use Release escrow when funds are held.")
             }
             .confirmationDialog(
                 "Report provider no-show?",
@@ -1248,7 +1465,30 @@ private struct ContractConfirmationsModifier: ViewModifier {
                     pendingMilestoneApproveID = nil
                 }
             } message: {
-                Text("Approving a milestone may release a payment step.")
+                Text("Approves the milestone on the contract. Escrow release still uses the payment release action when funds are held.")
+            }
+            .confirmationDialog(
+                "Release escrow to the provider?",
+                isPresented: Binding(
+                    get: { pendingReleasePayment != nil },
+                    set: { if !$0 { pendingReleasePayment = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Release escrow") {
+                    guard let payment = pendingReleasePayment else { return }
+                    pendingReleasePayment = nil
+                    onReleaseEscrow(payment)
+                }
+                Button("Not yet", role: .cancel) {
+                    pendingReleasePayment = nil
+                }
+            } message: {
+                if let payment = pendingReleasePayment {
+                    Text("Calls POST /payments/\(payment.id)/release with your auth and an Idempotency-Key. Server amount: \(payment.displayAmount). Providers cannot self-release.")
+                } else {
+                    Text("Releases held escrow to the provider. Server amounts only.")
+                }
             }
     }
 }

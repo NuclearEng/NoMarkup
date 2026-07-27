@@ -735,11 +735,6 @@ struct JobDetailView: View {
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(BrandTheme.bidActive)
                     }
-                    if entry.displayTrust != "—" {
-                        Text("Trust · \(entry.displayTrust)")
-                            .font(.caption2)
-                            .foregroundStyle(BrandTheme.textSecondary)
-                    }
                 }
 
                 Spacer(minLength: 8)
@@ -775,6 +770,16 @@ struct JobDetailView: View {
                     }
                 }
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                isLeading
+                    ? "Rank \(rank), leading, \(entry.displayName), \(entry.displayAmount)"
+                    : "Rank \(rank), \(entry.displayName), \(entry.displayAmount)"
+            )
+
+            // Outside combined a11y group so VoiceOver can focus the trust breakdown link.
+            trustChip(for: entry)
+                .padding(.leading, 40)
 
             if showWithdraw {
                 Button(role: .destructive) {
@@ -821,12 +826,41 @@ struct JobDetailView: View {
         }
         .padding(.vertical, 4)
         .frame(minHeight: 44)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            isLeading
-                ? "Rank \(rank), leading, \(entry.displayName), \(entry.displayAmount)"
-                : "Rank \(rank), \(entry.displayName), \(entry.displayAmount)"
-        )
+        // Keep children uncombined so the trust NavigationLink stays focusable.
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func trustChip(for entry: JobBidEntry) -> some View {
+        if entry.displayTrust == "—" {
+            EmptyView()
+        } else if let providerId = entry.bid?.providerId?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !providerId.isEmpty
+        {
+            NavigationLink {
+                TrustScoreView(userId: providerId, displayName: entry.displayName)
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Trust · \(entry.displayTrust)")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(BrandTheme.goldBright)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Trust \(entry.displayTrust)")
+            .accessibilityHint("Opens full trust score breakdown for \(entry.displayName)")
+        } else {
+            Text("Trust · \(entry.displayTrust)")
+                .font(.caption2)
+                .foregroundStyle(BrandTheme.textSecondary)
+        }
     }
 
     private func isOwnBid(_ entry: JobBidEntry) -> Bool {

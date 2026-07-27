@@ -1,8 +1,12 @@
+import PhotosUI
 import SwiftUI
 
-/// Provider verification documents — read-only list.
+/// Provider verification documents — list + upload.
 ///
-/// API: `GET /api/v1/providers/me/documents` → `{ "documents": [] }`.
+/// APIs:
+/// - `GET  /api/v1/providers/me/documents` → `{ "documents": [] }`
+/// - `POST /api/v1/providers/me/documents` after imaging pipeline
+///   (`context: document` → owned `documents/{userID}/…` key).
 struct VerificationDocumentsView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -12,13 +16,17 @@ struct VerificationDocumentsView: View {
     @State private var needsSignIn = false
     @State private var hasProviderRole = true
 
+    @State private var showUploadSheet = false
+    @State private var statusMessage: String?
+    @State private var actionError: String?
+
     var body: some View {
         Group {
             if auth.isScaffoldSession {
                 BrandEmptyState(
                     title: "Sign in required",
                     systemImage: "hammer.fill",
-                    message: "Browse-only mode has no API token. Sign in with a real account to view verification documents.",
+                    message: "Browse-only mode has no API token. Sign in with a real account to manage verification documents.",
                     actionTitle: "Sign out to log in",
                     action: { auth.signOut() }
                 )
@@ -26,7 +34,7 @@ struct VerificationDocumentsView: View {
                 BrandEmptyState(
                     title: "Sign in required",
                     systemImage: "lock.circle",
-                    message: "Sign in as a provider to view verification document status.",
+                    message: "Sign in as a provider to view and upload verification documents.",
                     actionTitle: "Sign in",
                     action: { auth.signOut() }
                 )
@@ -48,17 +56,17 @@ struct VerificationDocumentsView: View {
                 BrandEmptyState(
                     title: "Provider role required",
                     systemImage: "wrench.and.screwdriver",
-                    message: "Enable the provider role in Profile settings to view verification documents.",
+                    message: "Enable the provider role in Profile settings to manage verification documents.",
                     actionTitle: nil,
                     action: nil
                 )
             } else if documents.isEmpty {
                 BrandEmptyState(
                     title: "No documents yet",
-                    systemImage: "doc.badge.ellipsis",
-                    message: "Uploaded insurance, license, or ID verification files appear here after you submit them on the web provider portal.",
-                    actionTitle: nil,
-                    action: nil
+                    systemImage: "doc.badge.plus",
+                    message: "Upload a photo of your driver’s license, insurance, or trade license for platform review. JPEG, PNG, or WebP up to 10 MB.",
+                    actionTitle: "Upload document",
+                    action: { showUploadSheet = true }
                 )
             } else {
                 listContent
@@ -70,12 +78,59 @@ struct VerificationDocumentsView: View {
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar {
+            if canUpload {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showUploadSheet = true
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                    }
+                    .accessibilityLabel("Upload verification document")
+                }
+            }
+        }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showUploadSheet) {
+            UploadVerificationDocumentSheet(
+                onUploaded: { result in
+                    showUploadSheet = false
+                    let status = result.displayStatus
+                    statusMessage = "Document submitted (\(status)). It will appear after review updates."
+                    actionError = nil
+                    Task { await load() }
+                }
+            )
+            .environmentObject(auth)
+        }
+    }
+
+    private var canUpload: Bool {
+        auth.isAuthenticated && !auth.isScaffoldSession && hasProviderRole
     }
 
     private var listContent: some View {
         List {
+            if let statusMessage {
+                Section {
+                    Text(statusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.success)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+                }
+            }
+            if let actionError {
+                Section {
+                    Text(actionError)
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.destructive)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+                }
+            }
+
             Section {
                 ForEach(documents) { doc in
                     documentRow(doc)
@@ -84,8 +139,19 @@ struct VerificationDocumentsView: View {
             } header: {
                 Text("\(documents.count) document\(documents.count == 1 ? "" : "s")").brandSectionHeader()
             } footer: {
-                Text("Read-only on iOS for now. Upload and resubmit documents from the web provider workspace when required.")
+                Text("JPEG, PNG, or WebP up to 10 MB. MIME type is re-checked server-side; only files you upload under your account can be registered.")
                     .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            Section {
+                Button {
+                    showUploadSheet = true
+                } label: {
+                    Label("Upload another document", systemImage: "doc.badge.plus")
+                }
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityHint("Choose document type and pick a photo to submit for review")
             }
         }
         .brandListBackground()
@@ -161,6 +227,147 @@ struct VerificationDocumentsView: View {
             if documents.isEmpty {
                 loadError = error.localizedDescription
             }
+        }
+    }
+}
+
+// MARK: - Upload sheet
+
+/// Document type picker + PhotosPicker → imaging `document` context → register.
+private struct UploadVerificationDocumentSheet: View {
+    @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    let onUploaded: (ProviderDocumentUploadResult) -> Void
+
+    @State private var selectedType: ProviderDocumentType = .driversLicense
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var isUploading = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Document type", selection: $selectedType) {
+                        ForEach(ProviderDocumentType.allCases) { type in
+                            Text(type.displayLabel).tag(type)
+                        }
+                    }
+                    .pickerStyle(.navigationLink)
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Document type")
+
+                    Text(selectedType.detail)
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } header: {
+                    Text("Type").brandSectionHeader()
+                } footer: {
+                    Text("Must match a supported verification type. Review is handled by the platform.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+
+                Section {
+                    PhotosPicker(
+                        selection: $pickerItem,
+                        matching: .images,
+                        photoLibrary: .shared()
+                    ) {
+                        HStack {
+                            Label(
+                                pickerItem == nil ? "Choose photo" : "Change photo",
+                                systemImage: "photo.on.rectangle.angled"
+                            )
+                            Spacer()
+                            if isUploading {
+                                ProgressView()
+                                    .tint(BrandTheme.accent)
+                            } else if pickerItem != nil {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(BrandTheme.success)
+                                    .accessibilityLabel("Photo selected")
+                            }
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .disabled(isUploading)
+                    .accessibilityHint("Opens the photo library. JPEG, PNG, or WebP up to 10 MB.")
+                } header: {
+                    Text("Photo").brandSectionHeader()
+                } footer: {
+                    Text("Photos only (JPEG, PNG, WebP). Max 10 MB — same platform limit as other uploads. PDF is not accepted on this path.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.destructive)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
+                }
+            }
+            .brandListBackground()
+            .navigationTitle("Upload document")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isUploading)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        if isUploading {
+                            ProgressView()
+                                .tint(BrandTheme.accent)
+                        } else {
+                            Text("Submit")
+                        }
+                    }
+                    .disabled(isUploading || pickerItem == nil || !auth.isAuthenticated || auth.isScaffoldSession)
+                    .accessibilityLabel("Submit verification document")
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .tint(BrandTheme.accent)
+    }
+
+    @MainActor
+    private func submit() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            errorMessage = "Sign in as a provider to upload documents."
+            return
+        }
+        guard let item = pickerItem else {
+            errorMessage = "Choose a photo of the document first."
+            return
+        }
+
+        errorMessage = nil
+        isUploading = true
+        defer { isUploading = false }
+
+        do {
+            let result = try await ImageUploader.uploadVerificationDocument(
+                item: item,
+                documentType: selectedType
+            )
+            onUploaded(result)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

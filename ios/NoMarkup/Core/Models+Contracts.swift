@@ -769,6 +769,156 @@ enum ContractDisputeType: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+// MARK: - Service payments / escrow (GET /api/v1/payments, POST …/release)
+
+/// Row from `GET /api/v1/payments` / flat payment map from release.
+/// Money fields are server-authoritative integer cents — never recompute on client.
+struct ContractPayment: Decodable, Sendable, Hashable, Identifiable {
+    let id: String
+    var contractId: String?
+    var contractNumber: String?
+    var milestoneId: String?
+    var customerId: String?
+    var providerId: String?
+    var amountCents: Int64?
+    var platformFeeCents: Int64?
+    var guaranteeFeeCents: Int64?
+    var providerPayoutCents: Int64?
+    var status: String?
+    var failureReason: String?
+    var refundAmountCents: Int64?
+    var escrowAt: String?
+    var releasedAt: String?
+    var completedAt: String?
+    var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case contractId
+        case contractNumber
+        case milestoneId
+        case customerId
+        case providerId
+        case amountCents
+        case platformFeeCents
+        case guaranteeFeeCents
+        case providerPayoutCents
+        case status
+        case failureReason
+        case refundAmountCents
+        case escrowAt
+        case releasedAt
+        case completedAt
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let raw = try c.decodeIfPresent(String.self, forKey: .id), !raw.isEmpty {
+            id = raw
+        } else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: c,
+                debugDescription: "payment id required"
+            )
+        }
+        contractId = try c.decodeIfPresent(String.self, forKey: .contractId)
+        contractNumber = try c.decodeIfPresent(String.self, forKey: .contractNumber)
+        milestoneId = try c.decodeIfPresent(String.self, forKey: .milestoneId)
+        customerId = try c.decodeIfPresent(String.self, forKey: .customerId)
+        providerId = try c.decodeIfPresent(String.self, forKey: .providerId)
+        amountCents = Self.decodeFlexibleInt64(c, forKey: .amountCents)
+        platformFeeCents = Self.decodeFlexibleInt64(c, forKey: .platformFeeCents)
+        guaranteeFeeCents = Self.decodeFlexibleInt64(c, forKey: .guaranteeFeeCents)
+        providerPayoutCents = Self.decodeFlexibleInt64(c, forKey: .providerPayoutCents)
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        failureReason = try c.decodeIfPresent(String.self, forKey: .failureReason)
+        refundAmountCents = Self.decodeFlexibleInt64(c, forKey: .refundAmountCents)
+        escrowAt = try c.decodeIfPresent(String.self, forKey: .escrowAt)
+        releasedAt = try c.decodeIfPresent(String.self, forKey: .releasedAt)
+        completedAt = try c.decodeIfPresent(String.self, forKey: .completedAt)
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+    }
+
+    private static func decodeFlexibleInt64(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> Int64? {
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: key) { return v }
+        if let v = try? c.decodeIfPresent(Int.self, forKey: key) { return Int64(v) }
+        if let v = try? c.decodeIfPresent(Double.self, forKey: key) { return Int64(v) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key),
+           let v = Int64(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        {
+            return v
+        }
+        return nil
+    }
+
+    var normalizedStatus: String {
+        (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// Funds held pending customer release (or system/admin release).
+    var isHeldInEscrow: Bool {
+        normalizedStatus == "escrow"
+    }
+
+    var isReleased: Bool {
+        switch normalizedStatus {
+        case "released", "completed":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Display amount: server `amount_cents` only (no client fee math).
+    var displayAmount: String {
+        MoneyFormat.usd(cents: amountCents ?? 0)
+    }
+
+    /// Provider-facing payout label when the server supplies it.
+    var displayProviderPayout: String? {
+        guard let providerPayoutCents, providerPayoutCents > 0 else { return nil }
+        return MoneyFormat.usd(cents: providerPayoutCents)
+    }
+
+    var displayStatus: String {
+        StatusChipStyle.displayLabel(status ?? "unknown")
+    }
+
+    /// Customer may call `POST /payments/{id}/release` while status is escrow.
+    /// Provider self-release is refused server-side (actor rules).
+    func canReleaseAsCustomer(userId: String?) -> Bool {
+        guard isHeldInEscrow else { return false }
+        guard let userId, !userId.isEmpty else { return false }
+        if let customerId, !customerId.isEmpty {
+            return customerId == userId
+        }
+        // If customer_id is absent on the map, still allow UI for the signed-in
+        // customer path; the gateway/payment service enforces party + actor.
+        return true
+    }
+}
+
+struct PaymentsListResponse: Decodable, Sendable, Hashable {
+    var payments: [ContractPayment]
+    var pagination: PaginationMeta?
+
+    enum CodingKeys: String, CodingKey {
+        case payments
+        case pagination
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        payments = try c.decodeIfPresent([ContractPayment].self, forKey: .payments) ?? []
+        pagination = try c.decodeIfPresent(PaginationMeta.self, forKey: .pagination)
+    }
+}
+
 // MARK: Status chip extension for contracts
 
 extension StatusChipStyle {

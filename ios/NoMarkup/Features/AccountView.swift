@@ -225,7 +225,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
-                    .accessibilityHint("View provider verification document status")
+                    .accessibilityHint("View status and upload provider verification documents")
 
                     NavigationLink {
                         PaymentMethodsView()

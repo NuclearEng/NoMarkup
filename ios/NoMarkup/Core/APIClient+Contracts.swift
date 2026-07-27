@@ -17,6 +17,13 @@ import Foundation
 //   GET|POST /api/v1/contracts/{id}/guarantee-claim
 //   POST /api/v1/contracts/{id}/report-noshow|report-abandonment
 //   GET  /api/v1/contracts/{id}/pdf
+//
+// Escrow (gateway/internal/handler/payment.go) — services path:
+//   GET  /api/v1/payments?status=escrow|…
+//   POST /api/v1/payments/{id}/release  body: { reason? } + Idempotency-Key (required)
+//   Note: approve-completion finalizes the *contract* only; it does NOT call
+//   ReleaseEscrow. Customer must POST …/release (provider self-release refused).
+//   Goods listing orders release via mutual pickup handshake (not this route).
 
 extension APIClient {
 
@@ -326,6 +333,74 @@ extension APIClient {
         }
         return url
     }
+
+    // MARK: Payments / escrow release (services)
+
+    /// GET `/api/v1/payments?status=&page=&page_size=` — auth required.
+    /// Used to surface held escrow rows for a contract so the customer can release.
+    func fetchPayments(
+        status: String? = nil,
+        page: Int = 1,
+        pageSize: Int = 50
+    ) async throws -> PaymentsListResponse {
+        var query = [
+            URLQueryItem(name: "page", value: String(max(1, page))),
+            URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+        ]
+        if let status {
+            let trimmed = status.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                query.append(URLQueryItem(name: "status", value: trimmed))
+            }
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "payments"],
+            query: query,
+            authorized: true
+        )
+    }
+
+    /// Payments for a contract (filters client-side; list API has no contract_id query).
+    /// Prefer `status: "escrow"` when loading the release CTA.
+    func fetchPaymentsForContract(
+        contractId: String,
+        status: String? = nil
+    ) async throws -> [ContractPayment] {
+        let cid = contractId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cid.isEmpty else { return [] }
+        let response = try await fetchPayments(status: status, page: 1, pageSize: 50)
+        return response.payments.filter { payment in
+            (payment.contractId ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == cid
+        }
+    }
+
+    /// POST `/api/v1/payments/{id}/release` — customer releases held escrow to provider.
+    /// Body: `{ "reason": "..." }` (gateway requires a JSON body; empty reason is ok).
+    /// **Idempotency-Key required** (all `/payments` POST mutations).
+    ///
+    /// Security: auth Bearer only; actor must be the payment customer (or admin).
+    /// Provider self-release is refused in the payment service. Never compute
+    /// payout amounts client-side — display server `amount_cents` / `provider_payout_cents`.
+    @discardableResult
+    func releasePayment(
+        paymentId: String,
+        reason: String = "completion approved"
+    ) async throws -> ContractPayment {
+        let id = paymentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Payment id is required.")
+        }
+        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Fresh key per attempt so a prior failed attempt does not poison retries;
+        // success is still deduped server-side by CAS escrow→released.
+        let idem = "payment-release:\(id):\(UUID().uuidString)"
+        return try await postJSON(
+            pathComponents: ["api", "v1", "payments", id, "release"],
+            body: ContractsReleasePaymentBody(reason: trimmedReason),
+            authorized: .required,
+            headers: ["Idempotency-Key": idem]
+        )
+    }
 }
 
 // MARK: - Request bodies (snake_case via encoder keyEncodingStrategy)
@@ -361,4 +436,8 @@ private struct ContractsGuaranteeClaimBody: Encodable {
     let reason: String
     let description: String
     let evidenceUrls: [String]
+}
+
+private struct ContractsReleasePaymentBody: Encodable {
+    let reason: String
 }

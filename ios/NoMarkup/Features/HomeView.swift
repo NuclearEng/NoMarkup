@@ -625,6 +625,70 @@ private struct HowItWorksRow: View {
 private struct HomeJobCard: View {
     let job: JobSummary
 
+    /// Matches JobDetailView: sealed when type is `"sealed"` or missing (default reverse is sealed).
+    private var isSealedAuction: Bool {
+        let t = (job.auctionType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return t == "sealed" || t.isEmpty
+    }
+
+    private var isLiveAuctionType: Bool {
+        let t = (job.auctionType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return t == "live"
+    }
+
+    /// Open reverse auction that has not yet hit `auctionEndsAt`.
+    private var isAuctionActive: Bool {
+        let status = (job.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch status {
+        case "active", "open", "bidding", "live", "published":
+            break
+        default:
+            return false
+        }
+        if let ends = job.auctionEndsAt,
+           let date = CatalogDateFormat.parseISO(ends),
+           date < Date() {
+            return false
+        }
+        return true
+    }
+
+    /// Showcase badge copy — same labels as JobDetailView.reverseAuctionBadge.
+    private var auctionBadgeLabel: String {
+        let active = isAuctionActive
+        if active, isLiveAuctionType {
+            return "LIVE · reverse auction"
+        }
+        if active, isSealedAuction {
+            return "LIVE · sealed reverse"
+        }
+        if isSealedAuction {
+            return "Sealed reverse auction"
+        }
+        return active ? "LIVE · reverse auction" : "Reverse auction"
+    }
+
+    /// Starting bid is the reverse-auction budget ceiling when no offer is accepted yet.
+    private var budgetAmount: String? {
+        if let offer = job.offerAcceptedCents {
+            return MoneyFormat.usd(cents: offer)
+        }
+        if let start = job.startingBidCents, start > 0 {
+            return MoneyFormat.usd(cents: start)
+        }
+        return job.displayPrice
+    }
+
+    private var budgetCaption: String {
+        if job.offerAcceptedCents != nil { return "Accepted" }
+        if let start = job.startingBidCents, start > 0 { return "Budget" }
+        return "Price"
+    }
+
+    private var bidCountValue: Int {
+        job.bidCount ?? 0
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             // Leading gold rail
@@ -641,21 +705,8 @@ private struct HomeJobCard: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(BrandTheme.success)
-                                .frame(width: 6, height: 6)
-                            Text("LIVE AUCTION")
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                                .tracking(0.8)
-                                .foregroundStyle(BrandTheme.success)
-                            if let countdown = job.auctionCountdown {
-                                Text("· \(countdown)")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(BrandTheme.goldBright)
-                            }
-                        }
+                    VStack(alignment: .leading, spacing: 8) {
+                        reverseAuctionBadge
 
                         Text(job.displayTitle)
                             .font(.system(size: 16, weight: .semibold))
@@ -671,35 +722,31 @@ private struct HomeJobCard: View {
                                 Text(category)
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(BrandTheme.textSecondary)
-                            }
-                            if let status = job.status, !status.isEmpty {
-                                StatusChipView(
-                                    label: StatusChipStyle.displayLabel(status),
-                                    style: StatusChipStyle.forStatus(status)
-                                )
+                                    .lineLimit(1)
                             }
                         }
                     }
 
                     Spacer(minLength: 8)
 
-                    if let price = job.displayPrice {
+                    if let price = budgetAmount {
                         VStack(alignment: .trailing, spacing: 2) {
                             Text(price)
                                 .font(.system(size: 17, weight: .bold, design: .rounded))
                                 .foregroundStyle(BrandTheme.goldBright)
                                 .monospacedDigit()
-                            if let caption = job.priceCaption {
-                                Text(caption.uppercased())
-                                    .font(.system(size: 9, weight: .bold))
-                                    .tracking(0.6)
-                                    .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
-                            }
+                            Text(budgetCaption.uppercased())
+                                .font(.system(size: 9, weight: .bold))
+                                .tracking(0.6)
+                                .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
                         }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(budgetCaption) \(price)")
                     }
                 }
 
-                HStack(spacing: 12) {
+                // Intelligence row: location · bids · live countdown
+                HStack(spacing: 10) {
                     if let location = job.locationLabel {
                         Label(location, systemImage: "mappin")
                             .font(.system(size: 12))
@@ -707,28 +754,14 @@ private struct HomeJobCard: View {
                             .lineLimit(1)
                             .labelStyle(.titleAndIcon)
                     }
-                    if let bids = job.bidCount {
-                        Text("\(bids) bids")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(BrandTheme.textSecondary)
+
+                    if bidCountValue > 0 {
+                        bidCountChip(count: bidCountValue)
                     }
+
                     Spacer(minLength: 0)
-                    if let countdown = job.auctionCountdown {
-                        Text(countdown)
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundStyle(
-                                countdown == "Ended" ? BrandTheme.textSecondary : BrandTheme.navy
-                            )
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(
-                                Capsule().fill(
-                                    countdown == "Ended"
-                                        ? BrandTheme.surfaceRaised
-                                        : BrandTheme.goldBright
-                                )
-                            )
-                    }
+
+                    liveCountdownChip(iso: job.auctionEndsAt)
                 }
             }
             .padding(.leading, 14)
@@ -746,6 +779,84 @@ private struct HomeJobCard: View {
         )
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private var reverseAuctionBadge: some View {
+        HStack(spacing: 6) {
+            if isAuctionActive {
+                Circle()
+                    .fill(BrandTheme.success)
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+            }
+            Text(auctionBadgeLabel)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(0.4)
+                .foregroundStyle(BrandTheme.goldBright)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .overlay(
+            Capsule()
+                .strokeBorder(BrandTheme.gold, lineWidth: 1.5)
+        )
+        .accessibilityLabel(auctionBadgeLabel)
+    }
+
+    @ViewBuilder
+    private func bidCountChip(count: Int) -> some View {
+        Label("\(count) bid\(count == 1 ? "" : "s")", systemImage: "arrow.down.circle")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(BrandTheme.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(BrandTheme.navyElevated, in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(BrandTheme.gold.opacity(0.25), lineWidth: 1)
+            )
+            .accessibilityLabel("\(count) bids")
+    }
+
+    @ViewBuilder
+    private func liveCountdownChip(iso: String?) -> some View {
+        if let iso, !iso.isEmpty, CatalogDateFormat.parseISO(iso) != nil {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let label = CatalogDateFormat.countdownLabel(iso: iso, now: context.date) ?? "—"
+                Text(label)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(
+                        label == "Ended" ? BrandTheme.textSecondary : BrandTheme.navy
+                    )
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule().fill(
+                            label == "Ended"
+                                ? BrandTheme.surfaceRaised
+                                : BrandTheme.goldBright
+                        )
+                    )
+                    .accessibilityLabel("Auction \(label)")
+            }
+        }
+    }
+
+    private var accessibilitySummary: String {
+        var parts: [String] = [auctionBadgeLabel, job.displayTitle]
+        if let price = budgetAmount {
+            parts.append("\(budgetCaption) \(price)")
+        }
+        if bidCountValue > 0 {
+            parts.append("\(bidCountValue) bids")
+        }
+        if let location = job.locationLabel {
+            parts.append(location)
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -754,9 +865,26 @@ private struct HomeJobCard: View {
 private struct HomeListingCard: View {
     let listing: ListingSummary
 
+    private var isAuctionLive: Bool {
+        let status = (listing.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch status {
+        case "active", "open", "bidding", "live", "published":
+            break
+        default:
+            return false
+        }
+        if let ends = listing.auctionEndsAt, ends < Date() {
+            return false
+        }
+        return true
+    }
+
+    private var bidCountValue: Int {
+        listing.bidCount ?? 0
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            // Thumbnail placeholder kept by existing layout below
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(BrandTheme.surfaceRaised)
                 .frame(width: 48, height: 48)
@@ -766,11 +894,14 @@ private struct HomeListingCard: View {
                         .foregroundStyle(BrandTheme.gold.opacity(0.7))
                 }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
+                forwardAuctionBadge
+
                 Text(listing.displayTitle)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(BrandTheme.textPrimary)
                     .lineLimit(2)
+
                 HStack(spacing: 8) {
                     if let location = listing.locationLabel {
                         Text(location)
@@ -778,20 +909,29 @@ private struct HomeListingCard: View {
                             .foregroundStyle(BrandTheme.textSecondary)
                             .lineLimit(1)
                     }
-                    if let bids = listing.bidCount {
-                        Text("\(bids) bids")
-                            .font(.system(size: 12))
-                            .foregroundStyle(BrandTheme.textSecondary)
+                    if bidCountValue > 0 {
+                        Text("\(bidCountValue) bid\(bidCountValue == 1 ? "" : "s")")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(BrandTheme.goldBright)
+                    }
+                    if listing.auctionEndsAt != nil {
+                        listingCountdownChip
                     }
                 }
             }
 
             Spacer(minLength: 8)
 
-            Text(listing.displayPrice)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .foregroundStyle(BrandTheme.goldBright)
-                .monospacedDigit()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(listing.displayPrice)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(BrandTheme.goldBright)
+                    .monospacedDigit()
+                Text(listing.priceCaption.uppercased())
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.6)
+                    .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
+            }
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .semibold))
@@ -808,6 +948,54 @@ private struct HomeListingCard: View {
         )
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    private var forwardAuctionBadge: some View {
+        HStack(spacing: 6) {
+            if isAuctionLive {
+                Circle()
+                    .fill(BrandTheme.success)
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+            }
+            Text(isAuctionLive ? "LIVE · forward auction" : "Forward auction · goods")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(0.4)
+                .foregroundStyle(BrandTheme.goldBright)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .overlay(
+            Capsule()
+                .strokeBorder(BrandTheme.gold, lineWidth: 1.5)
+        )
+        .accessibilityLabel(isAuctionLive ? "Live forward auction" : "Forward auction, goods")
+    }
+
+    @ViewBuilder
+    private var listingCountdownChip: some View {
+        if let ends = listing.auctionEndsAt {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let label = CatalogDateFormat.countdownLabel(until: ends, now: context.date)
+                Text(label)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(
+                        label == "Ended" ? BrandTheme.textSecondary : BrandTheme.navy
+                    )
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule().fill(
+                            label == "Ended"
+                                ? BrandTheme.surfaceRaised
+                                : BrandTheme.goldBright
+                        )
+                    )
+                    .accessibilityLabel("Auction \(label)")
+            }
+        }
     }
 }
 

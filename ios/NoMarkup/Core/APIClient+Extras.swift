@@ -569,6 +569,40 @@ extension APIClient {
         )
     }
 
+    // MARK: Trust score (authed)
+
+    /// GET `/api/v1/users/{id}/trust-score` — full composite + four dimensions (Bearer).
+    func fetchUserTrustScore(userId: String) async throws -> UserTrustScore {
+        let trimmed = userId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "User id is required.")
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "users", trimmed, "trust-score"],
+            authorized: true
+        )
+    }
+
+    /// GET `/api/v1/users/{id}/trust-history` → `{ "snapshots": [...], "pagination": ... }` (Bearer).
+    func fetchUserTrustHistory(
+        userId: String,
+        page: Int = 1,
+        pageSize: Int = 20
+    ) async throws -> UserTrustHistoryResponse {
+        let trimmed = userId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "User id is required.")
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "users", trimmed, "trust-history"],
+            query: [
+                URLQueryItem(name: "page", value: String(max(1, page))),
+                URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+            ],
+            authorized: true
+        )
+    }
+
     // MARK: Trust tiers (public)
 
     /// GET `/api/v1/trust/tiers` → `{ "tiers": [...] }` — public ladder requirements.

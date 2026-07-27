@@ -53,6 +53,21 @@ enum ImageUploader {
         return urls
     }
 
+    /// Provider verification document: prepare JPEG/PNG/WebP (≤10 MB) → imaging
+    /// `document` context → `POST /api/v1/providers/me/documents`.
+    static func uploadVerificationDocument(
+        item: PhotosPickerItem,
+        documentType: ProviderDocumentType
+    ) async throws -> ProviderDocumentUploadResult {
+        let prepared = try await prepareJPEG(from: item)
+        return try await APIClient.shared.uploadAndSubmitProviderDocument(
+            data: prepared.data,
+            filename: prepared.filename,
+            mimeType: prepared.mimeType,
+            documentType: documentType.rawValue
+        )
+    }
+
     // MARK: - Prepare
 
     private struct PreparedImage: Sendable {

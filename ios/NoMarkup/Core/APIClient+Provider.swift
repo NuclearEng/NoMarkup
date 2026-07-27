@@ -217,13 +217,103 @@ extension APIClient {
 
     // MARK: Verification documents
 
-    /// GET `/api/v1/providers/me/documents` → `{ "documents": [...] }` (read-only list).
+    /// GET `/api/v1/providers/me/documents` → `{ "documents": [...] }`.
     func fetchMyProviderDocuments() async throws -> [ProviderVerificationDocument] {
         let wrapped: ProviderDocumentsResponse = try await getJSON(
             pathComponents: ["api", "v1", "providers", "me", "documents"],
             authorized: true
         )
         return wrapped.documents ?? []
+    }
+
+    /// POST `/api/v1/providers/me/documents` — register a previously uploaded storage object.
+    ///
+    /// Pipeline: `uploadImage(…, context: .document)` → this method.
+    /// Gateway requires `file_url` under `documents/{callerUserID}/…` (owned object).
+    /// Body: `{ document_type, file_url, file_name, mime_type, size_bytes, expires_at? }`.
+    /// Response `201`: `{ document_id, status }`.
+    @discardableResult
+    func submitProviderDocument(
+        documentType: String,
+        fileURL: String,
+        fileName: String,
+        mimeType: String,
+        sizeBytes: Int,
+        expiresAt: String? = nil
+    ) async throws -> ProviderDocumentUploadResult {
+        let type = documentType.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = fileURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mime = mimeType.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !type.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "document_type is required.")
+        }
+        guard ProviderDocumentType.isValidWireValue(type) else {
+            throw APIClientError.httpStatus(400, detail: "Invalid document type.")
+        }
+        guard !url.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "file_url is required.")
+        }
+        guard !name.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "file_name is required.")
+        }
+        guard !mime.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "mime_type is required.")
+        }
+        guard sizeBytes > 0 else {
+            throw APIClientError.httpStatus(400, detail: "size_bytes must be positive.")
+        }
+        // Match platform `MAX_FILE_SIZE_BYTES` / imaging 10 MB cap (also enforced on upload).
+        let maxBytes = 10 * 1024 * 1024
+        guard sizeBytes <= maxBytes else {
+            throw APIClientError.httpStatus(400, detail: "Document must be 10 MB or smaller.")
+        }
+
+        let body = SubmitProviderDocumentRequest(
+            documentType: type,
+            fileUrl: url,
+            fileName: name,
+            mimeType: mime,
+            sizeBytes: Int32(min(sizeBytes, Int(Int32.max))),
+            expiresAt: expiresAt.flatMap { raw in
+                let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.isEmpty ? nil : t
+            }
+        )
+        return try await postJSON(
+            pathComponents: ["api", "v1", "providers", "me", "documents"],
+            body: body,
+            authorized: .required
+        )
+    }
+
+    /// Full verification-doc pipeline: imaging upload (`document` context) then register.
+    ///
+    /// Returns the create response (`document_id` + `status`). Client enforces 10 MB;
+    /// server re-validates MIME on confirm and ownership on register.
+    @discardableResult
+    func uploadAndSubmitProviderDocument(
+        data: Data,
+        filename: String,
+        mimeType: String,
+        documentType: String,
+        expiresAt: String? = nil
+    ) async throws -> ProviderDocumentUploadResult {
+        let confirmedURL = try await uploadImage(
+            data: data,
+            filename: filename,
+            mimeType: mimeType,
+            context: .document
+        )
+        return try await submitProviderDocument(
+            documentType: documentType,
+            fileURL: confirmedURL,
+            fileName: filename,
+            mimeType: mimeType,
+            sizeBytes: data.count,
+            expiresAt: expiresAt
+        )
     }
 }
 
@@ -690,6 +780,67 @@ private struct CreateQuoteTemplateRequestBody: Encodable {
 }
 
 // MARK: - Verification documents
+
+/// Wire values accepted by user-service `isValidDocumentType`.
+enum ProviderDocumentType: String, CaseIterable, Sendable, Identifiable {
+    case driversLicense = "drivers_license"
+    case businessLicense = "business_license"
+    case ein = "ein"
+    case insurance = "insurance"
+    case tradeLicense = "trade_license"
+
+    var id: String { rawValue }
+
+    var displayLabel: String {
+        switch self {
+        case .driversLicense: return "Driver’s license / ID"
+        case .businessLicense: return "Business license"
+        case .ein: return "EIN / tax ID document"
+        case .insurance: return "Proof of insurance"
+        case .tradeLicense: return "Trade license"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .driversLicense:
+            return "Government-issued photo ID used to verify your identity."
+        case .businessLicense:
+            return "Business registration or operating license certificate."
+        case .ein:
+            return "EIN letter or tax ID paperwork for your business."
+        case .insurance:
+            return "Liability insurance or bonding documentation."
+        case .tradeLicense:
+            return "Electrician, plumber, contractor, or other trade credential."
+        }
+    }
+
+    static func isValidWireValue(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return allCases.contains { $0.rawValue == trimmed }
+    }
+}
+
+/// `POST /api/v1/providers/me/documents` body (snake_case via encoder).
+struct SubmitProviderDocumentRequest: Encodable, Sendable {
+    let documentType: String
+    let fileUrl: String
+    let fileName: String
+    let mimeType: String
+    let sizeBytes: Int32
+    var expiresAt: String?
+}
+
+/// `201` create response from document register.
+struct ProviderDocumentUploadResult: Codable, Sendable, Hashable {
+    var documentId: String?
+    var status: String?
+
+    var displayStatus: String {
+        StatusChipStyle.displayLabel(status ?? "pending")
+    }
+}
 
 /// Row from `GET /api/v1/providers/me/documents`.
 struct ProviderVerificationDocument: Codable, Sendable, Hashable, Identifiable {

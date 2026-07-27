@@ -1,6 +1,12 @@
 import SwiftUI
 
 /// Buyer/seller order list — pay pending orders and complete escrow pickup handshake.
+///
+/// Goods escrow path (server-driven; no client money math):
+/// 1. `POST /orders/{id}/pay` → Stripe PI (held)
+/// 2. `POST /orders/{id}/confirm-pickup` (buyer) + `POST …/seller-confirm` (seller)
+/// 3. Mutual confirm flips `escrow_status` to `released`; payment worker transfers.
+/// Service contracts use `POST /payments/{id}/release` instead (see ContractDetailView).
 struct MyOrdersView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -77,7 +83,7 @@ struct MyOrdersView: View {
                                 .listRowBackground(BrandTheme.navyElevated)
                         }
                     } footer: {
-                        Text("Pending orders use Apple Pay (or card) via Stripe. After payment, both buyer and seller confirm pickup to release escrow — fair trade, no platform markup on the bid.")
+                        Text("Pay → hold in escrow → buyer confirm pickup + seller confirm. Escrow releases automatically on the server when both confirm (no separate release button on goods). Amounts shown are server-side only.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
@@ -178,6 +184,14 @@ struct MyOrdersView: View {
                     .foregroundStyle(BrandTheme.bidActive.opacity(0.9))
             }
 
+            if let next = order.nextActionCaption(userId: currentUserID) {
+                Text(next)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(BrandTheme.goldBright.opacity(0.95))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(next)
+            }
+
             if order.needsPayment {
                 Button {
                     Task { await pay(order) }
@@ -213,7 +227,7 @@ struct MyOrdersView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.success)
                 .disabled(isBusy)
-                .accessibilityHint("Confirms you picked up the item and starts escrow release")
+                .accessibilityHint("Confirms you picked up the item; mutual confirm releases escrow on the server")
             }
 
             if showSellerConfirm {
@@ -232,7 +246,7 @@ struct MyOrdersView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.teal)
                 .disabled(isBusy)
-                .accessibilityHint("Confirms the handoff as the seller to release escrow")
+                .accessibilityHint("Confirms the handoff as the seller; mutual confirm releases escrow on the server")
             }
 
             if showDispute {
