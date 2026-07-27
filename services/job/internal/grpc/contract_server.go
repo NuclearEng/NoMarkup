@@ -447,9 +447,9 @@ func (s *ContractServer) GetRecurringConfig(ctx context.Context, req *contractv1
 	if req.GetContractId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "contract_id is required")
 	}
-	// Gateway has already authenticated; empty user skips party check only if
-	// gateway also enforces RequirePartyAccess (it does on /contracts/{id}/*).
-	cfg, err := s.svc.GetRecurringConfig(ctx, req.GetContractId(), "")
+	// Empty requesting_user_id fails closed in requireContractParty.
+	// Gateway and mesh callers must pass a real contract party id.
+	cfg, err := s.svc.GetRecurringConfig(ctx, req.GetContractId(), req.GetRequestingUserId())
 	if err != nil {
 		return nil, mapContractDomainError(err)
 	}
@@ -535,9 +535,8 @@ func (s *ContractServer) ListRecurringInstances(ctx context.Context, req *contra
 			pageSize = int(p.GetPageSize())
 		}
 	}
-	// Empty user: gateway RequirePartyAccess already gated; service still checks
-	// when user id is provided from handlers that pass claims.
-	instances, pagination, err := s.svc.ListRecurringInstances(ctx, req.GetRecurringId(), "", page, pageSize)
+	// Empty requesting_user_id fails closed in requireContractParty.
+	instances, pagination, err := s.svc.ListRecurringInstances(ctx, req.GetRecurringId(), req.GetRequestingUserId(), page, pageSize)
 	if err != nil {
 		return nil, mapContractDomainError(err)
 	}

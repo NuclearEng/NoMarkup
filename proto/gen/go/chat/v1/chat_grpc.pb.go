@@ -47,8 +47,9 @@ type ChatServiceClient interface {
 	ListMessages(ctx context.Context, in *ListMessagesRequest, opts ...grpc.CallOption) (*ListMessagesResponse, error)
 	MarkRead(ctx context.Context, in *MarkReadRequest, opts ...grpc.CallOption) (*MarkReadResponse, error)
 	// Local terms negotiation (FR-8.9 / FR-5.4) — provider proposes; customer
-	// must explicitly Accept or Reject. Accept records consent in-chat only;
-	// contract local-terms override application is a separate residual.
+	// must explicitly Accept or Reject. Accept records consent in-chat and, when
+	// the channel has a job with a live contract, binds payment_timing /
+	// terms_json on that contract (existing columns only).
 	SendProposedTerms(ctx context.Context, in *SendProposedTermsRequest, opts ...grpc.CallOption) (*SendProposedTermsResponse, error)
 	RespondToTerms(ctx context.Context, in *RespondToTermsRequest, opts ...grpc.CallOption) (*RespondToTermsResponse, error)
 	// Contact sharing (post-award)
@@ -213,8 +214,9 @@ type ChatServiceServer interface {
 	ListMessages(context.Context, *ListMessagesRequest) (*ListMessagesResponse, error)
 	MarkRead(context.Context, *MarkReadRequest) (*MarkReadResponse, error)
 	// Local terms negotiation (FR-8.9 / FR-5.4) — provider proposes; customer
-	// must explicitly Accept or Reject. Accept records consent in-chat only;
-	// contract local-terms override application is a separate residual.
+	// must explicitly Accept or Reject. Accept records consent in-chat and, when
+	// the channel has a job with a live contract, binds payment_timing /
+	// terms_json on that contract (existing columns only).
 	SendProposedTerms(context.Context, *SendProposedTermsRequest) (*SendProposedTermsResponse, error)
 	RespondToTerms(context.Context, *RespondToTermsRequest) (*RespondToTermsResponse, error)
 	// Contact sharing (post-award)

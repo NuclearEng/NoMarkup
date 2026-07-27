@@ -571,6 +571,56 @@ export interface ContractLocalTerms {
   [key: string]: string | number | boolean | undefined;
 }
 
+/**
+ * Nested recurring schedule on contract detail / GET …/recurring (FR-18).
+ * payment_retry_* fields are gateway DB enrichment (FR-16.7), not on the proto.
+ */
+export interface ContractRecurringConfig {
+  id: string;
+  contract_id?: string;
+  frequency?: string;
+  rate_cents?: number;
+  auto_approve?: boolean;
+  status?: string;
+  next_occurrence?: string;
+  /** Consecutive CreatePayment setup failures (gateway projects when > 0). */
+  payment_retry_count?: number;
+  /** When the gateway will re-attempt CreatePayment (RFC3339). */
+  next_retry_at?: string;
+  /** Pause threshold (usually 3). Present with retry count. */
+  payment_retry_threshold?: number;
+}
+
+/** One occurrence from GET …/recurring/instances (FR-18.2). */
+export interface ContractRecurringInstance {
+  id: string;
+  recurring_id?: string;
+  occurrence_date?: string;
+  status?: string;
+  amount_cents?: number;
+  auto_approved?: boolean;
+  completed_at?: string;
+}
+
+/**
+ * Approve/complete visit envelope. Money fields present only when gateway
+ * CreatePayment succeeds — never invent payment_id / client_secret client-side.
+ */
+export interface RecurringInstanceActionResult {
+  instance: ContractRecurringInstance;
+  payment_id?: string;
+  client_secret?: string;
+  payment_residual?: string;
+  payment_error?: string;
+  payment?: Payment;
+  /** True when CreatePayment confirmed+captured off-session (default PM). */
+  off_session_charged?: boolean;
+  off_session_charge_residual?: string;
+  recurring_paused?: boolean;
+  recurring_status?: string;
+  recurring_config?: ContractRecurringConfig;
+}
+
 export interface Contract {
   id: string;
   contract_number: string;
@@ -600,6 +650,8 @@ export interface Contract {
   tip_amount_cents?: number;
   /** Chat/award-bound local terms (FR-5.4). Absent when never accepted. */
   local_terms?: ContractLocalTerms | null;
+  /** FR-18 recurring schedule when this contract is recurring. */
+  recurring?: ContractRecurringConfig | null;
 }
 
 export interface ChangeOrder {
@@ -690,8 +742,16 @@ export interface PaymentsResponse {
 export interface CreatePaymentInput {
   contract_id: string;
   milestone_id?: string;
+  /** FR-18 visit payment — sticky UNIQUE(recurring_instance_id) on server. */
+  recurring_instance_id?: string;
+  provider_id?: string;
+  /**
+   * Server-authoritative amount in cents. For recurring visits this MUST be
+   * the instance amount from the API — never client fee math.
+   */
   amount_cents: number;
-  payment_method_id: string;
+  /** Optional; not required when PaymentElement will confirm the PI. */
+  payment_method_id?: string;
 }
 
 export interface FeeCalculationInput {

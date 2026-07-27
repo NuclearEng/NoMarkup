@@ -67,6 +67,10 @@ vi.mock('@/components/contracts/MilestoneTracker', () => ({
   MilestoneTracker: () => createElement('div', { 'data-testid': 'milestone-tracker' }),
 }));
 
+vi.mock('@/components/contracts/RecurringSchedule', () => ({
+  RecurringSchedule: () => createElement('div', { 'data-testid': 'recurring-schedule' }),
+}));
+
 vi.mock('@/components/payments/InstallmentSchedule', () => ({
   InstallmentSchedule: () => createElement('div', { 'data-testid': 'installment-schedule' }),
 }));

@@ -468,9 +468,9 @@ func (s *ContractService) requireContractParty(ctx context.Context, contractID, 
 	if err != nil {
 		return nil, err
 	}
-	if userID != "" &&
-		contract.CustomerID != userID &&
-		contract.ProviderID != userID {
+	// Empty userID must fail closed — never skip the party check (defense-in-depth).
+	if userID == "" ||
+		(contract.CustomerID != userID && contract.ProviderID != userID) {
 		return nil, domain.ErrNotContractParty
 	}
 	return contract, nil

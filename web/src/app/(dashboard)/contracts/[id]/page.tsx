@@ -20,6 +20,7 @@ import { useState } from 'react';
 import { CompletionFlow } from '@/components/contracts/CompletionFlow';
 import { ContractAcceptance } from '@/components/contracts/ContractAcceptance';
 import { GuaranteeCoverage } from '@/components/contracts/GuaranteeCoverage';
+import { RecurringSchedule } from '@/components/contracts/RecurringSchedule';
 import { InsuranceSelector } from '@/components/insurance/InsuranceSelector';
 import { InstallmentPlanSelector } from '@/components/payments/InstallmentPlanSelector';
 import { InstallmentSchedule } from '@/components/payments/InstallmentSchedule';
@@ -493,6 +494,20 @@ export default function ContractDetailPage() {
 
       {/* Guarantee Coverage */}
       <GuaranteeCoverage contract={contract} />
+
+      {/* FR-18 recurring schedule + visit approve/complete + FR-16.7 retry UX.
+          Self-hides when the contract has no recurring config. Pay visit is
+          customer-only; amounts come from server instance rows. */}
+      {(isCustomer || isProvider) ? (
+        <RecurringSchedule
+          contractId={contract.id}
+          customerId={contract.customer_id}
+          providerId={contract.provider_id}
+          isCustomer={isCustomer}
+          isProvider={isProvider}
+          embeddedConfig={contract.recurring}
+        />
+      ) : null}
 
       {/* BNPL: let the customer split this contract's payment into installments.
           Shown only on an ACTIVE contract, to the customer, when the customer_bnpl

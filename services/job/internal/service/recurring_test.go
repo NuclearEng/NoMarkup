@@ -99,6 +99,40 @@ func (r *recurringTestRepo) CreateRecurringInstance(_ context.Context, inst *dom
 	return &cp, nil
 }
 
+func TestRequireContractPartyRejectsEmptyUserID(t *testing.T) {
+	t.Parallel()
+	const (
+		customer = "cust-1"
+		provider = "prov-1"
+		contract = "ctr-1"
+		recID    = "rec-1"
+	)
+	repo := &recurringTestRepo{
+		contract: &domain.Contract{
+			ID: contract, CustomerID: customer, ProviderID: provider, Status: "active",
+		},
+		cfg: &domain.RecurringConfig{
+			ID: recID, ContractID: contract, Frequency: "weekly", RateCents: 7500,
+			Status: "active", NextOccurrence: time.Now().UTC().AddDate(0, 0, 7),
+		},
+	}
+	svc := NewContractService(repo, nil)
+
+	// Empty userID must fail closed (no party-check skip).
+	_, err := svc.GetRecurringConfig(context.Background(), contract, "")
+	if !errors.Is(err, domain.ErrNotContractParty) {
+		t.Fatalf("empty user GetRecurringConfig: want ErrNotContractParty, got %v", err)
+	}
+	_, err = svc.PauseRecurring(context.Background(), recID, "")
+	if !errors.Is(err, domain.ErrNotContractParty) {
+		t.Fatalf("empty user PauseRecurring: want ErrNotContractParty, got %v", err)
+	}
+	_, _, err = svc.ListRecurringInstances(context.Background(), recID, "", 1, 20)
+	if !errors.Is(err, domain.ErrNotContractParty) {
+		t.Fatalf("empty user ListRecurringInstances: want ErrNotContractParty, got %v", err)
+	}
+}
+
 func TestPauseResumeRecurring(t *testing.T) {
 	t.Parallel()
 	const (

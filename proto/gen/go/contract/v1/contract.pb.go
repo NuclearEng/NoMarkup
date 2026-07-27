@@ -2325,10 +2325,13 @@ func (x *CancelContractResponse) GetContract() *Contract {
 }
 
 type GetRecurringConfigRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ContractId    string                 `protobuf:"bytes,1,opt,name=contract_id,json=contractId,proto3" json:"contract_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ContractId string                 `protobuf:"bytes,1,opt,name=contract_id,json=contractId,proto3" json:"contract_id,omitempty"`
+	// Contract party (customer or provider). Empty fails closed in job service
+	// requireContractParty — mesh callers must pass a known party id.
+	RequestingUserId string `protobuf:"bytes,2,opt,name=requesting_user_id,json=requestingUserId,proto3" json:"requesting_user_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetRecurringConfigRequest) Reset() {
@@ -2364,6 +2367,13 @@ func (*GetRecurringConfigRequest) Descriptor() ([]byte, []int) {
 func (x *GetRecurringConfigRequest) GetContractId() string {
 	if x != nil {
 		return x.ContractId
+	}
+	return ""
+}
+
+func (x *GetRecurringConfigRequest) GetRequestingUserId() string {
+	if x != nil {
+		return x.RequestingUserId
 	}
 	return ""
 }
@@ -2813,11 +2823,13 @@ func (x *CancelRecurringResponse) GetConfig() *RecurringConfig {
 }
 
 type ListRecurringInstancesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RecurringId   string                 `protobuf:"bytes,1,opt,name=recurring_id,json=recurringId,proto3" json:"recurring_id,omitempty"`
-	Pagination    *v1.PaginationRequest  `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	RecurringId string                 `protobuf:"bytes,1,opt,name=recurring_id,json=recurringId,proto3" json:"recurring_id,omitempty"`
+	Pagination  *v1.PaginationRequest  `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
+	// Contract party (customer or provider). Empty fails closed in job service.
+	RequestingUserId string `protobuf:"bytes,3,opt,name=requesting_user_id,json=requestingUserId,proto3" json:"requesting_user_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ListRecurringInstancesRequest) Reset() {
@@ -2862,6 +2874,13 @@ func (x *ListRecurringInstancesRequest) GetPagination() *v1.PaginationRequest {
 		return x.Pagination
 	}
 	return nil
+}
+
+func (x *ListRecurringInstancesRequest) GetRequestingUserId() string {
+	if x != nil {
+		return x.RequestingUserId
+	}
+	return ""
 }
 
 type ListRecurringInstancesResponse struct {
@@ -4105,10 +4124,11 @@ const file_contract_v1_contract_proto_rawDesc = "" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"T\n" +
 	"\x16CancelContractResponse\x12:\n" +
-	"\bcontract\x18\x01 \x01(\v2\x1e.nomarkup.contract.v1.ContractR\bcontract\"<\n" +
+	"\bcontract\x18\x01 \x01(\v2\x1e.nomarkup.contract.v1.ContractR\bcontract\"j\n" +
 	"\x19GetRecurringConfigRequest\x12\x1f\n" +
 	"\vcontract_id\x18\x01 \x01(\tR\n" +
-	"contractId\"[\n" +
+	"contractId\x12,\n" +
+	"\x12requesting_user_id\x18\x02 \x01(\tR\x10requestingUserId\"[\n" +
 	"\x1aGetRecurringConfigResponse\x12=\n" +
 	"\x06config\x18\x01 \x01(\v2%.nomarkup.contract.v1.RecurringConfigR\x06config\"\xe0\x01\n" +
 	"\x1cUpdateRecurringConfigRequest\x12!\n" +
@@ -4134,12 +4154,13 @@ const file_contract_v1_contract_proto_rawDesc = "" +
 	"\frecurring_id\x18\x01 \x01(\tR\vrecurringId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\"X\n" +
 	"\x17CancelRecurringResponse\x12=\n" +
-	"\x06config\x18\x01 \x01(\v2%.nomarkup.contract.v1.RecurringConfigR\x06config\"\x89\x01\n" +
+	"\x06config\x18\x01 \x01(\v2%.nomarkup.contract.v1.RecurringConfigR\x06config\"\xb7\x01\n" +
 	"\x1dListRecurringInstancesRequest\x12!\n" +
 	"\frecurring_id\x18\x01 \x01(\tR\vrecurringId\x12E\n" +
 	"\n" +
 	"pagination\x18\x02 \x01(\v2%.nomarkup.common.v1.PaginationRequestR\n" +
-	"pagination\"\xaf\x01\n" +
+	"pagination\x12,\n" +
+	"\x12requesting_user_id\x18\x03 \x01(\tR\x10requestingUserId\"\xaf\x01\n" +
 	"\x1eListRecurringInstancesResponse\x12E\n" +
 	"\tinstances\x18\x01 \x03(\v2'.nomarkup.contract.v1.RecurringInstanceR\tinstances\x12F\n" +
 	"\n" +

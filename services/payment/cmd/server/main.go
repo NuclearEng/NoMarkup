@@ -214,11 +214,15 @@ func main() {
 	// PauseRecurring via job ContractService when count >= 3. Dial residual
 	// only means strike/pause residual (payment still flips to failed).
 	// Never cancel the contract from this path.
+	// Recurring-pause dual-party notifications share the notification client
+	// dialed below (SetNotifier when available).
 	jobAddr := envOrDefault("JOB_SERVICE_ADDR", "localhost:50052")
+	var recurringFailClient *paymentclient.ContractClient
 	if contractClient, err := paymentclient.NewContractClient(jobAddr, pool); err != nil {
 		slog.Error("failed to create contract client; FR-16.7/FR-18.8 payment_failed residual until job mesh reachable",
 			"error", err, "addr", jobAddr)
 	} else {
+		recurringFailClient = contractClient
 		paymentSvc.SetRecurringPaymentFailureHandler(contractClient)
 		defer func() { _ = contractClient.Close() }()
 		slog.Info("FR-16.7/FR-18.8 recurring payment-failure 3-strike wired", "addr", jobAddr)
@@ -268,16 +272,27 @@ func main() {
 	// at all. With off-session collection enabled below, that last case would
 	// mean a buyer's only signal was an order quietly expiring.
 	//
+	// Same client also backs FR-16.7/FR-18.8 dual-party alerts when recurring
+	// is paused after the payment-failure retry threshold.
+	//
 	// Degrades rather than blocks startup: if the notification service cannot be
-	// dialled the marketplace keeps its no-op notifier and every send site
-	// already logs-and-continues. Money correctness never depends on a
+	// dialled the marketplace keeps its no-op notifier and recurring-pause
+	// notifies log residual only. Money correctness never depends on a
 	// notification being delivered.
 	notificationAddr := envOrDefault("NOTIFICATION_SERVICE_ADDR", "localhost:50059")
 	if notifyClient, err := paymentclient.NewNotificationClient(notificationAddr); err != nil {
-		slog.Error("failed to create notification client; marketplace notifications will be dropped",
+		slog.Error("failed to create notification client; marketplace + FR-18.8 pause notifications will be dropped",
 			"error", err, "addr", notificationAddr)
+		if recurringFailClient != nil {
+			slog.Warn("FR-16.7/FR-18.8 residual: recurring pause notifications unwired (notification mesh unreachable)",
+				"addr", notificationAddr)
+		}
 	} else {
 		marketplaceSvc.SetNotifier(service.NewMarketplaceNotifier(notifyClient))
+		if recurringFailClient != nil {
+			recurringFailClient.SetNotifier(notifyClient)
+			slog.Info("FR-16.7/FR-18.8 recurring pause notifier wired", "addr", notificationAddr)
+		}
 		defer func() { _ = notifyClient.Close() }()
 		slog.Info("marketplace notifier wired", "addr", notificationAddr)
 	}

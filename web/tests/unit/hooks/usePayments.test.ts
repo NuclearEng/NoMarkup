@@ -42,6 +42,7 @@ vi.mock('@/lib/api', () => ({
     delete: vi.fn(),
   },
   idempotencyHeader: () => ({ 'Idempotency-Key': 'test-idem-key' }),
+  clearIdempotencyKey: vi.fn(),
   ApiError: class ApiError extends Error {
     code = 'ERR';
     userMessage(fallback: string) {

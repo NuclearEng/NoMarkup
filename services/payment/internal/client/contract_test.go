@@ -2,11 +2,14 @@ package client
 
 import (
 	"context"
+	"errors"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -20,7 +23,9 @@ import (
 type fakeContractServer struct {
 	contractv1.UnimplementedContractServiceServer
 	cfg             *contractv1.RecurringConfig
+	contract        *contractv1.Contract
 	getErr          error
+	getContractErr  error
 	pauseErr        error
 	pauseCalls      int
 	lastPauseUserID string
@@ -38,6 +43,25 @@ func (f *fakeContractServer) GetRecurringConfig(
 		return nil, status.Error(codes.NotFound, "no config")
 	}
 	return &contractv1.GetRecurringConfigResponse{Config: f.cfg}, nil
+}
+
+func (f *fakeContractServer) GetContract(
+	_ context.Context,
+	req *contractv1.GetContractRequest,
+) (*contractv1.GetContractResponse, error) {
+	if f.getContractErr != nil {
+		return nil, f.getContractErr
+	}
+	if f.contract != nil {
+		return &contractv1.GetContractResponse{Contract: f.contract}, nil
+	}
+	return &contractv1.GetContractResponse{
+		Contract: &contractv1.Contract{
+			Id:         req.GetContractId(),
+			CustomerId: "cust-1",
+			ProviderId: "prov-1",
+		},
+	}, nil
 }
 
 func (f *fakeContractServer) PauseRecurring(
@@ -58,6 +82,42 @@ func (f *fakeContractServer) PauseRecurring(
 		paused.ContractId = f.cfg.GetContractId()
 	}
 	return &contractv1.PauseRecurringResponse{Config: paused}, nil
+}
+
+// recordingNotifier captures Send calls for FR-18.8 dual-party notify tests.
+type recordingNotifier struct {
+	mu    sync.Mutex
+	calls []notifyCall
+	err   error
+}
+
+type notifyCall struct {
+	userID string
+	typ    notificationv1.NotificationType
+	title  string
+}
+
+func (r *recordingNotifier) Send(
+	_ context.Context,
+	userID string,
+	notificationType notificationv1.NotificationType,
+	title, _, _ string,
+	_ map[string]string,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, notifyCall{userID: userID, typ: notificationType, title: title})
+	return r.err
+}
+
+func (r *recordingNotifier) recipients() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, len(r.calls))
+	for _, c := range r.calls {
+		out = append(out, c.userID)
+	}
+	return out
 }
 
 func dialFakeContract(t *testing.T, srv *fakeContractServer) *ContractClient {
@@ -133,6 +193,96 @@ func TestContractClient_PauseOnPaymentFailed_AtThresholdPauses(t *testing.T) {
 	assert.Equal(t, 1, srv.pauseCalls)
 	assert.Equal(t, "cust-1", srv.lastPauseUserID, "UserId must be payment customer for party check")
 	assert.Equal(t, "rec-1", srv.lastPauseRecID)
+}
+
+// TestContractClient_PauseOnPaymentFailed_AtThresholdNotifiesBothParties:
+// FR-16.7 dual-party notify after successful pause.
+func TestContractClient_PauseOnPaymentFailed_AtThresholdNotifiesBothParties(t *testing.T) {
+	t.Parallel()
+	srv := &fakeContractServer{
+		cfg: &contractv1.RecurringConfig{
+			Id:         "rec-1",
+			ContractId: "ctr-1",
+			Status:     "active",
+		},
+		contract: &contractv1.Contract{
+			Id:         "ctr-1",
+			CustomerId: "cust-1",
+			ProviderId: "prov-1",
+		},
+	}
+	notifier := &recordingNotifier{}
+	c := withStrikeCount(dialFakeContract(t, srv), recurringPaymentRetryPauseThreshold)
+	c.SetNotifier(notifier)
+
+	err := c.PauseOnPaymentFailed(context.Background(), "ctr-1", "cust-1", "inst-1", "pmt-1")
+	require.NoError(t, err)
+	assert.Equal(t, 1, srv.pauseCalls)
+	assert.ElementsMatch(t, []string{"cust-1", "prov-1"}, notifier.recipients())
+	for _, call := range notifier.calls {
+		assert.Equal(t, notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED, call.typ)
+	}
+}
+
+// TestContractClient_PauseOnPaymentFailed_NotifyFailureDoesNotBlockPause:
+// Send errors are residual; PauseOnPaymentFailed still succeeds.
+func TestContractClient_PauseOnPaymentFailed_NotifyFailureDoesNotBlockPause(t *testing.T) {
+	t.Parallel()
+	srv := &fakeContractServer{
+		cfg: &contractv1.RecurringConfig{
+			Id:         "rec-1",
+			ContractId: "ctr-1",
+			Status:     "active",
+		},
+	}
+	notifier := &recordingNotifier{err: errors.New("notification mesh down")}
+	c := withStrikeCount(dialFakeContract(t, srv), recurringPaymentRetryPauseThreshold)
+	c.SetNotifier(notifier)
+
+	err := c.PauseOnPaymentFailed(context.Background(), "ctr-1", "cust-1", "inst-1", "pmt-1")
+	require.NoError(t, err, "notify failure must not fail pause")
+	assert.Equal(t, 1, srv.pauseCalls)
+	assert.NotEmpty(t, notifier.recipients(), "Send was attempted")
+}
+
+// TestContractClient_PauseOnPaymentFailed_BelowThresholdNoNotify: strikes
+// below pause threshold must not notify either party.
+func TestContractClient_PauseOnPaymentFailed_BelowThresholdNoNotify(t *testing.T) {
+	t.Parallel()
+	srv := &fakeContractServer{
+		cfg: &contractv1.RecurringConfig{
+			Id:         "rec-1",
+			ContractId: "ctr-1",
+			Status:     "active",
+		},
+	}
+	notifier := &recordingNotifier{}
+	c := withStrikeCount(dialFakeContract(t, srv), 1)
+	c.SetNotifier(notifier)
+
+	err := c.PauseOnPaymentFailed(context.Background(), "ctr-1", "cust-1", "inst-1", "pmt-1")
+	require.NoError(t, err)
+	assert.Equal(t, 0, srv.pauseCalls)
+	assert.Empty(t, notifier.recipients())
+}
+
+// TestContractClient_PauseOnPaymentFailed_NilNotifierResidual: unwired
+// notifier does not error the pause path.
+func TestContractClient_PauseOnPaymentFailed_NilNotifierResidual(t *testing.T) {
+	t.Parallel()
+	srv := &fakeContractServer{
+		cfg: &contractv1.RecurringConfig{
+			Id:         "rec-1",
+			ContractId: "ctr-1",
+			Status:     "active",
+		},
+	}
+	c := withStrikeCount(dialFakeContract(t, srv), recurringPaymentRetryPauseThreshold)
+	// deliberately no SetNotifier
+
+	err := c.PauseOnPaymentFailed(context.Background(), "ctr-1", "cust-1", "inst-1", "pmt-1")
+	require.NoError(t, err)
+	assert.Equal(t, 1, srv.pauseCalls)
 }
 
 // TestContractClient_PauseOnPaymentFailed_NoCounterNoPause: without durable

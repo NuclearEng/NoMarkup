@@ -10,13 +10,24 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 )
 
 // contractCallTimeout bounds GetRecurringConfig + PauseRecurring.
 // Match other mesh clients: fail-soft callers must not stall Stripe webhooks.
+// Notifications use a separate parent context + notifyCallTimeout so a near-
+// expiry contract deadline never drops dual-party FR-18.8 alerts.
 const contractCallTimeout = 2 * time.Second
+
+// RecurringPauseNotifier is the narrow surface ContractClient needs to alert
+// both parties after FR-18.8 pause-at-threshold. *NotificationClient satisfies
+// it; tests substitute a recorder. Optional — nil logs residual and continues.
+type RecurringPauseNotifier interface {
+	Send(ctx context.Context, userID string, notificationType notificationv1.NotificationType,
+		title, body, actionURL string, data map[string]string) error
+}
 
 // ContractClient wraps the job service's ContractService gRPC surface used by
 // the payment service for FR-16.7 (3-strike retry) + FR-18.8 (pause at
@@ -30,6 +41,18 @@ type ContractClient struct {
 	db *pgxpool.Pool
 	// incrPaymentRetryFn overrides SQL for unit tests (nil in production).
 	incrPaymentRetryFn func(ctx context.Context, recurringID string) (int, *time.Time, error)
+	// notify delivers FR-16.7 dual-party in-app (and preference-driven email)
+	// alerts after pause. Optional: nil → residual log only; never blocks pause.
+	notify RecurringPauseNotifier
+}
+
+// SetNotifier wires fail-soft dual-party notifications on FR-18.8 pause.
+// Safe to leave unset (tests / notification mesh down): pause still succeeds.
+func (c *ContractClient) SetNotifier(n RecurringPauseNotifier) {
+	if c == nil {
+		return
+	}
+	c.notify = n
 }
 
 // NewContractClient dials the job service at addr (ContractService lives there).
@@ -66,6 +89,7 @@ func NewContractClient(addr string, db *pgxpool.Pool) (*ContractClient, error) {
 //  2. Already-paused → success no-op. Non-active (cancelled/etc.) → leave alone.
 //  3. Active → increment payment_retry_count + set next_retry_at when count < 3.
 //  4. PauseRecurring only when count >= 3. Never cancel the contract.
+//  5. On actual pause: fail-soft dual-party notification (customer + provider).
 //
 // customerID is payments.customer_id and must be a contract party so
 // PauseRecurring's ownership check succeeds.
@@ -84,11 +108,15 @@ func (c *ContractClient) PauseOnPaymentFailed(
 		return fmt.Errorf("pause on payment failed: customer_id is required")
 	}
 
+	// Parent context for post-pause notify (own timeout); contract RPCs use a
+	// short deadline so a slow job mesh never stalls the Stripe webhook ack.
+	parentCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, contractCallTimeout)
 	defer cancel()
 
 	cfgResp, err := c.client.GetRecurringConfig(ctx, &contractv1.GetRecurringConfigRequest{
-		ContractId: contractID,
+		ContractId:       contractID,
+		RequestingUserId: customerID,
 	})
 	if err != nil {
 		return fmt.Errorf("get recurring config for contract %s: %w", contractID, err)
@@ -101,7 +129,7 @@ func (c *ContractClient) PauseOnPaymentFailed(
 	status := cfg.GetStatus()
 	switch status {
 	case "paused":
-		// Idempotent: FR-18.8 intent already satisfied.
+		// Idempotent: FR-18.8 intent already satisfied. Do not re-notify.
 		slog.InfoContext(ctx, "FR-18.8: recurring already paused on payment_failed",
 			"contract_id", contractID,
 			"recurring_id", cfg.GetId(),
@@ -164,7 +192,106 @@ func (c *ContractClient) PauseOnPaymentFailed(
 		"customer_id", customerID,
 		"payment_retry_count", count,
 	)
+
+	// FR-16.7: both parties notified. Never fail the pause path on notify.
+	c.notifyRecurringPausedForPaymentFailure(parentCtx, contractID, customerID, cfg.GetId(), paymentID)
 	return nil
+}
+
+// notifyRecurringPausedForPaymentFailure sends payment_failed notifications to
+// customer and provider after a successful FR-18.8 pause. Fully fail-soft:
+// missing notifier, GetContract blip, or Send errors are residual logs only.
+func (c *ContractClient) notifyRecurringPausedForPaymentFailure(
+	ctx context.Context,
+	contractID, customerID, recurringID, paymentID string,
+) {
+	if c.notify == nil {
+		slog.WarnContext(ctx, "FR-16.7/FR-18.8 residual: recurring paused but notification client unwired",
+			"contract_id", contractID,
+			"recurring_id", recurringID,
+			"payment_id", paymentID,
+			"customer_id", customerID,
+		)
+		return
+	}
+
+	providerID := c.resolveContractProviderID(ctx, contractID, customerID)
+	actionURL := "/contracts/" + contractID
+	data := map[string]string{
+		"contract_id":  contractID,
+		"recurring_id": recurringID,
+		"payment_id":   paymentID,
+		"reason":       "payment_retry_threshold",
+	}
+
+	if customerID != "" {
+		if err := c.notify.Send(ctx, customerID,
+			notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED,
+			"Recurring payments paused",
+			"We couldn't charge your payment method after several tries. Recurring visits are paused until you update your payment method.",
+			actionURL,
+			data,
+		); err != nil {
+			slog.WarnContext(ctx, "FR-16.7/FR-18.8 residual: customer pause notification failed (pause kept)",
+				"contract_id", contractID,
+				"customer_id", customerID,
+				"error", err,
+			)
+		}
+	}
+
+	if providerID == "" {
+		slog.WarnContext(ctx, "FR-16.7/FR-18.8 residual: recurring paused; provider not notified (provider_id unresolved)",
+			"contract_id", contractID,
+			"recurring_id", recurringID,
+			"customer_id", customerID,
+		)
+		return
+	}
+	if providerID == customerID {
+		return
+	}
+	if err := c.notify.Send(ctx, providerID,
+		notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED,
+		"Recurring schedule paused",
+		"The customer's payment could not be collected after several tries. Recurring visits are paused until payment is updated.",
+		actionURL,
+		data,
+	); err != nil {
+		slog.WarnContext(ctx, "FR-16.7/FR-18.8 residual: provider pause notification failed (pause kept)",
+			"contract_id", contractID,
+			"provider_id", providerID,
+			"error", err,
+		)
+	}
+}
+
+// resolveContractProviderID loads provider_id via GetContract. Empty
+// RequestingUserId skips party check (mesh internal — see job GetContract).
+func (c *ContractClient) resolveContractProviderID(ctx context.Context, contractID, customerID string) string {
+	if c.client == nil || contractID == "" {
+		return ""
+	}
+	// Prefer customer as requesting party when known; empty still works mesh-side.
+	req := &contractv1.GetContractRequest{
+		ContractId:       contractID,
+		RequestingUserId: customerID,
+	}
+	// Short bound so notify path cannot stall the webhook handler long after pause.
+	nctx, cancel := context.WithTimeout(ctx, contractCallTimeout)
+	defer cancel()
+	resp, err := c.client.GetContract(nctx, req)
+	if err != nil {
+		slog.WarnContext(ctx, "FR-18.8: GetContract for provider notify failed",
+			"contract_id", contractID,
+			"error", err,
+		)
+		return ""
+	}
+	if ct := resp.GetContract(); ct != nil {
+		return ct.GetProviderId()
+	}
+	return ""
 }
 
 func (c *ContractClient) incrementPaymentRetry(ctx context.Context, recurringID string) (int, *time.Time, error) {

@@ -18,14 +18,20 @@ import UIKit
 /// - Live WS: connect / subscribe / receive / typing / reconnect + poll fallback
 /// - Photo attach via PhotosPicker → `ImageUploader` (job_photo context) →
 ///   `POST …/messages` with `message_type: image` + confirmed URL as content
-/// - Mark read on open / pull-to-refresh / after send (`POST …/channels/{id}/read`)
+/// - Mark read on open / pull-to-refresh / after send / scroll-to-bottom tip
+///   (`POST …/channels/{id}/read`) — deduped per tip message id
 /// - Local in-thread search over loaded messages
-/// - **Read receipts (FR-8.2):** simple "Seen" under the caller’s last own message
-///   when the peer has read it. Prefer channel `customer_last_read_at` /
-///   `provider_last_read_at` (peer watermark ≥ message `created_at`) so Seen
-///   works without a peer reply. Fallbacks: `message.is_read == true` or a later
-///   peer message (web `MessageThread` heuristic). WS has no live `read_receipt`
-///   frame yet — channel is re-fetched on thread load/poll for watermark updates.
+/// - **Read receipts (FR-8.2):** double-check + "Seen" under the caller’s last own
+///   message when the peer has read it; single check ("Sent") while pending.
+///   Prefer channel `customer_last_read_at` / `provider_last_read_at` (peer
+///   watermark ≥ message `created_at`) so Seen works without a peer reply.
+///   Fallbacks: `message.is_read == true` or a later peer message (web heuristic).
+///   WS has no live `read_receipt` frame yet — channel is re-fetched on thread
+///   load/poll for watermark updates. Party-only: JWT `sub` vs channel parties.
+/// - **Mark read:** on open / pull-to-refresh / after send, and when the newest
+///   message scrolls into view (bottom) if not already marked for that tip.
+/// - **Inbox unread:** per-row badge from `channel.unread_count` (server, party-
+///   relative); list reloads when leaving a thread so badges clear after mark-read.
 /// - **Local terms (FR-5.4 / FR-8.9):** providers propose via toolbar **Propose terms**
 ///   sheet → `POST /api/v1/channels/{id}/proposed-terms` (dollars → Int64 cents wire
 ///   amount; server enforces provider-only). Cards render when content starts with
@@ -33,7 +39,6 @@ import UIKit
 ///   calls `POST /api/v1/channels/{id}/terms/respond` (`accepted: true|false`) —
 ///   auth + customer-only server-side; records `terms_accepted` / `terms_rejected`
 ///   (explicit consent only). Contract local-terms override remains server residual.
-/// - **Residual (other):** inbox-level live unread badges without opening a thread
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -53,6 +58,10 @@ struct MessagesView: View {
                 .task { await load() }
                 .navigationDestination(for: ChatChannelSummary.self) { channel in
                     ChatThreadView(channel: channel)
+                        // Refresh inbox unread badges after mark-read in the thread.
+                        .onDisappear {
+                            Task { await load() }
+                        }
                 }
         }
     }
@@ -116,7 +125,7 @@ struct MessagesView: View {
                         Text("Inbox").brandSectionHeader()
                     }
                 } footer: {
-                    Text("Open a conversation for live updates (WebSocket when available, otherwise a few-second refresh). Attach photos from the thread composer. Inbox refreshes when you pull down.")
+                    Text("Unread counts come from each channel’s server unread_count (your party only). Open a conversation for live updates (WebSocket when available, otherwise a few-second refresh). Attach photos from the thread composer. Inbox refreshes when you leave a thread or pull down.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
@@ -161,6 +170,13 @@ struct MessagesView: View {
 private struct ChannelRowView: View {
     let channel: ChatChannelSummary
 
+    /// Server `unread_count` is relative to the authenticated party (gateway).
+    private var unreadCount: Int {
+        max(0, channel.unreadCount ?? 0)
+    }
+
+    private var hasUnread: Bool { unreadCount > 0 }
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "bubble.left.and.bubble.right.fill")
@@ -172,25 +188,29 @@ private struct ChannelRowView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(channel.displayTitle)
-                        .font(.body.weight(.medium))
+                        .font(.body.weight(hasUnread ? .semibold : .medium))
                         .foregroundStyle(BrandTheme.textPrimary)
                         .lineLimit(1)
                     Spacer(minLength: 8)
-                    if let unread = channel.unreadCount, unread > 0 {
-                        Text("\(unread)")
+                    if hasUnread {
+                        Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(BrandTheme.navy)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(BrandTheme.accent))
-                            .accessibilityLabel("\(unread) unread")
+                            .accessibilityLabel(
+                                unreadCount == 1
+                                    ? "1 unread message"
+                                    : "\(unreadCount) unread messages"
+                            )
                     }
                 }
 
                 if let preview = channel.previewText {
                     Text(preview)
-                        .font(.subheadline)
-                        .foregroundStyle(BrandTheme.textSecondary)
+                        .font(.subheadline.weight(hasUnread ? .medium : .regular))
+                        .foregroundStyle(hasUnread ? BrandTheme.textPrimary.opacity(0.9) : BrandTheme.textSecondary)
                         .lineLimit(2)
                 }
 
@@ -210,6 +230,7 @@ private struct ChannelRowView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(hasUnread ? "\(unreadCount) unread" : "No unread")
     }
 }
 
@@ -250,6 +271,9 @@ struct ChatThreadView: View {
     @State private var termsRespondError: String?
     /// Provider Propose Terms sheet (FR-5.4).
     @State private var showProposeTermsSheet = false
+    /// Tip message id we last successfully POSTed mark-read for (dedupe scroll/open).
+    @State private var lastMarkedReadTipMessageID: String?
+    @State private var isMarkingRead = false
     #if canImport(UIKit)
     @State private var showCamera = false
     @State private var cameraImage: UIImage?
@@ -360,17 +384,19 @@ struct ChatThreadView: View {
             && !(counterpartyUserID == currentUserID)
     }
 
-    /// Latest own message id when the peer has read it (for the single "Seen" caption).
+    /// Receipt under the caller's last own message only (web double-check parity).
     ///
-    /// Priority:
-    /// 1. Peer `*_last_read_at` watermark ≥ last own message `created_at` (no reply needed)
-    /// 2. Explicit `message.is_read == true` when the wire ever sets it
-    /// 3. Later message from the other party (web `MessageThread` heuristic fallback)
-    /// Auth/party: only evaluated against JWT `sub` vs `sender_id` / channel parties —
-    /// gateway enforces channel membership on list/mark-read.
-    private var lastSeenOwnMessageID: String? {
+    /// - **seen:** peer MarkRead watermark ≥ message `created_at`, or `is_read`, or
+    ///   a later peer message (implies they opened the thread).
+    /// - **sent:** last own message not yet covered by the above.
+    ///
+    /// Party-only: uses JWT `sub` vs `sender_id` / channel `customer_id`|`provider_id`
+    /// via `peerLastReadAt`. Gateway re-enforces membership on list/mark-read.
+    private var lastOwnReceipt: (messageID: String, status: MessageReceiptStatus)? {
         guard let me = currentUserID, !me.isEmpty else { return nil }
-        guard let lastOwnIndex = messages.lastIndex(where: { $0.senderId == me }) else {
+        guard let lastOwnIndex = messages.lastIndex(where: {
+            ($0.senderId ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == me
+        }) else {
             return nil
         }
         let lastOwn = messages[lastOwnIndex]
@@ -381,22 +407,35 @@ struct ChatThreadView: View {
            let createdISO = lastOwn.createdAt,
            let created = CatalogDateFormat.parseISO(createdISO),
            peerRead >= created {
-            return lastOwn.id
+            return (lastOwn.id, .seen)
         }
 
         // (2) Explicit per-message is_read when populated on the wire.
         if lastOwn.isRead == true {
-            return lastOwn.id
+            return (lastOwn.id, .seen)
         }
 
         // (3) Fallback: peer replied after our last message (implies they opened the thread).
         let after = messages.index(after: lastOwnIndex)
-        guard after < messages.endIndex else { return nil }
-        let peerRepliedAfter = messages[after...].contains { msg in
-            guard let sender = msg.senderId, !sender.isEmpty else { return false }
-            return sender != me
+        if after < messages.endIndex {
+            let peerRepliedAfter = messages[after...].contains { msg in
+                guard let sender = msg.senderId?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !sender.isEmpty
+                else { return false }
+                return sender != me
+            }
+            if peerRepliedAfter {
+                return (lastOwn.id, .seen)
+            }
         }
-        return peerRepliedAfter ? lastOwn.id : nil
+
+        // Not yet seen by peer — single check under last own bubble.
+        return (lastOwn.id, .sent)
+    }
+
+    private func receiptStatus(for messageID: String) -> MessageReceiptStatus? {
+        guard let lastOwnReceipt, lastOwnReceipt.messageID == messageID else { return nil }
+        return lastOwnReceipt.status
     }
 
     var body: some View {
@@ -750,13 +789,22 @@ struct ChatThreadView: View {
                             MessageBubbleRow(
                                 message: message,
                                 isMine: isMine(message),
-                                showSeen: message.id == lastSeenOwnMessageID,
+                                receipt: receiptStatus(for: message.id),
                                 canRespondToTerms: canRespondToProposedTerms(message),
                                 isRespondingToTerms: termsRespondingMessageID == message.id,
                                 onAcceptTerms: { Task { await respondToTerms(message: message, accepted: true) } },
                                 onRejectTerms: { Task { await respondToTerms(message: message, accepted: false) } }
                             )
                             .id(message.id)
+                            // Mark read when the thread tip becomes visible (scroll to bottom
+                            // or initial open). Skips if already marked for this tip.
+                            .onAppear {
+                                guard searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                                    return
+                                }
+                                guard message.id == displayedMessages.last?.id else { return }
+                                Task { await markChannelReadIfNeeded(tipMessageID: message.id) }
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -966,7 +1014,8 @@ struct ChatThreadView: View {
                 channelMeta = refreshed
             }
             if markRead {
-                await markChannelReadBestEffort()
+                // Open / pull-to-refresh: always attempt (force) so peer watermark updates.
+                await markChannelReadBestEffort(force: true)
             }
         } catch let error as APIClientError where error.isUnauthorized {
             if showLoading {
@@ -1143,14 +1192,36 @@ struct ChatThreadView: View {
     }
 
     /// POST `/api/v1/channels/{id}/read` — best-effort; never surfaces as a thread error.
+    /// Dedupes by tip message id so open + scroll-to-bottom + send don't thrash.
+    /// `force: true` always hits the network (pull-to-refresh / explicit open).
     @MainActor
-    private func markChannelReadBestEffort() async {
+    private func markChannelReadIfNeeded(tipMessageID: String? = nil, force: Bool = false) async {
         guard canCompose else { return }
+        let tip = tipMessageID ?? messages.last?.id
+        if !force, let tip, tip == lastMarkedReadTipMessageID {
+            // Already marked through this tip — still clear local badge if needed.
+            if (channelMeta.unreadCount ?? 0) > 0 {
+                channelMeta.unreadCount = 0
+            }
+            return
+        }
+        if isMarkingRead { return }
+        isMarkingRead = true
+        defer { isMarkingRead = false }
+
         do {
             try await APIClient.shared.markChannelRead(channelID: channel.id)
+            lastMarkedReadTipMessageID = tip
+            channelMeta.unreadCount = 0
         } catch {
             // Unread badges may lag until next open; message load/send still succeeded.
         }
+    }
+
+    /// Convenience for open/send/refresh paths (force network unless tip already marked).
+    @MainActor
+    private func markChannelReadBestEffort(force: Bool = false) async {
+        await markChannelReadIfNeeded(tipMessageID: messages.last?.id, force: force)
     }
 }
 
@@ -1466,13 +1537,23 @@ private struct ChatReportUserSheet: View {
     }
 }
 
+// MARK: - Receipt status (FR-8.2)
+
+/// Delivery/read status for the caller's last own message only.
+private enum MessageReceiptStatus: Equatable, Sendable {
+    /// Delivered to server; peer has not yet marked the channel read through this tip.
+    case sent
+    /// Peer MarkRead watermark (or reply / is_read) covers this message.
+    case seen
+}
+
 // MARK: - Bubble
 
 private struct MessageBubbleRow: View {
     let message: ChatMessage
     let isMine: Bool
-    /// When true, render a simple "Seen" caption under this (own) bubble.
-    var showSeen: Bool = false
+    /// Receipt under last own message only (nil elsewhere).
+    var receipt: MessageReceiptStatus? = nil
     /// Customer-only Accept/Reject for proposed local terms (FR-8.9).
     var canRespondToTerms: Bool = false
     var isRespondingToTerms: Bool = false
@@ -1486,6 +1567,54 @@ private struct MessageBubbleRow: View {
             proposedTermsRow
         } else {
             standardBubbleRow
+        }
+    }
+
+    /// Double-check + "Seen" when peer read; single check when sent only.
+    @ViewBuilder
+    private var receiptCaption: some View {
+        if isMine, let receipt {
+            switch receipt {
+            case .seen:
+                HStack(spacing: 4) {
+                    doubleCheckmarks(color: BrandTheme.teal.opacity(0.95))
+                    Text("Seen")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(BrandTheme.teal.opacity(0.95))
+                }
+                .padding(.trailing, 8)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Seen by the other party")
+            case .sent:
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(BrandTheme.textSecondary.opacity(0.85))
+                        .accessibilityHidden(true)
+                }
+                .padding(.trailing, 8)
+                .accessibilityLabel("Sent")
+            }
+        }
+    }
+
+    private func doubleCheckmarks(color: Color) -> some View {
+        // Two overlapping checkmarks — web CheckCheck parity (no dedicated SF Symbol).
+        HStack(spacing: -5) {
+            Image(systemName: "checkmark")
+                .font(.caption2.weight(.bold))
+            Image(systemName: "checkmark")
+                .font(.caption2.weight(.bold))
+        }
+        .foregroundStyle(color)
+        .accessibilityHidden(true)
+    }
+
+    private var receiptA11ySuffix: String {
+        guard isMine, let receipt else { return "" }
+        switch receipt {
+        case .seen: return ", Seen"
+        case .sent: return ", Sent"
         }
     }
 
@@ -1568,18 +1697,12 @@ private struct MessageBubbleRow: View {
             }
             .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
 
-            if showSeen, isMine {
-                Text("Seen")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(BrandTheme.teal.opacity(0.95))
-                    .padding(.trailing, 8)
-                    .accessibilityLabel("Seen by the other party")
-            }
+            receiptCaption
         }
         // Keep children accessible when Accept/Reject are present (interactive buttons).
         .modifier(ProposedTermsA11yModifier(
             combineChildren: !canRespondToTerms,
-            label: accessibilityText + (showSeen && isMine ? ", Seen" : "")
+            label: accessibilityText + receiptA11ySuffix
         ))
     }
 
@@ -1702,17 +1825,11 @@ private struct MessageBubbleRow: View {
             }
             .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
 
-            // FR-8.2 read receipt — only under own last seen message.
-            if showSeen, isMine {
-                Text("Seen")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(BrandTheme.teal.opacity(0.95))
-                    .padding(.trailing, 8)
-                    .accessibilityLabel("Seen by the other party")
-            }
+            // FR-8.2 read receipt — only under last own message (sent / seen).
+            receiptCaption
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText + (showSeen && isMine ? ", Seen" : ""))
+        .accessibilityLabel(accessibilityText + receiptA11ySuffix)
     }
 
     private func metaRow(onGold: Bool) -> some View {

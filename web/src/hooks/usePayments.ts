@@ -44,23 +44,32 @@ export function usePayment(id: string) {
   });
 }
 
+function createPaymentOpKey(input: CreatePaymentInput): string {
+  // Sticky per contract+amount+instance so retries soft-replay the same PI.
+  // Instance-scoped for FR-18 visits (matches iOS create-payment key shape).
+  const inst = input.recurring_instance_id ?? input.milestone_id ?? '';
+  return `create-payment:${input.contract_id ?? ''}:${String(input.amount_cents)}:${inst}`;
+}
+
 export function useCreatePayment() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (input: CreatePaymentInput) => {
-      const opKey = `create-payment:${input.contract_id ?? ''}:${String(input.amount_cents)}:${input.milestone_id ?? ''}`;
-      const raw = await api.post<Record<string, unknown>>(
+      const opKey = createPaymentOpKey(input);
+      const raw = await api.post<Record<string, unknown> & { client_secret?: string }>(
         '/api/v1/payments',
         input,
         idempotencyHeader(opKey),
       );
-      return raw as unknown as Payment;
+      return raw as unknown as Payment & { client_secret?: string };
     },
     onSuccess: (_data, input) => {
-      clearIdempotencyKey(
-        `create-payment:${input.contract_id ?? ''}:${String(input.amount_cents)}:${input.milestone_id ?? ''}`,
-      );
+      // Keep sticky key until process/capture succeeds for visit pays; clear for
+      // one-shot creates so a later intentional re-attempt mints a new key.
+      if (!input.recurring_instance_id) {
+        clearIdempotencyKey(createPaymentOpKey(input));
+      }
       toast.success('Payment created');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
     },
@@ -70,27 +79,35 @@ export function useCreatePayment() {
   });
 }
 
+/** Clear sticky create-payment key after visit escrow capture (or intentional retry). */
+export function clearCreatePaymentIdempotency(input: CreatePaymentInput): void {
+  clearIdempotencyKey(createPaymentOpKey(input));
+}
+
 export function useProcessPayment() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (variables: { paymentId: string; payment_method_id: string }) => {
+    mutationFn: async (variables: {
+      paymentId: string;
+      /** Optional when PaymentElement already confirmed the PI (pass empty). */
+      payment_method_id?: string;
+    }) => {
+      const pm = variables.payment_method_id ?? '';
       const raw = await api.post<Record<string, unknown>>(
         `/api/v1/payments/${variables.paymentId}/process`,
-        { payment_method_id: variables.payment_method_id },
-        idempotencyHeader(
-          `process-payment:${variables.paymentId}:${variables.payment_method_id}`,
-        ),
+        { payment_method_id: pm },
+        idempotencyHeader(`process-payment:${variables.paymentId}`),
       );
       return raw as unknown as Payment;
     },
     onSuccess: (_data, variables) => {
-      clearIdempotencyKey(
-        `process-payment:${variables.paymentId}:${variables.payment_method_id}`,
-      );
+      clearIdempotencyKey(`process-payment:${variables.paymentId}`);
       toast.success('Payment processed');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
       void queryClient.invalidateQueries({ queryKey: ['payment', variables.paymentId] });
+      // FR-18.8: process may resume paused recurring — refresh schedule.
+      void queryClient.invalidateQueries({ queryKey: ['recurring'] });
     },
     onError: (err) => {
       toast.error(getApiErrorMessage(err, 'Payment failed — please try again'));

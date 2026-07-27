@@ -331,6 +331,26 @@ func TestApproveRecurringInstance_createPaymentFailedPausesAtThreshold(t *testin
 	assert.Equal(t, testCustomerID, cc.lastPauseReq.GetUserId())
 	assert.Equal(t, true, body["recurring_paused"])
 	assert.Equal(t, "paused", body["recurring_status"])
+	// nil db → dual-party notify residual only (no GetContract for provider).
+	// Pause must still succeed — notification must never block FR-18.8.
+	assert.Equal(t, 0, cc.getN, "nil-db residual must not require GetContract")
+}
+
+// TestResolveContractProviderID_viaGetContract: FR-18.8 dual-party notify
+// needs provider_id from GetContract when db is available for emit.
+func TestResolveContractProviderID_viaGetContract(t *testing.T) {
+	t.Parallel()
+	cc := &mockApproveContractClient{}
+	h := NewContractHandler(cc, nil, nil)
+
+	got := h.resolveContractProviderID(context.Background(), testContractID, testCustomerID)
+	assert.Equal(t, testProviderID, got)
+	assert.Equal(t, 1, cc.getN)
+
+	// nil-db notify residual must not panic and must not call GetContract.
+	before := cc.getN
+	h.notifyRecurringPausedForPaymentFailure(context.Background(), testContractID, testCustomerID, testRecurringID)
+	assert.Equal(t, before, cc.getN, "nil db short-circuits before provider resolve")
 }
 
 // TestApproveRecurringInstance_createPaymentFailedBelowThreshold: first/second

@@ -321,6 +321,9 @@ message CancelContractResponse {
 
 message GetRecurringConfigRequest {
   string contract_id = 1;
+  // Contract party (customer or provider). Empty fails closed in job service
+  // requireContractParty — mesh callers must pass a known party id.
+  string requesting_user_id = 2;
 }
 
 message GetRecurringConfigResponse {
@@ -368,6 +371,8 @@ message CancelRecurringResponse {
 message ListRecurringInstancesRequest {
   string recurring_id = 1;
   nomarkup.common.v1.PaginationRequest pagination = 2;
+  // Contract party (customer or provider). Empty fails closed in job service.
+  string requesting_user_id = 3;
 }
 
 message ListRecurringInstancesResponse {

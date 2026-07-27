@@ -1026,7 +1026,8 @@ func buildContractDocumentHTML(c *contractv1.Contract) string {
 
 // GetRecurringConfig handles GET /api/v1/contracts/{id}/recurring.
 func (h *ContractHandler) GetRecurringConfig(w http.ResponseWriter, r *http.Request) {
-	if _, ok := middleware.GetClaims(r.Context()); !ok {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
 	}
@@ -1036,7 +1037,8 @@ func (h *ContractHandler) GetRecurringConfig(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	resp, err := h.contractClient.GetRecurringConfig(r.Context(), &contractv1.GetRecurringConfigRequest{
-		ContractId: contractID,
+		ContractId:       contractID,
+		RequestingUserId: claims.UserID,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -1198,7 +1200,8 @@ func (h *ContractHandler) CancelRecurring(w http.ResponseWriter, r *http.Request
 
 // ListRecurringInstances handles GET /api/v1/contracts/{id}/recurring/instances.
 func (h *ContractHandler) ListRecurringInstances(w http.ResponseWriter, r *http.Request) {
-	if _, ok := middleware.GetClaims(r.Context()); !ok {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
 	}
@@ -1227,7 +1230,8 @@ func (h *ContractHandler) ListRecurringInstances(w http.ResponseWriter, r *http.
 	}
 
 	resp, err := h.contractClient.ListRecurringInstances(r.Context(), &contractv1.ListRecurringInstancesRequest{
-		RecurringId: cfg.GetId(),
+		RecurringId:      cfg.GetId(),
+		RequestingUserId: claims.UserID,
 		Pagination: &commonv1.PaginationRequest{
 			Page:     int32(page),
 			PageSize: int32(pageSize),
@@ -1466,7 +1470,7 @@ func (h *ContractHandler) attachRecurringInstancePayment(
 			// Already-funded visit (e.g. prior off-session success): no secret needed.
 			if recurringPaymentIsFunded(existing) {
 				result["off_session_charged"] = true
-				h.resetRecurringPaymentRetryAfterSuccess(ctx, contractID, instanceID, source)
+				h.resetRecurringPaymentRetryAfterSuccess(ctx, contractID, instanceID, customerID, source)
 				return
 			}
 			slog.WarnContext(ctx, "recurring instance: existing payment found but client_secret unavailable (fail closed)",
@@ -1519,7 +1523,7 @@ func (h *ContractHandler) attachRecurringInstancePayment(
 		result["payment_residual"] = "client_secret_missing"
 	}
 	// Successful visit PI setup (or funded capture) clears FR-16.7 partial strike count.
-	h.resetRecurringPaymentRetryAfterSuccess(ctx, contractID, instanceID, source)
+	h.resetRecurringPaymentRetryAfterSuccess(ctx, contractID, instanceID, customerID, source)
 }
 
 // recurringPaymentIsFunded reports whether a visit payment no longer needs
@@ -1598,7 +1602,8 @@ func (h *ContractHandler) recordRecurringPaymentSetupFailure(
 	}
 
 	cfgResp, err := h.contractClient.GetRecurringConfig(ctx, &contractv1.GetRecurringConfigRequest{
-		ContractId: contractID,
+		ContractId:       contractID,
+		RequestingUserId: customerID,
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "FR-16.7: GetRecurringConfig failed after payment setup failure (contract not cancelled)",
@@ -1730,6 +1735,92 @@ func (h *ContractHandler) recordRecurringPaymentSetupFailure(
 		"customer_id", customerID,
 		"payment_retry_count", count,
 	)
+
+	// FR-16.7 / FR-18.8: both parties notified on pause. Fail-soft — pause already
+	// committed; missing db / insert errors must not undo the pause decision.
+	h.notifyRecurringPausedForPaymentFailure(ctx, contractID, customerID, cfg.GetId())
+}
+
+// notifyRecurringPausedForPaymentFailure emits in-app payment_failed notifications
+// to the contract customer and provider after FR-18.8 pause-at-threshold.
+//
+// Actor is empty (system): emitNotification's self-notify guard would drop one
+// party if we used the customer as actor. Fully fail-soft via emitNotification
+// (nil db no-op, insert errors logged). Provider lookup failure still notifies
+// the customer; residual is logged when provider cannot be resolved.
+func (h *ContractHandler) notifyRecurringPausedForPaymentFailure(
+	ctx context.Context,
+	contractID, customerID, recurringID string,
+) {
+	if h.db == nil {
+		slog.WarnContext(ctx, "FR-16.7/FR-18.8 residual: recurring paused but in-app notify unavailable (gateway db unwired)",
+			"contract_id", contractID,
+			"recurring_id", recurringID,
+			"customer_id", customerID,
+		)
+		return
+	}
+
+	providerID := h.resolveContractProviderID(ctx, contractID, customerID)
+	actionURL := "/contracts/" + contractID
+
+	if customerID != "" {
+		emitNotification(ctx, h.db, "", customerID,
+			"payment_failed",
+			"Recurring payments paused",
+			"We couldn't charge your payment method after several tries. Recurring visits are paused until you update your payment method.",
+			actionURL,
+			"contract", contractID,
+		)
+	}
+	if providerID != "" {
+		emitNotification(ctx, h.db, "", providerID,
+			"payment_failed",
+			"Recurring schedule paused",
+			"The customer's payment could not be collected after several tries. Recurring visits are paused until payment is updated.",
+			actionURL,
+			"contract", contractID,
+		)
+	} else {
+		slog.WarnContext(ctx, "FR-16.7/FR-18.8 residual: recurring paused; provider not notified (provider_id unresolved)",
+			"contract_id", contractID,
+			"recurring_id", recurringID,
+			"customer_id", customerID,
+		)
+	}
+}
+
+// resolveContractProviderID best-effort loads the contract provider for
+// dual-party FR-18.8 pause notifications. Prefer GetContract as the customer
+// (party check passes); fall back to SQL when gRPC fails and h.db is set.
+func (h *ContractHandler) resolveContractProviderID(ctx context.Context, contractID, customerID string) string {
+	if h.contractClient != nil {
+		resp, err := h.contractClient.GetContract(ctx, &contractv1.GetContractRequest{
+			ContractId:       contractID,
+			RequestingUserId: customerID,
+		})
+		if err == nil {
+			if c := resp.GetContract(); c != nil {
+				if pid := c.GetProviderId(); pid != "" {
+					return pid
+				}
+			}
+		} else {
+			slog.WarnContext(ctx, "FR-18.8: GetContract for provider notify failed",
+				"contract_id", contractID,
+				"error", err,
+			)
+		}
+	}
+	if h.db != nil && contractID != "" {
+		var providerID string
+		if err := h.db.QueryRow(ctx,
+			`SELECT provider_id::text FROM contracts WHERE id = $1`, contractID,
+		).Scan(&providerID); err == nil {
+			return providerID
+		}
+	}
+	return ""
 }
 
 // incrementPaymentRetry uses the test hook when set; otherwise SQL via h.db.
@@ -1743,15 +1834,25 @@ func (h *ContractHandler) incrementPaymentRetry(ctx context.Context, recurringID
 
 // resetRecurringPaymentRetryAfterSuccess clears payment_retry_count after a
 // successful visit PI create. Fail-soft: lookup/reset errors are logged only.
+// customerID is a contract party so GetRecurringConfig party check succeeds.
 func (h *ContractHandler) resetRecurringPaymentRetryAfterSuccess(
 	ctx context.Context,
-	contractID, instanceID, source string,
+	contractID, instanceID, customerID, source string,
 ) {
 	if contractID == "" || h.contractClient == nil {
 		return
 	}
+	if customerID == "" {
+		slog.WarnContext(ctx, "FR-16.7: cannot reset payment_retry_count (no customer id; PI kept)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+		)
+		return
+	}
 	cfgResp, err := h.contractClient.GetRecurringConfig(ctx, &contractv1.GetRecurringConfigRequest{
-		ContractId: contractID,
+		ContractId:       contractID,
+		RequestingUserId: customerID,
 	})
 	if err != nil || cfgResp.GetConfig() == nil || cfgResp.GetConfig().GetId() == "" {
 		if err != nil {
@@ -1790,8 +1891,14 @@ func (h *ContractHandler) resetPaymentRetry(ctx context.Context, recurringID str
 }
 
 func (h *ContractHandler) resolveRecurringConfig(r *http.Request, contractID string) (*contractv1.RecurringConfig, error) {
+	// Callers authenticate first; empty UserID fails closed in requireContractParty.
+	userID := ""
+	if claims, ok := middleware.GetClaims(r.Context()); ok {
+		userID = claims.UserID
+	}
 	resp, err := h.contractClient.GetRecurringConfig(r.Context(), &contractv1.GetRecurringConfigRequest{
-		ContractId: contractID,
+		ContractId:       contractID,
+		RequestingUserId: userID,
 	})
 	if err != nil {
 		return nil, err

@@ -468,7 +468,8 @@ func (h *PaymentHandler) resumeRecurringAfterPaymentSuccess(
 	}
 
 	cfgResp, err := h.contractClient.GetRecurringConfig(ctx, &contractv1.GetRecurringConfigRequest{
-		ContractId: contractID,
+		ContractId:       contractID,
+		RequestingUserId: customerID,
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "FR-18.8: GetRecurringConfig failed after payment success (payment kept)",
