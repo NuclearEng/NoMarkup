@@ -68,6 +68,36 @@ enum ImageUploader {
         )
     }
 
+    #if canImport(UIKit)
+    /// Upload a camera-captured UIImage through the same JPEG + imaging pipeline.
+    static func upload(
+        uiImage: UIImage,
+        context: ImageUploadContext
+    ) async throws -> String {
+        let prepared = try jpegFromUIImage(uiImage)
+        return try await APIClient.shared.uploadImage(
+            data: prepared.data,
+            filename: prepared.filename,
+            mimeType: prepared.mimeType,
+            context: context
+        )
+    }
+
+    /// Provider verification document from camera capture.
+    static func uploadVerificationDocument(
+        uiImage: UIImage,
+        documentType: ProviderDocumentType
+    ) async throws -> ProviderDocumentUploadResult {
+        let prepared = try jpegFromUIImage(uiImage)
+        return try await APIClient.shared.uploadAndSubmitProviderDocument(
+            data: prepared.data,
+            filename: prepared.filename,
+            mimeType: prepared.mimeType,
+            documentType: documentType.rawValue
+        )
+    }
+    #endif
+
     // MARK: - Prepare
 
     private struct PreparedImage: Sendable {
@@ -154,6 +184,10 @@ struct PhotoPickSection: View {
     @Binding var errorMessage: String?
 
     @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var showCamera = false
+    #if canImport(UIKit)
+    @State private var cameraImage: UIImage?
+    #endif
 
     var body: some View {
         Section {
@@ -184,7 +218,7 @@ struct PhotoPickSection: View {
             ) {
                 HStack {
                     Label(
-                        photosEmpty ? "Add photos" : "Add more photos",
+                        photosEmpty ? "Add from library" : "Add more from library",
                         systemImage: "photo.on.rectangle.angled"
                     )
                     Spacer()
@@ -205,10 +239,30 @@ struct PhotoPickSection: View {
                 guard !newItems.isEmpty else { return }
                 Task { await uploadPicked(newItems) }
             }
+
+            #if canImport(UIKit)
+            Button {
+                showCamera = true
+            } label: {
+                Label("Take photo", systemImage: "camera.fill")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+            .disabled(uploading || atCapacity || !UIImagePickerController.isSourceTypeAvailable(.camera))
+            .listRowBackground(BrandTheme.navyElevated)
+            .accessibilityHint("Opens the camera to capture a photo for this job or listing")
+            .sheet(isPresented: $showCamera) {
+                CameraImagePicker(image: $cameraImage)
+                    .ignoresSafeArea()
+            }
+            .onChange(of: cameraImage) { _, image in
+                guard let image else { return }
+                Task { await uploadCamera(image) }
+            }
+            #endif
         } header: {
             Text("Photos").brandSectionHeader()
         } footer: {
-            Text("Optional. JPEG/PNG/WebP up to 10 MB each. Photos upload before submit.")
+            Text("Optional. Library or camera. JPEG/PNG/WebP up to 10 MB each. Photos upload before submit.")
                 .foregroundStyle(BrandTheme.textSecondary)
         }
     }
@@ -281,4 +335,23 @@ struct PhotoPickSection: View {
             errorMessage = error.localizedDescription
         }
     }
+
+    #if canImport(UIKit)
+    @MainActor
+    private func uploadCamera(_ image: UIImage) async {
+        errorMessage = nil
+        isUploading = true
+        defer {
+            isUploading = false
+            cameraImage = nil
+        }
+        guard photoURLs.count < maxCount else { return }
+        do {
+            let url = try await ImageUploader.upload(uiImage: image, context: context)
+            photoURLs.append(url)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    #endif
 }

@@ -118,7 +118,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .accessibilityHint("Native form to list a local goods item for auction")
 
-                    Text("Jobs and goods create flows call the gateway. Each form also links to the full web editor when you need photos or advanced options.")
+                    Text("Jobs and goods create flows include photo library and camera capture in-app.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } header: {
@@ -190,6 +190,15 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Connect Stripe and view payout readiness for providers")
+
+                    NavigationLink {
+                        BusinessFeaturesHubView()
+                    } label: {
+                        Label("Business & finance", systemImage: "building.2")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("BNPL, insurance, advances, instant payout, expenses, and tax — full web parity")
 
                     NavigationLink {
                         SalesExportView()
@@ -455,17 +464,12 @@ struct AccountView: View {
                     NavigationLink {
                         RegulatedRailsStatusView()
                     } label: {
-                        Label("Regulated capabilities", systemImage: "shield.lefthalf.filled")
+                        Label("Feature flag status", systemImage: "flag")
                     }
                     .frame(minHeight: 44)
-                    .accessibilityHint("Read-only list of financial and insurance rails that are not available in this iOS build.")
+                    .accessibilityHint("Server feature flags for BNPL, insurance, advances, and related rails")
 
-                    Text("Paid digital plans are web-only / not sold in this app. StoreKit IAP is intentionally omitted.")
-                        .font(.caption)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text("BNPL, advances, insurance purchase, lead-gen, and instant payout stay off in this binary (compliance).")
+                    Text("Paid digital subscriptions are web-only (no StoreKit IAP). BNPL, insurance, advances, and instant payout use server flags — open Business & finance when enabled.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

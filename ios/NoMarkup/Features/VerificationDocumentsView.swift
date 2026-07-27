@@ -1,5 +1,8 @@
 import PhotosUI
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Provider verification documents — list + upload.
 ///
@@ -242,8 +245,13 @@ private struct UploadVerificationDocumentSheet: View {
 
     @State private var selectedType: ProviderDocumentType = .driversLicense
     @State private var pickerItem: PhotosPickerItem?
+    @State private var showCamera = false
+    #if canImport(UIKit)
+    @State private var cameraImage: UIImage?
+    #endif
     @State private var isUploading = false
     @State private var errorMessage: String?
+    @State private var hasCapture = false
 
     var body: some View {
         NavigationStack {
@@ -278,14 +286,14 @@ private struct UploadVerificationDocumentSheet: View {
                     ) {
                         HStack {
                             Label(
-                                pickerItem == nil ? "Choose photo" : "Change photo",
+                                hasCapture || pickerItem != nil ? "Change from library" : "Choose from library",
                                 systemImage: "photo.on.rectangle.angled"
                             )
                             Spacer()
                             if isUploading {
                                 ProgressView()
                                     .tint(BrandTheme.accent)
-                            } else if pickerItem != nil {
+                            } else if hasCapture || pickerItem != nil {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(BrandTheme.success)
                                     .accessibilityLabel("Photo selected")
@@ -295,10 +303,34 @@ private struct UploadVerificationDocumentSheet: View {
                     }
                     .disabled(isUploading)
                     .accessibilityHint("Opens the photo library. JPEG, PNG, or WebP up to 10 MB.")
+                    .onChange(of: pickerItem) { _, item in
+                        if item != nil { hasCapture = true }
+                    }
+
+                    #if canImport(UIKit)
+                    Button {
+                        showCamera = true
+                    } label: {
+                        Label("Take photo with camera", systemImage: "camera.fill")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                    .disabled(isUploading || !UIImagePickerController.isSourceTypeAvailable(.camera))
+                    .accessibilityHint("Opens the camera to photograph your document")
+                    .sheet(isPresented: $showCamera) {
+                        CameraImagePicker(image: $cameraImage)
+                            .ignoresSafeArea()
+                    }
+                    .onChange(of: cameraImage) { _, image in
+                        if image != nil {
+                            hasCapture = true
+                            pickerItem = nil
+                        }
+                    }
+                    #endif
                 } header: {
                     Text("Photo").brandSectionHeader()
                 } footer: {
-                    Text("Photos only (JPEG, PNG, WebP). Max 10 MB — same platform limit as other uploads. PDF is not accepted on this path.")
+                    Text("Library or camera. JPEG, PNG, WebP. Max 10 MB. PDF is not accepted on this path.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
                 .listRowBackground(BrandTheme.navyElevated)
@@ -336,7 +368,7 @@ private struct UploadVerificationDocumentSheet: View {
                             Text("Submit")
                         }
                     }
-                    .disabled(isUploading || pickerItem == nil || !auth.isAuthenticated || auth.isScaffoldSession)
+                    .disabled(isUploading || !hasCapture || !auth.isAuthenticated || auth.isScaffoldSession)
                     .accessibilityLabel("Submit verification document")
                 }
             }
@@ -351,16 +383,26 @@ private struct UploadVerificationDocumentSheet: View {
             errorMessage = "Sign in as a provider to upload documents."
             return
         }
-        guard let item = pickerItem else {
-            errorMessage = "Choose a photo of the document first."
-            return
-        }
 
         errorMessage = nil
         isUploading = true
         defer { isUploading = false }
 
         do {
+            #if canImport(UIKit)
+            if let cameraImage {
+                let result = try await ImageUploader.uploadVerificationDocument(
+                    uiImage: cameraImage,
+                    documentType: selectedType
+                )
+                onUploaded(result)
+                return
+            }
+            #endif
+            guard let item = pickerItem else {
+                errorMessage = "Choose or capture a photo of the document first."
+                return
+            }
             let result = try await ImageUploader.uploadVerificationDocument(
                 item: item,
                 documentType: selectedType

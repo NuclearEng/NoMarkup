@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AE /* BusinessFeaturesHubView.swift */; };
+		A100000000000000000000AD /* Models+RegulatedRails.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AD /* Models+RegulatedRails.swift */; };
+		A100000000000000000000AC /* APIClient+RegulatedRails.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AC /* APIClient+RegulatedRails.swift */; };
+		A100000000000000000000AB /* CameraImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AB /* CameraImagePicker.swift */; };
 		A10000000000000000000001 /* NoMarkupApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* NoMarkupApp.swift */; };
 		A10000000000000000000002 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* AppConfig.swift */; };
 		A10000000000000000000003 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* KeychainTokenStore.swift */; };
@@ -99,6 +103,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B100000000000000000000AE /* BusinessFeaturesHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessFeaturesHubView.swift; sourceTree = "<group>"; };
+		B100000000000000000000AD /* Models+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+RegulatedRails.swift"; sourceTree = "<group>"; };
+		B100000000000000000000AC /* APIClient+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+RegulatedRails.swift"; sourceTree = "<group>"; };
+		B100000000000000000000AB /* CameraImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraImagePicker.swift; sourceTree = "<group>"; };
 		B10000000000000000000001 /* NoMarkupApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupApp.swift; sourceTree = "<group>"; };
 		B10000000000000000000002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		B10000000000000000000003 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
@@ -306,6 +314,9 @@
 				B10000000000000000000028 /* NoMarkupIcon.swift */,
 				B10000000000000000000052 /* PushRegistration.swift */,
 				B10000000000000000000053 /* ImageUploader.swift */,
+				B100000000000000000000AD /* Models+RegulatedRails.swift */,
+				B100000000000000000000AC /* APIClient+RegulatedRails.swift */,
+				B100000000000000000000AB /* CameraImagePicker.swift */,
 				B10000000000000000000059 /* NetworkMonitor.swift */,
 				B10000000000000000000071 /* APIClient+Extras.swift */,
 				B10000000000000000000078 /* APIClient+Provider.swift */,
@@ -366,6 +377,7 @@
 				B100000000000000000000A9 /* TrustScoreView.swift */,
 				B100000000000000000000A3 /* PlanLimitsView.swift */,
 				B100000000000000000000AA /* RegulatedRailsStatusView.swift */,
+				B100000000000000000000AE /* BusinessFeaturesHubView.swift */,
 				B100000000000000000000A4 /* TermsAcceptanceView.swift */,
 				B10000000000000000000027 /* NotificationsView.swift */,
 				B1000000000000000000002B /* WatchlistView.swift */,
@@ -564,6 +576,10 @@
 				A100000000000000000000A9 /* TrustScoreView.swift in Sources */,
 				A100000000000000000000A3 /* PlanLimitsView.swift in Sources */,
 				A100000000000000000000AA /* RegulatedRailsStatusView.swift in Sources */,
+				A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */,
+				A100000000000000000000AD /* Models+RegulatedRails.swift in Sources */,
+				A100000000000000000000AC /* APIClient+RegulatedRails.swift in Sources */,
+				A100000000000000000000AB /* CameraImagePicker.swift in Sources */,
 				A100000000000000000000A4 /* TermsAcceptanceView.swift in Sources */,
 				A10000000000000000000071 /* APIClient+Extras.swift in Sources */,
 				A10000000000000000000078 /* APIClient+Provider.swift in Sources */,

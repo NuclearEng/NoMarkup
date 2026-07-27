@@ -1378,7 +1378,7 @@ private struct ListingReportRequestBody: Encodable {
     let description: String
 }
 
-private struct AmountCentsBody: Encodable {
+struct AmountCentsBody: Encodable {
     let amountCents: Int64
 }
 
