@@ -123,7 +123,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
    - **FR-16.7 due-row auto-charge + UX** — **shipped (gateway + webhook + client project)**: cron CreatePayment `attempt-N`; `payment_intent.payment_failed` joins 3-strike schedule; config GET/JSON projects `payment_retry_count` / `next_retry_at` when non-zero; iOS/web recurring sections show count + next auto-retry. Residual: live Stripe dogfood of full day-0/3/7 path.
    - **Instant AI / ETA / push polish** — schedule window **is** consumed on ListProviderOffers + Accept (wave12); H:MM parse edge hardened (wave15). Phase 2 residual only.
    - **Chat receipts polish** — **shipped (wave17)**: MarkRead publishes live `read_receipt` WS; web last_read watermark Seen + Sent/Seen labels; iOS patches peer watermark on frame. Residual: delivery receipts out of scope.
-   - **FR-18 per-instance pay** — approve/auto-approve CreatePayment + soft-replay + off-session + iOS/web pay CTAs + scheduled retry cron **shipped**. Edge residuals only (durable approved_at / funded instance state).
+   - **FR-18 per-instance pay** — approve/auto-approve CreatePayment + soft-replay + off-session + iOS/web pay CTAs + scheduled retry cron + durable `approved_at` + list `payment_funded` enrichment **shipped**. Residual: live Stripe dogfood.
 
 Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted residual · **`[~] ops`** = human/ops only (not an eng task)
 
@@ -251,3 +251,4 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | 2026-07-27 wave15b | Instant schedule H:MM parse edge + tests green; gateway projects payment_retry fields on recurring config GET/JSON; iOS recurring retry UX; web local_terms award residual messaging; thin-residuals honesty |
 | 2026-07-27 wave16 | Web RecurringSchedule visit-pay + FR-18.8 pause dual-party notify; empty-userID fail-closed + `requesting_user_id` on Get/List recurring; iOS Seen polish (poll-based) |
 | 2026-07-27 wave17 | Chat live `read_receipt` WS on MarkRead; web last_read watermark Seen + Sent/Seen labels; iOS peer watermark patch from WS frame |
+| 2026-07-27 wave18 | Recurring instance `approved_at` wire + list `payment_id`/`payment_status`/`payment_funded` enrichment; residual Pay for any approved visit; hide Pay when funded |

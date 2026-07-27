@@ -299,6 +299,20 @@ export function isRecurringInstanceApprovable(instance: ContractRecurringInstanc
   return true;
 }
 
+/**
+ * Residual Pay visit CTA: completed + (auto or customer-approved) + amount +
+ * not already funded. Gateway projects payment_funded after list enrichment.
+ */
+export function isRecurringInstancePayable(instance: ContractRecurringInstance): boolean {
+  if ((instance.status ?? '').toLowerCase() !== 'completed') return false;
+  if (instance.payment_funded === true) return false;
+  const amount = instance.amount_cents ?? 0;
+  if (amount <= 0) return false;
+  if (instance.auto_approved === true) return true;
+  if (instance.approved_at?.trim()) return true;
+  return false;
+}
+
 export function hasPaymentRetryInfo(config: ContractRecurringConfig): boolean {
   if ((config.payment_retry_count ?? 0) > 0) return true;
   const next = config.next_retry_at?.trim();

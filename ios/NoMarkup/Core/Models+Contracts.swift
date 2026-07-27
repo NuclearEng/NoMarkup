@@ -267,6 +267,12 @@ struct ContractRecurringInstance: Codable, Sendable, Hashable, Identifiable {
     var completedAt: String?
     /// Customer approve timestamp (FR-18). Durable hide-Approve across reloads.
     var approvedAt: String?
+    /// Gateway enrichment: linked payments.id when a visit PI exists.
+    var paymentId: String?
+    /// Gateway enrichment: payments.status (pending, escrow, …).
+    var paymentStatus: String?
+    /// Gateway enrichment: true when escrow/released/completed/processing.
+    var paymentFunded: Bool?
 
     var displayStatus: String {
         StatusChipStyle.displayLabel(status ?? "unknown")
@@ -297,6 +303,18 @@ struct ContractRecurringInstance: Codable, Sendable, Hashable, Identifiable {
         // Prefer completed_at when present; status alone still allows approve if
         // gateway omitted completed_at after complete.
         return true
+    }
+
+    /// Residual Pay when completed + approved (or auto) + amount + not funded.
+    var isPayable: Bool {
+        guard (status ?? "").lowercased() == "completed" else { return false }
+        if paymentFunded == true { return false }
+        guard (amountCents ?? 0) > 0 else { return false }
+        if autoApproved == true { return true }
+        if let approvedAt, !approvedAt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        return false
     }
 }
 

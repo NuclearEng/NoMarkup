@@ -1246,6 +1246,9 @@ func (h *ContractHandler) ListRecurringInstances(w http.ResponseWriter, r *http.
 	for _, inst := range resp.GetInstances() {
 		instances = append(instances, protoRecurringInstanceToJSON(inst))
 	}
+	// Attach payment_id / payment_status / payment_funded so clients can hide
+	// Pay visit after escrow is funded (durable across reloads). Fail-soft.
+	h.attachRecurringInstancePaymentState(r.Context(), contractID, instances)
 	result := map[string]interface{}{
 		"instances": instances,
 	}
@@ -1945,6 +1948,89 @@ func protoRecurringInstanceToJSON(inst *contractv1.RecurringInstance) map[string
 		result["approved_at"] = formatTimestamp(inst.GetApprovedAt())
 	}
 	return result
+}
+
+// attachRecurringInstancePaymentState enriches instance JSON with the linked
+// payments row (migration 111 UNIQUE recurring_instance_id). Fail-soft: no db
+// or SQL error leaves instances unchanged so the timeline still renders.
+//
+// payment_funded mirrors recurringPaymentIsFunded (escrow/released/completed/
+// processing) so clients hide residual Pay after money is held.
+func (h *ContractHandler) attachRecurringInstancePaymentState(
+	ctx context.Context,
+	contractID string,
+	instances []map[string]interface{},
+) {
+	if h == nil || h.db == nil || contractID == "" || len(instances) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(instances))
+	byID := make(map[string]map[string]interface{}, len(instances))
+	for _, inst := range instances {
+		if inst == nil {
+			continue
+		}
+		rawID, _ := inst["id"].(string)
+		if rawID == "" || !isValidUUID(rawID) {
+			continue
+		}
+		ids = append(ids, rawID)
+		byID[rawID] = inst
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	rows, err := h.db.Query(ctx, `
+		SELECT id::text, recurring_instance_id::text, status
+		  FROM payments
+		 WHERE contract_id = $1
+		   AND recurring_instance_id = ANY($2::uuid[])`,
+		contractID, ids,
+	)
+	if err != nil {
+		slog.WarnContext(ctx, "ListRecurringInstances: payment state lookup failed (instances returned without payment fields)",
+			"contract_id", contractID,
+			"error", err,
+		)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var paymentID, instanceID, status string
+		if scanErr := rows.Scan(&paymentID, &instanceID, &status); scanErr != nil {
+			slog.WarnContext(ctx, "ListRecurringInstances: payment row scan failed",
+				"contract_id", contractID,
+				"error", scanErr,
+			)
+			continue
+		}
+		inst, ok := byID[instanceID]
+		if !ok || inst == nil {
+			continue
+		}
+		inst["payment_id"] = paymentID
+		inst["payment_status"] = status
+		inst["payment_funded"] = recurringPaymentStatusIsFunded(status)
+	}
+	if err := rows.Err(); err != nil {
+		slog.WarnContext(ctx, "ListRecurringInstances: payment rows iteration error",
+			"contract_id", contractID,
+			"error", err,
+		)
+	}
+}
+
+// recurringPaymentStatusIsFunded is the string-status twin of recurringPaymentIsFunded
+// for SQL status columns on payments.
+func recurringPaymentStatusIsFunded(status string) bool {
+	switch status {
+	case "escrow", "released", "completed", "processing":
+		return true
+	default:
+		return false
+	}
 }
 
 // --- Proto to JSON conversion helpers ---

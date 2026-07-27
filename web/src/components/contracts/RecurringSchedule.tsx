@@ -26,6 +26,7 @@ import {
   hasPaymentRetryInfo,
   isRecurringInstanceApprovable,
   isRecurringInstanceCompletable,
+  isRecurringInstancePayable,
   recurringResultHasPayCTA,
   useApproveRecurringInstance,
   useCancelRecurring,
@@ -141,6 +142,10 @@ export function RecurringSchedule({
   const [approvedInstanceIds, setApprovedInstanceIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  // Optimistic hide for Pay until list refetch projects payment_funded.
+  const [fundedInstanceIds, setFundedInstanceIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
 
   const configBusy =
     pauseRecurring.isPending || resumeRecurring.isPending || cancelRecurring.isPending;
@@ -151,6 +156,11 @@ export function RecurringSchedule({
 
       if (result.off_session_charged === true) {
         setPendingPay(null);
+        setFundedInstanceIds((prev) => {
+          const next = new Set(prev);
+          next.add(result.instance.id);
+          return next;
+        });
         setStatusIsError(false);
         setStatusMessage(
           source === 'approve'
@@ -216,6 +226,11 @@ export function RecurringSchedule({
         await processVisitPayment.mutateAsync(paymentId);
         clearVisitPaymentIdempotency(contractId, amountCents, instanceId);
         setPendingPay(null);
+        setFundedInstanceIds((prev) => {
+          const next = new Set(prev);
+          next.add(instanceId);
+          return next;
+        });
         setStatusIsError(false);
         setStatusMessage(
           `Visit paid — ${formatCents(amountCents)} held in escrow. Release after work is done.`,
@@ -619,16 +634,23 @@ export function RecurringSchedule({
               {instances.map((instance) => {
                 const pendingForInstance =
                   pendingPay?.instanceId === instance.id ? pendingPay : null;
+                const isFunded =
+                  instance.payment_funded === true || fundedInstanceIds.has(instance.id);
                 const showPendingPay =
                   isCustomer &&
+                  !isFunded &&
                   pendingForInstance !== null &&
                   hasConfirmablePayment({ client_secret: pendingForInstance.clientSecret });
-                const showAutoApprovePay =
+                // Residual Pay: auto-approved or customer-approved, not funded, no open secret.
+                const showResidualPay =
                   isCustomer &&
-                  instance.auto_approved === true &&
-                  (instance.status ?? '').toLowerCase() === 'completed' &&
+                  !isFunded &&
                   !showPendingPay &&
-                  pendingForInstance === null;
+                  pendingForInstance === null &&
+                  (isRecurringInstancePayable(instance) ||
+                    (approvedInstanceIds.has(instance.id) &&
+                      (instance.amount_cents ?? 0) > 0 &&
+                      (instance.status ?? '').toLowerCase() === 'completed'));
                 const amountLabel = formatCents(instance.amount_cents ?? 0);
                 const acting = actingInstanceId === instance.id;
                 const busy =
@@ -655,6 +677,11 @@ export function RecurringSchedule({
                             ? ' · Auto-approved'
                             : instance.approved_at || approvedInstanceIds.has(instance.id)
                               ? ' · Approved'
+                              : ''}
+                          {isFunded
+                            ? ' · Escrow funded'
+                            : instance.payment_status
+                              ? ` · Payment ${formatRecurringStatus(instance.payment_status)}`
                               : ''}
                         </p>
                       </div>
@@ -736,8 +763,8 @@ export function RecurringSchedule({
                         </div>
                       ) : null}
 
-                      {/* Customer: auto-approved residual without pending secret */}
-                      {showAutoApprovePay ? (
+                      {/* Customer: residual Pay without pending secret (soft-replay CreatePayment) */}
+                      {showResidualPay ? (
                         <Button
                           type="button"
                           className="min-h-[44px] w-full gap-2"

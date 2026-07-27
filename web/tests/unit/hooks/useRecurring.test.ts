@@ -6,6 +6,7 @@ import {
   hasPaymentRetryInfo,
   isRecurringInstanceApprovable,
   isRecurringInstanceCompletable,
+  isRecurringInstancePayable,
   recurringResultHasPayCTA,
 } from '@/hooks/useRecurring';
 import type { ContractRecurringConfig, RecurringInstanceActionResult } from '@/types';
@@ -31,6 +32,41 @@ describe('useRecurring helpers', () => {
         id: '1',
         status: 'completed',
         approved_at: '2026-07-27T12:00:00Z',
+      }),
+    ).toBe(false);
+  });
+
+  it('isRecurringInstancePayable when approved/auto and not funded', () => {
+    expect(
+      isRecurringInstancePayable({
+        id: '1',
+        status: 'completed',
+        auto_approved: true,
+        amount_cents: 5000,
+      }),
+    ).toBe(true);
+    expect(
+      isRecurringInstancePayable({
+        id: '1',
+        status: 'completed',
+        approved_at: '2026-07-27T12:00:00Z',
+        amount_cents: 5000,
+      }),
+    ).toBe(true);
+    expect(
+      isRecurringInstancePayable({
+        id: '1',
+        status: 'completed',
+        auto_approved: true,
+        amount_cents: 5000,
+        payment_funded: true,
+      }),
+    ).toBe(false);
+    expect(
+      isRecurringInstancePayable({
+        id: '1',
+        status: 'completed',
+        amount_cents: 5000,
       }),
     ).toBe(false);
   });

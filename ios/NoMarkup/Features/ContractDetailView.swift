@@ -685,6 +685,15 @@ struct ContractDetailView: View {
                     Text("Auto-approved")
                         .font(.caption2)
                         .foregroundStyle(BrandTheme.success)
+                } else if let approvedAt = instance.approvedAt, !approvedAt.isEmpty {
+                    Text("Approved")
+                        .font(.caption2)
+                        .foregroundStyle(BrandTheme.success)
+                }
+                if instance.paymentFunded == true {
+                    Text("Escrow funded")
+                        .font(.caption2)
+                        .foregroundStyle(BrandTheme.success)
                 }
             }
             let isProvider = contract.isProvider(userId: currentUserID)
@@ -725,15 +734,17 @@ struct ContractDetailView: View {
                         || isPayingRecurringInstance
                 )
             }
-            // Pay CTA when approve/complete returned a real client_secret, or when
-            // the visit was auto-approved and the customer still needs to fund escrow.
+            // Pay CTA when approve/complete returned a real client_secret, or residual
+            // CreatePayment when approved/auto and not yet funded (gateway payment_funded).
             let pendingForInstance =
                 (pendingRecurringPay?.instance.id == instance.id) ? pendingRecurringPay : nil
-            let showPendingPay = isCustomer && (pendingForInstance?.hasPayCTA == true)
-            let showAutoApprovePay =
+            let showPendingPay =
                 isCustomer
-                && instance.autoApproved == true
-                && (instance.status ?? "").lowercased() == "completed"
+                && instance.paymentFunded != true
+                && (pendingForInstance?.hasPayCTA == true)
+            let showResidualPay =
+                isCustomer
+                && instance.isPayable
                 && pendingForInstance?.hasPayCTA != true
             if showPendingPay, let pending = pendingForInstance {
                 Button {
@@ -756,11 +767,9 @@ struct ContractDetailView: View {
                 .accessibilityHint(
                     "Confirms the PaymentIntent for this visit amount, then captures into escrow"
                 )
-            } else if showAutoApprovePay {
-                // Complete+auto-approve created status; PI may only live on provider
-                // complete response. Customer re-creates via POST /payments with
-                // recurring_instance_id (sticky create-payment key) — residual if a
-                // prior PI already exists under recurring-instance-pay:{id}.
+            } else if showResidualPay {
+                // Residual / soft-replay CreatePayment with recurring_instance_id
+                // (sticky create-payment key + UNIQUE instance on server).
                 Button {
                     Task { await payAutoApprovedRecurringVisit(instance, contract: contract) }
                 } label: {
@@ -779,7 +788,7 @@ struct ContractDetailView: View {
                 .tint(BrandTheme.goldBright)
                 .disabled(isPayingRecurringInstance || actingActionTitle != nil)
                 .accessibilityHint(
-                    "Creates a PaymentIntent for this auto-approved visit, confirms, then captures into escrow"
+                    "Creates or soft-replays a PaymentIntent for this visit, confirms, then captures into escrow"
                 )
             }
         }

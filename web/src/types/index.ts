@@ -602,6 +602,12 @@ export interface ContractRecurringInstance {
   completed_at?: string;
   /** Customer approve timestamp — durable hide-Approve across reloads. */
   approved_at?: string;
+  /** Linked payments.id when a visit PI exists (gateway enrichment). */
+  payment_id?: string;
+  /** payments.status when linked (pending, escrow, …). */
+  payment_status?: string;
+  /** True when payment is escrow/released/completed/processing — hide Pay. */
+  payment_funded?: boolean;
 }
 
 /**
