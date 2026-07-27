@@ -121,16 +121,38 @@ export function useUploadVerificationDocument() {
   });
 }
 
+/** Weekly Instant window — matches gateway PUT/GET schedule shape. */
+export interface AvailabilityWindowInput {
+  day: string;
+  start_time: string;
+  end_time: string;
+}
+
+/**
+ * PUT `/api/v1/providers/me/availability`.
+ * Wire body uses `enabled` / `available_now` / `schedule` (not the response field
+ * names). Empty `schedule` clears previously saved windows server-side — always
+ * re-send retained windows when toggling available-now.
+ */
 export function useSetAvailability() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { instant_enabled: boolean; instant_available: boolean }) =>
+    mutationFn: (input: {
+      enabled: boolean;
+      available_now: boolean;
+      schedule?: AvailabilityWindowInput[];
+    }) =>
       api
         .put<{
           instant_enabled: boolean;
           instant_available: boolean;
-        }>('/api/v1/providers/me/availability', input)
+          schedule?: AvailabilityWindowInput[];
+        }>('/api/v1/providers/me/availability', {
+          enabled: input.enabled,
+          available_now: input.available_now,
+          schedule: input.schedule ?? [],
+        })
         .then((res) => res),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['providerProfile'] });

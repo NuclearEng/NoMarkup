@@ -2,6 +2,7 @@
 
 import { CheckCircle2, Clock, XCircle, Zap } from 'lucide-react';
 
+import { InstantAvailabilityCard } from '@/components/providers/InstantAvailabilityCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -144,6 +145,8 @@ export default function ProviderOffersPage() {
           </p>
         </div>
       </div>
+
+      <InstantAvailabilityCard />
 
       {isLoading ? (
         <OffersSkeleton />

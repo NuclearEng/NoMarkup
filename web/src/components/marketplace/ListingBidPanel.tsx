@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, ShieldCheck, Zap } from 'lucide-react';
+import { Loader2, ShieldCheck, Undo2, Zap } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
@@ -9,6 +9,7 @@ import { BidBondPrompt } from '@/components/compliance/BidBondPrompt';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { LISTING_BID_RETRACT_WINDOW_MS } from '@/lib/listing-bid-retract';
 import { cn, formatCents } from '@/lib/utils';
 
 interface ListingBidPanelProps {
@@ -53,6 +54,14 @@ interface ListingBidPanelProps {
    * `amountCents` with no autobid headroom.
    */
   onPlaceBid: (amountCents: number, maxBidCents?: number) => void;
+  /**
+   * eBay-style 60s retract for the caller's current high bid (detail parity
+   * with My Bids). When set with `onRetractBid`, a Retract control is shown
+   * while the server window remains open.
+   */
+  retractableBid?: { bidId: string; createdAt: string } | null;
+  isRetracting?: boolean;
+  onRetractBid?: () => void;
   className?: string;
 }
 
@@ -76,6 +85,9 @@ export function ListingBidPanel({
   bidBondRequirement,
   onBidBondAuthorized,
   onPlaceBid,
+  retractableBid,
+  isRetracting = false,
+  onRetractBid,
   className,
 }: ListingBidPanelProps) {
   const minBidCents = useMemo(
@@ -89,6 +101,36 @@ export function ListingBidPanel({
   // the visible bid — see the merging logic below.
   const [maxDollars, setMaxDollars] = useState<number>(minBidCents / 100);
   const [error, setError] = useState<string | null>(null);
+
+  // Tick while a retract window may still be open (matches MyListingBidCard).
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  useEffect(() => {
+    if (!retractableBid || !isUserWinning || isAuctionExpired) {
+      setNowMs(null);
+      return;
+    }
+    setNowMs(Date.now());
+    const id = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 250);
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [retractableBid, isUserWinning, isAuctionExpired]);
+
+  const retractRemainingMs = useMemo(() => {
+    if (!retractableBid || nowMs === null) return 0;
+    const created = Date.parse(retractableBid.createdAt);
+    if (!Number.isFinite(created)) return 0;
+    return Math.max(0, created + LISTING_BID_RETRACT_WINDOW_MS - nowMs);
+  }, [retractableBid, nowMs]);
+  const canRetract =
+    Boolean(retractableBid) &&
+    isUserWinning &&
+    !isAuctionExpired &&
+    retractRemainingMs > 0 &&
+    typeof onRetractBid === 'function';
+  const retractRemainingSec = Math.ceil(retractRemainingMs / 1000);
 
   // Pulse highlight + snipe banner are visible for LIVE_BID_HIGHLIGHT_MS after
   // a fresh bid_event arrives via the spectator socket.
@@ -277,6 +319,32 @@ export function ListingBidPanel({
           <Zap className="h-3.5 w-3.5 text-bid-winning" aria-hidden="true" />
           <span>Auto-bidding active up to {formatCents(userMaxBidCents)}</span>
         </div>
+      ) : null}
+
+      {canRetract ? (
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-[44px] w-full gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
+          disabled={isRetracting || isSubmitting}
+          onClick={() => {
+            onRetractBid?.();
+          }}
+          aria-label={`Retract bid (${String(retractRemainingSec)} seconds remaining)`}
+          data-testid="listing-retract-bid"
+        >
+          {isRetracting ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              Retracting…
+            </>
+          ) : (
+            <>
+              <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Retract bid ({String(retractRemainingSec)}s)
+            </>
+          )}
+        </Button>
       ) : null}
 
       <div className="space-y-2">

@@ -29,6 +29,7 @@ import {
   useListing,
   useListingBids,
   usePlaceListingBid,
+  useRetractListingBid,
 } from '@/hooks/useListings';
 import { useMarketplaceSpectator } from '@/hooks/useMarketplaceSpectator';
 import { useRecordRecentView } from '@/hooks/useRecentlyViewed';
@@ -52,6 +53,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
   });
   const { data: bidHistory } = useListingBids(listingId);
   const placeBid = usePlaceListingBid();
+  const retractBid = useRetractListingBid();
   const { isExpired } = useCountdown(listing?.auction_ends_at);
 
   // Bid-bond pre-auth: when the gateway returns 402 with a
@@ -432,7 +434,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
           {/* Buy It Now — fixed-price closeout (only when seller set a BIN) */}
           <BuyItNowButton listing={listing} />
 
-          {/* Bid panel */}
+          {/* Bid panel — includes eBay-style 60s retract when viewer is high bidder */}
           <ListingBidPanel
             currentBidCents={listing.current_bid_cents}
             minIncrementCents={listing.min_increment_cents}
@@ -445,6 +447,26 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
             lastLiveBidExtended={lastBid?.snipe_extension ?? false}
             listingId={listingId}
             bidBondRequirement={bidBondReq}
+            retractableBid={
+              listing.is_user_winning && user?.id
+                ? (() => {
+                    const mine = (bidHistory?.bids ?? []).find(
+                      (b) => b.is_winning && b.bidder_id === user.id,
+                    );
+                    return mine
+                      ? { bidId: mine.id, createdAt: mine.created_at }
+                      : null;
+                  })()
+                : null
+            }
+            isRetracting={retractBid.isPending}
+            onRetractBid={() => {
+              const mine = (bidHistory?.bids ?? []).find(
+                (b) => b.is_winning && b.bidder_id === user?.id,
+              );
+              if (!mine) return;
+              retractBid.mutate({ listingId, bidId: mine.id });
+            }}
             onBidBondAuthorized={() => {
               if (pendingBid) {
                 placeBid.mutate({

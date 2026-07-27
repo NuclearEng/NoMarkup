@@ -30,8 +30,11 @@ type PaymentHandler struct {
 	// db backs the instant-payout ledger (instant_payouts). Other gateway
 	// handlers query Postgres directly via pgxpool; we follow that pattern
 	// rather than adding a new gRPC RPC. May be nil in unit tests that don't
-	// exercise the ledger path.
+	// exercise the ledger path. Also resets FR-16.7 partial
+	// recurring_configs.payment_retry_count (migration 112) after visit capture.
 	db *pgxpool.Pool
+	// resetPaymentRetryFn overrides SQL reset for unit tests (nil in production).
+	resetPaymentRetryFn func(ctx context.Context, recurringID string) error
 }
 
 // NewPaymentHandler creates a new PaymentHandler. db is the gateway's shared
@@ -357,7 +360,8 @@ type processPaymentRequest struct {
 // visit (recurring_instance_id set), FR-18.8 best-effort resumes a paused
 // recurring config so visits generate again after the customer pays. Resume
 // failures never fail the payment response (fail-soft residual fields only).
-// Off-session auto-charge + FR-16.7 retry schedule remain residual.
+// Off-session auto-charge + FR-16.7 day-0/3/7 scheduled retries remain residual;
+// consecutive CreatePayment failure counting (pause at 3) is wired on approve.
 func (h *PaymentHandler) ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -394,10 +398,13 @@ func (h *PaymentHandler) ProcessPayment(w http.ResponseWriter, r *http.Request) 
 
 // resumeRecurringAfterPaymentSuccess implements FR-18.8 resume half: when a
 // visit payment captures successfully, resume the contract's recurring config
-// if it is paused (typically after CreatePayment failure paused it). Always
-// resume when status=paused — there is no pause_reason column. Fail-soft:
-// lookup/resume errors only add residual fields; payment JSON already stands.
-// No-ops for non-recurring payments and when the config is not paused.
+// if it is paused (typically after CreatePayment failures reached the FR-16.7
+// partial threshold of 3). Always resume when status=paused — there is no
+// pause_reason column. Also clears payment_retry_count (migration 112) so the
+// next failure series starts clean. Fail-soft: lookup/resume/reset errors only
+// add residual fields; payment JSON already stands. No-ops for non-recurring
+// payments and when the config is not paused (reset still attempted when we
+// have a recurring_id).
 func (h *PaymentHandler) resumeRecurringAfterPaymentSuccess(
 	ctx context.Context,
 	result map[string]interface{},
@@ -482,6 +489,9 @@ func (h *PaymentHandler) resumeRecurringAfterPaymentSuccess(
 	}
 
 	result["recurring_id"] = cfg.GetId()
+	// FR-16.7 partial: clear strike count whenever visit money succeeds.
+	h.resetPaymentRetryAfterVisitPay(ctx, result, cfg.GetId(), payment.GetId(), instanceID)
+
 	status := cfg.GetStatus()
 	if status == "active" {
 		// Already generating visits — surface status; no Resume RPC.
@@ -542,6 +552,40 @@ func (h *PaymentHandler) resumeRecurringAfterPaymentSuccess(
 		"recurring_id", cfg.GetId(),
 		"customer_id", customerID,
 	)
+}
+
+// resetPaymentRetryAfterVisitPay clears FR-16.7 partial payment_retry_count.
+// Fail-soft residual only — never fails ProcessPayment.
+func (h *PaymentHandler) resetPaymentRetryAfterVisitPay(
+	ctx context.Context,
+	result map[string]interface{},
+	recurringID, paymentID, instanceID string,
+) {
+	if recurringID == "" {
+		return
+	}
+	var err error
+	if h.resetPaymentRetryFn != nil {
+		err = h.resetPaymentRetryFn(ctx, recurringID)
+	} else {
+		err = resetRecurringPaymentRetryCount(ctx, h.db, recurringID)
+	}
+	if err != nil {
+		// db unwired in unit tests is expected — only residual when production
+		// SQL fails (or explicit test hook errors).
+		if errors.Is(err, errPaymentRetryDBUnwired) {
+			return
+		}
+		slog.WarnContext(ctx, "FR-16.7: payment_retry_count reset failed after visit pay (payment kept)",
+			"payment_id", paymentID,
+			"instance_id", instanceID,
+			"recurring_id", recurringID,
+			"error", err,
+		)
+		result["payment_retry_reset_residual"] = "reset_failed"
+		return
+	}
+	result["payment_retry_count"] = 0
 }
 
 // ListPayments handles GET /api/v1/payments.

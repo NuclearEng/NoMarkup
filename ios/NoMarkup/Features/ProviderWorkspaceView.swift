@@ -21,8 +21,7 @@ struct ProviderWorkspaceView: View {
     @State private var bio = ""
     @State private var instantAvailable = false
     /// Local weekly Instant windows (`day` = mon…sun, times = HH:MM).
-    /// Residual: GET `/providers/me` does not return `instant_schedule`, so this
-    /// cannot be hydrated from the server after cold start / reinstall.
+    /// Hydrated from GET `/providers/me` → `schedule` (owner-only).
     @State private var scheduleDays: [ProviderScheduleDayDraft] = ProviderScheduleDayDraft.blankWeek()
     @State private var paymentTiming = "completion"
     @State private var cancellationPolicy = ""
@@ -243,7 +242,7 @@ struct ProviderWorkspaceView: View {
             } header: {
                 Text("Weekly schedule").brandSectionHeader()
             } footer: {
-                Text("Optional day windows (local time, HH:MM) sent with Instant availability. Available now still works without a schedule. Saved windows are not returned by the API yet — re-enter them after reinstall.")
+                Text("Optional day windows (local time, HH:MM) sent with Instant availability. Available now still works without a schedule. Saved windows load from your profile on open.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -618,6 +617,11 @@ struct ProviderWorkspaceView: View {
             let u = (img.imageUrl ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return u.isEmpty ? nil : u
         }
+        // GET `/providers/me` includes `schedule`; PATCH/terms omit it — only
+        // hydrate when the key was present so local editor state is not wiped.
+        if let schedule = p.schedule {
+            scheduleDays = ProviderScheduleDayDraft.apply(windows: schedule)
+        }
     }
 
     @MainActor
@@ -735,6 +739,8 @@ struct ProviderWorkspaceView: View {
             if var p = profile {
                 p.instantEnabled = response.instantEnabled ?? (enabled || value)
                 p.instantAvailable = response.instantAvailable ?? value
+                // PUT does not echo schedule; keep the windows we just sent.
+                p.schedule = windows
                 profile = p
             }
             instantAvailable = response.instantAvailable ?? value
@@ -783,6 +789,8 @@ struct ProviderWorkspaceView: View {
             if var p = profile {
                 p.instantEnabled = response.instantEnabled ?? enabled
                 p.instantAvailable = response.instantAvailable ?? instantAvailable
+                // PUT does not echo schedule; keep the windows we just sent.
+                p.schedule = windows
                 profile = p
             }
             instantAvailable = response.instantAvailable ?? instantAvailable
@@ -851,8 +859,43 @@ struct ProviderScheduleDayDraft: Identifiable, Hashable, Sendable {
         }
     }
 
+    /// Hydrates the weekly editor from GET `/providers/me` → `schedule`.
+    /// Unknown day codes are ignored; unparseable times keep day defaults.
+    static func apply(windows: [ProviderAvailabilityWindow]) -> [ProviderScheduleDayDraft] {
+        var week = blankWeek()
+        for window in windows {
+            let code = window.day.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard let idx = week.firstIndex(where: { $0.dayCode == code }) else { continue }
+            guard let start = parseTime(window.startTime),
+                  let end = parseTime(window.endTime)
+            else { continue }
+            // Skip inverted ranges rather than enabling a broken row.
+            guard formatTime(start) < formatTime(end) else { continue }
+            week[idx].isEnabled = true
+            week[idx].startTime = start
+            week[idx].endTime = end
+        }
+        return week
+    }
+
     static func formatTime(_ date: Date) -> String {
         timeFormatter.string(from: date)
+    }
+
+    static func parseTime(_ raw: String) -> Date? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        // Prefer Calendar over DateFormatter so "HH:MM" alone is unambiguous.
+        let parts = trimmed.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count >= 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1].prefix(2)),
+              (0 ... 23).contains(hour),
+              (0 ... 59).contains(minute)
+        else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: Date())
     }
 
     private static func defaultStartEnd() -> (start: Date, end: Date) {

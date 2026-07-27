@@ -198,6 +198,13 @@ export interface PortfolioImage {
   sort_order: number;
 }
 
+/** Instant weekly window from GET/PUT `/providers/me` (`day` = mon…sun, times HH:MM). */
+export interface ProviderAvailabilityWindow {
+  day: string;
+  start_time: string;
+  end_time: string;
+}
+
 export interface ProviderProfile {
   id: string;
   user_id: string;
@@ -212,6 +219,12 @@ export interface ProviderProfile {
   warranty_terms: string | null;
   instant_enabled: boolean;
   instant_available: boolean;
+  /**
+   * Owner GET only (`GET /providers/me`). Weekly Instant windows from SQL
+   * `instant_schedule`. Empty array when none / DB unavailable. Never on
+   * public provider profiles.
+   */
+  schedule?: ProviderAvailabilityWindow[];
   jobs_completed: number;
   avg_response_time_minutes: number | null;
   on_time_rate: number | null;

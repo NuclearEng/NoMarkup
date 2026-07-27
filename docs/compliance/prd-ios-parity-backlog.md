@@ -92,8 +92,9 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 
 - Auth: email/password + SIWA + MFA hooks; Keychain JWT  
 - Jobs: browse/map, post (subset), drafts, bid/award/close/cancel, live auction poll  
-- Goods: marketplace, sell, orders, Apple Pay Rail A (env-dependent)  
-- Contracts: accept/start/complete/approve, milestones, change orders, tip, dispute, no-show, abandonment, documents + leave review  
+- Goods: marketplace, sell, orders, Apple Pay Rail A (env-dependent); bid retract (detail + MyBids, 60s)  
+- Contracts: accept/start/complete/approve, milestones, change orders, tip, dispute, no-show, abandonment, documents + leave review + **local_terms card (FR-5.4)**  
+- Instant: customer emergency CTA + provider offers; provider weekly schedule (GET hydrate + PUT)  
 - Trust: score/tiers; verification doc upload  
 - Account: properties, messages (REST poll), notifications + APNs register, Stripe Connect, business/finance hub  
 - Growth: referrals, savings, NPS  
@@ -104,7 +105,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 |------|-----|-----|
 | Chat | FR-8 | Poll + attachments/search shipped; native WS/typing/receipts residual |
 | Recurring | FR-18 | Lifecycle + roll-forward live; **Stripe per-instance pay residual** |
-| Instant | §13 | iOS Instant + web post + **web JobDetail re-request** shipped; push/ETA/AI match Phase 2 |
+| Instant | §13 | iOS + web Instant schedule GET/PUT shipped; JobDetail re-request; push/ETA/AI + **schedule consume on match fan-out** residual |
 | Digital subs | FR-12 | Read-only tiers; StoreKit deferred |
 | Social OAuth | FR-1.1 | **Google native shipped** (ASWebAuth+PKCE → `/auth/google/native`); needs `GOOGLE_IOS_CLIENT_ID` + reverse URL scheme for dogfood. Facebook still not on iOS |
 | Admin / fraud UI | FR-7/13 | Correctly **web-only** |
@@ -118,7 +119,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 **Consumer iOS product surface for PRD MVP depth is largely implemented.** Remaining unchecked items are:
 1. **Human/ops-gated** (ASC, device smoke sign-off, always-on review API, Apple Pay domain file, Google iOS client IDs in Console)
 2. **Accepted risk / licenses** (MON-14–18, R6.2–R6.6, Checkr, mTLS, StoreKit B2)
-3. **Thin polish residuals** (off-session auto-charge; FR-16.7 day 0/3/7 retries; GET availability schedule; Instant match consume schedule)
+3. **Thin polish residuals** (off-session auto-charge; FR-16.7 day-0/3/7 **scheduled** charge retries; Instant match **consume** schedule when fan-out exists)
 
 
 
@@ -134,6 +135,11 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 - [~] **ops** **PRE-05 review backend** — Always-on review API + seed + `APPLE_NATIVE_CLIENT_ID` + Stripe `pk_` for Apple Pay dogfood  
 - [~] **ops** **Device smoke** — Human-execute `device-smoke-checklist.md` + sign `launch-board.md` (auto smoke ≠ signed)  
 - [~] **FR-18 recurring** — Config/instances/pause/resume/cancel + lazy roll-forward on list **+ tests**; **Stripe per-instance pay still residual** (leave open; not a quick close)  
+- [x] **GET Instant schedule** — Owner GET `/providers/me` returns `schedule`; iOS + web hydrate weekly editor  
+- [x] **Web Instant schedule PUT** — Correct wire keys (`enabled`/`available_now`/`schedule`) + UI on provider dashboard/offers  
+- [x] **Marketplace retract parity** — Web listing detail + My Bids (iOS both); 60s leading-bid window  
+- [~] **FR-16.7 setup-failure strikes** — Migration 112 + 3-strike pause on CreatePayment fail (**day-0/3/7 scheduled charge retries + off-session auto-charge still residual**)  
+
 - [x] **FR-1.5–1.9 onboarding** — VerificationCenter + multi-step OnboardingWizardView (skip-friendly) shipped  
 - [x] **FR-3 job form + repost** — Full job form (recurrence, offer-accepted, schedule, property) + repost UX  
 - [x] **FR-4 bid advanced** — Lower bid, accept-offer, sort/filter bids on iOS  
@@ -226,3 +232,4 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | 2026-07-27 wave9 | UNIQUE payment-per-instance (111) + soft-replay; FR-18.8 pause on pay fail; award stamps accept metadata; web retract + local_terms card |
 
 | 2026-07-27 wave10 | Resume recurring on ProcessPayment; webhook payment_failed→pause; Instant weekly schedule iOS; local_terms + goods retract on MyBids |
+| 2026-07-27 wave11 | GET `/providers/me` `schedule` + iOS hydrate; web Instant schedule PUT+UI; listing detail retract; FR-16.7 setup-failure 3-strike pause (migration 112); contract local_terms verified on iOS |

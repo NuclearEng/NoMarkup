@@ -2,12 +2,16 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
@@ -96,9 +100,17 @@ func (h *ProviderHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := protoProviderToJSON(resp.GetProfile())
+	if result == nil {
+		writeError(w, http.StatusInternalServerError, "empty provider profile")
+		return
+	}
 	if label := h.getResponseTimeLabel(r.Context(), claims.UserID); label != nil {
 		result["response_time_label"] = *label
 	}
+	// Instant weekly windows live only in SQL (provider_profiles.instant_schedule);
+	// ProviderProfile proto has no schedule field. Enrich owner GET only so iOS
+	// can hydrate the weekly editor — never attach schedule to public profiles.
+	result["schedule"] = h.getInstantSchedule(r.Context(), claims.UserID)
 
 	writeJSON(w, http.StatusOK, result)
 }
@@ -286,9 +298,31 @@ func (h *ProviderHandler) SetAvailability(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Echo schedule from the accepted body (same shape as GET /providers/me).
+	// Prefer a post-write DB read when wired so clients see the durable value;
+	// fall back to the request windows when DB is nil (tests / degrade).
+	echoSchedule := h.getInstantSchedule(r.Context(), claims.UserID)
+	if len(echoSchedule) == 0 && len(req.Schedule) > 0 {
+		echoSchedule = make([]map[string]interface{}, 0, len(req.Schedule))
+		for _, s := range req.Schedule {
+			day := strings.ToLower(strings.TrimSpace(s.Day))
+			start := strings.TrimSpace(s.StartTime)
+			end := strings.TrimSpace(s.EndTime)
+			if day == "" || start == "" || end == "" {
+				continue
+			}
+			echoSchedule = append(echoSchedule, map[string]interface{}{
+				"day":        day,
+				"start_time": start,
+				"end_time":   end,
+			})
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"instant_enabled":   resp.GetInstantEnabled(),
 		"instant_available": resp.GetInstantAvailable(),
+		"schedule":          echoSchedule,
 	})
 }
 
@@ -631,6 +665,74 @@ func (h *ProviderHandler) SearchProviders(w http.ResponseWriter, r *http.Request
 	// Public provider directory, keyed by query at the edge. 60s CDN TTL +
 	// 5m SWR. No auth, no per-user data.
 	writeCachedJSON(w, r, http.StatusOK, result, 60, 300)
+}
+
+// getInstantSchedule loads provider_profiles.instant_schedule for the
+// authenticated owner. Returns an empty slice (never nil) so JSON always
+// emits `"schedule": []` when missing/unavailable — clients can distinguish
+// "no windows" from a missing key after PATCH responses that omit schedule.
+// Fail-soft: nil DB, missing row, or corrupt JSON all yield [].
+//
+// Security: call only from GetMe (RequireProvider + claims.UserID). Do not
+// attach this to public GET /providers/{id}.
+func (h *ProviderHandler) getInstantSchedule(ctx context.Context, userID string) []map[string]interface{} {
+	empty := make([]map[string]interface{}, 0)
+	if h.db == nil || userID == "" {
+		return empty
+	}
+
+	var raw []byte
+	err := h.db.QueryRow(ctx, `
+		SELECT instant_schedule
+		FROM provider_profiles
+		WHERE user_id = $1
+	`, userID).Scan(&raw)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("failed to query provider instant_schedule",
+				"user_id", userID,
+				"error", err,
+			)
+		}
+		return empty
+	}
+	return parseInstantScheduleJSON(raw)
+}
+
+// parseInstantScheduleJSON normalizes DB JSONB (written by SetInstantAvailability
+// via json.Marshal of AvailabilityWindow protos: day/start_time/end_time) into
+// the same shape as PUT /providers/me/availability's schedule body.
+func parseInstantScheduleJSON(raw []byte) []map[string]interface{} {
+	empty := make([]map[string]interface{}, 0)
+	if len(raw) == 0 {
+		return empty
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return empty
+	}
+
+	var windows []availabilityWindowReq
+	if err := json.Unmarshal(raw, &windows); err != nil {
+		slog.Warn("provider instant_schedule JSON unreadable", "error", err)
+		return empty
+	}
+
+	out := make([]map[string]interface{}, 0, len(windows))
+	for _, w := range windows {
+		day := strings.ToLower(strings.TrimSpace(w.Day))
+		start := strings.TrimSpace(w.StartTime)
+		end := strings.TrimSpace(w.EndTime)
+		if day == "" || start == "" || end == "" {
+			continue
+		}
+		out = append(out, map[string]interface{}{
+			"day":        day,
+			"start_time": start,
+			"end_time":   end,
+		})
+	}
+	return out
 }
 
 // getResponseTimeLabel calculates the average first-response time for a

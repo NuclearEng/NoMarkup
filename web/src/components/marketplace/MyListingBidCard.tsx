@@ -10,12 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { ProgressiveImage } from '@/components/ui/ProgressiveImage';
 import { useRetractListingBid } from '@/hooks/useListings';
+import { LISTING_BID_RETRACT_WINDOW_MS } from '@/lib/listing-bid-retract';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { LISTING_STATUS } from '@/types';
 import type { MyListingBid } from '@/types';
 
-/** Matches gateway listingRetractWindow (60s). */
-export const LISTING_BID_RETRACT_WINDOW_MS = 60_000;
+export { LISTING_BID_RETRACT_WINDOW_MS };
 
 interface MyListingBidCardProps {
   entry: MyListingBid;

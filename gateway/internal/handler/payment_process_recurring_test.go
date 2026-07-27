@@ -115,13 +115,20 @@ func newProcessPaymentHTTPRequest(t *testing.T, paymentID, customerID string) *h
 }
 
 // TestProcessPayment_resumePausedRecurring: capture success with
-// recurring_instance_id resumes paused config as the payment customer.
+// recurring_instance_id resumes paused config as the payment customer and
+// clears FR-16.7 partial payment_retry_count.
 func TestProcessPayment_resumePausedRecurring(t *testing.T) {
 	t.Parallel()
 	pc := &mockProcessPaymentClient{}
 	cc := &mockProcessContractClient{}
 	h := NewPaymentHandler(pc, nil)
 	h.SetContractClient(cc)
+	var resetN int
+	h.resetPaymentRetryFn = func(_ context.Context, recurringID string) error {
+		resetN++
+		assert.Equal(t, testProcessRecurring, recurringID)
+		return nil
+	}
 
 	rec := httptest.NewRecorder()
 	processPaymentRouter(h).ServeHTTP(rec, newProcessPaymentHTTPRequest(t, testProcessPaymentID, testProcessCustomerID))
@@ -135,12 +142,14 @@ func TestProcessPayment_resumePausedRecurring(t *testing.T) {
 	assert.Equal(t, true, body["recurring_resumed"])
 	assert.Equal(t, "active", body["recurring_status"])
 	assert.Equal(t, testProcessRecurring, body["recurring_id"])
+	assert.Equal(t, float64(0), body["payment_retry_count"])
 	_, hasResumeResidual := body["recurring_resume_residual"]
 	assert.False(t, hasResumeResidual)
 
 	require.Equal(t, 1, pc.processN)
 	require.Equal(t, 1, cc.getRecurringN)
 	require.Equal(t, 1, cc.resumeN)
+	assert.Equal(t, 1, resetN, "FR-16.7: visit pay must reset payment_retry_count")
 	assert.Equal(t, testProcessContractID, cc.lastGetRecurring.GetContractId())
 	assert.Equal(t, testProcessRecurring, cc.lastResumeReq.GetRecurringId())
 	assert.Equal(t, testProcessCustomerID, cc.lastResumeReq.GetUserId(), "resume as payment customer, not claims actor")

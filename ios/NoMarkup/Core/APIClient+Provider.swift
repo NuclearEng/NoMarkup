@@ -97,8 +97,9 @@ extension APIClient {
     /// Body: `{ enabled, available_now, schedule: [{ day, start_time, end_time }] }`.
     /// Day codes: `mon`…`sun`; times: `HH:MM`. Empty `schedule` writes SQL null and
     /// **clears** any previously saved windows — always re-send retained windows.
-    /// Response: `{ "instant_enabled", "instant_available" }` (schedule not echoed).
-    /// Role: gateway `RequireProvider`. There is no GET for schedule today.
+    /// Response: `{ "instant_enabled", "instant_available", "schedule" }`.
+    /// Role: gateway `RequireProvider`. Hydrate saved windows from `GET /providers/me`
+    /// (`schedule` array, owner-only gateway enrichment).
     @discardableResult
     func setMyProviderAvailability(
         enabled: Bool,
@@ -378,6 +379,10 @@ extension APIClient {
 // MARK: - Models (provider me)
 
 /// `GET|PATCH /api/v1/providers/me` (and terms response) profile shape.
+///
+/// `schedule` is owner-only gateway enrichment on **GET** `/providers/me`
+/// (from `provider_profiles.instant_schedule`). PATCH/terms responses omit it
+/// — treat nil as "unchanged", empty array as "no windows saved".
 struct ProviderMeProfile: Codable, Sendable, Hashable, Identifiable {
     var id: String
     var userId: String?
@@ -390,6 +395,9 @@ struct ProviderMeProfile: Codable, Sendable, Hashable, Identifiable {
     var warrantyTerms: String?
     var instantEnabled: Bool?
     var instantAvailable: Bool?
+    /// Owner GET only — weekly Instant windows (`day` mon…sun, times HH:MM)
+    /// from SQL `instant_schedule`. Nil on PATCH/terms responses.
+    var schedule: [ProviderAvailabilityWindow]?
     var jobsCompleted: Int?
     var avgResponseTimeMinutes: Double?
     var onTimeRate: Double?
@@ -414,6 +422,7 @@ struct ProviderMeProfile: Codable, Sendable, Hashable, Identifiable {
         case warrantyTerms
         case instantEnabled
         case instantAvailable
+        case schedule
         case jobsCompleted
         case avgResponseTimeMinutes
         case onTimeRate
@@ -445,6 +454,7 @@ struct ProviderMeProfile: Codable, Sendable, Hashable, Identifiable {
         warrantyTerms = try c.decodeIfPresent(String.self, forKey: .warrantyTerms)
         instantEnabled = try c.decodeIfPresent(Bool.self, forKey: .instantEnabled)
         instantAvailable = try c.decodeIfPresent(Bool.self, forKey: .instantAvailable)
+        schedule = try c.decodeIfPresent([ProviderAvailabilityWindow].self, forKey: .schedule)
         jobsCompleted = Self.decodeFlexibleInt(c, forKey: .jobsCompleted)
         avgResponseTimeMinutes = try c.decodeIfPresent(Double.self, forKey: .avgResponseTimeMinutes)
         onTimeRate = try c.decodeIfPresent(Double.self, forKey: .onTimeRate)
@@ -650,6 +660,8 @@ struct ProviderCategoriesResponse: Codable, Sendable {
 struct ProviderAvailabilityResponse: Codable, Sendable, Hashable {
     var instantEnabled: Bool?
     var instantAvailable: Bool?
+    /// Echoed from PUT body / post-write read (same shape as GET `/providers/me`).
+    var schedule: [ProviderAvailabilityWindow]?
 }
 
 // MARK: - Instant match offer models
@@ -716,12 +728,18 @@ struct ProviderInstantOfferActionResponse: Codable, Sendable, Hashable {
     }
 }
 
-/// Weekly Instant window for `PUT /providers/me/availability`.
+/// Weekly Instant window for `PUT|GET /providers/me` availability schedule.
 /// `day`: mon|tue|wed|thu|fri|sat|sun · `startTime`/`endTime`: `HH:MM` (local).
 struct ProviderAvailabilityWindow: Codable, Sendable, Hashable {
     var day: String
     var startTime: String
     var endTime: String
+
+    enum CodingKeys: String, CodingKey {
+        case day
+        case startTime
+        case endTime
+    }
 
     init(day: String, startTime: String, endTime: String) {
         self.day = day

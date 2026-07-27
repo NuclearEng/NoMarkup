@@ -249,19 +249,32 @@ describe('useSetAvailability', () => {
     client.clear();
   });
 
-  it('puts the availability flags + invalidates', async () => {
-    vi.mocked(api.put).mockResolvedValueOnce({ instant_enabled: true, instant_available: false });
+  it('puts enabled/available_now/schedule wire fields + invalidates', async () => {
+    vi.mocked(api.put).mockResolvedValueOnce({
+      instant_enabled: true,
+      instant_available: false,
+      schedule: [{ day: 'mon', start_time: '09:00', end_time: '17:00' }],
+    });
     const spy = vi.spyOn(client, 'invalidateQueries');
 
     const { result } = renderHook(() => useSetAvailability(), { wrapper: wrap(client) });
-    const input = { instant_enabled: true, instant_available: false };
+    const input = {
+      enabled: true,
+      available_now: false,
+      schedule: [{ day: 'mon', start_time: '09:00', end_time: '17:00' }],
+    };
     result.current.mutate(input);
     await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(vi.mocked(api.put)).toHaveBeenCalledWith('/api/v1/providers/me/availability', input);
+    expect(vi.mocked(api.put)).toHaveBeenCalledWith('/api/v1/providers/me/availability', {
+      enabled: true,
+      available_now: false,
+      schedule: [{ day: 'mon', start_time: '09:00', end_time: '17:00' }],
+    });
     expect(result.current.data?.instant_enabled).toBe(true);
+    expect(result.current.data?.schedule?.[0]?.day).toBe('mon');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['providerProfile'] });
   });
 });

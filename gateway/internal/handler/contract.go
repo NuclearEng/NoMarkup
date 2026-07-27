@@ -31,11 +31,17 @@ type ContractHandler struct {
 	// carried by the contract proto/domain (e.g. tip_amount_cents, added by the
 	// Wave 5 services-polish tip feature without a proto regen). It may be nil
 	// in tests; the tip enrichment degrades to absent rather than erroring.
+	// Also backs FR-16.7 partial payment_retry_count on recurring_configs
+	// (migration 112) without a proto regen.
 	db *pgxpool.Pool
 	// paymentClient creates a real Stripe PaymentIntent for recurring-instance
 	// approve (FR-18 residual). Optional: nil → approve still succeeds with
 	// status/timestamps only — never invent a payment_id or client_secret.
 	paymentClient paymentv1.PaymentServiceClient
+	// incrPaymentRetryFn / resetPaymentRetryFn override the SQL helpers for
+	// unit tests (production leaves them nil and uses h.db).
+	incrPaymentRetryFn  func(ctx context.Context, recurringID string) (int, error)
+	resetPaymentRetryFn func(ctx context.Context, recurringID string) error
 }
 
 // NewContractHandler creates a new ContractHandler.
@@ -1369,12 +1375,14 @@ func (h *ContractHandler) resolveContractCustomerID(ctx context.Context, contrac
 // customer (payment service enforces ownership). Sticky idempotency key
 // recurring-instance-pay:{instanceID} dedupes approve + auto-approve complete.
 //
-// On CreatePayment failure, FR-18.8 partial: best-effort PauseRecurring
-// (contract stays intact; config pauses only). Charge-failure pause after Stripe
-// payment_intent.payment_failed is owned by the payment service (job mesh
-// PauseRecurring). Resume on successful visit pay lives on
-// PaymentHandler.ProcessPayment (same FR-18.8). Residual: automatic off-session
-// charge + FR-16.7 day-0/3/7 retries (not wired); webhook-only capture without
+// On CreatePayment failure, FR-16.7 partial + FR-18.8: increment
+// recurring_configs.payment_retry_count (migration 112) and only PauseRecurring
+// when count >= 3 (contract stays intact; config pauses only). Charge-failure
+// pause after Stripe payment_intent.payment_failed is owned by the payment
+// service (still immediate pause — day-0/3/7 charge retries residual). Resume
+// on successful visit pay lives on PaymentHandler.ProcessPayment (FR-18.8) and
+// resets the retry counter. Residual: automatic off-session charge + FR-16.7
+// day-0/3/7 scheduled retries (not wired); webhook-only capture without
 // ProcessPayment does not resume (services use manual capture +
 // POST /payments/{id}/process).
 func (h *ContractHandler) attachRecurringInstancePayment(
@@ -1443,8 +1451,8 @@ func (h *ContractHandler) attachRecurringInstancePayment(
 			return
 		} else {
 			// Status already committed — surface residual, never fake a payment.
-			// FR-18.8 partial: pause recurrence fail-soft (never cancel the contract).
-			slog.WarnContext(ctx, "recurring instance: CreatePayment failed (status kept; pausing recurrence FR-18.8)",
+			// FR-16.7 partial: count setup failures; pause only at threshold.
+			slog.WarnContext(ctx, "recurring instance: CreatePayment failed (status kept; FR-16.7 retry count)",
 				"source", source,
 				"instance_id", instanceID,
 				"contract_id", contractID,
@@ -1454,12 +1462,12 @@ func (h *ContractHandler) attachRecurringInstancePayment(
 			result["payment_residual"] = "create_payment_failed"
 			result["payment_error"] = "Could not create escrow PaymentIntent for this visit. Visit is approved; pay via POST /payments with recurring_instance_id when ready."
 			// Honest residual: this path mints an on-session PI only. Automatic
-			// off-session charge + FR-16.7 day-0/3/7 retries are not wired
-			// (FR-18.8 full path residual). Customer pays via POST /payments
-			// + PaymentSheet + POST /payments/{id}/process — resume-on-success
-			// is wired on ProcessPayment when status was paused.
+			// off-session charge + FR-16.7 day-0/3/7 scheduled retries are not
+			// wired. Customer pays via POST /payments + PaymentSheet +
+			// POST /payments/{id}/process — resume-on-success is wired on
+			// ProcessPayment when status was paused after the 3rd failure.
 			result["off_session_charge_residual"] = "not_wired"
-			h.pauseRecurringAfterPaymentFailure(ctx, result, contractID, instanceID, customerID, source)
+			h.recordRecurringPaymentSetupFailure(ctx, result, contractID, instanceID, customerID, source)
 			return
 		}
 	}
@@ -1476,6 +1484,8 @@ func (h *ContractHandler) attachRecurringInstancePayment(
 		// Honest residual — never invent a secret.
 		result["payment_residual"] = "client_secret_missing"
 	}
+	// Successful visit PI setup clears FR-16.7 partial strike count (fail-soft).
+	h.resetRecurringPaymentRetryAfterSuccess(ctx, contractID, instanceID, source)
 }
 
 // findPaymentByRecurringInstance best-effort loads an existing payment for a
@@ -1507,11 +1517,17 @@ func (h *ContractHandler) findPaymentByRecurringInstance(ctx context.Context, cu
 	return nil
 }
 
-// pauseRecurringAfterPaymentFailure implements FR-18.8 partial: when instance
-// payment setup fails, pause the recurring config so new visits stop generating.
-// Never cancels the contract or the recurring config. Fail-soft: pause errors
+// recordRecurringPaymentSetupFailure implements FR-16.7 partial + FR-18.8:
+// on CreatePayment failure for a visit, increment payment_retry_count and only
+// PauseRecurring when count >= recurringPaymentRetryPauseThreshold. Never
+// cancels the contract or the recurring config. Fail-soft: counter/pause errors
 // only add residual fields — approval/completion already stands.
-func (h *ContractHandler) pauseRecurringAfterPaymentFailure(
+//
+// When the counter cannot be tracked (nil db, migration 112 not applied, SQL
+// error), we document residual and do NOT pause on the first failure — pausing
+// without a durable count would re-introduce the old "pause immediately"
+// behavior without the 3-strike gate. Ops still has payment_residual logs.
+func (h *ContractHandler) recordRecurringPaymentSetupFailure(
 	ctx context.Context,
 	result map[string]interface{},
 	contractID, instanceID, customerID, source string,
@@ -1522,7 +1538,7 @@ func (h *ContractHandler) pauseRecurringAfterPaymentFailure(
 	}
 	if customerID == "" {
 		result["recurring_pause_residual"] = "customer_unresolved"
-		slog.WarnContext(ctx, "FR-18.8: cannot pause recurring after payment failure (no customer id; contract not cancelled)",
+		slog.WarnContext(ctx, "FR-16.7: cannot record payment setup failure (no customer id; contract not cancelled)",
 			"source", source,
 			"instance_id", instanceID,
 			"contract_id", contractID,
@@ -1534,7 +1550,7 @@ func (h *ContractHandler) pauseRecurringAfterPaymentFailure(
 		ContractId: contractID,
 	})
 	if err != nil {
-		slog.WarnContext(ctx, "FR-18.8: GetRecurringConfig failed after payment failure (contract not cancelled)",
+		slog.WarnContext(ctx, "FR-16.7: GetRecurringConfig failed after payment setup failure (contract not cancelled)",
 			"source", source,
 			"instance_id", instanceID,
 			"contract_id", contractID,
@@ -1545,7 +1561,7 @@ func (h *ContractHandler) pauseRecurringAfterPaymentFailure(
 	}
 	cfg := cfgResp.GetConfig()
 	if cfg == nil || cfg.GetId() == "" {
-		slog.WarnContext(ctx, "FR-18.8: no recurring config to pause after payment failure (contract not cancelled)",
+		slog.WarnContext(ctx, "FR-16.7: no recurring config after payment setup failure (contract not cancelled)",
 			"source", source,
 			"instance_id", instanceID,
 			"contract_id", contractID,
@@ -1557,10 +1573,10 @@ func (h *ContractHandler) pauseRecurringAfterPaymentFailure(
 	status := cfg.GetStatus()
 	result["recurring_id"] = cfg.GetId()
 	if status == "paused" {
-		// Already paused — still surface success of FR-18.8 intent.
+		// Already paused — still surface FR-18.8 intent; no further pause.
 		result["recurring_paused"] = true
 		result["recurring_status"] = "paused"
-		slog.InfoContext(ctx, "FR-18.8: recurring already paused after payment failure (contract not cancelled)",
+		slog.InfoContext(ctx, "FR-16.7: recurring already paused after payment setup failure (contract not cancelled)",
 			"source", source,
 			"instance_id", instanceID,
 			"contract_id", contractID,
@@ -1572,7 +1588,7 @@ func (h *ContractHandler) pauseRecurringAfterPaymentFailure(
 		// cancelled / other — do not cancel further; leave alone.
 		result["recurring_status"] = status
 		result["recurring_pause_residual"] = "not_active"
-		slog.InfoContext(ctx, "FR-18.8: skip pause after payment failure — config not active (contract not cancelled)",
+		slog.InfoContext(ctx, "FR-16.7: skip after payment setup failure — config not active (contract not cancelled)",
 			"source", source,
 			"instance_id", instanceID,
 			"contract_id", contractID,
@@ -1582,16 +1598,52 @@ func (h *ContractHandler) pauseRecurringAfterPaymentFailure(
 		return
 	}
 
+	// FR-16.7 partial: durable strike count before pause.
+	count, incrErr := h.incrementPaymentRetry(ctx, cfg.GetId())
+	if incrErr != nil {
+		// Schema/db missing: document, do not invent a pause without a counter.
+		slog.WarnContext(ctx, "FR-16.7: payment_retry_count increment failed (not pausing without durable count)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+			"error", incrErr,
+		)
+		result["payment_retry_residual"] = "retry_count_untracked"
+		result["recurring_status"] = status
+		result["recurring_pause_residual"] = "retry_count_unavailable"
+		return
+	}
+	result["payment_retry_count"] = count
+	result["payment_retry_threshold"] = recurringPaymentRetryPauseThreshold
+	result["recurring_status"] = status
+
+	if count < recurringPaymentRetryPauseThreshold {
+		// Below threshold: leave schedule active; customer can still pay the visit.
+		result["recurring_paused"] = false
+		slog.InfoContext(ctx, "FR-16.7: CreatePayment failure counted; schedule still active",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+			"payment_retry_count", count,
+			"threshold", recurringPaymentRetryPauseThreshold,
+		)
+		return
+	}
+
+	// Threshold reached — FR-18.8 pause (never cancel contract).
 	pauseResp, pauseErr := h.contractClient.PauseRecurring(ctx, &contractv1.PauseRecurringRequest{
 		RecurringId: cfg.GetId(),
 		UserId:      customerID,
 	})
 	if pauseErr != nil {
-		slog.WarnContext(ctx, "FR-18.8: PauseRecurring failed after payment failure (contract not cancelled; visit status kept)",
+		slog.WarnContext(ctx, "FR-18.8: PauseRecurring failed after retry threshold (contract not cancelled; visit status kept)",
 			"source", source,
 			"instance_id", instanceID,
 			"contract_id", contractID,
 			"recurring_id", cfg.GetId(),
+			"payment_retry_count", count,
 			"error", pauseErr,
 		)
 		result["recurring_pause_residual"] = "pause_failed"
@@ -1607,13 +1659,70 @@ func (h *ContractHandler) pauseRecurringAfterPaymentFailure(
 			result["recurring_status"] = st
 		}
 	}
-	slog.InfoContext(ctx, "FR-18.8: recurring paused after CreatePayment failure (contract not cancelled)",
+	slog.InfoContext(ctx, "FR-16.7/FR-18.8: recurring paused after CreatePayment failures reached threshold (contract not cancelled)",
 		"source", source,
 		"instance_id", instanceID,
 		"contract_id", contractID,
 		"recurring_id", cfg.GetId(),
 		"customer_id", customerID,
+		"payment_retry_count", count,
 	)
+}
+
+// incrementPaymentRetry uses the test hook when set; otherwise SQL via h.db.
+func (h *ContractHandler) incrementPaymentRetry(ctx context.Context, recurringID string) (int, error) {
+	if h.incrPaymentRetryFn != nil {
+		return h.incrPaymentRetryFn(ctx, recurringID)
+	}
+	return incrRecurringPaymentRetryCount(ctx, h.db, recurringID)
+}
+
+// resetRecurringPaymentRetryAfterSuccess clears payment_retry_count after a
+// successful visit PI create. Fail-soft: lookup/reset errors are logged only.
+func (h *ContractHandler) resetRecurringPaymentRetryAfterSuccess(
+	ctx context.Context,
+	contractID, instanceID, source string,
+) {
+	if contractID == "" || h.contractClient == nil {
+		return
+	}
+	cfgResp, err := h.contractClient.GetRecurringConfig(ctx, &contractv1.GetRecurringConfigRequest{
+		ContractId: contractID,
+	})
+	if err != nil || cfgResp.GetConfig() == nil || cfgResp.GetConfig().GetId() == "" {
+		if err != nil {
+			slog.WarnContext(ctx, "FR-16.7: GetRecurringConfig failed when resetting payment_retry_count (PI kept)",
+				"source", source,
+				"instance_id", instanceID,
+				"contract_id", contractID,
+				"error", err,
+			)
+		}
+		return
+	}
+	recurringID := cfgResp.GetConfig().GetId()
+	if resetErr := h.resetPaymentRetry(ctx, recurringID); resetErr != nil {
+		slog.WarnContext(ctx, "FR-16.7: payment_retry_count reset failed after successful CreatePayment (PI kept)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", recurringID,
+			"error", resetErr,
+		)
+		return
+	}
+	slog.DebugContext(ctx, "FR-16.7: payment_retry_count reset after successful CreatePayment",
+		"source", source,
+		"instance_id", instanceID,
+		"recurring_id", recurringID,
+	)
+}
+
+func (h *ContractHandler) resetPaymentRetry(ctx context.Context, recurringID string) error {
+	if h.resetPaymentRetryFn != nil {
+		return h.resetPaymentRetryFn(ctx, recurringID)
+	}
+	return resetRecurringPaymentRetryCount(ctx, h.db, recurringID)
 }
 
 func (h *ContractHandler) resolveRecurringConfig(r *http.Request, contractID string) (*contractv1.RecurringConfig, error) {

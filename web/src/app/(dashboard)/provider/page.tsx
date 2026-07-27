@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { EarningsChart } from '@/components/analytics/EarningsChart';
 import { CreditScoreCard } from '@/components/providers/CreditScoreCard';
+import { InstantAvailabilityCard } from '@/components/providers/InstantAvailabilityCard';
 import { InstantPayoutButton } from '@/components/providers/InstantPayoutButton';
 import { ProviderRankCard } from '@/components/providers/ProviderRankCard';
 import { TaxProjectionCard } from '@/components/providers/TaxProjectionCard';
@@ -239,6 +240,10 @@ export default function ProviderDashboardPage() {
           </Card>
         ) : null}
       </div>
+
+      {/* Instant availability (weekly schedule + available-now) */}
+      <div className="glass-divider" role="separator" />
+      <InstantAvailabilityCard />
 
       {/* Financial Tools */}
       <div className="glass-divider" role="separator" />
