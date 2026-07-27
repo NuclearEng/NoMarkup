@@ -777,9 +777,13 @@ struct JobSummary: Codable, Sendable, Hashable, Identifiable {
 }
 
 /// Detail from `GET /api/v1/jobs/{id}` (`{ "job": ... }`).
+///
+/// `exactAddress` is server-gated: only job owner or awarded provider receive it.
+/// Never surface street-level address from approximate fields alone.
 struct JobDetail: Codable, Sendable, Hashable, Identifiable {
     let id: String
     var customerId: String?
+    var propertyId: String?
     var title: String?
     var description: String?
     var status: String?
@@ -792,6 +796,8 @@ struct JobDetail: Codable, Sendable, Hashable, Identifiable {
     var categoryName: String?
     var categorySlug: String?
     var approximateAddress: JobApproximateAddress?
+    /// Party-only street address (owner / awarded provider). Absent for public viewers.
+    var exactAddress: JobExactAddress?
     var startingBidCents: Int64?
     var offerAcceptedCents: Int64?
     var auctionEndsAt: String?
@@ -821,13 +827,25 @@ struct JobDetail: Codable, Sendable, Hashable, Identifiable {
         return nil
     }
 
+    /// Public-safe area label (city/state). Never a full street for non-parties.
     var locationLabel: String? {
         approximateAddress?.label
+    }
+
+    /// Exact single-line address when the server included `exact_address` for this caller.
+    var exactLocationLabel: String? {
+        exactAddress?.singleLine
+    }
+
+    /// True when Get Directions should be offered (authorized exact address present).
+    var canOfferDirections: Bool {
+        exactAddress?.isDirectionsReady == true
     }
 
     init(from summary: JobSummary) {
         id = summary.id
         customerId = summary.customerId
+        propertyId = nil
         title = summary.title
         description = summary.description
         status = summary.status
@@ -840,6 +858,7 @@ struct JobDetail: Codable, Sendable, Hashable, Identifiable {
         categoryName = summary.categoryName
         categorySlug = summary.categorySlug
         approximateAddress = summary.approximateAddress
+        exactAddress = nil
         startingBidCents = summary.startingBidCents
         offerAcceptedCents = summary.offerAcceptedCents
         auctionEndsAt = summary.auctionEndsAt
@@ -2120,10 +2139,20 @@ struct MyJobBidRow: Codable, Sendable, Hashable, Identifiable {
         return s == "active" || s == "open" || s == "pending"
     }
 
+    /// Active bids can be lowered via `PATCH /api/v1/bids/{id}` (never raised).
+    var isLowerable: Bool { isWithdrawable }
+
     /// Returns a copy marked withdrawn for optimistic UI updates.
     func markedWithdrawn() -> MyJobBidRow {
         var copy = self
         copy.status = "withdrawn"
+        return copy
+    }
+
+    /// Returns a copy with a lowered amount for optimistic UI updates.
+    func markedLowered(to cents: Int64) -> MyJobBidRow {
+        var copy = self
+        copy.amountCents = cents
         return copy
     }
 }

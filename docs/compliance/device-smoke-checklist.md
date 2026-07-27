@@ -40,7 +40,7 @@ Then run from Xcode (**⌘R**) on iPhone 16.
 |---|----------|----------|:----:|:----:|-------|
 | 1 | **Cold launch** → Login or scaffold | App shows native `LoginView` (email/password + SIWA + “Browse native chrome (scaffold)”). **Not** a WKWebView of the website. | [ ] | [ ] | Guideline **4.2** |
 | 2 | **Health check on Home** | Enter main tabs (sign in **or** scaffold). **Home** → Gateway section → **Refresh status**. Green check when API reachable; red + error copy when not. Live catalog counts or graceful offline message. | [ ] | [ ] | |
-| 3 | **Launch gates / hard-off flags** | Regulated rails stay **off** in this binary (`FeatureFlags.iOSHardOffKeys`): `customer_bnpl`, `working_capital`, `per_job_insurance`, `insurance_competition`, `legal_services`, `lead_gen`, `instant_payout`. **Home** “Product rails” (or Launch gates / debug UI if present) must not offer BNPL, advances, insurance purchase, legal marketplace, lead-gen, or instant payout CTAs. | [ ] | [ ] | Code hard-off is authoritative even if server flags are true |
+| 3 | **Launch gates / regulated server flags** | `FeatureFlags.iOSHardOffKeys` is **empty** (no client hard-off). Rails follow **server** `GET /api/v1/flags` + gateway `RequireFlag`. **Account → Business & finance**: when flags are **off**, CTAs stay disabled / unavailable with clear copy; when a flag is **on**, the matching surface opens (BNPL, insurance, advances, instant payout, etc.). For a **review/production** dogfood, confirm regulated keys remain **false** unless intentionally enabled. | [ ] | [ ] | Server flag is authoritative; empty hard-off set is expected |
 | 4 | **Marketplace** loads list | **Marketplace** tab: list of active listings **or** empty state **or** clear error (no blank crash). Pull-to-refresh works. | [ ] | [ ] | Public catalog |
 | 5 | **Listing detail → Report sheet → cancel** | Open a listing → detail renders → open **Report** sheet → **Cancel** dismisses without submit. | [ ] | [ ] | Do not file a real report against shared seed unless intentional |
 | 6 | **Jobs browse + mine (auth)** | **Jobs** → **Browse**: public open jobs list/detail. Sign in with seed customer (or real account). **Mine**: loads owner jobs **or** empty/error with clear copy (not infinite spinner). Scaffold session should prompt to sign in for Mine. | [ ] | [ ] | Auth required for Mine |
@@ -84,11 +84,11 @@ When this checklist is human-executed and signed, update launch-board **Device s
 
 ---
 
-## Hard-off keys (reference)
+## Regulated flag keys (reference)
 
-Client always forces **off** regardless of `GET /api/v1/flags`:
+`FeatureFlags.iOSHardOffKeys = []` — no permanent client hard-offs. Effective enablement = server map (default **false** if unknown).
 
-| Key | Product surface (must not ship UI) |
+| Key | Product surface (server-gated UI) |
 |-----|-------------------------------------|
 | `customer_bnpl` | Customer BNPL / installment plans |
 | `working_capital` | Working-capital advances |
@@ -98,4 +98,4 @@ Client always forces **off** regardless of `GET /api/v1/flags`:
 | `lead_gen` | Lead-gen fee surfaces |
 | `instant_payout` | Instant payout CTA |
 
-Source: `ios/NoMarkup/Core/FeatureFlags.swift` · product cut: [`v1-ios-product-cut.md`](./v1-ios-product-cut.md).
+Source: `ios/NoMarkup/Core/FeatureFlags.swift` · hub: `BusinessFeaturesHubView` · policy: [`ios-web-feature-matrix.md`](./ios-web-feature-matrix.md) · cut: [`v1-ios-product-cut.md`](./v1-ios-product-cut.md).

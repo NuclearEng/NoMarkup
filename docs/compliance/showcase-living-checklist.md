@@ -36,8 +36,8 @@
 - [ ] Money: integer cents server-side; Idempotency-Key on money mutations
 - [ ] PII: secretbox inventory respected; geometry coarsened where required
 - [ ] Stripe: no raw PAN; webhook signature verify on server
-- [ ] iOS hard-offs for regulated flags still enforced (`FeatureFlags.iOSHardOffKeys`)
-- [ ] Feature flags fail closed in production for enforced routes
+- [ ] iOS regulated rails gated by **server flags** (`FeatureFlags.iOSHardOffKeys` empty; `isEnabled` defaults false; hub under Account → Business & finance)
+- [ ] Feature flags fail closed in production for enforced routes (`RequireFlag`); review/prod keep regulated keys off until compliance exit
 
 ### Performance (targets — measure before claiming)
 
@@ -137,19 +137,19 @@
 | ID | Capability | Status | Clients | Evidence | Security | Perf | Next |
 |----|------------|--------|---------|----------|----------|------|------|
 | R6.1 | Marketplace take rate | `live` | gateway, payment, job | Services: `CalculateFees` ← `platform_fee_config`. Goods: mint + charge load same table (`listingMarketplaceFeeCents` / `marketplaceSellerFeeCents` / `MarketplaceSellerFeeCents`); admin fee-config edits apply; clients display server `fee_cents` only | money integrity; integer bps | n/a | Optional per-goods-category rows; lead-gen still services-only |
-| R6.2 | Outcome lead-gen 10% | `blocked-compliance` | gateway, payment, web admin | Fee model + admin fee_config + breakdown line; flag key exists **without** `RequireFlag` on money routes; no consumer lead product CTA; iOS hard-off | fee stacking + dual-gate | n/a | See [path to live-flagged](#path-to-live-flagged-regulated-rails-r62r66) |
-| R6.3 | Provider working capital | `blocked-compliance` | gateway, web | **Scaffolding:** `/providers/me/advances*` + `RequireFlag`; web `/provider/advances` + admin; iOS hard-off + status list only | lending + money races | n/a | Path doc — not `live-flagged` until licenses + E2E + security |
-| R6.4 | Customer BNPL | `blocked-compliance` | gateway, web | **Scaffolding:** installment-plans API + `RequireFlag`; web contract selector + `/payments/installments/[id]`; iOS hard-off | consumer credit + 3.1.x | n/a | Path doc — residual money integrity before `live-flagged` |
-| R6.5 | Per-job insurance | `blocked-compliance` | gateway, web | **Scaffolding:** `/insurance/*` + quote-requests + `RequireFlag` (both flags); web selector/quotes/admin; iOS hard-off | insurance law | n/a | Path doc — carrier/license + claim prod readiness |
-| R6.6 | Instant payout | `blocked-compliance` | gateway, web | **Scaffolding:** summary + POST + ledger claim-first; web `InstantPayoutButton`; **live Stripe path fail-closes 503** (not wired); iOS hard-off | risk + no synthetic success | n/a | Wire Connect instant path + risk review before `live-flagged` |
+| R6.2 | Outcome lead-gen 10% | `blocked-compliance` | gateway, payment, web admin | Fee model + admin fee_config + breakdown line; flag key exists **without** `RequireFlag` on money routes; no consumer lead product CTA; iOS **server-flag** gated (no client hard-off) | fee stacking + dual-gate | n/a | See [path to live-flagged](#path-to-live-flagged-regulated-rails-r62r66) |
+| R6.3 | Provider working capital | `blocked-compliance` | gateway, web, ios | **Scaffolding + iOS hub:** `/providers/me/advances*` + `RequireFlag`; web `/provider/advances`; iOS `AdvancesView` when `working_capital` server flag on | lending + money races | n/a | Path doc — not `live-flagged` until licenses + E2E + security |
+| R6.4 | Customer BNPL | `blocked-compliance` | gateway, web, ios | **Scaffolding + iOS hub:** installment-plans API + `RequireFlag`; web contract selector; iOS `InstallmentsListView` when `customer_bnpl` on | consumer credit + 3.1.x | n/a | Path doc — residual money integrity before `live-flagged` |
+| R6.5 | Per-job insurance | `blocked-compliance` | gateway, web, ios | **Scaffolding + iOS hub:** `/insurance/*` + quote-requests + `RequireFlag`; web selector; iOS insurance views when flags on | insurance law | n/a | Path doc — carrier/license + claim prod readiness |
+| R6.6 | Instant payout | `blocked-compliance` | gateway, web, ios | **Scaffolding + iOS hub:** summary + POST + ledger claim-first; web `InstantPayoutButton`; **live Stripe path fail-closes 503**; iOS when `instant_payout` on | risk + no synthetic success | n/a | Wire Connect instant path + risk review before `live-flagged` |
 | R6.7 | Pro / Business digital subscription | `blocked-compliance` / `web-only` | web | free-tier iOS; no StoreKit | ASR 3.1.1 | n/a | StoreKit B2 or web-only permanent |
 | R6.8 | Business services (1099, expenses) | `roadmap` / `web-partial` | web | provider OS partial web | PII | n/a | Provider OS program |
 
-**Exit for blocked-compliance → live-flagged:** product complete (no critical money stubs) + E2E + security review + legal path documented; production flag may stay **off**; iOS hard-off may remain.  
-**Exit for live-flagged → live:** licenses/partner live + production flag on + runbook. Removing an iOS hard-off key is a **separate** App Review decision.
+**Exit for blocked-compliance → live-flagged:** product complete (no critical money stubs) + E2E + security review + legal path documented; production **server** flag may stay **off** (iOS has **no** client hard-off — empty `iOSHardOffKeys`).  
+**Exit for live-flagged → live:** licenses/partner live + production flag on + runbook. Turning a regulated flag **on** for App Review is an **App Review risk** — document in Review Notes or keep off for the review environment.
 
-**Canonical inventory:** [`regulated-rails-live-flagged.md`](./regulated-rails-live-flagged.md) (gateway routes, web UI, hard-off proof, exit criteria, fail-closed rules).  
-**iOS App Review surface (read-only, no purchase deep links):** `ios/NoMarkup/Features/RegulatedRailsStatusView.swift` ← Account → Plan limits section.
+**Canonical inventory:** [`regulated-rails-live-flagged.md`](./regulated-rails-live-flagged.md) (gateway routes, web UI, exit criteria, fail-closed rules) — reconcile any residual “hard-off” language with empty `iOSHardOffKeys` + matrix policy.  
+**iOS surfaces:** `BusinessFeaturesHubView` (Account → Business & finance; server-flag gated) · `RegulatedRailsStatusView` (status under Plan limits).
 
 ### Path to live-flagged (regulated rails R6.2–R6.6)
 
@@ -224,7 +224,7 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | Trust tiers / plan limits / ToS | `live` (composite + 4-dim breakdown UI; plan = read-only) |
 | Seller exports / templates / docs | `live` (provider verification upload via `VerificationDocumentsView`) |
 | WebSocket chat/auction | `live` (chat REST poll SLA + auction HTTP live feed poll) / native WS optional |
-| Regulated rails | `blocked-compliance` (BNPL / insurance / lending / lead-gen / instant payout — hard-off; server+web scaffolding inventoried in `regulated-rails-live-flagged.md`; iOS status list only) |
+| Regulated rails | `blocked-compliance` (BNPL / insurance / lending / lead-gen / instant payout — **server-flag gated**, `iOSHardOffKeys` empty; hub UI + gateway scaffolding; keep prod/review flags off until licenses — App Review risk if on) |
 | Admin | `n/a-client` |
 | StoreKit IAP | `blocked-compliance` |
 
@@ -269,7 +269,7 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | Status | When allowed |
 |--------|----------------|
 | **`live`** | Required for all product capabilities (core marketplace, dual-rail, trust UI, escrow, etc.) — **with** security + perf evidence |
-| **`live-flagged`** | Full implementation + E2E + security exist; production enablement gated by compliance exit (regulated rails). iOS hard-off may remain until exit. |
+| **`live-flagged`** | Full implementation + E2E + security exist; production **server flag** stays off until compliance exit (regulated rails). No client hard-off — enablement is server-only. |
 | **`narrative-only`** | Investor copy with **no** product surface by design (e.g. multi-year TAM story). Must not claim product features. |
 | **`n/a-client`** | Consumer app must never ship this (admin). Web/admin may be `live` separately. |
 
@@ -277,7 +277,7 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 
 ### Gates for every `live` / `live-flagged` row
 
-1. **Security:** authn/authz, money cents + idempotency where applicable, no secrets in client, PII rules, Stripe PCI path, hard-offs fail closed.  
+1. **Security:** authn/authz, money cents + idempotency where applicable, no secrets in client, PII rules, Stripe PCI path, regulated flags fail closed (server + `RequireFlag`; UI defaults off).  
 2. **Performance:** global budgets (API p95, list scroll, cold paint) measured ≤30 days; no known P0 jank on the surface.  
 3. **E2E:** covered by `scripts/ios-full-feature-e2e.sh` and/or dedicated tests; device dogfood dated.  
 4. **Evidence:** path or command in this file’s row.
@@ -288,7 +288,7 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 2. **Zero open P0** security findings on money/auth/PII.  
 3. **Performance log** current.  
 4. **E2E green.**  
-5. All regulated rails at least **`live-flagged`** (code complete + tests + hard-off) or permanently re-scoped out of product with product-owner sign-off.
+5. All regulated rails at least **`live-flagged`** (code complete + tests + server flag off until exit) or permanently re-scoped out of product with product-owner sign-off.
 
 ---
 
@@ -314,7 +314,8 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | 2026-07-26 | Multi-payment guarantee allocation | **live** — oldest-first slices across contract payments | `allocateGuaranteeRefunds`; `refundGuaranteePayout` |
 | 2026-07-26 | Job PlaceBid soft-replay on AlreadyExists | **live** — matching amount returns existing active bid | `bid.go` PlaceBid + `loadActiveProviderBid` |
 | 2026-07-26 | Contract tip Stripe charge (MON-23) | **live** — off-session charge + transfer + CAS tip_amount; RequireIdempotencyKey | `ChargeContractTip`; `ContractTipHandler.Tip`; iOS/web sticky key |
-| 2026-07-26 | Regulated rails graduation docs + iOS status stub | R6.2–R6.6 stay **`blocked-compliance`** (honest); path-to-live-flagged documented; iOS hard-offs unchanged | `docs/compliance/regulated-rails-live-flagged.md`; `RegulatedRailsStatusView`; Account under Plan limits |
+| 2026-07-26 | Regulated rails graduation docs + iOS status stub | R6.2–R6.6 stay **`blocked-compliance`** (honest); path-to-live-flagged documented | `docs/compliance/regulated-rails-live-flagged.md`; `RegulatedRailsStatusView`; Account under Plan limits |
+| 2026-07-26 | Doc hygiene — empty iOS hard-offs | Align living checklist + cut/smoke/blockers/security/launch B4 with code: `iOSHardOffKeys = []`, server flags + Business hub | this file; `ios-web-feature-matrix.md` policy change |
 | 2026-07-26 | Escrow release path (C3.4) | **live** — services release + goods mutual handshake next actions | `ContractDetailView.releasePayment`; `MyOrdersView` nextAction / confirm CTAs |
 | 2026-07-26 | Provider verification upload (C3.5 / P1#7) | **partial closer** — provider list+upload E2E path shipped; admin review open | `VerificationDocumentsView` |
 | 2026-07-26 | Perf gate — public catalog p95 | **PASS** (jobs/listings/flags/providers/search all p95 &lt; 200 ms @ 20 samples) | `perf-gate-2026-07-26.md` (+ samples block / `perf-gate-2026-07-26-samples.md`) |

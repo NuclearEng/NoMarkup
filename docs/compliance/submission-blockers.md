@@ -3,7 +3,7 @@
 **As of:** 2026-07-26 (post Stage **B0–B4** agent team)  
 **Claim:** We do **not** claim App Store binary readiness.  
 **Web policy surface:** READY WITH FOLLOW-UPS.  
-**Native:** Simulator build succeeds — auth hooks, catalog browse, regulated hard-off. **Not** submission-ready.
+**Native:** Simulator build succeeds — auth hooks, catalog browse, regulated rails **server-flag gated** (`iOSHardOffKeys` empty). **Not** submission-ready.
 
 ---
 
@@ -16,7 +16,7 @@
 | **3** | ASC package (screenshots, age rating, privacy labels, IAP) | 2.3, 5.1 | **B6** |
 | **4** | Review backend always-on | PRE-05 | Ops |
 | **5** | ~~Native purpose strings~~ | 5.1 | **Done** (Info.plist) |
-| **6** | ~~Regulated features left ON~~ | 3.2 | **Hard-off** in `FeatureFlags` (B4) |
+| **6** | ~~Regulated features always client-on~~ | 3.2 | **B4:** server flags + `RequireFlag`; `iOSHardOffKeys` empty — keep review env flags **off** (App Review risk if on) |
 
 ---
 
@@ -29,7 +29,7 @@
 | Legal links | Safari to no-markup.com privacy/terms/support/community |
 | Account deletion / export | `DELETE/GET …/users/me` (+ export) |
 | Listings + jobs list/detail | Public GET APIs wired in UI |
-| Regulated rails | Hard-off keys in `FeatureFlags.iOSHardOffKeys` |
+| Regulated rails | Server-driven flags; `iOSHardOffKeys = []`; UI under Account → Business & finance |
 
 ---
 
@@ -38,7 +38,7 @@
 1. Rail A Stripe GMV · Rail B StoreKit digital (Option A multiplatform).  
 2. No pure WKWebView app.  
 3. No ATT unless ads/IDFA.  
-4. Hard-off: `customer_bnpl`, `working_capital`, `per_job_insurance`, `insurance_competition`, `legal_services`, `lead_gen`, `instant_payout`.
+4. Regulated rails via **server flags** (not client hard-off): `customer_bnpl`, `working_capital`, `per_job_insurance`, `insurance_competition`, `legal_services`, `lead_gen`, `instant_payout` — production/review should keep off until compliance exit.
 
 ---
 

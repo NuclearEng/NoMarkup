@@ -77,24 +77,37 @@ struct NotificationsView: View {
 
                     Section {
                         ForEach(items) { note in
-                            Button {
-                                Task { await markReadIfNeeded(note) }
-                            } label: {
-                                notificationRow(note)
+                            if let dest = NotificationDeepLink.destination(from: note.actionUrl) {
+                                NavigationLink {
+                                    dest.view
+                                } label: {
+                                    notificationRow(note)
+                                }
+                                .simultaneousGesture(TapGesture().onEnded {
+                                    Task { await markReadIfNeeded(note) }
+                                })
+                                .listRowBackground(BrandTheme.navyElevated)
+                                .accessibilityHint("Opens related \(dest.kindLabel); marks read")
+                            } else {
+                                Button {
+                                    Task { await markReadIfNeeded(note) }
+                                } label: {
+                                    notificationRow(note)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(markingID == note.id)
+                                .listRowBackground(BrandTheme.navyElevated)
+                                .accessibilityHint(
+                                    note.unread
+                                        ? "Marks this notification as read"
+                                        : "Already read"
+                                )
                             }
-                            .buttonStyle(.plain)
-                            .disabled(markingID == note.id)
-                            .listRowBackground(BrandTheme.navyElevated)
-                            .accessibilityHint(
-                                note.unread
-                                    ? "Marks this notification as read"
-                                    : "Already read"
-                            )
                         }
                     } header: {
                         Text(sectionHeaderText).brandSectionHeader()
                     } footer: {
-                        Text("Tap a row to mark it read. Use Mark all read in the toolbar for the full inbox.")
+                        Text("Tap a row to open the related job/contract/messages when the server includes an action URL; unread rows are marked read.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
@@ -312,6 +325,85 @@ struct NotificationsView: View {
         } catch {
             actionMessage = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Deep links (FR-17.5)
+
+/// Parses gateway `action_url` into in-app destinations (path-only or absolute).
+enum NotificationDeepLink {
+    struct Destination {
+        let kindLabel: String
+        let view: AnyView
+
+        init(kindLabel: String, @ViewBuilder content: () -> some View) {
+            self.kindLabel = kindLabel
+            self.view = AnyView(content())
+        }
+    }
+
+    static func destination(from actionURL: String?) -> Destination? {
+        guard let actionURL else { return nil }
+        let path = normalizedPath(actionURL)
+        guard !path.isEmpty else { return nil }
+
+        // /jobs/{uuid} or /api/v1/jobs/{uuid}
+        if let id = matchUUID(path: path, segments: ["jobs"]) {
+            return Destination(kindLabel: "job") { JobDetailView(jobID: id) }
+        }
+        if let id = matchUUID(path: path, segments: ["api", "v1", "jobs"]) {
+            return Destination(kindLabel: "job") { JobDetailView(jobID: id) }
+        }
+        // /contracts/{uuid}
+        if let id = matchUUID(path: path, segments: ["contracts"]) {
+            return Destination(kindLabel: "contract") { ContractDetailView(contractID: id) }
+        }
+        if let id = matchUUID(path: path, segments: ["api", "v1", "contracts"]) {
+            return Destination(kindLabel: "contract") { ContractDetailView(contractID: id) }
+        }
+        // /messages or /chat → Messages tab root
+        if path == "/messages" || path.hasPrefix("/messages/")
+            || path == "/chat" || path.hasPrefix("/chat/")
+            || path.contains("/channels")
+        {
+            return Destination(kindLabel: "messages") { MessagesView() }
+        }
+        // /orders → MyOrders
+        if path == "/orders" || path.hasPrefix("/orders/") {
+            return Destination(kindLabel: "orders") { MyOrdersView() }
+        }
+        return nil
+    }
+
+    private static func normalizedPath(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "" }
+        if let url = URL(string: trimmed), let hostPath = url.path.nilIfEmptyOrSlash {
+            return hostPath
+        }
+        if trimmed.hasPrefix("/") { return trimmed }
+        return "/" + trimmed
+    }
+
+    private static func matchUUID(path: String, segments: [String]) -> String? {
+        let parts = path.split(separator: "/").map(String.init)
+        guard parts.count >= segments.count + 1 else { return nil }
+        for (i, seg) in segments.enumerated() {
+            if parts[i].caseInsensitiveCompare(seg) != .orderedSame { return nil }
+        }
+        let id = parts[segments.count]
+        // Soft UUID check: 36-char with hyphens or 32 hex.
+        let compact = id.replacingOccurrences(of: "-", with: "")
+        guard compact.count >= 32 else { return nil }
+        return id
+    }
+}
+
+private extension String {
+    var nilIfEmptyOrSlash: String? {
+        let t = trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty || t == "/" { return nil }
+        return t
     }
 }
 

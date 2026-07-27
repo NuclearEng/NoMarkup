@@ -13,7 +13,7 @@
 |-------|--------|
 | 1. Idempotency-Key on listed money mutations | **PASS (middleware + sticky clients)** — job bid, listing bid, buy-now, order pay, bid-bond create/confirm: gateway enforces + web/iOS send headers. **iOS sticky keys** (web parity): `APIClient.idempotencyHeader(for:)` + clear-on-success for job/listing bid, bond create/confirm, payment release. Residual: handler durable SQL dedup for job bid/bond (SEC-GATE-07 class) |
 | 2. No force-unwraps in iOS money paths | **PASS** |
-| 3. `iOSHardOffKeys` still enforced | **PASS** |
+| 3. Regulated rails server-flag gated (`iOSHardOffKeys` empty) | **PASS** (matches code + matrix policy) |
 | 4. Amounts are `Int64` cents in API bodies | **PASS** (iOS encode + gateway decode) |
 | 5. confirm-pickup / seller-confirm exist + auth-gated | **PASS** |
 | Residual money races (MON-14–18 etc.) | **Open** — tracked; not closed by this gate |
@@ -24,7 +24,7 @@
 | Job PlaceBid sticky retry UX | **PASS** — AlreadyExists + same amount soft-replays active bid (no double row) |
 | Guarantee multi-payment payout | **PASS** — oldest-first allocation; underfunded fail-closed |
 
-**Gate overall:** **PASS WITH GAPS** — middleware Idempotency-Key gaps closed same day; production money races (MON-14–18) and iOS hard-off rails remain separate.
+**Gate overall:** **PASS WITH GAPS** — middleware Idempotency-Key gaps closed same day; production money races (MON-14–18) and regulated-rail **server-flag / license** enablement remain separate.
 
 ---
 
@@ -256,22 +256,19 @@ Money mutations use `async throws`, `guard`, optional binding, and typed `Int64`
 
 ---
 
-## 3. `iOSHardOffKeys` still enforced (`FeatureFlags.swift`)
+## 3. Regulated rails — server flags, empty hard-off set (`FeatureFlags.swift`)
 
-```22:52:ios/NoMarkup/Core/FeatureFlags.swift
-    /// Flags that must stay OFF in the first App Store binary regardless of server values.
-    static let iOSHardOffKeys: Set<String> = [
-        "customer_bnpl",
-        "working_capital",
-        "per_job_insurance",
-        "insurance_competition",
-        "legal_services",
-        "lead_gen",
-        "instant_payout",
-    ]
+**Policy (aligned with [`ios-web-feature-matrix.md`](./ios-web-feature-matrix.md)):** permanent iOS hard-offs for BNPL / insurance / advances / instant payout are **removed**. Money rails are gated by **server feature flags** + gateway `RequireFlag`. UI under **Account → Business & finance**.
+
+```7:46:ios/NoMarkup/Core/FeatureFlags.swift
+/// Product rule (full web parity): **no permanent iOS hard-offs**. Server flags +
+/// gateway `RequireFlag` gate money rails. UI shows disabled rails with
+/// clear copy when the flag is off (fail-closed UI).
+// ...
+    /// Reserved for emergency kill-switches only. Empty = full product surface
+    /// available when server enables the flag.
+    static let iOSHardOffKeys: Set<String> = []
     // ...
-    /// Effective enablement for product gates.
-    /// Hard-off keys always return `false`; all other keys follow the server (default `false` if unknown).
     func isEnabled(_ key: String) -> Bool {
         if Self.iOSHardOffKeys.contains(key) {
             return false
@@ -280,9 +277,10 @@ Money mutations use `async throws`, `guard`, optional binding, and typed `Int64`
     }
 ```
 
-Hard-off set is authoritative regardless of `GET /api/v1/flags` (documented at lines 8–10). Matches checklist / device-smoke expectations.
+`isEnabled` still consults the (empty) hard-off set first, then server map with default **false**.  
+**App Review / prod risk:** enabling a regulated flag in the review environment surfaces live UI — keep flags off until compliance exit, or document intentional enablement.
 
-**Verdict: PASS**
+**Verdict: PASS** — empty hard-off set + server-driven enablement matches current product code (not a residual “hard-off still enforced” claim).
 
 ---
 
@@ -422,7 +420,7 @@ UI: `ios/NoMarkup/Features/MyOrdersView.swift` (`confirmPickup` / `sellerConfirm
 | ID | Gap | Evidence | Exit |
 |----|-----|----------|------|
 | **SEC-GATE-01** | **Web listing bid omits `Idempotency-Key` while gateway requires it** | `useListings.ts:312–313` vs `router.go:751–752` | Pass `idempotencyHeader(...)` on place-listing-bid (and clear on success); E2E place bid 200 |
-| **SEC-GATE-02** | **Open money races MON-14–18** (capture/process, BNPL, advances, dispute transfer stamp, auto-release vs dispute) | `adversarial-action-tracker.md` MON-14…18 **Open**; ADR accepts residual for *web* remediation only | Close each MON row with concurrency tests before live money / enabling hard-off rails |
+| **SEC-GATE-02** | **Open money races MON-14–18** (capture/process, BNPL, advances, dispute transfer stamp, auto-release vs dispute) | `adversarial-action-tracker.md` MON-14…18 **Open**; ADR accepts residual for *web* remediation only | Close each MON row with concurrency tests before live money / enabling regulated **server flags** |
 | **SEC-GATE-03** | **Feature flags fail-closed only for routes that call `RequireFlag`** | Project rule §6 — 7/13 flags UI-only | Either wire enforcement or document “UI-only” per flag before claiming flag-off is API-off |
 
 ### P1
@@ -438,7 +436,7 @@ UI: `ios/NoMarkup/Features/MyOrdersView.swift` (`confirmPickup` / `sellerConfirm
 
 ### Explicit non-gaps (this audit)
 
-- iOS hard-off regulated rails: **enforced**.
+- iOS regulated rails: **server-flag gated**; `iOSHardOffKeys` **empty** (emergency kill-switch reserved).
 - confirm-pickup / seller-confirm: **exist**, **auth + party ownership**.
 - Money request bodies: **integer cents**.
 - iOS money clients: **no `try!` / `as!` / `fatalError`**.
@@ -451,7 +449,7 @@ UI: `ios/NoMarkup/Features/MyOrdersView.swift` (`confirmPickup` / `sellerConfirm
 # Idempotency middleware on money routes
 rg -n 'RequireIdempotencyKey|PlaceBid|buy-now|bid-bond|/pay' gateway/internal/router/router.go
 
-# iOS headers + hard-offs
+# iOS headers + flag hard-off set (expect empty set)
 rg -n 'Idempotency-Key|iOSHardOffKeys|AmountCentsBody|confirm-pickup|seller-confirm' ios/NoMarkup
 
 # Force-unwrap patterns

@@ -361,7 +361,7 @@ func main() {
 	adminJobsHandler := handler.NewAdminJobsHandler(jobClient)
 	adminDisputesHandler := handler.NewAdminDisputesHandler(contractClient, dbPool, paymentClient)
 	adminReviewsHandler := handler.NewAdminReviewsHandler(reviewClient)
-	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient)
+	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient, dbPool, cacheClient)
 	adminBankingHandler := handler.NewAdminBankingHandler(paymentClient)
 	adminPlatformHandler := handler.NewAdminPlatformHandler(analyticsClient, subscriptionClient)
 	featureFlagHandler := handler.NewFeatureFlagHandler(dbReadPool, cacheClient) // public flags + admin are safe on replica (small table)

@@ -93,6 +93,46 @@ func TestRequireFlag_dev_nilDB_allows(t *testing.T) {
 	assert.True(t, called)
 }
 
+// SEC-GATE-03: every regulated money key has the same fail-closed semantics
+// when RequireFlag (or IsFeatureDisabled) is used on its entry points.
+func TestRequireFlag_regulatedMoneyKeys_production_nilDB_503(t *testing.T) {
+	t.Setenv("ENVIRONMENT", "production")
+
+	keys := []string{
+		"customer_bnpl",
+		"working_capital",
+		"per_job_insurance",
+		"insurance_competition",
+		"instant_payout",
+		"lead_gen",
+		"legal_services",
+	}
+	for _, key := range keys {
+		key := key
+		t.Run(key, func(t *testing.T) {
+			called := false
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusOK)
+			})
+			h := RequireFlag(nil, nil, key)(next)
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/gated", nil)
+			h.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusServiceUnavailable, rec.Code, "flag %s must 503 in production with nil DB", key)
+			assert.False(t, called)
+			assert.True(t, IsFeatureDisabled(context.Background(), nil, nil, key))
+		})
+	}
+}
+
+func TestIsFeatureDisabled_matchesFlagDisabled(t *testing.T) {
+	t.Setenv("ENVIRONMENT", "production")
+	assert.True(t, IsFeatureDisabled(context.Background(), nil, nil, "lead_gen"))
+	t.Setenv("ENVIRONMENT", "development")
+	assert.False(t, IsFeatureDisabled(context.Background(), nil, nil, "lead_gen"))
+}
+
 func TestIsProductionEnv(t *testing.T) {
 	t.Setenv("ENVIRONMENT", "production")
 	assert.True(t, isProductionEnv())

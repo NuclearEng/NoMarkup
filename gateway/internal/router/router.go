@@ -313,6 +313,9 @@ func New(
 	r.Get("/api/v1/providers/{id:[0-9a-fA-F-]+}", optionalAuth(authMW, providerHandler.GetProvider))
 
 	// A provider's VERIFIED licenses only (verified-lawyer badge); PII-masked.
+	// Intentionally NOT behind legal_services: already-verified badges stay
+	// readable for SEO/trust on provider profiles even if the vertical is
+	// flag-off. Submit/list-mine + /legal browse ARE RequireFlag-gated below.
 	r.Get("/api/v1/providers/{id:[0-9a-fA-F-]+}/licenses", providerLicenseHandler.ListProviderVerifiedLicenses)
 
 	// Legal vertical browse surface — public data, gated behind legal_services.
@@ -340,8 +343,11 @@ func New(
 	// them to /login — a top-of-funnel killer. /analytics/market/trends stays
 	// authenticated (dashboard-only, unused by the public surface).
 
-	// @public insurance products (no auth required)
-	r.Get("/api/v1/insurance/products", insuranceHandler.ListProducts)
+	// @public insurance products — catalog browse is still a regulated surface;
+	// gate with per_job_insurance so flag-off hides the product list (money
+	// quote/purchase/claims live under the authed /insurance group below).
+	r.With(middleware.RequireFlag(dbPool, cacheClient, "per_job_insurance")).
+		Get("/api/v1/insurance/products", insuranceHandler.ListProducts)
 
 	// @public auction replay (no auth required — completed auctions are public)
 	r.Get("/api/v1/auctions/{jobId}/replay", auctionReplayHandler.GetAuctionReplay)
@@ -540,9 +546,14 @@ func New(
 				r.Put("/me/availability", providerHandler.SetAvailability)
 				r.Get("/me/streaks", providerHandler.GetStreaks)
 
-				// Professional licenses (bar/etc.) — legal vertical verification.
-				r.Post("/me/licenses", providerLicenseHandler.SubmitLicense)
-				r.Get("/me/licenses", providerLicenseHandler.ListMyLicenses)
+				// Professional licenses (bar) — legal vertical only today.
+				// SEC-GATE-03: RequireFlag legal_services so flag-off is API-off
+				// for the regulated write/list-mine surface (not just UI hide).
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireFlag(dbPool, cacheClient, "legal_services"))
+					r.Post("/me/licenses", providerLicenseHandler.SubmitLicense)
+					r.Get("/me/licenses", providerLicenseHandler.ListMyLicenses)
+				})
 
 				// Provider verification documents
 				r.Post("/me/documents", verificationHandler.UploadDocument)
@@ -560,17 +571,19 @@ func New(
 				r.Get("/me/stripe/onboarding", paymentHandler.GetStripeOnboardingLink)
 				r.Get("/me/stripe/status", paymentHandler.GetStripeAccountStatus)
 
-				// Working Capital advances — gated behind the working_capital flag.
-				r.Route("/me/advances", func(r chi.Router) {
+				// Working Capital advances + credit-limit quote — gated behind
+				// working_capital (SEC-GATE-03: credit-limit was previously
+				// outside the flag group and leaked lending surface when off).
+				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireFlag(dbPool, cacheClient, "working_capital"))
-					r.Post("/", workingCapitalHandler.RequestAdvance)
-					r.Get("/", workingCapitalHandler.ListMyAdvances)
-					r.Get("/{id}", workingCapitalHandler.GetAdvance)
-					r.With(middleware.RequireIdempotencyKey(cacheClient)).Post("/{id}/repay", workingCapitalHandler.RepayAdvance)
+					r.Route("/me/advances", func(r chi.Router) {
+						r.Post("/", workingCapitalHandler.RequestAdvance)
+						r.Get("/", workingCapitalHandler.ListMyAdvances)
+						r.Get("/{id}", workingCapitalHandler.GetAdvance)
+						r.With(middleware.RequireIdempotencyKey(cacheClient)).Post("/{id}/repay", workingCapitalHandler.RepayAdvance)
+					})
+					r.Get("/me/credit-limit", workingCapitalHandler.GetCreditLimit)
 				})
-
-				// Credit limit
-				r.Get("/me/credit-limit", workingCapitalHandler.GetCreditLimit)
 
 				// Expenses
 				r.Route("/me/expenses", func(r chi.Router) {
@@ -852,6 +865,14 @@ func New(
 				r.Get("/", installmentHandler.ListInstallmentPlans)
 				r.Get("/{id}", installmentHandler.GetInstallmentPlan)
 			})
+
+			// lead_gen: NO dedicated charge route group. Outcome lead-gen fee is
+			// applied inside payment fee calculation when fee_config.lead_gen_enabled
+			// is true (CreatePayment / CalculateFees). Do NOT RequireFlag the core
+			// /payments POST — that would 503 all escrow. Dual-gate lives in
+			// AdminPaymentsHandler fee-config updates (cannot enable lead_gen_*
+			// while the feature flag is off) + payment-service fee math. See
+			// docs/compliance/regulated-rails-live-flagged.md R6.2.
 		})
 
 		// Competitive insurance marketplace — insurers compete on quotes.
@@ -957,13 +978,17 @@ func New(
 			})
 
 			// Professional license review queue (legal vertical).
+			// Gated so flag-off legal_services cannot progress bar verification
+			// into a live product state via admin alone.
 			r.Route("/licenses", func(r chi.Router) {
+				r.Use(middleware.RequireFlag(dbPool, cacheClient, "legal_services"))
 				r.Get("/", providerLicenseHandler.ListPendingLicenses)
 				r.Put("/{id}", providerLicenseHandler.ReviewLicense)
 			})
 
 			// Insurer onboarding + approval (competitive insurance marketplace).
 			r.Route("/insurers", func(r chi.Router) {
+				r.Use(middleware.RequireFlag(dbPool, cacheClient, "insurance_competition"))
 				r.Get("/", insuranceCompetitionHandler.AdminListInsurers)
 				r.Post("/", insuranceCompetitionHandler.AdminCreateInsurer)
 				r.Put("/{id}", insuranceCompetitionHandler.AdminUpdateInsurer)
@@ -1022,8 +1047,10 @@ func New(
 				r.Delete("/{id}", adminBankingHandler.DeletePlatformBankAccount)
 			})
 
-			// Working Capital advances (admin review + disburse)
+			// Working Capital advances (admin review + disburse) — money path;
+			// RequireFlag so flag-off cannot disburse via admin API alone.
 			r.Route("/advances", func(r chi.Router) {
+				r.Use(middleware.RequireFlag(dbPool, cacheClient, "working_capital"))
 				r.Get("/", workingCapitalHandler.AdminListAdvances)
 				r.Post("/{id}/review", workingCapitalHandler.AdminReviewAdvance)
 				r.Post("/{id}/disburse", workingCapitalHandler.AdminDisburseAdvance)
@@ -1044,8 +1071,9 @@ func New(
 				r.Post("/", challengeHandler.AdminCreateChallenge)
 			})
 
-			// Insurance
+			// Insurance claims admin — regulated money/claims surface.
 			r.Route("/insurance/claims", func(r chi.Router) {
+				r.Use(middleware.RequireFlag(dbPool, cacheClient, "per_job_insurance"))
 				r.Get("/", insuranceHandler.AdminListClaims)
 				r.Post("/{id}/review", insuranceHandler.AdminReviewClaim)
 			})

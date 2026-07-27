@@ -6,21 +6,29 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // AdminPaymentsHandler handles admin payment management endpoints.
 type AdminPaymentsHandler struct {
 	paymentClient paymentv1.PaymentServiceClient
+	// db + cacheClient dual-gate lead_gen fee_config toggles against the
+	// feature_flags row (SEC-GATE-03 / R6.2). Optional in unit tests.
+	db          *pgxpool.Pool
+	cacheClient *cache.Client
 }
 
 // NewAdminPaymentsHandler creates a new AdminPaymentsHandler.
-func NewAdminPaymentsHandler(paymentClient paymentv1.PaymentServiceClient) *AdminPaymentsHandler {
-	return &AdminPaymentsHandler{paymentClient: paymentClient}
+// db and cacheClient may be nil (tests); production should pass both so
+// lead_gen cannot be enabled via fee_config while the product flag is off.
+func NewAdminPaymentsHandler(paymentClient paymentv1.PaymentServiceClient, db *pgxpool.Pool, cacheClient *cache.Client) *AdminPaymentsHandler {
+	return &AdminPaymentsHandler{paymentClient: paymentClient, db: db, cacheClient: cacheClient}
 }
 
 // ListPayments handles GET /api/v1/admin/payments.
@@ -158,6 +166,10 @@ func (h *AdminPaymentsHandler) UpdateFeeConfig(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if !h.allowLeadGenFeeConfig(w, r, body.LeadGenEnabled) {
+		return
+	}
+
 	grpcReq := buildFeeConfigUpdateReq(claims.UserID, body.CategoryID, body.FeePercentage, body.GuaranteePercentage, body.MinFeeCents, body.MaxFeeCents,
 		body.LeadGenEnabled, body.LeadGenPercentage, body.LeadGenMinFeeCents, body.LeadGenMaxFeeCents)
 
@@ -222,6 +234,10 @@ func (h *AdminPaymentsHandler) UpdateFeeConfigNested(w http.ResponseWriter, r *h
 		return
 	}
 
+	if !h.allowLeadGenFeeConfig(w, r, body.LeadGenEnabled) {
+		return
+	}
+
 	grpcReq := buildFeeConfigUpdateReq(claims.UserID, body.CategoryID, body.FeePercentage, body.GuaranteePercentage, body.MinFeeCents, body.MaxFeeCents,
 		body.LeadGenEnabled, body.LeadGenPercentage, body.LeadGenMinFeeCents, body.LeadGenMaxFeeCents)
 
@@ -234,6 +250,22 @@ func (h *AdminPaymentsHandler) UpdateFeeConfigNested(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"config": feeConfigToJSON(resp.GetConfig()),
 	})
+}
+
+// allowLeadGenFeeConfig dual-gates fee_config lead_gen_enabled against the
+// lead_gen feature flag (SEC-GATE-03 / R6.2). Enabling the fee while the
+// product flag is off is rejected with 503 so admin fee knobs cannot re-open
+// a regulated rail. Disabling the fee (leadGenEnabled=false) is always OK.
+// Returns false when the response has already been written.
+func (h *AdminPaymentsHandler) allowLeadGenFeeConfig(w http.ResponseWriter, r *http.Request, leadGenEnabled bool) bool {
+	if !leadGenEnabled {
+		return true
+	}
+	if middleware.IsFeatureDisabled(r.Context(), h.db, h.cacheClient, "lead_gen") {
+		writeError(w, http.StatusServiceUnavailable, "lead_gen feature is currently unavailable; enable the lead_gen flag before setting lead_gen_enabled on fee config")
+		return false
+	}
+	return true
 }
 
 // buildFeeConfigUpdateReq assembles the gRPC AdminUpdateFeeConfigRequest from

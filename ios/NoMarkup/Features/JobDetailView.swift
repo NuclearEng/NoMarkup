@@ -8,6 +8,7 @@ struct JobDetailView: View {
 
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     @State private var detail: JobDetail?
     @State private var isLoading = false
@@ -21,6 +22,22 @@ struct JobDetailView: View {
     @State private var isPlacingBid = false
     @State private var bidStatusMessage: String?
     @State private var bidStatusIsError = false
+
+    /// Provider's own active service bid on this job (from ladder or `GET /bids/mine`).
+    @State private var ownActiveServiceBid: MyJobBidRow?
+    @State private var isAcceptingOffer = false
+    @State private var acceptOfferMessage: String?
+    @State private var acceptOfferIsError = false
+    @State private var confirmAcceptOffer = false
+
+    /// FR-4.6 lite: ladder sort — price (default reverse-auction lead) or trust.
+    private enum LadderSort: String, CaseIterable, Identifiable {
+        case price = "Price"
+        case trust = "Trust"
+        var id: String { rawValue }
+    }
+
+    @State private var ladderSort: LadderSort = .price
 
     @State private var currentUserID: String?
     @State private var pendingAwardEntry: JobBidEntry?
@@ -64,7 +81,8 @@ struct JobDetailView: View {
             .appending(path: jobID)
     }
 
-    /// Reverse auction: lowest amount first; rank #1 is leading. Withdrawn bids sort last.
+    /// Reverse auction ladder. Default: lowest amount first (rank #1 leading).
+    /// Trust sort: highest trust first when scores exist. Withdrawn bids always last.
     private var sortedLadder: [JobBidEntry] {
         bidEntries.sorted { lhs, rhs in
             let leftWithdrawn = bidStatusIsWithdrawn(lhs)
@@ -72,16 +90,66 @@ struct JobDetailView: View {
             if leftWithdrawn != rightWithdrawn {
                 return !leftWithdrawn
             }
-            let a = lhs.bid?.amountCents ?? Int64.max
-            let b = rhs.bid?.amountCents ?? Int64.max
-            if a != b { return a < b }
-            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            switch ladderSort {
+            case .price:
+                let a = lhs.bid?.amountCents ?? Int64.max
+                let b = rhs.bid?.amountCents ?? Int64.max
+                if a != b { return a < b }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            case .trust:
+                let ta = trustSortKey(lhs)
+                let tb = trustSortKey(rhs)
+                if ta != tb { return ta > tb }
+                // Tie-break on price (lower better) then name.
+                let a = lhs.bid?.amountCents ?? Int64.max
+                let b = rhs.bid?.amountCents ?? Int64.max
+                if a != b { return a < b }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
         }
     }
 
+    /// 0…1 trust score for sort; missing scores sort to the bottom of the active group.
+    private func trustSortKey(_ entry: JobBidEntry) -> Double {
+        if let n = entry.trustScore?.normalizedScore { return n }
+        if let v = entry.trustScoreValue {
+            return TrustScoreScale.normalized(v) ?? -1
+        }
+        return -1
+    }
+
+    /// Provider's active bid amount on this job (for lower-only validation).
+    private var ownActiveBidAmountCents: Int64? {
+        if let own = ownActiveServiceBid, own.isLowerable, let cents = own.amountCents, cents > 0 {
+            return cents
+        }
+        if let entry = bidEntries.first(where: { isOwnWithdrawableBid($0) }),
+           let cents = entry.bid?.amountCents, cents > 0
+        {
+            return cents
+        }
+        return nil
+    }
+
+    private var ownActiveBidId: String? {
+        if let own = ownActiveServiceBid, own.isLowerable, !own.id.isEmpty {
+            return own.id
+        }
+        return bidEntries.first(where: { isOwnWithdrawableBid($0) })?.bid?.id
+    }
+
+    private var hasOwnActiveBid: Bool {
+        ownActiveBidId != nil
+    }
+
+    /// Lowest active bid amount (reverse-auction lead). Independent of ladder sort mode.
     private var leadingBidCents: Int64? {
-        if let ladder = sortedLadder.first(where: { !bidStatusIsWithdrawn($0) })?.bid?.amountCents {
-            return ladder
+        let activeAmounts = bidEntries
+            .filter { !bidStatusIsWithdrawn($0) }
+            .compactMap { $0.bid?.amountCents }
+            .filter { $0 > 0 }
+        if let lowest = activeAmounts.min() {
+            return lowest
         }
         if let live = liveLowestBidCents, live > 0 {
             return live
@@ -231,6 +299,22 @@ struct JobDetailView: View {
         } message: {
             Text("Cancels the auction and notifies bidders. This cannot be undone from the app.")
         }
+        .confirmationDialog(
+            "Accept offer price?",
+            isPresented: $confirmAcceptOffer,
+            titleVisibility: .visible
+        ) {
+            Button("Accept offer") {
+                Task { await acceptOfferPrice() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let offer = detail?.offerAcceptedCents, offer > 0 {
+                Text("Places a bid at the customer’s instant price of \(MoneyFormat.usd(cents: offer)). You can still lower that bid later.")
+            } else {
+                Text("Places a bid at the customer’s instant-accept price.")
+            }
+        }
         .sheet(isPresented: $showWebSafari) {
             NavigationStack {
                 LegalWebView(title: "Job on web", url: webJobURL)
@@ -254,6 +338,7 @@ struct JobDetailView: View {
                 auctionHeroSection(job)
             }
             placeBidSection(job)
+            acceptOfferSection(job)
             bidLadderSection(job)
             liveFeedSection
             manageAuctionSection
@@ -767,6 +852,15 @@ struct JobDetailView: View {
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         .accessibilityLabel("No bids yet — be first to compete")
                 } else {
+                    if bidEntries.count > 1 {
+                        Picker("Sort bids", selection: $ladderSort) {
+                            ForEach(LadderSort.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityLabel("Sort bid ladder by price or trust")
+                    }
                     if let awardStatusMessage {
                         Text(awardStatusMessage)
                             .font(.footnote)
@@ -780,7 +874,9 @@ struct JobDetailView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     ForEach(Array(sortedLadder.enumerated()), id: \.offset) { index, entry in
-                        let isLeading = index == 0 && !bidStatusIsWithdrawn(entry)
+                        // Leading badge always reflects reverse-auction price rank (#1 lowest active).
+                        let priceRank = priceLeadingRank(of: entry)
+                        let isLeading = priceRank == 1
                         bidLadderRow(entry: entry, rank: index + 1, isLeading: isLeading)
                     }
                 }
@@ -789,13 +885,26 @@ struct JobDetailView: View {
             Text("Auction · bid ladder").brandSectionHeader()
         } footer: {
             if canAward {
-                Text("You own this job. Award a bid to create the contract. Lowest dollar bid leads in a reverse auction.")
+                Text("You own this job. Award a bid to create the contract. Sort by Price (lowest wins) or Trust. Leading badge always follows lowest price.")
                     .foregroundStyle(BrandTheme.textSecondary)
             } else {
-                Text("Lowest dollar bid leads. Rank #1 is currently winning on price. Bids are sealed from other providers.")
+                Text("Lowest dollar bid leads. Rank follows the selected sort; Leading badge stays on lowest price. Bids are sealed from other providers.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
+    }
+
+    /// 1-based rank by reverse-auction price among non-withdrawn bids (1 = lowest = leading).
+    private func priceLeadingRank(of entry: JobBidEntry) -> Int? {
+        guard !bidStatusIsWithdrawn(entry) else { return nil }
+        let active = bidEntries.filter { !bidStatusIsWithdrawn($0) }
+            .sorted {
+                let a = $0.bid?.amountCents ?? Int64.max
+                let b = $1.bid?.amountCents ?? Int64.max
+                return a < b
+            }
+        guard let idx = active.firstIndex(where: { $0.id == entry.id }) else { return nil }
+        return idx + 1
     }
 
     // MARK: - Soft live feed (HTTP poll, not WebSocket)
@@ -933,6 +1042,7 @@ struct JobDetailView: View {
             && entry.bid?.id != nil
             && (detail?.status ?? "").lowercased() != "awarded"
         let showWithdraw = isOwnWithdrawableBid(entry)
+        let showLower = showWithdraw
 
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
@@ -1098,10 +1208,11 @@ struct JobDetailView: View {
         return status == "active" || status == "open" || status == "pending" || status.isEmpty
     }
 
-    // MARK: - Place bid (providers)
+    // MARK: - Place / lower bid (providers)
 
     @ViewBuilder
     private func placeBidSection(_ job: JobDetail) -> some View {
+        let isUpdate = hasOwnActiveBid
         Section {
             if !auth.isAuthenticated {
                 Text("Sign in as a provider to place a bid on this job.")
@@ -1121,7 +1232,23 @@ struct JobDetailView: View {
                     .disabled(true)
                     .frame(maxWidth: .infinity, minHeight: 44)
             } else {
-                Text(bidHint(for: job))
+                if isUpdate, let current = ownActiveBidAmountCents {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Your current bid")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.bidActive)
+                        Text(MoneyFormat.usd(cents: current))
+                            .font(.title3.weight(.bold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.goldBright)
+                        Text("You can only lower your bid, never raise it.")
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                }
+
+                Text(bidHint(for: job, isUpdate: isUpdate))
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1129,7 +1256,9 @@ struct JobDetailView: View {
                 DollarAmountField(
                     text: $bidAmountText,
                     placeholder: "0.00",
-                    accessibilityLabelText: "Your reverse bid in dollars — lower is better"
+                    accessibilityLabelText: isUpdate
+                        ? "New lower bid amount in dollars"
+                        : "Your reverse bid in dollars — lower is better"
                 )
 
                 if let bidStatusMessage {
@@ -1140,34 +1269,110 @@ struct JobDetailView: View {
                 }
 
                 Button {
-                    Task { await placeJobBid() }
+                    Task { await placeOrLowerJobBid() }
                 } label: {
                     if isPlacingBid {
                         ProgressView()
                             .tint(BrandTheme.navy)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else if let cents = MoneyFormat.cents(fromDollarsText: bidAmountText) {
-                        Text("Place reverse bid · \(MoneyFormat.usd(cents: cents))")
+                        Text(isUpdate
+                             ? "Lower bid · \(MoneyFormat.usd(cents: cents))"
+                             : "Place reverse bid · \(MoneyFormat.usd(cents: cents))")
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
-                        Text("Place reverse bid")
+                        Text(isUpdate ? "Lower bid" : "Place reverse bid")
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
                 .disabled(isPlacingBid || MoneyFormat.cents(fromDollarsText: bidAmountText) == nil)
-                .accessibilityHint("Submit a lower dollar bid to compete in this reverse auction")
+                .accessibilityHint(
+                    isUpdate
+                        ? "Submit a lower dollar amount for your existing bid"
+                        : "Submit a lower dollar bid to compete in this reverse auction"
+                )
             }
         } header: {
-            Text("Place a bid (dollars)").brandSectionHeader()
+            Text(isUpdate ? "Lower your bid (dollars)" : "Place a bid (dollars)").brandSectionHeader()
         } footer: {
-            Text("Services are reverse auctions — enter dollars (for example 350.00), not cents. Lower than the leading bid wins. Provider role required.")
-                .foregroundStyle(BrandTheme.textSecondary)
+            Text(
+                isUpdate
+                    ? "Reverse auction rule: new amount must be strictly below your current bid. Server rejects raises."
+                    : "Services are reverse auctions — enter dollars (for example 350.00), not cents. Lower than the leading bid wins. Provider role required."
+            )
+            .foregroundStyle(BrandTheme.textSecondary)
         }
     }
 
-    private func bidHint(for job: JobDetail) -> String {
+    /// Instant-accept at the customer's `offer_accepted_cents` (FR-4.4).
+    /// Shown only when the job has an offer price and the provider has no active bid yet.
+    @ViewBuilder
+    private func acceptOfferSection(_ job: JobDetail) -> some View {
+        // Web BidForm parity: offerAcceptedCents && !existingBid; auth provider session required.
+        if let offerCents = job.offerAcceptedCents,
+           offerCents > 0,
+           !hasOwnActiveBid,
+           auth.isAuthenticated,
+           !auth.isScaffoldSession
+        {
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bolt.fill")
+                            .foregroundStyle(BrandTheme.success)
+                        Text("Instant accept")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(BrandTheme.success)
+                    }
+                    Text("Accept this job at the customer’s instant price of \(MoneyFormat.usd(cents: offerCents)). This places a bid at that amount.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let acceptOfferMessage {
+                        Text(acceptOfferMessage)
+                            .font(.footnote)
+                            .foregroundStyle(acceptOfferIsError ? BrandTheme.destructive : BrandTheme.success)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Button {
+                        confirmAcceptOffer = true
+                    } label: {
+                        if isAcceptingOffer {
+                            ProgressView()
+                                .tint(BrandTheme.navy)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Label(
+                                "Accept offer · \(MoneyFormat.usd(cents: offerCents))",
+                                systemImage: "bolt.fill"
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.success)
+                    .disabled(isAcceptingOffer || isPlacingBid)
+                    .accessibilityLabel("Accept offer at \(MoneyFormat.usd(cents: offerCents))")
+                    .accessibilityHint("Places a bid at the customer’s instant-accept price")
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Offer accepted price").brandSectionHeader()
+            } footer: {
+                Text("Creates a bid at the offer price. The customer still awards a bid to form a contract.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+    }
+
+    private func bidHint(for job: JobDetail, isUpdate: Bool) -> String {
+        if isUpdate, let current = ownActiveBidAmountCents {
+            return "Enter a dollar amount strictly below your current bid (\(MoneyFormat.usd(cents: current))). Example: if your bid is $450, try 425.00."
+        }
         if let leading = leadingBidCents {
             return "Reverse auction: enter a lower dollar amount than the leading bid (\(MoneyFormat.usd(cents: leading))). Example: if leading is $450, try 425.00."
         }
@@ -1198,7 +1403,17 @@ struct JobDetailView: View {
                     Text(schedule.replacingOccurrences(of: "_", with: " ").capitalized)
                 }
             }
-            if let location = job.locationLabel {
+            // Party-only exact street (owner / awarded provider). Public viewers
+            // only ever see approximate city/state — never invent street from area.
+            if let exact = job.exactLocationLabel {
+                LabeledContent("Service address") {
+                    Text(exact)
+                        .foregroundStyle(BrandTheme.textPrimary)
+                        .multilineTextAlignment(.trailing)
+                        .textSelection(.enabled)
+                }
+                .accessibilityLabel("Service address \(exact)")
+            } else if let location = job.locationLabel {
                 LabeledContent("Area", value: location)
             }
             if let ends = job.auctionEndsAt, !ends.isEmpty {
@@ -1210,15 +1425,34 @@ struct JobDetailView: View {
             if let recurring = job.isRecurring, recurring {
                 LabeledContent("Recurring", value: "Yes")
             }
+            if job.canOfferDirections, let exact = job.exactLocationLabel {
+                Button {
+                    DirectionsHelper.openDirections(
+                        address: exact,
+                        openURL: { openURL($0) }
+                    )
+                } label: {
+                    Label("Get Directions", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 44)
+                }
+                .tint(BrandTheme.accent)
+                .accessibilityHint("Opens Apple Maps or Google Maps with the service address")
+            }
         } header: {
             Text("Details").brandSectionHeader()
+        } footer: {
+            if job.canOfferDirections {
+                Text("Exact address is only shown to you as the job owner or awarded provider.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
         }
     }
 
     // MARK: - Actions
 
     @MainActor
-    private func placeJobBid() async {
+    private func placeOrLowerJobBid() async {
         bidStatusMessage = nil
         bidStatusIsError = false
 
@@ -1233,6 +1467,36 @@ struct JobDetailView: View {
             bidStatusIsError = true
             bidStatusMessage =
                 "Enter a valid dollar amount (for example 75.00). Do not enter cents — $75 is 75, not 7500."
+            return
+        }
+
+        // FR-4.3: existing active bid → PATCH lower only.
+        if let bidId = ownActiveBidId {
+            if let current = ownActiveBidAmountCents,
+               let err = BidAmountRules.validateLowerOnly(currentCents: current, newCents: cents)
+            {
+                bidStatusIsError = true
+                bidStatusMessage = err
+                return
+            }
+            isPlacingBid = true
+            defer { isPlacingBid = false }
+            do {
+                _ = try await APIClient.shared.updateJobBid(id: bidId, newAmountCents: cents)
+                bidStatusIsError = false
+                bidStatusMessage = "Bid lowered to \(MoneyFormat.usd(cents: cents))."
+                bidAmountText = ""
+                if let own = ownActiveServiceBid {
+                    ownActiveServiceBid = own.markedLowered(to: cents)
+                }
+                await load()
+            } catch let error as APIClientError where error.isUnauthorized {
+                bidStatusIsError = true
+                bidStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+            } catch {
+                bidStatusIsError = true
+                bidStatusMessage = error.localizedDescription
+            }
             return
         }
 
@@ -1258,6 +1522,56 @@ struct JobDetailView: View {
         } catch {
             bidStatusIsError = true
             bidStatusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func acceptOfferPrice() async {
+        acceptOfferMessage = nil
+        acceptOfferIsError = false
+        guard !auth.isScaffoldSession, auth.isAuthenticated else {
+            acceptOfferIsError = true
+            acceptOfferMessage = "Sign in as a provider to accept this offer."
+            return
+        }
+        guard let offerCents = detail?.offerAcceptedCents, offerCents > 0 else {
+            acceptOfferIsError = true
+            acceptOfferMessage = "This job has no instant-accept price."
+            return
+        }
+        guard !hasOwnActiveBid else {
+            acceptOfferIsError = true
+            acceptOfferMessage = "You already have an active bid. Lower it instead of accepting the offer."
+            return
+        }
+        guard !isAcceptingOffer else { return }
+
+        isAcceptingOffer = true
+        defer { isAcceptingOffer = false }
+
+        do {
+            let bid = try await APIClient.shared.acceptJobOffer(jobId: jobID)
+            acceptOfferIsError = false
+            let amount = bid.amountCents ?? offerCents
+            acceptOfferMessage = "Offer accepted at \(MoneyFormat.usd(cents: amount))."
+            if let id = bid.id, !id.isEmpty {
+                ownActiveServiceBid = MyJobBidRow(
+                    id: id,
+                    jobId: bid.jobId ?? jobID,
+                    providerId: bid.providerId,
+                    amountCents: amount,
+                    status: bid.status ?? "active",
+                    isOfferAccepted: true,
+                    createdAt: bid.createdAt
+                )
+            }
+            await load()
+        } catch let error as APIClientError where error.isUnauthorized {
+            acceptOfferIsError = true
+            acceptOfferMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            acceptOfferIsError = true
+            acceptOfferMessage = error.localizedDescription
         }
     }
 
@@ -1414,10 +1728,48 @@ struct JobDetailView: View {
         }
 
         await loadBids()
+        await loadOwnActiveServiceBid()
         // Soft live-state + events refresh (ignore failures / 404).
         await refreshLiveAuctionState()
         await refreshLiveAuctionEvents()
         await loadMarketIntelligence()
+    }
+
+    /// Resolve the signed-in provider's active bid on this job.
+    /// Ladder is job-owner-only (403 for other providers), so fall back to `GET /bids/mine`.
+    @MainActor
+    private func loadOwnActiveServiceBid() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            ownActiveServiceBid = nil
+            return
+        }
+
+        // Prefer ladder row when we can see our own bid (owner who also bid, or non-sealed).
+        if let entry = bidEntries.first(where: { isOwnWithdrawableBid($0) }),
+           let id = entry.bid?.id, !id.isEmpty
+        {
+            ownActiveServiceBid = MyJobBidRow(
+                id: id,
+                jobId: entry.bid?.jobId ?? jobID,
+                providerId: entry.bid?.providerId,
+                amountCents: entry.bid?.amountCents,
+                status: entry.bid?.status ?? "active",
+                isOfferAccepted: entry.bid?.isOfferAccepted,
+                createdAt: entry.bid?.createdAt
+            )
+            return
+        }
+
+        do {
+            let response = try await APIClient.shared.fetchMyJobBids(page: 1, pageSize: 50)
+            ownActiveServiceBid = response.bids.first { bid in
+                guard bid.isLowerable else { return false }
+                let jid = (bid.jobId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return jid.caseInsensitiveCompare(jobID) == .orderedSame
+            }
+        } catch {
+            // Soft-fail: keep previous own bid if load fails (offline / 5xx).
+        }
     }
 
     /// Soft market-range for the intelligence strip (H1.4 / H1.5). Never throws / never blocks hero.

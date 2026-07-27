@@ -16,7 +16,7 @@
 | **Paid Pro / Business digital unlocks** | **Web-only** (Stripe Subscriptions) **or** later IAP when B2 ships |
 | **In-app “buy cheaper on web” for digital** | **Forbidden** (no external digital purchase steering by default) |
 | **Rail A (physical goods + offline services GMV)** | **Stripe** when payment UI is wired — **not** IAP (**3.1.3(e)**) |
-| **Regulated rails** | Remain **hard-off** on iOS (below) |
+| **Regulated rails** | **Server-flag gated** (no client hard-offs — below) |
 
 **Rationale:** Shipping a digital paywall or paid feature gate on iOS without StoreKit violates **3.1.1**. Completing B2 (ASC products + server JWS/ASN + restore + Option A multiplatform) is not ready. The compliant interim is to **omit digital purchase** entirely and ship browse/auth/legal/free-tier posture only.
 
@@ -65,21 +65,26 @@ Payment dual-rail design remains the long-term architecture; this cut only freez
 
 ---
 
-## Flag-off list (restated)
+## Regulated rails (server flags — restated)
 
-Client always forces **off** via `FeatureFlags.iOSHardOffKeys` (regardless of `GET /api/v1/flags`):
+**Policy (2026-07-26):** Client hard-offs for BNPL / insurance / advances / instant payout are **removed**.  
+`FeatureFlags.iOSHardOffKeys` is **empty** (reserved for emergency kill-switches only).  
+Rails are controlled by **server feature flags** + gateway `RequireFlag` (fail closed when off).  
+Native UI lives under **Account → Business & finance** (`BusinessFeaturesHubView`).
 
-| Key | Why off on first binary |
-|-----|-------------------------|
-| `customer_bnpl` | Consumer credit regulation |
-| `working_capital` | Commercial lending / advances |
-| `per_job_insurance` | Insurance intermediary / carrier licensing |
-| `insurance_competition` | Same + multi-carrier |
-| `legal_services` | Legal marketplace compliance |
-| `lead_gen` | Lead product risk / policy |
-| `instant_payout` | Risk / product review — web-only until cleared |
+| Key | Product surface | Gate |
+|-----|-----------------|------|
+| `customer_bnpl` | Customer BNPL / installment plans | Server flag + API |
+| `working_capital` | Working-capital advances | Server flag + API |
+| `per_job_insurance` | Per-job insurance | Server flag + API |
+| `insurance_competition` | Multi-carrier insurance | Server flag + API |
+| `legal_services` | Legal services marketplace | Server flag |
+| `lead_gen` | Lead-gen fee surfaces | Server flag (web/admin primary) |
+| `instant_payout` | Instant payout | Server flag + API |
 
-Do not add navigation to these product surfaces until licenses + hard-off set are revised.
+**App Review risk:** If any regulated flag is **on** for the review environment, reviewers can open those surfaces in-app. Keep production (and review) flags **off** until licenses + counsel exit, or document intentional enablement in Review Notes. Server off = UI shows disabled/unavailable copy; API must still `RequireFlag` where money paths exist.
+
+Canonical matrix: [`ios-web-feature-matrix.md`](./ios-web-feature-matrix.md) § Policy change.
 
 ---
 
@@ -102,9 +107,9 @@ Use with seed accounts (`customer@nomarkup.com` primary) and live API. Full past
 
 - In-App Purchase products, restore, or subscription management.
 - Digital Pro/Business paywall or Stripe digital checkout inside the app.
-- BNPL, working capital, insurance purchase, legal services, lead-gen, instant payout.
+- Active regulated-rail **purchase** flows when server flags are **off** (default review posture). Surfaces exist under Account → Business & finance when flags are **on** — keep review flags off or disclose (see regulated rails above).
 - Push notifications (B5 deferred).
-- Full web-parity bid → escrow pay → sell funnel until those write paths ship.
+- Full web-parity bid → escrow pay → sell funnel gaps only where write paths are still incomplete (matrix is the live inventory).
 
 ### Review notes one-liner (digital)
 
@@ -119,7 +124,7 @@ Use with seed accounts (`customer@nomarkup.com` primary) and live API. Full past
 | No StoreKit / IAP in binary | No IAP capability; no purchase UI |
 | Account discloses omission | Current AccountView copy retained |
 | No digital Stripe Checkout in binary | No deep-link/paywall for tiers |
-| Hard-off regulated flags | `iOSHardOffKeys` unchanged or stricter |
+| Regulated rails server-gated | `iOSHardOffKeys` empty; hub gated by `isEnabled` + server flags |
 | ASC notes include free-tier sentence | Human pastes checklist §11 / this one-liner |
 | B2 not claimed | Metadata does not advertise subscriptions |
 

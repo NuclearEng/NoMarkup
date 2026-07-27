@@ -873,6 +873,51 @@ func TestPaymentService_CreatePayment(t *testing.T) {
 	}
 }
 
+// staticFlags implements FeatureFlagChecker for dual-gate unit tests.
+type staticFlags map[string]bool
+
+func (f staticFlags) IsEnabled(_ context.Context, key string) bool {
+	return f[key]
+}
+
+// TestPaymentService_CalculateFees_LeadGenDualGate: fee_config.lead_gen_enabled
+// alone is not enough when a FeatureFlagChecker is wired — product flag off
+// must force zero lead-gen fee (SEC-GATE-03 / R6.2).
+func TestPaymentService_CalculateFees_LeadGenDualGate(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockPaymentRepo{
+		getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+			return &domain.FeeConfig{
+				FeePercentage:       0.08,
+				GuaranteePercentage: 0.02,
+				MinFeeCents:         100,
+				LeadGenEnabled:      true,
+				LeadGenPercentage:   0.10,
+				Active:              true,
+			}, nil
+		},
+	}
+	svc := newTestPaymentService(repo, nil)
+	svc.SetFeatureFlagChecker(staticFlags{"lead_gen": false})
+
+	bd, err := svc.CalculateFees(context.Background(), 10000, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), bd.LeadGenFeeCents, "flag off must suppress lead-gen fee")
+	assert.Equal(t, float64(0), bd.LeadGenPercentage)
+	// Platform + guarantee still apply; payout is full amount minus those only.
+	assert.Equal(t, int64(800), bd.PlatformFeeCents)
+	assert.Equal(t, int64(200), bd.GuaranteeFeeCents)
+	assert.Equal(t, int64(9000), bd.ProviderPayoutCents)
+
+	// Flag on → lead-gen applies again.
+	svc.SetFeatureFlagChecker(staticFlags{"lead_gen": true})
+	bdOn, err := svc.CalculateFees(context.Background(), 10000, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1000), bdOn.LeadGenFeeCents)
+	assert.Equal(t, int64(8000), bdOn.ProviderPayoutCents)
+}
+
 // TestPaymentService_CreatePayment_LeadGenLedgerReconciles is the regression
 // guard for the money-ledger invariant: the persisted payment split
 // (platform_fee + guarantee_fee + provider_payout) MUST equal amount_cents so

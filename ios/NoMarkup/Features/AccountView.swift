@@ -83,6 +83,15 @@ struct AccountView: View {
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Change password and view age verification status")
 
+                    NavigationLink {
+                        VerificationCenterView()
+                    } label: {
+                        Label("Verify email & phone", systemImage: "checkmark.shield")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession)
+                    .accessibilityHint("Resend email verification and complete phone OTP")
+
                     Button("Sign out", role: .destructive) {
                         PushRegistration.shared.resetSessionState()
                         auth.signOut()

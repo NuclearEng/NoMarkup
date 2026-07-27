@@ -20,9 +20,15 @@ struct PostJobView: View {
     @State private var createdJob: JobDetail?
     @State private var photoURLs: [String] = []
     @State private var isUploadingPhotos = false
+    @State private var properties: [PropertyItem] = []
+    @State private var selectedPropertyId = ""
+    @State private var offerAcceptedText = ""
+    @State private var isRecurring = false
+    @State private var recurrenceFrequency = "monthly"
 
     /// Job service allows 0…168 hours; common presets for the picker.
     private let durationOptions = [24, 48, 72, 168]
+    private let recurrenceOptions = ["weekly", "biweekly", "monthly"]
 
     var body: some View {
         Group {
@@ -57,6 +63,12 @@ struct PostJobView: View {
         .tint(BrandTheme.accent)
         .onChange(of: categoryId) { _, newValue in
             Task { await refreshFairPriceHint(categoryId: newValue) }
+        }
+        .onChange(of: selectedPropertyId) { _, newId in
+            applyPropertySelection(id: newId)
+        }
+        .task {
+            await loadProperties()
         }
     }
 
@@ -140,28 +152,80 @@ struct PostJobView: View {
                 Toggle("Publish immediately", isOn: $publish)
                     .frame(minHeight: 44)
                     .tint(BrandTheme.accent)
+
+                DollarAmountField(
+                    text: $offerAcceptedText,
+                    placeholder: "Optional",
+                    accessibilityLabelText: "Offer accepted price in dollars — optional"
+                )
+
+                Toggle("Recurring job", isOn: $isRecurring)
+                    .frame(minHeight: 44)
+                    .tint(BrandTheme.accent)
+
+                if isRecurring {
+                    Picker("Frequency", selection: $recurrenceFrequency) {
+                        ForEach(recurrenceOptions, id: \.self) { freq in
+                            Text(freq.capitalized).tag(freq)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                }
             } header: {
                 Text("Auction").brandSectionHeader()
             } footer: {
-                Text("Starting bid is the maximum you’re willing to open at. Providers compete by bidding lower.")
+                Text("Starting bid is the maximum you’re willing to open at. Providers compete by bidding lower. Optional offer-accepted price lets providers lock that amount without auto-award.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
             Section {
-                TextField(
-                    "Service address (optional)",
-                    text: $locationAddress,
-                    prompt: Text("Street, city, or neighborhood")
-                )
-                .textContentType(.fullStreetAddress)
-                .foregroundStyle(BrandTheme.textPrimary)
-                .frame(minHeight: 44)
-                .accessibilityLabel("Optional service address")
+                if !properties.isEmpty {
+                    Picker("Property", selection: $selectedPropertyId) {
+                        Text("None").tag("")
+                        ForEach(properties) { prop in
+                            Text(prop.displayName).tag(prop.id)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Property for this job")
+                    .accessibilityHint("Optional. Links the job to a saved property address.")
+                }
+
+                if selectedPropertyId.isEmpty {
+                    TextField(
+                        "Service address (optional)",
+                        text: $locationAddress,
+                        prompt: Text("Street, city, or neighborhood")
+                    )
+                    .textContentType(.fullStreetAddress)
+                    .foregroundStyle(BrandTheme.textPrimary)
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Optional service address")
+                } else if let selected = selectedProperty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(selected.displayName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textPrimary)
+                        ForEach(selected.addressLines, id: \.self) { line in
+                            Text(line)
+                                .font(.subheadline)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 44)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Selected property \(selected.displayName)")
+                }
             } header: {
                 Text("Location").brandSectionHeader()
             } footer: {
-                Text("Address is optional. Exact coordinates can be refined on web.")
-                    .foregroundStyle(BrandTheme.textSecondary)
+                Text(
+                    properties.isEmpty
+                        ? "Address is optional. Add properties under Account → Properties to reuse site addresses."
+                        : "Choose a saved property or leave None and type an optional address. Exact address is only revealed to the awarded provider after award."
+                )
+                .foregroundStyle(BrandTheme.textSecondary)
             }
 
             PhotoPickSection(
@@ -318,9 +382,30 @@ struct PostJobView: View {
             errorMessage = "Enter a valid starting bid in dollars (for example 100.00)."
             return
         }
+        var offerCents: Int64?
+        let offerTrimmed = offerAcceptedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !offerTrimmed.isEmpty {
+            guard let oc = MoneyFormat.cents(fromDollarsText: offerAcceptedText) else {
+                errorMessage = "Enter a valid offer-accepted amount in dollars, or leave it blank."
+                return
+            }
+            if let err = BidAmountRules.validateOfferAccepted(startingCents: cents, offerCents: oc) {
+                errorMessage = err
+                return
+            }
+            offerCents = oc
+        }
 
         isSubmitting = true
         defer { isSubmitting = false }
+
+        let propertyId = selectedPropertyId.trimmingCharacters(in: .whitespacesAndNewlines)
+        // When a property is linked, server copies its address; skip freeform override.
+        let freeformAddress: String? = propertyId.isEmpty
+            ? (locationAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nil
+                : locationAddress.trimmingCharacters(in: .whitespacesAndNewlines))
+            : nil
 
         do {
             let job = try await APIClient.shared.createJob(
@@ -329,18 +414,51 @@ struct PostJobView: View {
                 categoryId: trimmedCategory,
                 auctionDurationHours: durationHours,
                 startingBidCents: cents,
-                locationAddress: locationAddress.isEmpty ? nil : locationAddress,
+                locationAddress: freeformAddress,
                 locationLat: nil,
                 locationLng: nil,
                 publish: publish,
                 scheduleType: "flexible",
-                photoUrls: photoURLs
+                photoUrls: photoURLs,
+                propertyId: propertyId.isEmpty ? nil : propertyId,
+                offerAcceptedCents: offerCents,
+                isRecurring: isRecurring,
+                recurrenceFrequency: isRecurring ? recurrenceFrequency : nil
             )
             createdJob = job
         } catch let error as APIClientError {
             errorMessage = error.localizedDescription
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private var selectedProperty: PropertyItem? {
+        let id = selectedPropertyId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return nil }
+        return properties.first { $0.id == id }
+    }
+
+    @MainActor
+    private func loadProperties() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
+        do {
+            properties = try await APIClient.shared.fetchProperties().properties
+            // Default to primary property when present (still optional — user can pick None).
+            if selectedPropertyId.isEmpty,
+               let primary = properties.first(where: { $0.isPrimary == true })
+            {
+                selectedPropertyId = primary.id
+            }
+        } catch {
+            properties = []
+        }
+    }
+
+    private func applyPropertySelection(id: String) {
+        // Clear freeform when linking a property so we don't send conflicting location text.
+        if !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            locationAddress = ""
         }
     }
 

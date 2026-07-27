@@ -146,13 +146,17 @@ extension APIClient {
     }
 
     /// POST `/api/v1/contracts/{id}/reviews`
-    /// Body: `{ "overall_rating": N, "comment": "..." }` (CreateReview handler).
+    /// Body: overall_rating, comment, optional category ratings (1–5).
     /// Server requires comment ≥ 50 characters and review window eligibility.
     @discardableResult
     func createContractReview(
         id: String,
         rating: Int,
-        comment: String
+        comment: String,
+        qualityRating: Int? = nil,
+        communicationRating: Int? = nil,
+        timelinessRating: Int? = nil,
+        valueRating: Int? = nil
     ) async throws -> ContractReviewResponse {
         let clamped = min(5, max(1, rating))
         let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -162,9 +166,20 @@ extension APIClient {
                 detail: "Review comment must be at least 50 characters (currently \(trimmed.count))."
             )
         }
+        func clampOptional(_ v: Int?) -> Int32? {
+            guard let v else { return nil }
+            return Int32(min(5, max(1, v)))
+        }
         return try await postJSON(
             pathComponents: ["api", "v1", "contracts", id, "reviews"],
-            body: ContractsCreateReviewBody(overallRating: Int32(clamped), comment: trimmed),
+            body: ContractsCreateReviewBody(
+                overallRating: Int32(clamped),
+                comment: trimmed,
+                qualityRating: clampOptional(qualityRating),
+                communicationRating: clampOptional(communicationRating),
+                timelinessRating: clampOptional(timelinessRating),
+                valueRating: clampOptional(valueRating)
+            ),
             authorized: .required
         )
     }
@@ -174,6 +189,37 @@ extension APIClient {
         try await getJSON(
             pathComponents: ["api", "v1", "contracts", contractId, "reviews", "eligibility"],
             authorized: true
+        )
+    }
+
+    /// POST `/api/v1/reviews/{id}/respond` — single public response (≤500 chars server-side).
+    @discardableResult
+    func respondToReview(id: String, comment: String) async throws -> Data {
+        let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 10 else {
+            throw APIClientError.httpStatus(400, detail: "Response must be at least 10 characters.")
+        }
+        guard trimmed.count <= 500 else {
+            throw APIClientError.httpStatus(400, detail: "Response must be at most 500 characters.")
+        }
+        return try await postData(
+            pathComponents: ["api", "v1", "reviews", id, "respond"],
+            body: ReviewRespondBody(comment: trimmed),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/reviews/{id}/flag` — flag review for abuse/fraud.
+    @discardableResult
+    func flagReview(id: String, reason: String, details: String = "") async throws -> Data {
+        let r = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !r.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Flag reason is required.")
+        }
+        return try await postData(
+            pathComponents: ["api", "v1", "reviews", id, "flag"],
+            body: ReviewFlagBody(reason: r, details: details),
+            authorized: .required
         )
     }
 
@@ -497,6 +543,19 @@ private struct ContractsOpenDisputeBody: Encodable {
 private struct ContractsCreateReviewBody: Encodable {
     let overallRating: Int32
     let comment: String
+    let qualityRating: Int32?
+    let communicationRating: Int32?
+    let timelinessRating: Int32?
+    let valueRating: Int32?
+}
+
+private struct ReviewRespondBody: Encodable {
+    let comment: String
+}
+
+private struct ReviewFlagBody: Encodable {
+    let reason: String
+    let details: String
 }
 
 private struct ContractsMilestoneRevisionBody: Encodable {

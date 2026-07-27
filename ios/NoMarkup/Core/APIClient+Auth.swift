@@ -96,6 +96,22 @@ private struct EmailPasswordBody: Encodable {
     let password: String
 }
 
+private struct VerifyEmailTokenBody: Encodable {
+    let token: String
+}
+
+private struct PhoneBody: Encodable {
+    let phone: String
+}
+
+private struct OTPCodeBody: Encodable {
+    let otpCode: String
+
+    enum CodingKeys: String, CodingKey {
+        case otpCode = "otp_code"
+    }
+}
+
 // MARK: - APIClient auth extension
 
 extension APIClient {
@@ -171,6 +187,57 @@ extension APIClient {
         let data = try await postAuthJSON(path: "api/v1/auth/mfa/verify", body: body)
         let response = try decodeAuthResponse(data)
         return try persistTokens(from: response)
+    }
+
+    /// POST `/api/v1/auth/resend-verification` — body: `{ "email" }`.
+    /// Always returns success shape (anti-enumeration); no auth required.
+    func resendEmailVerification(email: String) async throws {
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Email is required.")
+        }
+        _ = try await postAuthJSON(
+            path: "api/v1/auth/resend-verification",
+            body: PasswordResetRequestBody(email: trimmed)
+        )
+    }
+
+    /// POST `/api/v1/auth/verify-email` — body: `{ "token" }` from email link.
+    func verifyEmail(token: String) async throws {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Verification token is required.")
+        }
+        _ = try await postAuthJSON(
+            path: "api/v1/auth/verify-email",
+            body: VerifyEmailTokenBody(token: trimmed)
+        )
+    }
+
+    /// POST `/api/v1/auth/send-phone-otp` — auth required. Body: `{ "phone" }`.
+    func sendPhoneOTP(phone: String) async throws {
+        let trimmed = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Phone number is required.")
+        }
+        try await postEmpty(
+            pathComponents: ["api", "v1", "auth", "send-phone-otp"],
+            body: PhoneBody(phone: trimmed),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/auth/verify-phone` — auth required. Body: `{ "otp_code" }`.
+    func verifyPhone(otpCode: String) async throws {
+        let trimmed = otpCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "OTP code is required.")
+        }
+        try await postEmpty(
+            pathComponents: ["api", "v1", "auth", "verify-phone"],
+            body: OTPCodeBody(otpCode: trimmed),
+            authorized: .required
+        )
     }
 
     // MARK: - Private helpers (file-local; APIClient internals are private to APIClient.swift)

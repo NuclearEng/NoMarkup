@@ -193,7 +193,7 @@ func TestMalformedUUIDPathGuardsAre400(t *testing.T) {
 			pattern: "/api/v1/admin/payments/{id}",
 			path:    "/api/v1/admin/payments/" + bad,
 			role:    "admin",
-			handler: NewAdminPaymentsHandler(nil).GetPaymentDetails,
+			handler: NewAdminPaymentsHandler(nil, nil, nil).GetPaymentDetails,
 		},
 		{
 			name:    "admin DeletePlatformBankAccount",

@@ -27,7 +27,7 @@ All review-logs phase-0…4b, privacy inventory, capability matrix, dual-rail Op
 | B3+ | Auth my jobs + chat channels/messages | **done** |
 | B3++ | Listing report + job/listing place bid | **done** |
 | B3+++ | Rail A Apple Pay (PaymentSheet + buy-now / order pay) | **done** (code); device merchant ID + `pk_` still ops |
-| B4 | Hard-off regulated flags | **done** |
+| B4 | Regulated rails server-flag gated (`iOSHardOffKeys` empty) | **done** — no client hard-offs; hub under Account → Business & finance; keep review/prod flags off until compliance (App Review risk if on) |
 | B5 | Push | **deferred** |
 | B6 | ASC packaging docs | **done** (docs); ops residual open |
 

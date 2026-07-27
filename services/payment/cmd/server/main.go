@@ -173,6 +173,8 @@ func main() {
 	paymentSvc := service.NewPaymentService(repo, stripeSvc)
 	paymentSvc.SetCustomerProvisioner(customerProvisioner)
 	paymentSvc.SetWebhookValidator(service.NewStripeWebhookValidator(webhookSecret))
+	// Dual-gate lead_gen fee against feature_flags (SEC-GATE-03 / R6.2).
+	paymentSvc.SetFeatureFlagChecker(repo)
 
 	// Working-capital underwriting: dial the trust + underwriting engines. Dials
 	// are lazy, so an engine being down doesn't block startup — ComputeCreditLimit

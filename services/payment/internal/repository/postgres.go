@@ -34,6 +34,26 @@ func (r *PostgresRepository) SetCipher(c *crypto.Cipher) {
 	r.cipher = c
 }
 
+// IsEnabled implements service.FeatureFlagChecker. Fail closed: missing row or
+// DB error ⇒ false so lead_gen (and similar) cannot charge when the product
+// flag is off or the flags table is unreachable (SEC-GATE-03 / R6.2).
+func (r *PostgresRepository) IsEnabled(ctx context.Context, key string) bool {
+	if r == nil || r.pool == nil || key == "" {
+		return false
+	}
+	var enabled bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT enabled FROM feature_flags WHERE key = $1`, key).Scan(&enabled)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.ErrorContext(ctx, "feature flag read failed; treating as disabled",
+				"flag", key, "error", err)
+		}
+		return false
+	}
+	return enabled
+}
+
 func (r *PostgresRepository) CreatePayment(ctx context.Context, payment *domain.Payment) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO payments (

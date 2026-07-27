@@ -344,9 +344,13 @@ actor APIClient {
     }
 
     /// GET `/api/v1/jobs/{id}` → `{ "job": ... }`
+    ///
+    /// Uses **optional** auth: public callers still load the job; signed-in
+    /// parties receive server-gated `exact_address` (owner / awarded provider).
     func fetchJob(id: String) async throws -> JobDetail {
         let wrapped: JobDetailResponse = try await getJSON(
-            pathComponents: ["api", "v1", "jobs", id]
+            pathComponents: ["api", "v1", "jobs", id],
+            authorized: .optional
         )
         return wrapped.job
     }
@@ -752,11 +756,21 @@ actor APIClient {
         locationLng: Double? = nil,
         publish: Bool = true,
         scheduleType: String = "flexible",
-        photoUrls: [String] = []
+        photoUrls: [String] = [],
+        propertyId: String? = nil,
+        offerAcceptedCents: Int64? = nil,
+        isRecurring: Bool = false,
+        recurrenceFrequency: String? = nil
     ) async throws -> JobDetail {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else {
             throw APIClientError.httpStatus(400, detail: "Title is required.")
+        }
+        if let offer = offerAcceptedCents, offer > 0, offer > startingBidCents {
+            throw APIClientError.httpStatus(
+                400,
+                detail: "Offer-accepted price must be at or below the starting bid."
+            )
         }
         let body = CreateJobRequestBody(
             title: trimmedTitle,
@@ -777,7 +791,16 @@ actor APIClient {
             locationLng: locationLng,
             publish: publish,
             scheduleType: scheduleType,
-            photoUrls: photoUrls
+            photoUrls: photoUrls,
+            propertyId: propertyId.flatMap { t in
+                let s = t.trimmingCharacters(in: .whitespacesAndNewlines)
+                return s.isEmpty ? nil : s
+            },
+            offerAcceptedCents: (offerAcceptedCents ?? 0) > 0 ? offerAcceptedCents : nil,
+            isRecurring: isRecurring,
+            recurrenceFrequency: isRecurring
+                ? (recurrenceFrequency?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "monthly")
+                : nil
         )
         let idem = "create-job:\(UUID().uuidString)"
         return try await postJSON(
@@ -921,6 +944,22 @@ actor APIClient {
     ) async throws -> Data {
         try await perform(
             method: "POST",
+            pathComponents: pathComponents,
+            query: [],
+            body: body,
+            auth: authorized,
+            headers: headers
+        )
+    }
+
+    func patchData<Body: Encodable>(
+        pathComponents: [String],
+        body: Body,
+        authorized: AuthMode,
+        headers: [String: String] = [:]
+    ) async throws -> Data {
+        try await perform(
+            method: "PATCH",
             pathComponents: pathComponents,
             query: [],
             body: body,
@@ -1401,6 +1440,17 @@ private struct CreateJobRequestBody: Encodable {
     let publish: Bool
     let scheduleType: String
     let photoUrls: [String]
+    let propertyId: String?
+    let offerAcceptedCents: Int64?
+    let isRecurring: Bool
+    let recurrenceFrequency: String?
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        let t = trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
 }
 
 /// Body for `POST /api/v1/listings` (snake_case via encoder).

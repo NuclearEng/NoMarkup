@@ -4,10 +4,20 @@ import SwiftUI
 ///
 /// - Goods: `GET /api/v1/listings/bids/mine`
 /// - Services: `GET /api/v1/bids/mine`
+///
+/// Service bids support FR-4.3 lower-bid (`PATCH /api/v1/bids/{id}`) and withdraw.
 struct MyBidsView: View {
     private enum Segment: String, CaseIterable, Identifiable {
         case goods = "Goods"
         case services = "Services"
+        var id: String { rawValue }
+    }
+
+    /// FR-4.6 lite — client-side sort for service bids.
+    private enum ServiceSort: String, CaseIterable, Identifiable {
+        case newest = "Newest"
+        case priceLow = "Price ↓"
+        case priceHigh = "Price ↑"
         var id: String { rawValue }
     }
 
@@ -22,6 +32,33 @@ struct MyBidsView: View {
     @State private var withdrawingBidID: String?
     @State private var withdrawMessage: String?
     @State private var withdrawIsError = false
+
+    @State private var serviceSort: ServiceSort = .newest
+    @State private var loweringBid: MyJobBidRow?
+    @State private var lowerAmountText = ""
+    @State private var isLoweringBid = false
+    @State private var lowerBidMessage: String?
+    @State private var lowerBidIsError = false
+
+    private var sortedJobBids: [MyJobBidRow] {
+        switch serviceSort {
+        case .newest:
+            return jobBids.sorted { lhs, rhs in
+                let a = lhs.createdAt ?? ""
+                let b = rhs.createdAt ?? ""
+                if a != b { return a > b }
+                return (lhs.amountCents ?? 0) < (rhs.amountCents ?? 0)
+            }
+        case .priceLow:
+            return jobBids.sorted {
+                ($0.amountCents ?? Int64.max) < ($1.amountCents ?? Int64.max)
+            }
+        case .priceHigh:
+            return jobBids.sorted {
+                ($0.amountCents ?? 0) > ($1.amountCents ?? 0)
+            }
+        }
+    }
 
     var body: some View {
         Group {
@@ -64,6 +101,9 @@ struct MyBidsView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .task(id: segment) { await load() }
         .refreshable { await load() }
+        .sheet(item: $loweringBid) { bid in
+            lowerBidSheet(bid)
+        }
     }
 
     @ViewBuilder
@@ -107,6 +147,18 @@ struct MyBidsView: View {
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 case .services:
+                    if jobBids.count > 1 {
+                        Section {
+                            Picker("Sort", selection: $serviceSort) {
+                                ForEach(ServiceSort.allCases) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityLabel("Sort service bids")
+                        }
+                    }
                     if let withdrawMessage {
                         Section {
                             Text(withdrawMessage)
@@ -115,8 +167,16 @@ struct MyBidsView: View {
                                 .listRowBackground(BrandTheme.navyElevated)
                         }
                     }
+                    if let lowerBidMessage {
+                        Section {
+                            Text(lowerBidMessage)
+                                .font(.footnote)
+                                .foregroundStyle(lowerBidIsError ? BrandTheme.destructive : BrandTheme.success)
+                                .listRowBackground(BrandTheme.navyElevated)
+                        }
+                    }
                     Section {
-                        ForEach(jobBids) { bid in
+                        ForEach(sortedJobBids) { bid in
                             jobBidRow(bid)
                                 .listRowBackground(BrandTheme.navyElevated)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -130,7 +190,27 @@ struct MyBidsView: View {
                                         .accessibilityLabel("Withdraw service bid")
                                     }
                                 }
+                                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                    if bid.isLowerable {
+                                        Button {
+                                            beginLowerBid(bid)
+                                        } label: {
+                                            Label("Lower", systemImage: "arrow.down.circle")
+                                        }
+                                        .tint(BrandTheme.accent)
+                                        .disabled(isLoweringBid)
+                                        .accessibilityLabel("Lower service bid")
+                                    }
+                                }
                                 .contextMenu {
+                                    if bid.isLowerable {
+                                        Button {
+                                            beginLowerBid(bid)
+                                        } label: {
+                                            Label("Lower bid", systemImage: "arrow.down.circle")
+                                        }
+                                        .disabled(isLoweringBid)
+                                    }
                                     if bid.isWithdrawable {
                                         Button(role: .destructive) {
                                             Task { await withdrawServiceBid(bid) }
@@ -144,7 +224,7 @@ struct MyBidsView: View {
                     } header: {
                         Text("\(jobBids.count) bid\(jobBids.count == 1 ? "" : "s")").brandSectionHeader()
                     } footer: {
-                        Text("Reverse auction: providers compete down. Lower price is more competitive — the market sets the rate. Swipe active bids to withdraw.")
+                        Text("Reverse auction: providers compete down. Lower price is more competitive. Swipe right to lower, left to withdraw active bids.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
@@ -206,9 +286,22 @@ struct MyBidsView: View {
     private func jobBidRow(_ bid: MyJobBidRow) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text(bid.displayTitle)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(BrandTheme.textPrimary)
+                Group {
+                    if let jobId = bid.jobId, !jobId.isEmpty {
+                        NavigationLink {
+                            JobDetailView(jobID: jobId)
+                        } label: {
+                            Text(bid.displayTitle)
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                                .multilineTextAlignment(.leading)
+                        }
+                    } else {
+                        Text(bid.displayTitle)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(BrandTheme.textPrimary)
+                    }
+                }
                 Spacer(minLength: 8)
                 Text(bid.displayAmount)
                     .font(.subheadline.weight(.semibold).monospacedDigit())
@@ -237,20 +330,111 @@ struct MyBidsView: View {
                         .controlSize(.small)
                 }
             }
-            if bid.isWithdrawable {
-                Button(role: .destructive) {
-                    Task { await withdrawServiceBid(bid) }
-                } label: {
-                    Text(withdrawingBidID == bid.id ? "Withdrawing…" : "Withdraw bid")
-                        .font(.caption.weight(.semibold))
-                        .frame(minHeight: 44)
+            if bid.isLowerable || bid.isWithdrawable {
+                HStack(spacing: 12) {
+                    if bid.isLowerable {
+                        Button {
+                            beginLowerBid(bid)
+                        } label: {
+                            Text("Lower bid")
+                                .font(.caption.weight(.semibold))
+                                .frame(minHeight: 44)
+                        }
+                        .tint(BrandTheme.accent)
+                        .disabled(isLoweringBid || withdrawingBidID != nil)
+                        .accessibilityLabel("Lower service bid of \(bid.displayAmount)")
+                    }
+                    if bid.isWithdrawable {
+                        Button(role: .destructive) {
+                            Task { await withdrawServiceBid(bid) }
+                        } label: {
+                            Text(withdrawingBidID == bid.id ? "Withdrawing…" : "Withdraw bid")
+                                .font(.caption.weight(.semibold))
+                                .frame(minHeight: 44)
+                        }
+                        .disabled(withdrawingBidID != nil || isLoweringBid)
+                        .accessibilityLabel("Withdraw service bid of \(bid.displayAmount)")
+                    }
                 }
-                .disabled(withdrawingBidID != nil)
-                .accessibilityLabel("Withdraw service bid of \(bid.displayAmount)")
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func lowerBidSheet(_ bid: MyJobBidRow) -> some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Current bid", value: bid.displayAmount)
+                    if let jobId = bid.jobId, !jobId.isEmpty {
+                        LabeledContent("Job", value: String(jobId.prefix(8)) + "…")
+                    }
+                    Text("Reverse auction: you can only lower this bid, never raise it.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                } header: {
+                    Text("Your bid").brandSectionHeader()
+                }
+
+                Section {
+                    DollarAmountField(
+                        text: $lowerAmountText,
+                        placeholder: "0.00",
+                        accessibilityLabelText: "New lower bid amount in dollars"
+                    )
+                    if let lowerBidMessage, loweringBid?.id == bid.id {
+                        Text(lowerBidMessage)
+                            .font(.footnote)
+                            .foregroundStyle(lowerBidIsError ? BrandTheme.destructive : BrandTheme.success)
+                    }
+                    Button {
+                        Task { await submitLowerBid(bid) }
+                    } label: {
+                        if isLoweringBid {
+                            ProgressView()
+                                .tint(BrandTheme.navy)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else if let cents = MoneyFormat.cents(fromDollarsText: lowerAmountText) {
+                            Text("Lower to \(MoneyFormat.usd(cents: cents))")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Text("Lower bid")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.accent)
+                    .disabled(isLoweringBid || MoneyFormat.cents(fromDollarsText: lowerAmountText) == nil)
+                } header: {
+                    Text("New amount (dollars)").brandSectionHeader()
+                } footer: {
+                    if let current = bid.amountCents {
+                        Text("Must be strictly less than \(MoneyFormat.usd(cents: current)). Server rejects raises.")
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                }
+            }
+            .brandListBackground()
+            .navigationTitle("Lower bid")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        loweringBid = nil
+                        lowerAmountText = ""
+                        lowerBidMessage = nil
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(isLoweringBid)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .tint(BrandTheme.accent)
     }
 
     private func statusColor(_ raw: String?) -> Color {
@@ -261,6 +445,13 @@ struct MyBidsView: View {
         case .danger: return BrandTheme.destructive
         case .neutral: return BrandTheme.textSecondary
         }
+    }
+
+    private func beginLowerBid(_ bid: MyJobBidRow) {
+        lowerBidMessage = nil
+        lowerBidIsError = false
+        lowerAmountText = ""
+        loweringBid = bid
     }
 
     @MainActor
@@ -276,6 +467,7 @@ struct MyBidsView: View {
         errorMessage = nil
         needsSignIn = false
         withdrawMessage = nil
+        lowerBidMessage = nil
         defer { isLoading = false }
 
         do {
@@ -327,6 +519,60 @@ struct MyBidsView: View {
         } catch {
             withdrawIsError = true
             withdrawMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func submitLowerBid(_ bid: MyJobBidRow) async {
+        lowerBidMessage = nil
+        lowerBidIsError = false
+
+        guard bid.isLowerable else {
+            lowerBidIsError = true
+            lowerBidMessage = "Only active service bids can be lowered."
+            return
+        }
+        guard !auth.isScaffoldSession, auth.isAuthenticated else {
+            lowerBidIsError = true
+            lowerBidMessage = "Sign in required to lower a service bid."
+            return
+        }
+        guard let cents = MoneyFormat.cents(fromDollarsText: lowerAmountText) else {
+            lowerBidIsError = true
+            lowerBidMessage =
+                "Enter a valid dollar amount (for example 75.00). Do not enter cents — $75 is 75, not 7500."
+            return
+        }
+        if let current = bid.amountCents,
+           let err = BidAmountRules.validateLowerOnly(currentCents: current, newCents: cents)
+        {
+            lowerBidIsError = true
+            lowerBidMessage = err
+            return
+        }
+
+        isLoweringBid = true
+        defer { isLoweringBid = false }
+
+        do {
+            _ = try await APIClient.shared.updateJobBid(id: bid.id, newAmountCents: cents)
+            if let idx = jobBids.firstIndex(where: { $0.id == bid.id }) {
+                jobBids[idx] = bid.markedLowered(to: cents)
+            }
+            lowerBidIsError = false
+            lowerBidMessage = "Bid lowered to \(MoneyFormat.usd(cents: cents))."
+            lowerAmountText = ""
+            loweringBid = nil
+            // Surface success on the list after sheet dismisses.
+            lowerBidIsError = false
+            lowerBidMessage = "Bid lowered to \(MoneyFormat.usd(cents: cents))."
+        } catch let error as APIClientError where error.isUnauthorized {
+            lowerBidIsError = true
+            lowerBidMessage = "Sign in required. Your session is missing or expired — please sign in again."
+            needsSignIn = true
+        } catch {
+            lowerBidIsError = true
+            lowerBidMessage = error.localizedDescription
         }
     }
 }

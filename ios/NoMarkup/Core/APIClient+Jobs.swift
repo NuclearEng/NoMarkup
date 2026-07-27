@@ -16,6 +16,42 @@ extension APIClient {
         )
     }
 
+    /// PATCH `/api/v1/bids/{id}` — provider lowers an active service bid (never raise).
+    /// Body: `{ "new_amount_cents": N }` (must be strictly less than current — engine-enforced).
+    /// No Idempotency-Key on this route (unlike POST place-bid).
+    @discardableResult
+    func updateJobBid(id: String, newAmountCents: Int64) async throws -> JobBidCore {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Bid id is required.")
+        }
+        guard newAmountCents > 0 else {
+            throw APIClientError.httpStatus(400, detail: "New amount must be greater than zero.")
+        }
+        return try await patchJSON(
+            pathComponents: ["api", "v1", "bids", trimmed],
+            body: UpdateJobBidBody(newAmountCents: newAmountCents),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/jobs/{id}/bids/accept-offer` — provider accepts the customer's
+    /// instant offer price (`offer_accepted_cents`). Creates a bid at that amount with
+    /// `is_offer_accepted = true`. Provider role required. Empty body.
+    /// Does not auto-award; customer still selects among acceptors / awards a bid.
+    @discardableResult
+    func acceptJobOffer(jobId: String) async throws -> JobBidCore {
+        let trimmed = jobId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "jobs", trimmed, "bids", "accept-offer"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
     /// GET `/api/v1/jobs/{id}/auction/state` — live reverse-auction snapshot (optional feature).
     /// Callers should treat decode / 404 failures as non-fatal.
     func fetchJobAuctionState(jobId: String) async throws -> LiveAuctionState {
@@ -92,4 +128,11 @@ extension APIClient {
             authorized: .required
         )
     }
+}
+
+// MARK: - Request bodies (camelCase → snake_case via encoder)
+
+/// Body for `PATCH /api/v1/bids/{id}` — reverse-auction lower only.
+private struct UpdateJobBidBody: Encodable {
+    let newAmountCents: Int64
 }

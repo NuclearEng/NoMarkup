@@ -44,6 +44,16 @@ type MarketplacePaymentHandler interface {
 	HandleListingPaymentIntentSucceeded(ctx context.Context, paymentIntentID string) error
 }
 
+// FeatureFlagChecker dual-gates product flags against fee_config (SEC-GATE-03 /
+// R6.2 lead_gen). When nil (unit tests), fee_config alone controls lead-gen.
+// Production wires a Postgres-backed checker so fee_config.lead_gen_enabled
+// cannot charge while feature_flags.lead_gen is off/missing.
+type FeatureFlagChecker interface {
+	// IsEnabled returns true only when the flag row exists and enabled=true.
+	// Missing row / DB error must return false (fail closed for money).
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // PaymentService implements payment business logic.
 type PaymentService struct {
 	repo             domain.PaymentRepository
@@ -59,6 +69,8 @@ type PaymentService struct {
 	// compiling; every path that needs it degrades explicitly and fail-closed
 	// when it is nil (see requireCustomers).
 	customers *CustomerProvisioner
+	// flags dual-gates regulated fee knobs (lead_gen). Optional in tests.
+	flags FeatureFlagChecker
 }
 
 // SetCustomerProvisioner wires Stripe Customer provisioning and payment-method
@@ -113,6 +125,11 @@ func (s *PaymentService) SetTrustSource(t ProviderTrustSource) {
 	s.trust = t
 }
 
+// SetFeatureFlagChecker wires product-flag dual-gating for regulated fees.
+func (s *PaymentService) SetFeatureFlagChecker(c FeatureFlagChecker) {
+	s.flags = c
+}
+
 // CalculateFees computes the fee breakdown for a given amount.
 func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, categoryID *string) (*domain.PaymentBreakdown, error) {
 	if amountCents <= 0 {
@@ -160,9 +177,20 @@ func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, c
 
 	// Calculate lead-gen fee: an ADDITIONAL provider-side deduction, clamped the
 	// same way as the platform fee. Disabled => zero, leaving payout unchanged.
+	// Dual-gate (SEC-GATE-03 / R6.2): fee_config.lead_gen_enabled AND product
+	// flag lead_gen must both be on. When a FeatureFlagChecker is wired and the
+	// flag is off/missing, force zero fee so admin fee_config drift cannot
+	// re-open the regulated rail. Unwired checker (unit tests) keeps fee_config.
 	var leadGenFee int64
 	var leadGenPercentage float64
-	if feeConfig.LeadGenEnabled {
+	leadGenOn := feeConfig.LeadGenEnabled
+	if leadGenOn && s.flags != nil && !s.flags.IsEnabled(ctx, "lead_gen") {
+		slog.InfoContext(ctx, "lead_gen fee suppressed: feature flag off or missing",
+			"amount_cents", amountCents,
+		)
+		leadGenOn = false
+	}
+	if leadGenOn {
 		leadGenPercentage = feeConfig.LeadGenPercentage
 		leadGenFee = feeFromBPS(amountCents, rateToBPS(feeConfig.LeadGenPercentage))
 		if leadGenFee < feeConfig.LeadGenMinFeeCents {

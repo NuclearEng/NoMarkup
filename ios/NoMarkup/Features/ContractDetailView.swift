@@ -17,12 +17,15 @@ struct ContractDetailView: View {
     let contractID: String
 
     @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.openURL) private var openURL
 
     @State private var contract: ContractDetail?
     @State private var changeOrders: [ContractChangeOrder] = []
     @State private var guaranteeClaim: GuaranteeClaim?
     /// Payments linked to this contract (loaded via GET /payments, filtered client-side).
     @State private var contractPayments: [ContractPayment] = []
+    /// Exact service address from linked job (party-only; server-gated on GET /jobs/{id}).
+    @State private var serviceExactAddress: JobExactAddress?
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
@@ -304,6 +307,8 @@ struct ContractDetailView: View {
             }
             .listRowBackground(BrandTheme.navyElevated)
 
+            serviceLocationSection(contract)
+
             if let created = contract.createdAt, !created.isEmpty {
                 Section {
                     LabeledContent("Created", value: CatalogDateFormat.friendlyDateTime(created))
@@ -336,6 +341,52 @@ struct ContractDetailView: View {
             documentsSection(contract)
         }
         .brandListBackground()
+    }
+
+    /// Party-only exact service address + Get Directions (FR-10.4).
+    /// Loaded from linked job; absent when non-party or job has no address.
+    @ViewBuilder
+    private func serviceLocationSection(_ contract: ContractDetail) -> some View {
+        if let line = partyDirectionsAddress(for: contract) {
+            Section {
+                LabeledContent("Service address") {
+                    Text(line)
+                        .foregroundStyle(BrandTheme.textPrimary)
+                        .multilineTextAlignment(.trailing)
+                        .textSelection(.enabled)
+                }
+                .accessibilityLabel("Service address \(line)")
+
+                Button {
+                    DirectionsHelper.openDirections(
+                        address: line,
+                        openURL: { openURL($0) }
+                    )
+                } label: {
+                    Label("Get Directions", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 44)
+                }
+                .tint(BrandTheme.accent)
+                .accessibilityHint("Opens Apple Maps or Google Maps with the service address")
+            } header: {
+                Text("Location").brandSectionHeader()
+            } footer: {
+                Text("Exact address is only shown to contract parties after award.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            .listRowBackground(BrandTheme.navyElevated)
+        }
+    }
+
+    /// Exact single-line address only when current user is a contract party and
+    /// the linked job returned server-gated `exact_address`.
+    private func partyDirectionsAddress(for contract: ContractDetail) -> String? {
+        let isParty = contract.isCustomer(userId: currentUserID)
+            || contract.isProvider(userId: currentUserID)
+        guard isParty else { return nil }
+        guard let exact = serviceExactAddress, exact.isDirectionsReady else { return nil }
+        return exact.singleLine
     }
 
     @ViewBuilder
@@ -1164,9 +1215,16 @@ struct ContractDetailView: View {
             )
             async let claimResult = Self.loadGuaranteeClaim(contractId: contractID)
             async let paymentsResult = Self.loadContractPayments(contractId: contractID)
+            async let addressResult = Self.loadPartyExactAddress(
+                jobId: detail.jobId,
+                userId: currentUserID,
+                isCustomer: detail.isCustomer(userId: currentUserID),
+                isProvider: detail.isProvider(userId: currentUserID)
+            )
             changeOrders = await ordersResult
             guaranteeClaim = await claimResult
             contractPayments = await paymentsResult
+            serviceExactAddress = await addressResult
         } catch {
             if contract == nil {
                 errorMessage = error.localizedDescription
@@ -1174,6 +1232,29 @@ struct ContractDetailView: View {
                 statusIsError = true
                 statusMessage = error.localizedDescription
             }
+        }
+    }
+
+    /// Soft-fail load of party-only `exact_address` from the linked job.
+    /// Server only returns it for owner / awarded provider — non-parties get nil.
+    private static func loadPartyExactAddress(
+        jobId: String?,
+        userId: String?,
+        isCustomer: Bool,
+        isProvider: Bool
+    ) async -> JobExactAddress? {
+        guard isCustomer || isProvider else { return nil }
+        guard let jobId, !jobId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        guard userId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            return nil
+        }
+        do {
+            let job = try await APIClient.shared.fetchJob(id: jobId)
+            return job.exactAddress
+        } catch {
+            return nil
         }
     }
 
@@ -1672,6 +1753,10 @@ private struct LeaveReviewSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var rating = 5
+    @State private var qualityRating = 5
+    @State private var communicationRating = 5
+    @State private var timelinessRating = 5
+    @State private var valueRating = 5
     @State private var comment = ""
     @State private var isSubmitting = false
     @State private var isLoadingEligibility = true
@@ -1733,6 +1818,23 @@ private struct LeaveReviewSheet: View {
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Rating \(rating) of 5 stars")
 
+                        Stepper(value: $qualityRating, in: 1 ... 5) {
+                            Text("Quality \(qualityRating)/5")
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+                        Stepper(value: $communicationRating, in: 1 ... 5) {
+                            Text("Communication \(communicationRating)/5")
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+                        Stepper(value: $timelinessRating, in: 1 ... 5) {
+                            Text("Timeliness \(timelinessRating)/5")
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+                        Stepper(value: $valueRating, in: 1 ... 5) {
+                            Text("Value \(valueRating)/5")
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+
                         TextField("Comment (required, 50+ characters)", text: $comment, axis: .vertical)
                             .lineLimit(4 ... 10)
                             .listRowBackground(BrandTheme.navyElevated)
@@ -1743,7 +1845,7 @@ private struct LeaveReviewSheet: View {
                     } header: {
                         Text("Review").brandSectionHeader()
                     } footer: {
-                        Text("Reviews are double-blind: they become visible once both parties have submitted. Window is 90 days after completion.")
+                        Text("Reviews are double-blind: they become visible once both parties have submitted. Window is 90 days after completion. Category ratings are optional on the server but recommended.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
@@ -1814,7 +1916,11 @@ private struct LeaveReviewSheet: View {
             _ = try await APIClient.shared.createContractReview(
                 id: contractID,
                 rating: rating,
-                comment: comment
+                comment: comment,
+                qualityRating: qualityRating,
+                communicationRating: communicationRating,
+                timelinessRating: timelinessRating,
+                valueRating: valueRating
             )
             onSuccess("Review submitted.")
             dismiss()

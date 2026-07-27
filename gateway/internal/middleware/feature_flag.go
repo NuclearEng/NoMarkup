@@ -89,13 +89,22 @@ func RequireFlag(db *pgxpool.Pool, cacheClient *cache.Client, flagKey string) fu
 	}
 }
 
-// flagDisabled reports whether the named flag should block the request.
+// IsFeatureDisabled reports whether the named flag should block the request
+// or suppress a dual-gated money feature (e.g. lead_gen fee). Same semantics
+// as RequireFlag — prefer RequireFlag on whole route groups; use this helper
+// only when a flag applies to a field inside a shared endpoint (fee config).
 //
 // Production (SEC-01 fail-closed): missing flag, DB error, or nil DB all
 // return true (disabled). Only an explicit enabled=true row allows traffic.
 //
 // Non-production (fail-open for missing/error): only an explicit enabled=false
 // row blocks; missing flags and infra blips allow the request through.
+func IsFeatureDisabled(ctx context.Context, db *pgxpool.Pool, cacheClient *cache.Client, flagKey string) bool {
+	return flagDisabled(ctx, db, cacheClient, flagKey)
+}
+
+// flagDisabled is the internal implementation; call IsFeatureDisabled from
+// handlers and RequireFlag from the router.
 func flagDisabled(ctx context.Context, db *pgxpool.Pool, cacheClient *cache.Client, flagKey string) bool {
 	prod := isProductionEnv()
 	redisKey := cache.Key(featureFlagPrefix, flagKey)
