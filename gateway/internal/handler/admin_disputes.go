@@ -418,15 +418,84 @@ type guaranteeRefundError struct {
 
 func (e *guaranteeRefundError) Error() string { return e.message }
 
-// refundGuaranteePayout locates a refundable contract payment and calls CreateRefund
-// as admin. Fail-closed: no payment client, no eligible payment, or Stripe/service
+// refundablePayment is one contract payment slice eligible for guarantee refund.
+type refundablePayment struct {
+	ID        string
+	Remaining int64
+	Status    string
+}
+
+// allocateGuaranteeRefunds walks oldest-first payments and assigns slices until
+// payout is covered. Fail-closed when total remaining < payout. Pure function
+// for unit tests.
+func allocateGuaranteeRefunds(payments []refundablePayment, payoutCents int64) ([]refundablePayment, *guaranteeRefundError) {
+	if payoutCents <= 0 {
+		return nil, &guaranteeRefundError{
+			status:  http.StatusBadRequest,
+			message: "payout amount must be positive for a guarantee refund",
+		}
+	}
+	if len(payments) == 0 {
+		return nil, &guaranteeRefundError{
+			status:  http.StatusConflict,
+			message: "no refundable payment on this contract; cannot pay out guarantee claim",
+		}
+	}
+	var total int64
+	for _, p := range payments {
+		if p.Remaining > 0 {
+			total += p.Remaining
+		}
+	}
+	if total < payoutCents {
+		return nil, &guaranteeRefundError{
+			status: http.StatusBadRequest,
+			message: fmt.Sprintf(
+				"payout exceeds refundable payment balance (%s remaining across payments)",
+				formatCentsUSD(total),
+			),
+		}
+	}
+	leftover := payoutCents
+	out := make([]refundablePayment, 0, len(payments))
+	for _, p := range payments {
+		if leftover <= 0 {
+			break
+		}
+		if p.Remaining <= 0 {
+			continue
+		}
+		slice := p.Remaining
+		if slice > leftover {
+			slice = leftover
+		}
+		out = append(out, refundablePayment{ID: p.ID, Remaining: slice, Status: p.Status})
+		leftover -= slice
+	}
+	if leftover > 0 {
+		// Should be unreachable after total check.
+		return nil, &guaranteeRefundError{
+			status:  http.StatusInternalServerError,
+			message: "failed to allocate guarantee refund across payments",
+		}
+	}
+	return out, nil
+}
+
+// refundGuaranteePayout locates refundable contract payments and calls CreateRefund
+// as admin, allocating oldest-first across milestones when needed. Fail-closed:
+// no payment client, no eligible payment, underfunded total, or Stripe/service
 // failure → error without resolving the dispute.
+//
+// On multi-slice refunds, a mid-loop failure may leave earlier slices refunded;
+// guarantee_paid_at is only stamped after the full allocation succeeds, so ops
+// must reconcile partial Stripe refunds before re-approving the same claim.
 func (h *AdminDisputesHandler) refundGuaranteePayout(
 	ctx context.Context,
 	adminID, claimID, contractID string,
 	payoutCents int64,
 	reason string,
-) (paymentID string, err *guaranteeRefundError) {
+) (primaryPaymentID string, err *guaranteeRefundError) {
 	if h.paymentClient == nil {
 		return "", &guaranteeRefundError{
 			status:  http.StatusServiceUnavailable,
@@ -440,43 +509,49 @@ func (h *AdminDisputesHandler) refundGuaranteePayout(
 		}
 	}
 
-	// Prefer the most recent payment that still has refundable balance and is
-	// in a refundable status (matches payment CreateRefund allow-list).
-	var pid string
-	var amountCents, alreadyRefunded int64
-	var status string
-	qerr := h.db.QueryRow(ctx, `
+	rows, qerr := h.db.Query(ctx, `
 		SELECT id::text, amount_cents, COALESCE(refund_amount_cents, 0), status
 		  FROM payments
 		 WHERE contract_id = $1
 		   AND status IN ('escrow', 'released', 'completed', 'partially_refunded')
 		   AND amount_cents - COALESCE(refund_amount_cents, 0) > 0
-		 ORDER BY created_at DESC
-		 LIMIT 1`, contractID,
-	).Scan(&pid, &amountCents, &alreadyRefunded, &status)
-	if errors.Is(qerr, pgx.ErrNoRows) {
-		return "", &guaranteeRefundError{
-			status:  http.StatusConflict,
-			message: "no refundable payment on this contract; cannot pay out guarantee claim",
-		}
-	}
+		 ORDER BY created_at ASC`, contractID)
 	if qerr != nil {
-		slog.ErrorContext(ctx, "guarantee refund: payment lookup failed",
+		slog.ErrorContext(ctx, "guarantee refund: payment list failed",
 			"error", qerr, "contract_id", contractID, "claim_id", claimID)
 		return "", &guaranteeRefundError{
 			status:  http.StatusInternalServerError,
 			message: "failed to locate contract payment for guarantee payout",
 		}
 	}
-	remaining := amountCents - alreadyRefunded
-	if payoutCents > remaining {
-		return "", &guaranteeRefundError{
-			status: http.StatusBadRequest,
-			message: fmt.Sprintf(
-				"payout exceeds refundable payment balance (%s remaining on payment)",
-				formatCentsUSD(remaining),
-			),
+	defer rows.Close()
+
+	var payments []refundablePayment
+	for rows.Next() {
+		var pid string
+		var amountCents, alreadyRefunded int64
+		var status string
+		if scanErr := rows.Scan(&pid, &amountCents, &alreadyRefunded, &status); scanErr != nil {
+			return "", &guaranteeRefundError{
+				status:  http.StatusInternalServerError,
+				message: "failed to locate contract payment for guarantee payout",
+			}
 		}
+		remaining := amountCents - alreadyRefunded
+		if remaining > 0 {
+			payments = append(payments, refundablePayment{ID: pid, Remaining: remaining, Status: status})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", &guaranteeRefundError{
+			status:  http.StatusInternalServerError,
+			message: "failed to locate contract payment for guarantee payout",
+		}
+	}
+
+	slices, allocErr := allocateGuaranteeRefunds(payments, payoutCents)
+	if allocErr != nil {
+		return "", allocErr
 	}
 
 	refundReason := reason
@@ -489,33 +564,44 @@ func (h *AdminDisputesHandler) refundGuaranteePayout(
 		refundReason = refundReason[:500]
 	}
 
-	resp, rerr := h.paymentClient.CreateRefund(ctx, &paymentv1.CreateRefundRequest{
-		PaymentId:       pid,
-		AmountCents:     payoutCents,
-		Reason:          refundReason,
-		InitiatedBy:     adminID,
-		ActorIsAdmin:    true,
-		SystemInitiated: false,
-	})
-	if rerr != nil {
-		slog.ErrorContext(ctx, "guarantee refund: CreateRefund failed",
-			"error", rerr, "payment_id", pid, "claim_id", claimID, "payout_cents", payoutCents)
-		return "", &guaranteeRefundError{
-			status:  http.StatusBadGateway,
-			message: "payment refund failed; claim left open for retry",
+	var lastID string
+	for i, slice := range slices {
+		resp, rerr := h.paymentClient.CreateRefund(ctx, &paymentv1.CreateRefundRequest{
+			PaymentId:       slice.ID,
+			AmountCents:     slice.Remaining,
+			Reason:          refundReason,
+			InitiatedBy:     adminID,
+			ActorIsAdmin:    true,
+			SystemInitiated: false,
+		})
+		if rerr != nil {
+			slog.ErrorContext(ctx, "guarantee refund: CreateRefund failed",
+				"error", rerr,
+				"payment_id", slice.ID,
+				"claim_id", claimID,
+				"slice_cents", slice.Remaining,
+				"slice_index", i,
+				"slices_total", len(slices),
+			)
+			return "", &guaranteeRefundError{
+				status:  http.StatusBadGateway,
+				message: "payment refund failed; claim left open for retry (check for partial refunds)",
+			}
 		}
+		lastID = slice.ID
+		if resp.GetPayment() != nil && resp.GetPayment().GetId() != "" {
+			lastID = resp.GetPayment().GetId()
+		}
+		slog.InfoContext(ctx, "guarantee claim refund slice issued",
+			"claim_id", claimID,
+			"payment_id", lastID,
+			"slice_cents", slice.Remaining,
+			"admin_id", adminID,
+			"prior_status", slice.Status,
+			"slice_index", i,
+		)
 	}
-	if resp.GetPayment() != nil && resp.GetPayment().GetId() != "" {
-		pid = resp.GetPayment().GetId()
-	}
-	slog.InfoContext(ctx, "guarantee claim refund issued",
-		"claim_id", claimID,
-		"payment_id", pid,
-		"payout_cents", payoutCents,
-		"admin_id", adminID,
-		"prior_status", status,
-	)
-	return pid, nil
+	return lastID, nil
 }
 
 // ---------------------------------------------------------------------------

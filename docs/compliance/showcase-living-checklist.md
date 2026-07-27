@@ -104,7 +104,7 @@
 | C3.5 | Identity & license verification | `live` | web, ios | Provider: `VerificationDocumentsView` list+upload + licenses; admin review is **web** (`/admin/verification`) — iOS `n/a-client` for admin | PII; 10 MB; server MIME | n/a | Optional web upload UX polish |
 | C3.6 | AI fraud detection | `live` | engines | Fraud **heuristics v1** live in fraud engine; ONNX ML remains `roadmap` (M5.3) — product copy must not claim ML | server-only | p99 budget | M5.3 for ONNX |
 | C3.7 | Transaction-verified reviews | `live` | web, ios | reviews on contracts | auth | n/a | — |
-| C3.8 | Work completion guarantee | `live` | web, ios | Claim file/read E2E; **admin approve with payout_cents calls CreateRefund** (admin actor) before resolve; `guarantee_paid_at` stamp blocks double-pay; fund metrics SUM fees | claim authz; payout cap; fail-closed no payment | n/a | Multi-payment allocation optional |
+| C3.8 | Work completion guarantee | `live` | web, ios | Claim file/read E2E; admin approve payout → CreateRefund (admin) before resolve; **oldest-first multi-payment allocation**; `guarantee_paid_at` stamp; fund metrics SUM fees | claim authz; payout cap; fail-closed underfunded | n/a | Partial mid-loop refund ops note |
 
 ---
 
@@ -311,6 +311,8 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | 2026-07-26 | Idempotency middleware: 2xx-only cache | **fixed** — 5xx/4xx no longer sticky for 24h | `gateway/internal/middleware/idempotency.go` `isIdempotencyCacheable` |
 | 2026-07-26 | R1 guarantee approve → CreateRefund | **live** — refund before resolve; paid_at stamp | `admin_disputes.go` ReviewGuaranteeClaim |
 | 2026-07-26 | R2 bid-bond SQL idempotency | **live** — col + soft replay | migration `109_bid_bond_idempotency`; `bid_bonds.go` CreateBidBond |
+| 2026-07-26 | Multi-payment guarantee allocation | **live** — oldest-first slices across contract payments | `allocateGuaranteeRefunds`; `refundGuaranteePayout` |
+| 2026-07-26 | Job PlaceBid soft-replay on AlreadyExists | **live** — matching amount returns existing active bid | `bid.go` PlaceBid + `loadActiveProviderBid` |
 | 2026-07-26 | Regulated rails graduation docs + iOS status stub | R6.2–R6.6 stay **`blocked-compliance`** (honest); path-to-live-flagged documented; iOS hard-offs unchanged | `docs/compliance/regulated-rails-live-flagged.md`; `RegulatedRailsStatusView`; Account under Plan limits |
 | 2026-07-26 | Escrow release path (C3.4) | **live** — services release + goods mutual handshake next actions | `ContractDetailView.releasePayment`; `MyOrdersView` nextAction / confirm CTAs |
 | 2026-07-26 | Provider verification upload (C3.5 / P1#7) | **partial closer** — provider list+upload E2E path shipped; admin review open | `VerificationDocumentsView` |

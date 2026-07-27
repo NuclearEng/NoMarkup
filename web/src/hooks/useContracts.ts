@@ -145,7 +145,7 @@ export function useApproveCompletion() {
   return useMutation({
     mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/approve-completion`),
     onSuccess: (_data, id) => {
-      toast.success('Completion approved — payment released');
+      toast.success('Completion approved. Release escrow separately if funds are still held.');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', id] });
     },

@@ -21,6 +21,8 @@
 | Goods take rate vs fee config | **PASS** — R6.1 wires mint+charge to `platform_fee_config` |
 | Guarantee approve → CreateRefund | **PASS** — ReviewGuaranteeClaim refunds before resolve; stamp `guarantee_paid_at`; fail-closed without refundable payment |
 | Bid-bond durable SQL idempotency | **PASS** — migration 109 + CreateBidBond soft-replay on (user, listing, key) |
+| Job PlaceBid sticky retry UX | **PASS** — AlreadyExists + same amount soft-replays active bid (no double row) |
+| Guarantee multi-payment payout | **PASS** — oldest-first allocation; underfunded fail-closed |
 
 **Gate overall:** **PASS WITH GAPS** — middleware Idempotency-Key gaps closed same day; production money races (MON-14–18) and iOS hard-off rails remain separate.
 

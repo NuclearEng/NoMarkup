@@ -133,6 +133,23 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 		AmountCents: req.AmountCents,
 	})
 	if err != nil {
+		// Soft-replay sticky Idempotency-Key retries: UNIQUE(job_id, provider_id)
+		// means the engine returns AlreadyExists when the provider already has a
+		// row. If the active bid amount matches this request, return that bid as
+		// success (201) so Redis-miss retries do not surface as 409. Different
+		// amounts stay 409 — intentional re-bids use PATCH /bids/{id}.
+		if st, ok := status.FromError(err); ok && st.Code() == codes.AlreadyExists {
+			if prior, found := h.loadActiveProviderBid(r.Context(), jobID, claims.UserID, req.AmountCents); found {
+				slog.InfoContext(r.Context(), "place bid idempotency soft-replay",
+					"job_id", jobID,
+					"provider_id", claims.UserID,
+					"amount_cents", req.AmountCents,
+					"bid_id", prior["id"],
+				)
+				writeJSON(w, http.StatusCreated, prior)
+				return
+			}
+		}
 		slog.WarnContext(r.Context(), "place bid failed",
 			"job_id", jobID,
 			"provider_id", claims.UserID,
@@ -157,6 +174,35 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 	h.notifyNewBid(r.Context(), jobID, claims.UserID, req.AmountCents)
 
 	writeJSON(w, http.StatusCreated, protoBidToJSON(resp.GetBid()))
+}
+
+// loadActiveProviderBid returns the provider's active bid on the job when the
+// amount matches. Used for PlaceBid soft-replay after AlreadyExists.
+func (h *BidHandler) loadActiveProviderBid(ctx context.Context, jobID, providerID string, amountCents int64) (map[string]interface{}, bool) {
+	if h.db == nil {
+		return nil, false
+	}
+	var (
+		id, status string
+		amount     int64
+	)
+	err := h.db.QueryRow(ctx, `
+		SELECT id::text, amount_cents, status
+		  FROM bids
+		 WHERE job_id = $1 AND provider_id = $2 AND status = 'active'
+		 LIMIT 1`,
+		jobID, providerID,
+	).Scan(&id, &amount, &status)
+	if err != nil || amount != amountCents {
+		return nil, false
+	}
+	return map[string]interface{}{
+		"id":           id,
+		"job_id":       jobID,
+		"provider_id":  providerID,
+		"amount_cents": amount,
+		"status":       status,
+	}, true
 }
 
 // notifyNewBid emits a `new_bid` in-app notification to the customer who owns
