@@ -1055,15 +1055,38 @@ struct JobBidCore: Codable, Sendable, Hashable {
     var jobId: String?
     var providerId: String?
     var amountCents: Int64?
+    var originalAmountCents: Int64?
     var status: String?
+    var isOfferAccepted: Bool?
     var createdAt: String?
+    var updatedAt: String?
+}
+
+/// Gateway returns `trust_score` as `{ overall_score, tier }`, not a bare double.
+struct ProviderTrustScore: Codable, Sendable, Hashable {
+    var overallScore: Double?
+    var tier: String?
+
+    /// 0…1 overall score when present.
+    var normalizedScore: Double? {
+        overallScore
+    }
+
+    var displayTier: String {
+        let t = tier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "—" : t.replacingOccurrences(of: "_", with: " ").capitalized
+    }
 }
 
 struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
     var bid: JobBidCore?
     var providerDisplayName: String?
     var providerBusinessName: String?
-    var trustScore: Double?
+    var providerAvatarUrl: String?
+    var jobsCompleted: Int?
+    var trustScore: ProviderTrustScore?
+    /// Legacy / alternate: some payloads may send a bare number.
+    var trustScoreValue: Double?
 
     var id: String {
         bid?.id ?? UUID().uuidString
@@ -1078,6 +1101,102 @@ struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
 
     var displayAmount: String {
         MoneyFormat.usd(cents: bid?.amountCents ?? 0)
+    }
+
+    var displayTrust: String {
+        if let tier = trustScore?.tier, !tier.isEmpty {
+            return trustScore?.displayTier ?? tier
+        }
+        if let v = trustScore?.overallScore ?? trustScoreValue {
+            return String(format: "%.0f%%", v * 100)
+        }
+        return "—"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case bid
+        case providerDisplayName
+        case providerBusinessName
+        case providerAvatarUrl
+        case jobsCompleted
+        case trustScore
+        case reviewSummary
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bid = try c.decodeIfPresent(JobBidCore.self, forKey: .bid)
+        providerDisplayName = try c.decodeIfPresent(String.self, forKey: .providerDisplayName)
+        providerBusinessName = try c.decodeIfPresent(String.self, forKey: .providerBusinessName)
+        providerAvatarUrl = try c.decodeIfPresent(String.self, forKey: .providerAvatarUrl)
+        jobsCompleted = try c.decodeIfPresent(Int.self, forKey: .jobsCompleted)
+
+        // trust_score may be object OR bare number OR missing.
+        trustScore = nil
+        trustScoreValue = nil
+        if c.contains(.trustScore) {
+            if let obj = try? c.decode(ProviderTrustScore.self, forKey: .trustScore) {
+                trustScore = obj
+            } else if let d = try? c.decode(Double.self, forKey: .trustScore) {
+                trustScoreValue = d
+                trustScore = ProviderTrustScore(overallScore: d, tier: nil)
+            } else if let i = try? c.decode(Int.self, forKey: .trustScore) {
+                let d = Double(i)
+                trustScoreValue = d
+                trustScore = ProviderTrustScore(overallScore: d, tier: nil)
+            }
+            // else: null / unknown shape → leave nil (don't fail whole ladder)
+        }
+        // review_summary intentionally ignored (null or object).
+        _ = try? c.decodeIfPresent(FlexibleJSONValue.self, forKey: .reviewSummary)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(bid, forKey: .bid)
+        try c.encodeIfPresent(providerDisplayName, forKey: .providerDisplayName)
+        try c.encodeIfPresent(providerBusinessName, forKey: .providerBusinessName)
+        try c.encodeIfPresent(providerAvatarUrl, forKey: .providerAvatarUrl)
+        try c.encodeIfPresent(jobsCompleted, forKey: .jobsCompleted)
+        try c.encodeIfPresent(trustScore, forKey: .trustScore)
+    }
+}
+
+/// Decode any JSON leaf so unknown nested objects don't break the ladder.
+enum FlexibleJSONValue: Codable, Sendable, Hashable {
+    case null
+    case bool(Bool)
+    case number(Double)
+    case string(String)
+    case array
+    case object
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() {
+            self = .null
+        } else if let b = try? c.decode(Bool.self) {
+            self = .bool(b)
+        } else if let n = try? c.decode(Double.self) {
+            self = .number(n)
+        } else if let s = try? c.decode(String.self) {
+            self = .string(s)
+        } else if (try? c.decode([FlexibleJSONValue].self)) != nil {
+            self = .array
+        } else {
+            self = .object
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case .bool(let b): try c.encode(b)
+        case .number(let n): try c.encode(n)
+        case .string(let s): try c.encode(s)
+        case .array, .object: try c.encodeNil()
+        }
     }
 }
 

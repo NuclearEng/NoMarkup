@@ -443,8 +443,8 @@ struct JobDetailView: View {
                         .font(.body.weight(.medium))
                         .foregroundStyle(BrandTheme.textPrimary)
                         .lineLimit(1)
-                    if let trust = entry.trustScore {
-                        Text("Trust \(String(format: "%.0f", trust))")
+                    if entry.displayTrust != "—" {
+                        Text("Trust · \(entry.displayTrust)")
                             .font(.caption2)
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
