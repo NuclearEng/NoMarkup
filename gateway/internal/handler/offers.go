@@ -747,6 +747,15 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Release other bidders' bonds; buyer keeps authorized until held.
+		if n, rerr := releaseAuthorizedBidBondsForListing(r.Context(), h.db, listingID, buyerID); rerr != nil {
+			slog.WarnContext(r.Context(), "accept offer: bond release for losers failed",
+				"listing_id", listingID, "error", rerr)
+		} else if n > 0 {
+			slog.InfoContext(r.Context(), "accept offer: released loser bid bonds",
+				"listing_id", listingID, "released_count", n)
+		}
+
 		resp := map[string]interface{}{
 			"offer":            h.loadOffer(r.Context(), offerID),
 			"order_id":         orderID,
