@@ -877,6 +877,10 @@ export interface Channel {
   message_count: number;
   created_at: string;
   updated_at: string;
+  /** MarkRead watermark for the customer party (ISO-8601). Peer uses this for Seen. */
+  customer_last_read_at?: string;
+  /** MarkRead watermark for the provider party (ISO-8601). Peer uses this for Seen. */
+  provider_last_read_at?: string;
 }
 
 export interface ChatMessage {

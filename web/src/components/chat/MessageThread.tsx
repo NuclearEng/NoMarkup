@@ -201,29 +201,112 @@ function ProposedTermsCard({
   );
 }
 
-function ReadReceipt({ isOwnMessage, isRead }: { isOwnMessage: boolean; isRead: boolean }) {
-  if (!isOwnMessage) return null;
+function ReadReceipt({
+  show,
+  isRead,
+}: {
+  /** Only the caller's last own message shows a receipt (iOS parity). */
+  show: boolean;
+  isRead: boolean;
+}) {
+  if (!show) return null;
 
   return (
     <span
-      className="ml-1 inline-flex items-center"
-      title={isRead ? 'Read' : 'Sent'}
-      aria-label={isRead ? 'Message read' : 'Message sent'}
+      className="ml-1 inline-flex items-center gap-0.5"
+      title={isRead ? 'Seen' : 'Sent'}
+      aria-label={isRead ? 'Message seen' : 'Message sent'}
     >
       {isRead ? (
-        <CheckCheck className="h-3 w-3 text-primary" aria-hidden="true" />
+        <>
+          <CheckCheck className="h-3 w-3 text-primary" aria-hidden="true" />
+          <span className="text-[10px] leading-none text-primary">Seen</span>
+        </>
       ) : (
-        <Check className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+        <>
+          <Check className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+          <span className="text-[10px] leading-none text-muted-foreground">Sent</span>
+        </>
       )}
     </span>
   );
+}
+
+/**
+ * Peer MarkRead watermark for the current viewer (customer sees provider's
+ * watermark and vice versa). Null when channel/role/watermark missing.
+ */
+export function peerLastReadAtISO(
+  channel:
+    | {
+        customer_id?: string;
+        provider_id?: string;
+        customer_last_read_at?: string;
+        provider_last_read_at?: string;
+      }
+    | null
+    | undefined,
+  viewerUserId: string | null | undefined,
+): string | null {
+  if (!channel || !viewerUserId) return null;
+  if (viewerUserId === channel.customer_id) {
+    return channel.provider_last_read_at ?? null;
+  }
+  if (viewerUserId === channel.provider_id) {
+    return channel.customer_last_read_at ?? null;
+  }
+  return null;
+}
+
+/**
+ * Id of the caller's last own message that should show a receipt, and whether
+ * the peer has Seen it. Prefers peer last_read watermark (works without a
+ * reply); falls back to a later peer message (implies they opened the thread).
+ */
+export function computeLastOwnReceipt(
+  messages: { id: string; sender_id: string; created_at: string }[],
+  viewerUserId: string | null | undefined,
+  peerLastReadISO: string | null,
+): { messageId: string; isRead: boolean } | null {
+  if (!viewerUserId) return null;
+  let lastOwnIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg && msg.sender_id === viewerUserId) {
+      lastOwnIdx = i;
+      break;
+    }
+  }
+  if (lastOwnIdx < 0) return null;
+  const lastOwn = messages[lastOwnIdx];
+  if (!lastOwn) return null;
+
+  // (1) Peer watermark ≥ message created_at → Seen without requiring a reply.
+  if (peerLastReadISO) {
+    const peerMs = Date.parse(peerLastReadISO);
+    const createdMs = Date.parse(lastOwn.created_at);
+    if (!Number.isNaN(peerMs) && !Number.isNaN(createdMs) && peerMs >= createdMs) {
+      return { messageId: lastOwn.id, isRead: true };
+    }
+  }
+
+  // (2) Fallback: any later peer message implies they opened the thread.
+  for (let i = lastOwnIdx + 1; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg && msg.sender_id !== viewerUserId) {
+      return { messageId: lastOwn.id, isRead: true };
+    }
+  }
+
+  return { messageId: lastOwn.id, isRead: false };
 }
 
 function MessageBubble({
   message,
   isOwnMessage,
   senderLabel,
-  isLastRead,
+  showReceipt,
+  isRead,
   canRespondToTerms,
   isRespondingToTerms,
   onAcceptTerms,
@@ -232,7 +315,8 @@ function MessageBubble({
   message: ChatMessage;
   isOwnMessage: boolean;
   senderLabel: string;
-  isLastRead: boolean;
+  showReceipt: boolean;
+  isRead: boolean;
   canRespondToTerms: boolean;
   isRespondingToTerms: boolean;
   onAcceptTerms: () => void;
@@ -299,7 +383,7 @@ function MessageBubble({
           <span className="text-[10px] text-muted-foreground">
             {formatRelativeTime(new Date(message.created_at))}
           </span>
-          <ReadReceipt isOwnMessage={isOwnMessage} isRead={isLastRead} />
+          <ReadReceipt show={isOwnMessage && showReceipt} isRead={isRead} />
           {message.flagged_contact_info ? (
             <span className="flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400" title="May contain contact information">
               <AlertTriangle className="h-3 w-3" aria-hidden="true" />
@@ -389,40 +473,12 @@ export function MessageThread({ channelId }: { channelId: string }) {
   }, [data?.messages]);
   const hasMore = data?.has_more ?? false;
 
-  // Determine the last message read by the other party.
-  // For simplicity, consider all non-own messages as "read" indicators.
-  // The last own message before any non-own message is considered "read".
-  const lastReadOwnMessageId = (() => {
-    if (!user) return null;
-    let lastOwnId: string | null = null;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (!msg) continue;
-      if (msg.sender_id !== user.id) {
-        // Found a message from the other party, mark the last own message before it as read
-        for (let j = i - 1; j >= 0; j--) {
-          const ownMsg = messages[j];
-          if (ownMsg && ownMsg.sender_id === user.id) {
-            lastOwnId = ownMsg.id;
-            break;
-          }
-        }
-        break;
-      }
-    }
-    // If the last message is our own and there are prior non-own messages, it's read
-    if (!lastOwnId && messages.length > 0) {
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg && lastMsg.sender_id === user.id) {
-        // Check if there are other participant messages before
-        const hasOtherMessages = messages.some((m) => m.sender_id !== user.id);
-        if (hasOtherMessages) {
-          lastOwnId = lastMsg.id;
-        }
-      }
-    }
-    return lastOwnId;
-  })();
+  // Peer Seen/Sent: prefer channel last_read watermarks (iOS parity); reply fallback.
+  const peerLastReadISO = peerLastReadAtISO(channel, user?.id);
+  const lastOwnReceipt = useMemo(
+    () => computeLastOwnReceipt(messages, user?.id, peerLastReadISO),
+    [messages, user?.id, peerLastReadISO],
+  );
 
   // Mark channel as read when viewing
   useEffect(() => {
@@ -591,7 +647,8 @@ export function MessageThread({ channelId }: { channelId: string }) {
                 message={message}
                 isOwnMessage={user?.id === message.sender_id}
                 senderLabel={user?.id === message.sender_id ? 'You' : otherPartyName}
-                isLastRead={message.id === lastReadOwnMessageId}
+                showReceipt={!!lastOwnReceipt && message.id === lastOwnReceipt.messageId}
+                isRead={!!lastOwnReceipt?.isRead && message.id === lastOwnReceipt.messageId}
                 canRespondToTerms={canRespond}
                 isRespondingToTerms={respondingMessageId === message.id}
                 onAcceptTerms={() => {

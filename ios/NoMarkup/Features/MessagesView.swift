@@ -26,7 +26,7 @@ import UIKit
 ///   Prefer channel `customer_last_read_at` / `provider_last_read_at` (peer
 ///   watermark ≥ message `created_at`) so Seen works without a peer reply.
 ///   Fallbacks: `message.is_read == true` or a later peer message (web heuristic).
-///   WS has no live `read_receipt` frame yet — channel is re-fetched on thread
+///   Live `read_receipt` WS frames patch peer watermark; REST re-fetch remains
 ///   load/poll for watermark updates. Party-only: JWT `sub` vs channel parties.
 /// - **Mark read:** on open / pull-to-refresh / after send, and when the newest
 ///   message scrolls into view (bottom) if not already marked for that tip.
@@ -722,6 +722,18 @@ struct ChatThreadView: View {
         case .unreadUpdate:
             // Thread is open — mark-read on open handles badges; no UI action required.
             break
+        case .readReceipt(let channelID, let userID, let lastReadAt):
+            guard channelID.isEmpty || channelID == expectedChannelID else { return }
+            guard let lastReadAt, !lastReadAt.isEmpty else { return }
+            // Patch peer watermark so Sent → Seen without waiting for poll.
+            let customer = channelMeta.customerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let provider = channelMeta.providerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let reader = userID.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !customer.isEmpty, reader == customer {
+                channelMeta.customerLastReadAt = lastReadAt
+            } else if !provider.isEmpty, reader == provider {
+                channelMeta.providerLastReadAt = lastReadAt
+            }
         case .error:
             // Protocol errors are non-fatal; poll fallback covers recovery.
             break

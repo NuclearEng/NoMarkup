@@ -13,6 +13,16 @@ beforeAll(() => {
 const markReadMutate = vi.fn(() => Promise.resolve({}));
 const respondToTermsMutate = vi.fn(() => Promise.resolve({ id: 'terms-resp-1' }));
 
+const channelFixture = {
+  customer_id: 'user-me',
+  provider_id: 'prov-1',
+  customer_name: 'Jane Customer',
+  provider_name: 'Mike Provider',
+  status: 'active',
+  customer_last_read_at: undefined as string | undefined,
+  provider_last_read_at: undefined as string | undefined,
+};
+
 vi.mock('@/hooks/useChannels', () => ({
   useMessages: vi.fn(),
   useMarkRead: () => ({ mutateAsync: markReadMutate, isPending: false }),
@@ -21,16 +31,10 @@ vi.mock('@/hooks/useChannels', () => ({
     isPending: false,
   }),
   // MessageThread reads the channel to resolve sender display names for bubbles
-  // and to decide customer-only Accept/Reject for proposed terms.
+  // and to decide customer-only Accept/Reject for proposed terms + peer Seen.
   useChannel: () => ({
     data: {
-      channel: {
-        customer_id: 'user-me',
-        provider_id: 'prov-1',
-        customer_name: 'Jane Customer',
-        provider_name: 'Mike Provider',
-        status: 'active',
-      },
+      channel: channelFixture,
     },
   }),
 }));
@@ -89,6 +93,8 @@ beforeEach(() => {
   respondToTermsMutate.mockClear();
   respondToTermsMutate.mockImplementation(() => Promise.resolve({ id: 'terms-resp-1' }));
   scrollIntoViewSpy.mockClear();
+  channelFixture.customer_last_read_at = undefined;
+  channelFixture.provider_last_read_at = undefined;
 });
 
 afterEach(() => {
@@ -368,7 +374,7 @@ describe('MessageThread', () => {
     expect(screen.getByText('Yesterday')).toBeDefined();
   });
 
-  it('renders a read-receipt indicator on own messages followed by other messages', () => {
+  it('renders a Seen receipt on last own message followed by a peer reply', () => {
     setMessages({
       messages: [
         makeMsg({ id: 'a', sender_id: 'user-other' }),
@@ -378,14 +384,13 @@ describe('MessageThread', () => {
       has_more: false,
     });
     render(<MessageThread channelId="chan-1" />);
-    expect(screen.getAllByLabelText(/Message read|Message sent/).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Message seen')).toBeDefined();
+    expect(screen.getByTitle('Seen')).toBeDefined();
   });
 
   // ---- WAVE 21 BRANCH-DEEPENING ----
 
-  it('renders the "Sent" (unread) read-receipt for an own message with no following other-party messages', () => {
-    // Single own message with no prior or following other messages → lastReadOwnMessageId
-    // stays null, so ReadReceipt renders the "Sent"/Check (unread) variant.
+  it('renders the "Sent" receipt for last own message with no peer watermark or reply', () => {
     setMessages({
       messages: [
         makeMsg({ id: 'only-mine', sender_id: 'user-me', content: 'first message' }),
@@ -395,6 +400,25 @@ describe('MessageThread', () => {
     render(<MessageThread channelId="chan-1" />);
     expect(screen.getByLabelText('Message sent')).toBeDefined();
     expect(screen.getByTitle('Sent')).toBeDefined();
+  });
+
+  it('renders Seen from peer last_read watermark without a peer reply', () => {
+    // Viewer is customer → peer watermark is provider_last_read_at.
+    channelFixture.provider_last_read_at = '2026-04-01T12:00:00Z';
+    setMessages({
+      messages: [
+        makeMsg({
+          id: 'only-mine',
+          sender_id: 'user-me',
+          content: 'first message',
+          created_at: '2026-04-01T11:00:00Z',
+        }),
+      ],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    expect(screen.getByLabelText('Message seen')).toBeDefined();
+    expect(screen.getByTitle('Seen')).toBeDefined();
   });
 
   it('renders own-message styling for a deleted own message', () => {

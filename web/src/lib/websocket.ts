@@ -22,6 +22,8 @@ export const WS_SERVER_MSG = {
   MESSAGE: 'message',
   TYPING: 'typing',
   UNREAD_UPDATE: 'unread_update',
+  /** Peer MarkRead watermark — flips Sent → Seen without REST poll. */
+  READ_RECEIPT: 'read_receipt',
 } as const;
 export type WsServerMsgType = (typeof WS_SERVER_MSG)[keyof typeof WS_SERVER_MSG];
 
@@ -61,7 +63,19 @@ export interface WsUnreadUpdatePayload {
   unread_count: number;
 }
 
-export type WsServerMessage = WsMessagePayload | WsTypingPayload | WsUnreadUpdatePayload;
+export interface WsReadReceiptPayload {
+  type: typeof WS_SERVER_MSG.READ_RECEIPT;
+  channel_id: string;
+  user_id: string;
+  /** RFC3339 peer MarkRead watermark. */
+  last_read_at?: string;
+}
+
+export type WsServerMessage =
+  | WsMessagePayload
+  | WsTypingPayload
+  | WsUnreadUpdatePayload
+  | WsReadReceiptPayload;
 
 // ─── Connection status ───────────────────────────────────────────
 export const CONNECTION_STATUS = {

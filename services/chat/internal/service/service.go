@@ -213,8 +213,26 @@ func (s *Service) ListMessages(ctx context.Context, channelID, userID string, be
 }
 
 // MarkRead validates user membership and marks messages as read.
+// On success, publishes a live read_receipt so the peer can flip Sent → Seen
+// without waiting for a REST poll (FR-8 receipts polish).
 func (s *Service) MarkRead(ctx context.Context, channelID, userID string) error {
-	return s.repo.MarkRead(ctx, channelID, userID)
+	if err := s.repo.MarkRead(ctx, channelID, userID); err != nil {
+		return err
+	}
+	if s.pubsub == nil {
+		return nil
+	}
+	// Repo stamps now(); publish the same wall-clock so peer watermark compares work.
+	lastReadAt := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := s.pubsub.PublishReadReceipt(ctx, channelID, userID, lastReadAt); err != nil {
+		// Fail-soft: durable MarkRead already succeeded; peer falls back to poll.
+		slog.ErrorContext(ctx, "failed to publish read_receipt after MarkRead",
+			"channel_id", channelID,
+			"user_id", userID,
+			"error", err,
+		)
+	}
+	return nil
 }
 
 // GetUnreadCounts returns unread message counts per channel for a user.

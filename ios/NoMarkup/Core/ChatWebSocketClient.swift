@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Protocol (mirrors `web/src/lib/websocket.ts` + chat service `ws.Handler`):
 /// - **Client → server:** `subscribe` / `unsubscribe` / `typing` with `channel_id`
-/// - **Server → client:** `message` / `typing` / `unread_update` / `error`
+/// - **Server → client:** `message` / `typing` / `unread_update` / `read_receipt` / `error`
 ///
 /// Auth: JWT on the upgrade request as `Authorization: Bearer <access>` (preferred).
 /// The gateway also accepts `?token=` — we deliberately avoid putting the token in
@@ -37,6 +37,8 @@ final class ChatWebSocketClient: ObservableObject {
         case typing(channelID: String, userID: String)
         /// Unread badge change for a channel.
         case unreadUpdate(channelID: String, unreadCount: Int)
+        /// Peer MarkRead watermark — flip Sent → Seen without REST poll.
+        case readReceipt(channelID: String, userID: String, lastReadAt: String?)
         /// Server-sent protocol error (e.g. not subscribed).
         case error(String)
     }
@@ -306,6 +308,11 @@ final class ChatWebSocketClient: ObservableObject {
                 count = 0
             }
             onEvent?(.unreadUpdate(channelID: channelID, unreadCount: count))
+        case "read_receipt":
+            let userID = (obj["user_id"] as? String) ?? ""
+            let lastReadAt = obj["last_read_at"] as? String
+            guard !channelID.isEmpty, !userID.isEmpty else { return }
+            onEvent?(.readReceipt(channelID: channelID, userID: userID, lastReadAt: lastReadAt))
         case "error":
             let msg = (obj["error"] as? String) ?? "WebSocket error"
             onEvent?(.error(msg))

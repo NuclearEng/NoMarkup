@@ -41,6 +41,8 @@ type ServerMessage struct {
 	ChannelID   string          `json:"channel_id,omitempty"`
 	Message     json.RawMessage `json:"message,omitempty"`
 	UserID      string          `json:"user_id,omitempty"`
+	// LastReadAt is set on type=read_receipt (RFC3339 peer MarkRead watermark).
+	LastReadAt  string          `json:"last_read_at,omitempty"`
 	UnreadCount int             `json:"unread_count,omitempty"`
 	Error       string          `json:"error,omitempty"`
 }
@@ -362,11 +364,12 @@ func (c *Connection) handleSubscribe(ctx context.Context, channelID string) {
 
 	subCtx, subCancel := context.WithCancel(ctx)
 
-	// Subscribe to both message and typing topics.
+	// Subscribe to message, typing, and read-receipt topics.
 	messageTopic := fmt.Sprintf("chat:%s", channelID)
 	typingTopic := fmt.Sprintf("chat:%s:typing", channelID)
+	readTopic := fmt.Sprintf("chat:%s:read", channelID)
 
-	redisSub := c.pubsub.SubscribeTopics(subCtx, messageTopic, typingTopic)
+	redisSub := c.pubsub.SubscribeTopics(subCtx, messageTopic, typingTopic, readTopic)
 
 	c.subs[channelID] = &channelSub{
 		redisSub: redisSub,
@@ -477,14 +480,28 @@ func (c *Connection) listenRedis(ctx context.Context, channelID string, redisSub
 	}
 }
 
+// redisTopicKind classifies a Redis channel name for a subscribed chat channel.
+func redisTopicKind(channelID, redisChannel string) string {
+	prefix := "chat:" + channelID
+	switch redisChannel {
+	case prefix:
+		return "message"
+	case prefix + ":typing":
+		return "typing"
+	case prefix + ":read":
+		return "read"
+	default:
+		return ""
+	}
+}
+
 // forwardRedisMessage converts a Redis pub/sub message to a ServerMessage and sends it.
 func (c *Connection) forwardRedisMessage(channelID string, redisMsg *redis.Message) {
-	// Determine type based on the Redis topic.
-	isTyping := len(redisMsg.Channel) > len(channelID)+5 &&
-		redisMsg.Channel[len(redisMsg.Channel)-7:] == ":typing"
+	kind := redisTopicKind(channelID, redisMsg.Channel)
 
 	var serverMsg ServerMessage
-	if isTyping {
+	switch kind {
+	case "typing":
 		// Parse the typing payload to extract user_id.
 		var payload struct {
 			UserID string `json:"user_id"`
@@ -502,8 +519,30 @@ func (c *Connection) forwardRedisMessage(channelID string, redisMsg *redis.Messa
 			ChannelID: channelID,
 			UserID:    payload.UserID,
 		}
-	} else {
-		// It's a chat message. Parse to check sender and avoid echo.
+	case "read":
+		var payload struct {
+			UserID     string `json:"user_id"`
+			LastReadAt string `json:"last_read_at"`
+		}
+		if err := json.Unmarshal([]byte(redisMsg.Payload), &payload); err != nil {
+			slog.Warn("failed to parse read_receipt payload", "error", err)
+			return
+		}
+		// Don't echo own MarkRead — the reader already knows they read the thread.
+		if payload.UserID == c.userID {
+			return
+		}
+		if payload.UserID == "" {
+			return
+		}
+		serverMsg = ServerMessage{
+			Type:       "read_receipt",
+			ChannelID:  channelID,
+			UserID:     payload.UserID,
+			LastReadAt: payload.LastReadAt,
+		}
+	case "message":
+		// Chat message body. Parse for structural validation only.
 		var msgPayload domain.Message
 		if err := json.Unmarshal([]byte(redisMsg.Payload), &msgPayload); err != nil {
 			slog.Warn("failed to parse message payload", "error", err)
@@ -514,6 +553,9 @@ func (c *Connection) forwardRedisMessage(channelID string, redisMsg *redis.Messa
 			ChannelID: channelID,
 			Message:   json.RawMessage(redisMsg.Payload),
 		}
+	default:
+		slog.Warn("unknown redis chat topic", "redis_channel", redisMsg.Channel, "channel_id", channelID)
+		return
 	}
 
 	data, err := json.Marshal(serverMsg)
