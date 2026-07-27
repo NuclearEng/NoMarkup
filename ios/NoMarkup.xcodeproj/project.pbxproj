@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A100000000000000000000AF /* DirectionsHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AF /* DirectionsHelper.swift */; };
 		A100000000000000000000B0 /* VerificationCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B0 /* VerificationCenterView.swift */; };
+		A100000000000000000000B1 /* MarketRangeBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B1 /* MarketRangeBar.swift */; };
 		A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AE /* BusinessFeaturesHubView.swift */; };
 		A100000000000000000000AD /* Models+RegulatedRails.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AD /* Models+RegulatedRails.swift */; };
 		A100000000000000000000AC /* APIClient+RegulatedRails.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AC /* APIClient+RegulatedRails.swift */; };
@@ -203,6 +204,7 @@
 		B100000000000000000000A9 /* TrustScoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustScoreView.swift; sourceTree = "<group>"; };
 		B100000000000000000000AF /* DirectionsHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionsHelper.swift; sourceTree = "<group>"; };
 		B100000000000000000000B0 /* VerificationCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationCenterView.swift; sourceTree = "<group>"; };
+		B100000000000000000000B1 /* MarketRangeBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketRangeBar.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -352,6 +354,7 @@
 				B1000000000000000000000B /* JobsView.swift */,
 				B10000000000000000000051 /* JobsMapView.swift */,
 				B10000000000000000000019 /* JobDetailView.swift */,
+				B100000000000000000000B1 /* MarketRangeBar.swift */,
 				B100000000000000000000A1 /* JobDraftsView.swift */,
 				B1000000000000000000000C /* MessagesView.swift */,
 				B1000000000000000000000D /* AccountView.swift */,
@@ -585,6 +588,7 @@
 				A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */,
 				A100000000000000000000AF /* DirectionsHelper.swift in Sources */,
 				A100000000000000000000B0 /* VerificationCenterView.swift in Sources */,
+				A100000000000000000000B1 /* MarketRangeBar.swift in Sources */,
 				A100000000000000000000AD /* Models+RegulatedRails.swift in Sources */,
 				A100000000000000000000AC /* APIClient+RegulatedRails.swift in Sources */,
 				A100000000000000000000AB /* CameraImagePicker.swift in Sources */,

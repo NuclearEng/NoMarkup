@@ -740,6 +740,59 @@ actor APIClient {
         )
     }
 
+    /// GET `/api/v1/analytics/market/range?category_id=` — FR-11 market band (public, edge-cached).
+    /// Soft-fails to `{ has_data: false }` on empty category, 404, or transport errors so the
+    /// range bar can hide entirely (never blocks post-job / bid flows).
+    func fetchMarketRange(
+        categoryId: String,
+        subcategoryId: String? = nil,
+        serviceTypeId: String? = nil,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        radiusKm: Double? = nil
+    ) async -> MarketRangeResponse {
+        let trimmed = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return MarketRangeResponse(hasData: false)
+        }
+        var query: [URLQueryItem] = [
+            URLQueryItem(name: "category_id", value: trimmed),
+        ]
+        if let subcategoryId {
+            let sid = subcategoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !sid.isEmpty {
+                query.append(URLQueryItem(name: "subcategory_id", value: sid))
+            }
+        }
+        if let serviceTypeId {
+            let stid = serviceTypeId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !stid.isEmpty {
+                query.append(URLQueryItem(name: "service_type_id", value: stid))
+            }
+        }
+        if let latitude, let longitude,
+           latitude >= -90, latitude <= 90,
+           longitude >= -180, longitude <= 180
+        {
+            query.append(URLQueryItem(name: "lat", value: String(latitude)))
+            query.append(URLQueryItem(name: "lng", value: String(longitude)))
+        }
+        if let radiusKm, radiusKm > 0 {
+            query.append(URLQueryItem(name: "radius_km", value: String(radiusKm)))
+        }
+        do {
+            let response: MarketRangeResponse = try await getJSON(
+                pathComponents: ["api", "v1", "analytics", "market", "range"],
+                query: query,
+                authorized: false
+            )
+            return response
+        } catch {
+            // Predictable empty / older 404 gateways / offline — FR-11 soft-hide.
+            return MarketRangeResponse(hasData: false)
+        }
+    }
+
     // MARK: - Create (jobs + listings)
 
     /// POST `/api/v1/jobs` — create a service reverse-auction job (Bearer required).

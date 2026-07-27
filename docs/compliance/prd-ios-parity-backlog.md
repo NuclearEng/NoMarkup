@@ -129,11 +129,11 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial / accepted residual
 - [ ] **ASC ops** — Team signing, ASC app record, 1024 icon, 6.7" + 12.9" screenshots, privacy labels, age rating, free-tier Review Notes paste  
 - [ ] **PRE-05 review backend** — Always-on review API + seed + `APPLE_NATIVE_CLIENT_ID` + Stripe `pk_` for Apple Pay dogfood  
 - [ ] **Device smoke** — Human-execute `device-smoke-checklist.md` + sign `launch-board.md` (auto smoke ≠ signed)  
-- [ ] **FR-18 recurring** — Implement recurring RPCs (instances / pause / resume) + iOS post / timeline / pause  
+- [~] **FR-18 recurring** — Config/instances/pause/resume/cancel + iOS timeline shipped; scheduler roll-forward + Stripe per-instance still residual  
 - [~] **FR-1.5–1.9 onboarding** — Email/phone **VerificationCenterView** live; full guided multi-step wizard still open  
-- [~] **FR-3 job form + repost** — Full job form (recurrence, offer-accepted, schedule, property) + repost UX  
+- [x] **FR-3 job form + repost** — Full job form (recurrence, offer-accepted, schedule, property) + repost UX  
 - [x] **FR-4 bid advanced** — Lower bid, accept-offer, sort/filter bids on iOS  
-- [ ] **FR-9 services pay** — Services escrow PaymentSheet capture + fee breakdown (not goods-only)  
+- [x] **FR-9 services pay** — Services escrow PaymentSheet capture + fee breakdown (not goods-only)  
 - [x] **FR-10.4 directions** — Post-award Get Directions (Maps) + `property_id` on PostJob  
 
 ### P1 — Product depth
@@ -142,12 +142,12 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial / accepted residual
 - [~] **Idempotency residual** — Job-bid durable SQL dedup + sticky iOS Idempotency-Key + bid-bond double-tap uniqueness  
 - [ ] **FR-12 digital** — ASC free-tier-only lock **or** full StoreKit B2 (no stubs)  
 - [x] **Perf gate close** — Mark parent `perf-gate-2026-07-26.md` PASS from samples; optional BrandAppIcon true 1x/2x/3x  
-- [ ] **FR-5 profile terms** — Portfolio upload UI + global terms editor + local terms in chat  
-- [~] **FR-6 review polish** — Category sub-ratings, respond to review, flag review on iOS  
+- [x] **FR-5 profile terms** — Portfolio upload UI + global terms editor + local terms in chat  
+- [x] **FR-6 review polish** — Category sub-ratings, respond to review, flag review on iOS  
 - [ ] **FR-8 chat parity** — Native WS / typing / receipts, attachments, search, proposed terms  
-- [ ] **FR-11 market bars** — Real p25/p50/p75 range bars on post + bid sheet (`/analytics/market/range`)  
+- [x] **FR-11 market bars** — Real p25/p50/p75 range bars on post + bid sheet (`/analytics/market/range`)  
 - [ ] **FR-19 property dash** — Summary cards, edit, history drill-in, property picker on jobs  
-- [ ] **FR-15/16 evidence** — Revision 200-char + cap UI; dispute/guarantee evidence upload in-app  
+- [x] **FR-15/16 evidence** — Revision 200-char + cap UI; dispute/guarantee evidence upload in-app  
 - [x] **FR-17.5 deep links** — Notification tap → job / contract / chat / payment  
 
 ### P2 — Growth, Instant, platform
@@ -204,4 +204,4 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial / accepted residual
 | 2026-07-27 | Initial backlog written from PRD §8–16 audit + compliance gate residual list |
 
 | 2026-07-27 | Wave: doc hygiene, RequireFlag SEC-GATE-03 + tests, FR-4 lower/accept-offer, FR-10 directions+property, FR-1 verify center, FR-3 post fields, FR-6 category ratings, FR-17 deep links, perf-gate PASS close |
-
+| 2026-07-27 wave2 | FR-9 pay escrow, FR-18 recurring partial, repost, review respond/flag, market bars, evidence photos, FR-5 terms/portfolio |

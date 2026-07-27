@@ -557,6 +557,81 @@ struct FairPriceResponse: Codable, Sendable {
     }
 }
 
+// MARK: - Market range API (`GET /api/v1/analytics/market/range`) — FR-11
+
+/// Public market price band from the analytics service. Soft empty: `{ "has_data": false }`.
+/// Wire fields: `low_cents` / `median_cents` / `high_cents` / `data_points` (sample size) / `source`.
+/// (`source` is typically `"seeded"`, `"platform"`, or `"blended"`.)
+struct MarketRangeResponse: Codable, Sendable, Equatable {
+    var hasData: Bool?
+    var categoryId: String?
+    var subcategoryId: String?
+    var serviceTypeId: String?
+    var region: String?
+    var lowCents: Int64?
+    var medianCents: Int64?
+    var highCents: Int64?
+    var dataPoints: Int?
+    var source: String?
+    var confidence: Double?
+    var computedAt: String?
+
+    init(
+        hasData: Bool? = nil,
+        categoryId: String? = nil,
+        subcategoryId: String? = nil,
+        serviceTypeId: String? = nil,
+        region: String? = nil,
+        lowCents: Int64? = nil,
+        medianCents: Int64? = nil,
+        highCents: Int64? = nil,
+        dataPoints: Int? = nil,
+        source: String? = nil,
+        confidence: Double? = nil,
+        computedAt: String? = nil
+    ) {
+        self.hasData = hasData
+        self.categoryId = categoryId
+        self.subcategoryId = subcategoryId
+        self.serviceTypeId = serviceTypeId
+        self.region = region
+        self.lowCents = lowCents
+        self.medianCents = medianCents
+        self.highCents = highCents
+        self.dataPoints = dataPoints
+        self.source = source
+        self.confidence = confidence
+        self.computedAt = computedAt
+    }
+
+    /// True when the gateway returned a usable low/high band (cents > 0).
+    /// Median is optional — `displayMedianCents` fills midpoint when missing.
+    var isUsable: Bool {
+        guard hasData == true else { return false }
+        guard let low = lowCents, let high = highCents, low > 0, high >= low else { return false }
+        return true
+    }
+
+    /// Sample size alias (`data_points` on the wire).
+    var sampleSize: Int {
+        max(0, dataPoints ?? 0)
+    }
+
+    /// Display median: server median, else midpoint of low–high.
+    var displayMedianCents: Int64 {
+        if let mid = medianCents, mid > 0 { return mid }
+        let low = lowCents ?? 0
+        let high = highCents ?? low
+        return low + (high - low) / 2
+    }
+
+    /// Seeded / industry guides (FR-11.2 disclaimer) vs platform transactions.
+    var isIndustrySeeded: Bool {
+        let s = (source ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return s == "seeded" || s == "industry" || s == "industry_data"
+    }
+}
+
 // MARK: - Market range intelligence (job detail H1.4 / H1.5)
 
 /// Provenance for the band shown when FPI may be empty — never claim index data we do not have.
@@ -623,6 +698,23 @@ enum MarketRangeMath {
         return Int64(blended.rounded())
     }
 
+    /// Analytics market/range → estimate when `isUsable` (low/median/high + data_points).
+    static func fromMarketRange(_ range: MarketRangeResponse) -> MarketRangeEstimate? {
+        guard range.isUsable,
+              let lo = range.lowCents,
+              let hi = range.highCents
+        else {
+            return nil
+        }
+        return MarketRangeEstimate(
+            lowCents: lo,
+            highCents: hi,
+            medianCents: range.displayMedianCents,
+            sampleCount: range.sampleSize,
+            source: .marketIndex
+        )
+    }
+
     /// FPI → estimate when `isUsable` (p25–p75 preferred, else CI, else median-as-point).
     static func fromFairPrice(_ fair: FairPriceResponse) -> MarketRangeEstimate? {
         guard fair.isUsable else { return nil }
@@ -645,6 +737,39 @@ enum MarketRangeMath {
                 medianCents: mid,
                 sampleCount: max(0, n),
                 source: .marketIndex
+            )
+        }
+        return nil
+    }
+
+    /// Fair-price engine → market/range-shaped payload so the same bar can render either API.
+    /// Maps p25 → low, price (p50) → median, p75 → high, n_eff → data_points.
+    static func marketRangeResponse(from fair: FairPriceResponse) -> MarketRangeResponse? {
+        guard fair.isUsable else { return nil }
+        let lo = fair.p25Cents ?? fair.ciLoCents
+        let hi = fair.p75Cents ?? fair.ciHiCents
+        let mid = fair.priceCents
+        let n = fair.nEff.map { Int($0.rounded()) } ?? 0
+        if let lo, let hi, lo > 0, hi >= lo {
+            return MarketRangeResponse(
+                hasData: true,
+                lowCents: lo,
+                medianCents: mid.flatMap { $0 > 0 ? $0 : nil } ?? (lo + (hi - lo) / 2),
+                highCents: hi,
+                dataPoints: max(0, n),
+                source: "platform",
+                confidence: fair.confidence
+            )
+        }
+        if let mid, mid > 0 {
+            return MarketRangeResponse(
+                hasData: true,
+                lowCents: mid,
+                medianCents: mid,
+                highCents: mid,
+                dataPoints: max(0, n),
+                source: "platform",
+                confidence: fair.confidence
             )
         }
         return nil
@@ -730,6 +855,8 @@ struct JobSummary: Codable, Sendable, Hashable, Identifiable {
     var status: String?
     var scheduleType: String?
     var isRecurring: Bool?
+    /// weekly | biweekly | monthly when `isRecurring` (FR-18.1).
+    var recurrenceFrequency: String? = nil
     var auctionDurationHours: Int?
     var bidCount: Int?
     var repostCount: Int?
@@ -774,6 +901,14 @@ struct JobSummary: Codable, Sendable, Hashable, Identifiable {
         guard let ends = auctionEndsAt, !ends.isEmpty else { return nil }
         return CatalogDateFormat.countdownLabel(iso: ends)
     }
+
+    /// Human label for recurrence when the job is recurring.
+    var recurrenceLabel: String? {
+        guard isRecurring == true else { return nil }
+        let f = recurrenceFrequency?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if f.isEmpty { return "Yes" }
+        return StatusChipStyle.displayLabel(f)
+    }
 }
 
 /// Detail from `GET /api/v1/jobs/{id}` (`{ "job": ... }`).
@@ -789,6 +924,8 @@ struct JobDetail: Codable, Sendable, Hashable, Identifiable {
     var status: String?
     var scheduleType: String?
     var isRecurring: Bool?
+    /// weekly | biweekly | monthly when `isRecurring` (FR-18.1).
+    var recurrenceFrequency: String? = nil
     var auctionDurationHours: Int?
     var bidCount: Int?
     var repostCount: Int?
@@ -842,6 +979,14 @@ struct JobDetail: Codable, Sendable, Hashable, Identifiable {
         exactAddress?.isDirectionsReady == true
     }
 
+    /// Human label for recurrence when the job is recurring.
+    var recurrenceLabel: String? {
+        guard isRecurring == true else { return nil }
+        let f = recurrenceFrequency?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if f.isEmpty { return "Yes" }
+        return StatusChipStyle.displayLabel(f)
+    }
+
     init(from summary: JobSummary) {
         id = summary.id
         customerId = summary.customerId
@@ -851,6 +996,7 @@ struct JobDetail: Codable, Sendable, Hashable, Identifiable {
         status = summary.status
         scheduleType = summary.scheduleType
         isRecurring = summary.isRecurring
+        recurrenceFrequency = summary.recurrenceFrequency
         auctionDurationHours = summary.auctionDurationHours
         bidCount = summary.bidCount
         repostCount = summary.repostCount

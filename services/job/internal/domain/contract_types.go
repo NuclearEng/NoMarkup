@@ -41,6 +41,16 @@ var (
 	ErrChangeOrderNotResponder = errors.New("only the customer can respond to a change order")
 	ErrChangeOrderNotPending   = errors.New("change order is no longer pending")
 	ErrInvalidChangeOrderDelta = errors.New("invalid change order amount delta")
+
+	// Recurring (FR-18) sentinels.
+	ErrRecurringNotFound         = errors.New("recurring config not found")
+	ErrRecurringInstanceNotFound = errors.New("recurring instance not found")
+	ErrRecurringNotActive        = errors.New("recurring config is not active")
+	ErrRecurringNotPaused        = errors.New("recurring config is not paused")
+	ErrRecurringCancelled        = errors.New("recurring config is cancelled")
+	ErrRecurringInvalidFrequency = errors.New("invalid recurrence frequency")
+	ErrRecurringInvalidRate      = errors.New("invalid recurring rate")
+	ErrRecurringInstanceState    = errors.New("invalid recurring instance status transition")
 )
 
 // Contract represents a contract between customer and provider.
@@ -72,6 +82,8 @@ type Contract struct {
 	JobTitle     string
 	Milestones   []Milestone
 	ChangeOrders []ChangeOrder
+	// Recurring is loaded when a recurring_configs row exists for the contract.
+	Recurring *RecurringConfig
 }
 
 // Milestone represents a milestone within a contract.
@@ -132,6 +144,41 @@ type MilestoneInput struct {
 	AmountCents int64
 }
 
+// RecurringConfig is the schedule + rate for a recurring contract (FR-18).
+// Backed by recurring_configs (migration 001).
+type RecurringConfig struct {
+	ID              string
+	ContractID      string
+	Frequency       string // weekly, biweekly, monthly
+	RateCents       int64
+	AutoApprove     bool
+	Status          string // active, paused, cancelled
+	PausedAt        *time.Time
+	PauseMaxDate    *time.Time
+	NextOccurrence  time.Time // DATE stored as midnight UTC
+	CancelledAt     *time.Time
+	CancelledBy     *string
+	NoticePeriodEnd *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// RecurringInstance is a single occurrence of a recurring contract (FR-18).
+// Backed by recurring_instances (migration 001).
+type RecurringInstance struct {
+	ID             string
+	RecurringID    string
+	ContractID     string
+	OccurrenceDate time.Time // DATE stored as midnight UTC
+	Status         string    // scheduled, in_progress, completed, skipped, cancelled
+	AmountCents    int64
+	CompletedAt    *time.Time
+	ApprovedAt     *time.Time
+	AutoApproved   bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 // ContractRepository defines persistence operations for contracts.
 type ContractRepository interface {
 	CreateContract(ctx context.Context, contract *Contract, milestones []MilestoneInput) (*Contract, error)
@@ -167,4 +214,14 @@ type ContractRepository interface {
 	ResolveDispute(ctx context.Context, disputeID, resolutionType, notes, resolvedBy string, refundAmountCents int64, guaranteeOutcome string) (*Dispute, error)
 	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error
 	UpdateContractStatus(ctx context.Context, contractID string, status string) error
+
+	// Recurring (FR-18) — tables recurring_configs / recurring_instances
+	GetRecurringConfigByContract(ctx context.Context, contractID string) (*RecurringConfig, error)
+	GetRecurringConfigByID(ctx context.Context, recurringID string) (*RecurringConfig, error)
+	CreateRecurringConfig(ctx context.Context, cfg *RecurringConfig) (*RecurringConfig, error)
+	UpdateRecurringConfig(ctx context.Context, cfg *RecurringConfig) (*RecurringConfig, error)
+	ListRecurringInstances(ctx context.Context, recurringID string, page, pageSize int) ([]*RecurringInstance, *Pagination, error)
+	GetRecurringInstance(ctx context.Context, instanceID string) (*RecurringInstance, error)
+	CreateRecurringInstance(ctx context.Context, inst *RecurringInstance) (*RecurringInstance, error)
+	UpdateRecurringInstance(ctx context.Context, inst *RecurringInstance) (*RecurringInstance, error)
 }

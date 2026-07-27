@@ -128,6 +128,41 @@ extension APIClient {
             authorized: .required
         )
     }
+
+    /// POST `/api/v1/jobs/{id}/repost` — owner creates a new auction from a closed/expired/
+    /// cancelled (or zero-bid closed) job (FR-3.5 / FR-3.10). Previous bids do not carry over.
+    /// Optional overrides let the customer tweak starting bid / duration / title / description.
+    @discardableResult
+    func repostJob(
+        id: String,
+        title: String? = nil,
+        description: String? = nil,
+        startingBidCents: Int64? = nil,
+        offerAcceptedCents: Int64? = nil,
+        auctionDurationHours: Int? = nil
+    ) async throws -> JobDetail {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        func optionalTrimmed(_ value: String?) -> String? {
+            guard let value else { return nil }
+            let t = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        let body = RepostJobBody(
+            title: optionalTrimmed(title),
+            description: optionalTrimmed(description),
+            startingBidCents: startingBidCents,
+            offerAcceptedCents: offerAcceptedCents,
+            auctionDurationHours: auctionDurationHours
+        )
+        return try await postJSON(
+            pathComponents: ["api", "v1", "jobs", trimmed, "repost"],
+            body: body,
+            authorized: .required
+        )
+    }
 }
 
 // MARK: - Request bodies (camelCase → snake_case via encoder)
@@ -135,4 +170,13 @@ extension APIClient {
 /// Body for `PATCH /api/v1/bids/{id}` — reverse-auction lower only.
 private struct UpdateJobBidBody: Encodable {
     let newAmountCents: Int64
+}
+
+/// Body for `POST /api/v1/jobs/{id}/repost` — all fields optional (empty = copy original).
+private struct RepostJobBody: Encodable {
+    let title: String?
+    let description: String?
+    let startingBidCents: Int64?
+    let offerAcceptedCents: Int64?
+    let auctionDurationHours: Int?
 }

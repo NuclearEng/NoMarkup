@@ -1022,6 +1022,53 @@ struct FollowToggleResponse: Decodable, Sendable {
 
 // MARK: - User reviews (public seller/provider)
 
+/// Nested public response on a review (FR-6.5).
+struct ReviewResponseSnippet: Decodable, Sendable, Hashable {
+    var id: String?
+    var reviewId: String?
+    var responderId: String?
+    var responderName: String?
+    var comment: String?
+    var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case reviewId
+        case responderId
+        case responderName
+        case comment
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
+        reviewId = try c.decodeIfPresent(String.self, forKey: .reviewId)
+        responderId = try c.decodeIfPresent(String.self, forKey: .responderId)
+        responderName = try c.decodeIfPresent(String.self, forKey: .responderName)
+        comment = try c.decodeIfPresent(String.self, forKey: .comment)
+        if let s = try? c.decodeIfPresent(String.self, forKey: .createdAt) {
+            createdAt = s
+        } else if let d = try? c.decodeIfPresent(Date.self, forKey: .createdAt) {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            createdAt = formatter.string(from: d)
+        } else {
+            createdAt = nil
+        }
+    }
+
+    var displayComment: String {
+        let t = comment?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "—" : t
+    }
+
+    var displayResponder: String {
+        let n = responderName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return n.isEmpty ? "Response" : n
+    }
+}
+
 /// Row from `GET /api/v1/users/{id}/reviews` → `{ "reviews": [...] }`.
 struct ReviewRow: Decodable, Sendable, Hashable, Identifiable {
     let id: String
@@ -1030,6 +1077,9 @@ struct ReviewRow: Decodable, Sendable, Hashable, Identifiable {
     var createdAt: String?
     var reviewerDisplayName: String?
     var reviewerId: String?
+    var revieweeId: String?
+    var isFlagged: Bool?
+    var response: ReviewResponseSnippet?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -1041,6 +1091,9 @@ struct ReviewRow: Decodable, Sendable, Hashable, Identifiable {
         case reviewerName
         case displayName
         case reviewerId
+        case revieweeId
+        case isFlagged
+        case response
     }
 
     init(from decoder: Decoder) throws {
@@ -1084,6 +1137,9 @@ struct ReviewRow: Decodable, Sendable, Hashable, Identifiable {
             .first { !$0.isEmpty }
 
         reviewerId = try c.decodeIfPresent(String.self, forKey: .reviewerId)
+        revieweeId = try c.decodeIfPresent(String.self, forKey: .revieweeId)
+        isFlagged = try c.decodeIfPresent(Bool.self, forKey: .isFlagged)
+        response = try c.decodeIfPresent(ReviewResponseSnippet.self, forKey: .response)
     }
 
     var displayReviewer: String {
@@ -1104,6 +1160,12 @@ struct ReviewRow: Decodable, Sendable, Hashable, Identifiable {
     var createdAtLabel: String? {
         guard let createdAt else { return nil }
         return CatalogDateFormat.friendlyDateTime(createdAt)
+    }
+
+    var hasResponse: Bool {
+        guard let response else { return false }
+        let c = response.comment?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !c.isEmpty || response.id != nil
     }
 }
 

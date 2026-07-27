@@ -227,6 +227,13 @@ func (r *PostgresRepository) GetContract(ctx context.Context, contractID string)
 	}
 	c.ChangeOrders = changeOrders
 
+	// Load optional recurring config (FR-18). Missing row is normal for one-shot jobs.
+	if rec, err := r.GetRecurringConfigByContract(ctx, contractID); err == nil {
+		c.Recurring = rec
+	} else if !errors.Is(err, domain.ErrRecurringNotFound) {
+		return nil, fmt.Errorf("get contract recurring: %w", err)
+	}
+
 	return &c, nil
 }
 

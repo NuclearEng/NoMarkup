@@ -295,7 +295,7 @@ func (s *JobService) RepostJob(ctx context.Context, jobID, customerID string, up
 		Publish:              true,
 	}
 
-	// Apply optional updates.
+	// Apply optional updates (customer may tweak scope / starting bid / duration on repost).
 	if updates != nil {
 		if updates.Title != nil {
 			input.Title = *updates.Title
@@ -308,6 +308,9 @@ func (s *JobService) RepostJob(ctx context.Context, jobID, customerID string, up
 		}
 		if updates.StartingBidCents != nil {
 			input.StartingBidCents = updates.StartingBidCents
+		}
+		if updates.OfferAcceptedCents != nil {
+			input.OfferAcceptedCents = updates.OfferAcceptedCents
 		}
 		if updates.AuctionDurationHours != nil {
 			input.AuctionDurationHours = *updates.AuctionDurationHours

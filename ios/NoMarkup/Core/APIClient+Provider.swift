@@ -66,6 +66,18 @@ extension APIClient {
         )
     }
 
+    /// PUT `/api/v1/providers/me/portfolio` — replace portfolio images (max ~20 server-side).
+    /// Body: `{ "images": [ { "image_url", "caption", "sort_order" } ] }`.
+    @discardableResult
+    func updateMyProviderPortfolio(images: [ProviderPortfolioImageUpload]) async throws -> ProviderMeProfile {
+        let body = UpdatePortfolioRequestBody(images: images)
+        return try await putJSON(
+            pathComponents: ["api", "v1", "providers", "me", "portfolio"],
+            body: body,
+            authorized: .required
+        )
+    }
+
     /// PUT `/api/v1/providers/me/categories` — replace service category membership.
     @discardableResult
     func updateMyProviderCategories(categoryIDs: [String]) async throws -> ProviderCategoriesResponse {
@@ -642,6 +654,17 @@ private struct SetProviderTermsRequestBody: Encodable {
     let milestones: [ProviderMilestoneTemplate]
     let cancellationPolicy: String
     let warrantyTerms: String
+}
+
+/// Portfolio image for `PUT /providers/me/portfolio`.
+struct ProviderPortfolioImageUpload: Encodable, Sendable, Hashable {
+    let imageUrl: String
+    let caption: String
+    let sortOrder: Int32
+}
+
+private struct UpdatePortfolioRequestBody: Encodable {
+    let images: [ProviderPortfolioImageUpload]
 }
 
 private struct UpdateProviderCategoriesRequestBody: Encodable {

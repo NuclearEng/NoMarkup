@@ -12,7 +12,8 @@ struct PostJobView: View {
     @State private var locationAddress = ""
     @State private var categoryId = ""
     @State private var categoryName = ""
-    @State private var fairPriceHint: String?
+    /// FR-11 market range band after category select (soft-hide when no data).
+    @State private var marketRange: MarketRangeResponse?
     @State private var durationHours = 24
     @State private var publish = true
     @State private var isSubmitting = false
@@ -62,7 +63,7 @@ struct PostJobView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .tint(BrandTheme.accent)
         .onChange(of: categoryId) { _, newValue in
-            Task { await refreshFairPriceHint(categoryId: newValue) }
+            Task { await refreshMarketRange(categoryId: newValue) }
         }
         .onChange(of: selectedPropertyId) { _, newId in
             applyPropertySelection(id: newId)
@@ -121,17 +122,24 @@ struct PostJobView: View {
                 .accessibilityLabel("Service category")
                 .accessibilityValue(categoryName.isEmpty ? "Not selected" : categoryName)
                 .accessibilityHint("Opens the category tree picker")
+
+                // FR-11.2 — market range bar immediately after category (hidden when no data).
+                if let marketRange, marketRange.isUsable {
+                    MarketRangeBar(
+                        range: marketRange,
+                        serviceLabel: categoryName.isEmpty ? nil : categoryName,
+                        audience: .customer,
+                        compact: true
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .accessibilityHint("Fair market price range for the selected category")
+                }
             } header: {
                 Text("Details").brandSectionHeader()
             } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Title, description, and category are required. Title max 200 characters.")
-                    if let fairPriceHint {
-                        Text(fairPriceHint)
-                            .foregroundStyle(BrandTheme.goldBright)
-                    }
-                }
-                .foregroundStyle(BrandTheme.textSecondary)
+                Text("Title, description, and category are required. Title max 200 characters.")
+                    .foregroundStyle(BrandTheme.textSecondary)
             }
 
             Section {
@@ -462,19 +470,26 @@ struct PostJobView: View {
         }
     }
 
+    /// FR-11: load market/range, fall back to fair-price (p25/p50/p75). Soft-hide on miss.
     @MainActor
-    private func refreshFairPriceHint(categoryId: String) async {
+    private func refreshMarketRange(categoryId: String) async {
         let trimmed = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            fairPriceHint = nil
+            marketRange = nil
             return
         }
+        // (a) Analytics market/range — primary FR-11 source.
+        let range = await APIClient.shared.fetchMarketRange(categoryId: trimmed)
+        if range.isUsable {
+            marketRange = range
+            return
+        }
+        // (b) Fair-price engine (p25 / price / p75 / n_eff) mapped into the same bar shape.
         do {
-            // side=1 → services reverse-auction.
             let price = try await APIClient.shared.fetchFairPrice(categoryId: trimmed, side: 1)
-            fairPriceHint = price.hintCaption
+            marketRange = MarketRangeMath.marketRangeResponse(from: price)
         } catch {
-            fairPriceHint = nil
+            marketRange = nil
         }
     }
 

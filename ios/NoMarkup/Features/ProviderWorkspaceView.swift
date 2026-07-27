@@ -16,6 +16,13 @@ struct ProviderWorkspaceView: View {
     @State private var businessName = ""
     @State private var bio = ""
     @State private var instantAvailable = false
+    @State private var paymentTiming = "completion"
+    @State private var cancellationPolicy = ""
+    @State private var warrantyTerms = ""
+    @State private var portfolioURLs: [String] = []
+    @State private var isUploadingPortfolio = false
+    @State private var isSavingTerms = false
+    @State private var isSavingPortfolio = false
 
     @State private var isLoading = false
     @State private var isSaving = false
@@ -24,6 +31,8 @@ struct ProviderWorkspaceView: View {
     @State private var statusMessage: String?
     @State private var needsSignIn = false
     @State private var loadError: String?
+
+    private let paymentTimingOptions = ["upfront", "completion", "milestone", "split"]
 
     var body: some View {
         Group {
@@ -316,6 +325,63 @@ struct ProviderWorkspaceView: View {
                 }
             }
 
+            Section {
+                Picker("Default payment timing", selection: $paymentTiming) {
+                    ForEach(paymentTimingOptions, id: \.self) { opt in
+                        Text(opt.replacingOccurrences(of: "_", with: " ").capitalized).tag(opt)
+                    }
+                }
+                .frame(minHeight: 44)
+                TextField("Cancellation policy", text: $cancellationPolicy, axis: .vertical)
+                    .lineLimit(2 ... 5)
+                    .frame(minHeight: 44)
+                TextField("Warranty terms", text: $warrantyTerms, axis: .vertical)
+                    .lineLimit(2 ... 5)
+                    .frame(minHeight: 44)
+                Button {
+                    Task { await saveTerms() }
+                } label: {
+                    if isSavingTerms {
+                        ProgressView().tint(BrandTheme.accent)
+                    } else {
+                        Text("Save default terms")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .disabled(isSavingTerms || isUploadingPortfolio)
+            } header: {
+                Text("Default contract terms").brandSectionHeader()
+            } footer: {
+                Text("Applied to new awards unless overridden per contract. PRD FR-5.2.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            PhotoPickSection(
+                context: .job,
+                maxCount: 20,
+                photoURLs: $portfolioURLs,
+                isUploading: $isUploadingPortfolio,
+                errorMessage: $errorMessage
+            )
+            Section {
+                Button {
+                    Task { await savePortfolio() }
+                } label: {
+                    if isSavingPortfolio {
+                        ProgressView().tint(BrandTheme.accent)
+                    } else {
+                        Text("Save portfolio (\(portfolioURLs.count)/20)")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .disabled(isSavingPortfolio || isUploadingPortfolio)
+            } header: {
+                Text("Portfolio").brandSectionHeader()
+            } footer: {
+                Text("Up to 20 past-work photos. Saves replace the full portfolio set on the server (PRD FR-5.5).")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
             if let statusMessage {
                 Section {
                     Text(statusMessage)
@@ -456,6 +522,64 @@ struct ProviderWorkspaceView: View {
         businessName = p.businessName ?? ""
         bio = p.bio ?? ""
         instantAvailable = p.isInstantAvailable
+        if let timing = p.defaultPaymentTiming?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !timing.isEmpty
+        {
+            paymentTiming = timing.lowercased()
+        }
+        cancellationPolicy = p.cancellationPolicy ?? ""
+        warrantyTerms = p.warrantyTerms ?? ""
+        portfolioURLs = (p.portfolio ?? []).compactMap { img in
+            let u = (img.imageUrl ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return u.isEmpty ? nil : u
+        }
+    }
+
+    @MainActor
+    private func saveTerms() async {
+        errorMessage = nil
+        statusMessage = nil
+        isSavingTerms = true
+        defer { isSavingTerms = false }
+        do {
+            let updated = try await APIClient.shared.setMyProviderTerms(
+                paymentTiming: paymentTiming,
+                cancellationPolicy: cancellationPolicy,
+                warrantyTerms: warrantyTerms
+            )
+            profile = updated
+            applyProfileToForm(updated)
+            statusMessage = "Default terms saved."
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func savePortfolio() async {
+        errorMessage = nil
+        statusMessage = nil
+        isSavingPortfolio = true
+        defer { isSavingPortfolio = false }
+        let images: [ProviderPortfolioImageUpload] = portfolioURLs.enumerated().map { index, url in
+            ProviderPortfolioImageUpload(
+                imageUrl: url,
+                caption: "",
+                sortOrder: Int32(index)
+            )
+        }
+        do {
+            let updated = try await APIClient.shared.updateMyProviderPortfolio(images: images)
+            profile = updated
+            applyProfileToForm(updated)
+            statusMessage = "Portfolio saved (\(images.count) image\(images.count == 1 ? "" : "s"))."
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     @MainActor

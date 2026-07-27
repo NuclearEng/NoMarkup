@@ -55,6 +55,13 @@ struct JobDetailView: View {
     @State private var confirmCloseBidding = false
     @State private var confirmCancelJob = false
 
+    /// FR-3.5 / FR-3.10: owner repost of closed / cancelled / expired / zero-bid jobs.
+    @State private var isReposting = false
+    @State private var repostMessage: String?
+    @State private var repostIsError = false
+    @State private var confirmRepost = false
+    @State private var repostedRoute: JobRepostRoute?
+
     /// Soft live-auction overlay (lowest bid / ends-at) from optional poll.
     @State private var liveLowestBidCents: Int64?
     /// True once `GET …/auction/state` succeeds (feature on + live job).
@@ -64,8 +71,10 @@ struct JobDetailView: View {
 
     /// Showcase H1.4/H1.5 — FPI when usable (median savings); soft-fail otherwise.
     @State private var fairPrice: FairPriceResponse?
-    /// Resolved band: FPI → category starting-bid sample → reverse-auction 60–100% estimate.
+    /// Resolved band: market/range → FPI → category sample → reverse-auction 60–100% estimate.
     @State private var marketRange: MarketRangeEstimate?
+    /// FR-11 API-backed band for `MarketRangeBar` only (hidden when no real index data).
+    @State private var apiMarketRange: MarketRangeResponse?
 
     init(jobID: String, preview: JobSummary? = nil) {
         self.jobID = jobID
@@ -198,6 +207,19 @@ struct JobDetailView: View {
         }
     }
 
+    /// Owner can repost when the original auction is finished without an award (FR-3.5 / FR-3.10).
+    /// Matches job service: closed | closed_zero_bids | expired | cancelled.
+    private var canRepost: Bool {
+        guard isJobOwner, auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        let status = (detail?.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch status {
+        case "closed", "closed_zero_bids", "expired", "cancelled":
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Light live-auction poll while the reverse auction is still open.
     private var isAuctionActiveForPolling: Bool {
         let status = (detail?.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -300,6 +322,23 @@ struct JobDetailView: View {
             Text("Cancels the auction and notifies bidders. This cannot be undone from the app.")
         }
         .confirmationDialog(
+            "Repost this job?",
+            isPresented: $confirmRepost,
+            titleVisibility: .visible
+        ) {
+            Button("Repost auction") {
+                Task { await repostOwnedJob() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "Creates a new reverse auction with the same details. Previous bids do not carry over. You can edit the new job after it is posted."
+            )
+        }
+        .navigationDestination(item: $repostedRoute) { route in
+            JobDetailView(jobID: route.id, preview: nil)
+        }
+        .confirmationDialog(
             "Accept offer price?",
             isPresented: $confirmAcceptOffer,
             titleVisibility: .visible
@@ -342,6 +381,7 @@ struct JobDetailView: View {
             bidLadderSection(job)
             liveFeedSection
             manageAuctionSection
+            repostSection
             detailsSection(job)
 
             if let description = job.description?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -520,6 +560,44 @@ struct JobDetailView: View {
             } footer: {
                 Text("You own this job. Close bidding to award, or cancel if you no longer need the work.")
                     .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var repostSection: some View {
+        if canRepost {
+            Section {
+                if let repostMessage {
+                    Text(repostMessage)
+                        .font(.footnote)
+                        .foregroundStyle(repostIsError ? BrandTheme.destructive : BrandTheme.success)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button {
+                    confirmRepost = true
+                } label: {
+                    if isReposting {
+                        ProgressView()
+                            .tint(BrandTheme.accent)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label("Repost job", systemImage: "arrow.triangle.2.circlepath")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                }
+                .disabled(isReposting)
+                .accessibilityHint(
+                    "Creates a new reverse auction from this job. Previous bids do not carry over."
+                )
+            } header: {
+                Text("Repost").brandSectionHeader()
+            } footer: {
+                Text(
+                    "Auction ended without an award, or you cancelled. Repost starts a fresh bidding window with the same details (FR-3.10)."
+                )
+                .foregroundStyle(BrandTheme.textSecondary)
             }
         }
     }
@@ -1232,6 +1310,18 @@ struct JobDetailView: View {
                     .disabled(true)
                     .frame(maxWidth: .infinity, minHeight: 44)
             } else {
+                // FR-11.3 — market range for providers during bid submission (soft-hide).
+                if let apiMarketRange, apiMarketRange.isUsable {
+                    MarketRangeBar(
+                        range: apiMarketRange,
+                        serviceLabel: job.categoryName,
+                        audience: .provider,
+                        compact: true
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color.clear)
+                }
+
                 if isUpdate, let current = ownActiveBidAmountCents {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Your current bid")
@@ -1422,8 +1512,8 @@ struct JobDetailView: View {
             if let bids = job.bidCount {
                 LabeledContent("Bids", value: "\(bids)")
             }
-            if let recurring = job.isRecurring, recurring {
-                LabeledContent("Recurring", value: "Yes")
+            if let label = job.recurrenceLabel {
+                LabeledContent("Recurring", value: label)
             }
             if job.canOfferDirections, let exact = job.exactLocationLabel {
                 Button {
@@ -1628,6 +1718,36 @@ struct JobDetailView: View {
     }
 
     @MainActor
+    private func repostOwnedJob() async {
+        repostMessage = nil
+        repostIsError = false
+        guard !auth.isScaffoldSession else {
+            repostIsError = true
+            repostMessage =
+                "Browse-only mode has no API credentials. Sign in against a live gateway to repost this job."
+            return
+        }
+        isReposting = true
+        defer { isReposting = false }
+        do {
+            let newJob = try await APIClient.shared.repostJob(id: jobID)
+            repostIsError = false
+            repostMessage = "Reposted as a new auction. Opening the new job…"
+            await load()
+            let newID = newJob.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !newID.isEmpty {
+                repostedRoute = JobRepostRoute(id: newID)
+            }
+        } catch let error as APIClientError where error.isUnauthorized {
+            repostIsError = true
+            repostMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            repostIsError = true
+            repostMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
     private func awardBid(_ entry: JobBidEntry) async {
         awardStatusMessage = nil
         awardStatusIsError = false
@@ -1714,7 +1834,7 @@ struct JobDetailView: View {
         defer { isLoading = false }
 
         if auth.isAuthenticated, !auth.isScaffoldSession {
-            currentUserID = await APIClient.shared.currentUserID()
+            currentUserID = APIClient.shared.currentUserID()
         } else {
             currentUserID = nil
         }
@@ -1772,21 +1892,42 @@ struct JobDetailView: View {
         }
     }
 
-    /// Soft market-range for the intelligence strip (H1.4 / H1.5). Never throws / never blocks hero.
-    /// Hierarchy: FPI p25–p75 → client category starting-bid sample → reverse-auction 60–100% band.
+    /// Soft market-range for the intelligence strip + FR-11 bar. Never throws / never blocks hero.
+    /// Hierarchy: market/range → FPI p25–p75 → category starting-bid sample → reverse-auction 60–100% band.
+    /// `apiMarketRange` only set for real index data (market/range or fair-price) so the bid bar
+    /// can soft-hide when only heuristic estimates exist (FR-11.2).
     @MainActor
     private func loadMarketIntelligence() async {
         let categoryId = detail?.categoryId?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let starting = detail?.startingBidCents ?? 0
+        apiMarketRange = nil
 
-        // (a) Fair-price index when the engine has data.
+        // (a) Analytics market/range (FR-11 primary).
+        if !categoryId.isEmpty {
+            let range = await APIClient.shared.fetchMarketRange(categoryId: categoryId)
+            if range.isUsable, let estimate = MarketRangeMath.fromMarketRange(range) {
+                apiMarketRange = range
+                marketRange = estimate
+                // Still try FPI for median-savings strip when available.
+                if let price = try? await APIClient.shared.fetchFairPrice(categoryId: categoryId, side: 1),
+                   price.isUsable {
+                    fairPrice = price
+                } else {
+                    fairPrice = nil
+                }
+                return
+            }
+        }
+
+        // (b) Fair-price index when the engine has data.
         if !categoryId.isEmpty {
             do {
                 let price = try await APIClient.shared.fetchFairPrice(categoryId: categoryId, side: 1)
                 if let estimate = MarketRangeMath.fromFairPrice(price) {
                     fairPrice = price
                     marketRange = estimate
+                    apiMarketRange = MarketRangeMath.marketRangeResponse(from: price)
                     return
                 }
                 fairPrice = nil
@@ -1797,7 +1938,8 @@ struct JobDetailView: View {
             fairPrice = nil
         }
 
-        // (b) Category sample: p25–p75 of recent public jobs' starting bids (max 20).
+        // (c) Category sample: p25–p75 of recent public jobs' starting bids (max 20).
+        // Heuristic only — do not set apiMarketRange (bar stays hidden).
         if !categoryId.isEmpty {
             if let sample = await loadCategorySampleRange(categoryId: categoryId) {
                 marketRange = sample
@@ -1805,7 +1947,7 @@ struct JobDetailView: View {
             }
         }
 
-        // (c) Documented reverse-auction band from this job's starting bid.
+        // (d) Documented reverse-auction band from this job's starting bid.
         marketRange = MarketRangeMath.reverseAuctionBand(startingBidCents: starting)
     }
 
@@ -1962,6 +2104,11 @@ private enum BidLadderState: Equatable {
     case needsAuth
     case forbidden
     case failed(String)
+}
+
+/// Navigation payload after a successful FR-3.10 repost.
+private struct JobRepostRoute: Hashable, Identifiable {
+    let id: String
 }
 
 #Preview {

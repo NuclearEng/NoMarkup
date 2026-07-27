@@ -23,6 +23,7 @@ func TestMapDomainError(t *testing.T) {
 		{"job not found", domain.ErrJobNotFound, codes.NotFound},
 		{"not draft", domain.ErrNotDraft, codes.FailedPrecondition},
 		{"not owner", domain.ErrNotOwner, codes.PermissionDenied},
+		{"not repostable", domain.ErrNotRepostable, codes.FailedPrecondition},
 		{"missing title", domain.ErrMissingTitle, codes.InvalidArgument},
 		{"invalid auction type", domain.ErrInvalidAuctionType, codes.InvalidArgument},
 	}

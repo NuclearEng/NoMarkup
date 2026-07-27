@@ -936,6 +936,332 @@ func buildContractDocumentHTML(c *contractv1.Contract) string {
 </html>`
 }
 
+// --- Recurring (FR-18) ---
+
+// GetRecurringConfig handles GET /api/v1/contracts/{id}/recurring.
+func (h *ContractHandler) GetRecurringConfig(w http.ResponseWriter, r *http.Request) {
+	if _, ok := middleware.GetClaims(r.Context()); !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	resp, err := h.contractClient.GetRecurringConfig(r.Context(), &contractv1.GetRecurringConfigRequest{
+		ContractId: contractID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": protoRecurringConfigToJSON(resp.GetConfig()),
+	})
+}
+
+// UpdateRecurringConfig handles PATCH /api/v1/contracts/{id}/recurring.
+func (h *ContractHandler) UpdateRecurringConfig(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+
+	var body struct {
+		ProposedRateCents *int64 `json:"proposed_rate_cents"`
+		AutoApprove       *bool  `json:"auto_approve"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+
+	cfg, err := h.resolveRecurringConfig(r, contractID)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	req := &contractv1.UpdateRecurringConfigRequest{
+		RecurringId: cfg.GetId(),
+		UserId:      claims.UserID,
+	}
+	if body.ProposedRateCents != nil {
+		req.ProposedRateCents = body.ProposedRateCents
+	}
+	if body.AutoApprove != nil {
+		req.AutoApprove = body.AutoApprove
+	}
+
+	resp, err := h.contractClient.UpdateRecurringConfig(r.Context(), req)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": protoRecurringConfigToJSON(resp.GetConfig()),
+	})
+}
+
+// PauseRecurring handles POST /api/v1/contracts/{id}/recurring/pause.
+func (h *ContractHandler) PauseRecurring(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	cfg, err := h.resolveRecurringConfig(r, contractID)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	resp, err := h.contractClient.PauseRecurring(r.Context(), &contractv1.PauseRecurringRequest{
+		RecurringId: cfg.GetId(),
+		UserId:      claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": protoRecurringConfigToJSON(resp.GetConfig()),
+	})
+}
+
+// ResumeRecurring handles POST /api/v1/contracts/{id}/recurring/resume.
+func (h *ContractHandler) ResumeRecurring(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	cfg, err := h.resolveRecurringConfig(r, contractID)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	resp, err := h.contractClient.ResumeRecurring(r.Context(), &contractv1.ResumeRecurringRequest{
+		RecurringId: cfg.GetId(),
+		UserId:      claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": protoRecurringConfigToJSON(resp.GetConfig()),
+	})
+}
+
+// CancelRecurring handles POST /api/v1/contracts/{id}/recurring/cancel.
+func (h *ContractHandler) CancelRecurring(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	cfg, err := h.resolveRecurringConfig(r, contractID)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	resp, err := h.contractClient.CancelRecurring(r.Context(), &contractv1.CancelRecurringRequest{
+		RecurringId: cfg.GetId(),
+		UserId:      claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": protoRecurringConfigToJSON(resp.GetConfig()),
+	})
+}
+
+// ListRecurringInstances handles GET /api/v1/contracts/{id}/recurring/instances.
+func (h *ContractHandler) ListRecurringInstances(w http.ResponseWriter, r *http.Request) {
+	if _, ok := middleware.GetClaims(r.Context()); !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	cfg, err := h.resolveRecurringConfig(r, contractID)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	page := 1
+	pageSize := 20
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if ps := r.URL.Query().Get("page_size"); ps != "" {
+		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
+			pageSize = v
+		}
+	}
+
+	resp, err := h.contractClient.ListRecurringInstances(r.Context(), &contractv1.ListRecurringInstancesRequest{
+		RecurringId: cfg.GetId(),
+		Pagination: &commonv1.PaginationRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+		},
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	instances := make([]map[string]interface{}, 0, len(resp.GetInstances()))
+	for _, inst := range resp.GetInstances() {
+		instances = append(instances, protoRecurringInstanceToJSON(inst))
+	}
+	result := map[string]interface{}{
+		"instances": instances,
+	}
+	if p := resp.GetPagination(); p != nil {
+		result["pagination"] = map[string]interface{}{
+			"total_count": p.GetTotalCount(),
+			"page":        p.GetPage(),
+			"page_size":   p.GetPageSize(),
+			"total_pages": p.GetTotalPages(),
+			"has_next":    p.GetHasNext(),
+		}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// CompleteRecurringInstance handles POST .../recurring/instances/{instanceId}/complete.
+func (h *ContractHandler) CompleteRecurringInstance(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	instanceID := chi.URLParam(r, "instanceId")
+	if !isValidUUID(instanceID) {
+		writeError(w, http.StatusBadRequest, "invalid instance id")
+		return
+	}
+	resp, err := h.contractClient.CompleteRecurringInstance(r.Context(), &contractv1.CompleteRecurringInstanceRequest{
+		InstanceId: instanceID,
+		ProviderId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"instance": protoRecurringInstanceToJSON(resp.GetInstance()),
+	})
+}
+
+// ApproveRecurringInstance handles POST .../recurring/instances/{instanceId}/approve.
+func (h *ContractHandler) ApproveRecurringInstance(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	instanceID := chi.URLParam(r, "instanceId")
+	if !isValidUUID(instanceID) {
+		writeError(w, http.StatusBadRequest, "invalid instance id")
+		return
+	}
+	resp, err := h.contractClient.ApproveRecurringInstance(r.Context(), &contractv1.ApproveRecurringInstanceRequest{
+		InstanceId: instanceID,
+		CustomerId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	result := map[string]interface{}{
+		"instance": protoRecurringInstanceToJSON(resp.GetInstance()),
+	}
+	if pid := resp.GetPaymentId(); pid != "" {
+		result["payment_id"] = pid
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *ContractHandler) resolveRecurringConfig(r *http.Request, contractID string) (*contractv1.RecurringConfig, error) {
+	resp, err := h.contractClient.GetRecurringConfig(r.Context(), &contractv1.GetRecurringConfigRequest{
+		ContractId: contractID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetConfig(), nil
+}
+
+func protoRecurringConfigToJSON(cfg *contractv1.RecurringConfig) map[string]interface{} {
+	if cfg == nil {
+		return map[string]interface{}{}
+	}
+	result := map[string]interface{}{
+		"id":          cfg.GetId(),
+		"contract_id": cfg.GetContractId(),
+		"frequency":   recurrenceFrequencyToString(cfg.GetFrequency()),
+		"rate_cents":  cfg.GetRateCents(),
+		"auto_approve": cfg.GetAutoApprove(),
+		"status":      cfg.GetStatus(),
+	}
+	if cfg.GetNextOccurrence() != nil {
+		result["next_occurrence"] = formatTimestamp(cfg.GetNextOccurrence())
+	}
+	return result
+}
+
+func protoRecurringInstanceToJSON(inst *contractv1.RecurringInstance) map[string]interface{} {
+	if inst == nil {
+		return map[string]interface{}{}
+	}
+	result := map[string]interface{}{
+		"id":           inst.GetId(),
+		"recurring_id": inst.GetRecurringId(),
+		"status":       inst.GetStatus(),
+		"amount_cents": inst.GetAmountCents(),
+		"auto_approved": inst.GetAutoApproved(),
+	}
+	if inst.GetOccurrenceDate() != nil {
+		result["occurrence_date"] = formatTimestamp(inst.GetOccurrenceDate())
+	}
+	if inst.GetCompletedAt() != nil {
+		result["completed_at"] = formatTimestamp(inst.GetCompletedAt())
+	}
+	return result
+}
+
 // --- Proto to JSON conversion helpers ---
 
 func protoContractToJSON(c *contractv1.Contract) map[string]interface{} {
@@ -975,6 +1301,10 @@ func protoContractToJSON(c *contractv1.Contract) map[string]interface{} {
 		milestones = append(milestones, protoMilestoneToJSON(m))
 	}
 	result["milestones"] = milestones
+
+	if rec := c.GetRecurring(); rec != nil && rec.GetId() != "" {
+		result["recurring"] = protoRecurringConfigToJSON(rec)
+	}
 
 	return result
 }

@@ -106,10 +106,15 @@ func (s *ContractService) AcceptContract(ctx context.Context, contractID, userID
 		return nil, fmt.Errorf("accept contract: %w", err)
 	}
 
-	// If contract is now active, update job status.
+	// If contract is now active, update job status and seed FR-18 recurring config
+	// when the underlying job was posted as is_recurring.
 	if updated.Status == "active" {
 		if err := s.contractRepo.UpdateJobStatus(ctx, updated.JobID, "in_progress"); err != nil {
 			slog.Warn("failed to update job status to in_progress", "job_id", updated.JobID, "error", err)
+		}
+		if err := s.ensureRecurringConfigForActiveContract(ctx, updated); err != nil {
+			slog.Warn("failed to ensure recurring config on accept",
+				"contract_id", contractID, "job_id", updated.JobID, "error", err)
 		}
 	}
 

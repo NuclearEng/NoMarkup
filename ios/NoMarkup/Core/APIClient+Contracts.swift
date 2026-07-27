@@ -17,13 +17,21 @@ import Foundation
 //   GET|POST /api/v1/contracts/{id}/guarantee-claim
 //   POST /api/v1/contracts/{id}/report-noshow|report-abandonment
 //   GET  /api/v1/contracts/{id}/pdf
+//   GET|PATCH /api/v1/contracts/{id}/recurring (+ pause|resume|cancel, instances)
 //
-// Escrow (gateway/internal/handler/payment.go) — services path:
-//   GET  /api/v1/payments?status=escrow|…
-//   POST /api/v1/payments/{id}/release  body: { reason? } + Idempotency-Key (required)
+// Escrow (gateway/internal/handler/payment.go) — services path (FR-9):
+//   POST /api/v1/payments                 body: contract_id, amount_cents, provider_id?
+//                                         → payment + client_secret (Idempotency-Key)
+//   POST /api/v1/payments/calculate-fees  body: amount_cents  (display only)
+//   POST /api/v1/payments/{id}/process    body: payment_method_id?  → capture → escrow
+//   GET  /api/v1/payments?status=escrow|pending|…
+//   POST /api/v1/payments/{id}/release    body: { reason? } + Idempotency-Key
 //   Note: approve-completion finalizes the *contract* only; it does NOT call
 //   ReleaseEscrow. Customer must POST …/release (provider self-release refused).
 //   Goods listing orders release via mutual pickup handshake (not this route).
+//
+// Security: charge amount is contract.amount_cents from GET /contracts/{id};
+// CreatePayment re-validates ownership, amount ≤ contract, and re-derives provider.
 
 extension APIClient {
 
@@ -123,12 +131,13 @@ extension APIClient {
     // MARK: Dispute + review
 
     /// POST `/api/v1/contracts/{id}/disputes`
-    /// Body: `{ "dispute_type": "...", "description": "..." }` (OpenDispute handler).
+    /// Body: dispute_type, description, optional evidence_urls (OpenDispute handler).
     @discardableResult
     func openContractDispute(
         id: String,
         disputeType: String,
-        description: String
+        description: String,
+        evidenceURLs: [String] = []
     ) async throws -> ContractDisputeResponse {
         let type = disputeType.trimmingCharacters(in: .whitespacesAndNewlines)
         let desc = description.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -138,9 +147,16 @@ extension APIClient {
         guard !desc.isEmpty else {
             throw APIClientError.httpStatus(400, detail: "Description is required.")
         }
+        let urls = evidenceURLs
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
         return try await postJSON(
             pathComponents: ["api", "v1", "contracts", id, "disputes"],
-            body: ContractsOpenDisputeBody(disputeType: type, description: desc),
+            body: ContractsOpenDisputeBody(
+                disputeType: type,
+                description: desc,
+                evidenceUrls: urls
+            ),
             authorized: .required
         )
     }
@@ -380,6 +396,116 @@ extension APIClient {
         )
     }
 
+    // MARK: Recurring (FR-18)
+
+    /// GET `/api/v1/contracts/{id}/recurring` → `{ "config": … }`.
+    func fetchRecurringConfig(contractId: String) async throws -> ContractRecurringConfig? {
+        let response: RecurringConfigEnvelope = try await getJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "recurring"],
+            authorized: true
+        )
+        return response.config
+    }
+
+    /// GET `/api/v1/contracts/{id}/recurring/instances`
+    func fetchRecurringInstances(
+        contractId: String,
+        page: Int = 1,
+        pageSize: Int = 20
+    ) async throws -> [ContractRecurringInstance] {
+        let response: RecurringInstancesListResponse = try await getJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "recurring", "instances"],
+            query: [
+                URLQueryItem(name: "page", value: String(max(1, page))),
+                URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+            ],
+            authorized: true
+        )
+        return response.instances ?? []
+    }
+
+    /// POST `/api/v1/contracts/{id}/recurring/pause`
+    @discardableResult
+    func pauseRecurring(contractId: String) async throws -> ContractRecurringConfig {
+        let response: RecurringConfigEnvelope = try await postJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "recurring", "pause"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+        guard let config = response.config else {
+            throw APIClientError.httpStatus(502, detail: "Recurring schedule missing from pause response.")
+        }
+        return config
+    }
+
+    /// POST `/api/v1/contracts/{id}/recurring/resume`
+    @discardableResult
+    func resumeRecurring(contractId: String) async throws -> ContractRecurringConfig {
+        let response: RecurringConfigEnvelope = try await postJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "recurring", "resume"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+        guard let config = response.config else {
+            throw APIClientError.httpStatus(502, detail: "Recurring schedule missing from resume response.")
+        }
+        return config
+    }
+
+    /// POST `/api/v1/contracts/{id}/recurring/cancel`
+    @discardableResult
+    func cancelRecurring(contractId: String) async throws -> ContractRecurringConfig {
+        let response: RecurringConfigEnvelope = try await postJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "recurring", "cancel"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+        guard let config = response.config else {
+            throw APIClientError.httpStatus(502, detail: "Recurring schedule missing from cancel response.")
+        }
+        return config
+    }
+
+    /// POST `/api/v1/contracts/{id}/recurring/instances/{instanceId}/complete` — provider.
+    @discardableResult
+    func completeRecurringInstance(
+        contractId: String,
+        instanceId: String
+    ) async throws -> ContractRecurringInstance {
+        let response: RecurringInstanceEnvelope = try await postJSON(
+            pathComponents: [
+                "api", "v1", "contracts", contractId,
+                "recurring", "instances", instanceId, "complete",
+            ],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+        guard let instance = response.instance else {
+            throw APIClientError.httpStatus(502, detail: "Instance missing from complete response.")
+        }
+        return instance
+    }
+
+    /// POST `/api/v1/contracts/{id}/recurring/instances/{instanceId}/approve` — customer.
+    @discardableResult
+    func approveRecurringInstance(
+        contractId: String,
+        instanceId: String
+    ) async throws -> ContractRecurringInstance {
+        let response: RecurringInstanceEnvelope = try await postJSON(
+            pathComponents: [
+                "api", "v1", "contracts", contractId,
+                "recurring", "instances", instanceId, "approve",
+            ],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+        guard let instance = response.instance else {
+            throw APIClientError.httpStatus(502, detail: "Instance missing from approve response.")
+        }
+        return instance
+    }
+
     // MARK: Report no-show / abandonment
 
     /// POST `/api/v1/contracts/{id}/report-noshow` — empty body; customer-only server-side.
@@ -493,6 +619,106 @@ extension APIClient {
         }
     }
 
+    /// POST `/api/v1/payments` — create services escrow PaymentIntent for a contract.
+    /// Body: `{ contract_id, amount_cents, provider_id? }` (provider re-derived server-side).
+    /// Returns payment map + `client_secret` for PaymentSheet.
+    ///
+    /// **Idempotency-Key sticky** as `create-payment:{contractId}:{amountCents}` (web parity).
+    /// Clear only after process/capture succeeds so retries replay the same PI.
+    ///
+    /// Security: pass **server** `contract.amount_cents` only — never client fee math.
+    /// Payment service refuses amount > contract total and non-customer actors.
+    @discardableResult
+    func createContractPayment(
+        contractId: String,
+        amountCents: Int64,
+        providerId: String? = nil
+    ) async throws -> ContractPayment {
+        let cid = contractId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cid.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Contract id is required.")
+        }
+        guard amountCents > 0 else {
+            throw APIClientError.httpStatus(400, detail: "amount_cents must be positive.")
+        }
+        let body = ContractsCreatePaymentBody(
+            contractId: cid,
+            providerId: providerId?.trimmingCharacters(in: .whitespacesAndNewlines),
+            amountCents: amountCents
+        )
+        // Match web `useCreatePayment` op key so double-tap / flaky network replays.
+        let opKey = "create-payment:\(cid):\(amountCents):"
+        let headers = idempotencyHeader(for: opKey)
+        return try await postJSON(
+            pathComponents: ["api", "v1", "payments"],
+            body: body,
+            authorized: .required,
+            headers: headers
+        )
+    }
+
+    /// Clears sticky create-payment key after funds are held (or intentional retry).
+    func clearCreateContractPaymentIdempotency(
+        contractId: String,
+        amountCents: Int64
+    ) {
+        let cid = contractId.trimmingCharacters(in: .whitespacesAndNewlines)
+        clearIdempotencyKey("create-payment:\(cid):\(amountCents):")
+    }
+
+    /// POST `/api/v1/payments/{id}/process` — capture authorized PI → status `escrow`.
+    /// Body: `{ payment_method_id }` (gateway requires JSON; PM unused when PaymentSheet
+    /// already confirmed the intent — pass empty string).
+    /// Sticky Idempotency-Key `process-payment:{paymentId}`.
+    @discardableResult
+    func processContractPayment(
+        paymentId: String,
+        paymentMethodId: String = ""
+    ) async throws -> ContractPayment {
+        let id = paymentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Payment id is required.")
+        }
+        let opKey = "process-payment:\(id)"
+        let headers = idempotencyHeader(for: opKey)
+        do {
+            let payment: ContractPayment = try await postJSON(
+                pathComponents: ["api", "v1", "payments", id, "process"],
+                body: ContractsProcessPaymentBody(paymentMethodId: paymentMethodId),
+                authorized: .required,
+                headers: headers
+            )
+            clearIdempotencyKey(opKey)
+            return payment
+        } catch {
+            throw error
+        }
+    }
+
+    /// POST `/api/v1/payments/calculate-fees` — display-only fee breakdown.
+    /// Body: `{ amount_cents, category_id? }`. Never use result to invent a charge —
+    /// charge always uses contract `amount_cents` via create payment.
+    func calculatePaymentFees(
+        amountCents: Int64,
+        categoryId: String? = nil
+    ) async throws -> PaymentFeeBreakdown {
+        guard amountCents > 0 else {
+            throw APIClientError.httpStatus(400, detail: "amount_cents must be positive.")
+        }
+        // Fee preview is not a fund movement; still requires Idempotency-Key on the
+        // /payments group. Fresh UUID per call is fine (no sticky retry needed).
+        let headers = ["Idempotency-Key": UUID().uuidString]
+        return try await postJSON(
+            pathComponents: ["api", "v1", "payments", "calculate-fees"],
+            body: ContractsCalculateFeesBody(
+                amountCents: amountCents,
+                categoryId: categoryId?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ),
+            authorized: .required,
+            headers: headers
+        )
+    }
+
     /// POST `/api/v1/payments/{id}/release` — customer releases held escrow to provider.
     /// Body: `{ "reason": "..." }` (gateway requires a JSON body; empty reason is ok).
     /// **Idempotency-Key required** (all `/payments` POST mutations).
@@ -538,6 +764,7 @@ private struct ContractsCancelBody: Encodable {
 private struct ContractsOpenDisputeBody: Encodable {
     let disputeType: String
     let description: String
+    let evidenceUrls: [String]
 }
 
 private struct ContractsCreateReviewBody: Encodable {
@@ -583,4 +810,52 @@ private struct ContractsGuaranteeClaimBody: Encodable {
 
 private struct ContractsReleasePaymentBody: Encodable {
     let reason: String
+}
+
+private struct ContractsCreatePaymentBody: Encodable {
+    let contractId: String
+    let providerId: String?
+    let amountCents: Int64
+
+    // Explicit snake_case: custom CodingKeys are not rewritten by convertToSnakeCase.
+    enum CodingKeys: String, CodingKey {
+        case contractId = "contract_id"
+        case providerId = "provider_id"
+        case amountCents = "amount_cents"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(contractId, forKey: .contractId)
+        try c.encode(amountCents, forKey: .amountCents)
+        if let providerId, !providerId.isEmpty {
+            try c.encode(providerId, forKey: .providerId)
+        }
+    }
+}
+
+private struct ContractsProcessPaymentBody: Encodable {
+    let paymentMethodId: String
+
+    enum CodingKeys: String, CodingKey {
+        case paymentMethodId = "payment_method_id"
+    }
+}
+
+private struct ContractsCalculateFeesBody: Encodable {
+    let amountCents: Int64
+    let categoryId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case amountCents = "amount_cents"
+        case categoryId = "category_id"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(amountCents, forKey: .amountCents)
+        if let categoryId, !categoryId.isEmpty {
+            try c.encode(categoryId, forKey: .categoryId)
+        }
+    }
 }

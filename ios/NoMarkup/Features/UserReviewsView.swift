@@ -1,9 +1,12 @@
 import SwiftUI
 
 /// Public reviews for a user — `GET /api/v1/users/{id}/reviews`.
+/// FR-6.5 respond (reviewee only, ≤500 chars) + FR-6.8 flag (auth, not own review).
 struct UserReviewsView: View {
     let userId: String
     var displayName: String?
+
+    @EnvironmentObject private var auth: AuthViewModel
 
     @State private var reviews: [ReviewRow] = []
     @State private var averageRating: Double?
@@ -11,6 +14,12 @@ struct UserReviewsView: View {
     @State private var pagination: PaginationMeta?
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var currentUserID: String?
+
+    @State private var respondTarget: ReviewRow?
+    @State private var flagTarget: ReviewRow?
+    @State private var actionBanner: String?
+    @State private var actionBannerIsError = false
 
     init(userId: String, displayName: String? = nil) {
         self.userId = userId
@@ -55,12 +64,42 @@ struct UserReviewsView: View {
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .task { await load() }
-        .refreshable { await load() }
+        .task {
+            resolveCurrentUser()
+            await load()
+        }
+        .refreshable {
+            resolveCurrentUser()
+            await load()
+        }
+        .sheet(item: $respondTarget) { review in
+            RespondToReviewSheet(review: review) { message in
+                actionBannerIsError = false
+                actionBanner = message
+                Task { await load() }
+            }
+        }
+        .sheet(item: $flagTarget) { review in
+            FlagReviewSheet(review: review) { message in
+                actionBannerIsError = false
+                actionBanner = message
+                Task { await load() }
+            }
+        }
     }
 
     private var listContent: some View {
         List {
+            if let actionBanner {
+                Section {
+                    Text(actionBanner)
+                        .font(.footnote)
+                        .foregroundStyle(actionBannerIsError ? BrandTheme.destructive : BrandTheme.success)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+                }
+            }
+
             Section {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -104,7 +143,7 @@ struct UserReviewsView: View {
 
     @ViewBuilder
     private func reviewRow(_ review: ReviewRow) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(review.displayReviewer)
                     .font(.body.weight(.medium))
@@ -114,6 +153,12 @@ struct UserReviewsView: View {
                 Text(review.displayRating)
                     .font(.subheadline.weight(.semibold).monospacedDigit())
                     .foregroundStyle(BrandTheme.goldBright)
+            }
+
+            if review.isFlagged == true {
+                Label("Flagged for review", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(BrandTheme.warning)
             }
 
             Text(review.displayComment)
@@ -126,11 +171,101 @@ struct UserReviewsView: View {
                     .font(.caption2)
                     .foregroundStyle(BrandTheme.textSecondary)
             }
+
+            if review.hasResponse, let response = review.response {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(response.displayResponder, systemImage: "bubble.left")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                    Text(response.displayComment)
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(BrandTheme.navy.opacity(0.55), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+
+            actionButtons(for: review)
         }
         .padding(.vertical, 4)
         .frame(minHeight: 44, alignment: .topLeading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(review.displayReviewer), \(review.displayRating). \(review.displayComment)")
+    }
+
+    @ViewBuilder
+    private func actionButtons(for review: ReviewRow) -> some View {
+        let canRespond = canRespondTo(review)
+        let canFlag = canFlag(review)
+        if canRespond || canFlag {
+            HStack(spacing: 12) {
+                if canRespond {
+                    Button {
+                        respondTarget = review
+                    } label: {
+                        Label("Respond", systemImage: "bubble.left")
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(BrandTheme.accent)
+                    .accessibilityHint("Post a public response to this review, maximum 500 characters")
+                }
+                if canFlag {
+                    Button {
+                        flagTarget = review
+                    } label: {
+                        Label("Report", systemImage: "flag")
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(BrandTheme.destructive)
+                    .accessibilityHint("Flag this review for fraud or abuse moderation")
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    /// Reviewee only, single public response (server enforces party + once).
+    private func canRespondTo(_ review: ReviewRow) -> Bool {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        guard review.hasResponse == false else { return false }
+        guard let uid = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines), !uid.isEmpty else {
+            return false
+        }
+        guard let reviewee = review.revieweeId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !reviewee.isEmpty
+        else {
+            return false
+        }
+        return uid.caseInsensitiveCompare(reviewee) == .orderedSame
+    }
+
+    /// Any signed-in user except the original reviewer; already-flagged reviews hide the control.
+    private func canFlag(_ review: ReviewRow) -> Bool {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        if review.isFlagged == true { return false }
+        guard let uid = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines), !uid.isEmpty else {
+            return false
+        }
+        if let reviewer = review.reviewerId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !reviewer.isEmpty,
+           uid.caseInsensitiveCompare(reviewer) == .orderedSame
+        {
+            return false
+        }
+        return true
+    }
+
+    @MainActor
+    private func resolveCurrentUser() {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            currentUserID = nil
+            return
+        }
+        currentUserID = APIClient.shared.currentUserID()
     }
 
     @MainActor
@@ -159,12 +294,261 @@ struct UserReviewsView: View {
     }
 }
 
+// MARK: - Respond sheet (FR-6.5)
+
+private struct RespondToReviewSheet: View {
+    let review: ReviewRow
+    var onSuccess: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var comment = ""
+    @State private var errorMessage: String?
+    @State private var isSubmitting = false
+
+    private var trimmedCount: Int {
+        comment.trimmingCharacters(in: .whitespacesAndNewlines).count
+    }
+
+    private var canSubmit: Bool {
+        trimmedCount >= 10 && trimmedCount <= 500 && !isSubmitting
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(review.displayComment)
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+                } header: {
+                    Text("Original review").brandSectionHeader()
+                }
+
+                Section {
+                    TextField("Your public response", text: $comment, axis: .vertical)
+                        .lineLimit(4 ... 12)
+                        .listRowBackground(BrandTheme.navyElevated)
+                    Text("\(trimmedCount) / 500 · minimum 10")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(countColor)
+                        .listRowBackground(BrandTheme.navyElevated)
+                } header: {
+                    Text("Response").brandSectionHeader()
+                } footer: {
+                    Text("One public response per review. Content is filtered server-side; keep it professional.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.destructive)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
+                }
+            }
+            .brandListBackground()
+            .navigationTitle("Respond")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                        .disabled(isSubmitting)
+                        .frame(minHeight: 44)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Submit") {
+                        Task { await submit() }
+                    }
+                    .disabled(!canSubmit)
+                    .fontWeight(.semibold)
+                    .frame(minHeight: 44)
+                }
+            }
+            .overlay {
+                if isSubmitting {
+                    ProgressView()
+                        .tint(BrandTheme.accent)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(BrandTheme.navy.opacity(0.4))
+                }
+            }
+            .interactiveDismissDisabled(isSubmitting)
+        }
+        .tint(BrandTheme.accent)
+    }
+
+    private var countColor: Color {
+        if trimmedCount > 500 { return BrandTheme.destructive }
+        if trimmedCount >= 10 { return BrandTheme.success }
+        return BrandTheme.warning
+    }
+
+    @MainActor
+    private func submit() async {
+        errorMessage = nil
+        let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 10, trimmed.count <= 500 else {
+            errorMessage = "Response must be 10–500 characters."
+            return
+        }
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            try await APIClient.shared.respondToReview(id: review.id, comment: trimmed)
+            onSuccess("Response posted.")
+            dismiss()
+        } catch let error as APIClientError where error.isUnauthorized {
+            errorMessage = "Sign in required. Your session is missing or expired."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Flag sheet (FR-6.8)
+
+private enum ReviewFlagReasonOption: String, CaseIterable, Identifiable {
+    case inappropriate
+    case fake
+    case harassment
+    case spam
+    case irrelevant
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .inappropriate: return "Inappropriate"
+        case .fake: return "Fake"
+        case .harassment: return "Harassment"
+        case .spam: return "Spam"
+        case .irrelevant: return "Irrelevant"
+        }
+    }
+}
+
+private struct FlagReviewSheet: View {
+    let review: ReviewRow
+    var onSuccess: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var reason: ReviewFlagReasonOption = .inappropriate
+    @State private var details = ""
+    @State private var errorMessage: String?
+    @State private var isSubmitting = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(review.displayComment)
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+                } header: {
+                    Text("Review").brandSectionHeader()
+                }
+
+                Section {
+                    Picker("Reason", selection: $reason) {
+                        ForEach(ReviewFlagReasonOption.allCases) { option in
+                            Text(option.label).tag(option)
+                        }
+                    }
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .frame(minHeight: 44)
+
+                    TextField("Details (optional)", text: $details, axis: .vertical)
+                        .lineLimit(2 ... 6)
+                        .listRowBackground(BrandTheme.navyElevated)
+                } header: {
+                    Text("Report").brandSectionHeader()
+                } footer: {
+                    Text("Flags enter the admin moderation queue. False reports may affect your trust standing.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.destructive)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
+                }
+            }
+            .brandListBackground()
+            .navigationTitle("Report review")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                        .disabled(isSubmitting)
+                        .frame(minHeight: 44)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Flag") {
+                        Task { await submit() }
+                    }
+                    .disabled(isSubmitting)
+                    .fontWeight(.semibold)
+                    .frame(minHeight: 44)
+                }
+            }
+            .overlay {
+                if isSubmitting {
+                    ProgressView()
+                        .tint(BrandTheme.accent)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(BrandTheme.navy.opacity(0.4))
+                }
+            }
+            .interactiveDismissDisabled(isSubmitting)
+        }
+        .tint(BrandTheme.accent)
+    }
+
+    @MainActor
+    private func submit() async {
+        errorMessage = nil
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            try await APIClient.shared.flagReview(
+                id: review.id,
+                reason: reason.rawValue,
+                details: details.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            onSuccess("Review flagged for moderation.")
+            dismiss()
+        } catch let error as APIClientError where error.isUnauthorized {
+            errorMessage = "Sign in required. Your session is missing or expired."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
 #Preview {
     NavigationStack {
         UserReviewsView(
             userId: "00000000-0000-0000-0000-000000000001",
             displayName: "Sample Provider"
         )
+        .environmentObject(AuthViewModel())
     }
     .preferredColorScheme(.dark)
     .tint(BrandTheme.accent)

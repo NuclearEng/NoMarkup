@@ -217,6 +217,42 @@ func (s *Server) CancelJob(ctx context.Context, req *jobv1.CancelJobRequest) (*j
 	return &jobv1.CancelJobResponse{Job: domainJobToProto(job)}, nil
 }
 
+// RepostJob creates a fresh auction from a closed/expired/cancelled job (FR-3.10).
+func (s *Server) RepostJob(ctx context.Context, req *jobv1.RepostJobRequest) (*jobv1.RepostJobResponse, error) {
+	var updates *domain.UpdateJobInput
+	if req.Title != nil || req.Description != nil || req.StartingBidCents != nil ||
+		req.OfferAcceptedCents != nil || req.AuctionDurationHours != nil {
+		u := domain.UpdateJobInput{}
+		if req.Title != nil {
+			t := req.GetTitle()
+			u.Title = &t
+		}
+		if req.Description != nil {
+			d := req.GetDescription()
+			u.Description = &d
+		}
+		if req.StartingBidCents != nil {
+			v := req.GetStartingBidCents()
+			u.StartingBidCents = &v
+		}
+		if req.OfferAcceptedCents != nil {
+			v := req.GetOfferAcceptedCents()
+			u.OfferAcceptedCents = &v
+		}
+		if req.AuctionDurationHours != nil {
+			h := int(req.GetAuctionDurationHours())
+			u.AuctionDurationHours = &h
+		}
+		updates = &u
+	}
+
+	job, err := s.svc.RepostJob(ctx, req.GetOriginalJobId(), req.GetCustomerId(), updates)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &jobv1.RepostJobResponse{NewJob: domainJobToProto(job)}, nil
+}
+
 func (s *Server) SearchJobs(ctx context.Context, req *jobv1.SearchJobsRequest) (*jobv1.SearchJobsResponse, error) {
 	input := domain.SearchJobsInput{
 		CategoryIDs: req.GetCategoryIds(),
@@ -755,6 +791,8 @@ func mapDomainError(err error) error {
 		return status.Error(codes.FailedPrecondition, "job is not active")
 	case errors.Is(err, domain.ErrNotOwner):
 		return status.Error(codes.PermissionDenied, "not the job owner")
+	case errors.Is(err, domain.ErrNotRepostable):
+		return status.Error(codes.FailedPrecondition, "job must be closed, expired, or cancelled to repost")
 	case errors.Is(err, domain.ErrInvalidStatus):
 		return status.Error(codes.FailedPrecondition, "invalid status transition")
 	case errors.Is(err, domain.ErrCategoryNotFound):

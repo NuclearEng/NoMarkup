@@ -6,10 +6,10 @@ import UIKit
 
 /// Contract detail — status, amount, parties, role-gated lifecycle actions,
 /// milestones, change orders, tip, reports, guarantee claim, open dispute / review,
-/// and customer escrow release (`POST /payments/{id}/release`).
+/// customer services pay/hold escrow (FR-9), and escrow release (`POST /payments/{id}/release`).
 ///
 /// Services escrow (not automatic on approve-completion):
-/// 1. Payment held with status `escrow` after process/capture
+/// 1. Customer pays via PaymentSheet (`POST /payments` + confirm + `…/process`) → status `escrow`
 /// 2. Provider mark complete → customer approve-completion (contract → completed)
 /// 3. Customer `POST /api/v1/payments/{id}/release` (Idempotency-Key) — provider cannot self-release
 /// Goods use mutual pickup on listing orders instead (see MyOrdersView).
@@ -24,8 +24,15 @@ struct ContractDetailView: View {
     @State private var guaranteeClaim: GuaranteeClaim?
     /// Payments linked to this contract (loaded via GET /payments, filtered client-side).
     @State private var contractPayments: [ContractPayment] = []
+    /// Server fee breakdown for display only (`POST /payments/calculate-fees`).
+    @State private var feeBreakdown: PaymentFeeBreakdown?
     /// Exact service address from linked job (party-only; server-gated on GET /jobs/{id}).
     @State private var serviceExactAddress: JobExactAddress?
+    /// FR-18 recurring schedule + instance timeline (loaded fail-soft).
+    @State private var recurringConfig: ContractRecurringConfig?
+    @State private var recurringInstances: [ContractRecurringInstance] = []
+    @State private var actingRecurringInstanceID: String?
+    @State private var showCancelRecurringConfirm = false
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
@@ -37,12 +44,15 @@ struct ContractDetailView: View {
     @State private var actingMilestoneID: String?
     @State private var actingChangeOrderID: String?
     @State private var releasingPaymentID: String?
+    /// True while create → PaymentSheet → process is running (services fund escrow).
+    @State private var isPayingEscrow = false
     @State private var currentUserID: String?
     @State private var showCancelConfirm = false
     @State private var showMarkCompleteConfirm = false
     @State private var showApproveCompletionConfirm = false
     @State private var showNoShowConfirm = false
     @State private var showAbandonmentConfirm = false
+    @State private var showPayEscrowConfirm = false
     @State private var pendingMilestoneApproveID: String?
     @State private var pendingMilestoneRevisionID: String?
     @State private var revisionNotesText = ""
@@ -71,6 +81,24 @@ struct ContractDetailView: View {
 
     private var releasedEscrowPayments: [ContractPayment] {
         contractPayments.filter(\.isReleased)
+    }
+
+    private var pendingCapturePayments: [ContractPayment] {
+        contractPayments.filter(\.isPendingCapture)
+    }
+
+    /// Customer may fund escrow when no held/released payment exists yet for this contract.
+    private func canFundEscrow(for contract: ContractDetail) -> Bool {
+        guard contract.isCustomer(userId: currentUserID) else { return false }
+        guard let amount = contract.amountCents, amount > 0 else { return false }
+        let status = contract.normalizedStatus
+        // Payable after acceptance (active) and while completion is wrapping up.
+        guard status == "active" || status == "completed" else { return false }
+        // Already funded or paid out — do not open a second charge for the same contract GMV.
+        if !heldEscrowPayments.isEmpty || !releasedEscrowPayments.isEmpty {
+            return false
+        }
+        return true
     }
 
     var body: some View {
@@ -130,8 +158,10 @@ struct ContractDetailView: View {
                 showApproveCompletionConfirm: $showApproveCompletionConfirm,
                 showNoShowConfirm: $showNoShowConfirm,
                 showAbandonmentConfirm: $showAbandonmentConfirm,
+                showPayEscrowConfirm: $showPayEscrowConfirm,
                 pendingMilestoneApproveID: $pendingMilestoneApproveID,
                 pendingReleasePayment: $pendingReleasePayment,
+                payEscrowAmountLabel: contract.map { MoneyFormat.usd(cents: $0.amountCents ?? 0) } ?? "",
                 onCancel: {
                     Task {
                         await runAction(title: pendingConfirmActionTitle ?? "Cancel contract") {
@@ -179,6 +209,9 @@ struct ContractDetailView: View {
                 },
                 onReleaseEscrow: { payment in
                     Task { await releaseEscrow(payment) }
+                },
+                onPayEscrow: {
+                    Task { await payAndHoldEscrow() }
                 }
             ))
     }
@@ -326,6 +359,8 @@ struct ContractDetailView: View {
 
             actionsSection(contract)
 
+            recurringSection(contract)
+
             escrowSection(contract)
 
             milestonesSection(contract)
@@ -419,6 +454,169 @@ struct ContractDetailView: View {
         return "—"
     }
 
+    // MARK: Recurring (FR-18)
+
+    @ViewBuilder
+    private func recurringSection(_ contract: ContractDetail) -> some View {
+        let config = recurringConfig ?? contract.recurring
+        if let config {
+            Section {
+                LabeledContent("Frequency", value: config.displayFrequency)
+                LabeledContent("Status") {
+                    Text(config.displayStatus)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(config.isPaused ? BrandTheme.warning : BrandTheme.textPrimary)
+                }
+                LabeledContent("Rate") {
+                    Text(config.displayRate)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
+                if let next = config.nextOccurrence, !next.isEmpty {
+                    LabeledContent("Next", value: CatalogDateFormat.friendlyDateTime(next))
+                }
+                if config.autoApprove == true {
+                    LabeledContent("Auto-approve", value: "On")
+                }
+
+                if !config.isCancelled {
+                    if config.isActive {
+                        actionButton(
+                            title: "Pause schedule",
+                            systemImage: "pause.circle",
+                            tint: BrandTheme.warning,
+                            prominent: false
+                        ) {
+                            await runRecurringConfigAction(title: "Pause schedule", success: "Recurring schedule paused.") {
+                                try await APIClient.shared.pauseRecurring(contractId: contract.id)
+                            }
+                        }
+                    }
+                    if config.isPaused {
+                        actionButton(
+                            title: "Resume schedule",
+                            systemImage: "play.circle",
+                            tint: BrandTheme.accent,
+                            prominent: true
+                        ) {
+                            await runRecurringConfigAction(title: "Resume schedule", success: "Recurring schedule resumed.") {
+                                try await APIClient.shared.resumeRecurring(contractId: contract.id)
+                            }
+                        }
+                    }
+                    actionButton(
+                        title: "Cancel schedule",
+                        systemImage: "xmark.circle",
+                        tint: BrandTheme.destructive,
+                        prominent: false
+                    ) {
+                        pendingConfirmActionTitle = "Cancel schedule"
+                        showCancelRecurringConfirm = true
+                    }
+                }
+
+                if recurringInstances.isEmpty {
+                    Text("No occurrences yet. The first instance is created when both parties accept a recurring job.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(recurringInstances) { instance in
+                        recurringInstanceRow(instance, contract: contract)
+                    }
+                }
+            } header: {
+                Text("Recurring schedule").brandSectionHeader()
+            } footer: {
+                Text("Pause stops new visits; cancel ends the schedule after the next occurrence notice. Completing/approving visits does not yet auto-create Stripe payments.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            .listRowBackground(BrandTheme.navyElevated)
+            .confirmationDialog(
+                "Cancel this recurring schedule?",
+                isPresented: $showCancelRecurringConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Cancel schedule", role: .destructive) {
+                    Task {
+                        await runRecurringConfigAction(
+                            title: "Cancel schedule",
+                            success: "Recurring schedule cancelled."
+                        ) {
+                            try await APIClient.shared.cancelRecurring(contractId: contract.id)
+                        }
+                    }
+                }
+                Button("Keep schedule", role: .cancel) {}
+            } message: {
+                Text("Cancellation takes effect after the next scheduled occurrence (1-visit notice). Completed visits stay on the timeline.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func recurringInstanceRow(
+        _ instance: ContractRecurringInstance,
+        contract: ContractDetail
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(instance.displayDate)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                Spacer()
+                Text(instance.displayStatus)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            HStack {
+                Text(instance.displayAmount)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+                if instance.autoApproved == true {
+                    Text("Auto-approved")
+                        .font(.caption2)
+                        .foregroundStyle(BrandTheme.success)
+                }
+            }
+            let isProvider = contract.isProvider(userId: currentUserID)
+            let isCustomer = contract.isCustomer(userId: currentUserID)
+            if isProvider && instance.isCompletable {
+                Button {
+                    Task { await completeRecurringInstance(instance, contractId: contract.id) }
+                } label: {
+                    if actingRecurringInstanceID == instance.id {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label("Mark visit complete", systemImage: "checkmark.circle")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(BrandTheme.accent)
+                .disabled(actingRecurringInstanceID != nil || actingActionTitle != nil)
+            }
+            if isCustomer && instance.isApprovable && instance.autoApproved != true {
+                Button {
+                    Task { await approveRecurringInstance(instance, contractId: contract.id) }
+                } label: {
+                    if actingRecurringInstanceID == instance.id {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label("Approve visit", systemImage: "hand.thumbsup")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .disabled(actingRecurringInstanceID != nil || actingActionTitle != nil)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
     // MARK: Actions
 
     @ViewBuilder
@@ -462,6 +660,12 @@ struct ContractDetailView: View {
                 }
 
                 if status == "active" {
+                    if isCustomer && canFundEscrow(for: contract) {
+                        Text("Next: pay & hold escrow below (server contract amount) so funds are secured before or during work.")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(BrandTheme.goldBright.opacity(0.95))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if isProvider && !contract.hasStarted {
                         actionButton(
                             title: "Start work",
@@ -565,7 +769,7 @@ struct ContractDetailView: View {
         }
     }
 
-    // MARK: Escrow / payment release
+    // MARK: Escrow / payment capture + release (FR-9 services)
 
     @ViewBuilder
     private func escrowSection(_ contract: ContractDetail) -> some View {
@@ -573,16 +777,53 @@ struct ContractDetailView: View {
         let isProvider = contract.isProvider(userId: currentUserID)
         let held = heldEscrowPayments
         let released = releasedEscrowPayments
+        let pending = pendingCapturePayments
+        let canPay = canFundEscrow(for: contract)
 
-        // Surface when there are payment rows, or when completion is in play
-        // (customer may still need to release after approve-completion).
+        // Surface when there are payment rows, when customer can fund, or when
+        // completion is in play (customer may still need to release after approve).
         let relevantStage = contract.normalizedStatus == "completed"
             || contract.normalizedStatus == "active"
             || contract.hasCompletedMark
-        let hasRows = !held.isEmpty || !released.isEmpty
-        if (isCustomer || isProvider) && (hasRows || relevantStage) {
+        let hasRows = !held.isEmpty || !released.isEmpty || !pending.isEmpty
+        if (isCustomer || isProvider) && (hasRows || relevantStage || canPay) {
             Section {
-                if held.isEmpty && released.isEmpty {
+                if canPay {
+                    feeBreakdownBlock(contract)
+
+                    Text(
+                        "Pay the contract amount to hold funds in escrow. Apple Pay / card via Stripe PaymentSheet. Charge amount is the server contract total — not client fee math."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .listRowBackground(BrandTheme.navyElevated)
+
+                    Button {
+                        showPayEscrowConfirm = true
+                    } label: {
+                        if isPayingEscrow {
+                            ProgressView()
+                                .tint(BrandTheme.navy)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Label(
+                                "Pay & hold escrow · \(MoneyFormat.usd(cents: contract.amountCents ?? 0))",
+                                systemImage: "creditcard.fill"
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.accent)
+                    .disabled(isBusyForEscrowActions)
+                    .accessibilityHint(
+                        "Creates a PaymentIntent for this contract amount, opens PaymentSheet, then captures into escrow"
+                    )
+                    .listRowBackground(BrandTheme.navyElevated)
+                }
+
+                if held.isEmpty && released.isEmpty && !canPay {
                     Text(
                         isCustomer
                             ? "No held escrow payment found for this contract yet. When a payment is in escrow, you can release it here after work is approved."
@@ -591,6 +832,31 @@ struct ContractDetailView: View {
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .listRowBackground(BrandTheme.navyElevated)
+                }
+
+                ForEach(pending) { payment in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(payment.displayAmount)
+                                .font(.body.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(BrandTheme.goldBright)
+                            Spacer()
+                            Text(payment.displayStatus)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(BrandTheme.warning)
+                        }
+                        Text("Payment \(String(payment.id.prefix(8)))… — authorization pending capture.")
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .textSelection(.enabled)
+                        if isCustomer && canPay {
+                            Text("Use Pay & hold escrow above to complete authorization and capture.")
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
                     .listRowBackground(BrandTheme.navyElevated)
                 }
 
@@ -630,11 +896,7 @@ struct ContractDetailView: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(BrandTheme.success)
-                            .disabled(
-                                releasingPaymentID != nil
-                                    || actingActionTitle != nil
-                                    || actingMilestoneID != nil
-                            )
+                            .disabled(isBusyForEscrowActions)
                             .accessibilityHint("Calls POST /payments/{id}/release with Idempotency-Key; pays the provider from held escrow")
                         } else if isProvider {
                             Text("Waiting for the customer to release escrow. You cannot release your own payout.")
@@ -668,10 +930,78 @@ struct ContractDetailView: View {
             } header: {
                 Text("Escrow").brandSectionHeader()
             } footer: {
-                Text("Customer releases via real endpoint POST /api/v1/payments/{id}/release (auth + Idempotency-Key). Display amounts are server fields only — no client fee math. Goods orders release via pickup handshake, not this control.")
+                Text("Services: customer pays via POST /payments + PaymentSheet + POST /payments/{id}/process (sticky Idempotency-Key). Release is POST /payments/{id}/release. Amounts are server fields only — no client fee math. Goods orders use Orders pickup handshake, not this control.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
+    }
+
+    /// Server fee lines for display only — never used as the charge amount.
+    @ViewBuilder
+    private func feeBreakdownBlock(_ contract: ContractDetail) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Fee breakdown (server)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary)
+
+            if let feeBreakdown {
+                feeRow(label: "Contract / charge", value: feeBreakdown.displayTotal)
+                if let pct = PaymentFeeBreakdown.formatPercent(feeBreakdown.feePercentage) {
+                    feeRow(label: "Platform fee (\(pct))", value: feeBreakdown.displayPlatformFee)
+                } else {
+                    feeRow(label: "Platform fee", value: feeBreakdown.displayPlatformFee)
+                }
+                if let pct = PaymentFeeBreakdown.formatPercent(feeBreakdown.guaranteePercentage) {
+                    feeRow(label: "Guarantee fee (\(pct))", value: feeBreakdown.displayGuaranteeFee)
+                } else {
+                    feeRow(label: "Guarantee fee", value: feeBreakdown.displayGuaranteeFee)
+                }
+                if let lead = feeBreakdown.displayLeadGenFee {
+                    if let pct = PaymentFeeBreakdown.formatPercent(feeBreakdown.leadGenPercentage) {
+                        feeRow(label: "Lead-gen fee (\(pct))", value: lead)
+                    } else {
+                        feeRow(label: "Lead-gen fee", value: lead)
+                    }
+                }
+                feeRow(label: "Provider receives", value: feeBreakdown.displayProviderPayout)
+                Text("You pay the contract total. Platform and guarantee fees come from the provider payout (server math).")
+                    .font(.caption2)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                // Fallback while fees load / if calculate-fees fails — still show server contract amount.
+                feeRow(
+                    label: "Contract / charge",
+                    value: MoneyFormat.usd(cents: contract.amountCents ?? 0)
+                )
+                Text("Fee lines load from POST /payments/calculate-fees when available.")
+                    .font(.caption2)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+        .padding(.vertical, 4)
+        .listRowBackground(BrandTheme.navyElevated)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func feeRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(BrandTheme.textSecondary)
+            Spacer()
+            Text(value)
+                .font(.caption.monospacedDigit().weight(.medium))
+                .foregroundStyle(BrandTheme.textPrimary)
+        }
+    }
+
+    private var isBusyForEscrowActions: Bool {
+        releasingPaymentID != nil
+            || isPayingEscrow
+            || actingActionTitle != nil
+            || actingMilestoneID != nil
     }
 
     @ViewBuilder
@@ -702,6 +1032,7 @@ struct ContractDetailView: View {
                 || actingMilestoneID != nil
                 || actingChangeOrderID != nil
                 || releasingPaymentID != nil
+                || isPayingEscrow
         )
         .accessibilityHint(title)
     }
@@ -1208,23 +1539,32 @@ struct ContractDetailView: View {
             contract = detail
 
             // Prefer dedicated list endpoint; fall back to embedded change_orders.
-            // Fetch change orders + claim + escrow payments in parallel after detail.
+            // Fetch change orders + claim + escrow payments + fee preview in parallel.
             async let ordersResult = Self.loadChangeOrders(
                 contractId: contractID,
                 fallback: detail.changeOrders ?? []
             )
             async let claimResult = Self.loadGuaranteeClaim(contractId: contractID)
             async let paymentsResult = Self.loadContractPayments(contractId: contractID)
+            async let feesResult = Self.loadFeeBreakdown(amountCents: detail.amountCents)
             async let addressResult = Self.loadPartyExactAddress(
                 jobId: detail.jobId,
                 userId: currentUserID,
                 isCustomer: detail.isCustomer(userId: currentUserID),
                 isProvider: detail.isProvider(userId: currentUserID)
             )
+            async let recurringResult = Self.loadRecurringBundle(
+                contractId: contractID,
+                embedded: detail.recurring
+            )
             changeOrders = await ordersResult
             guaranteeClaim = await claimResult
             contractPayments = await paymentsResult
+            feeBreakdown = await feesResult
             serviceExactAddress = await addressResult
+            let recurring = await recurringResult
+            recurringConfig = recurring.config
+            recurringInstances = recurring.instances
         } catch {
             if contract == nil {
                 errorMessage = error.localizedDescription
@@ -1273,10 +1613,13 @@ struct ContractDetailView: View {
         try? await APIClient.shared.fetchGuaranteeClaim(contractId: contractId)
     }
 
-    /// Load held + released payments for this contract. Fail-soft on list errors.
+    /// Load pending + held + released payments for this contract. Fail-soft on list errors.
     private static func loadContractPayments(contractId: String) async -> [ContractPayment] {
-        // Two status filters (escrow + released) so the CTA and “already paid”
-        // states both work without pulling the full history.
+        // Status filters so fund / release CTAs work without pulling full history.
+        async let pending = (try? await APIClient.shared.fetchPaymentsForContract(
+            contractId: contractId,
+            status: "pending"
+        )) ?? []
         async let escrow = (try? await APIClient.shared.fetchPaymentsForContract(
             contractId: contractId,
             status: "escrow"
@@ -1285,15 +1628,22 @@ struct ContractDetailView: View {
             contractId: contractId,
             status: "released"
         )) ?? []
+        let open = await pending
         let held = await escrow
         let done = await released
         var byID: [String: ContractPayment] = [:]
-        for payment in held + done {
+        for payment in open + held + done {
             byID[payment.id] = payment
         }
         return Array(byID.values).sorted { lhs, rhs in
             (lhs.createdAt ?? "") > (rhs.createdAt ?? "")
         }
+    }
+
+    /// Display-only fee preview from server (`POST /payments/calculate-fees`).
+    private static func loadFeeBreakdown(amountCents: Int64?) async -> PaymentFeeBreakdown? {
+        guard let amountCents, amountCents > 0 else { return nil }
+        return try? await APIClient.shared.calculatePaymentFees(amountCents: amountCents)
     }
 
     @MainActor
@@ -1350,6 +1700,80 @@ struct ContractDetailView: View {
         }
     }
 
+    /// FR-9: create PaymentIntent for server contract amount → PaymentSheet → process/capture.
+    /// Never invents a charge amount; uses `contract.amountCents` from GET /contracts/{id}.
+    @MainActor
+    private func payAndHoldEscrow() async {
+        guard let contract else { return }
+        guard canFundEscrow(for: contract) else {
+            statusIsError = true
+            statusMessage = "This contract is not payable, or escrow is already funded."
+            return
+        }
+        guard let amountCents = contract.amountCents, amountCents > 0 else {
+            statusIsError = true
+            statusMessage = "Contract has no server amount to charge."
+            return
+        }
+
+        isPayingEscrow = true
+        statusMessage = nil
+        statusIsError = false
+        defer { isPayingEscrow = false }
+
+        do {
+            // 1) Create PI (sticky Idempotency-Key create-payment:{contract}:{amount}:).
+            let created = try await APIClient.shared.createContractPayment(
+                contractId: contract.id,
+                amountCents: amountCents,
+                providerId: contract.providerId
+            )
+
+            // 2) Authorize via PaymentSheet (or skip on dev-stack sentinel secrets).
+            if created.isDevClientSecret {
+                // Dev payment service returns pi_dev_secret_* when Stripe is unwired.
+                // Capture path still works via ProcessPayment stub.
+            } else if let secret = created.clientSecret, created.hasConfirmableSecret {
+                try await RailACheckout.presentPaymentSheet(clientSecret: secret)
+            } else {
+                statusIsError = true
+                statusMessage =
+                    "Payment created but no confirmable client_secret was returned. Retry shortly, or check Stripe configuration."
+                await refreshSideData()
+                return
+            }
+
+            // 3) Capture → escrow (sticky process-payment:{id}).
+            let held = try await APIClient.shared.processContractPayment(paymentId: created.id)
+            await APIClient.shared.clearCreateContractPaymentIdempotency(
+                contractId: contract.id,
+                amountCents: amountCents
+            )
+
+            if let idx = contractPayments.firstIndex(where: { $0.id == held.id }) {
+                contractPayments[idx] = held
+            } else {
+                contractPayments.insert(held, at: 0)
+            }
+            statusIsError = false
+            statusMessage =
+                "Payment complete — \(held.displayAmount) is held in escrow. Release after you approve the work."
+            await refreshSideData()
+        } catch let error as RailACheckout.CheckoutError where error.isCanceled {
+            statusIsError = false
+            statusMessage =
+                "Payment canceled. You can try again; create uses a sticky Idempotency-Key so retries reuse the same intent."
+            await refreshSideData()
+        } catch let error as APIClientError where error.isUnauthorized {
+            statusIsError = true
+            statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+            await refreshSideData()
+        }
+    }
+
     @MainActor
     private func runMilestone(_ id: String, _ work: () async throws -> ContractMilestone) async {
         actingMilestoneID = id
@@ -1375,9 +1799,118 @@ struct ContractDetailView: View {
         )
         async let claim = Self.loadGuaranteeClaim(contractId: contractID)
         async let payments = Self.loadContractPayments(contractId: contractID)
+        async let fees = Self.loadFeeBreakdown(amountCents: contract?.amountCents)
+        async let recurring = Self.loadRecurringBundle(
+            contractId: contractID,
+            embedded: contract?.recurring ?? recurringConfig
+        )
         changeOrders = await orders
         guaranteeClaim = await claim
         contractPayments = await payments
+        if let fees {
+            feeBreakdown = fees
+        }
+        let rec = await recurring
+        recurringConfig = rec.config
+        recurringInstances = rec.instances
+    }
+
+    private static func loadRecurringBundle(
+        contractId: String,
+        embedded: ContractRecurringConfig?
+    ) async -> (config: ContractRecurringConfig?, instances: [ContractRecurringInstance]) {
+        // Prefer dedicated endpoints; fall back to embedded config on GetContract.
+        let config: ContractRecurringConfig?
+        if let fetched = try? await APIClient.shared.fetchRecurringConfig(contractId: contractId) {
+            config = fetched
+        } else {
+            config = embedded
+        }
+        guard config != nil else {
+            return (nil, [])
+        }
+        let instances = (try? await APIClient.shared.fetchRecurringInstances(contractId: contractId)) ?? []
+        return (config, instances)
+    }
+
+    @MainActor
+    private func runRecurringConfigAction(
+        title: String,
+        success: String,
+        _ work: () async throws -> ContractRecurringConfig
+    ) async {
+        actingActionTitle = title
+        pendingConfirmActionTitle = nil
+        statusMessage = nil
+        statusIsError = false
+        defer { actingActionTitle = nil }
+        do {
+            recurringConfig = try await work()
+            statusIsError = false
+            statusMessage = success
+            await refreshSideData()
+            // Keep contract.recurring in sync when present.
+            if var detail = contract {
+                detail.recurring = recurringConfig
+                contract = detail
+            }
+        } catch let error as APIClientError where error.isUnauthorized {
+            statusIsError = true
+            statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func completeRecurringInstance(
+        _ instance: ContractRecurringInstance,
+        contractId: String
+    ) async {
+        actingRecurringInstanceID = instance.id
+        statusMessage = nil
+        statusIsError = false
+        defer { actingRecurringInstanceID = nil }
+        do {
+            let updated = try await APIClient.shared.completeRecurringInstance(
+                contractId: contractId,
+                instanceId: instance.id
+            )
+            if let idx = recurringInstances.firstIndex(where: { $0.id == instance.id }) {
+                recurringInstances[idx] = updated
+            }
+            statusIsError = false
+            statusMessage = "Visit marked complete."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func approveRecurringInstance(
+        _ instance: ContractRecurringInstance,
+        contractId: String
+    ) async {
+        actingRecurringInstanceID = instance.id
+        statusMessage = nil
+        statusIsError = false
+        defer { actingRecurringInstanceID = nil }
+        do {
+            let updated = try await APIClient.shared.approveRecurringInstance(
+                contractId: contractId,
+                instanceId: instance.id
+            )
+            if let idx = recurringInstances.firstIndex(where: { $0.id == instance.id }) {
+                recurringInstances[idx] = updated
+            }
+            statusIsError = false
+            statusMessage = "Visit approved."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
     }
 
     @MainActor
@@ -1544,8 +2077,10 @@ private struct ContractConfirmationsModifier: ViewModifier {
     @Binding var showApproveCompletionConfirm: Bool
     @Binding var showNoShowConfirm: Bool
     @Binding var showAbandonmentConfirm: Bool
+    @Binding var showPayEscrowConfirm: Bool
     @Binding var pendingMilestoneApproveID: String?
     @Binding var pendingReleasePayment: ContractPayment?
+    var payEscrowAmountLabel: String
     let onCancel: () -> Void
     let onMarkComplete: () -> Void
     let onApproveCompletion: () -> Void
@@ -1553,6 +2088,7 @@ private struct ContractConfirmationsModifier: ViewModifier {
     let onReportAbandonment: () -> Void
     let onApproveMilestone: (String) -> Void
     let onReleaseEscrow: (ContractPayment) -> Void
+    let onPayEscrow: () -> Void
 
     func body(content: Content) -> some View {
         content
@@ -1626,6 +2162,16 @@ private struct ContractConfirmationsModifier: ViewModifier {
                 Text("Approves the milestone on the contract. Escrow release still uses the payment release action when funds are held.")
             }
             .confirmationDialog(
+                "Pay and hold escrow?",
+                isPresented: $showPayEscrowConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Pay \(payEscrowAmountLabel)", action: onPayEscrow)
+                Button("Not now", role: .cancel) {}
+            } message: {
+                Text("Charges the server contract amount (\(payEscrowAmountLabel)) via Stripe PaymentSheet (Apple Pay when available). Funds stay in escrow until you release them after approving work. Sticky Idempotency-Key on create + process.")
+            }
+            .confirmationDialog(
                 "Release escrow to the provider?",
                 isPresented: Binding(
                     get: { pendingReleasePayment != nil },
@@ -1660,8 +2206,16 @@ private struct OpenDisputeSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var disputeType: ContractDisputeType = .quality
     @State private var descriptionText = ""
+    @State private var evidenceURLs: [String] = []
+    @State private var isUploadingEvidence = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+
+    private var canSubmitDispute: Bool {
+        !isSubmitting
+            && !isUploadingEvidence
+            && !descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         NavigationStack {
@@ -1680,9 +2234,17 @@ private struct OpenDisputeSheet: View {
                 } header: {
                     Text("Dispute").brandSectionHeader()
                 } footer: {
-                    Text("Opens a formal dispute on this contract. Evidence uploads are available on the web dashboard.")
+                    Text("Opens a formal dispute on this contract. Attach photo evidence when possible.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
+
+                PhotoPickSection(
+                    context: .job,
+                    maxCount: 6,
+                    photoURLs: $evidenceURLs,
+                    isUploading: $isUploadingEvidence,
+                    errorMessage: $errorMessage
+                )
 
                 if let errorMessage {
                     Section {
@@ -1709,7 +2271,7 @@ private struct OpenDisputeSheet: View {
                     Button("Submit") {
                         Task { await submit() }
                     }
-                    .disabled(isSubmitting || descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!canSubmitDispute)
                     .fontWeight(.semibold)
                 }
             }
@@ -1735,9 +2297,14 @@ private struct OpenDisputeSheet: View {
             _ = try await APIClient.shared.openContractDispute(
                 id: contractID,
                 disputeType: disputeType.rawValue,
-                description: descriptionText
+                description: descriptionText,
+                evidenceURLs: evidenceURLs
             )
-            onSuccess("Dispute opened.")
+            onSuccess(
+                evidenceURLs.isEmpty
+                    ? "Dispute opened."
+                    : "Dispute opened with \(evidenceURLs.count) evidence photo(s)."
+            )
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
@@ -1939,11 +2506,17 @@ private struct GuaranteeClaimSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var reason: GuaranteeClaimReason = .quality
     @State private var descriptionText = ""
+    @State private var evidenceURLs: [String] = []
+    @State private var isUploadingEvidence = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
     private var descriptionValid: Bool {
         descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 50
+    }
+
+    private var canSubmitClaim: Bool {
+        !isSubmitting && !isUploadingEvidence && descriptionValid
     }
 
     var body: some View {
@@ -1972,9 +2545,17 @@ private struct GuaranteeClaimSheet: View {
                 } header: {
                     Text("Guarantee claim").brandSectionHeader()
                 } footer: {
-                    Text("Files a NoMarkup Guarantee claim on this completed contract. Photo evidence can be added on the web dashboard.")
+                    Text("Files a NoMarkup Guarantee claim on this completed contract. Attach photo evidence of the issue.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
+
+                PhotoPickSection(
+                    context: .job,
+                    maxCount: 6,
+                    photoURLs: $evidenceURLs,
+                    isUploading: $isUploadingEvidence,
+                    errorMessage: $errorMessage
+                )
 
                 if let errorMessage {
                     Section {
@@ -2001,7 +2582,7 @@ private struct GuaranteeClaimSheet: View {
                     Button("Submit") {
                         Task { await submit() }
                     }
-                    .disabled(isSubmitting || !descriptionValid)
+                    .disabled(!canSubmitClaim)
                     .fontWeight(.semibold)
                 }
             }
@@ -2027,9 +2608,14 @@ private struct GuaranteeClaimSheet: View {
             _ = try await APIClient.shared.submitGuaranteeClaim(
                 contractId: contractID,
                 reason: reason.rawValue,
-                description: descriptionText
+                description: descriptionText,
+                evidenceURLs: evidenceURLs
             )
-            onSuccess("Guarantee claim submitted.")
+            onSuccess(
+                evidenceURLs.isEmpty
+                    ? "Guarantee claim submitted."
+                    : "Guarantee claim submitted with \(evidenceURLs.count) evidence photo(s)."
+            )
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

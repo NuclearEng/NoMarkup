@@ -441,6 +441,148 @@ func (s *ContractServer) AdminResolveDispute(ctx context.Context, req *contractv
 	}, nil
 }
 
+// --- Recurring (FR-18) ---
+
+func (s *ContractServer) GetRecurringConfig(ctx context.Context, req *contractv1.GetRecurringConfigRequest) (*contractv1.GetRecurringConfigResponse, error) {
+	if req.GetContractId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "contract_id is required")
+	}
+	// Gateway has already authenticated; empty user skips party check only if
+	// gateway also enforces RequirePartyAccess (it does on /contracts/{id}/*).
+	cfg, err := s.svc.GetRecurringConfig(ctx, req.GetContractId(), "")
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.GetRecurringConfigResponse{Config: domainRecurringConfigToProto(cfg)}, nil
+}
+
+func (s *ContractServer) UpdateRecurringConfig(ctx context.Context, req *contractv1.UpdateRecurringConfigRequest) (*contractv1.UpdateRecurringConfigResponse, error) {
+	if req.GetRecurringId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "recurring_id is required")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	var rate *int64
+	if req.ProposedRateCents != nil {
+		v := req.GetProposedRateCents()
+		rate = &v
+	}
+	var auto *bool
+	if req.AutoApprove != nil {
+		v := req.GetAutoApprove()
+		auto = &v
+	}
+	cfg, err := s.svc.UpdateRecurringConfig(ctx, req.GetRecurringId(), req.GetUserId(), rate, auto)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.UpdateRecurringConfigResponse{Config: domainRecurringConfigToProto(cfg)}, nil
+}
+
+func (s *ContractServer) PauseRecurring(ctx context.Context, req *contractv1.PauseRecurringRequest) (*contractv1.PauseRecurringResponse, error) {
+	if req.GetRecurringId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "recurring_id is required")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	cfg, err := s.svc.PauseRecurring(ctx, req.GetRecurringId(), req.GetUserId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.PauseRecurringResponse{Config: domainRecurringConfigToProto(cfg)}, nil
+}
+
+func (s *ContractServer) ResumeRecurring(ctx context.Context, req *contractv1.ResumeRecurringRequest) (*contractv1.ResumeRecurringResponse, error) {
+	if req.GetRecurringId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "recurring_id is required")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	cfg, err := s.svc.ResumeRecurring(ctx, req.GetRecurringId(), req.GetUserId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.ResumeRecurringResponse{Config: domainRecurringConfigToProto(cfg)}, nil
+}
+
+func (s *ContractServer) CancelRecurring(ctx context.Context, req *contractv1.CancelRecurringRequest) (*contractv1.CancelRecurringResponse, error) {
+	if req.GetRecurringId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "recurring_id is required")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	cfg, err := s.svc.CancelRecurring(ctx, req.GetRecurringId(), req.GetUserId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.CancelRecurringResponse{Config: domainRecurringConfigToProto(cfg)}, nil
+}
+
+func (s *ContractServer) ListRecurringInstances(ctx context.Context, req *contractv1.ListRecurringInstancesRequest) (*contractv1.ListRecurringInstancesResponse, error) {
+	if req.GetRecurringId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "recurring_id is required")
+	}
+	page, pageSize := 1, 20
+	if p := req.GetPagination(); p != nil {
+		if p.GetPage() > 0 {
+			page = int(p.GetPage())
+		}
+		if p.GetPageSize() > 0 {
+			pageSize = int(p.GetPageSize())
+		}
+	}
+	// Empty user: gateway RequirePartyAccess already gated; service still checks
+	// when user id is provided from handlers that pass claims.
+	instances, pagination, err := s.svc.ListRecurringInstances(ctx, req.GetRecurringId(), "", page, pageSize)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	out := make([]*contractv1.RecurringInstance, 0, len(instances))
+	for _, inst := range instances {
+		out = append(out, domainRecurringInstanceToProto(inst))
+	}
+	return &contractv1.ListRecurringInstancesResponse{
+		Instances:  out,
+		Pagination: domainPaginationToProto(pagination),
+	}, nil
+}
+
+func (s *ContractServer) CompleteRecurringInstance(ctx context.Context, req *contractv1.CompleteRecurringInstanceRequest) (*contractv1.CompleteRecurringInstanceResponse, error) {
+	if req.GetInstanceId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "instance_id is required")
+	}
+	if req.GetProviderId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "provider_id is required")
+	}
+	inst, err := s.svc.CompleteRecurringInstance(ctx, req.GetInstanceId(), req.GetProviderId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.CompleteRecurringInstanceResponse{Instance: domainRecurringInstanceToProto(inst)}, nil
+}
+
+func (s *ContractServer) ApproveRecurringInstance(ctx context.Context, req *contractv1.ApproveRecurringInstanceRequest) (*contractv1.ApproveRecurringInstanceResponse, error) {
+	if req.GetInstanceId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "instance_id is required")
+	}
+	if req.GetCustomerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "customer_id is required")
+	}
+	inst, err := s.svc.ApproveRecurringInstance(ctx, req.GetInstanceId(), req.GetCustomerId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	// Payment wire for recurring approve is residual — empty payment_id.
+	return &contractv1.ApproveRecurringInstanceResponse{
+		Instance:  domainRecurringInstanceToProto(inst),
+		PaymentId: "",
+	}, nil
+}
+
 // --- Proto conversion helpers ---
 
 func domainContractToProto(c *domain.Contract) *contractv1.Contract {
@@ -479,6 +621,44 @@ func domainContractToProto(c *domain.Contract) *contractv1.Contract {
 		pb.Milestones = protoMilestones
 	}
 
+	if c.Recurring != nil {
+		pb.Recurring = domainRecurringConfigToProto(c.Recurring)
+	}
+
+	return pb
+}
+
+func domainRecurringConfigToProto(cfg *domain.RecurringConfig) *contractv1.RecurringConfig {
+	if cfg == nil {
+		return nil
+	}
+	pb := &contractv1.RecurringConfig{
+		Id:             cfg.ID,
+		ContractId:     cfg.ContractID,
+		Frequency:      stringToProtoRecurrence(cfg.Frequency),
+		RateCents:      cfg.RateCents,
+		AutoApprove:    cfg.AutoApprove,
+		Status:         cfg.Status,
+		NextOccurrence: timestamppb.New(cfg.NextOccurrence),
+	}
+	return pb
+}
+
+func domainRecurringInstanceToProto(inst *domain.RecurringInstance) *contractv1.RecurringInstance {
+	if inst == nil {
+		return nil
+	}
+	pb := &contractv1.RecurringInstance{
+		Id:             inst.ID,
+		RecurringId:    inst.RecurringID,
+		OccurrenceDate: timestamppb.New(inst.OccurrenceDate),
+		Status:         inst.Status,
+		AmountCents:    inst.AmountCents,
+		AutoApproved:   inst.AutoApproved,
+	}
+	if inst.CompletedAt != nil {
+		pb.CompletedAt = timestamppb.New(*inst.CompletedAt)
+	}
 	return pb
 }
 
@@ -742,6 +922,22 @@ func mapContractDomainError(err error) error {
 		return status.Error(codes.FailedPrecondition, "This change order has already been responded to")
 	case errors.Is(err, domain.ErrInvalidChangeOrderDelta):
 		return status.Error(codes.InvalidArgument, "invalid change order amount")
+	case errors.Is(err, domain.ErrRecurringNotFound):
+		return status.Error(codes.NotFound, "recurring config not found")
+	case errors.Is(err, domain.ErrRecurringInstanceNotFound):
+		return status.Error(codes.NotFound, "recurring instance not found")
+	case errors.Is(err, domain.ErrRecurringNotActive):
+		return status.Error(codes.FailedPrecondition, "recurring schedule is not active")
+	case errors.Is(err, domain.ErrRecurringNotPaused):
+		return status.Error(codes.FailedPrecondition, "recurring schedule is not paused")
+	case errors.Is(err, domain.ErrRecurringCancelled):
+		return status.Error(codes.FailedPrecondition, "recurring schedule is cancelled")
+	case errors.Is(err, domain.ErrRecurringInvalidFrequency):
+		return status.Error(codes.InvalidArgument, "invalid recurrence frequency")
+	case errors.Is(err, domain.ErrRecurringInvalidRate):
+		return status.Error(codes.InvalidArgument, "invalid recurring rate")
+	case errors.Is(err, domain.ErrRecurringInstanceState):
+		return status.Error(codes.FailedPrecondition, "invalid recurring instance status transition")
 	default:
 		slog.Error("unmapped contract error", "error", err)
 		return status.Error(codes.Internal, "internal error")

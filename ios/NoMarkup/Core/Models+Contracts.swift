@@ -204,6 +204,89 @@ struct ContractSummary: Codable, Sendable, Hashable, Identifiable {
 
 // MARK: Detail
 
+/// Nested recurring schedule on contract detail / GET …/recurring (FR-18).
+struct ContractRecurringConfig: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var contractId: String?
+    var frequency: String?
+    var rateCents: Int64?
+    var autoApprove: Bool?
+    var status: String?
+    var nextOccurrence: String?
+
+    var displayFrequency: String {
+        let f = frequency?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return f.isEmpty ? "Recurring" : StatusChipStyle.displayLabel(f)
+    }
+
+    var displayStatus: String {
+        StatusChipStyle.displayLabel(status ?? "unknown")
+    }
+
+    var displayRate: String {
+        MoneyFormat.usd(cents: rateCents ?? 0)
+    }
+
+    var isActive: Bool {
+        (status ?? "").lowercased() == "active"
+    }
+
+    var isPaused: Bool {
+        (status ?? "").lowercased() == "paused"
+    }
+
+    var isCancelled: Bool {
+        (status ?? "").lowercased() == "cancelled"
+    }
+}
+
+/// One occurrence from GET …/recurring/instances (FR-18.2).
+struct ContractRecurringInstance: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var recurringId: String?
+    var occurrenceDate: String?
+    var status: String?
+    var amountCents: Int64?
+    var autoApproved: Bool?
+    var completedAt: String?
+
+    var displayStatus: String {
+        StatusChipStyle.displayLabel(status ?? "unknown")
+    }
+
+    var displayAmount: String {
+        MoneyFormat.usd(cents: amountCents ?? 0)
+    }
+
+    var displayDate: String {
+        guard let occurrenceDate, !occurrenceDate.isEmpty else { return "—" }
+        return CatalogDateFormat.friendlyDateTime(occurrenceDate)
+    }
+
+    var isCompletable: Bool {
+        let s = (status ?? "").lowercased()
+        return s == "scheduled" || s == "in_progress"
+    }
+
+    /// Completed visits may be approved by the customer. Server approve is idempotent
+    /// (proto has no `approved_at` on the wire — residual).
+    var isApprovable: Bool {
+        (status ?? "").lowercased() == "completed" && completedAt != nil
+    }
+}
+
+struct RecurringConfigEnvelope: Codable, Sendable {
+    var config: ContractRecurringConfig?
+}
+
+struct RecurringInstancesListResponse: Codable, Sendable {
+    var instances: [ContractRecurringInstance]?
+}
+
+struct RecurringInstanceEnvelope: Codable, Sendable {
+    var instance: ContractRecurringInstance?
+}
+
 /// Full contract from `GET /api/v1/contracts/{id}` (flat map; change_orders optional).
 struct ContractDetail: Codable, Sendable, Hashable, Identifiable {
     let id: String
@@ -228,6 +311,8 @@ struct ContractDetail: Codable, Sendable, Hashable, Identifiable {
     var createdAt: String?
     var milestones: [ContractMilestone]?
     var changeOrders: [ContractChangeOrder]?
+    /// Present when the contract has a recurring_configs row (FR-18).
+    var recurring: ContractRecurringConfig? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -252,6 +337,7 @@ struct ContractDetail: Codable, Sendable, Hashable, Identifiable {
         case createdAt
         case milestones
         case changeOrders
+        case recurring
     }
 
     init(from decoder: Decoder) throws {
@@ -286,6 +372,7 @@ struct ContractDetail: Codable, Sendable, Hashable, Identifiable {
         createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
         milestones = try c.decodeIfPresent([ContractMilestone].self, forKey: .milestones)
         changeOrders = try c.decodeIfPresent([ContractChangeOrder].self, forKey: .changeOrders)
+        recurring = try c.decodeIfPresent(ContractRecurringConfig.self, forKey: .recurring)
     }
 
     private static func decodeFlexibleInt64(
@@ -796,9 +883,9 @@ enum ContractDisputeType: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-// MARK: - Service payments / escrow (GET /api/v1/payments, POST …/release)
+// MARK: - Service payments / escrow (GET /api/v1/payments, POST create/process/release)
 
-/// Row from `GET /api/v1/payments` / flat payment map from release.
+/// Row from `GET /api/v1/payments` / flat payment map from create/process/release.
 /// Money fields are server-authoritative integer cents — never recompute on client.
 struct ContractPayment: Decodable, Sendable, Hashable, Identifiable {
     let id: String
@@ -818,6 +905,8 @@ struct ContractPayment: Decodable, Sendable, Hashable, Identifiable {
     var releasedAt: String?
     var completedAt: String?
     var createdAt: String?
+    /// Present only on `POST /payments` create response (merged map).
+    var clientSecret: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -837,6 +926,7 @@ struct ContractPayment: Decodable, Sendable, Hashable, Identifiable {
         case releasedAt
         case completedAt
         case createdAt
+        case clientSecret
     }
 
     init(from decoder: Decoder) throws {
@@ -866,6 +956,7 @@ struct ContractPayment: Decodable, Sendable, Hashable, Identifiable {
         releasedAt = try c.decodeIfPresent(String.self, forKey: .releasedAt)
         completedAt = try c.decodeIfPresent(String.self, forKey: .completedAt)
         createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        clientSecret = try c.decodeIfPresent(String.self, forKey: .clientSecret)
     }
 
     private static func decodeFlexibleInt64(
@@ -892,6 +983,16 @@ struct ContractPayment: Decodable, Sendable, Hashable, Identifiable {
         normalizedStatus == "escrow"
     }
 
+    /// Awaiting customer PaymentSheet confirm + process/capture.
+    var isPendingCapture: Bool {
+        switch normalizedStatus {
+        case "pending", "processing":
+            return true
+        default:
+            return false
+        }
+    }
+
     var isReleased: Bool {
         switch normalizedStatus {
         case "released", "completed":
@@ -914,6 +1015,26 @@ struct ContractPayment: Decodable, Sendable, Hashable, Identifiable {
 
     var displayStatus: String {
         StatusChipStyle.displayLabel(status ?? "unknown")
+    }
+
+    /// True when `client_secret` looks like a real Stripe PaymentIntent secret.
+    var hasConfirmableSecret: Bool {
+        guard let secret = clientSecret?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !secret.isEmpty
+        else {
+            return false
+        }
+        return secret.hasPrefix("pi_") && secret.contains("_secret_")
+    }
+
+    /// Dev-stack sentinel (`pi_dev_…` / `dev_…`) — skip PaymentSheet; process/capture only.
+    var isDevClientSecret: Bool {
+        guard let secret = clientSecret?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !secret.isEmpty
+        else {
+            return false
+        }
+        return secret.hasPrefix("pi_dev_") || secret.hasPrefix("dev_")
     }
 
     /// Customer may call `POST /payments/{id}/release` while status is escrow.
@@ -943,6 +1064,117 @@ struct PaymentsListResponse: Decodable, Sendable, Hashable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         payments = try c.decodeIfPresent([ContractPayment].self, forKey: .payments) ?? []
         pagination = try c.decodeIfPresent(PaginationMeta.self, forKey: .pagination)
+    }
+}
+
+// MARK: Fee breakdown (display only — POST /payments/calculate-fees)
+
+/// Server fee math for services GMV. Customer still pays `total_cents` (== contract
+/// amount); platform/guarantee/lead-gen reduce provider payout. Never use this to
+/// invent a charge amount — only display server fields.
+struct PaymentFeeBreakdown: Decodable, Sendable, Hashable {
+    var subtotalCents: Int64?
+    var platformFeeCents: Int64?
+    var guaranteeFeeCents: Int64?
+    var totalCents: Int64?
+    var providerPayoutCents: Int64?
+    var feePercentage: Double?
+    var guaranteePercentage: Double?
+    var leadGenFeeCents: Int64?
+    var leadGenPercentage: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case subtotalCents
+        case platformFeeCents
+        case guaranteeFeeCents
+        case totalCents
+        case providerPayoutCents
+        case feePercentage
+        case guaranteePercentage
+        case leadGenFeeCents
+        case leadGenPercentage
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        subtotalCents = Self.decodeFlexibleInt64(c, forKey: .subtotalCents)
+        platformFeeCents = Self.decodeFlexibleInt64(c, forKey: .platformFeeCents)
+        guaranteeFeeCents = Self.decodeFlexibleInt64(c, forKey: .guaranteeFeeCents)
+        totalCents = Self.decodeFlexibleInt64(c, forKey: .totalCents)
+        providerPayoutCents = Self.decodeFlexibleInt64(c, forKey: .providerPayoutCents)
+        feePercentage = Self.decodeFlexibleDouble(c, forKey: .feePercentage)
+        guaranteePercentage = Self.decodeFlexibleDouble(c, forKey: .guaranteePercentage)
+        leadGenFeeCents = Self.decodeFlexibleInt64(c, forKey: .leadGenFeeCents)
+        leadGenPercentage = Self.decodeFlexibleDouble(c, forKey: .leadGenPercentage)
+    }
+
+    private static func decodeFlexibleInt64(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> Int64? {
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: key) { return v }
+        if let v = try? c.decodeIfPresent(Int.self, forKey: key) { return Int64(v) }
+        if let v = try? c.decodeIfPresent(Double.self, forKey: key) { return Int64(v) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key),
+           let v = Int64(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        {
+            return v
+        }
+        return nil
+    }
+
+    private static func decodeFlexibleDouble(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> Double? {
+        if let v = try? c.decodeIfPresent(Double.self, forKey: key) { return v }
+        if let v = try? c.decodeIfPresent(Int.self, forKey: key) { return Double(v) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key),
+           let v = Double(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        {
+            return v
+        }
+        return nil
+    }
+
+    /// Format a 0…1 fraction as percent for labels (server fields only).
+    static func formatPercent(_ fraction: Double?) -> String? {
+        guard let fraction else { return nil }
+        let pct = fraction * 100
+        if pct == floor(pct) {
+            return "\(Int(pct))%"
+        }
+        let trimmed = String(format: "%.2f", pct).replacingOccurrences(
+            of: "\\.?0+$",
+            with: "",
+            options: .regularExpression
+        )
+        return "\(trimmed)%"
+    }
+
+    var displaySubtotal: String {
+        MoneyFormat.usd(cents: subtotalCents ?? totalCents ?? 0)
+    }
+
+    var displayTotal: String {
+        MoneyFormat.usd(cents: totalCents ?? subtotalCents ?? 0)
+    }
+
+    var displayPlatformFee: String {
+        MoneyFormat.usd(cents: platformFeeCents ?? 0)
+    }
+
+    var displayGuaranteeFee: String {
+        MoneyFormat.usd(cents: guaranteeFeeCents ?? 0)
+    }
+
+    var displayProviderPayout: String {
+        MoneyFormat.usd(cents: providerPayoutCents ?? 0)
+    }
+
+    var displayLeadGenFee: String? {
+        guard let leadGenFeeCents, leadGenFeeCents > 0 else { return nil }
+        return MoneyFormat.usd(cents: leadGenFeeCents)
     }
 }
 

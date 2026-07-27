@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -491,6 +492,114 @@ func (h *JobHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, protoJobToJSON(resp.GetJob()))
+}
+
+// repostJobRequest is the optional JSON body for POST /api/v1/jobs/{id}/repost.
+// Empty body reposts the original fields; any provided field overrides the copy.
+type repostJobRequest struct {
+	Title                *string `json:"title,omitempty"`
+	Description          *string `json:"description,omitempty"`
+	StartingBidCents     *int64  `json:"starting_bid_cents,omitempty"`
+	OfferAcceptedCents   *int64  `json:"offer_accepted_cents,omitempty"`
+	AuctionDurationHours *int32  `json:"auction_duration_hours,omitempty"`
+}
+
+// Repost handles POST /api/v1/jobs/{id}/repost (FR-3.5 / FR-3.10).
+// Owner-only; creates a new active job linked to the original. Previous bids do not carry over.
+func (h *JobHandler) Repost(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	jobID := chi.URLParam(r, "id")
+	if jobID == "" {
+		writeError(w, http.StatusBadRequest, "job id required")
+		return
+	}
+
+	var req repostJobRequest
+	// Body is optional — empty or {} copies the original job as-is.
+	if err := decodeJSONOptional(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if req.Title != nil {
+		t := strings.TrimSpace(*req.Title)
+		if t == "" {
+			writeError(w, http.StatusBadRequest, "title cannot be empty")
+			return
+		}
+		if utf8.RuneCountInString(t) > maxJobTitleLen {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("title must be at most %d characters", maxJobTitleLen))
+			return
+		}
+		req.Title = &t
+		if rejectProhibitedUGC(w, r, t) {
+			return
+		}
+	}
+	if req.Description != nil {
+		d := strings.TrimSpace(*req.Description)
+		if d == "" {
+			writeError(w, http.StatusBadRequest, "description cannot be empty")
+			return
+		}
+		if utf8.RuneCountInString(d) > maxJobDescriptionLen {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("description must be at most %d characters", maxJobDescriptionLen))
+			return
+		}
+		req.Description = &d
+		if rejectProhibitedUGC(w, r, d) {
+			return
+		}
+	}
+	if req.StartingBidCents != nil && *req.StartingBidCents <= 0 {
+		writeError(w, http.StatusBadRequest, "starting_bid_cents must be a positive amount")
+		return
+	}
+	if req.OfferAcceptedCents != nil && *req.OfferAcceptedCents <= 0 {
+		writeError(w, http.StatusBadRequest, "offer_accepted_cents must be a positive amount")
+		return
+	}
+	if req.AuctionDurationHours != nil {
+		hours := *req.AuctionDurationHours
+		if hours < 1 || hours > 168 {
+			writeError(w, http.StatusBadRequest, "auction_duration_hours must be between 1 and 168")
+			return
+		}
+	}
+
+	grpcReq := &jobv1.RepostJobRequest{
+		OriginalJobId: jobID,
+		CustomerId:    claims.UserID,
+	}
+	if req.Title != nil {
+		grpcReq.Title = req.Title
+	}
+	if req.Description != nil {
+		grpcReq.Description = req.Description
+	}
+	if req.StartingBidCents != nil {
+		grpcReq.StartingBidCents = req.StartingBidCents
+	}
+	if req.OfferAcceptedCents != nil {
+		grpcReq.OfferAcceptedCents = req.OfferAcceptedCents
+	}
+	if req.AuctionDurationHours != nil {
+		grpcReq.AuctionDurationHours = req.AuctionDurationHours
+	}
+
+	resp, err := h.jobClient.RepostJob(r.Context(), grpcReq)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	// New job is a create-class response.
+	writeJSON(w, http.StatusCreated, protoJobToJSON(resp.GetNewJob()))
 }
 
 // Search handles GET /api/v1/jobs (public).

@@ -253,6 +253,9 @@ func New(
 			Post("/{id}/close", jobHandler.Close)
 		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
 			Post("/{id}/cancel", jobHandler.Cancel)
+		// FR-3.5 / FR-3.10: owner reposts closed/expired/cancelled (or zero-bid closed) jobs.
+		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
+			Post("/{id}/repost", jobHandler.Repost)
 		// MON-06/22: money-adjacent mutation requires Idempotency-Key (parity with listing bids).
 		r.With(authMW.Handler, middleware.RequireIdempotencyKey(cacheClient)).
 			Post("/{id}/bids", bidHandler.PlaceBid)
@@ -692,6 +695,17 @@ func New(
 				// Money mutation: Idempotency-Key required (MON-23 / MON-06).
 				r.With(middleware.RequireIdempotencyKey(cacheClient)).
 					Post("/{id}/tip", contractTipHandler.Tip)
+
+				// Recurring contracts (FR-18) — config + instances under the
+				// same party gate as other /contracts/{id}/* routes.
+				r.Get("/{id}/recurring", contractHandler.GetRecurringConfig)
+				r.Patch("/{id}/recurring", contractHandler.UpdateRecurringConfig)
+				r.Post("/{id}/recurring/pause", contractHandler.PauseRecurring)
+				r.Post("/{id}/recurring/resume", contractHandler.ResumeRecurring)
+				r.Post("/{id}/recurring/cancel", contractHandler.CancelRecurring)
+				r.Get("/{id}/recurring/instances", contractHandler.ListRecurringInstances)
+				r.Post("/{id}/recurring/instances/{instanceId}/complete", contractHandler.CompleteRecurringInstance)
+				r.Post("/{id}/recurring/instances/{instanceId}/approve", contractHandler.ApproveRecurringInstance)
 			})
 		})
 
