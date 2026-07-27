@@ -13,6 +13,8 @@
 #   ./scripts/cdn-ttfb-sample.sh
 #   BASE_URL=http://127.0.0.1:8080 SAMPLES=20 ./scripts/cdn-ttfb-sample.sh
 #   BASE_URL=https://api.example.com ./scripts/cdn-ttfb-sample.sh --write-md /tmp/cdn-ttfb.md
+#   ./scripts/cdn-ttfb-sample.sh --artifact-dir artifacts/cdn-ttfb
+#   ARTIFACT_DIR=artifacts/cdn-ttfb BASE_URL=https://api.example.com ./scripts/cdn-ttfb-sample.sh
 #   ./scripts/cdn-ttfb-sample.sh --base http://localhost:8080 --path /api/v1/pricing
 #   ./scripts/cdn-ttfb-sample.sh --base http://localhost:8080 --path /api/v1/markets --samples 30
 #
@@ -22,8 +24,14 @@
 #   PATHS / --path        Repeatable; default: /api/v1/pricing /api/v1/markets
 #   BUDGET_TTFB_MS        Soft budget for p95 TTFB (default: 100; report only)
 #   --write-md FILE       Write a markdown results artifact
+#   --artifact-dir DIR    CI-friendly: mkdir DIR, write results.md + console.log + README.md
+#   ARTIFACT_DIR          Same as --artifact-dir when flag omitted (CI default path)
 #   --warm N              Discard first N samples per path (default: 1) for cold-edge noise
 #   -h / --help           This header
+#
+# CI: .github/workflows/ci.yml job `cdn-ttfb-sample` (workflow_dispatch + schedule when
+# vars.CDN_TTFB_BASE_URL or secrets.CDN_TTFB_BASE_URL is set). Uploads ARTIFACT_DIR.
+# Soft HTTP fail (non-2xx) exits non-zero; TTFB budget overshoot is report-only.
 #
 # Companion: scripts/api-p95-sample.sh samples catalog p50/p95 total latency (LAN gate).
 # This script focuses on time_starttransfer (TTFB) + cache-header visibility.
@@ -38,6 +46,8 @@ SAMPLES="${SAMPLES:-20}"
 BUDGET_TTFB_MS="${BUDGET_TTFB_MS:-100}"
 WARM="${WARM:-1}"
 WRITE_MD=""
+# CI-friendly artifact directory (results.md + console.log). Empty = no auto dir.
+ARTIFACT_DIR="${ARTIFACT_DIR:-}"
 # Default public JSON paths (writeCachedJSON / catalog DATA layer).
 PATHS=()
 PATHS_FROM_CLI=0
@@ -48,6 +58,14 @@ while [[ $# -gt 0 ]]; do
       WRITE_MD="${2:-}"
       if [[ -z "$WRITE_MD" ]]; then
         echo "error: --write-md requires a file path" >&2
+        exit 2
+      fi
+      shift 2
+      ;;
+    --artifact-dir)
+      ARTIFACT_DIR="${2:-}"
+      if [[ -z "$ARTIFACT_DIR" ]]; then
+        echo "error: --artifact-dir requires a directory path" >&2
         exit 2
       fi
       shift 2
@@ -74,7 +92,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      sed -n '2,35p' "$0"
+      sed -n '2,42p' "$0"
       exit 0
       ;;
     *)
@@ -83,6 +101,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# If ARTIFACT_DIR is set and --write-md was not, default markdown into that dir.
+if [[ -n "$ARTIFACT_DIR" && -z "$WRITE_MD" ]]; then
+  WRITE_MD="${ARTIFACT_DIR%/}/results.md"
+fi
 
 if [[ "$PATHS_FROM_CLI" -eq 0 ]]; then
   if [[ -n "${PATHS_ENV:-}" ]]; then
@@ -266,18 +289,41 @@ sample_endpoint() {
 
 WHEN_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-echo "=== NoMarkup CDN / TTFB JSON sample ==="
-echo "BASE_URL=$BASE_URL"
-echo "SAMPLES=$SAMPLES (warm discard=$WARM)"
-echo "BUDGET_TTFB_MS=${BUDGET_TTFB_MS} (soft report only; not CI gate)"
-echo "WHEN=$WHEN_UTC"
-echo "NOTE=artifact recipe — local default is not CDN proof"
-echo
+# Tee console output into ARTIFACT_DIR/console.log when configured (CI artifact).
+CONSOLE_LOG=""
+if [[ -n "$ARTIFACT_DIR" ]]; then
+  mkdir -p "$ARTIFACT_DIR"
+  CONSOLE_LOG="${ARTIFACT_DIR%/}/console.log"
+  # Truncate previous log so re-runs are clean.
+  : >"$CONSOLE_LOG"
+fi
 
-printf '%-28s %6s %8s %8s %8s %8s %8s %6s  %s\n' \
-  "PATH" "HTTP" "ttfb_p50" "ttfb_p95" "ttfb_min" "ttfb_max" "tot_p95" "fails" "cache (last sample)"
-printf '%-28s %6s %8s %8s %8s %8s %8s %6s  %s\n' \
-  "----------------------------" "------" "--------" "--------" "--------" "--------" "--------" "------" "-------------------"
+log() {
+  # shellcheck disable=SC2059
+  printf '%s\n' "$*"
+  if [[ -n "$CONSOLE_LOG" ]]; then
+    printf '%s\n' "$*" >>"$CONSOLE_LOG"
+  fi
+}
+
+log "=== NoMarkup CDN / TTFB JSON sample ==="
+log "BASE_URL=$BASE_URL"
+log "SAMPLES=$SAMPLES (warm discard=$WARM)"
+log "BUDGET_TTFB_MS=${BUDGET_TTFB_MS} (soft report only; not hard budget gate)"
+log "WHEN=$WHEN_UTC"
+if [[ -n "$ARTIFACT_DIR" ]]; then
+  log "ARTIFACT_DIR=$ARTIFACT_DIR"
+fi
+log "NOTE=measurement recipe — local default is not live CDN proof"
+log ""
+
+# Header line (printf with columns — also tee when logging).
+header_line1=$(printf '%-28s %6s %8s %8s %8s %8s %8s %6s  %s' \
+  "PATH" "HTTP" "ttfb_p50" "ttfb_p95" "ttfb_min" "ttfb_max" "tot_p95" "fails" "cache (last sample)")
+header_line2=$(printf '%-28s %6s %8s %8s %8s %8s %8s %6s  %s' \
+  "----------------------------" "------" "--------" "--------" "--------" "--------" "--------" "------" "-------------------")
+log "$header_line1"
+log "$header_line2"
 
 MD_ROWS=()
 OVERALL_PASS=1
@@ -311,21 +357,22 @@ for path in "${PATHS[@]}"; do
     cache_disp="${cache_disp:0:45}..."
   fi
 
-  printf '%-28s %6s %8s %8s %8s %8s %8s %6s  %s\n' \
+  row_line=$(printf '%-28s %6s %8s %8s %8s %8s %8s %6s  %s' \
     "$path" "$SAMPLE_HTTP" "$TTFB_P50" "$TTFB_P95" "$TTFB_MIN" "$TTFB_MAX" \
-    "$TOTAL_P95" "$SAMPLE_FAILS" "$cache_disp ($budget_note)"
+    "$TOTAL_P95" "$SAMPLE_FAILS" "$cache_disp ($budget_note)")
+  log "$row_line"
 
   MD_ROWS+=("| \`$path\` | $SAMPLE_HTTP | $TTFB_P50 | $TTFB_P95 | $TTFB_MIN | $TTFB_MAX | $TOTAL_P95 | $SAMPLE_FAILS | \`$SAMPLE_CACHE\` | $SAMPLE_AGE | $SAMPLE_ETAG | $SAMPLE_CF | $SAMPLE_XCACHE | $budget_note |")
 done
 
-echo
-echo "Timing: curl -w time_starttransfer (TTFB) / time_total; units ms (rounded)."
-echo "Headers: last-sample Cache-Control, Age, ETag, CF-Cache-Status, X-Cache."
-echo "Percentiles: sorted samples; index = floor(q × (n−1)) for q ∈ {0.50, 0.95}."
+log ""
+log "Timing: curl -w time_starttransfer (TTFB) / time_total; units ms (rounded)."
+log "Headers: last-sample Cache-Control, Age, ETag, CF-Cache-Status, X-Cache."
+log "Percentiles: sorted samples; index = floor(q × (n−1)) for q ∈ {0.50, 0.95}."
 if [[ $OVERALL_PASS -eq 1 ]]; then
-  echo "HTTP health: PASS (all samples 200/204/304 on kept iterations)"
+  log "HTTP health: PASS (all samples 200/204/304 on kept iterations)"
 else
-  echo "HTTP health: FAIL (non-success status in samples)"
+  log "HTTP health: FAIL (non-success status in samples)"
 fi
 
 if [[ -n "$WRITE_MD" ]]; then
@@ -338,7 +385,10 @@ if [[ -n "$WRITE_MD" ]]; then
     echo "- **Samples per path:** $SAMPLES (warm discard: $WARM)"
     echo "- **Soft TTFB p95 budget:** ${BUDGET_TTFB_MS} ms (report only; local origin often exceeds edge target)"
     echo "- **Method:** \`curl -o /dev/null -D headers -w '%{http_code} %{time_namelookup} %{time_connect} %{time_appconnect} %{time_starttransfer} %{time_total}'\`"
-    echo "- **Scope:** artifact recipe — not automatic live CDN proof or CI gate"
+    echo "- **Scope:** measurement recipe + optional CI artifact — **not** live CDN proof unless BASE_URL is the public edge"
+    if [[ -n "$ARTIFACT_DIR" ]]; then
+      echo "- **Artifact dir:** \`$ARTIFACT_DIR\` (results.md + console.log + README.md)"
+    fi
     echo
     echo "| Path | HTTP (mode) | TTFB p50 | TTFB p95 | TTFB min | TTFB max | Total p95 | non-2xx | Cache-Control | Age | ETag | CF-Cache-Status | X-Cache | Note |"
     echo "|------|-------------|----------|----------|----------|----------|-----------|---------|---------------|-----|------|-----------------|---------|------|"
@@ -350,8 +400,31 @@ if [[ -n "$WRITE_MD" ]]; then
     echo
     echo "To measure edge/CDN: set \`BASE_URL\` to the public API host behind Cloudflare (or other CDN)"
     echo "and re-run; look for \`CF-Cache-Status: HIT\` / low Age / TTFB under the DATA TTFB target."
+    echo
+    echo "HTTP non-2xx fails the process exit code. Soft TTFB budget overshoot does not."
   } >"$WRITE_MD"
-  echo "Wrote $WRITE_MD"
+  log "Wrote $WRITE_MD"
+fi
+
+if [[ -n "$ARTIFACT_DIR" ]]; then
+  {
+    echo "# CDN TTFB sample artifact (PERF-13)"
+    echo
+    echo "Produced by \`scripts/cdn-ttfb-sample.sh\`."
+    echo
+    echo "| File | Contents |"
+    echo "|------|----------|"
+    echo "| \`results.md\` | Markdown table of TTFB p50/p95 + cache headers |"
+    echo "| \`console.log\` | Full terminal table (same run) |"
+    echo "| \`README.md\` | This file |"
+    echo
+    echo "- **When (UTC):** $WHEN_UTC"
+    echo "- **BASE_URL:** \`$BASE_URL\`"
+    echo "- **HTTP health exit:** $([ "$OVERALL_PASS" -eq 1 ] && echo PASS || echo FAIL)"
+    echo
+    echo "This is **not** field RUM and is **not** capacity proof. Soft TTFB budget is report-only."
+  } >"${ARTIFACT_DIR%/}/README.md"
+  log "Wrote ${ARTIFACT_DIR%/}/README.md"
 fi
 
 exit $((1 - OVERALL_PASS))

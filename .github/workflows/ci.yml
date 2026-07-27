@@ -7,10 +7,10 @@ on:
     branches: [main]
   schedule:
     # Optional nightly: engines-bench-nightly, lighthouse-budget,
-    # e2e-cross-browser (firefox/webkit), k6-smoke (when K6_BASE_URL set) —
-    # 06:00 UTC daily.
+    # e2e-cross-browser (firefox/webkit), k6-smoke (when K6_BASE_URL set),
+    # cdn-ttfb-sample (when CDN_TTFB_BASE_URL set) — 06:00 UTC daily.
     - cron: "0 6 * * *"
-  # Manual re-run of optional PERF / cross-browser E2E / k6 jobs.
+  # Manual re-run of optional PERF / cross-browser E2E / k6 / CDN TTFB jobs.
   workflow_dispatch:
 
 concurrency:
@@ -633,13 +633,38 @@ jobs:
           if [ -z "${BASE}" ]; then
             BASE="${K6_BASE_URL_SECRET:-}"
           fi
+          # Normalize: strip trailing slashes so paths never become //healthz.
+          BASE="${BASE%/}"
+          mkdir -p artifacts/k6
           if [ -z "${BASE}" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "# k6 smoke skipped (PERF-10)"
+              echo
+              echo "\`K6_BASE_URL\` (repo var or secret) is unset."
+              echo "Set it to a public staging/edge API base URL to enable this optional job."
+              echo
+              echo "This skip is intentional — default CI stays green without a live stack."
+            } > artifacts/k6/SKIPPED.md
             echo "K6_BASE_URL unset — skipping k6 smoke (PERF-10 optional; set repo var K6_BASE_URL to enable)."
+            {
+              echo "## k6 smoke (PERF-10)"
+              echo "Skipped: \`K6_BASE_URL\` unset."
+            } >> "$GITHUB_STEP_SUMMARY"
           else
+            # Do not echo the full URL (may include staging host); host-only for summary.
+            HOST="$(printf '%s' "$BASE" | sed -E 's#^[a-zA-Z]+://##' | cut -d/ -f1)"
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "base_url=${BASE}" >> "$GITHUB_OUTPUT"
-            echo "Running k6 smoke against configured BASE_URL (host redacted in logs if needed)."
+            echo "host=${HOST}" >> "$GITHUB_OUTPUT"
+            echo "Running k6 smoke against configured BASE_URL (host=${HOST})."
+            {
+              echo "## k6 smoke (PERF-10)"
+              echo "Target host: \`${HOST}\`"
+              echo
+              echo "Script: \`tests/load/smoke.js\` (1 VU × 5 iter, public GETs only)."
+              echo "Not capacity proof; thresholds are availability-oriented only."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Install k6
         if: steps.target.outputs.skip != 'true'
@@ -647,12 +672,32 @@ jobs:
           K6_VERSION: v0.54.0
         run: |
           set -euo pipefail
-          curl -sSL "https://github.com/grafana/k6/releases/download/${K6_VERSION}/k6-${K6_VERSION}-linux-amd64.tar.gz" \
-            | tar -xz -C /tmp
+          ARCHIVE="k6-${K6_VERSION}-linux-amd64.tar.gz"
+          curl -sSL -o "/tmp/${ARCHIVE}" \
+            "https://github.com/grafana/k6/releases/download/${K6_VERSION}/${ARCHIVE}"
+          # Basic integrity: non-empty gzip that extracts a k6 binary.
+          test -s "/tmp/${ARCHIVE}"
+          tar -xzf "/tmp/${ARCHIVE}" -C /tmp
+          test -x "/tmp/k6-${K6_VERSION}-linux-amd64/k6"
           sudo mv "/tmp/k6-${K6_VERSION}-linux-amd64/k6" /usr/local/bin/k6
-          k6 version
+          k6 version | tee artifacts/k6/k6-version.txt
+      - name: Preflight healthz
+        if: steps.target.outputs.skip != 'true'
+        id: preflight
+        env:
+          BASE_URL: ${{ steps.target.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          # Cheap reachability check so k6 failures distinguish "down" vs threshold.
+          CODE="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "${BASE_URL}/healthz" || echo "000")"
+          echo "http_code=${CODE}" >> "$GITHUB_OUTPUT"
+          echo "preflight /healthz → HTTP ${CODE}" | tee artifacts/k6/preflight.txt
+          if [ "${CODE}" != "200" ]; then
+            echo "Preflight non-200; k6 smoke will still run and surface check failures." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: k6 smoke (public catalog)
         if: steps.target.outputs.skip != 'true'
+        id: k6run
         env:
           BASE_URL: ${{ steps.target.outputs.base_url }}
           # Optional real token for future authed smokes; smoke.js is public-only today.
@@ -660,17 +705,138 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts/k6
-          k6 run \
-            --summary-export=artifacts/k6/smoke-summary.json \
-            -e "BASE_URL=${BASE_URL}" \
-            ${AUTH_TOKEN:+-e "AUTH_TOKEN=${AUTH_TOKEN}"} \
-            tests/load/smoke.js
+          set +e
+          K6_ARGS=(
+            run
+            --summary-export=artifacts/k6/smoke-summary.json
+            -e "BASE_URL=${BASE_URL}"
+          )
+          if [ -n "${AUTH_TOKEN:-}" ]; then
+            K6_ARGS+=(-e "AUTH_TOKEN=${AUTH_TOKEN}")
+          fi
+          k6 "${K6_ARGS[@]}" tests/load/smoke.js 2>&1 | tee artifacts/k6/console.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=${RC}" >> "$GITHUB_OUTPUT"
+          {
+            echo "# k6 smoke artifact (PERF-10)"
+            echo
+            echo "| File | Contents |"
+            echo "|------|----------|"
+            echo "| \`smoke-summary.json\` | k6 \`--summary-export\` thresholds + metrics |"
+            echo "| \`console.log\` | Full k6 stdout/stderr |"
+            echo "| \`preflight.txt\` | curl /healthz status before k6 |"
+            echo "| \`k6-version.txt\` | binary version |"
+            echo "| \`README.md\` | This file |"
+            echo
+            echo "- **Exit code:** ${RC}"
+            echo "- **Preflight /healthz:** ${{ steps.preflight.outputs.http_code }}"
+            echo "- **Host:** \`${{ steps.target.outputs.host }}\`"
+            echo
+            echo "Not capacity proof. Full profiles under \`tests/load/\` are manual."
+          } > artifacts/k6/README.md
+          {
+            echo ""
+            echo "### Result"
+            echo "- k6 exit: \`${RC}\`"
+            echo "- Artifact: \`k6-smoke-${{ github.run_id }}\` (14d retention)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "${RC}"
       - name: Upload k6 smoke artifact
-        if: always() && steps.target.outputs.skip != 'true'
+        # Always upload when we intended to run (or skip note for audit).
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: k6-smoke-${{ github.run_id }}
           path: artifacts/k6/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ── Optional CDN / TTFB JSON sample (PERF-13 Partial) ─────────
+  # Measurement recipe against a configured public API base. Not a PR gate,
+  # not capacity proof, not field RUM. Runs on schedule + workflow_dispatch
+  # when `CDN_TTFB_BASE_URL` (var or secret) is set; otherwise no-ops.
+  # Soft TTFB budget is report-only; non-2xx HTTP fails the job step
+  # (continue-on-error keeps the workflow green).
+
+  cdn-ttfb-sample:
+    name: CDN TTFB Sample (PERF-13)
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Resolve BASE_URL
+        id: target
+        env:
+          CDN_TTFB_BASE_URL_VAR: ${{ vars.CDN_TTFB_BASE_URL }}
+          CDN_TTFB_BASE_URL_SECRET: ${{ secrets.CDN_TTFB_BASE_URL }}
+          # Optional fallback: reuse k6 staging URL when CDN-specific var unset.
+          K6_BASE_URL_VAR: ${{ vars.K6_BASE_URL }}
+          K6_BASE_URL_SECRET: ${{ secrets.K6_BASE_URL }}
+        run: |
+          set -euo pipefail
+          BASE="${CDN_TTFB_BASE_URL_VAR:-}"
+          if [ -z "${BASE}" ]; then
+            BASE="${CDN_TTFB_BASE_URL_SECRET:-}"
+          fi
+          if [ -z "${BASE}" ]; then
+            BASE="${K6_BASE_URL_VAR:-}"
+          fi
+          if [ -z "${BASE}" ]; then
+            BASE="${K6_BASE_URL_SECRET:-}"
+          fi
+          BASE="${BASE%/}"
+          mkdir -p artifacts/cdn-ttfb
+          if [ -z "${BASE}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "# CDN TTFB sample skipped (PERF-13)"
+              echo
+              echo "No \`CDN_TTFB_BASE_URL\` (or fallback \`K6_BASE_URL\`) configured."
+              echo "Set a public edge/API base URL to enable optional CI sampling."
+            } > artifacts/cdn-ttfb/SKIPPED.md
+            echo "CDN_TTFB_BASE_URL unset — skipping (PERF-13 optional)."
+            {
+              echo "## CDN TTFB sample (PERF-13)"
+              echo "Skipped: no base URL configured."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            HOST="$(printf '%s' "$BASE" | sed -E 's#^[a-zA-Z]+://##' | cut -d/ -f1)"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "base_url=${BASE}" >> "$GITHUB_OUTPUT"
+            echo "host=${HOST}" >> "$GITHUB_OUTPUT"
+            {
+              echo "## CDN TTFB sample (PERF-13)"
+              echo "Target host: \`${HOST}\`"
+              echo
+              echo "Script: \`scripts/cdn-ttfb-sample.sh\` → \`artifacts/cdn-ttfb/\`."
+              echo "Soft TTFB budget is report-only; not live CDN proof unless this host is edge."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Sample public JSON TTFB
+        if: steps.target.outputs.skip != 'true'
+        env:
+          BASE_URL: ${{ steps.target.outputs.base_url }}
+          # Fewer samples in CI than local default (20) to keep the job short.
+          SAMPLES: "10"
+          WARM: "1"
+          BUDGET_TTFB_MS: "100"
+          ARTIFACT_DIR: artifacts/cdn-ttfb
+        run: |
+          set -euo pipefail
+          chmod +x scripts/cdn-ttfb-sample.sh
+          # Non-zero on HTTP health fail only; budget overshoot is soft.
+          ./scripts/cdn-ttfb-sample.sh --artifact-dir artifacts/cdn-ttfb
+      - name: Upload CDN TTFB artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cdn-ttfb-${{ github.run_id }}
+          path: artifacts/cdn-ttfb/
           if-no-files-found: warn
           retention-days: 14
 
@@ -680,8 +846,7 @@ jobs:
   # (loose — lab LCP is multi-second today), not North Star. Not a hard PR
   # gate: continue-on-error on pull_request; schedule/workflow_dispatch fail
   # the job when floors break so nightly still signals. Does NOT join the
-  # `build` needs chain. Optional external URL: set vars.LIGHTHOUSE_URL and
-  # the job still builds/runs local first; staging-URL mode is future work.
+  # `build` needs chain. Reports always uploaded as `lighthouse-reports-<run_id>`.
 
   lighthouse-budget:
     name: Lighthouse Budget (PERF-02)
@@ -711,7 +876,27 @@ jobs:
       - name: Install Playwright Chromium
         working-directory: web
         run: npx playwright install --with-deps chromium
+      - name: Prepare report directories
+        working-directory: web
+        run: |
+          set -euo pipefail
+          # Ensure upload paths exist even if LHCI aborts before filesystem upload.
+          mkdir -p lighthouse-reports .lighthouseci
+          {
+            echo "# Lighthouse CI reports (PERF-02)"
+            echo
+            echo "Produced by \`npm run lighthouse:ci\` (\`@lhci/cli\` + \`scripts/run-lighthouse-ci.mjs\`)."
+            echo
+            echo "| Path | Contents |"
+            echo "|------|----------|"
+            echo "| \`lighthouse-reports/\` | HTML + JSON per URL + \`manifest.json\` (LHCI filesystem upload) |"
+            echo "| \`.lighthouseci/\` | Raw LHR copies + \`assertion-results.json\` |"
+            echo
+            echo "**Floors (honest Partial):** performance ≥ 0.30, a11y ≥ 0.70, LCP ≤ 12s, CLS ≤ 0.50."
+            echo "Not North Star. Not field RUM. PR runs are soft-fail; schedule hard-fails floors."
+          } > lighthouse-reports/README.md
       - name: Lighthouse CI (/, /marketplace, /jobs)
+        id: lhci
         working-directory: web
         env:
           # Wrapper builds into .next-lhci (isolated from any default .next),
@@ -728,6 +913,46 @@ jobs:
           NEXT_PUBLIC_MAPBOX_TOKEN: pk.lhci_placeholder_not_a_real_token
           NEXT_PUBLIC_WS_URL: ws://127.0.0.1:8080
         run: npm run lighthouse:ci
+      - name: Inventory Lighthouse reports
+        if: always()
+        working-directory: web
+        run: |
+          set -euo pipefail
+          {
+            echo "## Lighthouse budget (PERF-02)"
+            echo
+            echo "Artifact: \`lighthouse-reports-${{ github.run_id }}\` (14-day retention)."
+            echo
+            echo "### Regression floors (asserted)"
+            echo "| Metric | Floor |"
+            echo "|--------|-------|"
+            echo "| Performance | ≥ 0.30 |"
+            echo "| Accessibility | ≥ 0.70 |"
+            echo "| LCP (lab) | ≤ 12s |"
+            echo "| CLS (lab) | ≤ 0.50 |"
+            echo
+            echo "Not North Star. Not field RUM."
+            echo
+            echo "### Report files"
+            echo '```'
+            find lighthouse-reports .lighthouseci -type f 2>/dev/null | sort || true
+            echo '```'
+            if [ -f lighthouse-reports/manifest.json ]; then
+              echo
+              echo "\`manifest.json\` present."
+            else
+              echo
+              echo "⚠️ \`manifest.json\` missing — LHCI may have failed before filesystem upload."
+            fi
+            if [ -f .lighthouseci/assertion-results.json ]; then
+              echo
+              echo "### Assertion results"
+              echo '```json'
+              head -c 8000 .lighthouseci/assertion-results.json || true
+              echo
+              echo '```'
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY" > lighthouse-reports/CI_INVENTORY.md
       - name: Upload Lighthouse reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -736,6 +961,7 @@ jobs:
           path: |
             web/lighthouse-reports/
             web/.lighthouseci/
+          # Warn (not error): early abort before collect still uploads README + inventory.
           if-no-files-found: warn
           retention-days: 14
 

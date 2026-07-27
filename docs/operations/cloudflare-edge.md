@@ -44,7 +44,9 @@ Action: **Bypass cache**.
 
 1. Anonymous warm GET of a `writeCachedJSON` route → `CF-Cache-Status: HIT` (or equivalent).
 2. Same URL with `Authorization: Bearer …` → `DYNAMIC` / BYPASS; body matches origin for that session.
-3. `curl -w '%{time_starttransfer}\n' -o /dev/null -sS https://api.<zone>/api/v1/pricing` via [`scripts/cdn-ttfb-sample.sh`](../../scripts/cdn-ttfb-sample.sh) once DNS points at CF.
+3. TTFB + cache headers via [`scripts/cdn-ttfb-sample.sh`](../../scripts/cdn-ttfb-sample.sh) once DNS points at CF:
+   `BASE_URL=https://api.<zone> ./scripts/cdn-ttfb-sample.sh --artifact-dir artifacts/cdn-ttfb`
+   Optional CI: set repo var `CDN_TTFB_BASE_URL` (or reuse `K6_BASE_URL`); job `cdn-ttfb-sample` on schedule/`workflow_dispatch` uploads `cdn-ttfb-<run_id>` (PERF-13 Partial — not automatic live proof until that URL is the real edge).
 
 ## Residual (Founder-Action)
 

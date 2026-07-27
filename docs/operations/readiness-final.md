@@ -79,7 +79,7 @@ Per CLAUDE.md §6:
 | Argon2id password hashing | ✅ |
 | Backup codes argon2id hashed (one-way) | ✅ |
 | PII at rest | ✅ **XSalsa20-Poly1305** via Go `nacl/secretbox` — *not* AES-256-GCM, and not whole-row: selected fields only (phone, MFA secret, provider service address, EIN/TIN, insurance policy number; migrations `031`/`033`). Email stays plaintext for auth lookup. See CLAUDE.md §6 and tracker SEC-13. |
-| TLS | ⚠️ **edge only.** TLS 1.3 + HSTS at the ingress/CDN (`next.config.ts`). The gRPC mesh still dials with insecure credentials on the private network; mTLS is the target (tracker SEC-05). Do not read this row as "TLS 1.3 for all connections". |
+| TLS | ⚠️ **edge default + mesh optional.** TLS 1.3 + HSTS at the ingress/CDN (`next.config.ts`). gRPC mesh mTLS is **code-complete, default-off** (`pkg/grpmtls` / `engine_telemetry::load_server_tls`; `docs/operations/mesh-mtls.md`; tracker SEC-05 Done code, claim demoted). Without certs mounted the mesh still uses insecure credentials on the private network. Do not read this row as "TLS 1.3 for all connections". |
 | CORS allowlist (no wildcards in prod) | ✅ |
 | CSP | ✅ `script-src` per-request nonce + `strict-dynamic`, no `'unsafe-eval'` in prod. ⚠️ `style-src` still allows `'unsafe-inline'` (`web/src/middleware.ts:161`) — Next.js/Tailwind inject styles; tracker SEC-11. |
 | Per-IP + per-user rate limiting | ✅ 5/15min on auth tier |

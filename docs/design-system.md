@@ -118,9 +118,8 @@ xl: ['1.25rem', { lineHeight: '1.75rem' }],
 | `src/app/icon.tsx`, `src/app/apple-icon.tsx` | Next.js `ImageResponse` has no document CSS vars at render time |
 | `src/app/layout.tsx` | `viewport.themeColor` meta needs a concrete color string at module scope |
 | `src/components/auth/oauth-icons.tsx` | Google “G” trademark brand palette (not product tokens) |
-| `src/components/marketplace/MarketplaceMap.tsx` | Mapbox GL `paint` API color strings (cluster markers) |
 
-**Charts / canvas / SVG:** use CSS vars in `stroke` / `fill` / `stopColor` (browser resolves them). Canvas confetti resolves `getComputedStyle(…).getPropertyValue('--brand-*')` at paint time — do not hardcode hex arrays. Landing atmospheric mesh fills live on `.gradient-blob-*` in `globals.css`, not inline in `GradientMesh.tsx`.
+**Charts / canvas / SVG / Mapbox:** use CSS vars in `stroke` / `fill` / `stopColor` (browser resolves them). Canvas confetti and Mapbox GL paint resolve `getComputedStyle(…).getPropertyValue('--brand-*' | '--background')` at paint time — do not hardcode hex arrays. Landing atmospheric mesh fills live on `.gradient-blob-*` in `globals.css`, not inline in `GradientMesh.tsx`.
 
 ```typescript
 // tailwind.config.ts — canonical shape (values resolve via CSS vars)

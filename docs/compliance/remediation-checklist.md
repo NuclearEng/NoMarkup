@@ -36,7 +36,7 @@ Status: `todo` · `in_progress` · `done` · `deferred` · `accepted_risk`
 | ASR-3.1.1.* IAP | — | Packaging | **deferred** | `ios-payment-rails-design.md` |
 | ASR-4.2 native shell | — | Packaging | **deferred** | No binary this run |
 | ASR-3.2.1.viii licenses | — | Packaging | **deferred** | Flag-off guidance for iOS in dual-rail doc |
-| mTLS mesh | — | Packaging | **deferred** | Residual RISK (SEC-05 demoted claim) |
+| mTLS mesh arming | — | Packaging | **deferred** | Code complete default-off (SEC-05 Done code); arming + certs still ops residual |
 | DEPLOY_PROVISIONED | — | Packaging | **deferred** | Checklist only |
 | Mobile web iPhone/iPad | P0 | UX | **done** | `ios-mobile-web-readiness.md`; nav/safe-area/dialog/TOC |
 | Apple docs review | P1 | Process | **done** (Stage A) | Ph 0–4 logs + inventory + matrix; `launch-board.md` |

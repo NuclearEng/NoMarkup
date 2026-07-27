@@ -1,4 +1,4 @@
-# In-cluster Prometheus + Alertmanager (OPS-10)
+# In-cluster Prometheus + Grafana + Alertmanager (OPS-10)
 
 Minimal stack that scrapes annotated NoMarkup pods (especially gateway
 `/metrics`) using the configs already under `deploy/monitoring/`. **Not**
@@ -10,8 +10,8 @@ on the monitoring namespace.
 | Kustomize root | `deploy/monitoring/kustomization.yaml` |
 | Prometheus config + rules | `deploy/monitoring/prometheus/prometheus.yml`, `alerts.yml` |
 | Alertmanager config | `deploy/monitoring/alertmanager/alertmanager.yml` |
+| Grafana datasources + dashboards | `deploy/monitoring/grafana/` |
 | Manifests | `deploy/monitoring/k8s/*` |
-| Grafana dashboards (optional, not deployed) | `deploy/monitoring/grafana/` |
 
 ## Prerequisites
 
@@ -39,6 +39,10 @@ Without this Secret the Prometheus pod will not schedule (volume mount is
 required). A token mismatch yields **401** on gateway scrapes and every
 `http_requests_total`-based alert stays dark.
 
+Grafana does **not** require a Secret for bootstrap (default admin/admin +
+anonymous Viewer on ClusterIP only). Change credentials before exposing
+beyond the cluster.
+
 ## Apply
 
 ```bash
@@ -49,9 +53,10 @@ kubectl kustomize deploy/monitoring
 kubectl apply -k deploy/monitoring
 ```
 
-Images are public (`prom/prometheus:v2.51.0`, `prom/alertmanager:v0.27.0`) —
-same pins as `docker-compose.yml`. No GHCR pull secrets required for this
-stack.
+Images are public (`prom/prometheus:v2.51.0`, `prom/alertmanager:v0.27.0`,
+`grafana/grafana:10.4.2`) — same Prometheus/Alertmanager pins as
+`docker-compose.yml`. No GHCR pull secrets or founder cloud credentials
+required for this stack.
 
 ## Verify scrape (gateway)
 
@@ -59,6 +64,7 @@ stack.
 # Wait for Ready
 kubectl -n monitoring rollout status deploy/prometheus
 kubectl -n monitoring rollout status deploy/alertmanager
+kubectl -n monitoring rollout status deploy/grafana
 
 # Port-forward Prometheus UI
 kubectl -n monitoring port-forward svc/prometheus 9090:9090
@@ -81,6 +87,14 @@ kubectl -n monitoring port-forward svc/alertmanager 9093:9093
 # UI: http://localhost:9093
 ```
 
+Grafana (provisioned Prometheus datasource + NoMarkup dashboards):
+
+```bash
+kubectl -n monitoring port-forward svc/grafana 3000:3000
+# UI: http://localhost:3000  (admin/admin or anonymous Viewer)
+# Dashboards → NoMarkup folder: API Overview, Service Health
+```
+
 ## What works when applied correctly
 
 - **Pod SD scrape** of anything in `nomarkup` with `prometheus.io/*`
@@ -89,26 +103,23 @@ kubectl -n monitoring port-forward svc/alertmanager 9093:9093
   `/etc/prometheus/secrets/metrics-bearer-token`.
 - **Rule evaluation** from `alerts.yml` (recording + alerting groups).
 - **Alertmanager fan-in** at `alertmanager:9093` (same-namespace Service;
-  matches the static target in `prometheus.yml`).
+  matches the static target in `prometheus.yml`). Blackhole receiver: alerts
+  evaluate and show in UIs; nothing pages until Slack/PagerDuty is wired.
+- **Grafana** with auto-provisioned Prometheus (`http://prometheus:9090`) and
+  file dashboards `api-overview` / `service-health`.
 
-## Residuals (why OPS-10 is Partial, not Done)
+## Non-blocking residuals
 
 | Residual | Impact |
 |----------|--------|
-| **Not cluster-proven** while `DEPLOY_PROVISIONED` is off | Manifests + configs are complete for scrape; no live “alerts fire on test” proof in this repo’s CI. |
-| **No TSDB / AM persistence** | `emptyDir` only — history and silences lost on pod restart. Add a PVC later if needed. |
-| **Alertmanager blackhole receiver** | Alerts evaluate and show in UIs; nothing pages until Slack/PagerDuty (or similar) is configured from a Secret. |
-| **No kube-state-metrics Deployment** | Jobs `kube-state-metrics` stay DOWN. Rules using `kube_deployment_*` / `kube_pod_*` (e.g. `NoMarkupGatewayDown`) cannot fire until KSM is installed. |
+| **Not cluster-proven in this repo’s CI** | Manifests + configs are complete for apply/scrape without cloud SaaS; live “alerts fire on test” needs a provisioned cluster (`DEPLOY_PROVISIONED`). |
+| **No TSDB / AM / Grafana persistence** | `emptyDir` only — history, silences, and Grafana SQLite lost on pod restart. Add PVCs later if needed. |
+| **Alertmanager blackhole receiver** | Intentional until on-call integrations (Secret-mounted webhook). |
+| **No kube-state-metrics Deployment** | Job `kube-state-metrics` stays DOWN. Rules using `kube_deployment_*` / `kube_pod_*` (e.g. `NoMarkupGatewayDown`) cannot fire until KSM is installed. App HTTP metrics and payment P0s do not need KSM. |
 | **Node / cAdvisor jobs** | Need working kubelet proxy + RBAC; often noisy or partial on managed clusters. Not required for gateway HTTP metrics. |
-| **Grafana not deployed** | Dashboards under `deploy/monitoring/grafana/` are file-only; optional follow-up. |
 | **Staging namespace** | `prometheus.yml` SD lists `nomarkup` only. For `nomarkup-staging`, patch the job namespaces list (overlay or ConfigMap edit). |
 | **DB exporter alerts** | Still disabled in `alerts.yml` (see comments there); not part of this stack. |
-
-## Grafana (optional, not in kustomization)
-
-To add later: Grafana Deployment + Service, ConfigMap-mount
-`deploy/monitoring/grafana/provisioning/` and dashboards, datasource URL
-`http://prometheus:9090`. Keep it out of the critical scrape path.
+| **Grafana default password** | `admin`/`admin` + anonymous Viewer for bootstrap; override env or add a Secret before any ingress. |
 
 ## Rotate `METRICS_BEARER_TOKEN`
 

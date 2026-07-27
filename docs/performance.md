@@ -21,8 +21,9 @@ claim the bar is already met**.
 | INP | < 100ms | Not field-gated |
 | DATA-layer CDN (`writeCachedJSON`) | shipped | **Real** — public listings/catalog JSON cacheable |
 | Service worker | offline/instant repeat | **Kill-switch only** (`public/sw.js` unregisters + purges) |
-| Criterion / k6 | enforce budgets | **Partial (PERF-10)** — scripts under `tests/load/`; optional CI `k6-smoke` when `K6_BASE_URL` set (schedule / dispatch). Not capacity proof |
-| Lighthouse lab (`/`, `/marketplace`, `/jobs`) | regression floors | **Partial (PERF-02)** — `npm run lighthouse:ci`; CI optional (PR soft / nightly hard); not North Star |
+| Criterion / k6 | enforce budgets | **Partial (PERF-10)** — scripts under `tests/load/`; optional CI `k6-smoke` when `K6_BASE_URL` set (schedule / dispatch); artifact `k6-smoke-<run_id>`. Not capacity proof |
+| Lighthouse lab (`/`, `/marketplace`, `/jobs`) | regression floors | **Partial (PERF-02)** — `npm run lighthouse:ci`; CI optional (PR soft / nightly hard); artifact `lighthouse-reports-<run_id>`; not North Star |
+| CDN / DATA TTFB sample | edge JSON evidence | **Partial (PERF-13)** — `scripts/cdn-ttfb-sample.sh` + optional CI `cdn-ttfb-sample` when `CDN_TTFB_BASE_URL` (or `K6_BASE_URL`) set; artifact `cdn-ttfb-<run_id>`. Not live CDN proof without a real edge URL |
 
 ## JS budgets (React-floor-aware — measured, not aspirational)
 | Surface | First Load JS budget |
@@ -121,17 +122,47 @@ k6 run -e BASE_URL=http://127.0.0.1:8080 tests/load/smoke.js
 k6 run -e BASE_URL=https://staging-api.example.com tests/load/marketplace-scoreboard.js
 ```
 
-**CI:** `.github/workflows/ci.yml` job **`k6-smoke`** — `schedule` + `workflow_dispatch` only. Skips cleanly when repo variable **`K6_BASE_URL`** (or secret `K6_BASE_URL`) is unset. Optional secret `K6_AUTH_TOKEN` for future authed smokes. `continue-on-error: true`; JSON summary artifact when run. **Not** a PR gate and **not** Done: full staging load proof with real tokens + threshold artifacts still required to close PERF-10.
+**CI:** `.github/workflows/ci.yml` job **`k6-smoke`** — `schedule` + `workflow_dispatch` only.
 
-## TTFB / DATA-layer CDN sampling (PERF-13 recipe)
+| Behavior | Detail |
+|----------|--------|
+| Enable | Repo variable **`K6_BASE_URL`** (preferred) or secret `K6_BASE_URL` |
+| Skip | Unset → job no-ops; uploads `artifacts/k6/SKIPPED.md` so the run still has an artifact trail |
+| When run | Preflight `GET /healthz`, then `k6 run tests/load/smoke.js` with `--summary-export` |
+| Soft-fail | `continue-on-error: true` (orange job on threshold fail; workflow stays green) |
+| Artifact | **`k6-smoke-<run_id>`** (14d) — `smoke-summary.json`, `console.log`, `preflight.txt`, `README.md` |
+| Auth | Optional secret `K6_AUTH_TOKEN` reserved for future authed smokes; smoke is public-only today |
+
+**Not** a PR gate and **not** Done: full staging load proof with real tokens + capacity thresholds still required to close PERF-10. Do not invent concurrent-capacity numbers from this smoke.
+
+## TTFB / DATA-layer CDN sampling (PERF-13 — Partial)
 
 For **public JSON** TTFB (not HTML), use [`scripts/cdn-ttfb-sample.sh`](../scripts/cdn-ttfb-sample.sh):
 `curl -w` reports `time_starttransfer` (TTFB) and `time_total`, plus last-sample cache headers
 (`Cache-Control`, `Age`, `ETag`, `CF-Cache-Status`, `X-Cache`). Default paths are
-`/api/v1/pricing` and `/api/v1/markets` against `http://127.0.0.1:8080`. Point `BASE_URL` at the
-public edge host for CDN numbers and optionally `--write-md` an artifact. This is a **measurement
-recipe**, not live CDN proof or a CI gate — companion LAN catalog p50/p95 remains
-[`scripts/api-p95-sample.sh`](../scripts/api-p95-sample.sh).
+`/api/v1/pricing` and `/api/v1/markets` against `http://127.0.0.1:8080`.
+
+```bash
+# Local gateway
+./scripts/cdn-ttfb-sample.sh
+# Explicit markdown
+BASE_URL=https://api.example.com ./scripts/cdn-ttfb-sample.sh --write-md /tmp/cdn-ttfb.md
+# CI-shaped artifact directory (results.md + console.log + README.md)
+./scripts/cdn-ttfb-sample.sh --artifact-dir artifacts/cdn-ttfb
+ARTIFACT_DIR=artifacts/cdn-ttfb BASE_URL=https://api.example.com ./scripts/cdn-ttfb-sample.sh
+```
+
+**CI:** job **`cdn-ttfb-sample`** — `schedule` + `workflow_dispatch` only.
+
+| Behavior | Detail |
+|----------|--------|
+| Enable | **`CDN_TTFB_BASE_URL`** (var or secret); falls back to `K6_BASE_URL` if unset |
+| Skip | No URL → no-op + `artifacts/cdn-ttfb/SKIPPED.md` |
+| When run | `SAMPLES=10`, writes `--artifact-dir artifacts/cdn-ttfb` |
+| Soft-fail | `continue-on-error: true`; HTTP non-2xx fails the step; soft TTFB p95 budget is **report-only** |
+| Artifact | **`cdn-ttfb-<run_id>`** (14d) — `results.md`, `console.log`, `README.md` |
+
+This is a **measurement recipe + optional CI smoke**, not automatic live CDN proof (that requires a real public edge URL) and **not** field RUM. Companion LAN catalog p50/p95 remains [`scripts/api-p95-sample.sh`](../scripts/api-p95-sample.sh).
 
 ## Lighthouse CI (PERF-02 — Partial)
 
@@ -150,6 +181,10 @@ Lab Lighthouse against a production standalone Next server for **`/`**, **`/mark
 - **Nightly / workflow_dispatch hard-fail** when regression floors break (signal without PR noise).
 - Does **not** join the `build` `needs` chain.
 - No live gateway in the job — public routes fail-soft (empty catalogs). Scores are **lab**, not field.
+- **Reports artifact (always, `if: always()`):** name **`lighthouse-reports-<run_id>`**, 14-day retention, paths:
+  - `web/lighthouse-reports/` — HTML + JSON per URL + `manifest.json` + `README.md` + `CI_INVENTORY.md`
+  - `web/.lighthouseci/` — raw LHR copies + `assertion-results.json`
+- Job summary lists inventory + floors; early abort still uploads the pre-seeded README.
 
 **Config:** [`web/lighthouserc.cjs`](../web/lighthouserc.cjs) + wrapper
 [`web/scripts/run-lighthouse-ci.mjs`](../web/scripts/run-lighthouse-ci.mjs).
@@ -162,9 +197,9 @@ Lab Lighthouse against a production standalone Next server for **`/`**, **`/mark
 | CLS (lab) | ≤ 0.50 | < 0.05 |
 | TBT / TTI | warn only (3s / 15s) | — |
 
-Floors exist to catch catastrophic regressions, not to claim North Star. Local smoke
+Floors exist to catch catastrophic regressions, not to claim North Star — **leave Partial** until floors ratchet under the product bar **and** PR is hard-fail. Local smoke
 (2026-07-27, desktop preset, empty API): Performance ~0.8–0.98, LCP ~1.0–1.2s, homepage
 CLS ~0.23–0.38 — **do not treat those as field RUM**. Ratchet floors down only after repeated
 green runs; never raise without updating this table.
 
-Reports land in `web/lighthouse-reports/` (gitignored); CI uploads them as artifacts.
+Local reports land in `web/lighthouse-reports/` (gitignored). CI artifact is the source of truth for review on PR/nightly runs.

@@ -12,6 +12,3 @@ src/app/layout.tsx
 
 # Third-party brand palette (Google "G") — trademark colors, not product tokens
 src/components/auth/oauth-icons.tsx
-
-# Mapbox GL paint API needs resolved color strings (runtime CSS vars still OK later)
-src/components/marketplace/MarketplaceMap.tsx

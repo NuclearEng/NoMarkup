@@ -6,6 +6,8 @@
 # Requires Secret nomarkup-metrics-token in namespace monitoring first
 # (see docs/operations/monitoring-stack.md). Reuses prometheus.yml + alerts.yml
 # from this directory tree via configMapGenerator.
+#
+# Stack: Prometheus + Alertmanager + Grafana (datasources + dashboards provisioned).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -24,9 +26,12 @@ resources:
   - k8s/prometheus-service.yaml
   - k8s/alertmanager-deployment.yaml
   - k8s/alertmanager-service.yaml
+  - k8s/grafana-deployment.yaml
+  - k8s/grafana-service.yaml
 
 # Configs live next to this kustomization so default load restrictions allow
-# them (no --load-restrictor needed). Same files docker-compose mounts.
+# them (no --load-restrictor needed). Same files docker-compose mounts for
+# Prometheus/Alertmanager.
 configMapGenerator:
   - name: prometheus-config
     files:
@@ -35,3 +40,13 @@ configMapGenerator:
   - name: alertmanager-config
     files:
       - alertmanager.yml=alertmanager/alertmanager.yml
+  - name: grafana-datasources
+    files:
+      - datasources.yaml=grafana/provisioning/datasources.yaml
+  - name: grafana-dashboards-provider
+    files:
+      - dashboards.yaml=grafana/provisioning/dashboards.yaml
+  - name: grafana-dashboards
+    files:
+      - api-overview.json=grafana/dashboards/api-overview.json
+      - service-health.json=grafana/dashboards/service-health.json

@@ -139,7 +139,7 @@ From code-complete to real users on production. Every item must be checked off o
 - [ ] `ci.yml` green on main: web lint + typecheck, Vitest (**floors** ~71–77% in `vitest.config.mts`, not blanket 80% all metrics), Playwright **Chromium** E2E (backend-tolerant; full dogfood needs stack + `SEED_PASSWORD`), Go tests + PostGIS service container integration, Rust fmt/clippy/test
 - [ ] `security-scan.yml` green (govulncheck, cargo-audit, npm audit **policy**: prod deps + high+ only — see `docs/conventions.md` QA-15 residual)
 - [ ] **QA-10 Founder-Action:** branch protection on `main` requires status check **`Security Gate`** (aggregate job in `security-scan.yml`). Scanners are a separate workflow — not in `ci.yml` `build.needs`. Without this setting, merge is not gated on dependency audits.
-- [ ] **Not in CI today (or Partial only):** criterion p99 gates, k6 full load (smoke optional via `K6_BASE_URL` — PERF-10 Partial), full axe AA on real routes, Go/Rust 80% coverage gates, Husky pre-commit
+- [ ] **Not in CI today (or Partial only):** criterion p99 gates, k6 full load (smoke optional via `K6_BASE_URL` — PERF-10 Partial; artifact `k6-smoke-<run_id>`), CDN TTFB sample optional via `CDN_TTFB_BASE_URL` (PERF-13 Partial), Lighthouse lab floors optional (PERF-02 Partial; artifact `lighthouse-reports-<run_id>`), full axe AA on real routes, Go/Rust 80% coverage gates, Husky pre-commit
 
 ### Deploy Pipeline
 - [ ] **CRITICAL:** real deploy (build/push → migrate → apply → smoke) behind `DEPLOY_PROVISIONED`
@@ -211,7 +211,8 @@ From code-complete to real users on production. Every item must be checked off o
 - [ ] Record lab Lighthouse LCP/INP/CLS on `/`, marketplace, jobs — **expect multi-second LCP until improved**
 - [ ] Confirm public JSON CDN headers on catalog endpoints
 - [ ] Bid engine p99 bench **local** (criterion not CI)
-- [ ] Optional k6 against staging — CI job `k6-smoke` when `K6_BASE_URL` set; full profiles still manual
+- [ ] Optional k6 against staging — CI job `k6-smoke` when `K6_BASE_URL` set (artifact `k6-smoke-<run_id>`); full profiles still manual
+- [ ] Optional CDN TTFB sample — CI job `cdn-ttfb-sample` when `CDN_TTFB_BASE_URL` (or `K6_BASE_URL`) set; artifact `cdn-ttfb-<run_id>`
 
 ---
 

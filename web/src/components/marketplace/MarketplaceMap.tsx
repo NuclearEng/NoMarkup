@@ -52,6 +52,19 @@ function getMapboxToken(): string {
 }
 
 /**
+ * Mapbox GL paint needs resolved color strings (no CSS cascade). Read brand
+ * tokens from the document so cluster chrome tracks the design-system SSOT
+ * instead of hardcoded hex (FE-03). No hex fallbacks — keep the raw-hex ban clean.
+ */
+function resolveCssColor(varName: string): string {
+  if (typeof window === 'undefined') return 'currentColor';
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(varName)
+    .trim();
+  return raw || 'currentColor';
+}
+
+/**
  * A listing has a real, plottable pickup point only when it has non-null
  * coordinates that aren't the (0,0) Null-Island placeholder. Legacy listings
  * posted before geocoding was enforced can carry (0,0); plotting those would
@@ -161,14 +174,17 @@ export function MarketplaceMap({
             clusterRadius: 50,
           });
 
-          // Cluster bubble
+          // Cluster bubble — colors from CSS vars (Mapbox needs resolved strings).
+          const brandGold = resolveCssColor('--brand-gold');
+          const surface = resolveCssColor('--background');
+
           map.addLayer({
             id: 'clusters',
             type: 'circle',
             source: 'listings',
             filter: ['has', 'point_count'],
             paint: {
-              'circle-color': '#d4a017',
+              'circle-color': brandGold,
               'circle-radius': [
                 'step',
                 ['get', 'point_count'],
@@ -179,7 +195,7 @@ export function MarketplaceMap({
                 30,
               ],
               'circle-stroke-width': 2,
-              'circle-stroke-color': '#07080b',
+              'circle-stroke-color': surface,
               'circle-opacity': 0.85,
             },
           });
@@ -193,7 +209,7 @@ export function MarketplaceMap({
               'text-field': ['get', 'point_count_abbreviated'],
               'text-size': 12,
             },
-            paint: { 'text-color': '#07080b' },
+            paint: { 'text-color': surface },
           });
 
           // Unclustered: small dot. We render the price-chip via custom DOM

@@ -7,7 +7,7 @@
  *
  * Allowed by design (not scanned):
  *   - web/src/styles/globals.css, tailwind.config.ts (token SSOT)
- *   - paths listed in raw-hex-allowlist.txt (Mapbox, OAuth brand, OG icons, themeColor)
+ *   - paths listed in raw-hex-allowlist.txt (OG icons, themeColor, OAuth brand)
  *
  * Usage:
  *   node web/scripts/check-no-raw-hex.mjs

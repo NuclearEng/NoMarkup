@@ -257,7 +257,7 @@ These are non-negotiable. The hooks enforce many automatically.
   testcontainers-go. Integration packages under `tests/integration/` + service tests; httptest + bufconn.
 - **Rust**: proptest for numerical code (trust bounds, bid invariants, fraud no-panics, underwriting).
   Criterion benches exist for p99 budgets (**local / not CI-enforced**). k6 under `tests/load/`:
-  optional CI smoke (`k6-smoke` when `K6_BASE_URL` set) only — full load profiles not CI-gated (PERF-10 Partial).
+  optional CI smoke (`k6-smoke` when `K6_BASE_URL` set; artifact `k6-smoke-<run_id>`) only — full load profiles not CI-gated (PERF-10 Partial).
 
 → **Vitest config + full per-stack detail: `docs/conventions.md`.**
 
