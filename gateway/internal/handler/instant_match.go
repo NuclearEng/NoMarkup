@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,10 +10,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
@@ -72,17 +75,70 @@ type InstantMatchHandler struct {
 	jobClient      jobv1.JobServiceClient
 	bidClient      bidv1.BidServiceClient
 	contractClient contractv1.ContractServiceClient
+	userClient     userv1.UserServiceClient
 	cache          *cache.Client
+	db             *pgxpool.Pool
 }
 
-// NewInstantMatchHandler creates a new InstantMatchHandler. contractClient
-// (optional) is used to mint the contract row immediately after an offer is
-// accepted — without it, accepting an instant-match offer only awards the bid
-// and flips the job to `awarded`, leaving the offer→contract pipeline severed
-// (the customer/provider never get a contract to accept). This mirrors
-// BidHandler.AwardBid's saga step 2.
-func NewInstantMatchHandler(jobClient jobv1.JobServiceClient, bidClient bidv1.BidServiceClient, contractClient contractv1.ContractServiceClient, cacheClient *cache.Client) *InstantMatchHandler {
-	return &InstantMatchHandler{jobClient: jobClient, bidClient: bidClient, contractClient: contractClient, cache: cacheClient}
+// NewInstantMatchHandler creates a new InstantMatchHandler.
+//
+// contractClient (optional) is used to mint the contract row immediately after
+// an offer is accepted — without it, accepting an instant-match offer only
+// awards the bid and flips the job to `awarded`, leaving the offer→contract
+// pipeline severed (the customer/provider never get a contract to accept).
+// This mirrors BidHandler.AwardBid's saga step 2.
+//
+// userClient + db gate Redis fan-out (ListProviderOffers / AcceptOffer) to
+// providers with instant_enabled and (available_now OR currently inside an
+// instant_schedule window). db is optional: missing schedule fails soft to
+// available_now only; missing userClient fails closed (no offers).
+func NewInstantMatchHandler(
+	jobClient jobv1.JobServiceClient,
+	bidClient bidv1.BidServiceClient,
+	contractClient contractv1.ContractServiceClient,
+	cacheClient *cache.Client,
+	userClient userv1.UserServiceClient,
+	db *pgxpool.Pool,
+) *InstantMatchHandler {
+	return &InstantMatchHandler{
+		jobClient:      jobClient,
+		bidClient:      bidClient,
+		contractClient: contractClient,
+		userClient:     userClient,
+		cache:          cacheClient,
+		db:             db,
+	}
+}
+
+// providerEligibleForInstantFanOut loads the caller's instant flags + schedule
+// and returns whether they should see/accept redis-broadcast offers.
+// Fail-closed when the profile cannot be loaded (do not fan out to everyone).
+func (h *InstantMatchHandler) providerEligibleForInstantFanOut(ctx context.Context, userID string) bool {
+	if h.userClient == nil || userID == "" {
+		return false
+	}
+	resp, err := h.userClient.GetProviderProfile(ctx, &userv1.GetProviderProfileRequest{
+		UserId: userID,
+	})
+	if err != nil {
+		slog.Warn("instant match: eligibility profile lookup failed",
+			"user_id", userID,
+			"error", err,
+		)
+		return false
+	}
+	p := resp.GetProfile()
+	if p == nil {
+		return false
+	}
+	schedule, loc := h.loadInstantScheduleAndLocation(ctx, userID)
+	return isProviderInstantEligible(
+		p.GetInstantEnabled(),
+		p.GetInstantAvailable(),
+		schedule,
+		time.Now(),
+		loc,
+	)
 }
 
 // CreateInstantMatch handles POST /api/v1/jobs/{id}/instant-match.
@@ -172,10 +228,21 @@ func (h *InstantMatchHandler) CreateInstantMatch(w http.ResponseWriter, r *http.
 
 // ListProviderOffers handles GET /api/v1/provider/offers.
 // Requires auth — provider only. Scans Redis for all pending instant_match:* keys.
+// Fan-out respects provider instant eligibility (enabled + available_now OR
+// inside an instant_schedule window); ineligible providers get an empty list.
 func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Eligibility gate before Redis SCAN — providers outside their schedule
+	// (and not available_now) must not receive the broadcast.
+	if !h.providerEligibleForInstantFanOut(ctx, claims.UserID) {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"offers": []interface{}{}})
 		return
 	}
 
@@ -191,7 +258,6 @@ func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.
 		return
 	}
 
-	ctx := r.Context()
 	var keys []string
 	var cursor uint64
 	for {
@@ -255,7 +321,8 @@ func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.
 }
 
 // AcceptOffer handles POST /api/v1/provider/offers/{jobId}/accept.
-// Requires auth — provider only.
+// Requires auth — provider only. Same instant eligibility as ListProviderOffers
+// so the schedule filter cannot be bypassed by calling accept directly.
 func (h *InstantMatchHandler) AcceptOffer(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -275,6 +342,13 @@ func (h *InstantMatchHandler) AcceptOffer(w http.ResponseWriter, r *http.Request
 	}
 
 	ctx := r.Context()
+
+	if !h.providerEligibleForInstantFanOut(ctx, claims.UserID) {
+		writeError(w, http.StatusForbidden,
+			"you are not currently available for instant match")
+		return
+	}
+
 	offerKey := jobOfferKey(jobID)
 
 	var rec instantMatchRecord

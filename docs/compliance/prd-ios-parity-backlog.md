@@ -119,7 +119,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 **Consumer iOS product surface for PRD MVP depth is largely implemented.** Remaining unchecked items are:
 1. **Human/ops-gated** (ASC, device smoke sign-off, always-on review API, Apple Pay domain file, Google iOS client IDs in Console)
 2. **Accepted risk / licenses** (MON-14–18, R6.2–R6.6, Checkr, mTLS, StoreKit B2)
-3. **Thin polish residuals** (off-session auto-charge; FR-16.7 day-0/3/7 **scheduled** charge retries; Instant match **consume** schedule when fan-out exists)
+3. **Thin polish residuals** (off-session auto-charge on FR-16.7 due rows; Instant match **consume** schedule when fan-out exists). next_retry_at + log-only job ticker shipped (wave12).
 
 
 
@@ -138,7 +138,8 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 - [x] **GET Instant schedule** — Owner GET `/providers/me` returns `schedule`; iOS + web hydrate weekly editor  
 - [x] **Web Instant schedule PUT** — Correct wire keys (`enabled`/`available_now`/`schedule`) + UI on provider dashboard/offers  
 - [x] **Marketplace retract parity** — Web listing detail + My Bids (iOS both); 60s leading-bid window  
-- [~] **FR-16.7 setup-failure strikes** — Migration 112 + 3-strike pause on CreatePayment fail (**day-0/3/7 scheduled charge retries + off-session auto-charge still residual**)  
+- [~] **FR-16.7 payment retries** — Migration 112 (`payment_retry_count`) + 113 (`next_retry_at` day-3/day-7 after setup fail when count < 3) + 3-strike pause; job-service `processRecurringPaymentRetries` **log-only** cron. **Residual: off-session auto-charge when due**  
+
 
 - [x] **FR-1.5–1.9 onboarding** — VerificationCenter + multi-step OnboardingWizardView (skip-friendly) shipped  
 - [x] **FR-3 job form + repost** — Full job form (recurrence, offer-accepted, schedule, property) + repost UX  
@@ -233,3 +234,4 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 
 | 2026-07-27 wave10 | Resume recurring on ProcessPayment; webhook payment_failed→pause; Instant weekly schedule iOS; local_terms + goods retract on MyBids |
 | 2026-07-27 wave11 | GET `/providers/me` `schedule` + iOS hydrate; web Instant schedule PUT+UI; listing detail retract; FR-16.7 setup-failure 3-strike pause (migration 112); contract local_terms verified on iOS |
+| 2026-07-27 wave12 | FR-16.7 `next_retry_at` (migration 113) on setup fail when count < 3; reset clears it; job-service `processRecurringPaymentRetries` log-only cron; off-session charge residual; iOS Instant schedule after GetMe re-verified |

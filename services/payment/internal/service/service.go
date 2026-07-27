@@ -338,7 +338,18 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 	// fees. This keeps the lead-gen fee with the platform and reduces the
 	// provider transfer by the same amount (mirrors breakdown.ProviderPayoutCents).
 	totalFee := breakdown.PlatformFeeCents + breakdown.GuaranteeFeeCents + breakdown.LeadGenFeeCents
-	piID, clientSecret, err := s.stripe.CreatePaymentIntent(ctx, input.AmountCents, "usd", providerAccountID, totalFee, idempotencyKey)
+
+	// FR-18 visit: best-effort bind the customer's Stripe Customer so one
+	// off-session confirm is possible. Lookup never provisions; missing customer
+	// → ordinary on-session PI (client_secret residual).
+	customerStripeID := ""
+	if input.RecurringInstanceID != nil && *input.RecurringInstanceID != "" && s.customers != nil {
+		if cus, lookupErr := s.customers.Lookup(ctx, input.CustomerID); lookupErr == nil {
+			customerStripeID = cus
+		}
+	}
+
+	piID, clientSecret, err := s.stripe.CreatePaymentIntent(ctx, input.AmountCents, "usd", providerAccountID, totalFee, idempotencyKey, customerStripeID)
 	if err != nil {
 		// The payments row was inserted above, before this call. Leaving it in
 		// 'pending' with a NULL payment intent is not inert: ProcessPayment
@@ -366,8 +377,179 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 	if err != nil {
 		return nil, "", err
 	}
+	// Defensive: ensure PI id is present for the off-session attempt even if a
+	// test repo re-fetch does not echo UpdateStripeFields.
+	if payment.StripePaymentIntentID == "" {
+		payment.StripePaymentIntentID = piID
+	}
+
+	// FR-18 residual: ONE safe off-session attempt for recurring visits when
+	// a default payment method exists. Never invent money: success only after
+	// confirm (+ capture for manual-capture PIs) and status → escrow. On any
+	// skip/fail leave the on-session PI + client_secret for PaymentSheet.
+	if input.RecurringInstanceID != nil && *input.RecurringInstanceID != "" {
+		if funded := s.tryRecurringVisitOffSession(ctx, payment, input.CustomerID); funded {
+			if updated, gerr := s.repo.GetPayment(ctx, payment.ID); gerr == nil && updated != nil {
+				payment = updated
+				if payment.StripePaymentIntentID == "" {
+					payment.StripePaymentIntentID = piID
+				}
+			} else {
+				payment.Status = "escrow"
+			}
+			slog.InfoContext(ctx, "FR-18: recurring visit charged off-session; client_secret omitted",
+				"payment_id", payment.ID,
+				"recurring_instance_id", *input.RecurringInstanceID,
+				"pi_id", piID,
+			)
+			return payment, "", nil
+		}
+	}
 
 	return payment, clientSecret, nil
+}
+
+// tryRecurringVisitOffSession performs a single merchant-initiated charge
+// against the customer's default saved card for a visit PaymentIntent.
+//
+// Fail-soft contract (never invent money):
+//   - Returns true ONLY when Stripe confirmed funds and local status reached escrow.
+//   - Returns false on missing instrument, SCA, decline, capture failure, or
+//     provisioner unwired — caller keeps the on-session client_secret residual.
+//   - Does not mark the payment failed (visit stays payable on-session).
+//   - One attempt only (attempt-1 idempotency key); soft-replay of CreatePayment
+//     does not re-enter this path.
+func (s *PaymentService) tryRecurringVisitOffSession(ctx context.Context, payment *domain.Payment, customerID string) bool {
+	if payment == nil || payment.StripePaymentIntentID == "" || customerID == "" {
+		return false
+	}
+	if s.customers == nil {
+		slog.InfoContext(ctx, "FR-18: off-session skip — customer provisioner unwired",
+			"payment_id", payment.ID,
+		)
+		return false
+	}
+
+	stripeCustomerID, err := s.customers.Lookup(ctx, customerID)
+	if err != nil || stripeCustomerID == "" {
+		slog.InfoContext(ctx, "FR-18: off-session skip — no stripe customer on file",
+			"payment_id", payment.ID,
+			"customer_id", customerID,
+			"error", err,
+		)
+		return false
+	}
+
+	paymentMethodID, err := s.customers.DefaultPaymentMethod(ctx, customerID)
+	if err != nil || paymentMethodID == "" {
+		slog.InfoContext(ctx, "FR-18: off-session skip — no default payment method",
+			"payment_id", payment.ID,
+			"customer_id", customerID,
+			"error", err,
+		)
+		return false
+	}
+
+	// Attempt-scoped key: a future FR-16.7 scheduled retry can use attempt-N
+	// without Stripe replaying a cached decline from attempt-1.
+	idemKey := fmt.Sprintf("recurring-visit-offsession:%s:attempt-1", payment.ID)
+	status, confirmErr := s.stripe.ConfirmOffSessionPaymentIntent(ctx, payment.StripePaymentIntentID, paymentMethodID, idemKey)
+	if confirmErr != nil {
+		outcome, _ := classifyChargeError(confirmErr)
+		slog.WarnContext(ctx, "FR-18: off-session confirm failed; on-session PI residual kept",
+			"payment_id", payment.ID,
+			"pi_id", payment.StripePaymentIntentID,
+			"outcome", string(outcome),
+			"error", confirmErr,
+		)
+		return false
+	}
+
+	// Services PI uses manual capture → requires_capture after confirm.
+	// DevStore / auto-capture paths may report succeeded. Anything else is residual.
+	switch status {
+	case "requires_capture", "succeeded":
+		// proceed
+	default:
+		outcome := classifyChargeStatus(status)
+		slog.WarnContext(ctx, "FR-18: off-session confirm non-success status; on-session residual",
+			"payment_id", payment.ID,
+			"pi_id", payment.StripePaymentIntentID,
+			"status", status,
+			"outcome", string(outcome),
+		)
+		return false
+	}
+
+	// Capture authorized funds onto the platform balance (manual capture).
+	// When Stripe already auto-captured (status=succeeded), Capture is still
+	// invoked with a deterministic key — real Stripe is idempotent / no-ops a
+	// second capture via error we treat as residual only if we cannot proceed.
+	if status == "requires_capture" {
+		captureKey := "capture:" + payment.ID
+		if capErr := s.stripe.CapturePaymentIntent(ctx, payment.StripePaymentIntentID, captureKey); capErr != nil {
+			// Confirmed hold may exist but we never mark escrow without capture
+			// success (would release unfunded escrow later). Leave pending for
+			// on-session ProcessPayment / ops.
+			slog.ErrorContext(ctx, "FR-18: off-session confirmed but capture failed; on-session residual",
+				"payment_id", payment.ID,
+				"pi_id", payment.StripePaymentIntentID,
+				"error", capErr,
+			)
+			return false
+		}
+	} else if status == "succeeded" {
+		// DevStore and any auto-captured path: still record capture under the
+		// same ProcessPayment key so retries collapse cleanly.
+		captureKey := "capture:" + payment.ID
+		if capErr := s.stripe.CapturePaymentIntent(ctx, payment.StripePaymentIntentID, captureKey); capErr != nil {
+			// Funds already captured at Stripe; proceed to escrow — capture
+			// idempotency error on an already-captured PI is not a money miss.
+			slog.InfoContext(ctx, "FR-18: capture after succeeded confirm returned error (treating as already captured)",
+				"payment_id", payment.ID,
+				"error", capErr,
+			)
+		}
+	}
+
+	// CAS pending → processing → escrow (same shape as ProcessPayment).
+	if err := s.repo.ClaimPaymentStatus(ctx, payment.ID, "pending", "processing"); err != nil {
+		// Concurrent ProcessPayment may have won — re-read and accept funded states.
+		if current, gerr := s.repo.GetPayment(ctx, payment.ID); gerr == nil && current != nil {
+			switch current.Status {
+			case "processing", "escrow", "released", "completed":
+				slog.InfoContext(ctx, "FR-18: off-session funds moved; status already advanced by concurrent path",
+					"payment_id", payment.ID,
+					"status", current.Status,
+				)
+				// Money path is active or done — omit client_secret so the client
+				// does not open PaymentSheet against an already-claimed PI.
+				payment.Status = current.Status
+				return true
+			}
+		}
+		slog.WarnContext(ctx, "FR-18: off-session claim processing failed after capture; on-session residual",
+			"payment_id", payment.ID,
+			"error", err,
+		)
+		return false
+	}
+	if err := s.repo.ClaimPaymentStatus(ctx, payment.ID, "processing", "escrow"); err != nil {
+		// Capture already succeeded — best-effort status write (ProcessPayment pattern).
+		if markErr := s.repo.UpdatePaymentStatus(ctx, payment.ID, "escrow"); markErr != nil {
+			slog.ErrorContext(ctx, "FR-18: off-session captured but failed to mark escrow; reconciling",
+				"payment_id", payment.ID,
+				"claim_error", err,
+				"mark_error", markErr,
+			)
+			// Money moved; report funded so caller omits client_secret (soft-replay
+			// of a later CreatePayment will re-read status).
+			payment.Status = "escrow"
+			return true
+		}
+	}
+	payment.Status = "escrow"
+	return true
 }
 
 // softReplayCreatePayment returns an existing payment + real client_secret when

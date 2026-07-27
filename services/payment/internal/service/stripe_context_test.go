@@ -135,7 +135,7 @@ func allStripeCalls() []stripeCallCase {
 			return s.DeletePaymentMethod(ctx, "pm_1")
 		}},
 		{"PaymentIntent.Create", func(ctx context.Context, s *StripeService) error {
-			_, _, err := s.CreatePaymentIntent(ctx, 1000, "usd", "acct_1", 100, "idem-pi")
+			_, _, err := s.CreatePaymentIntent(ctx, 1000, "usd", "acct_1", 100, "idem-pi", "")
 			return err
 		}},
 		{"PaymentIntent.Capture", func(ctx context.Context, s *StripeService) error {
@@ -345,7 +345,7 @@ func TestStripeBackend_PerAttemptTimeoutBoundsACallerWithNoDeadline(t *testing.T
 	done := make(chan error, 1)
 	start := time.Now()
 	go func() {
-		_, _, err := svc.CreatePaymentIntent(context.Background(), 1000, "usd", "acct_1", 100, "idem-no-deadline")
+		_, _, err := svc.CreatePaymentIntent(context.Background(), 1000, "usd", "acct_1", 100, "idem-no-deadline", "")
 		done <- err
 	}()
 
@@ -406,7 +406,7 @@ func TestStripeMutatingCalls_SendDeterministicIdempotencyKey(t *testing.T) {
 			return s.DeletePaymentMethod(ctx, "pm_1")
 		}},
 		{"PaymentIntent.Create", func(ctx context.Context, s *StripeService) error {
-			_, _, err := s.CreatePaymentIntent(ctx, 1000, "usd", "acct_1", 100, "idem-pi")
+			_, _, err := s.CreatePaymentIntent(ctx, 1000, "usd", "acct_1", 100, "idem-pi", "")
 			return err
 		}},
 		{"PaymentIntent.Capture", func(ctx context.Context, s *StripeService) error {

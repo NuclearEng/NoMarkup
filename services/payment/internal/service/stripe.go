@@ -733,15 +733,19 @@ func (s *StripeService) DeletePaymentMethod(ctx context.Context, paymentMethodID
 // providerAccountID and platformFeeCents are recorded in metadata for
 // reconciliation only — they do not create a destination charge.
 // Uses capture_method="manual" for escrow functionality.
-func (s *StripeService) CreatePaymentIntent(ctx context.Context, amountCents int64, currency string, providerAccountID string, platformFeeCents int64, idempotencyKey string) (string, string, error) {
+//
+// customerStripeID, when non-empty, binds the PaymentIntent to the customer's
+// Stripe Customer so ConfirmOffSessionPaymentIntent can charge a saved card
+// (FR-18 visit auto-charge). Passing "" preserves customerless on-session PIs.
+func (s *StripeService) CreatePaymentIntent(ctx context.Context, amountCents int64, currency string, providerAccountID string, platformFeeCents int64, idempotencyKey string, customerStripeID string) (string, string, error) {
 	if s.devMode {
 		// Deterministic stub id/secret. Record in DevStore so soft-replay
 		// (GetPaymentIntentClientSecret) can re-read the same secret — same
 		// contract as marketplace CreateMarketplacePaymentIntent.
 		piID := "pi_dev_" + idempotencyKey
 		secret := "pi_dev_secret_" + idempotencyKey
-		s.DevStore().RecordPaymentIntent(piID, "", amountCents, secret)
-		slog.Info("dev mode: stub CreatePaymentIntent", "amountCents", amountCents, "pi_id", piID)
+		s.DevStore().RecordPaymentIntent(piID, customerStripeID, amountCents, secret)
+		slog.Info("dev mode: stub CreatePaymentIntent", "amountCents", amountCents, "pi_id", piID, "customer", customerStripeID)
 		return piID, secret, nil
 	}
 
@@ -751,6 +755,9 @@ func (s *StripeService) CreatePaymentIntent(ctx context.Context, amountCents int
 		CaptureMethod: stripe.String(string(stripe.PaymentIntentCaptureMethodManual)),
 		// No TransferData / ApplicationFeeAmount: platform holds funds until
 		// ReleaseEscrow CreateTransfer. See comment above.
+	}
+	if customerStripeID != "" {
+		params.Customer = stripe.String(customerStripeID)
 	}
 	if providerAccountID != "" {
 		params.AddMetadata("provider_account_id", providerAccountID)

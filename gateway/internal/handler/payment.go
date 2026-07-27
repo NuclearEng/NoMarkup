@@ -31,7 +31,8 @@ type PaymentHandler struct {
 	// handlers query Postgres directly via pgxpool; we follow that pattern
 	// rather than adding a new gRPC RPC. May be nil in unit tests that don't
 	// exercise the ledger path. Also resets FR-16.7 partial
-	// recurring_configs.payment_retry_count (migration 112) after visit capture.
+	// recurring_configs.payment_retry_count + next_retry_at (migrations 112/113)
+	// after visit capture.
 	db *pgxpool.Pool
 	// resetPaymentRetryFn overrides SQL reset for unit tests (nil in production).
 	resetPaymentRetryFn func(ctx context.Context, recurringID string) error
@@ -360,8 +361,10 @@ type processPaymentRequest struct {
 // visit (recurring_instance_id set), FR-18.8 best-effort resumes a paused
 // recurring config so visits generate again after the customer pays. Resume
 // failures never fail the payment response (fail-soft residual fields only).
-// Off-session auto-charge + FR-16.7 day-0/3/7 scheduled retries remain residual;
-// consecutive CreatePayment failure counting (pause at 3) is wired on approve.
+// Off-session auto-charge remains residual. FR-16.7 next_retry_at is stored on
+// setup failure (gateway/migration 113); job-service processRecurringPaymentRetries
+// is log-only until charge is wired. CreatePayment failure counting (pause at 3)
+// is wired on approve/auto-approve; this path only resets the counter after capture.
 func (h *PaymentHandler) ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -554,8 +557,8 @@ func (h *PaymentHandler) resumeRecurringAfterPaymentSuccess(
 	)
 }
 
-// resetPaymentRetryAfterVisitPay clears FR-16.7 partial payment_retry_count.
-// Fail-soft residual only — never fails ProcessPayment.
+// resetPaymentRetryAfterVisitPay clears FR-16.7 partial payment_retry_count
+// and next_retry_at. Fail-soft residual only — never fails ProcessPayment.
 func (h *PaymentHandler) resetPaymentRetryAfterVisitPay(
 	ctx context.Context,
 	result map[string]interface{},

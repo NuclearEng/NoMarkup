@@ -31,8 +31,8 @@ type ContractHandler struct {
 	// carried by the contract proto/domain (e.g. tip_amount_cents, added by the
 	// Wave 5 services-polish tip feature without a proto regen). It may be nil
 	// in tests; the tip enrichment degrades to absent rather than erroring.
-	// Also backs FR-16.7 partial payment_retry_count on recurring_configs
-	// (migration 112) without a proto regen.
+	// Also backs FR-16.7 partial payment_retry_count + next_retry_at on
+	// recurring_configs (migrations 112/113) without a proto regen.
 	db *pgxpool.Pool
 	// paymentClient creates a real Stripe PaymentIntent for recurring-instance
 	// approve (FR-18 residual). Optional: nil → approve still succeeds with
@@ -40,7 +40,8 @@ type ContractHandler struct {
 	paymentClient paymentv1.PaymentServiceClient
 	// incrPaymentRetryFn / resetPaymentRetryFn override the SQL helpers for
 	// unit tests (production leaves them nil and uses h.db).
-	incrPaymentRetryFn  func(ctx context.Context, recurringID string) (int, error)
+	// incr returns (count, nextRetryAt); nextRetryAt is nil at/above threshold.
+	incrPaymentRetryFn  func(ctx context.Context, recurringID string) (int, *time.Time, error)
 	resetPaymentRetryFn func(ctx context.Context, recurringID string) error
 }
 
@@ -1375,16 +1376,20 @@ func (h *ContractHandler) resolveContractCustomerID(ctx context.Context, contrac
 // customer (payment service enforces ownership). Sticky idempotency key
 // recurring-instance-pay:{instanceID} dedupes approve + auto-approve complete.
 //
+// CreatePayment for recurring_instance_id performs ONE safe off-session attempt
+// when the customer has a default saved card: on success status is escrow and
+// client_secret is omitted; on skip/fail the on-session PI residual remains
+// (client_secret for PaymentSheet). Never invents money.
+//
 // On CreatePayment failure, FR-16.7 partial + FR-18.8: increment
 // recurring_configs.payment_retry_count (migration 112) and only PauseRecurring
 // when count >= 3 (contract stays intact; config pauses only). Charge-failure
 // pause after Stripe payment_intent.payment_failed is owned by the payment
-// service (still immediate pause — day-0/3/7 charge retries residual). Resume
-// on successful visit pay lives on PaymentHandler.ProcessPayment (FR-18.8) and
-// resets the retry counter. Residual: automatic off-session charge + FR-16.7
-// day-0/3/7 scheduled retries (not wired); webhook-only capture without
-// ProcessPayment does not resume (services use manual capture +
-// POST /payments/{id}/process).
+// service (still immediate pause — day-0/3/7 scheduled charge retries residual).
+// Resume on successful visit pay lives on PaymentHandler.ProcessPayment
+// (FR-18.8) and resets the retry counter. Residual: FR-16.7 day-0/3/7
+// scheduled retries (not wired); webhook-only capture without ProcessPayment
+// does not resume (services use manual capture + POST /payments/{id}/process).
 func (h *ContractHandler) attachRecurringInstancePayment(
 	ctx context.Context,
 	result map[string]interface{},
@@ -1439,6 +1444,12 @@ func (h *ContractHandler) attachRecurringInstancePayment(
 				result["payment_id"] = existing.GetId()
 				result["payment"] = protoPaymentToJSON(existing)
 			}
+			// Already-funded visit (e.g. prior off-session success): no secret needed.
+			if recurringPaymentIsFunded(existing) {
+				result["off_session_charged"] = true
+				h.resetRecurringPaymentRetryAfterSuccess(ctx, contractID, instanceID, source)
+				return
+			}
 			slog.WarnContext(ctx, "recurring instance: existing payment found but client_secret unavailable (fail closed)",
 				"source", source,
 				"instance_id", instanceID,
@@ -1461,12 +1472,9 @@ func (h *ContractHandler) attachRecurringInstancePayment(
 			)
 			result["payment_residual"] = "create_payment_failed"
 			result["payment_error"] = "Could not create escrow PaymentIntent for this visit. Visit is approved; pay via POST /payments with recurring_instance_id when ready."
-			// Honest residual: this path mints an on-session PI only. Automatic
-			// off-session charge + FR-16.7 day-0/3/7 scheduled retries are not
-			// wired. Customer pays via POST /payments + PaymentSheet +
-			// POST /payments/{id}/process — resume-on-success is wired on
-			// ProcessPayment when status was paused after the 3rd failure.
-			result["off_session_charge_residual"] = "not_wired"
+			// No PI was minted, so off-session was never attempted. FR-16.7
+			// day-0/3/7 scheduled charge retries remain residual (not this path).
+			result["off_session_charge_residual"] = "not_attempted_create_failed"
 			h.recordRecurringPaymentSetupFailure(ctx, result, contractID, instanceID, customerID, source)
 			return
 		}
@@ -1478,14 +1486,38 @@ func (h *ContractHandler) attachRecurringInstancePayment(
 	}
 	if secret := payResp.GetClientSecret(); secret != "" {
 		// Real Stripe (or dev-stack) secret for PaymentSheet — not invented.
+		// Present when off-session was skipped (no default PM) or failed
+		// (decline/SCA) — one safe attempt already ran inside CreatePayment.
 		result["client_secret"] = secret
+		result["off_session_charge_residual"] = "on_session_residual"
+	} else if p := payResp.GetPayment(); p != nil && recurringPaymentIsFunded(p) {
+		// Off-session confirm+capture succeeded (or soft-replay of funded row).
+		// Never invent a secret; client does not need PaymentSheet.
+		result["off_session_charged"] = true
 	} else {
-		// PI row may exist without a confirmable secret (misconfig / already held).
-		// Honest residual — never invent a secret.
+		// PI row may exist without a confirmable secret (misconfig / already held
+		// without status echo). Honest residual — never invent a secret.
 		result["payment_residual"] = "client_secret_missing"
 	}
-	// Successful visit PI setup clears FR-16.7 partial strike count (fail-soft).
+	// Successful visit PI setup (or funded capture) clears FR-16.7 partial strike count.
 	h.resetRecurringPaymentRetryAfterSuccess(ctx, contractID, instanceID, source)
+}
+
+// recurringPaymentIsFunded reports whether a visit payment no longer needs
+// PaymentSheet / client_secret (funds held or past escrow).
+func recurringPaymentIsFunded(p *paymentv1.Payment) bool {
+	if p == nil {
+		return false
+	}
+	switch p.GetStatus() {
+	case paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW,
+		paymentv1.PaymentStatus_PAYMENT_STATUS_RELEASED,
+		paymentv1.PaymentStatus_PAYMENT_STATUS_COMPLETED,
+		paymentv1.PaymentStatus_PAYMENT_STATUS_PROCESSING:
+		return true
+	default:
+		return false
+	}
 }
 
 // findPaymentByRecurringInstance best-effort loads an existing payment for a
@@ -1598,8 +1630,8 @@ func (h *ContractHandler) recordRecurringPaymentSetupFailure(
 		return
 	}
 
-	// FR-16.7 partial: durable strike count before pause.
-	count, incrErr := h.incrementPaymentRetry(ctx, cfg.GetId())
+	// FR-16.7 partial: durable strike count + next_retry_at before pause.
+	count, nextRetryAt, incrErr := h.incrementPaymentRetry(ctx, cfg.GetId())
 	if incrErr != nil {
 		// Schema/db missing: document, do not invent a pause without a counter.
 		slog.WarnContext(ctx, "FR-16.7: payment_retry_count increment failed (not pausing without durable count)",
@@ -1617,17 +1649,29 @@ func (h *ContractHandler) recordRecurringPaymentSetupFailure(
 	result["payment_retry_count"] = count
 	result["payment_retry_threshold"] = recurringPaymentRetryPauseThreshold
 	result["recurring_status"] = status
+	if nextRetryAt != nil {
+		result["next_retry_at"] = nextRetryAt.UTC().Format(time.RFC3339)
+	}
 
 	if count < recurringPaymentRetryPauseThreshold {
-		// Below threshold: leave schedule active; customer can still pay the visit.
+		// Below threshold: leave schedule active; stamp next_retry_at for the
+		// day-3 / day-7 worker scan. Customer can still pay the visit manually.
+		// Automatic off-session charge on that schedule is residual (job cron
+		// processRecurringPaymentRetries currently logs only).
 		result["recurring_paused"] = false
-		slog.InfoContext(ctx, "FR-16.7: CreatePayment failure counted; schedule still active",
+		logAttrs := []any{
 			"source", source,
 			"instance_id", instanceID,
 			"contract_id", contractID,
 			"recurring_id", cfg.GetId(),
 			"payment_retry_count", count,
 			"threshold", recurringPaymentRetryPauseThreshold,
+		}
+		if nextRetryAt != nil {
+			logAttrs = append(logAttrs, "next_retry_at", nextRetryAt.UTC().Format(time.RFC3339))
+		}
+		slog.InfoContext(ctx, "FR-16.7: CreatePayment failure counted; schedule still active; next_retry_at stored",
+			logAttrs...,
 		)
 		return
 	}
@@ -1670,7 +1714,8 @@ func (h *ContractHandler) recordRecurringPaymentSetupFailure(
 }
 
 // incrementPaymentRetry uses the test hook when set; otherwise SQL via h.db.
-func (h *ContractHandler) incrementPaymentRetry(ctx context.Context, recurringID string) (int, error) {
+// Returns the new strike count and optional next_retry_at (nil at/above pause threshold).
+func (h *ContractHandler) incrementPaymentRetry(ctx context.Context, recurringID string) (int, *time.Time, error) {
 	if h.incrPaymentRetryFn != nil {
 		return h.incrPaymentRetryFn(ctx, recurringID)
 	}

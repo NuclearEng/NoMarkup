@@ -260,7 +260,7 @@ func TestMalformedUUIDPathGuardsAre400(t *testing.T) {
 			path:    "/api/v1/jobs/" + bad + "/instant-match",
 			role:    "customer",
 			body:    `{}`,
-			handler: NewInstantMatchHandler(nil, nil, nil, nil).CreateInstantMatch,
+			handler: NewInstantMatchHandler(nil, nil, nil, nil, nil, nil).CreateInstantMatch,
 		},
 		{
 			name:    "provider GetProvider",

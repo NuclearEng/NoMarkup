@@ -321,6 +321,17 @@ func main() {
 		envDuration("FAIR_PRICE_REFRESH_INITIAL_DELAY", 30*time.Second),
 	)
 
+	// FR-16.7 partial: scan recurring_configs.next_retry_at (migration 113) and
+	// log due payment retries. Log-only stub — off-session auto-charge residual.
+	// Gateway stamps next_retry_at on CreatePayment setup failure when count < 3.
+	service.RunRecurringPaymentRetryCron(
+		sigCtx,
+		service.NewRecurringPaymentRetryWorker(pool),
+		envDuration("RECURRING_PAYMENT_RETRY_INTERVAL", time.Hour),
+		envDuration("RECURRING_PAYMENT_RETRY_INITIAL_DELAY", 45*time.Second),
+		envInt("RECURRING_PAYMENT_RETRY_BATCH", 100),
+	)
+
 	go func() {
 		slog.Info("job service starting", "port", port)
 		if err := s.Serve(lis); err != nil {

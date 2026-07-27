@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
@@ -254,7 +255,7 @@ func TestApproveRecurringInstance_createPaymentFailedResidual(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, "create_payment_failed", body["payment_residual"])
 	assert.NotEmpty(t, body["payment_error"])
-	assert.Equal(t, "not_wired", body["off_session_charge_residual"])
+	assert.Equal(t, "not_attempted_create_failed", body["off_session_charge_residual"])
 	_, hasPayID := body["payment_id"]
 	assert.False(t, hasPayID, "must not invent payment_id after CreatePayment failure")
 	_, hasSecret := body["client_secret"]
@@ -289,9 +290,10 @@ func TestApproveRecurringInstance_createPaymentFailedPausesAtThreshold(t *testin
 	}
 	h := NewContractHandler(cc, nil, nil)
 	h.SetPaymentClient(pc)
-	h.incrPaymentRetryFn = func(_ context.Context, recurringID string) (int, error) {
+	h.incrPaymentRetryFn = func(_ context.Context, recurringID string) (int, *time.Time, error) {
 		assert.Equal(t, testRecurringID, recurringID)
-		return recurringPaymentRetryPauseThreshold, nil
+		// At threshold: next_retry_at cleared (no further auto-retry).
+		return recurringPaymentRetryPauseThreshold, nil, nil
 	}
 
 	rec := httptest.NewRecorder()
@@ -324,8 +326,9 @@ func TestApproveRecurringInstance_createPaymentFailedBelowThreshold(t *testing.T
 	}
 	h := NewContractHandler(cc, nil, nil)
 	h.SetPaymentClient(pc)
-	h.incrPaymentRetryFn = func(_ context.Context, _ string) (int, error) {
-		return 1, nil
+	next := time.Now().UTC().Add(3 * 24 * time.Hour).Truncate(time.Second)
+	h.incrPaymentRetryFn = func(_ context.Context, _ string) (int, *time.Time, error) {
+		return 1, &next, nil
 	}
 
 	rec := httptest.NewRecorder()
@@ -338,6 +341,8 @@ func TestApproveRecurringInstance_createPaymentFailedBelowThreshold(t *testing.T
 	assert.Equal(t, float64(1), body["payment_retry_count"])
 	assert.Equal(t, false, body["recurring_paused"])
 	assert.Equal(t, 0, cc.pauseN)
+	// FR-16.7: next_retry_at stored when count < 3 (day-3 schedule after day-0 fail).
+	assert.Equal(t, next.Format(time.RFC3339), body["next_retry_at"])
 }
 
 // TestApproveRecurringInstance_clientSecretMissingResidual: PI exists without
@@ -398,11 +403,62 @@ func TestApproveRecurringInstance_successReturnsRealPayment(t *testing.T) {
 	assert.Equal(t, "pi_secret_real", body["client_secret"])
 	_, hasResidual := body["payment_residual"]
 	assert.False(t, hasResidual, "successful PI must not surface a residual")
+	// On-session secret means off-session did not fully fund (skip or fail) —
+	// honest residual for PaymentSheet, never invented money.
+	assert.Equal(t, "on_session_residual", body["off_session_charge_residual"])
+	_, charged := body["off_session_charged"]
+	assert.False(t, charged)
 	inst, ok := body["instance"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, float64(7500), inst["amount_cents"])
 	assert.Equal(t, 1, resetN, "successful CreatePayment must reset payment_retry_count")
 	assert.Equal(t, 1, cc.getRecurringN, "reset looks up recurring config")
+}
+
+// TestApproveRecurringInstance_offSessionChargedOmitsClientSecret: when
+// CreatePayment returns escrow + empty secret (off-session success), surface
+// payment_id + off_session_charged and never invent client_secret.
+func TestApproveRecurringInstance_offSessionChargedOmitsClientSecret(t *testing.T) {
+	t.Parallel()
+	cc := &mockApproveContractClient{}
+	pc := &mockApprovePaymentClient{
+		createFn: func(_ context.Context, req *paymentv1.CreatePaymentRequest) (*paymentv1.CreatePaymentResponse, error) {
+			return &paymentv1.CreatePaymentResponse{
+				Payment: &paymentv1.Payment{
+					Id:                  "pay-offsession-1",
+					ContractId:          req.GetContractId(),
+					RecurringInstanceId: req.GetRecurringInstanceId(),
+					CustomerId:          req.GetCustomerId(),
+					AmountCents:         req.GetAmountCents(),
+					Status:              paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW,
+				},
+				ClientSecret: "",
+			}, nil
+		},
+	}
+	h := NewContractHandler(cc, nil, nil)
+	h.SetPaymentClient(pc)
+	var resetN int
+	h.resetPaymentRetryFn = func(_ context.Context, _ string) error {
+		resetN++
+		return nil
+	}
+
+	rec := httptest.NewRecorder()
+	approveRecurringRouter(h).ServeHTTP(rec, approveRecurringRequest(t, testCustomerID))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "pay-offsession-1", body["payment_id"])
+	assert.Equal(t, true, body["off_session_charged"])
+	_, hasSecret := body["client_secret"]
+	assert.False(t, hasSecret, "must not invent client_secret after off-session capture")
+	_, hasResidual := body["payment_residual"]
+	assert.False(t, hasResidual)
+	_, hasOSResidual := body["off_session_charge_residual"]
+	assert.False(t, hasOSResidual, "funded path must not surface off-session residual")
+	assert.Equal(t, 1, resetN)
 }
 
 // TestApproveRecurringInstance_prefersContractPaymentID: if job service already
@@ -547,6 +603,7 @@ func TestCompleteRecurringInstance_autoApproveCreatesPaymentAsCustomer(t *testin
 	assert.Equal(t, "pi_secret_real", body["client_secret"])
 	_, hasResidual := body["payment_residual"]
 	assert.False(t, hasResidual)
+	assert.Equal(t, "on_session_residual", body["off_session_charge_residual"])
 	require.Equal(t, 1, pc.calls)
 	assert.Equal(t, testCustomerID, pc.lastReq.GetCustomerId(), "CreatePayment must use contract customer, not provider actor")
 	assert.NotEqual(t, testProviderID, pc.lastReq.GetCustomerId())
@@ -584,8 +641,8 @@ func TestCompleteRecurringInstance_autoApprovePaymentFailKeepsComplete(t *testin
 	}
 	h := NewContractHandler(cc, nil, nil)
 	h.SetPaymentClient(pc)
-	h.incrPaymentRetryFn = func(_ context.Context, _ string) (int, error) {
-		return recurringPaymentRetryPauseThreshold, nil
+	h.incrPaymentRetryFn = func(_ context.Context, _ string) (int, *time.Time, error) {
+		return recurringPaymentRetryPauseThreshold, nil, nil
 	}
 
 	rec := httptest.NewRecorder()
@@ -596,7 +653,7 @@ func TestCompleteRecurringInstance_autoApprovePaymentFailKeepsComplete(t *testin
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, "create_payment_failed", body["payment_residual"])
 	assert.NotEmpty(t, body["payment_error"])
-	assert.Equal(t, "not_wired", body["off_session_charge_residual"])
+	assert.Equal(t, "not_attempted_create_failed", body["off_session_charge_residual"])
 	_, hasPayID := body["payment_id"]
 	assert.False(t, hasPayID, "must not invent payment_id after CreatePayment failure")
 	_, hasSecret := body["client_secret"]
@@ -667,8 +724,8 @@ func TestApproveRecurringInstance_createPaymentFailedPauseSoftFails(t *testing.T
 	}
 	h := NewContractHandler(cc, nil, nil)
 	h.SetPaymentClient(pc)
-	h.incrPaymentRetryFn = func(_ context.Context, _ string) (int, error) {
-		return recurringPaymentRetryPauseThreshold, nil
+	h.incrPaymentRetryFn = func(_ context.Context, _ string) (int, *time.Time, error) {
+		return recurringPaymentRetryPauseThreshold, nil, nil
 	}
 
 	rec := httptest.NewRecorder()
@@ -762,6 +819,7 @@ func TestApproveRecurringInstance_softReplayOnSecondCreate(t *testing.T) {
 	assert.Equal(t, "pi_secret_soft_replay", body["client_secret"])
 	_, hasResidual := body["payment_residual"]
 	assert.False(t, hasResidual, "soft-replay success must not surface residual")
+	assert.Equal(t, "on_session_residual", body["off_session_charge_residual"])
 	assert.Equal(t, 2, pc.calls)
 	assert.Equal(t, 0, cc.pauseN, "must not pause when soft-replay recovers client_secret")
 }

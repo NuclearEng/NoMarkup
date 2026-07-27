@@ -551,6 +551,8 @@ struct ProviderWorkspaceView: View {
         defer { isLoading = false }
 
         do {
+            // Role gate first (GET /users/me). Instant weekly schedule is NOT on
+            // that payload — hydrate it only from GET /providers/me after GetMe.
             let me = try await APIClient.shared.fetchMe()
             hasProviderRole = me.hasProviderRole
             roleChecked = true
@@ -559,6 +561,8 @@ struct ProviderWorkspaceView: View {
                 profile = nil
                 streaks = []
                 licenses = []
+                // Leave blank week; non-providers never see the Instant editor.
+                scheduleDays = ProviderScheduleDayDraft.blankWeek()
                 return
             }
 
@@ -568,6 +572,8 @@ struct ProviderWorkspaceView: View {
 
             let loaded = try await profileTask
             profile = loaded
+            // applyProfileToForm reads `schedule` (always present on owner GET,
+            // empty array when no windows) so the weekly editor matches server.
             applyProfileToForm(loaded)
 
             // Streaks / licenses degrade soft — profile is the primary surface.

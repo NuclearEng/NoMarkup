@@ -699,11 +699,11 @@ func (h *ProviderHandler) getInstantSchedule(ctx context.Context, userID string)
 	return parseInstantScheduleJSON(raw)
 }
 
-// parseInstantScheduleJSON normalizes DB JSONB (written by SetInstantAvailability
+// parseInstantScheduleWindows normalizes DB JSONB (written by SetInstantAvailability
 // via json.Marshal of AvailabilityWindow protos: day/start_time/end_time) into
-// the same shape as PUT /providers/me/availability's schedule body.
-func parseInstantScheduleJSON(raw []byte) []map[string]interface{} {
-	empty := make([]map[string]interface{}, 0)
+// typed weekly windows. Fail-soft: empty/null/corrupt → empty slice (never nil).
+func parseInstantScheduleWindows(raw []byte) []availabilityWindowReq {
+	empty := make([]availabilityWindowReq, 0)
 	if len(raw) == 0 {
 		return empty
 	}
@@ -718,7 +718,7 @@ func parseInstantScheduleJSON(raw []byte) []map[string]interface{} {
 		return empty
 	}
 
-	out := make([]map[string]interface{}, 0, len(windows))
+	out := make([]availabilityWindowReq, 0, len(windows))
 	for _, w := range windows {
 		day := strings.ToLower(strings.TrimSpace(w.Day))
 		start := strings.TrimSpace(w.StartTime)
@@ -726,10 +726,25 @@ func parseInstantScheduleJSON(raw []byte) []map[string]interface{} {
 		if day == "" || start == "" || end == "" {
 			continue
 		}
+		out = append(out, availabilityWindowReq{
+			Day:       day,
+			StartTime: start,
+			EndTime:   end,
+		})
+	}
+	return out
+}
+
+// parseInstantScheduleJSON normalizes DB JSONB into the same shape as
+// PUT /providers/me/availability's schedule body (owner GET/PATCH echo).
+func parseInstantScheduleJSON(raw []byte) []map[string]interface{} {
+	windows := parseInstantScheduleWindows(raw)
+	out := make([]map[string]interface{}, 0, len(windows))
+	for _, w := range windows {
 		out = append(out, map[string]interface{}{
-			"day":        day,
-			"start_time": start,
-			"end_time":   end,
+			"day":        w.Day,
+			"start_time": w.StartTime,
+			"end_time":   w.EndTime,
 		})
 	}
 	return out
