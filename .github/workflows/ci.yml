@@ -122,7 +122,16 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: gateway/go.sum
       - run: cd gateway && go vet ./...
+      # QA-02: coverprofile was already written; the gate was missing.
+      # Measured 2026-07-27 (local, -race -count=1): total statements 15.2%
+      # (handler ~12%, middleware ~68%, vault ~78%, router/cmd/cache 0%).
+      # Floor 12% = modest regression bar under measured, ~3pt headroom.
+      # RATCHET UP only (toward 40% then docs' 80%); never lower without a
+      # measured reason. Not the aspirational 80% — whole-module totals are
+      # dragged down by untested handler/router surface.
       - run: cd gateway && go test ./... -race -coverprofile=coverage.out
+      - name: Gateway coverage floor (QA-02)
+        run: scripts/check-go-coverage.sh gateway/coverage.out 12
 
   # ── Go Microservices (matrix) ─────────────────────────────────
 
@@ -140,7 +149,25 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: services/${{ matrix.service }}/go.sum
       - run: cd services/${{ matrix.service }} && go vet ./...
-      - run: cd services/${{ matrix.service }} && go test ./... -race
+      # QA-02 optional pilot: payment is the money path and the strongest
+      # service-layer culture (~75% service package). Other matrix legs stay
+      # ungated until measured floors are chosen per service.
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          cd "services/${{ matrix.service }}"
+          if [ "${{ matrix.service }}" = "payment" ]; then
+            go test ./... -race -coverprofile=coverage.out
+          else
+            go test ./... -race
+          fi
+      - name: Payment coverage floor (QA-02)
+        if: matrix.service == 'payment'
+        run: |
+          # Measured 2026-07-27 (local, -race -count=1): total statements 41.4%
+          # (service ~74.9%, observability ~73.9%, repository/domain/crypto 0%).
+          # Floor 40% ≈ measured −1.4pt; ratchet toward 50% then 80%.
+          scripts/check-go-coverage.sh services/payment/coverage.out 40
       # The database module holds a THIRD copy of the geo-coarsening code
       # (database/cmd/encrypt-pii/geo.go) whose golden-vector guard must
       # bit-match the other two and the SQL function. CI ran `go run` in
@@ -610,6 +637,11 @@ jobs:
       - verify-proto
       - money-race-tests
     runs-on: ubuntu-latest
+    # packages:write required for main-branch GHCR push via GITHUB_TOKEN
+    # (OPS-21). contents:read is the default we keep explicit.
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
@@ -685,11 +717,27 @@ jobs:
             echo "::endgroup::"
           done
 
-      - name: Build & push Docker images (main — push to registry)
+      # OPS-21: real registry login + push on main (not build-only theater).
+      # Default path is GHCR with GITHUB_TOKEN (packages:write above) — no
+      # extra secrets. Optional overrides for a private/external registry:
+      #   vars.DOCKER_REGISTRY       (default ghcr.io)
+      #   vars.DOCKER_IMAGE_PREFIX   (default <owner>/nomarkup — same as deploy.yml)
+      #   secrets.REGISTRY_USERNAME  (default github.actor)
+      #   secrets.REGISTRY_PASSWORD  (default GITHUB_TOKEN)
+      # Tags: :<sha8> only (release tags stay on deploy.yml / v* pushes).
+      - name: Log in to container registry
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ vars.DOCKER_REGISTRY || 'ghcr.io' }}
+          username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+
+      - name: Build & push Docker images (main)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         env:
           REGISTRY: ${{ vars.DOCKER_REGISTRY || 'ghcr.io' }}
-          IMAGE_PREFIX: ${{ github.repository }}
+          IMAGE_PREFIX: ${{ vars.DOCKER_IMAGE_PREFIX || format('{0}/nomarkup', github.repository_owner) }}
         run: |
           set -euo pipefail
           images=(
@@ -715,8 +763,9 @@ jobs:
             tag="${REGISTRY}/${IMAGE_PREFIX}/${name}:${GITHUB_SHA::8}"
             args=(-f "${dockerfile}" -t "${tag}")
             if [ -n "${target}" ]; then args+=(--target "${target}"); fi
-            echo "::group::Building and tagging ${tag}"
+            echo "::group::Build+push ${tag}"
             docker build "${args[@]}" .
-            echo "Built ${tag} — push step requires docker login (configure DOCKER_REGISTRY secret)"
+            docker push "${tag}"
+            echo "Pushed ${tag}"
             echo "::endgroup::"
           done

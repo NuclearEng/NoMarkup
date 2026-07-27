@@ -17,6 +17,8 @@ database/seed
 
 # Coverage & test
 coverage/
+coverage.out
+*.coverprofile
 *.test
 *.prof
 

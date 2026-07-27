@@ -54,8 +54,8 @@ From code-complete to real users on production. Every item must be checked off o
 - [ ] Confirm production `S3_*` does not point at MinIO
 
 ### Container Registry
-- [ ] Registry auth (GHCR default in CI)
-- [ ] CI pushes images on main **when** docker login/push is wired (verify OPS-21)
+- [ ] Registry auth (GHCR default in CI; `GITHUB_TOKEN` + `packages:write` on main `build` job)
+- [x] CI pushes images on main (OPS-21) — `docker/login-action` → GHCR + real `docker push` as `ghcr.io/<owner>/nomarkup/<svc>:<sha8>`; optional `vars.DOCKER_REGISTRY` / `secrets.REGISTRY_*` override
 - [ ] Build images for: web, gateway, user, job, payment, chat, notification, bidding, fraud, trust, imaging
   (underwriting/pricing as deployed in your compose/k8s layout)
 

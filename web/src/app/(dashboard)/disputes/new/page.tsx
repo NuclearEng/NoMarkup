@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useContracts } from '@/hooks/useContracts';
 import { useFileDispute } from '@/hooks/useDisputes';
@@ -528,9 +529,19 @@ function DisputeFormInner() {
   );
 }
 
+function NewDisputeFallback() {
+  return (
+    <div className="space-y-6" role="status" aria-label="Loading dispute form">
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-4 w-72" />
+      <Skeleton className="h-64 w-full rounded-xl" />
+    </div>
+  );
+}
+
 export default function NewDisputePage() {
   return (
-    <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center"><div className="border-primary h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" /></div>}>
+    <Suspense fallback={<NewDisputeFallback />}>
       <DisputeFormInner />
     </Suspense>
   );

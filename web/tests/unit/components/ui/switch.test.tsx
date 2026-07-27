@@ -30,4 +30,11 @@ describe('Switch', () => {
     await user.click(screen.getByRole('switch'));
     expect(onCheckedChange).not.toHaveBeenCalled();
   });
+
+  it('exposes a min 44px hit target (FE-07)', () => {
+    render(<Switch aria-label="agree" />);
+    const el = screen.getByRole('switch', { name: 'agree' });
+    expect(el.className).toMatch(/min-h-11/);
+    expect(el.className).toMatch(/min-w-11/);
+  });
 });

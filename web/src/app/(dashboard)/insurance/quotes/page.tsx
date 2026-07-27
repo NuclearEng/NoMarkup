@@ -7,9 +7,10 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 
 import { InsuranceQuoteCompare } from '@/components/insurance/InsuranceQuoteCompare';
-import { EmptyState } from '@/components/ui/empty-state';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
+import { EmptyState } from '@/components/ui/empty-state';
 import { PageTransition } from '@/components/ui/page-transition';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 
 // Reads ?contractId=&coverageCents= — must live under a Suspense boundary so
@@ -57,16 +58,24 @@ function InsuranceQuotesContent() {
   );
 }
 
+function InsuranceQuotesFallback() {
+  return (
+    <div className="space-y-6" role="status" aria-label="Loading insurance quotes">
+      <Skeleton className="h-5 w-36" />
+      <Skeleton className="h-8 w-56" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Skeleton className="h-48 rounded-xl" />
+        <Skeleton className="h-48 rounded-xl" />
+        <Skeleton className="h-48 rounded-xl" />
+      </div>
+    </div>
+  );
+}
+
 export default function InsuranceQuotesPage() {
   return (
     <PageTransition>
-      <Suspense
-        fallback={
-          <div className="flex min-h-[40vh] items-center justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--brand-gold)]/30 border-t-[var(--brand-gold)]" />
-          </div>
-        }
-      >
+      <Suspense fallback={<InsuranceQuotesFallback />}>
         <InsuranceQuotesContent />
       </Suspense>
     </PageTransition>

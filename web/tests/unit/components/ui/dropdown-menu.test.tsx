@@ -259,4 +259,31 @@ describe('DropdownMenu', () => {
     await user.click(screen.getByText('Open'));
     expect(document.querySelector('.my-sep')).not.toBeNull();
   });
+
+  it('exposes min 44px hit targets on menu items (FE-07)', async () => {
+    const user = userEvent.setup();
+    render(
+      <DropdownMenu>
+        <DropdownMenuTrigger>Open</DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem>Plain Item</DropdownMenuItem>
+          <DropdownMenuCheckboxItem checked>Check Item</DropdownMenuCheckboxItem>
+          <DropdownMenuRadioGroup value="a">
+            <DropdownMenuRadioItem value="a">Radio Item</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Sub Trigger</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem>Nested</DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>,
+    );
+    await user.click(screen.getByText('Open'));
+    expect(screen.getByText('Plain Item').className).toMatch(/min-h-11/);
+    expect(screen.getByText('Check Item').className).toMatch(/min-h-11/);
+    expect(screen.getByText('Radio Item').className).toMatch(/min-h-11/);
+    expect(screen.getByText('Sub Trigger').className).toMatch(/min-h-11/);
+  });
 });
