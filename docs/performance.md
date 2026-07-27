@@ -103,3 +103,13 @@ When adding or converting a public page, copy the marketplace pattern:
   metric (Lighthouse/field data, bundle analyzer, `curl -w` TTFB, etc.). No unverified "this should
   be faster" claims.
 - A change that misses a budget without a written, accepted reason is a regression.
+
+## TTFB / DATA-layer CDN sampling (PERF-13 recipe)
+
+For **public JSON** TTFB (not HTML), use [`scripts/cdn-ttfb-sample.sh`](../scripts/cdn-ttfb-sample.sh):
+`curl -w` reports `time_starttransfer` (TTFB) and `time_total`, plus last-sample cache headers
+(`Cache-Control`, `Age`, `ETag`, `CF-Cache-Status`, `X-Cache`). Default paths are
+`/api/v1/pricing` and `/api/v1/markets` against `http://127.0.0.1:8080`. Point `BASE_URL` at the
+public edge host for CDN numbers and optionally `--write-md` an artifact. This is a **measurement
+recipe**, not live CDN proof or a CI gate — companion LAN catalog p50/p95 remains
+[`scripts/api-p95-sample.sh`](../scripts/api-p95-sample.sh).

@@ -38,6 +38,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { PageTransition } from '@/components/ui/page-transition';
 import { ShareSavingsCard } from '@/components/ui/ShareSavingsCard';
@@ -117,8 +118,18 @@ export default function ContractDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="text-zinc-300 h-8 w-8 animate-spin" aria-hidden="true" />
+      <div className="space-y-6" role="status" aria-label="Loading contract">
+        <Skeleton className="h-4 w-32" />
+        <div className="space-y-3">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-5 w-64" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Skeleton className="h-32 rounded-xl" />
+          <Skeleton className="h-32 rounded-xl" />
+        </div>
+        <Skeleton className="h-56 w-full rounded-xl" />
+        <Skeleton className="h-40 w-full rounded-xl" />
       </div>
     );
   }
@@ -950,8 +961,10 @@ function ReviewSection({ contractId }: { contractId: string }) {
   if (isLoading) {
     return (
       <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
-        <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="text-zinc-300 h-6 w-6 animate-spin" aria-hidden="true" />
+        <CardContent className="space-y-3 py-6" role="status" aria-label="Loading reviews">
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-20 w-full rounded-lg" />
+          <Skeleton className="h-11 w-full rounded-lg" />
         </CardContent>
       </Card>
     );

@@ -18,6 +18,10 @@ package handler
 // All four mirror the transactional pgx pattern in listings_bid.go and
 // return JSON shaped like `listingJSON` (see listings.go). On 4xx the
 // body is `{ "error": "..." }` matching the rest of the gateway.
+//
+// Primary write path (ARC-09): this gateway SQL surface is authoritative.
+// proto/listing/v1/listing.proto documents a secondary/unused gRPC contract
+// only — no ListingService gRPC server is registered, and we do not dual-write.
 
 import (
 	"context"

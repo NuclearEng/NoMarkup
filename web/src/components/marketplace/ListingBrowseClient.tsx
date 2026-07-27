@@ -12,6 +12,7 @@ import { TrendingRail } from '@/components/marketplace/TrendingRail';
 import { UrgencyStrip } from '@/components/marketplace/UrgencyStrip';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useListings } from '@/hooks/useListings';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { useAuthStore } from '@/stores/auth-store';
@@ -242,18 +243,22 @@ export function ListingBrowseClient({
         {/* Scoreboard */}
         <div className="flex-1">
           {isLoading ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div
+              className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+              role="status"
+              aria-label="Loading auctions"
+            >
               {Array.from({ length: 6 }).map((_, i) => (
                 <div
                   key={`scoreboard-skeleton-${String(i)}`}
-                  className="glass glass-highlight animate-pulse rounded-xl border border-[var(--brand-gold)]/10 p-5"
+                  className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-5"
                 >
-                  <div className="mb-3 aspect-[16/10] w-full rounded-lg bg-white/[0.06]" />
-                  <div className="mb-2 h-5 w-3/4 rounded bg-white/[0.06]" />
-                  <div className="mb-4 h-3 w-5/6 rounded bg-white/[0.06]" />
+                  <Skeleton className="mb-3 aspect-[16/10] w-full rounded-lg" />
+                  <Skeleton className="mb-2 h-5 w-3/4" />
+                  <Skeleton className="mb-4 h-3 w-5/6" />
                   <div className="flex items-center justify-between">
-                    <div className="h-7 w-24 rounded bg-white/[0.06]" />
-                    <div className="h-5 w-16 rounded bg-white/[0.06]" />
+                    <Skeleton className="h-7 w-24" />
+                    <Skeleton className="h-5 w-16" />
                   </div>
                 </div>
               ))}

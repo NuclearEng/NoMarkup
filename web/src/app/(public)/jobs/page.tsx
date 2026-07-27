@@ -131,9 +131,23 @@ async function fetchJobs(queryString: string): Promise<JobsResponse> {
   }
 }
 
+/**
+ * PERF-06: Server Component entry for `/jobs`.
+ *
+ * - Exports static metadata (SEO).
+ * - Server-fetches the public jobs catalog (URL searchParams → same query the
+ *   client would build) and seeds the client island so first paint is real
+ *   cards — no skeleton flash on the default / deep-linked browse.
+ * - Interactive filters, pagination, and retry stay in JobsSearchClient.
+ * - Fetch errors return EMPTY_RESPONSE (fail soft); the island still mounts
+ *   and TanStack refetches client-side. Root layout still forces dynamic
+ *   rendering via CSP nonce (`headers()`); the DATA fetch is revalidated
+ *   independently (30s).
+ */
 export default async function JobsSearchPage({
   searchParams,
 }: {
+  // Next.js 15: searchParams is a Promise in async Server Components.
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;

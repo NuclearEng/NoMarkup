@@ -12,6 +12,27 @@ import "common/v1/common.proto";
 //
 // Direction is the inverse of JobService: highest bidder at close wins.
 // Local pickup only in v1; 25-mile radius cap enforced at app layer.
+//
+// ============================================================
+// PATH STATUS (ARC-09) — DO NOT TREAT AS PRIMARY WRITE PATH
+// ============================================================
+// This package defines a *future / secondary* gRPC contract only.
+//
+// Production goods writes (create / update / cancel / place bid / buy-it-now /
+// retract / report) are implemented as **gateway-direct SQL** (pgx):
+//   gateway/internal/handler/listings_write.go
+//   gateway/internal/handler/listings_bid.go
+//   gateway/internal/handler/listings.go  (reads)
+//
+// There is **no** ListingService gRPC server in services/job/internal/grpc/,
+// and the gateway does **not** dial a listing client. Job-service
+// `ListingService` (Go domain + repository) is used for auction-close /
+// Meilisearch lifecycle workers — not as a gRPC mesh surface for HTTP writes.
+//
+// Do not implement dual-write (gateway SQL + gRPC) without an explicit
+// migration plan. Until a real server is registered and gateway is switched,
+// treat this .proto as schema documentation / reserved contract, not the
+// live path. See docs/architecture.md and docs/marketplace.md.
 // ============================================================
 
 service ListingService {

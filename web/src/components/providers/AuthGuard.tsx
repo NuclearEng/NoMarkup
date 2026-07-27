@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
+import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/stores/auth-store';
 
 interface AuthGuardProps {
@@ -10,29 +11,44 @@ interface AuthGuardProps {
 }
 
 /**
- * Skeleton-style loader. Replaces the previous tiny spinner so that on
- * Slow-3G the LCP element is a real piece of the page layout (the gold
- * "Loading your dashboard…" heading), not the post-auth `<h1>` greeting.
+ * Dashboard-shell skeleton while AuthRestorer hydrates the session.
  *
- * The earlier spinner-only loader was 32x32px in the center of the
- * viewport, so the LCP element was always a downstream paint that
- * couldn't happen until BOTH the JWT refresh round-trip and the first
- * batch of dashboard queries had resolved. This heading saturates LCP
- * within a few frames of the JS bundle parsing.
+ * Replaces the centered spinner so initial paint mirrors the real layout
+ * (heading + stat cards). LCP stays a large text/skeleton region instead of
+ * a 32×32 spinner that only paints after JWT + first queries.
  */
 function Loader() {
   return (
     <div
-      className="dark flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4"
+      className="dark flex min-h-screen flex-col bg-background px-4 py-10 sm:px-6"
       role="status"
       aria-live="polite"
       aria-label="Loading"
     >
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--brand-gold)]/30 border-t-[var(--brand-gold)]" />
-      <p className="gold-text text-2xl font-bold tracking-tight sm:text-3xl">
-        Loading your dashboard…
-      </p>
-      <p className="text-sm text-zinc-400">Restoring your session.</p>
+      <div className="mx-auto w-full max-w-6xl space-y-8">
+        <div className="space-y-2">
+          <p className="gold-text text-2xl font-bold tracking-tight sm:text-3xl">
+            Loading your dashboard…
+          </p>
+          <p className="text-sm text-zinc-400">Restoring your session.</p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton
+              key={`auth-skel-stat-${String(i)}`}
+              className="h-28 rounded-xl"
+              aria-hidden="true"
+            />
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          <Skeleton className="h-6 w-40" aria-hidden="true" />
+          <Skeleton className="h-40 w-full rounded-xl" aria-hidden="true" />
+          <Skeleton className="h-40 w-full rounded-xl" aria-hidden="true" />
+        </div>
+      </div>
     </div>
   );
 }

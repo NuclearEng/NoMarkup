@@ -67,6 +67,14 @@ the only places where goods has a separate code path.
   auction bids only. Goods forward-auction place/retract/buy-it-now run in the
   gateway against Postgres (`listings_bid.go`). Do not document goods bids as
   engine-routed. See architecture.md “Dual bidding paths”.
+
+  Listing gRPC (`proto/listing/v1/listing.proto`) is **secondary / unused** —
+  reserved contract only (ARC-09). No job-service gRPC ListingServer is
+  registered; the gateway never dials it. Create/update/cancel/bid HTTP
+  writes are gateway SQL only (`listings_write.go`, `listings_bid.go`).
+  Job-service Go `ListingService` is for auction-close / search lifecycle,
+  not the HTTP primary write path. See architecture.md “Listing gRPC proto
+  is secondary”.
 ```
 
 ### Schema (migration 034 + 035)

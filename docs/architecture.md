@@ -69,6 +69,16 @@
 
 Goods bids do **not** go through the Rust bidding engine on the happy path. The engine remains the services reverse-auction hot path. Listing lifecycle (create/update/cancel, Meilisearch index) is also gateway/job-service SQL, not the bidding crate. See `docs/marketplace.md` for the goods integration map (diagram matches this split).
 
+### Listing gRPC proto is secondary (ARC-09)
+
+| Artifact | Role | Evidence |
+|----------|------|----------|
+| **Primary write path** | Gateway HTTP + **direct pgx SQL** for create/update/cancel, place bid, buy-it-now, retract, reports | `gateway/internal/handler/listings_write.go`, `listings_bid.go`; mounted in `gateway/internal/router/router.go` |
+| **`proto/listing/v1/listing.proto`** | **Secondary / unused contract** — documents a possible future mesh API; **not** the live write path | Header comment in the `.proto` (ARC-09); no `ListingService` gRPC server under `services/job/internal/grpc/`; gateway has **no** listing gRPC dialer/client |
+| **Job `ListingService` (Go)** | Domain + repository for auction-close cron / Meilisearch lifecycle — coexists with gateway SQL; **not** exposed as listing gRPC | `services/job/internal/service/listing.go`, `listing_repo.go` |
+
+Do **not** invent dual-write (gateway SQL + gRPC) or claim HTTP goods mutations fan out through `ListingService` RPCs. If the mesh path is ever adopted, switch gateway handlers and register a real server in one deliberate cutover — until then the proto is honesty-marked secondary.
+
 ## Project Structure
 
 ```

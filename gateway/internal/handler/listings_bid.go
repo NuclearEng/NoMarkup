@@ -8,11 +8,14 @@ package handler
 // a `listing:{id}` Redis event consumed by the marketplace spectator
 // WebSocket (gateway/internal/handler/marketplace_spectator_ws.go).
 //
-// Why direct SQL in the gateway: the job service does not yet expose a
-// gRPC listing surface (the proto exists but no server impl). The
-// transactional bid placement here mirrors the reference implementation
-// in services/job/internal/repository/listing_repo.go (FOR UPDATE on the
-// listings row + insert into listing_bids + atomic counter update).
+// Why direct SQL in the gateway (ARC-09 — primary write path):
+// proto/listing/v1/listing.proto exists as a secondary/unused contract only
+// (no ListingService gRPC server under services/job/internal/grpc/; gateway
+// never dials a listing client). This file + listings_write.go are the
+// authoritative goods mutation path. Do not dual-write to gRPC.
+// Transactional bid placement mirrors services/job/internal/repository/
+// listing_repo.go (FOR UPDATE on the listings row + insert into
+// listing_bids + atomic counter update).
 
 import (
 	"context"

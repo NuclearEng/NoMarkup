@@ -20,18 +20,18 @@
 
 ## Summary dashboard
 
-**Recounted 2026-07-27 C3** (OPS-18/11, FE-11, QA-14/16, ARC-05/15; includes concurrent FE-08/09 ARC-06/18) (140 code/ops rows).
+**Recounted 2026-07-27** (PERF-13 Partial + ARC-09) (140 code/ops rows).
 
 | Section | Open | Partial | Done | Demoted | Founder-Action | Total |
 |---------|------|---------|------|---------|----------------|-------|
 | P0 — Money integrity | 0 | 0 | 27 | 1 | 0 | 28 |
 | P0 — Security fail-closed | 0 | 0 | 14 | 3 | 1 | 18 |
 | P0 — Production deploy / ops | 13 | 1 | 14 | 0 | 0 | 28 |
-| P1 — North Star performance | 7 | 0 | 4 | 5 | 0 | 16 |
+| P1 — North Star performance | 5 | 1 | 5 | 5 | 0 | 16 |
 | P1 — CI / testing enforcers | 7 | 0 | 4 | 5 | 0 | 16 |
 | P1 — Frontend / a11y / honesty | 4 | 0 | 7 | 5 | 0 | 16 |
-| P2 — Architecture / polish | 8 | 0 | 3 | 7 | 0 | 18 |
-| **All** | **39** | **1** | **73** | **26** | **1** | **140** |
+| P2 — Architecture / polish | 7 | 0 | 4 | 7 | 0 | 18 |
+| **All** | **37** | **2** | **74** | **26** | **1** | **140** |
 
 The separate **DOC** table (18 rows) is a cross-reference of the language-only demotions already
 reflected in the `Demoted` column above — it is not 18 additional items.
@@ -144,14 +144,14 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | PERF-03 | Lab LCP ~3.8–4s fails North Star 1.5s | BLOCKER | web | layout, `/`, `/jobs` | RSC + perf work until measured under bar **or** demote North Star language | Field/lab under declared gate | **Demoted** language 2026-07-09; perf work still Open | |
 | PERF-04 | Service worker is kill-switch (anti-cache) | BLOCKER | web | `public/sw.js`, ServiceWorkerRegistrar | Real SW behind prod flag **or** remove PWA claims | SW caches or claim removed | **Demoted** claim 2026-07-09; real SW still Open | |
 | PERF-05 | Homepage `/` is full `'use client'` | MAJOR | web | `(public)/page.tsx` | RSC shell + islands | First paint HTML content | **Done** 2026-07-27 (partial island) — async RSC `page.tsx` + metadata + server pricing seed → `LandingPageClient`; hero/demo still client. Residual: more static HTML above island if LCP needs it | |
-| PERF-06 | `/jobs` browse is full client page | MAJOR | web | `(public)/jobs/page.tsx` | RSC + seeded island (marketplace pattern) | Server HTML + initialData | Open | |
+| PERF-06 | `/jobs` browse is full client page | MAJOR | web | `(public)/jobs/page.tsx` | RSC + seeded island (marketplace pattern) | Server HTML + initialData | **Done** 2026-07-27 — async RSC `page.tsx` + metadata + `fetchJobs` (revalidate 30s, fail-soft EMPTY) → `JobsSearchClient` via `initialJobs`/`initialFilters`; `useSearchJobs` seed + identity `seedFilters` (marketplace pattern). Evidence: `web/tests/unit/app/public/jobs.test.tsx` (initialData seed + no-skeleton first paint) | |
 | PERF-07 | No First Load / bundle size CI gate | MAJOR | ci | web build | Fail on shared >190kB / interactive >300kB (with documented exceptions) | CI enforces | Open | |
 | PERF-08 | Accepted overages `/jobs/[id]` 375kB, `/jobs/new` 309kB unenforced | MINOR | docs/ci | performance.md | Encode exceptions in CI allowlist | Regression only if new | Open | |
 | PERF-09 | Criterion benches not in CI; no p99 asserts | MAJOR | ci/engines | benches/ | Nightly `cargo bench` + threshold or demote claim | Bench fail on regression | **Demoted** claim 2026-07-09; CI bench still Open | |
 | PERF-10 | k6 load tests not in CI; mock auth | MAJOR | tests/load | `tests/load/` | Nightly k6 against staging with real tokens | Artifacts + thresholds | Open (claim already non-asserted in docs) | |
 | PERF-11 | Prometheus alerts looser than budgets (bid 5ms vs 1ms) | MAJOR | monitoring | alerts.yml | Align alerts to CLAUDE budgets | Alert thresholds = budgets | **Done** 2026-07-27 — `NoMarkupBidProcessingSlow` p99 `> 0.001` (1ms) | |
 | PERF-12 | Stale docs: recharts claim; aggressive SW principle | DOC | docs | performance.md | Fix recharts (removed); SW truth | Docs match package.json | **Demoted** 2026-07-09 | |
-| PERF-13 | No TTFB/curl evidence for edge JSON | MAJOR | ops | — | Script `curl -w` against CDN | Artifact in CI/smoke | Open | |
+| PERF-13 | No TTFB/curl evidence for edge JSON | MAJOR | ops | `scripts/cdn-ttfb-sample.sh` | Script `curl -w` against CDN | Artifact in CI/smoke | **Partial** 2026-07-27 — recipe shipped (`cdn-ttfb-sample.sh`: TTFB via `time_starttransfer` + cache headers; default local `/api/v1/pricing`+`/markets`; `--write-md` artifact). **Not** live CDN proof, not CI-gated | |
 | PERF-14 | HTML cannot edge-cache (CSP nonce) — stretch 300ms impossible | DOC | claims | CLAUDE §14 | Keep DATA-cache strategy; remove MPA edge-HTML implication | Claims honest | **Demoted** 2026-07-09 | |
 | PERF-15 | Static asset Cache-Control not set in next.config | MINOR | web | next.config | Long-cache hashed assets | Headers present | **Done** 2026-07-27 — `next.config.ts` `/_next/static` + `/static` → `max-age=31536000, immutable` | |
 | PERF-16 | `optimizePackageImports` absent | MINOR | web | next.config | Enable for lucide/etc. | Bundle delta | **Done** 2026-07-27 — `experimental.optimizePackageImports` for lucide-react + radix + tanstack | |
@@ -188,7 +188,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | FE-01 | axe-core only on HTML stubs; contrast disabled | BLOCKER | web | `tests/integration/axe.test.ts` | Playwright + axe on real routes; enable contrast | CI a11y gate | Open | |
 | FE-02 | ~81/95 pages client — “RSC-first default” false | MAJOR | web | `app/**/page.tsx` | Convert public LCP routes; stop claiming default | Client page % drops; docs match | **Demoted** claim 2026-07-09; conversions still Open | |
 | FE-03 | Raw hex pervasive (~180 hits); “never hex” false | MAJOR | web | components + globals | Tokens + Tailwind brand colors; ban arbitrary hex in components | Lint rule / grep CI | Open | |
-| FE-04 | Loader2/spinners vs “Skeleton only” | MAJOR | web | many pages | Skeleton/ContentLoader for page load; spinner for button pending | Audit key routes | Open | |
+| FE-04 | Loader2/spinners vs “Skeleton only” | MAJOR | web | many pages | Skeleton/ContentLoader for page load; spinner for button pending | Audit key routes | **Partial** 2026-07-27 — key public/dashboard initial loads converted: AuthGuard shell, provider layout, /jobs/map, /orders list+detail, /marketplace browse + map side panel, /contracts/[id] page+review section. Residual (not done): intentional button/action Loader2; /insurance/quotes full spinner; /disputes/new Suspense spinner; /contracts/[id]/review page spinner; admin tiny loaders; InstantAvailabilityCard fetch spinner; installment status icon spinner; /jobs browse still uses ad-hoc pulse divs (not Spinner, not shared Skeleton) | |
 | FE-05 | PWA manifest + install without working SW | MAJOR | web | pwa components | Wire SW or remove install UX | No dead PWA promise | **Done** 2026-07-27 — install UI is no-op (`InstallPrompt`); SW registrar only unregisters kill-switch `sw.js` (no offline PWA promise) | |
 | FE-06 | Goods spectate “LIVE” without WS / weak errors | MAJOR | web | marketplace spectate | WS + isError/retry; honest connection state | Live = real stream | **Done** 2026-07-27 — LIVE honesty on marketplace spectate, job spectate, and JobDetail (badge only when spectator/auction socket is open) | |
 | FE-07 | Sub-44px checkbox/select/slider | MAJOR | web | ui primitives | 44×44 hit areas | Touch audit | Open | |
@@ -216,7 +216,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | ARC-06 | Goods bidding primary path is gateway SQL (not Rust engine) | DOC | docs | architecture | Clarify primary path | Docs true | **Done** 2026-07-27 — dual-path table in `docs/architecture.md`; marketplace.md diagram no longer routes goods bids through Rust engine | |
 | ARC-07 | CLAUDE engines tree omits underwriting + pricing | DOC | docs | CLAUDE | Add real engines | Tree complete | **Demoted** 2026-07-09 | |
 | ARC-08 | Gateway does not dial underwriting/pricing (by design) | DOC | docs | architecture | Document payment/job dialers | Wiring diagram true | **Demoted** 2026-07-09 | |
-| ARC-09 | Listing gRPC proto without primary write path | MINOR | proto/gateway | listing proto | Implement or mark secondary | No dual truth | Open | |
+| ARC-09 | Listing gRPC proto without primary write path | MINOR | proto/gateway | listing proto | Implement or mark secondary | No dual truth | **Done** 2026-07-27 — doc honesty (no dual-write): `proto/listing/v1/listing.proto` header marks secondary/unused; primary = gateway SQL (`listings_write.go`, `listings_bid.go`); `docs/architecture.md` “Listing gRPC proto is secondary”; `docs/marketplace.md` diagram note; no ListingServer in `services/job/internal/grpc/`, no gateway listing client | |
 | ARC-10 | Experimentation: binary flags only | P2 | product | flags | % rollout + exposure logging | Experiment API | Open | |
 | ARC-11 | Native mobile missing | P2 | product | — | Roadmap or PWA completion first | Strategy doc | Open | |
 | ARC-12 | Data flywheel / ML moat not real | P2 | ml | ml/ | Train + serve **or** stop moat language | Model in prod path | Open | |
@@ -310,6 +310,8 @@ Do in this order for **CONDITIONAL-GO** (not full SOTA):
 | 2026-07-27 | **FE-08 Done** — TrendingRail + SimilarListings error/retry UI (no silent null on error). **FE-09 Done** — Mapbox/MFA raw img exceptions in CLAUDE.md §13 + design-system.md. **ARC-06 Done** — dual bidding paths documented (goods = gateway SQL). **ARC-18 Done** — spectator anonymize/delay tests green. |
 | 2026-07-25 | **MON-25 / QA-12 closed by CI change:** `.github/workflows/ci.yml` gains `fullstack-security-test`, which boots the docker-compose stack (`tests/integration/docker-compose.ci.yml` overlay) and runs the Tier-1 suites — 4 × `TestAuthBypass_*`, `TestDoubleSpend_ParallelAwardsCreateOneContract`, `TestOwnership_CrossAccountReadIsRejected` — plus the live-stack `TestIdempotency_PaymentDoubleSubmit`. Before this, every one of those tests was behind `//go:build integration` and ran in **no** CI job. Also fixes N11 and (partly) N7/N9's execution venue. |
 | 2026-07-27 | **C3 verification + small eng.** Grep-confirmed already Done: **OPS-18** pricing/underwriting `engine_telemetry::init` + `GrpcTraceLayer` + instrumented gRPC; **QA-14** CLAUDE §10 Claude-hooks-only (no Husky); **ARC-15** `fair_price_index` seed false + compliance docs. Implemented: **FE-11** reduce-motion kills `.animate-pulse`/`.animate-spin` in `globals.css`; **OPS-11** pricing/underwriting k8s scrape + `*_METRICS_PORT` (metrics servers already existed). Honesty: **QA-16** conventions.md drops MSW mandate; **ARC-05** demoted `ml/README.md` (heuristics in prod). Left Open (this pass focus): ARC-09 (listing gRPC dual path), PERF-13 (no CDN TTFB script — only LAN `api-p95-sample.sh`). Dashboard recount (parsed): Open 39 / Partial 1 / Done 73 / Demoted 26 / FA 1. |
+| 2026-07-27 | **PERF-13 Partial** — shipped `scripts/cdn-ttfb-sample.sh` (curl `-w` TTFB via `time_starttransfer` + cache headers; default local `/api/v1/pricing` + `/api/v1/markets`; `--write-md` artifact recipe). Docs: one paragraph in `docs/performance.md`. Not live CDN proof / not CI gate. Dashboard: Open 37 / Partial 2 / Done 74 / Demoted 26 / FA 1. |
+| 2026-07-27 | **ARC-09 Done** (doc honesty, no dual-write rewrite). Primary goods writes = gateway SQL (`listings_write.go`, `listings_bid.go`). `proto/listing/v1/listing.proto` header + `docs/architecture.md` + `docs/marketplace.md` mark listing gRPC secondary/unused (no job ListingServer, no gateway listing client). Dashboard: Open 38 / Partial 1 / Done 74 / Demoted 26 / FA 1. |
 
 ---
 

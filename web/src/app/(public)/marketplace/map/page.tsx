@@ -32,6 +32,7 @@ import {
 } from '@/components/marketplace/MarketplaceMap';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useListings } from '@/hooks/useListings';
 import { formatCents } from '@/lib/utils';
 import type { Listing } from '@/types';
@@ -179,14 +180,18 @@ function SidePanelList({
 }) {
   if (isLoading) {
     return (
-      <ul className={compact ? 'space-y-2 py-2' : 'space-y-2 p-4'}>
+      <ul
+        className={compact ? 'space-y-2 py-2' : 'space-y-2 p-4'}
+        aria-busy="true"
+        aria-label="Loading listings"
+      >
         {Array.from({ length: 6 }).map((_, i) => (
           <li
             key={`map-side-skel-${String(i)}`}
-            className="glass animate-pulse rounded-lg border border-white/[0.06] p-3"
+            className="glass rounded-lg border border-white/[0.06] p-3"
           >
-            <div className="h-4 w-2/3 rounded bg-white/[0.06]" />
-            <div className="mt-2 h-3 w-1/3 rounded bg-white/[0.06]" />
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="mt-2 h-3 w-1/3" />
           </li>
         ))}
       </ul>

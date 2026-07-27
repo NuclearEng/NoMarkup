@@ -59,43 +59,38 @@ function SearchIllustration() {
 
 export interface JobsSearchClientProps {
   /** Server-seeded first page (RSC) so first paint skips the skeleton. */
-  initialJobs?: JobsResponse;
-  /** Filters used for the server seed — keeps TanStack query key aligned. */
+  initialJobs: JobsResponse;
+  /**
+   * Filter set parsed from the page URL (?q=&category_id=&…). Seeds the
+   * first-paint state so a deep-linked / shared search URL renders the
+   * matching results instead of the default browse view.
+   */
   initialFilters?: SearchJobsParams;
 }
+
+const DEFAULT_FILTERS: SearchJobsParams = {
+  page: 1,
+  page_size: DEFAULT_PAGE_SIZE,
+};
 
 export function JobsSearchClient({
   initialJobs,
   initialFilters,
 }: JobsSearchClientProps) {
-  const [filters, setFilters] = useState<SearchJobsParams>(
-    initialFilters ?? {
-      page: 1,
-      page_size: DEFAULT_PAGE_SIZE,
-    },
+  // Capture seed filters once so object identity is stable across renders —
+  // `initialData` is applied only while `filters === seedFilters` (marketplace
+  // ListingBrowseClient pattern). Value-equality would re-seed stale server
+  // data after Clear All returns to the default params.
+  const [seedFilters] = useState<SearchJobsParams>(
+    () => initialFilters ?? DEFAULT_FILTERS,
   );
+  const [filters, setFilters] = useState<SearchJobsParams>(seedFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Seed only when the query key still matches the server-fetched filters
-  // (same pattern as marketplace ListingBrowseClient).
-  const seedMatches =
-    initialJobs !== undefined &&
-    initialFilters !== undefined &&
-    filters.page === initialFilters.page &&
-    filters.page_size === initialFilters.page_size &&
-    filters.query === initialFilters.query &&
-    filters.category_id === initialFilters.category_id &&
-    filters.schedule_type === initialFilters.schedule_type &&
-    filters.min_price_cents === initialFilters.min_price_cents &&
-    filters.max_price_cents === initialFilters.max_price_cents &&
-    filters.radius_km === initialFilters.radius_km &&
-    filters.is_recurring === initialFilters.is_recurring;
-
+  const isSeedFilters = filters === seedFilters;
   const { data, isLoading, isError, refetch } = useSearchJobs(
     filters,
-    // `seedMatches` already requires initialJobs !== undefined, and TS narrows
-    // through the const boolean alias, so re-checking it here is redundant.
-    seedMatches ? { initialData: initialJobs } : undefined,
+    isSeedFilters ? { initialData: initialJobs } : undefined,
   );
 
   const currentPage = filters.page ?? 1;

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE } from '@/types';
 
@@ -15,8 +16,29 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
 
   if (isHydrating) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <div className="border-primary h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" />
+      <div
+        className="space-y-6"
+        role="status"
+        aria-live="polite"
+        aria-label="Loading provider section"
+      >
+        <div>
+          <Skeleton className="h-8 w-56" />
+          <Skeleton className="mt-2 h-4 w-72" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton
+              key={`provider-layout-stat-${String(i)}`}
+              className="h-28 rounded-xl"
+            />
+          ))}
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Skeleton className="h-48 rounded-xl" />
+          <Skeleton className="h-48 rounded-xl" />
+        </div>
+        <Skeleton className="h-44 rounded-xl" />
       </div>
     );
   }

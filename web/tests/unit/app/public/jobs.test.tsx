@@ -1,8 +1,12 @@
-// Jobs search index page — covers loading, empty, and success states for the
-// search hook. We stub the heavy filter / card components.
+// Jobs search index — covers the JobsSearchClient island (RSC page.tsx
+// server-fetches and seeds this component). Mirrors marketplace.test.tsx:
+// stub heavy filter / card components; assert loading, empty, success, and
+// initialData seeding paths for the search hook.
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+import type { JobsResponse, SearchJobsParams } from '@/types';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -37,7 +41,9 @@ vi.mock('@/components/jobs/JobSearchFilters', () => ({
         {
           type: 'button',
           'data-testid': 'apply-test-filter',
-          onClick: () => { onChange({ query: 'leak', page: 1, page_size: 12 }); },
+          onClick: () => {
+            onChange({ query: 'leak', page: 1, page_size: 12 });
+          },
         },
         'Apply Test Filter',
       ),
@@ -53,9 +59,28 @@ vi.mock('@/hooks/useJobs', () => ({
 }));
 
 const { useSearchJobs } = await import('@/hooks/useJobs');
-const { default: JobsSearchPage } = await import('@/app/(public)/jobs/JobsSearchClient');
+const { JobsSearchClient } = await import('@/app/(public)/jobs/JobsSearchClient');
 
-describe('(public)/jobs/page', () => {
+const EMPTY_SEED: JobsResponse = {
+  jobs: [],
+  pagination: { totalCount: 0, page: 1, pageSize: 12, totalPages: 0, hasNext: false },
+};
+
+const DEFAULT_FILTERS: SearchJobsParams = { page: 1, page_size: 12 };
+
+function renderClient(
+  seed: JobsResponse = EMPTY_SEED,
+  filters: SearchJobsParams = DEFAULT_FILTERS,
+) {
+  return render(
+    createElement(JobsSearchClient, {
+      initialJobs: seed,
+      initialFilters: filters,
+    }),
+  );
+}
+
+describe('(public)/jobs JobsSearchClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -68,9 +93,74 @@ describe('(public)/jobs/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useSearchJobs>);
 
-    render(createElement(JobsSearchPage));
+    renderClient();
     expect(screen.getByRole('heading', { name: /Find/i })).toBeDefined();
     expect(screen.getByTestId('filters')).toBeDefined();
+  });
+
+  it('passes initialData to useSearchJobs on first paint (PERF-06 seed)', () => {
+    const seed: JobsResponse = {
+      jobs: [{ id: 'j-seed', title: 'Seeded job', category_slug: 'plumbing' }] as JobsResponse['jobs'],
+      pagination: { totalCount: 1, page: 1, pageSize: 12, totalPages: 1, hasNext: false },
+    };
+    vi.mocked(useSearchJobs).mockImplementation((_params, options) => {
+      return {
+        data: options?.initialData,
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      } as unknown as ReturnType<typeof useSearchJobs>;
+    });
+
+    renderClient(seed);
+    expect(useSearchJobs).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 1, page_size: 12 }),
+      { initialData: seed },
+    );
+    expect(screen.getByTestId('job-j-seed')).toBeDefined();
+    expect(screen.getByText('Seeded job')).toBeDefined();
+  });
+
+  it('renders seeded cards with no loading skeleton on first paint', () => {
+    const seed: JobsResponse = {
+      jobs: [{ id: 'j1', title: 'Fix sink', category_slug: 'plumbing' }] as JobsResponse['jobs'],
+      pagination: { totalCount: 1, page: 1, pageSize: 12, totalPages: 1, hasNext: false },
+    };
+    vi.mocked(useSearchJobs).mockImplementation((_params, options) => {
+      return {
+        data: options?.initialData,
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      } as unknown as ReturnType<typeof useSearchJobs>;
+    });
+
+    const { container } = renderClient(seed);
+    expect(container.querySelectorAll('.animate-pulse').length).toBe(0);
+    expect(screen.getByTestId('job-j1')).toBeDefined();
+  });
+
+  it('stops seeding initialData after filters change', () => {
+    vi.mocked(useSearchJobs).mockReturnValue({
+      data: { jobs: [], pagination: { totalCount: 0, totalPages: 0, hasNext: false } },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useSearchJobs>);
+
+    renderClient();
+    // First call is the seed path.
+    expect(useSearchJobs).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ initialData: EMPTY_SEED }),
+    );
+
+    fireEvent.click(screen.getByTestId('apply-test-filter'));
+    // After filter change, identity no longer matches seedFilters → no initialData.
+    expect(useSearchJobs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: 'leak' }),
+      undefined,
+    );
   });
 
   it('shows the empty state when no jobs are returned', () => {
@@ -81,7 +171,7 @@ describe('(public)/jobs/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useSearchJobs>);
 
-    render(createElement(JobsSearchPage));
+    renderClient();
     expect(screen.getByText('No jobs found')).toBeDefined();
   });
 
@@ -96,7 +186,7 @@ describe('(public)/jobs/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useSearchJobs>);
 
-    render(createElement(JobsSearchPage));
+    renderClient();
     expect(screen.getByTestId('job-j1')).toBeDefined();
     expect(screen.getByText('Fix sink')).toBeDefined();
     expect(screen.getByText(/1 job/)).toBeDefined();
@@ -110,7 +200,7 @@ describe('(public)/jobs/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useSearchJobs>);
 
-    render(createElement(JobsSearchPage));
+    renderClient();
     const toggle = screen.getByRole('button', { name: /Filters/i });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(toggle);
@@ -126,7 +216,7 @@ describe('(public)/jobs/page', () => {
       refetch,
     } as unknown as ReturnType<typeof useSearchJobs>);
 
-    render(createElement(JobsSearchPage));
+    renderClient();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(refetch).toHaveBeenCalled();
   });
@@ -142,12 +232,11 @@ describe('(public)/jobs/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useSearchJobs>);
 
-    render(createElement(JobsSearchPage));
+    renderClient();
     const prev = screen.getByRole('button', { name: 'Previous' });
     const next = screen.getByRole('button', { name: 'Next' });
     expect((prev as HTMLButtonElement).disabled).toBe(true);
     expect((next as HTMLButtonElement).disabled).toBe(false);
-    // Click next to drive the setFilters handler.
     fireEvent.click(next);
     expect(screen.getByText(/Page/)).toBeDefined();
   });
@@ -160,19 +249,12 @@ describe('(public)/jobs/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useSearchJobs>);
 
-    render(createElement(JobsSearchPage));
-    expect(
-      screen.getByText(/No open jobs right now/i),
-    ).toBeDefined();
-    // No "Clear All Filters" button without active filters.
+    renderClient();
+    expect(screen.getByText(/No open jobs right now/i)).toBeDefined();
     expect(screen.queryByRole('button', { name: /clear all filters/i })).toBeNull();
   });
 
   it('clicking Clear All Filters resets filters when active filters present', () => {
-    // First render with results so the JobSearchFilters mock can drive setFilters.
-    // Easier: drive an active filter via the mock and verify the clear button click resets things.
-    // We rely on the page exposing the empty state with active filters when search is empty —
-    // simulate this via re-rendering with new mock returns.
     vi.mocked(useSearchJobs).mockImplementation(() => {
       return {
         data: {
@@ -182,17 +264,10 @@ describe('(public)/jobs/page', () => {
         isLoading: false,
         isError: false,
         refetch: vi.fn(),
-        // Hint to the page that filters are active by passing a non-empty query in the params.
       } as unknown as ReturnType<typeof useSearchJobs>;
     });
 
-    // Replace JobSearchFilters mock at module level — already mocked. We rely on the
-    // page's own filter state. Simulate by triggering pagination change to set page>1
-    // (which doesn't activate hasActiveFilters) — instead toggle filtersOpen mobile UI.
-    // Active filters (query/category etc.) are set via JobSearchFilters internal calls.
-    // Simpler: assert the conditional based on hasActiveFilters via the mobile filter pill.
-    render(createElement(JobsSearchPage));
-    // Mobile filter toggle reads "Filters" — verify it does not show the alert pill.
+    renderClient();
     const toggle = screen.getByRole('button', { name: /Filters/i });
     expect(toggle.textContent).not.toContain('!');
   });
@@ -208,14 +283,12 @@ describe('(public)/jobs/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useSearchJobs>);
 
-    render(createElement(JobsSearchPage));
+    renderClient();
     expect(screen.getByTestId('job-jnoCat')).toBeDefined();
     expect(screen.queryByTestId('seasonal')).toBeNull();
   });
 
   it('Previous pagination button click decrements page when on page 2+', () => {
-    // Use the mock to simulate that the hook returns hasNext+hasPrevious data.
-    // We'll click Next first to drive page→2, then Previous to exercise line 248-249.
     const refetch = vi.fn();
     vi.mocked(useSearchJobs).mockReturnValue({
       data: {
@@ -227,13 +300,12 @@ describe('(public)/jobs/page', () => {
       refetch,
     } as unknown as ReturnType<typeof useSearchJobs>);
 
-    render(createElement(JobsSearchPage));
+    renderClient();
     const next = screen.getByRole('button', { name: 'Next' });
-    fireEvent.click(next); // page 1 -> 2
-    // After the state update, Previous becomes enabled.
+    fireEvent.click(next);
     const prev = screen.getByRole('button', { name: 'Previous' });
     expect((prev as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(prev); // exercises lines 248-249
+    fireEvent.click(prev);
     expect(screen.getAllByText(/Page/).length).toBeGreaterThan(0);
   });
 
@@ -245,19 +317,12 @@ describe('(public)/jobs/page', () => {
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useSearchJobs>);
 
-    render(createElement(JobsSearchPage));
-    // Before applying a filter: empty state shows the no-filters description.
+    renderClient();
     expect(screen.getByText(/No open jobs right now/i)).toBeDefined();
-    // Apply a filter via the JobSearchFilters mock — this sets `query` so
-    // hasActiveFilters becomes true.
     fireEvent.click(screen.getByTestId('apply-test-filter'));
-    // Now the filtered description renders and "Clear All Filters" shows up.
-    expect(
-      screen.getByText(/no jobs match your current filters/i),
-    ).toBeDefined();
+    expect(screen.getByText(/no jobs match your current filters/i)).toBeDefined();
     const clearBtn = screen.getByRole('button', { name: /clear all filters/i });
-    fireEvent.click(clearBtn); // exercises the setFilters reset on lines 207-209
-    // After clearing, the no-filters message is back.
+    fireEvent.click(clearBtn);
     expect(screen.getByText(/No open jobs right now/i)).toBeDefined();
   });
 });

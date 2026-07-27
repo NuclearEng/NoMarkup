@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import {
   useConfirmPickup,
@@ -65,10 +66,16 @@ export default function OrderDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="space-y-4">
-          <div className="h-6 w-48 animate-pulse rounded bg-white/[0.06]" />
-          <div className="h-64 animate-pulse rounded-xl bg-white/[0.06]" />
+      <div
+        className="mx-auto max-w-3xl space-y-4 px-4 py-8 sm:px-6 lg:px-8"
+        role="status"
+        aria-label="Loading order"
+      >
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-64 rounded-xl" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
         </div>
       </div>
     );

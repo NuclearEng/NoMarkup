@@ -55,13 +55,15 @@ describe('ProviderLayout', () => {
     expect(container.textContent).toMatch(/CHILD/);
   });
 
-  it('shows a loading spinner during hydration', () => {
+  it('shows a skeleton layout during hydration (not a spinner)', () => {
     mockState.user = null;
     mockState.isHydrating = true;
-    const { container } = render(
+    const { container, getByRole } = render(
       withQueryClient(createElement(ProviderLayout, { children: 'CHILD' })),
     );
-    expect(container.querySelector('.animate-spin')).toBeTruthy();
+    expect(getByRole('status', { name: /loading provider section/i })).toBeTruthy();
+    expect(container.querySelector('.animate-spin')).toBeNull();
+    expect(container.textContent).not.toMatch(/CHILD/);
   });
 
   // The in-page provider nav tab (a one-item "Instant Offers" bar) was removed —

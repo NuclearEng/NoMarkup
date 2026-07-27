@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useMyOrders } from '@/hooks/useListings';
 import { canNextImageLoad, formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -54,12 +55,12 @@ export default function OrdersPage() {
           {[0, 1, 2].map((i) => (
             <li key={i}>
               <div className="flex items-center gap-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-                <div className="h-16 w-16 shrink-0 animate-pulse rounded-lg bg-white/[0.06]" />
+                <Skeleton className="h-16 w-16 shrink-0 rounded-lg" />
                 <div className="min-w-0 flex-1 space-y-2">
-                  <div className="h-4 w-1/2 animate-pulse rounded bg-white/[0.06]" />
-                  <div className="h-3 w-1/3 animate-pulse rounded bg-white/[0.06]" />
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-3 w-1/3" />
                 </div>
-                <div className="h-4 w-16 animate-pulse rounded bg-white/[0.06]" />
+                <Skeleton className="h-4 w-16" />
               </div>
             </li>
           ))}
