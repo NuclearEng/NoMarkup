@@ -6,7 +6,7 @@
 ## Symptoms
 
 - Alert: `NoMarkupWebhookSignatureFailures` (P0) firing.
-- Alert: `NoMarkupPaymentFailureSpike` (P2) firing with no apparent cause.
+- Alert: `NoMarkupPaymentFailureSpike` (P0) firing with no apparent cause.
 - Stripe Dashboard → Developers → Webhooks shows endpoint with red "Failed" badge or rising attempt count.
 - Customer-side: payments collected but escrow status stuck in `pending_capture` / `requires_action`.
 - Provider-side: completed jobs not flipping to "Awaiting payout".

@@ -26,12 +26,12 @@
 |---------|------|---------|------|---------|----------------|-------|
 | P0 — Money integrity | 0 | 0 | 27 | 1 | 0 | 28 |
 | P0 — Security fail-closed | 0 | 0 | 14 | 3 | 1 | 18 |
-| P0 — Production deploy / ops | 15 | 2 | 11 | 0 | 0 | 28 |
+| P0 — Production deploy / ops | 14 | 2 | 12 | 0 | 0 | 28 |
 | P1 — North Star performance | 11 | 0 | 0 | 5 | 0 | 16 |
 | P1 — CI / testing enforcers | 9 | 0 | 2 | 5 | 0 | 16 |
 | P1 — Frontend / a11y / honesty | 9 | 0 | 2 | 5 | 0 | 16 |
 | P2 — Architecture / polish | 12 | 0 | 0 | 6 | 0 | 18 |
-| **All** | **56** | **2** | **56** | **25** | **1** | **140** |
+| **All** | **55** | **2** | **57** | **25** | **1** | **140** |
 
 The separate **DOC** table (18 rows) is a cross-reference of the language-only demotions already
 reflected in the `Demoted` column above — it is not 18 additional items.
@@ -126,7 +126,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | OPS-20 | Staging `namePrefix` breaks service DNS | MAJOR | k8s | staging overlay | Fix or document required overrides | Staging boots | Open | |
 | OPS-21 | Docker main “push” does not login/push | MAJOR | ci | ci.yml | docker login + push or rename step | Images in registry | Open | |
 | OPS-22 | Missing runbooks: Redis, Meili, ingress/TLS, migration fail | MAJOR | docs | runbooks/ | Add runbooks | Linked from alerts | **Partial** 2026-07-25 — `docs/runbooks/07-redis-degraded.md`, `08-meilisearch-degraded.md`, `09-migration-job.md` shipped; ingress/TLS runbook still missing | |
-| OPS-23 | Alert runbook URLs point off-repo | MINOR | monitoring | alerts.yml | Point to `docs/runbooks/` | Links resolve | Open | |
+| OPS-23 | Alert runbook URLs point off-repo | MINOR | monitoring | alerts.yml | Point to `docs/runbooks/` | Links resolve | **Done** 2026-07-27 — `alerts.yml` runbook → `docs/runbooks/*.md`; index `docs/runbooks/README.md` | |
 | OPS-24 | Cloudflare CDN claim with zero config in repo | DOC | ops | CLAUDE / checklist | Add CF config or demote claim | Edge rules documented | Open | Founder-Action |
 | OPS-25 | Vault client exists; no prod wiring | MAJOR | gateway | vault package | Wire ESO/Vault for secrets | Prod secrets not file-mounted only | Open | Founder-Action |
 | OPS-26 | 99.9% / 10k concurrent unproven | DOC/P1 | claims | README/PRD | Load proof + HA design or demote | k6/report artifacts | Open | |

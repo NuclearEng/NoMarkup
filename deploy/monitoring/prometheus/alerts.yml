@@ -1,5 +1,8 @@
 # NoMarkup Prometheus Alerting Rules
 #
+# OPS-23: runbook annotations are repo-relative paths under docs/runbooks/
+# (see docs/runbooks/README.md). Do not invent off-repo docs hosts.
+#
 # Severity levels:
 #   P0 (critical) — immediate page, service is down or data loss imminent
 #   P1 (warning)  — investigate within 15 min, degraded performance
@@ -76,7 +79,7 @@ groups:
             The gateway deployment in namespace {{ $labels.namespace }} has had
             0 available replicas for more than 2 minutes. All client traffic is
             blocked. This is a total service outage.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupGatewayDown"
+          runbook: "docs/runbooks/02-database-master-down.md"
 
       - alert: NoMarkupServiceDown
         expr: |
@@ -92,7 +95,7 @@ groups:
             Deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }}
             has had 0 available pods for over 2 minutes. Dependent features are
             completely unavailable.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupServiceDown"
+          runbook: "docs/runbooks/02-database-master-down.md"
 
       - alert: NoMarkupHighErrorRate
         expr: nomarkup:http_error_rate_5m > 0.01
@@ -107,7 +110,7 @@ groups:
             The overall 5xx error rate has been {{ $value | humanizePercentage }}
             for the last 5 minutes, exceeding the 1% threshold. Performance
             budget requires < 0.1% error rate.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighErrorRate"
+          runbook: "docs/runbooks/README.md"
 
   # ---------------------------------------------------------------------------
   # P0 — Security (page immediately)
@@ -128,7 +131,7 @@ groups:
             attempts per minute for the last 2 minutes. This exceeds the
             threshold of 50/min and may indicate a brute-force or credential
             stuffing attack.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupAuthFailureSpike"
+          runbook: "docs/runbooks/05-auth-service-degraded.md"
 
       - alert: NoMarkupWebhookSignatureFailures
         expr: |
@@ -145,7 +148,7 @@ groups:
             at a sustained rate of {{ $value | humanize }}/s. This may indicate
             tampered webhook payloads, a rotated signing secret, or an attacker
             attempting to forge Stripe events.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupWebhookSignatureFailures"
+          runbook: "docs/runbooks/01-stripe-webhook-stuck.md"
 
   # ---------------------------------------------------------------------------
   # P1 — Latency
@@ -165,7 +168,7 @@ groups:
             The API p95 response time is {{ $value | humanizeDuration }},
             exceeding the 500ms threshold. Performance budget is p95 < 200ms;
             this alert fires at 500ms as an escalation boundary.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighLatencyP95"
+          runbook: "docs/runbooks/08-meilisearch-degraded.md"
 
       - alert: NoMarkupHighLatencyP99
         expr: nomarkup:http_latency_p99 > 1.0
@@ -180,7 +183,7 @@ groups:
             The API p99 response time is {{ $value | humanizeDuration }},
             exceeding the 1s threshold. Performance budget is p99 < 500ms;
             this alert fires at 1s as an escalation boundary.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighLatencyP99"
+          runbook: "docs/runbooks/08-meilisearch-degraded.md"
 
       # Requires bid_processing_duration_seconds histogram from the bidding engine
       # (engines/bidding, scraped on BIDDING_METRICS_PORT=60053). Absent series
@@ -200,7 +203,7 @@ groups:
             Bid processing p99 latency is {{ $value | humanizeDuration }},
             exceeding the hard performance budget of p99 < 1ms. Investigate
             the bidding engine for contention, lock waits, or slow DB paths.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupBidProcessingSlow"
+          runbook: "docs/runbooks/04-bidding-engine-down.md"
 
   # ---------------------------------------------------------------------------
   # P1 — Resources
@@ -225,7 +228,7 @@ groups:
             Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has been
             using {{ $value | humanizePercentage }} of its CPU limit for 10
             minutes. Consider scaling the deployment or increasing limits.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighCPU"
+          runbook: "docs/runbooks/02-database-master-down.md"
 
       - alert: NoMarkupHighMemory
         expr: |
@@ -245,7 +248,7 @@ groups:
             Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is using
             {{ $value | humanizePercentage }} of its memory limit. OOM kill is
             likely if usage continues to climb.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighMemory"
+          runbook: "docs/runbooks/02-database-master-down.md"
 
       - alert: NoMarkupPodRestartLoop
         expr: |
@@ -261,7 +264,7 @@ groups:
             Container {{ $labels.container }} in pod {{ $labels.pod }} has
             restarted {{ $value | humanize }} times in the last 15 minutes.
             This is likely a crash loop. Check pod logs and events.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupPodRestartLoop"
+          runbook: "docs/runbooks/02-database-master-down.md"
 
   # ---------------------------------------------------------------------------
   # P1 — Database — DISABLED: required exporters are not deployed
@@ -308,7 +311,7 @@ groups:
   #           PgBouncer connection pool for database {{ $labels.database }} is
   #           {{ $value | humanizePercentage }} utilized. New connections may
   #           start queuing or timing out.
-  #         runbook: "https://docs.nomarkup.dev/runbook#NoMarkupDBConnectionPoolExhausted"
+  #         runbook: "docs/runbooks/02-database-master-down.md"
   #
   #     - alert: NoMarkupDBSlowQueries
   #       expr: |
@@ -326,7 +329,7 @@ groups:
   #           PostgreSQL has transactions running longer than 30 seconds in
   #           database {{ $labels.datname }}. This may indicate lock contention,
   #           missing indexes, or runaway queries. Check pg_stat_activity.
-  #         runbook: "https://docs.nomarkup.dev/runbook#NoMarkupDBSlowQueries"
+  #         runbook: "docs/runbooks/02-database-master-down.md"
 
   # ---------------------------------------------------------------------------
   # P2 — Business Metrics
@@ -348,7 +351,7 @@ groups:
             over the last 10 minutes. This may indicate a Stripe outage,
             expired API keys, or a code regression in the payment service.
             Treat as a money-path outage until proven otherwise.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupPaymentFailureSpike"
+          runbook: "docs/runbooks/03-provider-payout-failed.md"
 
       # Faster signal for total payment path death (zero successes with traffic).
       - alert: NoMarkupPaymentPathDown
@@ -366,7 +369,7 @@ groups:
           description: >-
             Payment endpoints are receiving traffic but producing no successful
             (2xx) responses for 3+ minutes. Immediate investigation required.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupPaymentFailureSpike"
+          runbook: "docs/runbooks/03-provider-payout-failed.md"
 
       # Requires active_websocket_connections gauge from the gateway/chat service.
       - alert: NoMarkupWebSocketConnectionDrop
@@ -388,7 +391,7 @@ groups:
             Active WebSocket connections have decreased by more than 20% in the
             last 5 minutes. This may indicate a chat/auction service crash,
             network partition, or load balancer issue.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupWebSocketConnectionDrop"
+          runbook: "docs/runbooks/07-redis-degraded.md"
 
       # Requires contract status tracking metrics from the job/contract service.
       # Uses HTTP status codes on dispute endpoints as a proxy.
@@ -413,4 +416,4 @@ groups:
             The ratio of new disputes to completed jobs has exceeded 5% over
             the last hour. This may indicate quality issues with providers,
             unclear job scoping, or platform abuse.
-          runbook: "https://docs.nomarkup.dev/runbook#NoMarkupHighDisputeRate"
+          runbook: "docs/runbooks/03-provider-payout-failed.md"
