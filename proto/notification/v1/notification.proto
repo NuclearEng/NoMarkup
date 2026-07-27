@@ -108,6 +108,9 @@ enum NotificationType {
   // Goods-marketplace Best-Offer chain.
   NOTIFICATION_TYPE_OFFER_RECEIVED = 43;   // a buyer made an offer on your listing
   NOTIFICATION_TYPE_OFFER_COUNTERED = 44;  // the other party countered your offer
+  // SCA / 3DS — buyer must complete bank authentication (distinct from a hard
+  // decline). UI should render an Authenticate CTA, not a generic failure icon.
+  NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED = 45;
 }
 
 message Notification {

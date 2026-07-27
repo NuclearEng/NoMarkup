@@ -126,10 +126,12 @@ PostGIS types. The spatial DDL is untested on the real target version.
 - Residual: `insurance_provider` / expiry / coverage_cents still UI-only (no
   domain write path yet; not PII-encrypted columns).
 
-### C4. No SCA notification type
-The enum has no member for "authentication required", so it reuses
-`PAYMENT_FAILED` with the distinction in `Data["outcome"]`. A dedicated member
-would let the UI render an "Authenticate" button instead of a generic failure.
+### C4. No SCA notification type — **shipped 2026-07-27**
+- Proto `NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED = 45`.
+- Marketplace notifier uses it for `ChargeOutcomeAuthenticationRequired`; hard
+  declines stay on `PAYMENT_FAILED`.
+- Notification string↔proto mapping + web `NOTIFICATION_TYPE` + Authenticate CTA
+  on `NotificationItem` + prefs label.
 
 ### C7. The CDN half of the cache guard — **origin cannot finish this**
 `writeCachedJSON` refuses to publicly **store** a response for an identified
@@ -222,14 +224,12 @@ on new money call sites.
 
 ## Suggested order for the next session
 
-1. **C4** if SCA UX needs a dedicated notification type.
-2. **C8** if tracing browser → gateway is a release gate.
-3. Optional: extend provider update for insurance_provider/expiry/coverage.
-4. Otherwise stay on **A** (human) and **B** (staging/Stripe/k6) — those gate
+1. **C8** if tracing browser → gateway is a release gate.
+2. Optional: extend provider update for insurance_provider/expiry/coverage.
+3. Otherwise stay on **A** (human) and **B** (staging/Stripe/k6) — those gate
    production claims more than residual C polish.
-5. **C7** only when someone has Cloudflare API access.
-6. Tracker residual often-stale Open rows: OPS-23 runbook URLs, PERF/FE/QA
-   (many ops need Founder-Action or cluster).
+4. **C7** only when someone has Cloudflare API access.
+5. Tracker residual: PERF/FE/QA and Founder-Action ops (cluster, CF, secrets).
 
 ---
 

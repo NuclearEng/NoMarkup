@@ -326,6 +326,8 @@ func protoNotificationTypeToString(nt notificationv1.NotificationType) string {
 		return "payment_released"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED:
 		return "payment_failed"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED:
+		return "payment_authentication_required"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT:
 		return "payout_sent"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_NEW_MESSAGE:
@@ -403,6 +405,8 @@ func stringToProtoNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_RELEASED
 	case "payment_failed":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED
+	case "payment_authentication_required":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED
 	case "payout_sent":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT
 	case "new_message":

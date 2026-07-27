@@ -23,6 +23,9 @@ func TestNotificationTypeRoundTrip(t *testing.T) {
 		// Sanity: an already-mapped type still round-trips.
 		{"wishlist_match", notificationv1.NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH},
 		{"new_bid", notificationv1.NotificationType_NOTIFICATION_TYPE_NEW_BID},
+		// C4: SCA / 3DS is distinct from payment_failed.
+		{"payment_authentication_required", notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED},
+		{"payment_failed", notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED},
 	}
 
 	for _, tc := range cases {

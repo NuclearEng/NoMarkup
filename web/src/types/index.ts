@@ -1135,6 +1135,8 @@ export const NOTIFICATION_TYPE = {
   PAYMENT_RECEIVED: 'payment_received',
   PAYMENT_RELEASED: 'payment_released',
   PAYMENT_FAILED: 'payment_failed',
+  /** SCA/3DS — buyer must authenticate (not a hard decline). */
+  PAYMENT_AUTHENTICATION_REQUIRED: 'payment_authentication_required',
   PAYOUT_SENT: 'payout_sent',
   NEW_MESSAGE: 'new_message',
   REVIEW_RECEIVED: 'review_received',

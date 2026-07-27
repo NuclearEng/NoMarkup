@@ -46,6 +46,10 @@ const PREFERENCE_CATEGORIES: CategoryGroup[] = [
       { type: NOTIFICATION_TYPE.PAYMENT_RECEIVED, label: 'Payment received' },
       { type: NOTIFICATION_TYPE.PAYMENT_RELEASED, label: 'Payment released' },
       { type: NOTIFICATION_TYPE.PAYMENT_FAILED, label: 'Payment failed' },
+      {
+        type: NOTIFICATION_TYPE.PAYMENT_AUTHENTICATION_REQUIRED,
+        label: 'Bank authentication (3DS)',
+      },
       { type: NOTIFICATION_TYPE.PAYOUT_SENT, label: 'Payout sent' },
     ],
   },

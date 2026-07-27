@@ -37,6 +37,7 @@ const NOTIFICATION_ICON_MAP: Partial<Record<NotificationType, string>> = {
   [NOTIFICATION_TYPE.PAYMENT_RECEIVED]: '\uD83D\uDCB3',
   [NOTIFICATION_TYPE.PAYMENT_RELEASED]: '\uD83D\uDCB3',
   [NOTIFICATION_TYPE.PAYMENT_FAILED]: '\uD83D\uDCB3',
+  [NOTIFICATION_TYPE.PAYMENT_AUTHENTICATION_REQUIRED]: '\uD83D\uDD10',
   [NOTIFICATION_TYPE.PAYOUT_SENT]: '\uD83D\uDCB3',
   // Chat
   [NOTIFICATION_TYPE.NEW_MESSAGE]: '\uD83D\uDCAC',
@@ -123,6 +124,12 @@ export function NotificationItem({ notification, variant = 'full', onMarkRead }:
         <p className="mt-1 text-xs text-muted-foreground">
           {formatRelativeTime(new Date(notification.created_at))}
         </p>
+        {notification.notification_type === NOTIFICATION_TYPE.PAYMENT_AUTHENTICATION_REQUIRED &&
+          !isCompact && (
+            <span className="mt-2 inline-flex min-h-[44px] items-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground">
+              Authenticate payment
+            </span>
+          )}
       </div>
     </button>
   );

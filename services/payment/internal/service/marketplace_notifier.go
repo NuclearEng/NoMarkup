@@ -94,29 +94,26 @@ func (n *marketplaceNotifier) NotifyDisputeResolved(ctx context.Context, userID,
 // NotifyListingPaymentProblem tells the buyer an off-session charge did not
 // complete, and what to do.
 //
-// All four outcomes map to NOTIFICATION_TYPE_PAYMENT_FAILED because the
-// notification service's enum has no "action required" / SCA member, and adding
-// one would require coordinated changes across proto/, services/notification/
-// and web/ — all outside this change's blast radius. The distinction is NOT
-// lost: the precise outcome travels in Data["outcome"], the body text is
-// outcome-specific (ChargeOutcome.BuyerMessage), and both are already
-// distinguished in the settlement stats and logs. A dedicated enum member is
-// worth adding later so the UI can render SCA with an "Authenticate" button
-// rather than a generic failure icon.
+// SCA (ChargeOutcomeAuthenticationRequired) uses
+// NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED so the UI can render an
+// Authenticate CTA. Hard declines / expired cards stay on PAYMENT_FAILED.
+// Data["outcome"] and Data["action_required"] remain for older clients.
 func (n *marketplaceNotifier) NotifyListingPaymentProblem(ctx context.Context, buyerID, orderID string, outcome ChargeOutcome, buyerMessage string) error {
 	title := "There's a problem with your payment"
+	typ := notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED
 	if outcome == ChargeOutcomeAuthenticationRequired {
 		title = "Your bank needs you to confirm this payment"
+		typ = notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED
 	}
 	return n.sender.Send(ctx, buyerID,
-		notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED,
+		typ,
 		title,
 		buyerMessage,
 		orderURL(orderID),
 		map[string]string{
 			"order_id": orderID,
 			"outcome":  string(outcome),
-			// Lets the UI decide whether to show "Authenticate" vs "Update card".
+			// Lets older UI clients decide Authenticate vs Update card.
 			"action_required": fmt.Sprintf("%t", outcome == ChargeOutcomeAuthenticationRequired),
 		},
 	)
