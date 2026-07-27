@@ -296,8 +296,18 @@ func main() {
 	rateLimiter := middleware.NewRateLimiter(cacheClient, cfg.IsProduction(), authLimitOverride)
 
 	// Wire up handlers and middleware.
+	// SESSION_SECRET HMAC-signs the has_session soft-gate cookie (SEC-07).
+	// HAS_SESSION_SECRET is an optional override so the web edge and gateway
+	// can share a dedicated key without rotating the broader session secret.
+	sessionSecret := os.Getenv("HAS_SESSION_SECRET")
+	if sessionSecret == "" {
+		sessionSecret = os.Getenv("SESSION_SECRET")
+	}
+	if sessionSecret == "" {
+		slog.Warn("SESSION_SECRET unset: has_session soft-gate cookie will not be issued")
+	}
 	authMW := middleware.NewAuthMiddleware(publicKey, cacheClient)
-	authHandler := handler.NewAuthHandler(userClient, secureCookie)
+	authHandler := handler.NewAuthHandler(userClient, secureCookie, sessionSecret)
 	// Wire the idle-session timeout (CLAUDE.md §6) into the auth handler so
 	// Login seeds the idle key and Refresh enforces it. authMW owns the cache
 	// client + token decode; passing nil cache (Redis down) fails open.
@@ -386,7 +396,7 @@ func main() {
 	auctionReplayHandler := handler.NewAuctionReplayHandler(dbPool)
 	challengeHandler := handler.NewChallengeHandler(dbPool)
 	installmentHandler := handler.NewInstallmentHandler(paymentClient)
-	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie)
+	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie, sessionSecret)
 	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient)
 	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, bidClient, contractClient, cacheClient, userClient, dbPool)
 	disputeHandler := handler.NewDisputeHandler(contractClient, dbPool)

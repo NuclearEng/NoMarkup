@@ -163,11 +163,12 @@ const (
 //     logged-in client's stale-while-revalidate refresh return an unstorable
 //     response to the CDN — evicting a warm entry and regressing the hit rate for
 //     the anonymous traffic the cache exists to serve.
-//   - The `has_session` sentinel cookie. It is a non-httpOnly constant ("1") with
-//     Path=/ that carries no identity at all, so it cannot personalize anything —
-//     but it IS sent on every request from a logged-in browser. Treating it as
-//     authentication would disable edge caching for all signed-in browsing for
-//     zero security gain.
+//   - The `has_session` soft-gate cookie (SEC-07 HMAC-signed sentinel). Even
+//     though the value now embeds a user_id, it is a non-HttpOnly UX flag with
+//     Path=/ sent on every request from a logged-in browser and is NOT used for
+//     personalization here. Treating it as authentication would disable edge
+//     caching for all signed-in browsing for zero security gain — real identity
+//     comes from resolved JWT claims or the HttpOnly refresh_token cookie.
 func publicCacheDenied(r *http.Request) cacheGuardReason {
 	if claims, ok := middleware.GetClaims(r.Context()); ok && claims != nil {
 		return cacheGuardResolvedIdentity

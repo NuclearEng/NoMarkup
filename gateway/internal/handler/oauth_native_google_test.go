@@ -10,7 +10,7 @@ import (
 
 func TestNativeGoogleSignIn_MissingIdentityToken(t *testing.T) {
 	t.Parallel()
-	h := NewOAuthHandler(nil, false)
+	h := NewOAuthHandler(nil, false, "test-session-secret")
 
 	body, err := json.Marshal(map[string]string{"identity_token": ""})
 	if err != nil {
@@ -29,7 +29,7 @@ func TestNativeGoogleSignIn_MissingIdentityToken(t *testing.T) {
 
 func TestNativeGoogleSignIn_InvalidJSON(t *testing.T) {
 	t.Parallel()
-	h := NewOAuthHandler(nil, false)
+	h := NewOAuthHandler(nil, false, "test-session-secret")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/google/native", bytes.NewReader([]byte(`{not-json`)))
 	req.Header.Set("Content-Type", "application/json")
@@ -49,7 +49,7 @@ func TestNativeGoogleSignIn_InvalidTokenUnauthorized(t *testing.T) {
 	t.Setenv("GOOGLE_CLIENT_ID", "test-web-client.apps.googleusercontent.com")
 	t.Setenv("GOOGLE_IOS_CLIENT_ID", "test-ios-client.apps.googleusercontent.com")
 
-	h := NewOAuthHandler(nil, false)
+	h := NewOAuthHandler(nil, false, "test-session-secret")
 	body, err := json.Marshal(map[string]string{
 		"identity_token": "not.a.real.jwt",
 	})

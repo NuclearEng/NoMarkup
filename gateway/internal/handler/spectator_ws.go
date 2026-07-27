@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -79,8 +78,11 @@ func NewSpectatorWSHandler(cacheClient *cache.Client) *SpectatorWSHandler {
 // SpectateAuction handles anonymous WebSocket connections for auction spectators.
 // This endpoint is publicly accessible (no authentication required).
 func (h *SpectatorWSHandler) SpectateAuction(w http.ResponseWriter, r *http.Request) {
-	// Check feature flag.
-	if os.Getenv("ENABLE_LIVE_AUCTION") != "true" {
+	// Dual gate: spectator_mode DB flag is enforced by RequireFlag on the route
+	// (migration 013). ENABLE_LIVE_AUCTION remains an ops kill switch AND-ed
+	// here so services-side spectate can be killed without a DB write.
+	// See middleware.LiveAuctionEnvEnabled.
+	if !middleware.LiveAuctionEnvEnabled() {
 		writeError(w, http.StatusNotFound, "live auctions not enabled")
 		return
 	}

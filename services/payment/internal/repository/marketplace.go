@@ -147,9 +147,14 @@ func (r *MarketplaceRepository) UpdateListingOrderPaymentIntent(
 	return nil
 }
 
-// ClaimListingOrderForRelease locks the order row FOR UPDATE and returns it
-// only when still eligible for payout (held or released, no open dispute, no
-// transfer yet). Concurrent dispute file or another auto-release loses.
+// ClaimListingOrderForRelease locks the order row FOR UPDATE and stamps a
+// durable pending transfer claim when still eligible for payout (held or
+// released, no open dispute, no final transfer). Concurrent dispute freeze or
+// another auto-release loses (MON-18).
+//
+// The pending marker (stripe_transfer_id = pending:<orderID>) is written under
+// the same lock so FileListingDispute's ClaimListingOrderForDispute fails closed
+// for the whole Stripe transfer window, not only the brief SELECT.
 func (r *MarketplaceRepository) ClaimListingOrderForRelease(ctx context.Context, orderID string) (*service.MarketplaceListingOrder, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -191,20 +196,120 @@ func (r *MarketplaceRepository) ClaimListingOrderForRelease(ctx context.Context,
 	if o.DisputeID != nil && *o.DisputeID != "" {
 		return nil, fmt.Errorf("claim listing order disputed: %w", service.ErrInvalidEscrowState)
 	}
-	if o.StripeTransferID != "" {
+	if service.IsFinalListingTransfer(o.StripeTransferID) {
 		return nil, fmt.Errorf("claim listing order already paid: %w", service.ErrInvalidEscrowState)
 	}
 	if o.EscrowStatus != "held" && o.EscrowStatus != "released" {
 		return nil, fmt.Errorf("claim listing order status %q: %w", o.EscrowStatus, service.ErrInvalidEscrowState)
 	}
 
-	// Commit releases the lock; the transfer id stamp is the durable claim.
-	// Holding the lock only through the SELECT is enough to serialize with
-	// FileListingDispute's status update on the same row when both run under
-	// FOR UPDATE; FileListingDispute currently does not lock — the recheck of
-	// dispute_id above is the critical race close for auto-release.
+	// Durable claim: block concurrent dispute freeze for the transfer window.
+	// Re-claim of our own pending marker is allowed so a crashed worker can retry.
+	claim := service.PendingListingTransferClaim(orderID)
+	const claimQ = `
+		UPDATE listing_orders
+		   SET stripe_transfer_id = $2,
+		       updated_at = now()
+		 WHERE id = $1
+		   AND dispute_id IS NULL
+		   AND (
+		         stripe_transfer_id IS NULL
+		         OR stripe_transfer_id = ''
+		         OR stripe_transfer_id = $2
+		       )`
+	tag, err := tx.Exec(ctx, claimQ, orderID, claim)
+	if err != nil {
+		return nil, fmt.Errorf("claim listing order stamp: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, fmt.Errorf("claim listing order lost race: %w", service.ErrInvalidEscrowState)
+	}
+	o.StripeTransferID = claim
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("claim listing order commit: %w", err)
+	}
+	return o, nil
+}
+
+// ClaimListingOrderForDispute locks the order row FOR UPDATE and freezes it as
+// disputed with disputeID when still eligible (held or pickup_confirmed, no
+// open dispute, no final or pending transfer claim). Fail closed (MON-18).
+func (r *MarketplaceRepository) ClaimListingOrderForDispute(ctx context.Context, orderID, disputeID string) (*service.MarketplaceListingOrder, error) {
+	if disputeID == "" {
+		return nil, fmt.Errorf("claim listing order for dispute: empty dispute id: %w", service.ErrInvalidEscrowState)
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("claim listing order for dispute begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	const q = `
+		SELECT lo.id, lo.listing_id, lo.seller_id, lo.buyer_id,
+		       lo.amount_cents, lo.fee_cents, lo.tax_cents, lo.seller_payout_cents,
+		       lo.escrow_status, COALESCE(lo.payment_intent_id,''),
+		       COALESCE(lo.idempotency_key,''),
+		       COALESCE(lo.stripe_transfer_id,''),
+		       COALESCE(l.pickup_zip_code,''),
+		       lo.pickup_confirmed_at, lo.released_at, lo.auto_release_at,
+		       lo.dispute_id, lo.created_at, lo.updated_at
+		  FROM listing_orders lo
+		  JOIN listings l ON l.id = lo.listing_id
+		 WHERE lo.id = $1
+		 FOR UPDATE OF lo`
+	o := &service.MarketplaceListingOrder{}
+	var existingDispute *string
+	err = tx.QueryRow(ctx, q, orderID).Scan(
+		&o.ID, &o.ListingID, &o.SellerID, &o.BuyerID,
+		&o.AmountCents, &o.FeeCents, &o.TaxCents, &o.SellerPayoutCents,
+		&o.EscrowStatus, &o.PaymentIntentID, &o.IdempotencyKey,
+		&o.StripeTransferID, &o.PickupZipCode,
+		&o.PickupConfirmedAt, &o.ReleasedAt, &o.AutoReleaseAt,
+		&existingDispute, &o.CreatedAt, &o.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, service.ErrListingOrderNotFound
+		}
+		return nil, fmt.Errorf("claim listing order for dispute: %w", err)
+	}
+	o.DisputeID = existingDispute
+
+	if o.DisputeID != nil && *o.DisputeID != "" {
+		return nil, fmt.Errorf("claim listing order for dispute already open: %w", service.ErrDisputeAlreadyOpen)
+	}
+	if o.StripeTransferID != "" {
+		// Final transfer or pending release claim — dispute loses.
+		return nil, fmt.Errorf("claim listing order for dispute not eligible (transfer %q): %w",
+			o.StripeTransferID, service.ErrInvalidEscrowState)
+	}
+	if o.EscrowStatus != "held" && o.EscrowStatus != "pickup_confirmed" {
+		return nil, fmt.Errorf("claim listing order for dispute status %q: %w", o.EscrowStatus, service.ErrInvalidEscrowState)
+	}
+
+	const freezeQ = `
+		UPDATE listing_orders
+		   SET escrow_status = 'disputed',
+		       dispute_id = $2,
+		       updated_at = now()
+		 WHERE id = $1
+		   AND dispute_id IS NULL
+		   AND (stripe_transfer_id IS NULL OR stripe_transfer_id = '')
+		   AND escrow_status IN ('held', 'pickup_confirmed')`
+	tag, err := tx.Exec(ctx, freezeQ, orderID, disputeID)
+	if err != nil {
+		return nil, fmt.Errorf("claim listing order for dispute freeze: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, fmt.Errorf("claim listing order for dispute lost race: %w", service.ErrInvalidEscrowState)
+	}
+	o.EscrowStatus = "disputed"
+	o.DisputeID = &disputeID
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("claim listing order for dispute commit: %w", err)
 	}
 	return o, nil
 }
@@ -323,6 +428,9 @@ func (r *MarketplaceRepository) UpdateListingOrderDispute(ctx context.Context, o
 //     both confirmed) but the Stripe Connect transfer to the seller was never
 //     fired. These have no time window: they should be paid out on the next
 //     tick. This is the disconnect the money-bug fix closes.
+//  3. orders carrying a MON-18 pending transfer claim (stripe_transfer_id LIKE
+//     'pending:%') — a prior worker claimed then crashed before stamping the
+//     real transfer id; the next tick must retry.
 //
 // Disputed/refunded orders never appear (status filter), so they never pay out.
 func (r *MarketplaceRepository) ListListingOrdersForAutoRelease(ctx context.Context, before time.Time, limit int) ([]*service.MarketplaceListingOrder, error) {
@@ -338,7 +446,10 @@ func (r *MarketplaceRepository) ListListingOrdersForAutoRelease(ctx context.Cont
 		  FROM listing_orders lo
 		  JOIN listings l ON l.id = lo.listing_id
 		 WHERE lo.dispute_id IS NULL
-		   AND lo.stripe_transfer_id IS NULL
+		   AND (
+		         lo.stripe_transfer_id IS NULL
+		         OR lo.stripe_transfer_id LIKE 'pending:%'
+		       )
 		   AND (
 		         (lo.escrow_status = 'held' AND lo.created_at < $1)
 		         OR

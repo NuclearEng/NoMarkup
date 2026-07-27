@@ -1,22 +1,27 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import {
+  resolveSessionFlagSecret,
+  SESSION_FLAG_COOKIE,
+  verifySessionFlag,
+} from '@/lib/session-flag';
+
 /**
  * Edge auth guard for authenticated routes + per-request CSP nonce.
  *
  * Two responsibilities:
  *
- * 1. SOFT SESSION GATE (SEC-07) — Presence-only redirect UX. This middleware
- *    only checks for the *presence* of session indicators (cookies /
- *    Authorization header). It does **not**:
- *      - verify JWT signature, exp, iss, or aud
+ * 1. SOFT SESSION GATE (SEC-07) — Redirect UX only. This middleware checks for
+ *    session *indicators* and does **not**:
+ *      - verify the access JWT signature, exp, iss, or aud
  *      - load the user, roles, or grants
  *      - authorize any data access
- *    A client that presents a stale/forged `has_session=1` cookie can still
- *    reach the HTML shell; **no protected data is granted here**. Real authz
- *    lives in the Go gateway (`withAuth` / `RequireAdmin` / ownership checks)
- *    and in route handlers that verify the RS256 access JWT (e.g. AI routes
- *    via `gateAiRoute`). The soft gate only reduces wasted HTML for bots and
- *    unauthenticated SSR probes by redirecting them to `/login`.
+ *    The `has_session` cookie is HMAC-SHA256 signed by the gateway with
+ *    SESSION_SECRET / HAS_SESSION_SECRET (`v1.<user_id>.<exp>.<mac>`). Edge
+ *    verifies the MAC + exp; a forged or expired value is treated as no
+ *    session. **No protected data is granted here** — real authz lives in the
+ *    Go gateway (`withAuth` / `RequireAdmin` / ownership) and in route handlers
+ *    that verify the RS256 access JWT (e.g. AI routes via `gateAiRoute`).
  *
  * 2. CSP NONCE — A cryptographically-random nonce is generated per request
  *    and embedded in the Content-Security-Policy header so we can drop
@@ -29,10 +34,9 @@ import { NextResponse, type NextRequest } from 'next/server';
  *    transitively loaded by an explicitly-trusted (nonce'd) script. This lets
  *    Next.js bootstrap chunks load without enumerating every chunk URL.
  *
- * Cookies in play (presence indicators only — never treated as proof of auth):
- *   - has_session=1          — sentinel set by the gateway when a refresh
- *                              token cookie is issued (non-HttpOnly sentinel
- *                              for client-side detection)
+ * Cookies in play (soft indicators only — never treated as proof of auth):
+ *   - has_session            — HMAC-signed sentinel set by the gateway when a
+ *                              refresh token cookie is issued (non-HttpOnly)
  *   - refresh_token          — HttpOnly, path-scoped to /api/v1/auth; not
  *                              always readable here but worth checking when
  *                              the browser sends it
@@ -73,9 +77,20 @@ const AUTH_ONLY_API: readonly string[] = [
   '/api/analyze-listing-image',
 ];
 
-function hasSessionIndicator(req: NextRequest): boolean {
+async function hasSessionIndicator(req: NextRequest): Promise<boolean> {
   const cookies = req.cookies;
-  if (cookies.get('has_session')?.value === '1') return true;
+
+  // SEC-07: only a valid HMAC-signed has_session passes the soft gate.
+  // Legacy literal "1" and forged values are rejected.
+  const sessionFlag = cookies.get(SESSION_FLAG_COOKIE)?.value;
+  if (sessionFlag) {
+    const secret = resolveSessionFlagSecret();
+    if (secret) {
+      const result = await verifySessionFlag(secret, sessionFlag);
+      if (result.ok) return true;
+    }
+  }
+
   if (cookies.get('refresh_token')?.value) return true;
   if (cookies.get('oauth_access_token')?.value) return true;
 
@@ -173,7 +188,7 @@ function buildCsp(nonce: string): string {
   return directives.join('; ');
 }
 
-export function middleware(req: NextRequest): NextResponse {
+export async function middleware(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
 
   // ─── Auth gate ──────────────────────────────────────────────────────────
@@ -184,7 +199,7 @@ export function middleware(req: NextRequest): NextResponse {
     (p) => pathname === p || pathname.startsWith(p + '/'),
   );
 
-  if ((isProtectedPage || isProtectedApi) && !hasSessionIndicator(req)) {
+  if ((isProtectedPage || isProtectedApi) && !(await hasSessionIndicator(req))) {
     if (isProtectedApi) {
       return new NextResponse(JSON.stringify({ error: 'unauthorized' }), {
         status: 401,

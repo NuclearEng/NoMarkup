@@ -17,6 +17,7 @@ import (
 	keyfunc "github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
+	"github.com/nomarkup/nomarkup/gateway/internal/sessionflag"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -28,21 +29,24 @@ const (
 
 // OAuthHandler handles OAuth authentication flows.
 type OAuthHandler struct {
-	userClient   userv1.UserServiceClient
-	secureCookie bool
-	frontendURL  string
+	userClient    userv1.UserServiceClient
+	secureCookie  bool
+	sessionSecret []byte
+	frontendURL   string
 }
 
 // NewOAuthHandler creates a new OAuthHandler.
-func NewOAuthHandler(userClient userv1.UserServiceClient, secureCookie bool) *OAuthHandler {
+// sessionSecret signs the has_session soft-gate cookie (SEC-07); see AuthHandler.
+func NewOAuthHandler(userClient userv1.UserServiceClient, secureCookie bool, sessionSecret string) *OAuthHandler {
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
 		frontendURL = "http://localhost:3000"
 	}
 	return &OAuthHandler{
-		userClient:   userClient,
-		secureCookie: secureCookie,
-		frontendURL:  frontendURL,
+		userClient:    userClient,
+		secureCookie:  secureCookie,
+		sessionSecret: []byte(sessionSecret),
+		frontendURL:   frontendURL,
 	}
 }
 
@@ -400,15 +404,19 @@ func (h *OAuthHandler) completeOAuthLogin(w http.ResponseWriter, r *http.Request
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   refreshMaxAge,
 	})
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionFlagCookieName,
-		Value:    "1",
-		Path:     "/",
-		HttpOnly: false,
-		Secure:   h.secureCookie,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   refreshMaxAge,
-	})
+	if flag, err := sessionflag.SignWithMaxAge(h.sessionSecret, result.GetUserId(), refreshMaxAge); err != nil {
+		slog.Warn("has_session cookie not issued on oauth login: sign failed", "error", err)
+	} else {
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionFlagCookieName,
+			Value:    flag,
+			Path:     "/",
+			HttpOnly: false,
+			Secure:   h.secureCookie,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   refreshMaxAge,
+		})
+	}
 
 	// Redirect to the frontend with the access token as a fragment (not query param)
 	// to avoid it being logged in server access logs.

@@ -173,3 +173,29 @@ func interpretFlagState(st featureFlagState, production bool) bool {
 	}
 	return !st.Enabled
 }
+
+// LiveAuctionEnvEnabled reports whether the ENABLE_LIVE_AUCTION ops kill switch
+// allows live-auction / spectator traffic.
+//
+// Dual gate (product + ops):
+//
+//  1. DB feature flags (primary, admin-togglable, fail-closed in production):
+//     - live_auction   (migration 013) — live arena WS, auction state/events,
+//       and CreateJob with auction_type=live
+//     - spectator_mode (migration 013) — anonymous /ws/.../spectate sockets
+//     Enforced via RequireFlag on route groups, or IsFeatureDisabled for
+//     field-level gates inside shared endpoints (e.g. CreateJob).
+//
+//  2. ENABLE_LIVE_AUCTION env (ops kill switch, AND-ed with the DB flag):
+//     Must be exactly "true" for services-side live-auction and services
+//     spectator surfaces. When unset or any other value, those surfaces stay
+//     off even if the DB flag is enabled — so an emergency kill needs only a
+//     process env change, not a DB write. Marketplace spectator uses the
+//     spectator_mode DB flag only (no env AND).
+//
+// Prefer RequireFlag at the router for whole routes; use LiveAuctionEnvEnabled
+// inside handlers as the AND kill switch after the middleware has already
+// checked the DB flag (or together with IsFeatureDisabled on shared paths).
+func LiveAuctionEnvEnabled() bool {
+	return os.Getenv("ENABLE_LIVE_AUCTION") == "true"
+}

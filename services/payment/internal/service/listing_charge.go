@@ -58,6 +58,26 @@ var (
 	ErrDisputeAlreadyOpen   = errors.New("dispute already open for this order")
 )
 
+// PendingListingTransferPrefix marks stripe_transfer_id while a release worker
+// owns the payout path but has not yet stamped a real Stripe transfer id
+// (MON-18 durable claim). Real Connect transfer ids start with "tr_".
+const PendingListingTransferPrefix = "pending:"
+
+// PendingListingTransferClaim returns the durable in-flight claim marker for an order.
+func PendingListingTransferClaim(orderID string) string {
+	return PendingListingTransferPrefix + orderID
+}
+
+// IsPendingListingTransferClaim reports whether transferID is an in-flight claim.
+func IsPendingListingTransferClaim(transferID string) bool {
+	return strings.HasPrefix(transferID, PendingListingTransferPrefix)
+}
+
+// IsFinalListingTransfer reports whether transferID is a completed Stripe payout.
+func IsFinalListingTransfer(transferID string) bool {
+	return transferID != "" && !IsPendingListingTransferClaim(transferID)
+}
+
 // MarketplaceListingOrder is the in-memory representation of a row in
 // listing_orders. It mirrors the schema from migrations 034 + 035.
 type MarketplaceListingOrder struct {
@@ -147,11 +167,18 @@ type MarketplaceRepository interface {
 	// UPDATE itself, so an order that funded in the meantime is never clobbered.
 	// Returns ErrInvalidEscrowState when no row matched.
 	FailListingOrderPayment(ctx context.Context, orderID, reason string) error
-	// ClaimListingOrderForRelease locks the order row (FOR UPDATE) and returns
-	// it only when still eligible for payout (held/released, no dispute, no
-	// transfer). Returns ErrInvalidEscrowState when another worker claimed it
-	// or a dispute is open (MON-18).
+	// ClaimListingOrderForRelease locks the order row (FOR UPDATE) and stamps a
+	// durable pending transfer claim when still eligible for payout
+	// (held/released, no dispute, no final transfer). Returns
+	// ErrInvalidEscrowState when another worker claimed it or a dispute is open
+	// (MON-18). The pending claim blocks concurrent FileListingDispute freezes
+	// for the duration of the Stripe transfer call.
 	ClaimListingOrderForRelease(ctx context.Context, orderID string) (*MarketplaceListingOrder, error)
+	// ClaimListingOrderForDispute locks the order row (FOR UPDATE) and freezes
+	// it as disputed with the given disputeID when still eligible (held or
+	// pickup_confirmed, no open dispute, no transfer/claim). Fail closed with
+	// ErrInvalidEscrowState / ErrDisputeAlreadyOpen (MON-18).
+	ClaimListingOrderForDispute(ctx context.Context, orderID, disputeID string) (*MarketplaceListingOrder, error)
 	// MarkListingOrderTransferred stamps the Stripe Connect transfer id on a
 	// paid-out order. This is the durable "already paid" marker that lets the
 	// auto-release worker reconcile handshake-released orders exactly once.
@@ -697,8 +724,14 @@ func (s *MarketplaceService) ConfirmPickup(ctx context.Context, orderID, actorUs
 		return nil, fmt.Errorf("confirm pickup: order has open dispute: %w", ErrInvalidEscrowState)
 	}
 
+	// MON-18: durable claim before transfer so a concurrent dispute freeze loses.
+	claimed, err := s.repo.ClaimListingOrderForRelease(ctx, order.ID)
+	if err != nil {
+		return nil, fmt.Errorf("confirm pickup: claim: %w", err)
+	}
+
 	now := s.now()
-	if err := s.releaseToSeller(ctx, order, &now); err != nil {
+	if err := s.releaseToSeller(ctx, claimed, &now); err != nil {
 		return nil, fmt.Errorf("confirm pickup: %w", err)
 	}
 
@@ -742,12 +775,15 @@ func (s *MarketplaceService) resolveSellerConnectAccount(ctx context.Context, se
 // amount - fee (tax stays with platform), creates the Stripe transfer, and
 // updates the order to released. Also stamps the seller_tax_forms 1099-K
 // running total.
+//
+// Callers that race with FileListingDispute must pass an order already claimed
+// via ClaimListingOrderForRelease (durable pending transfer marker). ConfirmPickup
+// claims inline before invoking this helper.
 func (s *MarketplaceService) releaseToSeller(ctx context.Context, order *MarketplaceListingOrder, pickupConfirmedAt *time.Time) error {
-	// Double-pay guard: if this order already carries a transfer id, the seller
-	// was already paid (e.g. a prior handshake-release or auto-release). Never
-	// fire a second transfer. The deterministic Stripe idempotency key below is
-	// the second line of defense; this is the first.
-	if order.StripeTransferID != "" {
+	// Double-pay guard: a final Stripe transfer id means the seller was already
+	// paid. A pending claim (MON-18) is intentionally not a skip — it means this
+	// worker owns the payout path and should proceed to CreateMarketplaceTransfer.
+	if IsFinalListingTransfer(order.StripeTransferID) {
 		slog.Info("release to seller: order already paid out, skipping",
 			"order_id", order.ID,
 			"transfer_id", order.StripeTransferID,
@@ -823,6 +859,10 @@ func (s *MarketplaceService) releaseToSeller(ctx context.Context, order *Marketp
 // FileListingDispute lets a buyer dispute a listing order. Allowed in:
 //   - status=held (any time before auto-release)
 //   - status=pickup_confirmed AND within DisputeWindowAfter from pickup
+//
+// MON-18: freezes the order under FOR UPDATE via ClaimListingOrderForDispute so
+// a concurrent auto-release cannot transfer after (or while) the dispute opens.
+// Fail closed when the order is no longer held/eligible or a release claim won.
 func (s *MarketplaceService) FileListingDispute(ctx context.Context, orderID, buyerID, reason, description string) (*MarketplaceDispute, error) {
 	order, err := s.repo.GetListingOrder(ctx, orderID)
 	if err != nil {
@@ -848,6 +888,11 @@ func (s *MarketplaceService) FileListingDispute(ctx context.Context, orderID, bu
 		return nil, fmt.Errorf("file dispute: order in status %q: %w", order.EscrowStatus, ErrInvalidEscrowState)
 	}
 
+	// Fail closed against a concurrent release claim before we insert a dispute row.
+	if IsFinalListingTransfer(order.StripeTransferID) || IsPendingListingTransferClaim(order.StripeTransferID) {
+		return nil, fmt.Errorf("file dispute: order already claimed for release: %w", ErrInvalidEscrowState)
+	}
+
 	dispute := &MarketplaceDispute{
 		ID:             uuid.New().String(),
 		ListingOrderID: order.ID,
@@ -862,21 +907,18 @@ func (s *MarketplaceService) FileListingDispute(ctx context.Context, orderID, bu
 		return nil, fmt.Errorf("file dispute: create: %w", err)
 	}
 
-	// Freeze escrow.
-	disputeID := dispute.ID
-	if err := s.repo.UpdateListingOrderEscrowStatus(ctx, order.ID, "disputed", nil, nil, 0); err != nil {
-		return nil, fmt.Errorf("file dispute: freeze escrow: %w", err)
-	}
-	if err := s.repo.UpdateListingOrderDispute(ctx, order.ID, &disputeID); err != nil {
-		return nil, fmt.Errorf("file dispute: link dispute id: %w", err)
+	// MON-18: lock + freeze under FOR UPDATE. Serializes with ClaimListingOrderForRelease.
+	frozen, err := s.repo.ClaimListingOrderForDispute(ctx, order.ID, dispute.ID)
+	if err != nil {
+		return nil, fmt.Errorf("file dispute: claim/freeze: %w", err)
 	}
 
-	if err := s.notifier.NotifyDisputeFiled(ctx, order.SellerID, order.ID, dispute.ID); err != nil {
+	if err := s.notifier.NotifyDisputeFiled(ctx, frozen.SellerID, frozen.ID, dispute.ID); err != nil {
 		slog.Warn("failed to notify seller of dispute",
-			"order_id", order.ID, "dispute_id", dispute.ID, "error", err)
+			"order_id", frozen.ID, "dispute_id", dispute.ID, "error", err)
 	}
 	slog.Info("listing dispute filed",
-		"order_id", order.ID, "dispute_id", dispute.ID, "reason", reason,
+		"order_id", frozen.ID, "dispute_id", dispute.ID, "reason", reason,
 	)
 	return dispute, nil
 }

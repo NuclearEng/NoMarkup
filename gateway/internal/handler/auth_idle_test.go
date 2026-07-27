@@ -107,7 +107,7 @@ func TestRefresh_IdleKeyPresent_Allows(t *testing.T) {
 	t.Cleanup(func() { c.Redis().Del(ctx, idleKey(userID)) })
 
 	authMW := middleware.NewAuthMiddleware(&key.PublicKey, c)
-	h := NewAuthHandler(&refreshMockUserClient{accessToken: access, refreshToken: "rt-new"}, false).
+	h := NewAuthHandler(&refreshMockUserClient{accessToken: access, refreshToken: "rt-new"}, false, "test-session-secret").
 		WithIdleSession(authMW)
 
 	rec := doRefresh(h)
@@ -137,7 +137,7 @@ func TestRefresh_IdleKeyAbsent_Rejects(t *testing.T) {
 	c.Redis().Del(ctx, idleKey(userID))
 
 	authMW := middleware.NewAuthMiddleware(&key.PublicKey, c)
-	h := NewAuthHandler(&refreshMockUserClient{accessToken: access, refreshToken: "rt-new"}, false).
+	h := NewAuthHandler(&refreshMockUserClient{accessToken: access, refreshToken: "rt-new"}, false, "test-session-secret").
 		WithIdleSession(authMW)
 
 	rec := doRefresh(h)
@@ -162,7 +162,7 @@ func TestRefresh_NoIdleWiring_FailsOpen(t *testing.T) {
 	access := signAccessToken(t, key, "user-x", []string{"customer"})
 
 	// No WithIdleSession call -> authMW nil -> enforcement skipped.
-	h := NewAuthHandler(&refreshMockUserClient{accessToken: access, refreshToken: "rt-new"}, false)
+	h := NewAuthHandler(&refreshMockUserClient{accessToken: access, refreshToken: "rt-new"}, false, "test-session-secret")
 
 	rec := doRefresh(h)
 

@@ -183,7 +183,7 @@ func TestAuthHandler_Register(t *testing.T) {
 			t.Parallel()
 
 			client := &mockUserClient{registerFn: tt.mockFn}
-			h := NewAuthHandler(client, false)
+			h := NewAuthHandler(client, false, "test-session-secret")
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -256,7 +256,7 @@ func TestAuthHandler_Login(t *testing.T) {
 			t.Parallel()
 
 			client := &mockUserClient{loginFn: tt.mockFn}
-			h := NewAuthHandler(client, false)
+			h := NewAuthHandler(client, false, "test-session-secret")
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -308,7 +308,7 @@ func TestAuthHandler_VerifyEmail(t *testing.T) {
 			t.Parallel()
 
 			client := &mockUserClient{verifyEmailFn: tt.mockFn}
-			h := NewAuthHandler(client, false)
+			h := NewAuthHandler(client, false, "test-session-secret")
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/verify-email", bytes.NewBufferString(tt.body))
 			rec := httptest.NewRecorder()

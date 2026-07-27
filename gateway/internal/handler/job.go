@@ -250,6 +250,20 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Live auction create is dual-gated (field-level — CreateJob is shared with
+	// sealed auctions, so we cannot RequireFlag the whole route):
+	//   1. live_auction DB flag (migration 013) via IsFeatureDisabled — fail-
+	//      closed in production when missing/error/nil DB (SEC-01)
+	//   2. ENABLE_LIVE_AUCTION ops kill switch AND-ed
+	// Sealed (default) and empty auction_type are unaffected.
+	if strings.EqualFold(strings.TrimSpace(req.AuctionType), "live") {
+		if !middleware.LiveAuctionEnvEnabled() ||
+			middleware.IsFeatureDisabled(r.Context(), h.db, h.cache, "live_auction") {
+			writeError(w, http.StatusServiceUnavailable, "live auctions are currently unavailable")
+			return
+		}
+	}
+
 	grpcReq := &jobv1.CreateJobRequest{
 		CustomerId:           claims.UserID,
 		PropertyId:           req.PropertyID,

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"sync"
 
@@ -865,8 +864,11 @@ func (h *BidHandler) GetBidCount(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetLiveAuctionState returns the current state of a live auction.
+//
+// Dual gate: live_auction DB flag via RequireFlag on the route (migration 013);
+// ENABLE_LIVE_AUCTION ops kill switch AND-ed here (middleware.LiveAuctionEnvEnabled).
 func (h *BidHandler) GetLiveAuctionState(w http.ResponseWriter, r *http.Request) {
-	if os.Getenv("ENABLE_LIVE_AUCTION") != "true" {
+	if !middleware.LiveAuctionEnvEnabled() {
 		writeError(w, http.StatusNotFound, "live auctions not enabled")
 		return
 	}
@@ -889,8 +891,11 @@ func (h *BidHandler) GetLiveAuctionState(w http.ResponseWriter, r *http.Request)
 }
 
 // GetAuctionEvents returns the bid events for a live auction.
+//
+// Dual gate: live_auction DB flag via RequireFlag on the route (migration 013);
+// ENABLE_LIVE_AUCTION ops kill switch AND-ed here (middleware.LiveAuctionEnvEnabled).
 func (h *BidHandler) GetAuctionEvents(w http.ResponseWriter, r *http.Request) {
-	if os.Getenv("ENABLE_LIVE_AUCTION") != "true" {
+	if !middleware.LiveAuctionEnvEnabled() {
 		writeError(w, http.StatusNotFound, "live auctions not enabled")
 		return
 	}

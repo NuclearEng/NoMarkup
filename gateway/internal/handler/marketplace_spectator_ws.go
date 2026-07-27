@@ -82,6 +82,10 @@ type listingSpectatorMsg struct {
 }
 
 // Spectate handles an incoming WebSocket connection. Public route, no auth.
+//
+// Gate: spectator_mode DB flag via RequireFlag on the route (migration 013).
+// Marketplace spectator is NOT AND-ed with ENABLE_LIVE_AUCTION — that env is
+// the services-side live-auction kill switch; goods spectate is flag-only.
 func (h *MarketplaceSpectatorWSHandler) Spectate(w http.ResponseWriter, r *http.Request) {
 	listingID := chi.URLParam(r, "listingId")
 	if listingID == "" {

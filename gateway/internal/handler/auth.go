@@ -13,6 +13,7 @@ import (
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	"github.com/nomarkup/nomarkup/gateway/internal/sessionflag"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -20,16 +21,18 @@ import (
 
 const (
 	refreshTokenCookieName = "refresh_token"
-	// sessionFlagCookieName is a non-httpOnly sentinel the web client reads to
-	// decide whether to attempt a token refresh on mount. Its presence does not
-	// authorize anything — the server always validates the real refresh cookie.
-	sessionFlagCookieName = "has_session"
+	// sessionFlagCookieName is a non-HttpOnly HMAC-signed sentinel (SEC-07).
+	// The web client / edge middleware treat a valid signature as "soft logged
+	// in" for UX only — it does not authorize any data access. Real auth is
+	// the HttpOnly refresh_token + RS256 access JWT.
+	sessionFlagCookieName = sessionflag.CookieName
 )
 
 // AuthHandler handles HTTP auth endpoints by proxying to the User gRPC service.
 type AuthHandler struct {
-	userClient   userv1.UserServiceClient
-	secureCookie bool
+	userClient    userv1.UserServiceClient
+	secureCookie  bool
+	sessionSecret []byte
 	// authMW backs the role-based idle-session timeout (CLAUDE.md §6): it owns
 	// the Redis cache client and the JWT decode used to read the refreshed
 	// token's userID/roles. nil disables idle tracking/enforcement (fail open).
@@ -37,10 +40,14 @@ type AuthHandler struct {
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(userClient userv1.UserServiceClient, secureCookie bool) *AuthHandler {
+// sessionSecret is SESSION_SECRET (or HAS_SESSION_SECRET) used to HMAC-sign the
+// has_session soft-gate cookie. Empty secret skips issuing the cookie (never
+// falls back to the forgeable literal "1").
+func NewAuthHandler(userClient userv1.UserServiceClient, secureCookie bool, sessionSecret string) *AuthHandler {
 	return &AuthHandler{
-		userClient:   userClient,
-		secureCookie: secureCookie,
+		userClient:    userClient,
+		secureCookie:  secureCookie,
+		sessionSecret: []byte(sessionSecret),
 	}
 }
 
@@ -159,7 +166,7 @@ func (h *AuthHandler) RegisterPhoneOnly(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	h.setRefreshTokenCookie(w, regResp.GetRefreshToken())
+	h.setRefreshTokenCookie(w, regResp.GetRefreshToken(), regResp.GetUserId())
 
 	writeJSON(w, http.StatusCreated, authResponse{
 		UserID:               regResp.GetUserId(),
@@ -237,7 +244,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.setRefreshTokenCookie(w, resp.GetRefreshToken())
+	h.setRefreshTokenCookie(w, resp.GetRefreshToken(), resp.GetUserId())
 
 	writeJSON(w, http.StatusCreated, authResponse{
 		UserID:               resp.GetUserId(),
@@ -269,7 +276,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if resp.GetRefreshToken() != "" {
-		h.setRefreshTokenCookie(w, resp.GetRefreshToken())
+		h.setRefreshTokenCookie(w, resp.GetRefreshToken(), resp.GetUserId())
 	}
 
 	// Seed the idle-session sliding window so a freshly logged-in session has
@@ -367,7 +374,11 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.setRefreshTokenCookie(w, resp.GetRefreshToken())
+	userID, _, decoded := h.decodeAccessToken(resp.GetAccessToken())
+	if !decoded {
+		userID = userIDFromJWT(resp.GetAccessToken())
+	}
+	h.setRefreshTokenCookie(w, resp.GetRefreshToken(), userID)
 
 	writeJSON(w, http.StatusOK, authResponse{
 		AccessToken:          resp.GetAccessToken(),
@@ -730,7 +741,7 @@ func (h *AuthHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if resp.GetRefreshToken() != "" {
-		h.setRefreshTokenCookie(w, resp.GetRefreshToken())
+		h.setRefreshTokenCookie(w, resp.GetRefreshToken(), userIDFromJWT(resp.GetAccessToken()))
 	}
 
 	writeJSON(w, http.StatusOK, authResponse{
@@ -768,7 +779,7 @@ func (h *AuthHandler) DisableMFA(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"success": resp.GetSuccess()})
 }
 
-func (h *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, token string) {
+func (h *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, token, userID string) {
 	maxAge := 7 * 24 * 60 * 60
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookieName,
@@ -779,13 +790,22 @@ func (h *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, token string)
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
 	})
-	h.setSessionFlagCookie(w, maxAge)
+	h.setSessionFlagCookie(w, userID, maxAge)
 }
 
-func (h *AuthHandler) setSessionFlagCookie(w http.ResponseWriter, maxAge int) {
+// setSessionFlagCookie issues the SEC-07 HMAC-signed has_session sentinel.
+// Never falls back to the forgeable literal "1" — if signing fails (empty
+// secret), the cookie is simply omitted and the client falls through to
+// other session indicators / explicit login.
+func (h *AuthHandler) setSessionFlagCookie(w http.ResponseWriter, userID string, maxAge int) {
+	value, err := sessionflag.SignWithMaxAge(h.sessionSecret, userID, maxAge)
+	if err != nil {
+		slog.Warn("has_session cookie not issued: sign failed", "error", err)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionFlagCookieName,
-		Value:    "1",
+		Value:    value,
 		Path:     "/",
 		HttpOnly: false,
 		Secure:   h.secureCookie,
@@ -804,6 +824,31 @@ func (h *AuthHandler) clearSessionFlagCookie(w http.ResponseWriter) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
+}
+
+// userIDFromJWT extracts the "sub" claim from an access JWT without verifying
+// the signature. Used only to bind the has_session soft-gate cookie to the
+// user that just received a freshly minted token from our user service.
+func userIDFromJWT(accessToken string) string {
+	parts := strings.Split(accessToken, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		// Some issuers use padded base64url.
+		payload, err = base64.URLEncoding.DecodeString(parts[1])
+		if err != nil {
+			return ""
+		}
+	}
+	var claims struct {
+		Sub string `json:"sub"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	return claims.Sub
 }
 
 func parseRoles(roles []string) []commonv1.UserRole {

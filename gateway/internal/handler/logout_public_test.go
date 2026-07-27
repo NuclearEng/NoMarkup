@@ -84,7 +84,7 @@ func TestLogout_PublicWithoutAccessToken_RevokesAnd204(t *testing.T) {
 	key := newTestKeyPair(t)
 	authMW := middleware.NewAuthMiddleware(&key.PublicKey, nil)
 	mock := &logoutMockUserClient{}
-	h := NewAuthHandler(mock, false)
+	h := NewAuthHandler(mock, false, "test-session-secret")
 	r := buildLogoutRouter(authMW, h)
 
 	// No Authorization header at all, but a refresh cookie to revoke.
@@ -103,7 +103,7 @@ func TestLogout_PublicWithExpiredAccessToken_RevokesAnd204(t *testing.T) {
 	key := newTestKeyPair(t)
 	authMW := middleware.NewAuthMiddleware(&key.PublicKey, nil)
 	mock := &logoutMockUserClient{}
-	h := NewAuthHandler(mock, false)
+	h := NewAuthHandler(mock, false, "test-session-secret")
 	r := buildLogoutRouter(authMW, h)
 
 	expired := signExpiredAccessToken(t, key, "user-logging-out")
@@ -125,7 +125,7 @@ func TestProtectedRouteStill401WithoutToken(t *testing.T) {
 	t.Parallel()
 	key := newTestKeyPair(t)
 	authMW := middleware.NewAuthMiddleware(&key.PublicKey, nil)
-	h := NewAuthHandler(&logoutMockUserClient{}, false)
+	h := NewAuthHandler(&logoutMockUserClient{}, false, "test-session-secret")
 	r := buildLogoutRouter(authMW, h)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/verify-phone", nil)

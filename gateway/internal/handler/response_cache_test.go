@@ -103,7 +103,7 @@ func TestWriteCachedJSON_CachePolicyByIdentity(t *testing.T) {
 			want: wantPublicPolicy,
 		},
 		{
-			// DELIBERATE: has_session is a non-httpOnly constant with Path=/ that
+			// DELIBERATE: has_session is a non-HttpOnly Path=/ soft-gate cookie that
 			// carries no identity. It is present on every signed-in request.
 			name: "has_session sentinel cookie stays public",
 			mutate: func(_ *testing.T, r *http.Request) *http.Request {

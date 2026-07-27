@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -33,8 +32,10 @@ func NewAuctionWSHandler(authMW *middleware.AuthMiddleware, chatWSAddr, internal
 
 // WebSocket handles the auction WebSocket proxy.
 func (h *AuctionWSHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
-	// Check feature flag
-	if os.Getenv("ENABLE_LIVE_AUCTION") != "true" {
+	// Dual gate: live_auction DB flag is enforced by RequireFlag on the route
+	// (migration 013). ENABLE_LIVE_AUCTION remains an ops kill switch AND-ed
+	// here. See middleware.LiveAuctionEnvEnabled.
+	if !middleware.LiveAuctionEnvEnabled() {
 		writeError(w, http.StatusNotFound, "live auctions not enabled")
 		return
 	}

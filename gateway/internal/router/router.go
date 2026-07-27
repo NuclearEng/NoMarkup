@@ -274,8 +274,12 @@ func New(
 		// Live auction endpoints — public (optional auth) so logged-out
 		// visitors can spectate live auctions (drives excitement). The
 		// handlers don't read claims; matches the public job-detail route.
-		r.Get("/{id}/auction/state", optionalAuth(authMW, bidHandler.GetLiveAuctionState))
-		r.Get("/{id}/auction/events", optionalAuth(authMW, bidHandler.GetAuctionEvents))
+		// RequireFlag live_auction (migration 013); ENABLE_LIVE_AUCTION is an
+		// additional ops kill switch AND-ed inside the handlers.
+		r.With(middleware.RequireFlag(dbPool, cacheClient, "live_auction")).
+			Get("/{id}/auction/state", optionalAuth(authMW, bidHandler.GetLiveAuctionState))
+		r.With(middleware.RequireFlag(dbPool, cacheClient, "live_auction")).
+			Get("/{id}/auction/events", optionalAuth(authMW, bidHandler.GetAuctionEvents))
 
 		// Pre-quote answers (Wave 5 audit Section H). Auth-bound:
 		// the handler enforces customer-only writes and customer +
@@ -1214,15 +1218,21 @@ func New(
 	// WebSocket chat endpoint (auth via query param, header, or cookie — validated in handler)
 	r.Get("/ws/chat", chatHandler.WebSocket)
 
-	// Auction WebSocket endpoint (auth via query param, header, or cookie — validated in handler)
-	r.Get("/ws/auction/{jobId}", auctionWSHandler.WebSocket)
+	// Auction WebSocket endpoint (auth via query param, header, or cookie — validated in handler).
+	// RequireFlag live_auction (migration 013); ENABLE_LIVE_AUCTION ops kill switch AND-ed in handler.
+	r.With(middleware.RequireFlag(dbPool, cacheClient, "live_auction")).
+		Get("/ws/auction/{jobId}", auctionWSHandler.WebSocket)
 
-	// Spectator WebSocket endpoint (public, no auth required — anonymous viewers)
-	r.Get("/ws/auction/{jobId}/spectate", spectatorWSHandler.SpectateAuction)
+	// Spectator WebSocket endpoint (public, no auth — anonymous viewers).
+	// RequireFlag spectator_mode (migration 013); ENABLE_LIVE_AUCTION ops kill switch AND-ed in handler.
+	r.With(middleware.RequireFlag(dbPool, cacheClient, "spectator_mode")).
+		Get("/ws/auction/{jobId}/spectate", spectatorWSHandler.SpectateAuction)
 
 	// Marketplace (goods) spectator WebSocket — anonymous live-bid stream for
 	// a single listing. PII-stripped, 3-second delayed.
-	r.Get("/ws/marketplace/{listingId}/spectate", marketplaceSpectatorWSHandler.Spectate)
+	// RequireFlag spectator_mode only (no ENABLE_LIVE_AUCTION AND — that env is services-side).
+	r.With(middleware.RequireFlag(dbPool, cacheClient, "spectator_mode")).
+		Get("/ws/marketplace/{listingId}/spectate", marketplaceSpectatorWSHandler.Spectate)
 
 	return r
 }

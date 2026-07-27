@@ -83,7 +83,7 @@ func TestIntegration_FullRegistrationFlow(t *testing.T) {
 			t.Parallel()
 
 			client := &mockUserClient{registerFn: tt.mockFn}
-			h := NewAuthHandler(client, false)
+			h := NewAuthHandler(client, false, "test-session-secret")
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -122,7 +122,7 @@ func TestIntegration_LoginThenVerifyEmail(t *testing.T) {
 		},
 	}
 
-	h := NewAuthHandler(loginClient, false)
+	h := NewAuthHandler(loginClient, false, "test-session-secret")
 
 	// Login request.
 	loginBody := `{"email":"verify@test.com","password":"Pass123!"}`

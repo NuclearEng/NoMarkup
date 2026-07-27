@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 
 import { parseJwtPayload, setAccessToken } from '@/lib/auth';
+import { looksLikeSessionFlag } from '@/lib/session-flag';
 import { useAuthStore } from '@/stores/auth-store';
 import type { UserRole } from '@/types';
 
@@ -29,9 +30,10 @@ export function AuthRestorer() {
 
     // Check for OAuth callback cookies first.
     const oauthToken = getCookie('oauth_access_token');
-    if (!oauthToken && getCookie('has_session') !== '1') {
+    if (!oauthToken && !looksLikeSessionFlag(getCookie('has_session'))) {
       // No server-set session sentinel — don't hit /auth/refresh and avoid a
-      // guaranteed 400 in the console on every public page load.
+      // guaranteed 400 in the console on every public page load. Client only
+      // does a structural check (v1.* or legacy "1"); HMAC verify is edge-only.
       useAuthStore.setState({ isHydrating: false });
       return;
     }

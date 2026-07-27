@@ -211,12 +211,41 @@ func (m *mockMarketplaceRepo) ClaimListingOrderForRelease(_ context.Context, ord
 	if o.DisputeID != nil && *o.DisputeID != "" {
 		return nil, ErrInvalidEscrowState
 	}
-	if o.StripeTransferID != "" {
+	if IsFinalListingTransfer(o.StripeTransferID) {
 		return nil, ErrInvalidEscrowState
 	}
 	if o.EscrowStatus != "held" && o.EscrowStatus != "released" {
 		return nil, ErrInvalidEscrowState
 	}
+	// Durable pending claim (MON-18) — blocks concurrent dispute freeze.
+	claim := PendingListingTransferClaim(orderID)
+	if o.StripeTransferID != "" && o.StripeTransferID != claim {
+		return nil, ErrInvalidEscrowState
+	}
+	o.StripeTransferID = claim
+	cp := *o
+	return &cp, nil
+}
+
+func (m *mockMarketplaceRepo) ClaimListingOrderForDispute(_ context.Context, orderID, disputeID string) (*MarketplaceListingOrder, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o, ok := m.orders[orderID]
+	if !ok {
+		return nil, ErrListingOrderNotFound
+	}
+	if o.DisputeID != nil && *o.DisputeID != "" {
+		return nil, ErrDisputeAlreadyOpen
+	}
+	if o.StripeTransferID != "" {
+		return nil, ErrInvalidEscrowState
+	}
+	if o.EscrowStatus != "held" && o.EscrowStatus != "pickup_confirmed" {
+		return nil, ErrInvalidEscrowState
+	}
+	o.EscrowStatus = "disputed"
+	id := disputeID
+	o.DisputeID = &id
 	cp := *o
 	return &cp, nil
 }
@@ -243,7 +272,7 @@ func (m *mockMarketplaceRepo) ListListingOrdersForAutoRelease(_ context.Context,
 		if o.DisputeID != nil && *o.DisputeID != "" {
 			continue
 		}
-		if o.StripeTransferID != "" {
+		if IsFinalListingTransfer(o.StripeTransferID) {
 			continue
 		}
 		eligible := (o.EscrowStatus == "held" && o.CreatedAt.Before(before)) ||
@@ -533,6 +562,83 @@ func TestMarketplaceStateMachine_dispute_after_pickup_outside_window_rejected(t 
 
 	_, err := svc.FileListingDispute(context.Background(), o.ID, o.BuyerID, "item_damaged", "too late")
 	assert.ErrorIs(t, err, ErrDisputeWindowClosed)
+}
+
+// TestMarketplaceStateMachine_dispute_fails_closed_after_release_claim is the
+// MON-18 unit proof: once auto-release (or pickup) has claimed the order with a
+// pending transfer marker, FileListingDispute must fail closed rather than
+// freeze a row that is mid-payout.
+func TestMarketplaceStateMachine_dispute_fails_closed_after_release_claim(t *testing.T) {
+	t.Parallel()
+	svc, repo, _ := newMarketplaceFixture()
+
+	o := newOrder("ord-mon18-a", "held", 50000, 2500)
+	o.PaymentIntentID = "pi_mon18_a"
+	repo.addOrder(o)
+
+	claimed, err := repo.ClaimListingOrderForRelease(context.Background(), o.ID)
+	require.NoError(t, err)
+	require.True(t, IsPendingListingTransferClaim(claimed.StripeTransferID))
+
+	_, err = svc.FileListingDispute(context.Background(), o.ID, o.BuyerID, "item_damaged", "too late for race")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidEscrowState)
+
+	got, _ := repo.GetListingOrder(context.Background(), o.ID)
+	assert.Equal(t, "held", got.EscrowStatus, "order must not freeze after release claim")
+	assert.Nil(t, got.DisputeID)
+	assert.True(t, IsPendingListingTransferClaim(got.StripeTransferID))
+}
+
+// TestMarketplaceStateMachine_release_claim_fails_after_dispute_freeze is the
+// other half of MON-18: after FileListingDispute freezes under FOR UPDATE,
+// ClaimListingOrderForRelease must fail closed so auto-release cannot pay out.
+func TestMarketplaceStateMachine_release_claim_fails_after_dispute_freeze(t *testing.T) {
+	t.Parallel()
+	svc, repo, _ := newMarketplaceFixture()
+
+	o := newOrder("ord-mon18-b", "held", 50000, 2500)
+	o.PaymentIntentID = "pi_mon18_b"
+	repo.addOrder(o)
+
+	d, err := svc.FileListingDispute(context.Background(), o.ID, o.BuyerID, "item_not_as_described", "wrong item")
+	require.NoError(t, err)
+	require.NotEmpty(t, d.ID)
+
+	_, err = repo.ClaimListingOrderForRelease(context.Background(), o.ID)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidEscrowState)
+
+	got, _ := repo.GetListingOrder(context.Background(), o.ID)
+	assert.Equal(t, "disputed", got.EscrowStatus)
+	require.NotNil(t, got.DisputeID)
+	assert.Equal(t, d.ID, *got.DisputeID)
+	assert.Empty(t, got.StripeTransferID)
+}
+
+// TestAutoRelease_skips_when_dispute_wins_claim_race covers the auto-release
+// worker path: a disputed order is listed only if still held without dispute;
+// after freeze the claim step fails closed and no transfer is stamped.
+func TestAutoRelease_skips_when_dispute_wins_claim_race(t *testing.T) {
+	t.Parallel()
+	svc, repo, _ := newMarketplaceFixture()
+
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	svc.SetClock(func() time.Time { return now })
+
+	o := newOrder("ord-mon18-c", "held", 50000, 2500)
+	o.PaymentIntentID = "pi_mon18_c"
+	o.CreatedAt = now.Add(-15 * 24 * time.Hour)
+	repo.addOrder(o)
+
+	// Buyer freezes first.
+	_, err := svc.FileListingDispute(context.Background(), o.ID, o.BuyerID, "item_damaged", "broken")
+	require.NoError(t, err)
+
+	count, err := svc.AutoReleaseListingOrders(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+	require.Len(t, repo.transferStamps, 0)
 }
 
 // ====== Dispute resolution tests ======

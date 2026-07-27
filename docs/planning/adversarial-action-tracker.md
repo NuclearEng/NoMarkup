@@ -20,18 +20,18 @@
 
 ## Summary dashboard
 
-**Recounted 2026-07-27 wave26 by parsing the tables below** (140 code/ops rows).
+**Recounted 2026-07-27 MON-18 close by parsing the tables below** (140 code/ops rows).
 
 | Section | Open | Partial | Done | Demoted | Founder-Action | Total |
 |---------|------|---------|------|---------|----------------|-------|
-| P0 — Money integrity | 5 | 0 | 22 | 1 | 0 | 28 |
+| P0 — Money integrity | 4 | 0 | 23 | 1 | 0 | 28 |
 | P0 — Security fail-closed | 4 | 0 | 10 | 3 | 1 | 18 |
 | P0 — Production deploy / ops | 16 | 2 | 10 | 0 | 0 | 28 |
 | P1 — North Star performance | 11 | 0 | 0 | 5 | 0 | 16 |
 | P1 — CI / testing enforcers | 9 | 0 | 2 | 5 | 0 | 16 |
 | P1 — Frontend / a11y / honesty | 9 | 0 | 2 | 5 | 0 | 16 |
 | P2 — Architecture / polish | 12 | 0 | 0 | 6 | 0 | 18 |
-| **All** | **66** | **2** | **46** | **25** | **1** | **140** |
+| **All** | **65** | **2** | **47** | **25** | **1** | **140** |
 
 The separate **DOC** table (18 rows) is a cross-reference of the language-only demotions already
 reflected in the `Demoted` column above — it is not 18 additional items.
@@ -61,7 +61,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | MON-15 | BNPL: provider paid before first customer charge; off-session PI unkeyed | MAJOR | payment | `installment.go`, `CreateOffSessionPaymentIntent` | Charge/authorize customer first **or** compensate; add Stripe keys | Cron retry does not double-charge | Open | |
 | MON-16 | Working capital `RequestAdvance` credit TOCTOU | MAJOR | payment | `advance.go` | Advisory lock / serializable credit check | Concurrent RequestAdvance ≤ line | **Done** 2026-07-27 — `advance.go` RequestAdvance wraps credit check + CreateAdvance in `WithProviderAdvisoryLock` | |
 | MON-17 | Goods dispute resolve does not stamp `stripe_transfer_id` | MAJOR | payment | `listing_charge.go` dispute path | Use same stamp path as release; single idempotency key family | Dispute transfer once; no re-pay race | **Done** 2026-07-27 — `listing_charge.go` ResolveListingDispute uses `listing-release:<orderID>` + `MarkListingOrderTransferred`; test asserts stamp | |
-| MON-18 | Goods auto-release vs dispute file race (no FOR UPDATE) | MAJOR | payment/job | AutoRelease + FileListingDispute | Lock order row before act | Concurrent release+dispute → safe end state | Open | |
+| MON-18 | Goods auto-release vs dispute file race (no FOR UPDATE) | MAJOR | payment/job | AutoRelease + FileListingDispute | Lock order row before act | Concurrent release+dispute → safe end state | **Done** 2026-07-27 — `ClaimListingOrderForDispute` freezes under FOR UPDATE; release stamps durable `pending:<orderID>` claim before Stripe; tests `dispute_fails_closed_after_release_claim` / `release_claim_fails_after_dispute_freeze` | |
 | MON-19 | Services award missing `job.status == active` under lock | MAJOR | bidding | `engines/bidding/src/engine.rs` | Check job active under FOR UPDATE | Cannot award non-active job | **Done** 2026-07-27 — `engines/bidding/src/engine.rs` award_bid FOR UPDATE + `job.status != "active"` → AuctionNotActive | |
 | MON-20 | Goods fee 5% vs README 8%+2%; fee not always persisted on charge | MAJOR | product/payment | gateway fee bps; listing_charge | Align fee policy; persist fee_cents on charge | Charged fee = released fee | Open | |
 | MON-21 | Client can under-pay contract (amount ≤ contract, no cumulative check) | MAJOR | payment | CreatePayment | Enforce milestone/total paid ≤ contract | Underpay path rejected or tracked | Open | |
@@ -85,7 +85,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | SEC-04 | Chat backend `InsecureSkipVerify: true` origin | MAJOR | chat | `ws/handler.go` | Rely on secret + network policy; document; optional origin check | No CSWSH if port exposed | **Done** 2026-07-25 — `services/chat/internal/ws/handler.go:185-190` OriginPatterns replaces InsecureSkipVerify | |
 | SEC-05 | Plaintext gRPC mesh vs “TLS 1.3 everywhere” | BLOCKER (claim) / MAJOR (code) | gateway | `main.go` insecure credentials | mTLS mesh **or** demote claim to “TLS at edge; mesh private network” | Claim matches threat model | **Demoted** claim 2026-07-09; mTLS code still Open | |
 | SEC-06 | Auth TierAuth missing `register-phone`, `resend-verification`, OAuth | MAJOR | gateway | `ratelimit.go` | Map to TierAuth (5/15m) | 429 after budget | **Done** 2026-07-25 — `gateway/internal/router/router.go:216-227` register-phone / resend-verification / oauth / callback → TierAuth | |
-| SEC-07 | Edge middleware `has_session=1` forgeable | MAJOR | web | `middleware.ts` | Document soft gate; never treat as auth; consider signed cookie | AI routes still JWT-only (keep) | Open | |
+| SEC-07 | Edge middleware `has_session=1` forgeable | MAJOR | web | `middleware.ts` | Document soft gate; never treat as auth; consider signed cookie | AI routes still JWT-only (keep) | **Done** 2026-07-27 — gateway HMAC-signs `has_session` (`sessionflag`); edge verifies MAC+exp; AI routes still JWT-only | |
 | SEC-08 | Unauthenticated `/metrics` | MAJOR | gateway | `router.go` | Network-isolate + optional basic auth | External scrape blocked | **Done** 2026-07-25 — `router.go:148` + `protectMetrics` (bearer token or loopback in production) | |
 | SEC-09 | Jobs mutations lack gateway `RequireOwnership` | MAJOR | gateway | jobs routes | Apply ownership middleware like contracts | IDOR regression suite | **Done** 2026-07-25 — `router.go:227,244-252` RequireOwnership on job update/delete/publish/close/cancel | |
 | SEC-10 | Chat typing indicator no membership check | MAJOR | chat | `service.go` SendTypingIndicator | Require channel membership | Non-member → PermissionDenied | **Done** 2026-07-25 — `services/chat/internal/service/service.go:219-226` IsChannelMember check | |
@@ -304,6 +304,7 @@ Do in this order for **CONDITIONAL-GO** (not full SOTA):
 | 2026-07-27 | **MON-24 Done** — advance APR/service-fee and instant-payout fee paths converted from float64 to integer basis-point math (`prorateHalfUp` / half-up service fee / `feeFromBPS` + min floor). |
 | 2026-07-27 | **SEC-16 Done** — JWT `WithValidMethods` RS256-only (`auth.go`); RS384/RS512 rejected in middleware tests. **FE-06 Done** — LIVE honesty on marketplace + job spectate + JobDetail. Guarantee claim routes gated with `RequireFlag(nomarkup_guarantee)` (contracts + admin). |
 | 2026-07-27 | **wave26 verification pass.** Grep-confirmed Done (already fixed in tree): **MON-14** ProcessPayment CAS pending→processing + `capture:<id>` (`service.go`, `stripe.go`, concurrent test); **MON-16** `WithProviderAdvisoryLock` on RequestAdvance (`advance.go`); **MON-17** dispute resolve stamps transfer via `MarkListingOrderTransferred` + `listing-release:<orderID>` (`listing_charge.go`); **MON-19** award_bid active check under FOR UPDATE (`engines/bidding/src/engine.rs`); **MON-26** concurrent refund/release/capture tests (`money_concurrency_test.go`); **FE-10** ListingBidPanel `Link` to /login. **MON-24** / **SEC-16** already Done (reconfirmed integer fee math + RS256-only). Left **Open**: MON-15 (BNPL order residual review), MON-18 (FileListingDispute still unlocked; claim commits before transfer). Dashboard recount: Open 66 / Partial 2 / Done 46 / Demoted 25 / FA 1. |
+| 2026-07-27 | **MON-18 Done** — `ClaimListingOrderForDispute` freezes listing_orders under FOR UPDATE (status=disputed + dispute_id); `ClaimListingOrderForRelease` stamps durable `pending:<orderID>` transfer claim under the same lock so dispute fails closed for the whole Stripe window; ConfirmPickup claims before release; unit tests cover both race directions. Dashboard: Open 65 / Partial 2 / Done 47 / Demoted 25 / FA 1. |
 | 2026-07-25 | **MON-25 / QA-12 closed by CI change:** `.github/workflows/ci.yml` gains `fullstack-security-test`, which boots the docker-compose stack (`tests/integration/docker-compose.ci.yml` overlay) and runs the Tier-1 suites — 4 × `TestAuthBypass_*`, `TestDoubleSpend_ParallelAwardsCreateOneContract`, `TestOwnership_CrossAccountReadIsRejected` — plus the live-stack `TestIdempotency_PaymentDoubleSubmit`. Before this, every one of those tests was behind `//go:build integration` and ran in **no** CI job. Also fixes N11 and (partly) N7/N9's execution venue. |
 
 ---

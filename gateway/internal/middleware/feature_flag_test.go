@@ -107,6 +107,9 @@ func TestRequireFlag_regulatedMoneyKeys_production_nilDB_503(t *testing.T) {
 		"lead_gen",
 		"legal_services",
 		"nomarkup_guarantee",
+		// Live auction / spectator (migration 013) — same RequireFlag fail-closed.
+		"live_auction",
+		"spectator_mode",
 	}
 	for _, key := range keys {
 		key := key
@@ -149,4 +152,40 @@ func TestIsProductionEnv(t *testing.T) {
 
 	t.Setenv("ENVIRONMENT", "")
 	assert.False(t, isProductionEnv())
+}
+
+func TestLiveAuctionEnvEnabled(t *testing.T) {
+	t.Setenv("ENABLE_LIVE_AUCTION", "true")
+	assert.True(t, LiveAuctionEnvEnabled())
+
+	t.Setenv("ENABLE_LIVE_AUCTION", "false")
+	assert.False(t, LiveAuctionEnvEnabled())
+
+	t.Setenv("ENABLE_LIVE_AUCTION", "1")
+	assert.False(t, LiveAuctionEnvEnabled(), "only exact true enables")
+
+	t.Setenv("ENABLE_LIVE_AUCTION", "")
+	assert.False(t, LiveAuctionEnvEnabled())
+}
+
+// RequireFlag on live_auction / spectator_mode routes: production nil DB → 503.
+func TestRequireFlag_liveAuctionAndSpectator_production_nilDB_503(t *testing.T) {
+	t.Setenv("ENVIRONMENT", "production")
+	for _, key := range []string{"live_auction", "spectator_mode"} {
+		key := key
+		t.Run(key, func(t *testing.T) {
+			called := false
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusOK)
+			})
+			h := RequireFlag(nil, nil, key)(next)
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/gated", nil)
+			h.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+			assert.False(t, called)
+			assert.Contains(t, rec.Body.String(), "currently unavailable")
+		})
+	}
 }

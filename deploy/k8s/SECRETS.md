@@ -19,7 +19,7 @@ environments.
 | `REDIS_URL` | gateway, services | session/idempotency cache |
 | `JWT_PRIVATE_KEY` | user service | RS256 signing. **Mounted as a file, not read from env** — see below. |
 | `JWT_PUBLIC_KEY` | gateway, every service | JWT verification. **Mounted as a file, not read from env** — see below. |
-| `SESSION_SECRET` | gateway | secure cookie sealing |
+| `SESSION_SECRET` | gateway, web (edge) | HMAC for `has_session` soft-gate cookie (SEC-07); optional `HAS_SESSION_SECRET` override |
 | `INTERNAL_WS_SECRET` | gateway + chat | Shared secret for gateway→chat WebSocket hop auth. Generate with `openssl rand -base64 32`. Same value on both Deployments (explicit `secretKeyRef` + `envFrom`). |
 | `STRIPE_SECRET_KEY` | payment service | server-side Stripe API |
 | `STRIPE_WEBHOOK_SECRET` | payment service | webhook signature verification (mandatory; no env-based bypass) |
