@@ -29,28 +29,46 @@ in-cluster is `meili-data` (Meilisearch index storage).
 
 ## Image pinning + the deploy gate
 
-- Base manifests reference `ghcr.io/nomarkup/<name>:latest`, but **overlays
-  never deploy `:latest`**: both `overlays/production/kustomization.yaml` and
-  `overlays/staging/kustomization.yaml` carry an `images:` block pinning all
-  13 deployables (`gateway, web, user, job, payment, chat, notification,
-  bidding, fraud, imaging, pricing, trust, underwriting`) to an explicit tag.
-- `v0.1.0` in the repo is a placeholder. At deploy time CI stamps the real
-  release tag:
+- Base manifests reference `ghcr.io/nomarkup/<name>:latest` (dev-friendly
+  default). **Overlays pin explicit tags** so a rendered prod/staging apply
+  never ships floating `:latest`:
+  - **Production** (`overlays/production`): every image is tagged
+    `require-ci-stamp` — intentionally not a pullable release. This is
+    fail-closed for accidental `kubectl apply -k` (OPS-08).
+  - **Staging** (`overlays/staging`): placeholder `v0.1.0` until CI stamps a
+    real tag (non-prod may still use base `:latest` only if you apply `base/`
+    directly — do not do that for shared clusters).
+- Image **names** in overlays match the base: `ghcr.io/nomarkup/<svc>`. At
+  deploy time CI rewrites name **and** tag to the OPS-21 / deploy.yml push
+  path:
+
+  ```text
+  ghcr.io/<github.repository_owner>/nomarkup/<svc>:<VERSION|sha8>
+  ```
 
   ```bash
   cd deploy/k8s/overlays/production
   for img in gateway web user job payment chat notification \
-             bidding fraud imaging pricing trust underwriting; do
-    kustomize edit set image ghcr.io/nomarkup/$img:$RELEASE_TAG
+             bidding fraud imaging pricing trust underwriting migrate; do
+    kustomize edit set image \
+      "ghcr.io/nomarkup/${img}=ghcr.io/${OWNER}/nomarkup/${img}:${RELEASE_TAG}"
   done
   ```
 
+  Optional registry overrides: `vars.DOCKER_REGISTRY`, `vars.DOCKER_IMAGE_PREFIX`
+  (same as main-branch push in `ci.yml`).
+
 - `.github/workflows/deploy.yml` is **fail-closed** until
   `DEPLOY_PROVISIONED=true`. When provisioned **and** secrets `KUBE_CONFIG` +
-  `REGISTRY_PASSWORD` are present, it build/pushes images, runs the
-  `db-migrate-<version>` Job, then `kubectl apply -k overlays/production`.
+  `REGISTRY_PASSWORD` are present, it build/pushes images, stamps the overlay,
+  runs the `db-migrate-<version>` Job, then `kubectl apply -k overlays/production`.
   Missing credentials after the gate is flipped fails with a clear error
   (no echo-only success path).
+
+- **Google OAuth client ID** is not a ConfigMap literal in production. Provision
+  `GOOGLE_CLIENT_ID` (and confidential `GOOGLE_CLIENT_SECRET`) into
+  `nomarkup-secrets` — see [`SECRETS.md`](./SECRETS.md). Do not invent or
+  commit real Google client credentials.
 
 ## Secrets
 

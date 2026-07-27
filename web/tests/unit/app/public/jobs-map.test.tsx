@@ -89,7 +89,8 @@ describe('(public)/jobs/map/page', () => {
     } as unknown as ReturnType<typeof useSearchJobs>);
 
     render(createElement(JobsMapPage));
-    expect(screen.getByText(/Loading jobs/)).toBeDefined();
+    expect(screen.getByRole('status', { name: 'Loading job map' })).toBeDefined();
+    expect(screen.getByRole('status', { name: 'Loading nearby jobs' })).toBeDefined();
   });
 
   it('renders the error fallback for the map and calls refetch on Retry', () => {
@@ -168,8 +169,9 @@ describe('(public)/jobs/map/page', () => {
       isError: false,
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useSearchJobs>);
-    const { container } = render(createElement(JobsMapPage));
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    render(createElement(JobsMapPage));
+    expect(screen.getByRole('status', { name: 'Loading nearby jobs' })).toBeDefined();
+    expect(screen.getByRole('status', { name: 'Loading job map' })).toBeDefined();
   });
 
   it('renders job card without location_address when address is missing', () => {
@@ -208,8 +210,10 @@ describe('(public)/jobs/map/page', () => {
       isError: false,
       refetch: vi.fn(),
     } as unknown as ReturnType<typeof useSearchJobs>);
-    const { container } = render(createElement(JobsMapPage));
-    expect(container.querySelectorAll('.animate-pulse').length).toBe(6);
+    render(createElement(JobsMapPage));
+    const listStatus = screen.getByRole('status', { name: 'Loading nearby jobs' });
+    // 6 card Skeleton children under the list status region
+    expect(listStatus.children.length).toBe(6);
   });
 
   it('renders multiple jobs in the grid when many returned', () => {

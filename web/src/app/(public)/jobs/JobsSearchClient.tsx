@@ -8,6 +8,7 @@ import { JobSearchFilters } from '@/components/jobs/JobSearchFilters';
 import { SeasonalDemandBanner } from '@/components/jobs/SeasonalDemandBanner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useSearchJobs } from '@/hooks/useJobs';
 import type { JobsResponse, SearchJobsParams } from '@/types';
 
@@ -164,33 +165,37 @@ export function JobsSearchClient({
         {/* Results */}
         <div className="flex-1">
           {showSkeleton ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div
+              className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+              role="status"
+              aria-label="Loading jobs"
+            >
               {Array.from({ length: 6 }).map((_, i) => (
                 <div
                   key={`skeleton-${String(i)}`}
-                  className="glass glass-highlight animate-pulse rounded-xl border border-[var(--brand-gold)]/10 p-5"
+                  className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-5"
                 >
                   <div className="mb-3 flex items-center gap-3">
-                    <div className="h-5 w-16 rounded-full bg-white/[0.06]" />
-                    <div className="h-4 w-12 rounded bg-white/[0.06]" />
+                    <Skeleton className="h-5 w-16 rounded-full" />
+                    <Skeleton className="h-4 w-12" />
                   </div>
-                  <div className="mb-2 h-5 w-3/4 rounded bg-white/[0.06]" />
+                  <Skeleton className="mb-2 h-5 w-3/4" />
                   <div className="mb-4 space-y-2">
-                    <div className="h-3 w-full rounded bg-white/[0.06]" />
-                    <div className="h-3 w-5/6 rounded bg-white/[0.06]" />
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-5/6" />
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="h-4 w-4 rounded bg-white/[0.06]" />
-                    <div className="h-3 w-24 rounded bg-white/[0.06]" />
+                    <Skeleton className="h-4 w-4" />
+                    <Skeleton className="h-3 w-24" />
                   </div>
                   <div className="mt-3 flex items-center gap-2">
-                    <div className="h-4 w-4 rounded bg-white/[0.06]" />
-                    <div className="h-3 w-20 rounded bg-white/[0.06]" />
+                    <Skeleton className="h-4 w-4" />
+                    <Skeleton className="h-3 w-20" />
                   </div>
                   <div className="glass-divider mt-4 mb-3" />
                   <div className="flex items-center justify-between">
-                    <div className="h-5 w-20 rounded bg-white/[0.06]" />
-                    <div className="h-3 w-16 rounded bg-white/[0.06]" />
+                    <Skeleton className="h-5 w-20" />
+                    <Skeleton className="h-3 w-16" />
                   </div>
                 </div>
               ))}

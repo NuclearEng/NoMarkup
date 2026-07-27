@@ -769,6 +769,10 @@ export interface AdminFeatureFlag {
   key: string;
   enabled: boolean;
   description: string;
+  /** Sticky 0-100 cohort when enabled; money/regulated keys are binary_only (0 or 100). */
+  rollout_percent?: number;
+  /** True for money/regulated keys — partial % is rejected by the API. */
+  binary_only?: boolean;
   updated_at: string;
 }
 

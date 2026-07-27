@@ -98,6 +98,18 @@ describe('(public)/jobs JobsSearchClient', () => {
     expect(screen.getByTestId('filters')).toBeDefined();
   });
 
+  it('renders Skeleton job-card placeholders while loading without seed data', () => {
+    vi.mocked(useSearchJobs).mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useSearchJobs>);
+
+    renderClient();
+    expect(screen.getByRole('status', { name: 'Loading jobs' })).toBeDefined();
+  });
+
   it('passes initialData to useSearchJobs on first paint (PERF-06 seed)', () => {
     const seed: JobsResponse = {
       jobs: [{ id: 'j-seed', title: 'Seeded job', category_slug: 'plumbing' }] as JobsResponse['jobs'],
@@ -135,8 +147,8 @@ describe('(public)/jobs JobsSearchClient', () => {
       } as unknown as ReturnType<typeof useSearchJobs>;
     });
 
-    const { container } = renderClient(seed);
-    expect(container.querySelectorAll('.animate-pulse').length).toBe(0);
+    renderClient(seed);
+    expect(screen.queryByRole('status', { name: 'Loading jobs' })).toBeNull();
     expect(screen.getByTestId('job-j1')).toBeDefined();
   });
 

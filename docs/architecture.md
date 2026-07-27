@@ -103,7 +103,7 @@ NoMarkup/
 │   └── Cargo.toml                     # members list is authoritative
 ├── database/                          # golang-migrate (001…073) + seed
 ├── ml/                                # Python training (NOT deployed)
-├── tests/                             # integration (Go) + load (k6 — not CI)
+├── tests/                             # integration (Go) + load (k6; optional CI smoke only)
 └── deploy/
     ├── docker/ k8s/ monitoring/
     └── terraform/                     # skeleton until IaC is filled in

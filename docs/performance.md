@@ -21,7 +21,7 @@ claim the bar is already met**.
 | INP | < 100ms | Not field-gated |
 | DATA-layer CDN (`writeCachedJSON`) | shipped | **Real** — public listings/catalog JSON cacheable |
 | Service worker | offline/instant repeat | **Kill-switch only** (`public/sw.js` unregisters + purges) |
-| Criterion / k6 | enforce budgets | **Local / scripts only — not CI** |
+| Criterion / k6 | enforce budgets | **Partial (PERF-10)** — scripts under `tests/load/`; optional CI `k6-smoke` when `K6_BASE_URL` set (schedule / dispatch). Not capacity proof |
 | Lighthouse lab (`/`, `/marketplace`, `/jobs`) | regression floors | **Partial (PERF-02)** — `npm run lighthouse:ci`; CI optional (PR soft / nightly hard); not North Star |
 
 ## JS budgets (React-floor-aware — measured, not aspirational)
@@ -104,6 +104,24 @@ When adding or converting a public page, copy the marketplace pattern:
   metric (Lighthouse/field data, bundle analyzer, `curl -w` TTFB, etc.). No unverified "this should
   be faster" claims.
 - A change that misses a budget without a written, accepted reason is a regression.
+
+## k6 load / smoke (PERF-10 — Partial)
+
+Scripts live under [`tests/load/`](../tests/load/). Shared config: `config.js` (`BASE_URL`, mock or `AUTH_TOKEN` headers).
+
+| Script | Role |
+|--------|------|
+| `smoke.js` | **CI path** — 1 VU × 5 iterations, public GETs only (`/healthz`, pricing, markets, categories, jobs, listings) |
+| `jobs.js`, `bids.js`, `search.js`, `auction.js`, `websocket.js`, `marketplace-scoreboard.js` | Full load profiles — **local / manual** against a live stack |
+
+```bash
+# Install: https://grafana.com/docs/k6/latest/set-up/install-k6/
+k6 run tests/load/smoke.js
+k6 run -e BASE_URL=http://127.0.0.1:8080 tests/load/smoke.js
+k6 run -e BASE_URL=https://staging-api.example.com tests/load/marketplace-scoreboard.js
+```
+
+**CI:** `.github/workflows/ci.yml` job **`k6-smoke`** — `schedule` + `workflow_dispatch` only. Skips cleanly when repo variable **`K6_BASE_URL`** (or secret `K6_BASE_URL`) is unset. Optional secret `K6_AUTH_TOKEN` for future authed smokes. `continue-on-error: true`; JSON summary artifact when run. **Not** a PR gate and **not** Done: full staging load proof with real tokens + threshold artifacts still required to close PERF-10.
 
 ## TTFB / DATA-layer CDN sampling (PERF-13 recipe)
 

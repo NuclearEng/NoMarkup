@@ -18,7 +18,7 @@ From code-complete to real users on production. Every item must be checked off o
 
 - [ ] Set repo/environment `DEPLOY_PROVISIONED=true` **only after** cluster + secrets + migrate-on-deploy work
 - [ ] Confirm `deploy.yml` no longer exits placeholder-only (currently fail-closed until provisioned)
-- [ ] Secrets in Vault/ESO/K8s — no `REPLACE_ME_*` in production overlay
+- [ ] Secrets in Vault/ESO/K8s — production overlay has no `REPLACE_ME_*`/`SET_ME_*` (OPS-08 Partial: image tags are `require-ci-stamp` until CI; provision real `GOOGLE_CLIENT_ID` into `nomarkup-secrets`)
 - [ ] DNS + TLS for **`no-markup.com`** / **`www.no-markup.com`** only
 - [ ] Run migrations **001 → 073** on production Postgres (PostGIS 3.4)
 - [ ] Smoke: `curl -f https://no-markup.com` and `https://no-markup.com/api/health` (or actual gateway path)
@@ -138,7 +138,7 @@ From code-complete to real users on production. Every item must be checked off o
 ### Current Pipeline (truth)
 - [ ] `ci.yml` green on main: web lint + typecheck, Vitest (**floors** ~71–77% in `vitest.config.mts`, not blanket 80% all metrics), Playwright **Chromium** E2E (backend-tolerant; full dogfood needs stack + `SEED_PASSWORD`), Go tests + PostGIS service container integration, Rust fmt/clippy/test
 - [ ] `security-scan.yml` green (govulncheck, cargo-audit, npm audit **policy**: prod deps + high+ only — see `docs/conventions.md` QA-15 residual)
-- [ ] **Not in CI today:** criterion p99 gates, k6 load, full axe AA on real routes, Go/Rust 80% coverage gates, Husky pre-commit
+- [ ] **Not in CI today (or Partial only):** criterion p99 gates, k6 full load (smoke optional via `K6_BASE_URL` — PERF-10 Partial), full axe AA on real routes, Go/Rust 80% coverage gates, Husky pre-commit
 
 ### Deploy Pipeline
 - [ ] **CRITICAL:** real deploy (build/push → migrate → apply → smoke) behind `DEPLOY_PROVISIONED`
@@ -210,7 +210,7 @@ From code-complete to real users on production. Every item must be checked off o
 - [ ] Record lab Lighthouse LCP/INP/CLS on `/`, marketplace, jobs — **expect multi-second LCP until improved**
 - [ ] Confirm public JSON CDN headers on catalog endpoints
 - [ ] Bid engine p99 bench **local** (criterion not CI)
-- [ ] Optional k6 against staging (not CI)
+- [ ] Optional k6 against staging — CI job `k6-smoke` when `K6_BASE_URL` set; full profiles still manual
 
 ---
 
@@ -269,7 +269,7 @@ From code-complete to real users on production. Every item must be checked off o
 - [ ] Track open P0s in `docs/planning/adversarial-action-tracker.md` — **do not take real money** until money + fail-closed items close
 
 ### Claims demoted (docs done; code optional)
-- Feature flags fail-open on missing rows · mesh plaintext gRPC · secretbox not AES-GCM · coverage floors not 80% all stacks · no testcontainers · criterion/k6 not CI · no Husky · E2E CI backend-tolerant · North Star not achieved · SW kill-switch · RSC pilots not whole app · WCAG goal not axe-certified · insurance/legal flag-off · win-prob cosmetic · GPS honor system
+- Feature flags fail-open on missing rows · mesh plaintext gRPC · secretbox not AES-GCM · coverage floors not 80% all stacks · no testcontainers · criterion not CI · k6 smoke optional only (not capacity proof) · no Husky · E2E CI backend-tolerant · North Star not achieved · SW kill-switch · RSC pilots not whole app · WCAG goal not axe-certified · insurance/legal flag-off · win-prob cosmetic · GPS honor system
 
 ---
 

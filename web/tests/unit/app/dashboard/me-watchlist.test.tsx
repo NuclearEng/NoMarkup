@@ -66,8 +66,8 @@ afterEach(() => {
 describe('WatchlistPage', () => {
   it('renders skeletons while loading', () => {
     watchlistState.isLoading = true;
-    const { container } = renderPage();
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    renderPage();
+    expect(screen.getByRole('status', { name: 'Loading watchlist' })).toBeDefined();
   });
 
   it('renders the error state and Retry invokes refetch', () => {

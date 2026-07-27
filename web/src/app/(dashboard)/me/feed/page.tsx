@@ -11,6 +11,7 @@ import Link from 'next/link';
 
 import { ListingCard } from '@/components/marketplace/ListingCard';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useMyFeed } from '@/hooks/useFollows';
 import type { Listing } from '@/types';
 
@@ -35,10 +36,15 @@ export default function MyFeedPage() {
       </header>
 
       {isLoading ? (
-        <div className="space-y-4" aria-busy="true">
-          <div className="glass glass-highlight h-48 animate-pulse rounded-xl border border-[var(--brand-gold)]/10" />
-          <div className="glass glass-highlight h-48 animate-pulse rounded-xl border border-[var(--brand-gold)]/10" />
-          <div className="glass glass-highlight h-48 animate-pulse rounded-xl border border-[var(--brand-gold)]/10" />
+        <div
+          className="space-y-4"
+          role="status"
+          aria-label="Loading feed"
+          aria-busy="true"
+        >
+          <Skeleton variant="card" className="h-48 w-full" />
+          <Skeleton variant="card" className="h-48 w-full" />
+          <Skeleton variant="card" className="h-48 w-full" />
         </div>
       ) : null}
 

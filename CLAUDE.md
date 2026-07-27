@@ -224,6 +224,13 @@ These are non-negotiable. The hooks enforce many automatically.
 - Admin-togglable keys; `RequireFlag` → **503 when the flag row exists and `enabled=false`**.
 - **Fails closed in production** (SEC-01, shipped): missing flag row, DB error, and nil DB all →
   503 when `ENVIRONMENT=production`. Non-production keeps fail-open for missing/error only.
+- **ARC-10 Partial — sticky % (not a full experiment platform):** optional
+  `feature_flags.rollout_percent` (0–100, default 100). When `enabled=true` and percent &lt; 100,
+  cohort is sticky via `SHA256(userID|key) % 100` (device id fallback). Public `GET /api/v1/flags`
+  stays a flat bool map (CDN). Exposure metrics: `feature_flag_checks_total`,
+  `experiment_exposures_total`. **Money/regulated keys are binary-only** (allow only at 100%;
+  partial fails closed; admin write rejects 1–99). Handler-level `WithExperiment` is
+  control/treatment only — no multi-arm stats warehouse.
 - **Caveat:** only 6 route groups call `RequireFlag`. Of the 13 flags in the DB, 7 have no backend
   enforcement at all and gate UI only — toggling those off does not close the API.
 
@@ -247,8 +254,8 @@ These are non-negotiable. The hooks enforce many automatically.
 - **Go**: table-driven parallel; **CI uses a PostGIS service container** (GitHub Actions), not
   testcontainers-go. Integration packages under `tests/integration/` + service tests; httptest + bufconn.
 - **Rust**: proptest for numerical code (trust bounds, bid invariants, fraud no-panics, underwriting).
-  Criterion benches exist for p99 budgets (**local / not CI-enforced**). k6 scripts under `tests/load/`
-  are **not** in CI.
+  Criterion benches exist for p99 budgets (**local / not CI-enforced**). k6 under `tests/load/`:
+  optional CI smoke (`k6-smoke` when `K6_BASE_URL` set) only — full load profiles not CI-gated (PERF-10 Partial).
 
 → **Vitest config + full per-stack detail: `docs/conventions.md`.**
 

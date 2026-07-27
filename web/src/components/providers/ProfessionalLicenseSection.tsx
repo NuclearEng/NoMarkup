@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import {
   LICENSE_STATUS,
@@ -192,7 +193,11 @@ export function ProfessionalLicenseSection({ className }: { className?: string }
 
       {/* Existing licenses + their verification status */}
       {isLoading ? (
-        <div className="h-16 animate-pulse rounded-lg border border-[var(--brand-gold)]/10 bg-white/[0.04]" />
+        <Skeleton
+          className="h-16 w-full rounded-lg"
+          role="status"
+          aria-label="Loading professional licenses"
+        />
       ) : licenses && licenses.length > 0 ? (
         <ul className="space-y-2">
           {licenses.map((license) => (

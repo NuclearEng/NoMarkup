@@ -18,6 +18,7 @@ import type { Route } from 'next';
 
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   savedSearchQueryToParams,
   summarizeSavedSearchQuery,
@@ -70,12 +71,17 @@ export default function SavedSearchesPage() {
       </header>
 
       {isLoading ? (
-        <ul className="space-y-3" aria-busy="true" aria-live="polite">
+        <ul
+          className="space-y-3"
+          role="status"
+          aria-label="Loading saved searches"
+          aria-busy="true"
+          aria-live="polite"
+        >
           {Array.from({ length: 3 }).map((_, i) => (
-            <li
-              key={`saved-search-skeleton-${String(i)}`}
-              className="glass glass-highlight h-20 animate-pulse rounded-xl border border-[var(--brand-gold)]/10"
-            />
+            <li key={`saved-search-skeleton-${String(i)}`}>
+              <Skeleton variant="card" className="h-20 w-full" />
+            </li>
           ))}
         </ul>
       ) : isError ? (

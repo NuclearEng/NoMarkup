@@ -7,9 +7,10 @@ on:
     branches: [main]
   schedule:
     # Optional nightly: engines-bench-nightly, lighthouse-budget,
-    # e2e-cross-browser (firefox/webkit) — 06:00 UTC daily.
+    # e2e-cross-browser (firefox/webkit), k6-smoke (when K6_BASE_URL set) —
+    # 06:00 UTC daily.
     - cron: "0 6 * * *"
-  # Manual re-run of optional PERF / cross-browser E2E jobs.
+  # Manual re-run of optional PERF / cross-browser E2E / k6 jobs.
   workflow_dispatch:
 
 concurrency:
@@ -597,6 +598,81 @@ jobs:
           cd services/payment
           go test ./internal/service/ -tags integration -short -race \
             -run 'Concurrent|Race|Double|Idempotency' -count=1 -timeout=10m
+
+  # ── Optional k6 smoke against staging/edge (PERF-10 Partial) ──
+  # Public-catalog smoke only (`tests/load/smoke.js`). Not a PR gate, not in
+  # `build` needs, not capacity proof. Runs on schedule + workflow_dispatch
+  # only when repo variable `K6_BASE_URL` (or secret `K6_BASE_URL`) is set;
+  # otherwise the job no-ops successfully so default CI stays green without
+  # a live stack. Full load profiles (jobs/bids/search/…) stay local/manual.
+  # Promote PERF-10 to Done only with real staging load artifacts + thresholds.
+
+  k6-smoke:
+    name: k6 Smoke (PERF-10)
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Soft-fail: missing staging or flaky edge must not break the workflow run
+    # identity. When BASE_URL is set, failures still show as job failed (orange
+    # X on the job) while continue-on-error keeps the overall workflow green.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Resolve BASE_URL
+        id: target
+        env:
+          # Prefer non-secret repo variable (staging URL is not a credential).
+          # Secret fallback for orgs that only expose secrets to Actions.
+          K6_BASE_URL_VAR: ${{ vars.K6_BASE_URL }}
+          K6_BASE_URL_SECRET: ${{ secrets.K6_BASE_URL }}
+        run: |
+          set -euo pipefail
+          BASE="${K6_BASE_URL_VAR:-}"
+          if [ -z "${BASE}" ]; then
+            BASE="${K6_BASE_URL_SECRET:-}"
+          fi
+          if [ -z "${BASE}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "K6_BASE_URL unset — skipping k6 smoke (PERF-10 optional; set repo var K6_BASE_URL to enable)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "base_url=${BASE}" >> "$GITHUB_OUTPUT"
+            echo "Running k6 smoke against configured BASE_URL (host redacted in logs if needed)."
+          fi
+      - name: Install k6
+        if: steps.target.outputs.skip != 'true'
+        env:
+          K6_VERSION: v0.54.0
+        run: |
+          set -euo pipefail
+          curl -sSL "https://github.com/grafana/k6/releases/download/${K6_VERSION}/k6-${K6_VERSION}-linux-amd64.tar.gz" \
+            | tar -xz -C /tmp
+          sudo mv "/tmp/k6-${K6_VERSION}-linux-amd64/k6" /usr/local/bin/k6
+          k6 version
+      - name: k6 smoke (public catalog)
+        if: steps.target.outputs.skip != 'true'
+        env:
+          BASE_URL: ${{ steps.target.outputs.base_url }}
+          # Optional real token for future authed smokes; smoke.js is public-only today.
+          AUTH_TOKEN: ${{ secrets.K6_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/k6
+          k6 run \
+            --summary-export=artifacts/k6/smoke-summary.json \
+            -e "BASE_URL=${BASE_URL}" \
+            ${AUTH_TOKEN:+-e "AUTH_TOKEN=${AUTH_TOKEN}"} \
+            tests/load/smoke.js
+      - name: Upload k6 smoke artifact
+        if: always() && steps.target.outputs.skip != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: k6-smoke-${{ github.run_id }}
+          path: artifacts/k6/
+          if-no-files-found: warn
+          retention-days: 14
 
   # ── Optional Lighthouse budgets (PERF-02 Partial) ─────────────
   # Lab Lighthouse against a production `next start` for `/`, `/marketplace`,

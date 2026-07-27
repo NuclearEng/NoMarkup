@@ -35,6 +35,8 @@ disables that engine's `/metrics` listener (gRPC health remains available).
 |--------------------------------------------------|----------------------------|------------|
 | `http_requests_total{method,path,status}`         | Gateway                    | Implemented |
 | `http_request_duration_seconds{method,path}`      | Gateway                    | Implemented |
+| `feature_flag_checks_total{flag,result}`          | Gateway                    | Implemented (ARC-10 exposure) |
+| `experiment_exposures_total{key,variant}`         | Gateway                    | Implemented (ARC-10 exposure) |
 | `grpc_requests_total{service,method,status}`      | Gateway (outbound)         | Wired (interceptor TODO)*  |
 | `grpc_request_duration_seconds{service,method}`   | Gateway (outbound)         | Wired (interceptor TODO)*  |
 | `bid_processing_duration_seconds`                 | Bidding engine (60053)     | Implemented (place_bid + award_bid timers) |

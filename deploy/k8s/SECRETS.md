@@ -28,7 +28,8 @@ environments.
 | `SENDGRID_API_KEY` | notification | email sending (dev-mode stub if absent — TODOS-6) |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | notification | SMS sending |
 | `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | every service | error tracking (TODOS-7) |
-| `GOOGLE_CLIENT_SECRET` | gateway | Google OAuth token exchange |
+| `GOOGLE_CLIENT_ID` | gateway | Google OAuth web client ID (`…apps.googleusercontent.com`). Used for OAuth `aud` validation — **not** confidential like the secret, but still provisioned out-of-band so production overlays never commit a real (or fake `SET_ME_*`) value (OPS-08). Gateway reads it via `envFrom: secretRef: nomarkup-secrets`. |
+| `GOOGLE_CLIENT_SECRET` | gateway | Google OAuth token exchange (confidential — Vault only) |
 | `APPLE_CLIENT_SECRET` | gateway | Apple OAuth token exchange |
 | `ENCRYPTION_KEY` | user, services with PII | base64 32-byte key for **XSalsa20-Poly1305** (`nacl/secretbox`), not AES-256-GCM — see CLAUDE.md §6. Required in staging as well as production: the code's ephemeral-key fallback is keyed on `ENVIRONMENT == "production"`, so a staging pod without this generates a **different random key per replica** and writes permanently undecryptable PII. |
 | `MEILISEARCH_API_KEY` | gateway, job service, meilisearch (as `MEILI_MASTER_KEY`) | search index admin operations + gateway listings search; the in-cluster Meilisearch Deployment (`base/meilisearch/deployment.yaml`) boots with this same value as its master key — identical to the docker-compose wiring |

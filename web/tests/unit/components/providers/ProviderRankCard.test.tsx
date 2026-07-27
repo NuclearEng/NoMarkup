@@ -23,8 +23,8 @@ describe('ProviderRankCard', () => {
       data: undefined,
       isLoading: true,
     } as unknown as ReturnType<typeof useProviderStreaks>);
-    const { container } = render(<ProviderRankCard />);
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    render(<ProviderRankCard />);
+    expect(screen.getByRole('status', { name: 'Loading win stats' })).toBeDefined();
   });
 
   it('returns null when no streaks data', () => {

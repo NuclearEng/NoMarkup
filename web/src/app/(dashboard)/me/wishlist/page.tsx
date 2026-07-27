@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useGoodsCategoryTree } from '@/hooks/useCategories';
 import {
   useCreateWishlistItem,
@@ -177,12 +178,17 @@ export default function WishlistPage() {
 
       {/* List */}
       {isLoading ? (
-        <ul className="space-y-3" aria-busy="true" aria-live="polite">
+        <ul
+          className="space-y-3"
+          role="status"
+          aria-label="Loading wishlist"
+          aria-busy="true"
+          aria-live="polite"
+        >
           {Array.from({ length: 3 }).map((_, i) => (
-            <li
-              key={`wishlist-skeleton-${String(i)}`}
-              className="glass glass-highlight h-20 animate-pulse rounded-xl border border-[var(--brand-gold)]/10"
-            />
+            <li key={`wishlist-skeleton-${String(i)}`}>
+              <Skeleton variant="card" className="h-20 w-full" />
+            </li>
           ))}
         </ul>
       ) : isError ? (

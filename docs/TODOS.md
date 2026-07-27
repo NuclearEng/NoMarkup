@@ -20,7 +20,7 @@ The file `qa/scripts/qa-creds.env` containing `QA_PASSWORD=Password123!` was unt
 - **Priority:** P0 (blast radius: anyone with prior repo access)
 
 ### Done — S2. Set new required env vars in every deploy target
-Wired in commit `68d5cbf`: staging + production overlays now declare `ENVIRONMENT`, `JWT_ISSUER`, `JWT_AUDIENCE`, `WS_ALLOWED_ORIGINS`, `TRUSTED_PROXIES`, `APPLE_CLIENT_ID`, and `GOOGLE_CLIENT_ID` in their ConfigMap. Sensitive secrets (Stripe, JWT keys, Twilio, OAuth client secrets) are documented in `deploy/k8s/SECRETS.md` for provisioning via External Secrets Operator / Vault. Founder must replace the placeholder `GOOGLE_CLIENT_ID` literal in each overlay with the real Google Cloud Console value before deploy.
+Wired in commit `68d5cbf`: staging + production overlays declare `ENVIRONMENT`, `JWT_ISSUER`, `JWT_AUDIENCE`, `WS_ALLOWED_ORIGINS`, `TRUSTED_PROXIES`, and `APPLE_CLIENT_ID` in their ConfigMap. **OPS-08 (2026-07-27):** production no longer carries a `GOOGLE_CLIENT_ID` / `SET_ME_*` ConfigMap literal — provision `GOOGLE_CLIENT_ID` (+ confidential `GOOGLE_CLIENT_SECRET`) into `nomarkup-secrets` (see `deploy/k8s/SECRETS.md`). Staging still has a `SET_ME_STAGING_*` ConfigMap placeholder until staging secrets are wired the same way. Image tags in production are fail-closed `require-ci-stamp` until deploy.yml stamps CI-built GHCR tags.
 
 #### (original spec preserved below)
 The audit fixes made several env vars mandatory (services refuse to start without them). Deploy WILL fail if these aren't set in Vault / K8s secrets / CI before merging the audit branch.
