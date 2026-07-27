@@ -263,3 +263,4 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | 2026-07-27 wave25 | Bid-bond release: losers on auction close/buy-now; winner on escrow held |
 | 2026-07-27 wave26 | Bond cancel release + CreateOffer bond gate; Instant distance order + enrich accept notify; fee tests; tracker honesty MON-14/16/17/19/26 Done |
 | 2026-07-27 wave27 | MON-18 dispute/release mutual FOR UPDATE claim; SEC-07 signed has_session HMAC; live_auction + spectator_mode RequireFlag SSOT |
+| 2026-07-27 wave28 | MON-15 BNPL charge-first hardened (resolveCustomerStripeID fail-closed) + regression tests; tracker Done |

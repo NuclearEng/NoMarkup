@@ -288,6 +288,62 @@ func TestInstallmentService_CreateInstallmentPlan(t *testing.T) {
 		require.Error(t, err)
 		assert.True(t, strings.Contains(err.Error(), "provider not connected"))
 	})
+
+	// MON-15: first customer charge must fail closed without paying the provider.
+	t.Run("charge_failure_does_not_pay_provider", func(t *testing.T) {
+		t.Parallel()
+		var providerPaidCalls int
+		var failedInstallment string
+		repo := &mockPaymentRepo{
+			getContractForPaymentFn: func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+				return &domain.ContractForPayment{
+					ID: contractID, CustomerID: "cust-1", ProviderID: "prov-1",
+					AmountCents: 30000, Status: "active",
+				}, nil
+			},
+			getStripeAccountIDFn: func(_ context.Context, _ string) (string, error) {
+				return "acct_dev", nil
+			},
+			updateInstallmentPlanProviderPaidFn: func(_ context.Context, _, _ string) error {
+				providerPaidCalls++
+				return nil
+			},
+			updateScheduledInstallmentStatusFn: func(_ context.Context, id, status string, _ *string) error {
+				if status == "failed" {
+					failedInstallment = id
+				}
+				return nil
+			},
+			getInstallmentPlanFn: func(_ context.Context, _ string) (*domain.InstallmentPlan, error) {
+				return &domain.InstallmentPlan{}, nil
+			},
+		}
+		ss := &StripeService{devMode: true, testFailOffSession: true}
+		svc := NewInstallmentService(repo, ss)
+		_, _, err := svc.CreateInstallmentPlan(context.Background(), domain.CreateInstallmentPlanInput{
+			ContractID:       "c1",
+			CustomerID:       "cust-1",
+			ProviderID:       "prov-1",
+			TotalAmountCents: 30000,
+			InstallmentCount: 3,
+			PaymentMethodID:  "pm_1",
+			IdempotencyKey:   "idem-charge-fail",
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "first charge")
+		assert.Equal(t, 0, providerPaidCalls, "provider must not be marked paid when first charge fails")
+		assert.NotEmpty(t, failedInstallment, "first installment should be marked failed")
+		// DevStore must not record a platform transfer under the BNPL payout key.
+		assert.Equal(t, 0, ss.DevStore().AdvanceCount(), "no provider transfer on charge failure")
+	})
+
+	t.Run("empty_offsession_key_rejected", func(t *testing.T) {
+		t.Parallel()
+		ss := &StripeService{devMode: true}
+		_, _, err := ss.CreateOffSessionPaymentIntent(context.Background(), 1000, "usd", "cus_1", "pm_1", "", nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "idempotency key required")
+	})
 }
 
 // --- ConfirmInstallmentPaymentSucceeded ---

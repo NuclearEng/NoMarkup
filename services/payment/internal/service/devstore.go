@@ -474,6 +474,13 @@ func (d *DevStore) RecordAdvance(idempotencyKey, providerID string, amountCts in
 	return id
 }
 
+// AdvanceCount is the number of unique platform transfers recorded (tests).
+func (d *DevStore) AdvanceCount() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.advances)
+}
+
 // RecordTransfer records a dev-mode escrow CreateTransfer, deduped by key.
 func (d *DevStore) RecordTransfer(idempotencyKey, destination string, amountCts int64) string {
 	d.mu.Lock()

@@ -171,13 +171,24 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 	// provider. If the charge fails we leave the plan active with installment 1
 	// in a clear non-paid state and do NOT disburse the provider transfer.
 	firstInstallment := installments[0]
-	customerStripeID, err := s.repo.GetStripeCustomerID(ctx, input.CustomerID)
+	// Fail closed: resolve a real Stripe customer (or dev stub id). Never fall
+	// back to the platform user UUID in production — that is not a cus_ id and
+	// would only ever be rejected by Stripe after burning a confusing error.
+	customerStripeID, err := s.resolveCustomerStripeID(ctx, input.CustomerID)
 	if err != nil {
-		slog.Warn("failed to get customer stripe id for first installment, using platform id",
+		slog.Error("failed to resolve customer stripe id for first installment; provider NOT paid",
+			"plan_id", planID,
 			"customer_id", input.CustomerID,
 			"error", err,
 		)
-		customerStripeID = input.CustomerID
+		_ = s.repo.UpdateScheduledInstallmentStatus(ctx, firstInstallment.ID, "failed", nil)
+		return nil, "", fmt.Errorf("create installment plan first charge: %w", err)
+	}
+	if input.PaymentMethodID == "" && !(s.stripe != nil && s.stripe.IsDevMode()) {
+		// Production BNPL create requires an explicit instrument (the Elements
+		// PM the client just confirmed). Cron due charges may use the default.
+		_ = s.repo.UpdateScheduledInstallmentStatus(ctx, firstInstallment.ID, "failed", nil)
+		return nil, "", fmt.Errorf("create installment plan first charge: payment_method_id required")
 	}
 
 	// Deterministic off-session key so retries never double-charge installment 1.

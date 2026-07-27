@@ -20,18 +20,18 @@
 
 ## Summary dashboard
 
-**Recounted 2026-07-27 MON-18 close by parsing the tables below** (140 code/ops rows).
+**Recounted 2026-07-27 MON-15 close by parsing the tables below** (140 code/ops rows).
 
 | Section | Open | Partial | Done | Demoted | Founder-Action | Total |
 |---------|------|---------|------|---------|----------------|-------|
-| P0 — Money integrity | 4 | 0 | 23 | 1 | 0 | 28 |
-| P0 — Security fail-closed | 4 | 0 | 10 | 3 | 1 | 18 |
+| P0 — Money integrity | 3 | 0 | 24 | 1 | 0 | 28 |
+| P0 — Security fail-closed | 3 | 0 | 11 | 3 | 1 | 18 |
 | P0 — Production deploy / ops | 16 | 2 | 10 | 0 | 0 | 28 |
 | P1 — North Star performance | 11 | 0 | 0 | 5 | 0 | 16 |
 | P1 — CI / testing enforcers | 9 | 0 | 2 | 5 | 0 | 16 |
 | P1 — Frontend / a11y / honesty | 9 | 0 | 2 | 5 | 0 | 16 |
 | P2 — Architecture / polish | 12 | 0 | 0 | 6 | 0 | 18 |
-| **All** | **65** | **2** | **47** | **25** | **1** | **140** |
+| **All** | **63** | **2** | **49** | **25** | **1** | **140** |
 
 The separate **DOC** table (18 rows) is a cross-reference of the language-only demotions already
 reflected in the `Demoted` column above — it is not 18 additional items.
@@ -58,7 +58,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | **GAP-004** / MON-12 | Webhook dedup swallows retries after failed processing | BLOCKER | payment | `webhook.go` + `RecordStripeEventStart` | Skip only when `processed_at IS NOT NULL` (or lease) | Fail handler → Stripe retry reprocesses | **Done** 2026-07-25 — `services/payment/internal/service/webhook.go:70-135` skips only when `processed_at` set | |
 | MON-13 | Concurrent services refund can over-capture | BLOCKER | payment | CreateRefund path | Row lock / CAS on refunded amount + Stripe key | Concurrent refunds total ≤ amount | **Done** 2026-07-25 — `service.go:636-644` UpdateRefundCAS | |
 | MON-14 | `CapturePaymentIntent` / `ProcessPayment` no idempotency + race | MAJOR | payment | `stripe.go`, `service.go` | Key capture; CAS status pending→processing | Double ProcessPayment → one capture | **Done** 2026-07-27 — `service.go` ProcessPayment CAS pending→processing + `capture:<paymentID>` key; `stripe.go` CapturePaymentIntent requires idem; `money_concurrency_test.go` TestProcessPayment_Concurrent_ExactlyOneCapture | |
-| MON-15 | BNPL: provider paid before first customer charge; off-session PI unkeyed | MAJOR | payment | `installment.go`, `CreateOffSessionPaymentIntent` | Charge/authorize customer first **or** compensate; add Stripe keys | Cron retry does not double-charge | Open | |
+| MON-15 | BNPL: provider paid before first customer charge; off-session PI unkeyed | MAJOR | payment | `installment.go`, `CreateOffSessionPaymentIntent` | Charge/authorize customer first **or** compensate; add Stripe keys | Cron retry does not double-charge | **Done** 2026-07-27 — charge first (`bnpl-first:` / `bnpl-installment:` keys, empty key rejected); provider transfer only after success (`installment-provider-payout:`); resolveCustomerStripeID fail-closed; test `charge_failure_does_not_pay_provider` | |
 | MON-16 | Working capital `RequestAdvance` credit TOCTOU | MAJOR | payment | `advance.go` | Advisory lock / serializable credit check | Concurrent RequestAdvance ≤ line | **Done** 2026-07-27 — `advance.go` RequestAdvance wraps credit check + CreateAdvance in `WithProviderAdvisoryLock` | |
 | MON-17 | Goods dispute resolve does not stamp `stripe_transfer_id` | MAJOR | payment | `listing_charge.go` dispute path | Use same stamp path as release; single idempotency key family | Dispute transfer once; no re-pay race | **Done** 2026-07-27 — `listing_charge.go` ResolveListingDispute uses `listing-release:<orderID>` + `MarkListingOrderTransferred`; test asserts stamp | |
 | MON-18 | Goods auto-release vs dispute file race (no FOR UPDATE) | MAJOR | payment/job | AutoRelease + FileListingDispute | Lock order row before act | Concurrent release+dispute → safe end state | **Done** 2026-07-27 — `ClaimListingOrderForDispute` freezes under FOR UPDATE; release stamps durable `pending:<orderID>` claim before Stripe; tests `dispute_fails_closed_after_release_claim` / `release_claim_fails_after_dispute_freeze` | |
@@ -305,6 +305,8 @@ Do in this order for **CONDITIONAL-GO** (not full SOTA):
 | 2026-07-27 | **SEC-16 Done** — JWT `WithValidMethods` RS256-only (`auth.go`); RS384/RS512 rejected in middleware tests. **FE-06 Done** — LIVE honesty on marketplace + job spectate + JobDetail. Guarantee claim routes gated with `RequireFlag(nomarkup_guarantee)` (contracts + admin). |
 | 2026-07-27 | **wave26 verification pass.** Grep-confirmed Done (already fixed in tree): **MON-14** ProcessPayment CAS pending→processing + `capture:<id>` (`service.go`, `stripe.go`, concurrent test); **MON-16** `WithProviderAdvisoryLock` on RequestAdvance (`advance.go`); **MON-17** dispute resolve stamps transfer via `MarkListingOrderTransferred` + `listing-release:<orderID>` (`listing_charge.go`); **MON-19** award_bid active check under FOR UPDATE (`engines/bidding/src/engine.rs`); **MON-26** concurrent refund/release/capture tests (`money_concurrency_test.go`); **FE-10** ListingBidPanel `Link` to /login. **MON-24** / **SEC-16** already Done (reconfirmed integer fee math + RS256-only). Left **Open**: MON-15 (BNPL order residual review), MON-18 (FileListingDispute still unlocked; claim commits before transfer). Dashboard recount: Open 66 / Partial 2 / Done 46 / Demoted 25 / FA 1. |
 | 2026-07-27 | **MON-18 Done** — `ClaimListingOrderForDispute` freezes listing_orders under FOR UPDATE (status=disputed + dispute_id); `ClaimListingOrderForRelease` stamps durable `pending:<orderID>` transfer claim under the same lock so dispute fails closed for the whole Stripe window; ConfirmPickup claims before release; unit tests cover both race directions. Dashboard: Open 65 / Partial 2 / Done 47 / Demoted 25 / FA 1. |
+| 2026-07-27 | **MON-15 Done** — BNPL charges customer first with keyed off-session PI (`bnpl-first:` / `bnpl-installment:attempt-N`); provider platform transfer only after success (`installment-provider-payout:`); empty off-session key rejected; resolveCustomerStripeID fail-closed; regression `charge_failure_does_not_pay_provider`. Dashboard: Open 63 / Partial 2 / Done 49. |
+| 2026-07-27 | **SEC-07 Done** — signed `has_session` HMAC (gateway sessionflag + web session-flag verify). **Live auction flag SSOT** — RequireFlag `live_auction` / `spectator_mode` + env kill switch. |
 | 2026-07-25 | **MON-25 / QA-12 closed by CI change:** `.github/workflows/ci.yml` gains `fullstack-security-test`, which boots the docker-compose stack (`tests/integration/docker-compose.ci.yml` overlay) and runs the Tier-1 suites — 4 × `TestAuthBypass_*`, `TestDoubleSpend_ParallelAwardsCreateOneContract`, `TestOwnership_CrossAccountReadIsRejected` — plus the live-stack `TestIdempotency_PaymentDoubleSubmit`. Before this, every one of those tests was behind `//go:build integration` and ran in **no** CI job. Also fixes N11 and (partly) N7/N9's execution venue. |
 
 ---

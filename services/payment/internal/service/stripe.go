@@ -142,6 +142,10 @@ type StripeService struct {
 	// the dedup silently stopped working. `go test -race` reported it on every
 	// run — which is why the money-race CI job had never passed.
 	devOnce sync.Once
+	// testFailOffSession forces CreateOffSessionPaymentIntent to error (unit
+	// tests only — never set in production). Used to prove MON-15: charge
+	// failure must not disburse the provider transfer.
+	testFailOffSession bool
 }
 
 // NewStripeService creates a new StripeService for the given deployment
@@ -1375,6 +1379,10 @@ func (s *StripeService) CreateMarketplaceRefund(
 func (s *StripeService) CreateOffSessionPaymentIntent(ctx context.Context, amountCents int64, currency string, customerStripeID string, paymentMethodID string, idempotencyKey string, metadata map[string]string) (string, string, error) {
 	if idempotencyKey == "" {
 		return "", "", fmt.Errorf("create off-session payment intent: idempotency key required")
+	}
+	// Test-only injection: simulate charge failure without a live Stripe.
+	if s != nil && s.testFailOffSession {
+		return "", "", fmt.Errorf("create off-session payment intent: forced test failure")
 	}
 	if s.devMode {
 		slog.Info("dev mode: stub CreateOffSessionPaymentIntent", "amountCents", amountCents, "customerStripeID", customerStripeID, "idem", idempotencyKey)
