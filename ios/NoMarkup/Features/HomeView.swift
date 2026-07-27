@@ -505,6 +505,15 @@ struct HomeView: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
 
+            Text("·")
+                .font(.system(size: 12))
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.4))
+
+            Text(AppConfig.apiBaseHostDisplay)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.55))
+                .lineLimit(1)
+
             Spacer()
 
             Button {
@@ -520,6 +529,10 @@ struct HomeView: View {
         }
         .padding(.horizontal, 4)
         .padding(.top, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(healthOK == true ? "Connected" : (healthOK == false ? "Offline" : "Checking")), API \(AppConfig.apiBaseHostDisplay)"
+        )
     }
 
     // MARK: - Chrome helpers
