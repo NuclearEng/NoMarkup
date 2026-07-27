@@ -11,7 +11,9 @@ struct CreateListingView: View {
     @State private var startingPriceText = ""
     @State private var buyNowText = ""
     @State private var pickupZip = ""
-    @State private var categoryId = "goods-furniture"
+    @State private var categoryId = ""
+    @State private var categoryName = ""
+    @State private var fairPriceHint: String?
     @State private var condition: ListingConditionOption = .good
     @State private var durationHours = 48
     @State private var publish = true
@@ -55,6 +57,9 @@ struct CreateListingView: View {
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .tint(BrandTheme.accent)
+        .onChange(of: categoryId) { _, newValue in
+            Task { await refreshFairPriceHint(categoryId: newValue) }
+        }
     }
 
     // MARK: - Form
@@ -142,13 +147,25 @@ struct CreateListingView: View {
                 }
                 .frame(minHeight: 44)
 
-                TextField("Category", text: $categoryId, prompt: Text("goods-furniture"))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .foregroundStyle(BrandTheme.textPrimary)
+                NavigationLink {
+                    CategoryPickerView(selectedId: $categoryId, selectedName: $categoryName)
+                } label: {
+                    HStack {
+                        Text("Category")
+                            .foregroundStyle(BrandTheme.textPrimary)
+                        Spacer(minLength: 8)
+                        Text(categoryName.isEmpty ? "Select…" : categoryName)
+                            .foregroundStyle(
+                                categoryName.isEmpty ? BrandTheme.textSecondary : BrandTheme.goldBright
+                            )
+                            .lineLimit(1)
+                    }
                     .frame(minHeight: 44)
-                    .accessibilityLabel("Category slug or UUID")
-                    .accessibilityHint("Slug such as goods-furniture, or a category UUID")
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Listing category")
+                .accessibilityValue(categoryName.isEmpty ? "Not selected" : categoryName)
+                .accessibilityHint("Opens the category tree picker")
 
                 Toggle("Publish immediately", isOn: $publish)
                     .frame(minHeight: 44)
@@ -156,8 +173,14 @@ struct CreateListingView: View {
             } header: {
                 Text("Listing options").brandSectionHeader()
             } footer: {
-                Text("Duration must be 24 hours, 48 hours, or 7 days. Category accepts a slug (e.g. goods-furniture) or UUID.")
-                    .foregroundStyle(BrandTheme.textSecondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Duration must be 24 hours, 48 hours, or 7 days. Pick a real category from the taxonomy tree.")
+                    if let fairPriceHint {
+                        Text(fairPriceHint)
+                            .foregroundStyle(BrandTheme.goldBright)
+                    }
+                }
+                .foregroundStyle(BrandTheme.textSecondary)
             }
 
             if let errorMessage {
@@ -318,7 +341,7 @@ struct CreateListingView: View {
 
         let cat = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cat.isEmpty else {
-            errorMessage = "Enter a category slug or UUID."
+            errorMessage = "Choose a category from the taxonomy."
             return
         }
 
@@ -348,6 +371,27 @@ struct CreateListingView: View {
             errorMessage = error.localizedDescription
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func refreshFairPriceHint(categoryId: String) async {
+        let trimmed = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            fairPriceHint = nil
+            return
+        }
+        let zip = pickupZip.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            // side=2 → goods marketplace.
+            let price = try await APIClient.shared.fetchFairPrice(
+                categoryId: trimmed,
+                zip: zip.isEmpty ? nil : zip,
+                side: 2
+            )
+            fairPriceHint = price.hintCaption
+        } catch {
+            fairPriceHint = nil
         }
     }
 

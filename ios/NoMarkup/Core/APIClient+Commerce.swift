@@ -141,6 +141,48 @@ extension APIClient {
         )
     }
 
+    // MARK: Seller / provider export utilities
+
+    /// GET `/api/v1/me/sales.csv` — completed goods sales as CSV text bytes (auth required).
+    /// Content-Type is `text/csv`; response is not JSON.
+    func exportSalesCSV() async throws -> Data {
+        try await perform(
+            method: "GET",
+            pathComponents: ["api", "v1", "me", "sales.csv"],
+            query: [],
+            body: nil as EmptyBody?,
+            auth: .required,
+            headers: ["Accept": "text/csv, text/plain, */*"]
+        )
+    }
+
+    /// GET `/api/v1/me/calendar.ics` — RFC 5545 VCALENDAR of contracts / pickups / deadlines.
+    /// Accepts Bearer auth (same as other me routes). Response is not JSON.
+    func exportCalendarICS() async throws -> Data {
+        try await perform(
+            method: "GET",
+            pathComponents: ["api", "v1", "me", "calendar.ics"],
+            query: [],
+            body: nil as EmptyBody?,
+            auth: .required,
+            headers: ["Accept": "text/calendar, text/plain, */*"]
+        )
+    }
+
+    /// GET `/api/v1/bids/analytics?job_id=` — reverse-auction bid ladder stats for a job.
+    /// Gateway requires `job_id` query param (400 without it).
+    func fetchBidAnalytics(jobId: String) async throws -> BidAnalytics {
+        let trimmed = jobId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "job_id is required.")
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "bids", "analytics"],
+            query: [URLQueryItem(name: "job_id", value: trimmed)],
+            authorized: true
+        )
+    }
+
     // MARK: Listing order disputes / no-show
 
     /// POST `/api/v1/orders/{id}/file-dispute` — buyer only.

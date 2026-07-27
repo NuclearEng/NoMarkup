@@ -1489,3 +1489,287 @@ struct EnableMFAResponse: Codable, Sendable, Hashable {
         return !s.isEmpty || !(backupCodes ?? []).isEmpty || resolvedQRCodeURL != nil
     }
 }
+
+// MARK: - Trust tiers (public ladder)
+
+/// Row from `GET /api/v1/trust/tiers` → `{ "tiers": [...] }`.
+struct TrustTier: Codable, Sendable, Hashable, Identifiable {
+    var tier: String?
+    var description: String?
+    var minCompletedJobs: Int?
+    var minOverallScore: Double?
+    var minRating: Double?
+    var minReviews: Int?
+    var requiresVerification: Bool?
+
+    var id: String {
+        let t = tier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? UUID().uuidString : t
+    }
+
+    var displayName: String {
+        let t = tier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if t.isEmpty { return "Tier" }
+        return t.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var displayDescription: String {
+        let d = description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return d.isEmpty ? "No description provided for this tier." : d
+    }
+
+    var scoreLabel: String {
+        guard let minOverallScore else { return "—" }
+        // Gateway stores overall score on a 0…1 scale; show as percentage when ≤ 1.
+        if minOverallScore <= 1.0 {
+            let pct = minOverallScore * 100
+            return pct.formatted(.number.precision(.fractionLength(0...1))) + "%"
+        }
+        return minOverallScore.formatted(.number.precision(.fractionLength(0...2)))
+    }
+
+    var ratingLabel: String {
+        guard let minRating else { return "—" }
+        return minRating.formatted(.number.precision(.fractionLength(0...1))) + "★"
+    }
+
+    var jobsLabel: String {
+        guard let minCompletedJobs else { return "—" }
+        return minCompletedJobs == 1 ? "1 job" : "\(minCompletedJobs) jobs"
+    }
+
+    var reviewsLabel: String {
+        guard let minReviews else { return "—" }
+        return minReviews == 1 ? "1 review" : "\(minReviews) reviews"
+    }
+
+    /// Sort key: lower ranks first (under_review / new → top_rated).
+    var sortRank: Int {
+        switch (tier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "under_review": return 0
+        case "new", "unspecified": return 1
+        case "rising": return 2
+        case "trusted": return 3
+        case "top_rated": return 4
+        default: return 50
+        }
+    }
+}
+
+struct TrustTiersResponse: Codable, Sendable {
+    var tiers: [TrustTier]
+
+    enum CodingKeys: String, CodingKey {
+        case tiers
+    }
+
+    init(tiers: [TrustTier]) {
+        self.tiers = tiers
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tiers = try c.decodeIfPresent([TrustTier].self, forKey: .tiers) ?? []
+    }
+}
+
+// MARK: - Subscription tiers (display / limits only — no IAP)
+
+/// Row from `GET /api/v1/subscriptions/tiers` → `{ "tiers": [...] }`.
+/// Read-only in the iOS client: no purchase, StoreKit, or web digital checkout links.
+struct SubscriptionTier: Codable, Sendable, Hashable, Identifiable {
+    /// Wire `id` from the gateway (UUID). Stored separately from `Identifiable.id`.
+    var remoteId: String?
+    var name: String?
+    var slug: String?
+    var monthlyPriceCents: Int64?
+    var annualPriceCents: Int64?
+    var feeDiscountPercentage: Double?
+    var maxActiveBids: Int?
+    var maxServiceCategories: Int?
+    var featuredPlacement: Bool?
+    var analyticsAccess: Bool?
+    var prioritySupport: Bool?
+    var verifiedBadgeBoost: Bool?
+    var portfolioImageLimit: Int?
+    var instantEnabled: Bool?
+    var sortOrder: Int?
+    var isActive: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case remoteId = "id"
+        case name
+        case slug
+        case monthlyPriceCents
+        case annualPriceCents
+        case feeDiscountPercentage
+        case maxActiveBids
+        case maxServiceCategories
+        case featuredPlacement
+        case analyticsAccess
+        case prioritySupport
+        case verifiedBadgeBoost
+        case portfolioImageLimit
+        case instantEnabled
+        case sortOrder
+        case isActive
+    }
+
+    /// Stable list identity (UUID / slug / name).
+    var id: String {
+        let raw = remoteId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !raw.isEmpty { return raw }
+        let s = slug?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !s.isEmpty { return s }
+        let n = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return n.isEmpty ? UUID().uuidString : n
+    }
+
+    var displayName: String {
+        let n = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !n.isEmpty { return n }
+        let s = slug?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return s.isEmpty ? "Plan" : s.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    /// True when listed monthly price is zero or missing (free tier).
+    var isFree: Bool {
+        (monthlyPriceCents ?? 0) <= 0
+    }
+
+    /// Free vs paid label — never a purchase CTA (App Store 3.1.1).
+    var planKindLabel: String {
+        isFree ? "Free" : "Paid (web-only)"
+    }
+
+    var maxActiveBidsLabel: String {
+        guard let maxActiveBids else { return "—" }
+        if maxActiveBids <= 0 { return "Unlimited" }
+        return "\(maxActiveBids)"
+    }
+
+    var maxServiceCategoriesLabel: String {
+        guard let maxServiceCategories else { return "—" }
+        if maxServiceCategories <= 0 { return "Unlimited" }
+        return "\(maxServiceCategories)"
+    }
+
+    var portfolioImageLimitLabel: String {
+        guard let portfolioImageLimit else { return "—" }
+        if portfolioImageLimit <= 0 { return "Unlimited" }
+        return "\(portfolioImageLimit)"
+    }
+
+    var sortKey: Int {
+        sortOrder ?? 999
+    }
+}
+
+struct SubscriptionTiersResponse: Codable, Sendable {
+    var tiers: [SubscriptionTier]
+
+    enum CodingKeys: String, CodingKey {
+        case tiers
+    }
+
+    init(tiers: [SubscriptionTier]) {
+        self.tiers = tiers
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tiers = try c.decodeIfPresent([SubscriptionTier].self, forKey: .tiers) ?? []
+    }
+}
+
+// MARK: - Terms of Service (current + acceptance)
+
+/// `GET /api/v1/tos/current` — public current ToS pointer.
+struct ToSCurrent: Codable, Sendable, Hashable {
+    var version: String?
+    var bodyUrl: String?
+    var effectiveAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case bodyUrl
+        case effectiveAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(String.self, forKey: .version)
+        bodyUrl = try c.decodeIfPresent(String.self, forKey: .bodyUrl)
+        // effective_at may arrive as ISO string (or be pre-decoded via date strategy elsewhere).
+        if let s = try? c.decodeIfPresent(String.self, forKey: .effectiveAt) {
+            effectiveAt = s
+        } else if let d = try? c.decodeIfPresent(Date.self, forKey: .effectiveAt) {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            effectiveAt = formatter.string(from: d)
+        } else {
+            effectiveAt = nil
+        }
+    }
+
+    var displayVersion: String {
+        let v = version?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return v.isEmpty ? "—" : v
+    }
+
+    var effectiveAtLabel: String? {
+        guard let effectiveAt, !effectiveAt.isEmpty else { return nil }
+        return CatalogDateFormat.friendlyDateTime(effectiveAt)
+    }
+
+    /// Resolves relative `body_url` (e.g. `/terms`) against the public web base.
+    var resolvedBodyURL: URL? {
+        let raw = bodyUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if raw.isEmpty {
+            return AppConfig.termsURL
+        }
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
+            return URL(string: raw)
+        }
+        var path = raw
+        if path.hasPrefix("/") {
+            path = String(path.dropFirst())
+        }
+        return AppConfig.publicWebBaseURL.appending(path: path)
+    }
+}
+
+/// `GET /api/v1/me/tos-acceptance` — caller's latest acceptance (fields may be null).
+struct ToSAcceptance: Codable, Sendable, Hashable {
+    var tosVersion: String?
+    var acceptedAt: String?
+
+    var displayVersion: String {
+        let v = tosVersion?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return v.isEmpty ? "Not accepted" : v
+    }
+
+    var hasAcceptedAny: Bool {
+        let v = tosVersion?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !v.isEmpty
+    }
+
+    var acceptedAtLabel: String? {
+        guard let acceptedAt, !acceptedAt.isEmpty else { return nil }
+        return CatalogDateFormat.friendlyDateTime(acceptedAt)
+    }
+
+    /// True when accepted version matches the current platform version.
+    func isCurrent(relativeTo current: ToSCurrent) -> Bool {
+        let accepted = tosVersion?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let latest = current.version?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !accepted.isEmpty, !latest.isEmpty else { return false }
+        return accepted == latest
+    }
+}
+
+/// `POST /api/v1/me/tos-acceptance` response.
+struct ToSAcceptResponse: Codable, Sendable {
+    var accepted: Bool?
+    var tosVersion: String?
+}

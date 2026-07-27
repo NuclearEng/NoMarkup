@@ -11,7 +11,8 @@ struct PostJobView: View {
     @State private var startingBidText = ""
     @State private var locationAddress = ""
     @State private var categoryId = ""
-    @State private var categories: [ServiceCategorySummary] = []
+    @State private var categoryName = ""
+    @State private var fairPriceHint: String?
     @State private var durationHours = 24
     @State private var publish = true
     @State private var isSubmitting = false
@@ -54,8 +55,8 @@ struct PostJobView: View {
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .tint(BrandTheme.accent)
-        .task {
-            await loadCategoriesIfNeeded()
+        .onChange(of: categoryId) { _, newValue in
+            Task { await refreshFairPriceHint(categoryId: newValue) }
         }
     }
 
@@ -89,28 +90,36 @@ struct PostJobView: View {
                 .frame(minHeight: 88)
                 .accessibilityLabel("Job description")
 
-                if categories.isEmpty {
-                    TextField("Category ID", text: $categoryId, prompt: Text("UUID from taxonomy"))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .foregroundStyle(BrandTheme.textPrimary)
-                        .frame(minHeight: 44)
-                        .accessibilityLabel("Category UUID")
-                } else {
-                    Picker("Category", selection: $categoryId) {
-                        Text("Select…").tag("")
-                        ForEach(categories) { cat in
-                            Text(cat.displayName).tag(cat.id)
-                        }
+                NavigationLink {
+                    CategoryPickerView(selectedId: $categoryId, selectedName: $categoryName)
+                } label: {
+                    HStack {
+                        Text("Category")
+                            .foregroundStyle(BrandTheme.textPrimary)
+                        Spacer(minLength: 8)
+                        Text(categoryName.isEmpty ? "Select…" : categoryName)
+                            .foregroundStyle(
+                                categoryName.isEmpty ? BrandTheme.textSecondary : BrandTheme.goldBright
+                            )
+                            .lineLimit(1)
                     }
                     .frame(minHeight: 44)
-                    .accessibilityLabel("Service category")
+                    .contentShape(Rectangle())
                 }
+                .accessibilityLabel("Service category")
+                .accessibilityValue(categoryName.isEmpty ? "Not selected" : categoryName)
+                .accessibilityHint("Opens the category tree picker")
             } header: {
                 Text("Details").brandSectionHeader()
             } footer: {
-                Text("Title, description, and category are required. Title max 200 characters.")
-                    .foregroundStyle(BrandTheme.textSecondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Title, description, and category are required. Title max 200 characters.")
+                    if let fairPriceHint {
+                        Text(fairPriceHint)
+                            .foregroundStyle(BrandTheme.goldBright)
+                    }
+                }
+                .foregroundStyle(BrandTheme.textSecondary)
             }
 
             Section {
@@ -336,18 +345,18 @@ struct PostJobView: View {
     }
 
     @MainActor
-    private func loadCategoriesIfNeeded() async {
-        guard categories.isEmpty else { return }
+    private func refreshFairPriceHint(categoryId: String) async {
+        let trimmed = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            fairPriceHint = nil
+            return
+        }
         do {
-            let list = try await APIClient.shared.fetchServiceCategories(level: 1)
-            // Prefer active categories when the flag is present.
-            let active = list.filter { $0.active != false }
-            categories = active.isEmpty ? list : active
-            if categoryId.isEmpty, let first = categories.first {
-                categoryId = first.id
-            }
+            // side=1 → services reverse-auction.
+            let price = try await APIClient.shared.fetchFairPrice(categoryId: trimmed, side: 1)
+            fairPriceHint = price.hintCaption
         } catch {
-            // Free-text category UUID field remains available when taxonomy is offline.
+            fairPriceHint = nil
         }
     }
 

@@ -9,6 +9,11 @@ struct MarketplaceView: View {
     @State private var errorMessage: String?
     @State private var loadMoreError: String?
     @State private var searchText = ""
+    @State private var categorySlugFilter: String?
+    @State private var suggestions: [ListingAutocompleteSuggestion] = []
+    @State private var isLoadingSuggestions = false
+    @State private var autocompleteTask: Task<Void, Never>?
+    @State private var selectedListingRoute: ListingIDRoute?
 
     var body: some View {
         NavigationStack {
@@ -16,7 +21,17 @@ struct MarketplaceView: View {
                 .navigationTitle("Marketplace")
                 .searchable(text: $searchText, prompt: "Search listings")
                 .onSubmit(of: .search) {
+                    // Free-text search clears a prior category-slug filter so q= wins.
+                    categorySlugFilter = nil
+                    suggestions = []
                     Task { await load(reset: true) }
+                }
+                .onChange(of: searchText) { _, newValue in
+                    scheduleAutocomplete(for: newValue)
+                    // Clearing the search field also clears the category filter.
+                    if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        categorySlugFilter = nil
+                    }
                 }
                 .refreshable { await load(reset: true) }
                 .task { await load(reset: true) }
@@ -25,18 +40,21 @@ struct MarketplaceView: View {
                 .navigationDestination(for: ListingSummary.self) { listing in
                     ListingDetailView(listingID: listing.id, preview: listing)
                 }
+                .navigationDestination(item: $selectedListingRoute) { route in
+                    ListingDetailView(listingID: route.id, preview: nil)
+                }
         }
     }
 
     @ViewBuilder
     private var content: some View {
-        if isLoading && listings.isEmpty {
+        if isLoading && listings.isEmpty && !showsSuggestions {
             ProgressView("Loading listings…")
                 .tint(BrandTheme.accent)
                 .foregroundStyle(BrandTheme.textSecondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .brandScreenBackground()
-        } else if let errorMessage, listings.isEmpty {
+        } else if let errorMessage, listings.isEmpty, !showsSuggestions {
             BrandEmptyState(
                 title: "Couldn’t load listings",
                 systemImage: "wifi.exclamationmark",
@@ -45,7 +63,7 @@ struct MarketplaceView: View {
             ) {
                 Task { await load(reset: true) }
             }
-        } else if listings.isEmpty {
+        } else if listings.isEmpty, !showsSuggestions {
             BrandEmptyState(
                 title: "No listings nearby",
                 systemImage: "bag",
@@ -58,6 +76,36 @@ struct MarketplaceView: View {
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .listRowBackground(BrandTheme.navyElevated)
+                }
+
+                if showsSuggestions {
+                    suggestionsSection
+                }
+
+                if let categorySlugFilter, !categorySlugFilter.isEmpty {
+                    Section {
+                        HStack(spacing: 10) {
+                            Image(systemName: "tag.fill")
+                                .foregroundStyle(BrandTheme.goldBright)
+                                .accessibilityHidden(true)
+                            Text("Category: \(categorySlugFilter)")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            Button("Clear") {
+                                self.categorySlugFilter = nil
+                                searchText = ""
+                                suggestions = []
+                                Task { await load(reset: true) }
+                            }
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(BrandTheme.destructive)
+                            .frame(minHeight: 44)
+                            .accessibilityLabel("Clear category filter")
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+                    }
                 }
 
                 Section {
@@ -113,6 +161,97 @@ struct MarketplaceView: View {
         }
     }
 
+    private var showsSuggestions: Bool {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
+            && (!suggestions.isEmpty || isLoadingSuggestions)
+    }
+
+    @ViewBuilder
+    private var suggestionsSection: some View {
+        Section {
+            if isLoadingSuggestions && suggestions.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .tint(BrandTheme.accent)
+                    Text("Searching…")
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+            } else {
+                ForEach(suggestions, id: \.suggestionKey) { suggestion in
+                    Button {
+                        handleSuggestion(suggestion)
+                    } label: {
+                        SuggestionRowView(suggestion: suggestion)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(minHeight: 44)
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityHint(
+                        suggestion.isCategory
+                            ? "Filters marketplace by this category"
+                            : "Opens listing detail"
+                    )
+                }
+            }
+        } header: {
+            Text("Suggestions").brandSectionHeader()
+        }
+    }
+
+    private func scheduleAutocomplete(for raw: String) {
+        autocompleteTask?.cancel()
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else {
+            suggestions = []
+            isLoadingSuggestions = false
+            return
+        }
+        autocompleteTask = Task { @MainActor in
+            // Light debounce so we don't fire on every keystroke.
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            guard !Task.isCancelled else { return }
+            isLoadingSuggestions = true
+            defer { isLoadingSuggestions = false }
+            do {
+                let hits = try await APIClient.shared.autocompleteListings(q: trimmed, limit: 10)
+                guard !Task.isCancelled else { return }
+                // Ignore stale responses if the field changed while in flight.
+                let current = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard current == trimmed else { return }
+                suggestions = hits
+            } catch {
+                guard !Task.isCancelled else { return }
+                // Soft-fail: typeahead is non-critical.
+                suggestions = []
+            }
+        }
+    }
+
+    @MainActor
+    private func handleSuggestion(_ suggestion: ListingAutocompleteSuggestion) {
+        if suggestion.isCategory {
+            let slug = suggestion.categorySlug?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let label = suggestion.displayLabel
+            categorySlugFilter = slug.isEmpty ? nil : slug
+            // Show the friendly label in the search field; list filters by slug.
+            searchText = label
+            suggestions = []
+            Task { await load(reset: true) }
+            return
+        }
+
+        if suggestion.isListing {
+            let listingID = suggestion.id?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !listingID.isEmpty else { return }
+            suggestions = []
+            selectedListingRoute = ListingIDRoute(id: listingID)
+            return
+        }
+    }
+
     @MainActor
     private func load(reset: Bool) async {
         if reset {
@@ -133,11 +272,19 @@ struct MarketplaceView: View {
         let pageSize = 40
         let nextPage = reset ? 1 : (pagination?.resolvedPage ?? 1) + 1
 
+        // When filtering by category slug, skip free-text `q` so the slug is authoritative
+        // (search field holds the friendly label, not a Meili query).
+        let qParam: String? = {
+            if let slug = categorySlugFilter, !slug.isEmpty { return nil }
+            return searchText
+        }()
+
         do {
             let response = try await APIClient.shared.fetchListings(
                 page: nextPage,
                 pageSize: pageSize,
-                q: searchText
+                q: qParam,
+                categorySlug: categorySlugFilter
             )
             if reset {
                 listings = response.listings
@@ -239,6 +386,49 @@ private struct ListingRowView: View {
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
     }
+}
+
+// MARK: - Suggestion row
+
+private struct SuggestionRowView: View {
+    let suggestion: ListingAutocompleteSuggestion
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: suggestion.isCategory ? "tag.fill" : "bag.fill")
+                .font(.body)
+                .foregroundStyle(suggestion.isCategory ? BrandTheme.goldBright : BrandTheme.teal)
+                .frame(width: 24, alignment: .center)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(suggestion.displayLabel)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                if let secondary = suggestion.secondaryLabel {
+                    Text(secondary)
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.6))
+                .accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Lightweight route for autocomplete → listing detail navigation.
+private struct ListingIDRoute: Hashable, Identifiable {
+    let id: String
 }
 
 #Preview {

@@ -568,6 +568,59 @@ extension APIClient {
             authorized: false
         )
     }
+
+    // MARK: Trust tiers (public)
+
+    /// GET `/api/v1/trust/tiers` → `{ "tiers": [...] }` — public ladder requirements.
+    func fetchTrustTiers() async throws -> TrustTiersResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "trust", "tiers"],
+            authorized: false
+        )
+    }
+
+    // MARK: Subscription tiers (public, display-only)
+
+    /// GET `/api/v1/subscriptions/tiers` → `{ "tiers": [...] }`.
+    /// iOS uses this for limits comparison only — no purchase / StoreKit / web checkout.
+    func fetchSubscriptionTiers() async throws -> SubscriptionTiersResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "subscriptions", "tiers"],
+            authorized: false
+        )
+    }
+
+    // MARK: Terms of Service
+
+    /// GET `/api/v1/tos/current` — public current ToS version pointer.
+    func fetchCurrentToS() async throws -> ToSCurrent {
+        try await getJSON(
+            pathComponents: ["api", "v1", "tos", "current"],
+            authorized: false
+        )
+    }
+
+    /// GET `/api/v1/me/tos-acceptance` — caller's latest accepted version (Bearer).
+    func fetchMyToSAcceptance() async throws -> ToSAcceptance {
+        try await getJSON(
+            pathComponents: ["api", "v1", "me", "tos-acceptance"],
+            authorized: true
+        )
+    }
+
+    /// POST `/api/v1/me/tos-acceptance` with `{ "tos_version": "..." }` — idempotent accept.
+    @discardableResult
+    func acceptToS(version: String) async throws -> ToSAcceptResponse {
+        let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "tos_version is required")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "me", "tos-acceptance"],
+            body: AcceptToSBody(tosVersion: trimmed),
+            authorized: .required
+        )
+    }
 }
 
 // MARK: - Request bodies (camelCase → snake_case via encoder)
@@ -641,4 +694,8 @@ private struct ChangePasswordBody: Encodable {
 private struct ReportUserBody: Encodable {
     let reason: String
     let description: String
+}
+
+private struct AcceptToSBody: Encodable {
+    let tosVersion: String
 }

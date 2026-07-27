@@ -102,6 +102,15 @@ struct AccountView: View {
                     .accessibilityHint("Native form to post a reverse-auction service job")
 
                     NavigationLink {
+                        JobDraftsView()
+                    } label: {
+                        Label("Job drafts", systemImage: "doc.text")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Review unpublished service job drafts and publish them")
+
+                    NavigationLink {
                         CreateListingView()
                     } label: {
                         Label("Sell an item", systemImage: "tag")
@@ -181,6 +190,42 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Connect Stripe and view payout readiness for providers")
+
+                    NavigationLink {
+                        SalesExportView()
+                    } label: {
+                        Label("Sales export (CSV)", systemImage: "tablecells")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Download completed sales as a CSV file and share it")
+
+                    NavigationLink {
+                        CalendarExportView()
+                    } label: {
+                        Label("Calendar export", systemImage: "calendar")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Download an iCal file of jobs, contracts, and pickups")
+
+                    NavigationLink {
+                        QuoteTemplatesView()
+                    } label: {
+                        Label("Quote templates", systemImage: "doc.text")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Create and manage reusable service bid quote templates")
+
+                    NavigationLink {
+                        VerificationDocumentsView()
+                    } label: {
+                        Label("Verification documents", systemImage: "checkmark.shield")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("View provider verification document status")
 
                     NavigationLink {
                         PaymentMethodsView()
@@ -315,6 +360,14 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("Browse launched city markets for services and goods")
+
+                    NavigationLink {
+                        TrustTiersView()
+                    } label: {
+                        Label("Trust tiers", systemImage: "shield.lefthalf.filled")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("How provider trust scores and ladder requirements work")
                 } header: {
                     Text("Network & safety").brandSectionHeader()
                 }
@@ -332,6 +385,14 @@ struct AccountView: View {
                         Label("Terms of Service", systemImage: "doc.text")
                     }
                     .frame(minHeight: 44)
+                    NavigationLink {
+                        TermsAcceptanceView()
+                    } label: {
+                        Label("Terms acceptance", systemImage: "checkmark.seal")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Compare current Terms version with what you accepted")
                     NavigationLink {
                         LegalWebView(title: "Community Guidelines", url: AppConfig.communityGuidelinesURL)
                     } label: {
@@ -383,13 +444,18 @@ struct AccountView: View {
                 }
 
                 Section {
-                    Label(
-                        "Digital subscriptions (StoreKit) — not in this build",
-                        systemImage: "bag.badge.minus"
-                    )
-                    .foregroundStyle(BrandTheme.textSecondary)
+                    NavigationLink {
+                        PlanLimitsView()
+                    } label: {
+                        Label("Plan limits", systemImage: "list.bullet.rectangle")
+                    }
                     .frame(minHeight: 44)
-                    .accessibilityLabel("Digital subscriptions via StoreKit are not in this build")
+                    .accessibilityHint("Compare free and paid provider plan limits. Paid digital plans are not sold in this app.")
+
+                    Text("Paid digital plans are web-only / not sold in this app. StoreKit IAP is intentionally omitted.")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } header: {
                     Text("Subscriptions").brandSectionHeader()
                 }
@@ -525,18 +591,7 @@ private struct ExportShareItem: Identifiable {
     let url: URL
 }
 
-#if canImport(UIKit)
-/// System share sheet for export JSON (and other activity items).
-private struct ActivityShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
-#endif
+// ActivityShareSheet lives in SalesExportView.swift (shared for CSV/ICS/JSON share).
 
 #Preview {
     AccountView()

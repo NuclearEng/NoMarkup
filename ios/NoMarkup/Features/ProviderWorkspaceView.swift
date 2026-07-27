@@ -244,6 +244,45 @@ struct ProviderWorkspaceView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
+            Section {
+                NavigationLink {
+                    QuoteTemplatesView()
+                } label: {
+                    Label("Quote templates", systemImage: "doc.text")
+                }
+                .frame(minHeight: 44)
+                .accessibilityHint("Reusable bid wording and default amounts")
+
+                NavigationLink {
+                    VerificationDocumentsView()
+                } label: {
+                    Label("Verification documents", systemImage: "checkmark.shield")
+                }
+                .frame(minHeight: 44)
+                .accessibilityHint("View insurance and ID verification status")
+
+                NavigationLink {
+                    CalendarExportView()
+                } label: {
+                    Label("Calendar export", systemImage: "calendar")
+                }
+                .frame(minHeight: 44)
+                .accessibilityHint("Download an iCal file of contracts and jobs")
+
+                NavigationLink {
+                    SalesExportView()
+                } label: {
+                    Label("Sales export (CSV)", systemImage: "tablecells")
+                }
+                .frame(minHeight: 44)
+                .accessibilityHint("Download completed marketplace sales as CSV")
+            } header: {
+                Text("Tools").brandSectionHeader()
+            } footer: {
+                Text("Exports and templates help run your provider practice without the full web Business OS.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
             if let profile {
                 Section {
                     if let jobs = profile.jobsCompleted {

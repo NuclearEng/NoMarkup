@@ -198,7 +198,7 @@ struct JobsView: View {
         } else {
             List {
                 Section {
-                    Text("Jobs you posted. Open a row for public detail; manage bids and contracts on the web.")
+                    Text("Jobs you posted (including drafts if the mine feed includes them). Open a row for detail; publish drafts from Account → Job drafts.")
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .listRowBackground(BrandTheme.navyElevated)
@@ -358,6 +358,10 @@ struct JobsView: View {
 private struct JobRowView: View {
     let job: JobSummary
 
+    private var isDraft: Bool {
+        (job.status ?? "").lowercased() == "draft"
+    }
+
     private var isLive: Bool {
         switch (job.status ?? "").lowercased() {
         case "active", "open", "bidding", "live":
@@ -369,7 +373,21 @@ private struct JobRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if isLive {
+            if isDraft {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.text")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(BrandTheme.warning)
+                    Text("DRAFT")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(BrandTheme.warning)
+                    Text("· not published")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Draft, not published")
+            } else if isLive {
                 HStack(spacing: 6) {
                     Circle()
                         .fill(BrandTheme.success)
@@ -406,9 +424,11 @@ private struct JobRowView: View {
             }
 
             HStack(spacing: 8) {
-                Text("Bid down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(BrandTheme.goldBright)
+                if !isDraft {
+                    Text("Bid down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
                 if let status = job.status, !status.isEmpty {
                     StatusChipView(
                         label: StatusChipStyle.displayLabel(status),

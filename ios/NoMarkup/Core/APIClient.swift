@@ -216,8 +216,13 @@ actor APIClient {
 
     // MARK: - Public catalog (no auth)
 
-    /// GET `/api/v1/listings?page=&page_size=&q=`
-    func fetchListings(page: Int = 1, pageSize: Int = 20, q: String? = nil) async throws -> ListingsResponse {
+    /// GET `/api/v1/listings?page=&page_size=&q=&category_slug=`
+    func fetchListings(
+        page: Int = 1,
+        pageSize: Int = 20,
+        q: String? = nil,
+        categorySlug: String? = nil
+    ) async throws -> ListingsResponse {
         var items = [
             URLQueryItem(name: "page", value: String(max(1, page))),
             URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
@@ -228,7 +233,29 @@ actor APIClient {
                 items.append(URLQueryItem(name: "q", value: trimmed))
             }
         }
+        if let categorySlug {
+            let slug = categorySlug.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !slug.isEmpty {
+                items.append(URLQueryItem(name: "category_slug", value: slug))
+            }
+        }
         return try await getJSON(pathComponents: ["api", "v1", "listings"], query: items)
+    }
+
+    /// GET `/api/v1/listings/autocomplete?q=&limit=` — typeahead (categories + listings).
+    func autocompleteListings(q: String, limit: Int = 10) async throws -> [ListingAutocompleteSuggestion] {
+        let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else { return [] }
+        let capped = min(max(1, limit), 25)
+        let items = [
+            URLQueryItem(name: "q", value: trimmed),
+            URLQueryItem(name: "limit", value: String(capped)),
+        ]
+        let response: ListingsAutocompleteResponse = try await getJSON(
+            pathComponents: ["api", "v1", "listings", "autocomplete"],
+            query: items
+        )
+        return response.suggestions ?? []
     }
 
     /// GET `/api/v1/listings/{id}` → `{ "listing": ... }`
@@ -582,6 +609,54 @@ actor APIClient {
             query: query
         )
         return wrapped.categories
+    }
+
+    /// GET `/api/v1/categories/tree` — nested taxonomy for pickers (`id`, `name`, `slug`, `children[]`).
+    func fetchCategoryTree() async throws -> [CategoryNode] {
+        let wrapped: CategoryTreeResponse = try await getJSON(
+            pathComponents: ["api", "v1", "categories", "tree"]
+        )
+        return wrapped.categories
+    }
+
+    /// GET `/api/v1/analytics/fair-price?category_id=` / `category_slug=` — optional social proof.
+    /// Soft-fails to `has_data=false` on server errors; never blocks create flows.
+    /// - Parameter side: `1` = service (default), `2` = goods.
+    func fetchFairPrice(
+        categoryId: String? = nil,
+        categorySlug: String? = nil,
+        zip: String? = nil,
+        side: Int = 1
+    ) async throws -> FairPriceResponse {
+        var query: [URLQueryItem] = []
+        if let categoryId {
+            let id = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !id.isEmpty {
+                query.append(URLQueryItem(name: "category_id", value: id))
+            }
+        }
+        if let categorySlug {
+            let slug = categorySlug.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !slug.isEmpty {
+                query.append(URLQueryItem(name: "category_slug", value: slug))
+            }
+        }
+        guard !query.isEmpty else {
+            return FairPriceResponse(hasData: false)
+        }
+        if let zip {
+            let z = zip.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !z.isEmpty {
+                query.append(URLQueryItem(name: "zip", value: z))
+            }
+        }
+        if side == 1 || side == 2 {
+            query.append(URLQueryItem(name: "side", value: String(side)))
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "analytics", "fair-price"],
+            query: query
+        )
     }
 
     // MARK: - Create (jobs + listings)

@@ -66,7 +66,7 @@ enum StatusChipStyle {
         switch raw.lowercased() {
         case "open", "active", "live", "published", "in_progress", "awarded":
             return .success
-        case "pending", "pending_payment", "scheduled", "review":
+        case "pending", "pending_payment", "scheduled", "review", "draft":
             return .warning
         case "completed", "closed", "sold", "fulfilled", "paid":
             return .info
@@ -391,6 +391,163 @@ struct ServiceCategoriesResponse: Codable, Sendable {
     let categories: [ServiceCategorySummary]
 }
 
+/// Nested node from `GET /api/v1/categories/tree`.
+struct CategoryNode: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var parentId: String?
+    var name: String?
+    var slug: String?
+    var level: Int?
+    var description: String?
+    var icon: String?
+    var sortOrder: Int?
+    var active: Bool?
+    var children: [CategoryNode]?
+
+    var displayName: String {
+        let n = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !n.isEmpty { return n }
+        let s = slug?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return s.isEmpty ? id : s
+    }
+
+    /// Active children only (treat missing `active` as true).
+    var activeChildren: [CategoryNode] {
+        (children ?? []).filter { $0.active != false }
+    }
+
+    var hasActiveChildren: Bool {
+        !activeChildren.isEmpty
+    }
+}
+
+struct CategoryTreeResponse: Codable, Sendable {
+    let categories: [CategoryNode]
+}
+
+// MARK: - Listings autocomplete
+
+/// Row from `GET /api/v1/listings/autocomplete` — `type` is `"listing"` or `"category"`.
+struct ListingAutocompleteSuggestion: Codable, Sendable, Hashable {
+    var type: String?
+    /// Listing UUID when `type == "listing"`.
+    var id: String?
+    var title: String?
+    var categorySlug: String?
+    /// Category display label when `type == "category"`.
+    var label: String?
+    var startingPriceCents: Int64?
+
+    var isCategory: Bool {
+        (type ?? "").lowercased() == "category"
+    }
+
+    var isListing: Bool {
+        (type ?? "").lowercased() == "listing"
+    }
+
+    /// Stable identity for `ForEach` (categories have no listing id).
+    var suggestionKey: String {
+        if isListing {
+            let listingID = id?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !listingID.isEmpty { return "listing:\(listingID)" }
+            let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return "listing-title:\(t)"
+        }
+        let slug = categorySlug?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !slug.isEmpty { return "category:\(slug)" }
+        let lab = label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return "category-label:\(lab)"
+    }
+
+    var displayLabel: String {
+        if isCategory {
+            let lab = label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !lab.isEmpty { return lab }
+            let slug = categorySlug?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return slug.isEmpty ? "Category" : slug
+        }
+        let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "Listing" : t
+    }
+
+    var secondaryLabel: String? {
+        if isCategory {
+            let slug = categorySlug?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return slug.isEmpty ? "Category" : "Category · \(slug)"
+        }
+        if let cents = startingPriceCents {
+            return MoneyFormat.usd(cents: cents)
+        }
+        let slug = categorySlug?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return slug.isEmpty ? "Listing" : slug
+    }
+}
+
+struct ListingsAutocompleteResponse: Codable, Sendable {
+    var suggestions: [ListingAutocompleteSuggestion]?
+}
+
+// MARK: - Fair price (optional social proof)
+
+/// `GET /api/v1/analytics/fair-price` — soft social proof; fails soft with `has_data=false`.
+struct FairPriceResponse: Codable, Sendable {
+    var hasData: Bool?
+    var priceCents: Int64?
+    var p25Cents: Int64?
+    var p75Cents: Int64?
+    var ciLoCents: Int64?
+    var ciHiCents: Int64?
+    var nEff: Double?
+    var confidence: Double?
+    var confidenceLabel: String?
+    var levelUsed: Int?
+    var modelVersion: String?
+
+    init(
+        hasData: Bool? = nil,
+        priceCents: Int64? = nil,
+        p25Cents: Int64? = nil,
+        p75Cents: Int64? = nil,
+        ciLoCents: Int64? = nil,
+        ciHiCents: Int64? = nil,
+        nEff: Double? = nil,
+        confidence: Double? = nil,
+        confidenceLabel: String? = nil,
+        levelUsed: Int? = nil,
+        modelVersion: String? = nil
+    ) {
+        self.hasData = hasData
+        self.priceCents = priceCents
+        self.p25Cents = p25Cents
+        self.p75Cents = p75Cents
+        self.ciLoCents = ciLoCents
+        self.ciHiCents = ciHiCents
+        self.nEff = nEff
+        self.confidence = confidence
+        self.confidenceLabel = confidenceLabel
+        self.levelUsed = levelUsed
+        self.modelVersion = modelVersion
+    }
+
+    var isUsable: Bool {
+        hasData == true && (priceCents ?? 0) > 0
+    }
+
+    /// Short caption for form footers, e.g. "Market median ≈ $120 (p25–p75 $80–$160)".
+    var hintCaption: String? {
+        guard isUsable, let price = priceCents else { return nil }
+        var parts: [String] = ["Market median ≈ \(MoneyFormat.usd(cents: price))"]
+        if let lo = p25Cents, let hi = p75Cents, lo > 0, hi > 0 {
+            parts.append("(p25–p75 \(MoneyFormat.usd(cents: lo))–\(MoneyFormat.usd(cents: hi)))")
+        }
+        if let label = confidenceLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty {
+            parts.append("· \(label)")
+        }
+        return parts.joined(separator: " ")
+    }
+}
+
 // MARK: - Jobs (services reverse-auction)
 
 struct JobApproximateAddress: Codable, Sendable, Hashable {
@@ -569,6 +726,12 @@ typealias JobMine = JobSummary
 struct JobsMineResponse: Codable, Sendable {
     let jobs: [JobMine]
     let pagination: PaginationMeta?
+}
+
+/// Authenticated `GET /api/v1/jobs/drafts` — unpublished jobs owned by the customer.
+/// Drafts use the same job row shape as the public list (`JobSummary`).
+struct JobDraftsResponse: Codable, Sendable {
+    let drafts: [JobSummary]
 }
 
 // MARK: - Chat

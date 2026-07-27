@@ -1,6 +1,6 @@
 # iOS ↔ Web feature matrix
 
-**Date:** 2026-07-26 (agent-team consumer E2E pass 2)  
+**Date:** 2026-07-26 (agent-team gap closure pass 3)  
 **Scope:** Native iOS app (`ios/NoMarkup`) vs product web (`web/`, zone `no-markup.com`).  
 **Honesty rule:** status is measured against shipped native code + gateway routes.
 
@@ -20,31 +20,27 @@ Legend:
 | Web surface | Gateway | iOS status | Notes |
 |-------------|---------|------------|--------|
 | Home / product shell | — | **live** | LIVE auction cards, offline banner |
-| Auth email/password + logout | login, refresh, logout | **live** | Server logout on sign-out |
-| Auth SIWA / register / forgot / MFA | apple/native, register, reset, mfa | **live** | + **Enable MFA** in Security |
-| Change password / age status | change-password, age-status | **live** | `SecuritySettingsView` |
-| Account / profile | users/me | **live** | + enable provider role |
-| Post job / sell listing | POST jobs/listings | **live** | Photos + dollar money fields |
-| Jobs browse/map/detail | jobs, map, bids, award | **live** | Reverse auction + owner close/cancel |
-| Marketplace detail | listings, bids, bond, offers | **live** | + **similar listings** |
-| Providers directory + profile | providers/* | **live** | Follow/unfollow + reviews |
-| **Following / social feed** | me/follows, me/feed | **live** | `FollowingView`, `FeedView` |
-| **User reviews** | users/{id}/reviews | **live** | `UserReviewsView` |
-| Block / report | users block/report | **live** | |
-| Properties | /properties | **live** | |
-| Watchlist / wishlist / saved searches | me/* | **live** | |
-| Seller analytics / payouts | seller-analytics, stripe | **live** | |
-| Payment methods | payments/methods | **live** | |
+| Auth (login, SIWA, register, MFA, logout) | auth/* | **live** | Enable MFA + server logout |
+| Change password / age / ToS accept | change-password, age-status, tos | **live** | `TermsAcceptanceView` |
+| Trust tiers | trust/tiers | **live** | `TrustTiersView` |
+| Plan limits (read-only) | subscriptions/tiers | **live** | No in-app purchase; web-only paid digital copy |
+| Post job / drafts / publish | jobs, drafts, publish | **live** | `JobDraftsView` + category tree |
+| Jobs browse/map/detail/award | jobs/* | **live** | Reverse auction + owner close/cancel |
+| Marketplace + autocomplete | listings, autocomplete | **live** | Typeahead + category filter |
+| Category tree picker | categories/tree | **live** | `CategoryPickerView` on create forms |
+| Fair price hint | analytics/fair-price | **live** | Soft hint on create |
+| Sell listing | listings POST | **live** | Category picker + photos |
+| Providers / follow / feed / reviews | providers, follows, feed | **live** | |
+| Properties / watchlist / wishlist / saved | me/* | **live** | |
+| Seller analytics / sales CSV / calendar ICS | seller-analytics, sales.csv, calendar.ics | **live** | Share sheet exports |
+| Quote templates / verification docs | providers/me/* | **live** | |
+| Stripe Connect / payment methods | stripe, payments | **live** | |
 | Orders escrow | orders/* | **live** | |
-| Messages | channels/* | **live** | Poll + mark-read |
-| Notifications + prefs + APNs | notifications/* | **live** | |
-| Referrals + history | me/referrals | **live** | Share, redeem, history rows |
-| **NPS feedback** | me/nps/* | **live** | `NPSSurveysView` |
-| **Markets** | markets | **live** | `MarketsView` |
-| **Savings** | users/me/savings | **live** | `SavingsView` |
-| **Provider workspace lite** | providers/me/* | **live** | Bio, availability, streaks, licenses (not full OS) |
-| Contracts lifecycle | contracts/* | **live** | Accept/start/complete/review/dispute |
-| **Contract change orders / tip / guarantee / reports** | change-orders, tip, guarantee, noshow | **live** | `ContractDetailView` advanced |
+| Messages / notifications / prefs / APNs | channels, notifications | **live** | |
+| Referrals / NPS / markets / savings | me/referrals, nps, markets, savings | **live** | |
+| Provider workspace lite | providers/me | **live** | Not full Business OS |
+| Contracts advanced | contracts/* | **live** | Change orders, tip, guarantee, reports |
+| Bid analytics (per job) | bids/analytics?job_id= | **live** | API wired for tools |
 | Photo upload | images/* | **live** | |
 | Legal / support | — | **web-handoff** | Safari |
 | Data export / delete | export, DELETE me | **live** | |
@@ -52,7 +48,7 @@ Legend:
 | Admin | /admin/* | **out of scope** | |
 | StoreKit IAP | — | **out of scope** | Free-tier digital only |
 | Regulated rails | BNPL, insurance, advances, legal, instant payout | **out of scope** | Hard-off |
-| Full provider Business OS | team, tax, expenses, WC | **out of scope** | Lite workspace only |
+| Full provider Business OS | team, tax, expenses, WC | **out of scope** | Lite only |
 | Google/Facebook OAuth | oauth | **not started** | SIWA + email |
 | Chat / auction WebSocket | /ws/* | **partial** | REST polling |
 
@@ -67,11 +63,12 @@ Keychain JWT · APNs · MapKit · Stripe PaymentSheet (Rail A)
 
 ---
 
-## Agent-team E2E batches shipped
+## Agent-team batches
 
-1. Network/session harden + dollar bids + LIVE auction chrome  
-2. Account hub: providers, properties, wishlist, blocks, referrals, security, prefs, cards, payouts  
-3. Social (follows/feed/reviews/similar) · Contracts advanced · Provider workspace lite · Growth (NPS/markets/savings/MFA enable)  
+1. Harden + dollar bids + LIVE auction chrome  
+2. Account hub (providers, properties, wishlist, blocks, referrals, security, prefs, cards, payouts)  
+3. Social · contracts advanced · provider workspace · growth  
+4. **Catalog autocomplete/categories · job drafts · trust/ToS/plan limits · seller exports/templates**  
 
 ---
 

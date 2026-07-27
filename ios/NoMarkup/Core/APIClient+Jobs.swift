@@ -54,4 +54,28 @@ extension APIClient {
             authorized: .required
         )
     }
+
+    /// GET `/api/v1/jobs/drafts` — customer's unpublished job drafts (Bearer required).
+    /// Response: `{ "drafts": [ Job-like objects ] }`.
+    func fetchJobDrafts() async throws -> JobDraftsResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "jobs", "drafts"],
+            authorized: true
+        )
+    }
+
+    /// POST `/api/v1/jobs/{id}/publish` — publish a draft to the active reverse auction.
+    /// Response is the job JSON map (not wrapped), same shape as create.
+    @discardableResult
+    func publishJob(id: String) async throws -> JobDetail {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "jobs", trimmed, "publish"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
 }

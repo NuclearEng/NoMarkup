@@ -153,6 +153,78 @@ extension APIClient {
             authorized: .required
         )
     }
+
+    // MARK: Quote templates
+
+    /// GET `/api/v1/providers/me/quote-templates` → `{ "templates": [...] }`.
+    func fetchMyQuoteTemplates() async throws -> [QuoteTemplate] {
+        let wrapped: QuoteTemplatesResponse = try await getJSON(
+            pathComponents: ["api", "v1", "providers", "me", "quote-templates"],
+            authorized: true
+        )
+        return wrapped.templates ?? []
+    }
+
+    /// POST `/api/v1/providers/me/quote-templates` — create a reusable bid boilerplate.
+    @discardableResult
+    func createQuoteTemplate(
+        name: String,
+        body: String,
+        defaultAmountCents: Int64? = nil,
+        defaultDurationHours: Int? = nil
+    ) async throws -> QuoteTemplate {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Template name is required.")
+        }
+        guard !trimmedBody.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Template body is required.")
+        }
+        guard trimmedBody.count <= 4000 else {
+            throw APIClientError.httpStatus(400, detail: "Template body must be at most 4000 characters.")
+        }
+        if let defaultAmountCents, defaultAmountCents < 0 {
+            throw APIClientError.httpStatus(400, detail: "Default amount must be non-negative.")
+        }
+        if let defaultDurationHours, defaultDurationHours < 0 {
+            throw APIClientError.httpStatus(400, detail: "Default duration must be non-negative.")
+        }
+        let request = CreateQuoteTemplateRequestBody(
+            name: trimmedName,
+            body: trimmedBody,
+            defaultAmountCents: defaultAmountCents,
+            defaultDurationHours: defaultDurationHours
+        )
+        return try await postJSON(
+            pathComponents: ["api", "v1", "providers", "me", "quote-templates"],
+            body: request,
+            authorized: .required
+        )
+    }
+
+    /// DELETE `/api/v1/providers/me/quote-templates/{id}` — owner-scoped; 404 if missing.
+    func deleteQuoteTemplate(id: String) async throws {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Template id is required.")
+        }
+        let _: QuoteTemplateDeletedResponse = try await deleteJSON(
+            pathComponents: ["api", "v1", "providers", "me", "quote-templates", trimmed],
+            authorized: .required
+        )
+    }
+
+    // MARK: Verification documents
+
+    /// GET `/api/v1/providers/me/documents` → `{ "documents": [...] }` (read-only list).
+    func fetchMyProviderDocuments() async throws -> [ProviderVerificationDocument] {
+        let wrapped: ProviderDocumentsResponse = try await getJSON(
+            pathComponents: ["api", "v1", "providers", "me", "documents"],
+            authorized: true
+        )
+        return wrapped.documents ?? []
+    }
 }
 
 // MARK: - Models (provider me)
@@ -496,4 +568,211 @@ private struct SubmitProviderLicenseRequestBody: Encodable {
     let licenseType: String
     let licenseNumber: String
     let jurisdiction: String
+}
+
+// MARK: - Quote templates
+
+/// Row from `GET|POST /api/v1/providers/me/quote-templates`.
+struct QuoteTemplate: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var userId: String?
+    var name: String?
+    var body: String?
+    var defaultAmountCents: Int64?
+    var defaultDurationHours: Int?
+    var useCount: Int?
+    var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId
+        case name
+        case body
+        case defaultAmountCents
+        case defaultDurationHours
+        case useCount
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let rawId = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        id = rawId.isEmpty ? UUID().uuidString : rawId
+        userId = try c.decodeIfPresent(String.self, forKey: .userId)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        body = try c.decodeIfPresent(String.self, forKey: .body)
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: .defaultAmountCents) {
+            defaultAmountCents = v
+        } else if let v = try? c.decodeIfPresent(Int.self, forKey: .defaultAmountCents) {
+            defaultAmountCents = Int64(v)
+        } else {
+            defaultAmountCents = nil
+        }
+        if let v = try? c.decodeIfPresent(Int.self, forKey: .defaultDurationHours) {
+            defaultDurationHours = v
+        } else if let v = try? c.decodeIfPresent(Int64.self, forKey: .defaultDurationHours) {
+            defaultDurationHours = Int(v)
+        } else {
+            defaultDurationHours = nil
+        }
+        if let v = try? c.decodeIfPresent(Int.self, forKey: .useCount) {
+            useCount = v
+        } else if let v = try? c.decodeIfPresent(Int64.self, forKey: .useCount) {
+            useCount = Int(v)
+        } else {
+            useCount = nil
+        }
+        // created_at may be ISO8601 string or decoded via flexible strategies.
+        if let s = try? c.decodeIfPresent(String.self, forKey: .createdAt) {
+            createdAt = s
+        } else if let d = try? c.decodeIfPresent(Date.self, forKey: .createdAt) {
+            createdAt = ISO8601DateFormatter().string(from: d)
+        } else {
+            createdAt = nil
+        }
+    }
+
+    var displayName: String {
+        let n = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return n.isEmpty ? "Untitled template" : n
+    }
+
+    var displayBodyPreview: String {
+        let b = body?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if b.isEmpty { return "No body" }
+        if b.count <= 120 { return b }
+        return String(b.prefix(117)) + "…"
+    }
+
+    var displayDefaultAmount: String? {
+        guard let cents = defaultAmountCents else { return nil }
+        return MoneyFormat.usd(cents: cents)
+    }
+
+    var displayUseCount: String {
+        let n = useCount ?? 0
+        return n == 1 ? "Used once" : "Used \(n) times"
+    }
+}
+
+struct QuoteTemplatesResponse: Codable, Sendable {
+    var templates: [QuoteTemplate]?
+}
+
+struct QuoteTemplateDeletedResponse: Codable, Sendable {
+    var deleted: Bool?
+}
+
+private struct CreateQuoteTemplateRequestBody: Encodable {
+    let name: String
+    let body: String
+    let defaultAmountCents: Int64?
+    let defaultDurationHours: Int?
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(name, forKey: .name)
+        try c.encode(body, forKey: .body)
+        if let defaultAmountCents {
+            try c.encode(defaultAmountCents, forKey: .defaultAmountCents)
+        }
+        if let defaultDurationHours {
+            try c.encode(defaultDurationHours, forKey: .defaultDurationHours)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case body
+        case defaultAmountCents
+        case defaultDurationHours
+    }
+}
+
+// MARK: - Verification documents
+
+/// Row from `GET /api/v1/providers/me/documents`.
+struct ProviderVerificationDocument: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var documentType: String?
+    var status: String?
+    var resubmissionCount: Int?
+    var rejectionReason: String?
+    var expiresAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case documentType
+        case status
+        case resubmissionCount
+        case rejectionReason
+        case expiresAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let rawId = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        let type = try c.decodeIfPresent(String.self, forKey: .documentType)
+        // Some status-only rows may omit id; fall back to type for list identity.
+        if rawId.isEmpty {
+            let fallback = type?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            id = fallback.isEmpty ? UUID().uuidString : fallback
+        } else {
+            id = rawId
+        }
+        documentType = type
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        if let v = try? c.decodeIfPresent(Int.self, forKey: .resubmissionCount) {
+            resubmissionCount = v
+        } else if let v = try? c.decodeIfPresent(Int64.self, forKey: .resubmissionCount) {
+            resubmissionCount = Int(v)
+        } else {
+            resubmissionCount = nil
+        }
+        rejectionReason = try c.decodeIfPresent(String.self, forKey: .rejectionReason)
+        expiresAt = try c.decodeIfPresent(String.self, forKey: .expiresAt)
+    }
+
+    var displayType: String {
+        let t = documentType?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if t.isEmpty { return "Document" }
+        return t.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var displayStatus: String {
+        StatusChipStyle.displayLabel(status ?? "unknown")
+    }
+
+    var statusStyle: StatusChipStyle {
+        StatusChipStyle.forStatus(status)
+    }
+}
+
+struct ProviderDocumentsResponse: Codable, Sendable {
+    var documents: [ProviderVerificationDocument]?
+}
+
+// MARK: - Bid analytics (job reverse-auction)
+
+/// `GET /api/v1/bids/analytics?job_id=` response.
+struct BidAnalytics: Codable, Sendable, Hashable {
+    var totalBids: Int?
+    var lowestBidCents: Int64?
+    var highestBidCents: Int64?
+    var medianBidCents: Int64?
+    var offerAcceptedCount: Int?
+    var firstBidAt: String?
+    var lastBidAt: String?
+
+    var displayLowest: String {
+        MoneyFormat.usd(cents: lowestBidCents ?? 0)
+    }
+
+    var displayHighest: String {
+        MoneyFormat.usd(cents: highestBidCents ?? 0)
+    }
+
+    var displayMedian: String {
+        MoneyFormat.usd(cents: medianBidCents ?? 0)
+    }
 }
