@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkline } from '@/components/ui/sparkline';
 import { extractBidBondRequirement } from '@/hooks/useCompliance';
 import { useCountdown } from '@/hooks/useCountdown';
@@ -124,9 +125,13 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
   if (isLoading) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="space-y-6">
-          <div className="bg-muted h-8 w-2/3 animate-pulse rounded" />
-          <div className="bg-muted aspect-[4/3] animate-pulse rounded-xl" />
+        <div
+          className="space-y-6"
+          role="status"
+          aria-label="Loading listing"
+        >
+          <Skeleton className="h-8 w-2/3" />
+          <Skeleton variant="card" className="aspect-[4/3] w-full" />
         </div>
       </div>
     );

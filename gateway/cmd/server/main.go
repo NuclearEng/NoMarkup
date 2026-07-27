@@ -46,6 +46,7 @@ import (
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"github.com/nomarkup/nomarkup/gateway/internal/observability"
 	"github.com/nomarkup/nomarkup/gateway/internal/router"
+	"github.com/nomarkup/nomarkup/gateway/internal/vault"
 	"github.com/nomarkup/nomarkup/pkg/grpmtls"
 )
 
@@ -76,9 +77,30 @@ func main() {
 		}
 	}
 
+	// OPS-25: optional in-process Vault overlay. When VAULT_ADDR is unset the
+	// client is a no-op and every GetString falls through to env (K8s Secret
+	// / .env.local) — zero behavior change. When set, Vault wins for keys
+	// present at the platform path; missing keys still use env. ESO →
+	// nomarkup-secrets remains the primary prod path (OPS-04); this wire is
+	// the migration bridge documented in docs/operations/vault-client.md.
+	bootCtx := context.Background()
+	vaultClient, err := vault.New(bootCtx)
+	if err != nil {
+		slog.Error("failed to initialize vault client", "error", err)
+		os.Exit(1)
+	}
+	defer vaultClient.Close()
+	vaultPath := vaultPlatformPath(cfg.Environment)
+	if ws := vaultClient.GetString(bootCtx, vaultPath, "INTERNAL_WS_SECRET", "INTERNAL_WS_SECRET"); ws != "" {
+		cfg.InternalWSSecret = ws
+	} else if alias := os.Getenv("GATEWAY_CHAT_SECRET"); alias != "" {
+		// Preserve config.Load alias when Vault + INTERNAL_WS_SECRET are empty.
+		cfg.InternalWSSecret = alias
+	}
+
 	// Initialize Sentry error tracking. When SENTRY_DSN is not set, this is a
 	// no-op — all sentry.CaptureException / hub.Recover calls become silent.
-	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {
+	if sentryDSN := vaultClient.GetString(bootCtx, vaultPath, "SENTRY_DSN", "SENTRY_DSN"); sentryDSN != "" {
 		if err := sentry.Init(sentry.ClientOptions{
 			Dsn:              sentryDSN,
 			Environment:      os.Getenv("APP_ENV"),
@@ -299,9 +321,10 @@ func main() {
 	// SESSION_SECRET HMAC-signs the has_session soft-gate cookie (SEC-07).
 	// HAS_SESSION_SECRET is an optional override so the web edge and gateway
 	// can share a dedicated key without rotating the broader session secret.
+	// Vault path (when VAULT_ADDR set) uses property SESSION_SECRET; env fallback.
 	sessionSecret := os.Getenv("HAS_SESSION_SECRET")
 	if sessionSecret == "" {
-		sessionSecret = os.Getenv("SESSION_SECRET")
+		sessionSecret = vaultClient.GetString(context.Background(), vaultPath, "SESSION_SECRET", "SESSION_SECRET")
 	}
 	if sessionSecret == "" {
 		slog.Warn("SESSION_SECRET unset: has_session soft-gate cookie will not be issued")
@@ -462,8 +485,9 @@ func main() {
 	// production: booting green with search silently dead is fail-open.
 	var meiliClient meilisearch.ServiceManager
 	if meiliURL := config.ResolveMeilisearchURL(); meiliURL != "" {
+		meiliAPIKey := vaultClient.GetString(context.Background(), vaultPath, "MEILISEARCH_API_KEY", "MEILISEARCH_API_KEY")
 		meiliClient = meilisearch.New(meiliURL,
-			meilisearch.WithAPIKey(os.Getenv("MEILISEARCH_API_KEY")),
+			meilisearch.WithAPIKey(meiliAPIKey),
 			// Traced transport: Meilisearch has no OTel integration of its own,
 			// so without this a slow search is an unexplained gap in the trace.
 			meilisearch.WithCustomClient(observability.NewTracedHTTPClient("meilisearch")),
@@ -575,6 +599,20 @@ func main() {
 		slog.Error("forced shutdown", "error", err)
 	}
 	slog.Info("gateway stopped")
+}
+
+// vaultPlatformPath is the KV path for gateway-readable platform secrets.
+// Aligns with OPS-04 ExternalSecret remoteRef key `nomarkup/<env>` under the
+// `secret` mount (see deploy/k8s/base/externalsecret.sample.yaml).
+func vaultPlatformPath(environment string) string {
+	switch environment {
+	case "production":
+		return "secret/nomarkup/production"
+	case "staging":
+		return "secret/nomarkup/staging"
+	default:
+		return "secret/nomarkup/dev"
+	}
 }
 
 // initTracer initializes an OpenTelemetry trace exporter. If OTEL_EXPORTER_OTLP_ENDPOINT

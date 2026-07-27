@@ -70,13 +70,20 @@ in-cluster is `meili-data` (Meilisearch index storage).
   `nomarkup-secrets` — see [`SECRETS.md`](./SECRETS.md). Do not invent or
   commit real Google client credentials.
 
-## Secrets
+## Secrets (OPS-04 Partial)
 
 All runtime secrets (including `DATABASE_URL` / `REDIS_URL` for the managed
 Postgres and Redis) come from the `nomarkup-secrets` Secret, provisioned
-externally from Vault (External Secrets Operator recommended). Sample:
-[`base/externalsecret.sample.yaml`](./base/externalsecret.sample.yaml). Full
-key list (includes `INTERNAL_WS_SECRET`): [`SECRETS.md`](./SECRETS.md).
+**out-of-band** — nothing in this repo creates live credentials.
+
+| Pattern | Sample | Status |
+|---|---|---|
+| ESO → Vault (preferred) | [`base/externalsecret.sample.yaml`](./base/externalsecret.sample.yaml) | Explicit `data:` remoteRefs for **METRICS**, **JWT**, **STRIPE**, **GOOGLE** + second ExternalSecret for `monitoring/nomarkup-metrics-token` |
+| Sealed Secrets (gitops fallback) | [`base/sealedsecret.sample.yaml`](./base/sealedsecret.sample.yaml) | `kubeseal` workflow; empty `encryptedData` until sealed against the cluster cert |
+
+Full key list + rotation: [`SECRETS.md`](./SECRETS.md). **Founder still wires
+Vault / controller and stores real values** before first deploy — samples are
+not applied by kustomize.
 
 ## Migrations
 

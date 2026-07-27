@@ -20,6 +20,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useTrendingListings } from '@/hooks/useListings';
 import { canNextImageLoad, formatCents } from '@/lib/utils';
 import type { Listing } from '@/types';
@@ -97,16 +98,21 @@ export function TrendingRail({ className, limit = 12 }: TrendingRailProps) {
           </Button>
         </div>
       ) : (
-        <ul className="rail-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+        <ul
+          className="rail-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2"
+          {...(isLoading
+            ? { role: 'status' as const, 'aria-label': 'Loading trending auctions' }
+            : {})}
+        >
           {isLoading
             ? Array.from({ length: 6 }).map((_, i) => (
                 <li
                   key={`trending-skeleton-${String(i)}`}
-                  className="glass animate-pulse w-44 shrink-0 snap-start rounded-lg border border-white/[0.06] p-2"
+                  className="glass w-44 shrink-0 snap-start rounded-lg border border-white/[0.06] p-2"
                 >
-                  <div className="aspect-[4/3] w-full rounded-md bg-white/[0.06]" />
-                  <div className="mt-2 h-3 w-3/4 rounded bg-white/[0.06]" />
-                  <div className="mt-1 h-3 w-1/2 rounded bg-white/[0.06]" />
+                  <Skeleton className="aspect-[4/3] w-full rounded-md" />
+                  <Skeleton className="mt-2 h-3 w-3/4" />
+                  <Skeleton className="mt-1 h-3 w-1/2" />
                 </li>
               ))
             : listings.map((l) => <TrendingCard key={l.id} listing={l} />)}

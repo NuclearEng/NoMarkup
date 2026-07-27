@@ -139,8 +139,9 @@ exporters:
 
 3. Restart the collector Deployment.
 
-Prefer ExternalSecrets / Vault for the Secret in production (OPS-04 /
-OPS-25). Never commit tokens.
+Prefer ExternalSecrets / Vault for the Secret in production (OPS-04 Partial —
+see `deploy/k8s/base/externalsecret.sample.yaml` + `SECRETS.md`; Founder still
+wires Vault). Never commit tokens.
 
 ## Verify
 

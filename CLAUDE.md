@@ -68,9 +68,11 @@ Stripe, WebSocket fan-out, **Meilisearch** coordination, and **PostGIS** geo. Se
 
 ### Infrastructure
 - Docker + Compose (local) · Kubernetes **manifests** (prod path) · GitHub Actions CI/CD
-- **Cloudflare** is registrar + DNS + CDN/edge for the production zone **`no-markup.com`** (hyphenated —
-  the non-hyphen `nomarkup.com` is **not** owned). Edge-caching strategy targets the public **DATA**
-  layer, not HTML (see §14). Account ID / Zone ID: Vault/`.env.local`, not committed.
+- **Cloudflare** is the **intended** registrar + DNS + CDN/edge for production zone **`no-markup.com`**
+  (hyphenated — the non-hyphen `nomarkup.com` is **not** owned). Origin targets public **DATA**
+  caching, not HTML (see §14). **In-repo edge inventory** (auth cache-bypass expression, what is
+  not Terraform-managed): `docs/operations/cloudflare-edge.md` + `docs/operations/cdn-cache-auth-bypass.md`.
+  Live CF rules / Account ID / Zone ID: Founder + Vault/`.env.local`, not committed (OPS-24 Partial).
 - **Deploy is not production-ready** until `DEPLOY_PROVISIONED=true`, secrets, cluster, and real
   migrate-on-deploy exist (`docs/operations/provisioning-checklist.md`). `deploy/terraform/` is a
   skeleton until IaC is filled in.

@@ -126,8 +126,8 @@ afterEach(() => {
 describe('SpectatePage', () => {
   it('renders the loading skeleton when loading', () => {
     listingState.isLoading = true;
-    const { container } = render(withQueryClient(createElement(SpectatePage)));
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    render(withQueryClient(createElement(SpectatePage)));
+    expect(screen.getByRole('status', { name: 'Loading auction' })).toBeDefined();
   });
 
   it('renders Retry on error and invokes refetch', () => {

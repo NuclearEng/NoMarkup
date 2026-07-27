@@ -7,6 +7,16 @@ env-var fallback for local development.
 
 - `gateway/internal/vault/vault.go` — `vault.Client`
 - `gateway/internal/vault/vault_test.go` — round-trip + fallback tests
+- `gateway/cmd/server/main.go` — **OPS-25 Partial:** constructs the client at boot,
+  resolves `INTERNAL_WS_SECRET`, `SESSION_SECRET`, `SENTRY_DSN`, and
+  `MEILISEARCH_API_KEY` via `GetString` (env fallback when `VAULT_ADDR` unset or
+  key missing), closes the client on process exit. Path:
+  `secret/nomarkup/{production|staging|dev}` (matches OPS-04 ExternalSecret
+  remoteRef keys under the `secret` mount).
+
+**Not done:** other Go services do not dial Vault yet; prod still primarily
+mounts `nomarkup-secrets` via ESO/K8s. Setting `VAULT_ADDR` + AppRole on the
+gateway Deployment is Founder/ops.
 
 ## Usage
 

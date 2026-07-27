@@ -97,19 +97,60 @@ unauthenticated to anything that can reach the pod.
 
 Apply + verify: [`docs/operations/monitoring-stack.md`](../../docs/operations/monitoring-stack.md).
 
-## Provisioning (recommended via External Secrets Operator + Vault)
+## Provisioning (OPS-04 Partial)
 
-Sample ExternalSecret manifest (copy + apply after ClusterSecretStore exists):
+**In-repo today:** sample manifests + this doc. **Not done:** Founder still
+stands up Vault (or Sealed Secrets controller), stores live values, and applies
+the CRs on a real cluster. Samples never contain real credentials — do not
+invent Stripe / Google / JWT material into git.
+
+| Path | Sample | When to use |
+|---|---|---|
+| **ESO + Vault** (preferred) | [`base/externalsecret.sample.yaml`](./base/externalsecret.sample.yaml) | Production once Vault + ClusterSecretStore exist |
+| **Sealed Secrets** (gitops fallback) | [`base/sealedsecret.sample.yaml`](./base/sealedsecret.sample.yaml) | Offline seal with `kubeseal` when Vault is not wired yet |
+| Manual `kubectl create secret` | below | Dev / break-glass only |
+
+Neither sample is listed in `kustomization.yaml` — copy into an overlay or
+secrets platform after the backend is real.
+
+### Spotlight key families (explicit in the samples)
+
+These four groups are mapped with explicit ExternalSecret `data:` remoteRefs
+(and listed for SealedSecret `encryptedData`) so the Vault property → K8s key
+contract is reviewable:
+
+| Family | Secret keys | Consumers |
+|---|---|---|
+| **METRICS** | `METRICS_BEARER_TOKEN` | gateway (`secretKeyRef`) **and** Prometheus Secret `nomarkup-metrics-token` in `monitoring` (same value twice) |
+| **JWT** | `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` | PEM **content** in Secret → file mounts (`JWT_*_KEY_PATH`); user signs, gateway verifies |
+| **STRIPE** | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CONNECT_CLIENT_ID` | payment service only |
+| **GOOGLE** | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | gateway OAuth; **not** ConfigMap (OPS-08) |
+
+### External Secrets Operator + Vault
 
 ```bash
+# 1) Founder: install ESO, create Vault KV path, apply ClusterSecretStore
+#    (commented skeleton at bottom of externalsecret.sample.yaml).
+
+# 2) Copy sample → production overlay (gitignored or secrets-only branch OK)
 cp deploy/k8s/base/externalsecret.sample.yaml \
    deploy/k8s/overlays/production/externalsecret.yaml
-# edit store name / Vault path, then:
+# Edit Vault path / store name if they differ from vault-backend + nomarkup/production.
+# Strip the commented ClusterSecretStore if you apply it separately.
+
+# 3) Apply both ExternalSecrets (nomarkup-secrets + monitoring metrics token)
 kubectl apply -f deploy/k8s/overlays/production/externalsecret.yaml
+
+# 4) Confirm sync
+kubectl get externalsecret -n nomarkup
+kubectl get externalsecret -n monitoring
+kubectl get secret nomarkup-secrets -n nomarkup -o jsonpath='{.data}' | jq 'keys'
+kubectl get secret nomarkup-metrics-token -n monitoring -o jsonpath='{.data}' | jq 'keys'
 ```
 
+Pattern (abbreviated — full explicit remoteRefs live in the sample file):
+
 ```yaml
-# deploy/k8s/base/externalsecret.sample.yaml (committed sample)
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
@@ -122,28 +163,94 @@ spec:
     kind: ClusterSecretStore
   target:
     name: nomarkup-secrets
-  dataFrom:
-    - extract:
-        key: nomarkup/production
+  data:
+    - secretKey: METRICS_BEARER_TOKEN
+      remoteRef: { key: nomarkup/production, property: METRICS_BEARER_TOKEN }
+    - secretKey: JWT_PRIVATE_KEY
+      remoteRef: { key: nomarkup/production, property: JWT_PRIVATE_KEY }
+    - secretKey: JWT_PUBLIC_KEY
+      remoteRef: { key: nomarkup/production, property: JWT_PUBLIC_KEY }
+    - secretKey: STRIPE_SECRET_KEY
+      remoteRef: { key: nomarkup/production, property: STRIPE_SECRET_KEY }
+    - secretKey: STRIPE_WEBHOOK_SECRET
+      remoteRef: { key: nomarkup/production, property: STRIPE_WEBHOOK_SECRET }
+    - secretKey: STRIPE_CONNECT_CLIENT_ID
+      remoteRef: { key: nomarkup/production, property: STRIPE_CONNECT_CLIENT_ID }
+    - secretKey: GOOGLE_CLIENT_ID
+      remoteRef: { key: nomarkup/production, property: GOOGLE_CLIENT_ID }
+    - secretKey: GOOGLE_CLIENT_SECRET
+      remoteRef: { key: nomarkup/production, property: GOOGLE_CLIENT_SECRET }
+    # …DATABASE_URL, REDIS_URL, SESSION_SECRET, INTERNAL_WS_SECRET, …
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: nomarkup-metrics-token
+  namespace: monitoring
+spec:
+  secretStoreRef:
+    name: vault-backend
+    kind: ClusterSecretStore
+  target:
+    name: nomarkup-metrics-token
+  data:
+    - secretKey: METRICS_BEARER_TOKEN
+      remoteRef: { key: nomarkup/production, property: METRICS_BEARER_TOKEN }
 ```
+
+Force resync after Vault rotation:
+
+```bash
+kubectl annotate externalsecret nomarkup-secrets force-sync=$(date +%s) \
+  -n nomarkup --overwrite
+kubectl annotate externalsecret nomarkup-metrics-token force-sync=$(date +%s) \
+  -n monitoring --overwrite
+kubectl rollout restart deployment -n nomarkup -l app.kubernetes.io/part-of=nomarkup
+kubectl -n monitoring rollout restart deploy/prometheus
+```
+
+### Sealed Secrets (fallback)
+
+See [`base/sealedsecret.sample.yaml`](./base/sealedsecret.sample.yaml) for the
+full `kubeseal` workflow. Summary:
+
+1. Build a plain Secret **locally** (never commit) with the keys above.
+2. `kubeseal --format=yaml` → overlay sealed manifests (cluster-scoped ciphertext).
+3. Seal `METRICS_BEARER_TOKEN` twice (namespaces `nomarkup` + `monitoring`) with
+   the **same** plaintext.
+4. Apply SealedSecrets; controller materializes `nomarkup-secrets` /
+   `nomarkup-metrics-token`.
+
+The committed sample has empty `encryptedData: {}` on purpose — only kubeseal
+output is apply-ready.
 
 ## Manual fallback (one-shot, NOT for production)
 
 ```bash
+# Placeholders only — substitute real values from Vault / vendor dashboards.
+# Do not commit the resulting Secret or shell history with live keys.
 kubectl create secret generic nomarkup-secrets \
-  --from-literal=DATABASE_URL='postgres://...' \
-  --from-literal=STRIPE_SECRET_KEY='sk_live_...' \
-  --from-literal=STRIPE_WEBHOOK_SECRET='whsec_...' \
+  --from-literal=DATABASE_URL='postgres://…' \
+  --from-literal=METRICS_BEARER_TOKEN="$(openssl rand -base64 32)" \
+  --from-literal=STRIPE_SECRET_KEY='sk_live_…' \
+  --from-literal=STRIPE_WEBHOOK_SECRET='whsec_…' \
+  --from-literal=GOOGLE_CLIENT_ID='….apps.googleusercontent.com' \
+  --from-literal=GOOGLE_CLIENT_SECRET='…' \
   ... \
   --namespace=nomarkup
 ```
+
+Mirror metrics token for Prometheus before `kubectl apply -k deploy/monitoring`
+(see `METRICS_BEARER_TOKEN` section above).
 
 ## Audit-trail rotation
 
 Every entry above is in scope for the secrets-rotation runbook
 (`docs/secrets-rotation.md`). After rotation, restart all pods that mount
-`nomarkup-secrets` to pick up the new values:
+`nomarkup-secrets` to pick up the new values, **and** restart Prometheus if
+`METRICS_BEARER_TOKEN` changed:
 
 ```bash
 kubectl rollout restart deployment -n nomarkup -l app.kubernetes.io/part-of=nomarkup
+kubectl -n monitoring rollout restart deploy/prometheus
 ```

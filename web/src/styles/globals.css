@@ -1046,12 +1046,15 @@ body {
 }
 
 /* Respect reduced motion preference.
-   Tailwind utilities `.animate-pulse` / `.animate-spin` are used heavily for
-   skeletons and button pending states — FE-11: kill them under reduce so loaders
-   stay visible without continuous motion. */
+   FE-11: Tailwind continuous utilities (pulse/spin/ping/bounce) are used heavily
+   for skeletons, pending spinners, live dots, and typing indicators — kill them
+   under reduce so elements stay visible without continuous motion. Also covers
+   custom celebration, marquee ticker, confetti, and decorative motion classes. */
 @media (prefers-reduced-motion: reduce) {
   .animate-pulse,
   .animate-spin,
+  .animate-ping,
+  .animate-bounce,
   .animate-digit-roll-up,
   .animate-digit-roll-down,
   .animate-digit-flash-green,
@@ -1080,6 +1083,7 @@ body {
   .animate-gradient,
   .animate-accept-attention,
   .animate-auction-elapsed,
+  .animate-auth-error,
   .ticker-track,
   .gradient-blob-1,
   .gradient-blob-2,
@@ -1104,6 +1108,11 @@ body {
   .hero-gold-line-animated,
   .hero-strip-live-glow {
     animation: none !important;
+  }
+  /* One-shot enters: still show final state (visible, no transform). */
+  .animate-auth-error {
+    opacity: 1 !important;
+    transform: none !important;
   }
   .ticker-track {
     overflow-x: auto;
@@ -1543,9 +1552,9 @@ body {
 /* Respect reduced motion — page transitions & stagger */
 @media (prefers-reduced-motion: reduce) {
   .animate-page-enter {
-    animation: none;
-    opacity: 1;
-    transform: none;
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
   .stagger-animated {
     animation: none !important;
@@ -2444,7 +2453,7 @@ body {
   }
 }
 
-/* ─── Reduced-motion: page-enter + Tailwind utility animations ─── */
+/* ─── Reduced-motion: entrances + remaining Tailwind utilities ─── */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-fade-in-up,
@@ -2453,9 +2462,14 @@ body {
   .animate-float,
   .animate-gradient,
   .animate-auth-card-enter,
+  .animate-auth-error,
   .animate-confetti-fall,
+  .animate-confetti-cascade,
+  .animate-page-enter,
   .animate-pulse,
   .animate-spin,
+  .animate-ping,
+  .animate-bounce,
   .stagger-children > * {
     animation: none !important;
     transition: none !important;

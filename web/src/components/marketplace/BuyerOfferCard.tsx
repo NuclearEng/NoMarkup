@@ -32,6 +32,7 @@ import { PaymentConfirmationDialog } from '@/components/payments/PaymentConfirma
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   awaitingPartyForDepth,
   computeOfferDepths,
@@ -101,9 +102,15 @@ export function BuyerOfferCard({ listingId, className }: BuyerOfferCardProps) {
   if (offers.isLoading) {
     return (
       <Card variant="glass" className={className}>
-        <CardContent className="text-muted-foreground flex items-center gap-2 p-4 text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          Loading your offer…
+        <CardContent
+          className="space-y-3 p-4"
+          role="status"
+          aria-label="Loading your offer"
+        >
+          <span className="sr-only">Loading your offer…</span>
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="h-5 w-2/3" />
+          <Skeleton className="h-9 w-full" />
         </CardContent>
       </Card>
     );

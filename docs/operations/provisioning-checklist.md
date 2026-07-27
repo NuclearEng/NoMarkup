@@ -38,15 +38,36 @@ release tag. Deployments read it via `configMapKeyRef` (category cache bust).
 When provisioned + credentials present, deploy builds/pushes all service images
 (including migrate + engines) to GHCR.
 
-### 4. Set the internal WS-auth secret — wire in Vault
-Gateway + chat Deployments inject `INTERNAL_WS_SECRET` via `secretKeyRef`.
-Generate and store in Vault / `nomarkup-secrets`:
+### 4. Provision `nomarkup-secrets` (OPS-04 Partial — Founder wires Vault)
+
+In-repo samples only; **no live secret store is applied by kustomize**.
+
+| Pattern | Path |
+|---|---|
+| ESO + Vault (preferred) | `deploy/k8s/base/externalsecret.sample.yaml` |
+| Sealed Secrets fallback | `deploy/k8s/base/sealedsecret.sample.yaml` |
+| Key inventory + dual metrics token | `deploy/k8s/SECRETS.md` |
+
+Spotlight families mapped explicitly in the ExternalSecret sample:
+
+- **METRICS** — `METRICS_BEARER_TOKEN` (gateway + `monitoring/nomarkup-metrics-token`)
+- **JWT** — `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` (PEM content → file mounts)
+- **STRIPE** — `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_CONNECT_CLIENT_ID`
+- **GOOGLE** — `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (not ConfigMap)
+
+Also generate and store platform keys, including WS hop auth:
 
 ```bash
-openssl rand -base64 32   # store as INTERNAL_WS_SECRET
+openssl rand -base64 32   # INTERNAL_WS_SECRET (same on gateway + chat)
+openssl rand -base64 32   # METRICS_BEARER_TOKEN (same on gateway + Prometheus)
+openssl rand -base64 32   # SESSION_SECRET / ENCRYPTION_KEY as needed
 ```
 
-Sample ExternalSecret: `deploy/k8s/base/externalsecret.sample.yaml`.
+**Founder-Action:** stand up Vault (or Sealed Secrets controller), write real
+values (Stripe Dashboard, Google OAuth client, RSA PEMs — never invent into
+git), apply ClusterSecretStore + ExternalSecrets (or sealed overlays), confirm
+`kubectl get secret nomarkup-secrets -n nomarkup` has the required keys before
+`DEPLOY_PROVISIONED=true`.
 
 ### 5. Deploy credentials (required when DEPLOY_PROVISIONED=true)
 | Secret / var | Purpose |

@@ -68,8 +68,8 @@ describe('(public)/auctions/[id]/spectate/page', () => {
       isError: false,
     } as unknown as ReturnType<typeof useJob>);
 
-    const { container } = render(createElement(SpectatorPage));
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    render(createElement(SpectatorPage));
+    expect(screen.getByRole('status', { name: 'Loading auction' })).toBeDefined();
   });
 
   it('shows the not-found state on error', () => {

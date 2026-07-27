@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useCategoryTree } from '@/hooks/useCategories';
 import { useSearchJobs } from '@/hooks/useJobs';
 import type { JobsResponse } from '@/types';
@@ -197,11 +198,16 @@ export function LegalLandingClient({ initialJobs, legalCategoryId }: LegalLandin
         </div>
 
         {isLoading && jobs.length === 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div
+            className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+            role="status"
+            aria-label="Loading legal cases"
+          >
             {Array.from({ length: 3 }).map((_, i) => (
-              <div
+              <Skeleton
                 key={`skeleton-${String(i)}`}
-                className="glass glass-highlight h-48 animate-pulse rounded-xl border border-[var(--brand-gold)]/10"
+                variant="card"
+                className="glass glass-highlight h-48 border border-[var(--brand-gold)]/10"
               />
             ))}
           </div>

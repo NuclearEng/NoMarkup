@@ -9,6 +9,7 @@ import { GradientMesh } from '@/components/landing/GradientMesh';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
 import { TerminalGrid } from '@/components/terminal/terminal-grid';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useJob } from '@/hooks/useJobs';
 import { useSpectatorTerminal } from '@/hooks/useSpectatorTerminal';
 import type { MarketRange } from '@/types';
@@ -43,10 +44,17 @@ export default function SpectatorPage() {
           aria-hidden="true"
         />
         <div className="relative z-[2] flex min-h-screen items-center justify-center">
-          <div className="space-y-6 text-center">
-            <div className="mx-auto h-8 w-2/3 max-w-xs animate-pulse rounded bg-white/10" />
-            <div className="mx-auto h-4 w-1/3 max-w-[140px] animate-pulse rounded bg-white/10" />
-            <div className="mx-auto h-96 w-full max-w-2xl animate-pulse rounded-xl border border-white/[0.06] bg-white/5" />
+          <div
+            className="mx-auto w-full max-w-2xl space-y-6 px-4 text-center"
+            role="status"
+            aria-label="Loading auction"
+          >
+            <Skeleton className="mx-auto h-8 w-2/3 max-w-xs" />
+            <Skeleton className="mx-auto h-4 w-1/3 max-w-[140px]" />
+            <Skeleton
+              variant="card"
+              className="mx-auto h-96 w-full border border-white/[0.06]"
+            />
           </div>
         </div>
       </div>

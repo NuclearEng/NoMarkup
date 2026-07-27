@@ -62,5 +62,7 @@ resources:
   # Network Policies (ingress least-privilege + OPS-19 egress default-deny)
   - network-policy.yaml
   - network-policy-egress.yaml
-  # NOTE: externalsecret.sample.yaml is intentionally NOT listed — operators
-  # copy it after Vault / ClusterSecretStore is provisioned (see SECRETS.md).
+  # NOTE: externalsecret.sample.yaml and sealedsecret.sample.yaml are
+  # intentionally NOT listed — operators copy them after Vault /
+  # ClusterSecretStore (or Sealed Secrets controller) is provisioned.
+  # See SECRETS.md (OPS-04 Partial — Founder still wires live secrets).

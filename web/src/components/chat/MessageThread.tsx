@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   useChannel,
   useMarkRead,
@@ -585,9 +586,17 @@ export function MessageThread({ channelId }: { channelId: string }) {
 
   if (isLoading && !beforeCursor) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
+      <div
+        className="flex flex-1 flex-col justify-end gap-3 p-4"
+        role="status"
+        aria-label="Loading messages"
+      >
         <span className="sr-only">Loading messages</span>
+        <Skeleton className="h-10 w-3/5 self-start rounded-2xl" />
+        <Skeleton className="h-10 w-1/2 self-end rounded-2xl" />
+        <Skeleton className="h-10 w-2/3 self-start rounded-2xl" />
+        <Skeleton className="h-10 w-2/5 self-end rounded-2xl" />
+        <Skeleton className="h-10 w-1/2 self-start rounded-2xl" />
       </div>
     );
   }

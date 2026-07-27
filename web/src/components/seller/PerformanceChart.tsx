@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { formatCents } from '@/lib/utils';
 import type { SellerAnalyticsDailyPoint } from '@/types';
@@ -79,8 +80,8 @@ export function PerformanceChart({ data, rangeDays, className }: PerformanceChar
       </CardHeader>
       <CardContent className="space-y-4">
         {!mounted ? (
-          <div
-            className="h-48 animate-pulse rounded-lg bg-muted/30"
+          <Skeleton
+            className="h-48 w-full rounded-lg bg-muted/30"
             aria-hidden="true"
           />
         ) : (

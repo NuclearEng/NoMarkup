@@ -4,6 +4,7 @@ import { CheckCircle2, ExternalLink, Loader2, XCircle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   useCreateStripeAccount,
   useStripeAccountStatus,
@@ -53,11 +54,11 @@ export function StripeOnboarding() {
   if (isLoading) {
     return (
       <Card>
-        <CardContent className="py-8">
-          <div className="flex items-center justify-center gap-2">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden="true" />
-            <span className="text-sm text-muted-foreground">Checking Stripe status...</span>
-          </div>
+        <CardContent className="space-y-3 py-8" role="status" aria-label="Checking Stripe status">
+          <span className="sr-only">Checking Stripe status...</span>
+          <Skeleton className="mx-auto h-4 w-48" />
+          <Skeleton className="mx-auto h-4 w-32" />
+          <Skeleton className="mx-auto h-9 w-40" />
         </CardContent>
       </Card>
     );

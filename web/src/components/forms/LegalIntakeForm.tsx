@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useCategoryTree } from '@/hooks/useCategories';
 import { useCreateJob } from '@/hooks/useJobs';
@@ -195,8 +196,9 @@ export function LegalIntakeForm({ presetMatterCategoryId }: LegalIntakeFormProps
                   <FormItem>
                     <FormLabel>What type of legal help do you need?</FormLabel>
                     {treeLoading ? (
-                      <div
-                        className="bg-muted h-11 w-full animate-pulse rounded-md"
+                      <Skeleton
+                        className="h-11 w-full"
+                        role="status"
                         aria-label="Loading legal matter types"
                       />
                     ) : treeError || matterTypes.length === 0 ? (
