@@ -14,6 +14,8 @@ struct MyOrdersView: View {
     @State private var currentUserID: String?
     @State private var disputeOrder: ListingOrderSummary?
     @State private var noShowOrder: ListingOrderSummary?
+    @State private var pendingPickupOrder: ListingOrderSummary?
+    @State private var pendingSellerConfirmOrder: ListingOrderSummary?
 
     private var isBusy: Bool {
         payingOrderID != nil || actingOrderID != nil
@@ -110,6 +112,40 @@ struct MyOrdersView: View {
                 }
             }
         }
+        .confirmationDialog(
+            "Confirm you picked up this item?",
+            isPresented: Binding(
+                get: { pendingPickupOrder != nil },
+                set: { if !$0 { pendingPickupOrder = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Confirm pickup") {
+                guard let order = pendingPickupOrder else { return }
+                pendingPickupOrder = nil
+                Task { await confirmPickup(order) }
+            }
+            Button("Cancel", role: .cancel) { pendingPickupOrder = nil }
+        } message: {
+            Text("This tells the seller you’ve received the goods and advances the escrow handshake.")
+        }
+        .confirmationDialog(
+            "Confirm handoff as seller?",
+            isPresented: Binding(
+                get: { pendingSellerConfirmOrder != nil },
+                set: { if !$0 { pendingSellerConfirmOrder = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Seller confirm") {
+                guard let order = pendingSellerConfirmOrder else { return }
+                pendingSellerConfirmOrder = nil
+                Task { await sellerConfirm(order) }
+            }
+            Button("Cancel", role: .cancel) { pendingSellerConfirmOrder = nil }
+        } message: {
+            Text("Confirm the buyer took possession. When both sides confirm, escrow can release.")
+        }
     }
 
     @ViewBuilder
@@ -163,7 +199,7 @@ struct MyOrdersView: View {
 
             if showBuyerConfirm {
                 Button {
-                    Task { await confirmPickup(order) }
+                    pendingPickupOrder = order
                 } label: {
                     if actingOrderID == order.id {
                         ProgressView()
@@ -182,7 +218,7 @@ struct MyOrdersView: View {
 
             if showSellerConfirm {
                 Button {
-                    Task { await sellerConfirm(order) }
+                    pendingSellerConfirmOrder = order
                 } label: {
                     if actingOrderID == order.id {
                         ProgressView()

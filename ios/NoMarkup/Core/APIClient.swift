@@ -8,8 +8,11 @@ actor APIClient {
     static let shared = APIClient()
 
     private let session: URLSession
+    /// Shared keychain store — also used by auth helpers via `tokenStoreForAuth`.
     private let tokenStore: KeychainTokenStore
     private let decoder: JSONDecoder
+    /// Single-flight refresh so parallel 401s don't rotate the refresh token twice.
+    private var refreshTask: Task<AuthTokenPair, Error>?
 
     init(
         session: URLSession = .shared,
@@ -21,6 +24,13 @@ actor APIClient {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         decoder.dateDecodingStrategy = .iso8601
         self.decoder = decoder
+    }
+
+    /// Shared keychain for extension modules (auth) so login/refresh share one store.
+    nonisolated var tokenStoreForAuth: KeychainTokenStore {
+        // Keychain is process-global by service; returning a new store with default
+        // service is equivalent, but prefer reading via actor when possible.
+        KeychainTokenStore()
     }
 
     // MARK: - Health
@@ -81,8 +91,27 @@ actor APIClient {
         throw APIClientError.decoding("Unexpected login response shape")
     }
 
-    /// Refresh access token using stored refresh token.
+    /// Refresh access token using stored refresh token (single-flight).
+    /// Parallel 401s share one refresh so rotated refresh tokens aren't burned twice.
     func refreshSession() async throws -> AuthTokenPair {
+        if let existing = refreshTask {
+            return try await existing.value
+        }
+        let task = Task<AuthTokenPair, Error> {
+            try await self.performRefreshSession()
+        }
+        refreshTask = task
+        do {
+            let pair = try await task.value
+            refreshTask = nil
+            return pair
+        } catch {
+            refreshTask = nil
+            throw error
+        }
+    }
+
+    private func performRefreshSession() async throws -> AuthTokenPair {
         guard let refresh = try tokenStore.read(.refreshToken), !refresh.isEmpty else {
             throw APIClientError.unauthorized
         }
@@ -92,6 +121,7 @@ actor APIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 20
         request.httpBody = try JSONEncoder().encode(RefreshRequestBody(refreshToken: refresh))
 
         let (data, response) = try await session.data(for: request)
@@ -670,11 +700,7 @@ actor APIClient {
             body: nil as EmptyBody?,
             auth: authorized ? .required : .none
         )
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            throw APIClientError.decoding("Could not decode response: \(error.localizedDescription)")
-        }
+        return try decodeFlexible(data)
     }
 
     func postJSON<Body: Encodable, T: Decodable>(
@@ -689,11 +715,23 @@ actor APIClient {
             authorized: authorized,
             headers: headers
         )
+        return try decodeFlexible(data)
+    }
+
+    /// Decode JSON, or synthesize `{}` for empty / non-JSON 2xx success bodies.
+    private func decodeFlexible<T: Decodable>(_ data: Data) throws -> T {
+        let trimmed = data.trimmingASCIIWhitespace
+        if trimmed.isEmpty {
+            if let empty = try? decoder.decode(T.self, from: Data("{}".utf8)) {
+                return empty
+            }
+        }
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
-            // Some mutation endpoints return flexible shapes; prefer empty success over hard fail
-            // when status was already 2xx. Fall through only if decode fails entirely.
+            if let empty = try? decoder.decode(T.self, from: Data("{}".utf8)) {
+                return empty
+            }
             throw APIClientError.decoding("Could not decode response: \(error.localizedDescription)")
         }
     }
@@ -727,11 +765,7 @@ actor APIClient {
             auth: authorized,
             headers: headers
         )
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            throw APIClientError.decoding("Could not decode response: \(error.localizedDescription)")
-        }
+        return try decodeFlexible(data)
     }
 
     /// DELETE that tolerates empty / 204 bodies (no JSON decode).
@@ -764,11 +798,22 @@ actor APIClient {
             auth: authorized,
             headers: headers
         )
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            throw APIClientError.decoding("Could not decode response: \(error.localizedDescription)")
-        }
+        return try decodeFlexible(data)
+    }
+
+    /// POST with no response body expected (treats empty 2xx as success).
+    func postEmpty<Body: Encodable>(
+        pathComponents: [String],
+        body: Body,
+        authorized: AuthMode = .required,
+        headers: [String: String] = [:]
+    ) async throws {
+        _ = try await postData(
+            pathComponents: pathComponents,
+            body: body,
+            authorized: authorized,
+            headers: headers
+        )
     }
 
     func perform<Body: Encodable>(
@@ -894,6 +939,18 @@ struct EmptyBody: Encodable {}
 
 /// Encodes as `{}` for POSTs that require a JSON content-type but no fields.
 struct EmptyJSONObject: Encodable {}
+
+private extension Data {
+    var trimmingASCIIWhitespace: Data {
+        guard !isEmpty else { return self }
+        let ws = Set<UInt8>([0x09, 0x0A, 0x0D, 0x20])
+        var start = startIndex
+        var end = endIndex
+        while start < end, ws.contains(self[start]) { start = index(after: start) }
+        while end > start, ws.contains(self[index(before: end)]) { end = index(before: end) }
+        return self[start ..< end]
+    }
+}
 
 // MARK: - Models
 

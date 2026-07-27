@@ -70,11 +70,16 @@ final class AuthViewModel: ObservableObject {
     // MARK: - Login (+ MFA)
 
     func login() async {
+        guard !isLoading else { return }
         errorMessage = nil
         statusMessage = nil
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !password.isEmpty else {
             errorMessage = "Enter email and password."
+            return
+        }
+        guard trimmed.contains("@"), trimmed.contains(".") else {
+            errorMessage = "Enter a valid email address."
             return
         }
 
@@ -104,6 +109,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func verifyMFA() async {
+        guard !isLoading else { return }
         errorMessage = nil
         statusMessage = nil
         let code = mfaCode.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -112,8 +118,8 @@ final class AuthViewModel: ObservableObject {
             needsMFA = false
             return
         }
-        guard !code.isEmpty else {
-            errorMessage = "Enter your authenticator code."
+        guard code.count >= 6 else {
+            errorMessage = "Enter the 6-digit authenticator code."
             return
         }
 
@@ -152,20 +158,21 @@ final class AuthViewModel: ObservableObject {
         displayName: String,
         roles: [String] = ["customer"]
     ) async {
+        guard !isLoading else { return }
         errorMessage = nil
         statusMessage = nil
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedEmail.isEmpty else {
-            errorMessage = "Enter your email."
+        guard !trimmedEmail.isEmpty, trimmedEmail.contains("@") else {
+            errorMessage = "Enter a valid email."
             return
         }
         guard !trimmedName.isEmpty else {
             errorMessage = "Enter a display name."
             return
         }
-        guard password.count >= 8 else {
-            errorMessage = "Password must be at least 8 characters."
+        guard Self.isStrongPassword(password) else {
+            errorMessage = "Password must be at least 8 characters and include a letter and a number or symbol."
             return
         }
 
@@ -193,11 +200,12 @@ final class AuthViewModel: ObservableObject {
     // MARK: - Password reset
 
     func requestPasswordReset(email: String) async {
+        guard !isLoading else { return }
         errorMessage = nil
         statusMessage = nil
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            errorMessage = "Enter your email."
+        guard !trimmed.isEmpty, trimmed.contains("@") else {
+            errorMessage = "Enter a valid email."
             return
         }
 
@@ -214,6 +222,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func resetPassword(token: String, newPassword: String) async {
+        guard !isLoading else { return }
         errorMessage = nil
         statusMessage = nil
         let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -221,8 +230,8 @@ final class AuthViewModel: ObservableObject {
             errorMessage = "Paste the reset token from your email."
             return
         }
-        guard newPassword.count >= 8 else {
-            errorMessage = "Password must be at least 8 characters."
+        guard Self.isStrongPassword(newPassword) else {
+            errorMessage = "Password must be at least 8 characters and include a letter and a number or symbol."
             return
         }
 
@@ -299,7 +308,15 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    private static func isStrongPassword(_ password: String) -> Bool {
+        guard password.count >= 8 else { return false }
+        let hasLetter = password.rangeOfCharacter(from: .letters) != nil
+        let hasDigitOrSymbol = password.rangeOfCharacter(from: .decimalDigits.union(.punctuationCharacters).union(.symbols)) != nil
+        return hasLetter && hasDigitOrSymbol
+    }
+
     private func exchangeAppleIdentityToken(_ identityToken: String, fullName: String?) async {
+        guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
         do {

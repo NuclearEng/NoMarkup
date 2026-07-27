@@ -16,79 +16,91 @@ struct ContractDetailView: View {
     @State private var actingMilestoneID: String?
     @State private var currentUserID: String?
     @State private var showCancelConfirm = false
+    @State private var showMarkCompleteConfirm = false
+    @State private var showApproveCompletionConfirm = false
+    @State private var pendingMilestoneApproveID: String?
     @State private var showDisputeSheet = false
     @State private var showReviewSheet = false
 
     var body: some View {
-        Group {
-            if !auth.isAuthenticated || auth.isScaffoldSession {
-                BrandEmptyState(
-                    title: "Sign in required",
-                    systemImage: "person.crop.circle.badge.exclamationmark",
-                    message: "Sign in with a real account to view this contract."
-                )
-            } else if isLoading && contract == nil {
-                ProgressView("Loading contract…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
-            } else if let errorMessage, contract == nil {
-                BrandEmptyState(
-                    title: "Couldn’t load contract",
-                    systemImage: "exclamationmark.triangle",
-                    message: errorMessage,
-                    actionTitle: "Try again"
-                ) {
-                    Task { await load() }
-                }
-            } else if let contract {
-                detailList(contract)
-            } else {
-                BrandEmptyState(
-                    title: "Contract not found",
-                    systemImage: "doc.text.magnifyingglass",
-                    message: "This contract may have been removed or you are not a party to it."
-                )
-            }
-        }
-        .navigationTitle(contract?.displayTitle ?? "Contract")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .task { await load() }
-        .refreshable { await load() }
-        .sheet(isPresented: $showDisputeSheet) {
-            if let contract {
-                OpenDisputeSheet(contractID: contract.id) { message in
+        contractBody
+            .navigationTitle(contract?.displayTitle ?? "Contract")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .task { await load() }
+            .refreshable { await load() }
+            .modifier(ContractSheetsModifier(
+                showDisputeSheet: $showDisputeSheet,
+                showReviewSheet: $showReviewSheet,
+                contractID: contract?.id,
+                onMessage: { message in
                     statusIsError = false
                     statusMessage = message
                     Task { await load() }
                 }
-            }
-        }
-        .sheet(isPresented: $showReviewSheet) {
-            if let contract {
-                LeaveReviewSheet(contractID: contract.id) { message in
-                    statusIsError = false
-                    statusMessage = message
-                    Task { await load() }
+            ))
+            .modifier(ContractConfirmationsModifier(
+                showCancelConfirm: $showCancelConfirm,
+                showMarkCompleteConfirm: $showMarkCompleteConfirm,
+                showApproveCompletionConfirm: $showApproveCompletionConfirm,
+                pendingMilestoneApproveID: $pendingMilestoneApproveID,
+                onCancel: {
+                    Task { await runAction { try await APIClient.shared.cancelContract(id: contractID) } }
+                },
+                onMarkComplete: {
+                    Task { await runAction { try await APIClient.shared.completeContract(id: contractID) } }
+                },
+                onApproveCompletion: {
+                    Task {
+                        await runAction {
+                            try await APIClient.shared.approveContractCompletion(id: contractID)
+                        }
+                    }
+                },
+                onApproveMilestone: { mid in
+                    Task {
+                        await runMilestone(mid) {
+                            try await APIClient.shared.approveMilestone(id: mid)
+                        }
+                    }
                 }
+            ))
+    }
+
+    @ViewBuilder
+    private var contractBody: some View {
+        if !auth.isAuthenticated || auth.isScaffoldSession {
+            BrandEmptyState(
+                title: "Sign in required",
+                systemImage: "person.crop.circle.badge.exclamationmark",
+                message: "Sign in with a real account to view this contract."
+            )
+        } else if isLoading && contract == nil {
+            ProgressView("Loading contract…")
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .brandScreenBackground()
+        } else if let errorMessage, contract == nil {
+            BrandEmptyState(
+                title: "Couldn’t load contract",
+                systemImage: "exclamationmark.triangle",
+                message: errorMessage,
+                actionTitle: "Try again"
+            ) {
+                Task { await load() }
             }
-        }
-        .confirmationDialog(
-            "Cancel this contract?",
-            isPresented: $showCancelConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Cancel contract", role: .destructive) {
-                Task { await runAction { try await APIClient.shared.cancelContract(id: contractID) } }
-            }
-            Button("Keep contract", role: .cancel) {}
-        } message: {
-            Text("This cannot be undone. Escrow rules on the server still apply.")
+        } else if let contract {
+            detailList(contract)
+        } else {
+            BrandEmptyState(
+                title: "Contract not found",
+                systemImage: "doc.text.magnifyingglass",
+                message: "This contract may have been removed or you are not a party to it."
+            )
         }
     }
 
@@ -291,7 +303,7 @@ struct ContractDetailView: View {
                             tint: BrandTheme.success,
                             prominent: true
                         ) {
-                            await runAction { try await APIClient.shared.completeContract(id: contract.id) }
+                            showMarkCompleteConfirm = true
                         }
                     }
                     if isProvider && contract.hasCompletedMark {
@@ -306,9 +318,7 @@ struct ContractDetailView: View {
                             tint: BrandTheme.success,
                             prominent: true
                         ) {
-                            await runAction {
-                                try await APIClient.shared.approveContractCompletion(id: contract.id)
-                            }
+                            showApproveCompletionConfirm = true
                         }
                     }
                     actionButton(
@@ -460,9 +470,7 @@ struct ContractDetailView: View {
 
             if isCustomer && milestone.canApproveAsCustomer && contract.normalizedStatus == "active" {
                 Button {
-                    Task { await runMilestone(milestone.id) {
-                        try await APIClient.shared.approveMilestone(id: milestone.id)
-                    } }
+                    pendingMilestoneApproveID = milestone.id
                 } label: {
                     if actingMilestoneID == milestone.id {
                         ProgressView()
@@ -476,6 +484,7 @@ struct ContractDetailView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.success)
                 .disabled(isActing || actingMilestoneID != nil)
+                .accessibilityHint("Confirm before approving this milestone payment step")
             }
         }
         .padding(.vertical, 4)
@@ -547,6 +556,93 @@ struct ContractDetailView: View {
             statusIsError = true
             statusMessage = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Sheets / confirms (split for type-checker)
+
+private struct ContractSheetsModifier: ViewModifier {
+    @Binding var showDisputeSheet: Bool
+    @Binding var showReviewSheet: Bool
+    let contractID: String?
+    let onMessage: (String) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $showDisputeSheet) {
+                if let contractID {
+                    OpenDisputeSheet(contractID: contractID, onSuccess: onMessage)
+                }
+            }
+            .sheet(isPresented: $showReviewSheet) {
+                if let contractID {
+                    LeaveReviewSheet(contractID: contractID, onSuccess: onMessage)
+                }
+            }
+    }
+}
+
+private struct ContractConfirmationsModifier: ViewModifier {
+    @Binding var showCancelConfirm: Bool
+    @Binding var showMarkCompleteConfirm: Bool
+    @Binding var showApproveCompletionConfirm: Bool
+    @Binding var pendingMilestoneApproveID: String?
+    let onCancel: () -> Void
+    let onMarkComplete: () -> Void
+    let onApproveCompletion: () -> Void
+    let onApproveMilestone: (String) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog(
+                "Cancel this contract?",
+                isPresented: $showCancelConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Cancel contract", role: .destructive, action: onCancel)
+                Button("Keep contract", role: .cancel) {}
+            } message: {
+                Text("This cannot be undone. Escrow rules on the server still apply.")
+            }
+            .confirmationDialog(
+                "Mark this job complete?",
+                isPresented: $showMarkCompleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Mark complete", action: onMarkComplete)
+                Button("Not yet", role: .cancel) {}
+            } message: {
+                Text("The customer will be asked to approve completion before funds move.")
+            }
+            .confirmationDialog(
+                "Approve completion and release work?",
+                isPresented: $showApproveCompletionConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Approve completion", action: onApproveCompletion)
+                Button("Not yet", role: .cancel) {}
+            } message: {
+                Text("Confirm the work is done as agreed. This advances escrow / payout per platform rules.")
+            }
+            .confirmationDialog(
+                "Approve this milestone?",
+                isPresented: Binding(
+                    get: { pendingMilestoneApproveID != nil },
+                    set: { if !$0 { pendingMilestoneApproveID = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Approve milestone") {
+                    guard let mid = pendingMilestoneApproveID else { return }
+                    pendingMilestoneApproveID = nil
+                    onApproveMilestone(mid)
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingMilestoneApproveID = nil
+                }
+            } message: {
+                Text("Approving a milestone may release a payment step.")
+            }
     }
 }
 

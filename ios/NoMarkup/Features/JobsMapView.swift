@@ -1,6 +1,9 @@
 import CoreLocation
 import MapKit
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// MapKit jobs map — `GET /api/v1/jobs/map` pins (no Mapbox SDK).
 /// Tap a pin → `JobDetailView`. Centers on user location when permitted.
@@ -54,6 +57,12 @@ struct JobsMapView: View {
             .task {
                 locationManager.onUpdate = { coord in
                     userCoordinate = coord
+                }
+                locationManager.onFail = { message in
+                    // Don't clobber a successful pin load with transient GPS noise.
+                    if pins.isEmpty {
+                        errorMessage = "Couldn’t get your location (\(message)). Pan the map to browse jobs."
+                    }
                 }
                 await reload(recenter: true)
             }
@@ -184,10 +193,18 @@ struct JobsMapView: View {
                 Task { await reloadAround(userCoordinate, recenter: true) }
             }
         case .denied, .restricted:
-            errorMessage = "Location is off. Enable it in Settings to center on nearby jobs, or pan the map."
+            errorMessage = "Location is off. Open Settings → NoMarkup → Location, or pan the map to explore jobs."
+            openAppSettingsIfPossible()
         @unknown default:
             break
         }
+    }
+
+    private func openAppSettingsIfPossible() {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+        #endif
     }
 
     @MainActor
@@ -297,9 +314,13 @@ final class MapLocationManager: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    var onFail: ((String) -> Void)?
+
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // Silent — map still works without a user fix.
-        _ = error
+        let message = error.localizedDescription
+        Task { @MainActor in
+            onFail?(message)
+        }
     }
 }
 

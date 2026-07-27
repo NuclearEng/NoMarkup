@@ -121,6 +121,7 @@ struct LoginView: View {
                 .focused($focusedField, equals: .password)
                 .submitLabel(.go)
                 .onSubmit {
+                    guard !auth.isLoading else { return }
                     Task { await auth.login() }
                 }
         }
@@ -143,11 +144,24 @@ struct LoginView: View {
                 .focused($focusedField, equals: .mfaCode)
                 .submitLabel(.go)
                 .onSubmit {
+                    guard !auth.isLoading else { return }
                     Task { await auth.verifyMFA() }
+                }
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") {
+                            focusedField = nil
+                            guard !auth.isLoading else { return }
+                            Task { await auth.verifyMFA() }
+                        }
+                        .fontWeight(.semibold)
+                    }
                 }
                 .accessibilityLabel("Authenticator code")
 
             Button {
+                guard !auth.isLoading else { return }
                 Task { await auth.verifyMFA() }
             } label: {
                 Group {

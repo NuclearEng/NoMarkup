@@ -5,6 +5,7 @@ import UIKit
 
 struct AccountView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var push: PushRegistration
     @State private var exportMessage: String?
     @State private var exportIsError = false
     @State private var isExporting = false
@@ -34,6 +35,16 @@ struct AccountView: View {
                                     .foregroundStyle(BrandTheme.textSecondary)
                                     .textSelection(.enabled)
                             }
+                        }
+                        if push.isRegisteredWithServer {
+                            Label("Push notifications on", systemImage: "bell.badge.fill")
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        } else if let pushError = push.lastError {
+                            Text(pushError)
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.warning)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     } else {
                         Label("Not signed in", systemImage: "person.crop.circle.badge.questionmark")

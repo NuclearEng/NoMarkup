@@ -240,6 +240,7 @@ struct ChatThreadView: View {
         }
         .task(id: channel.id) {
             // Quiet poll every 5s while the thread stays open; cancels on disappear / id change.
+            // Stops when signed out / session invalid so we don't thrash 401s.
             while !Task.isCancelled {
                 do {
                     try await Task.sleep(nanoseconds: Self.pollIntervalNanoseconds)
@@ -247,6 +248,9 @@ struct ChatThreadView: View {
                     break
                 }
                 guard !Task.isCancelled else { break }
+                if needsSignIn || auth.isScaffoldSession || !auth.isAuthenticated {
+                    break
+                }
                 await loadMessages(showLoading: false)
             }
         }
