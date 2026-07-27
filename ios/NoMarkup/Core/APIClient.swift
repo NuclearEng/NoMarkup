@@ -325,6 +325,16 @@ actor APIClient {
         )
     }
 
+    /// POST `/api/v1/channels/{id}/read` — mark channel messages read for the caller (empty body).
+    /// Gateway returns `{ "status": "ok" }`. Failures are caller-owned (UI usually best-effort).
+    func markChannelRead(channelID: String) async throws {
+        _ = try await postData(
+            pathComponents: ["api", "v1", "channels", channelID, "read"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
     /// Best-effort current user id from the access-token JWT `sub` claim (no signature verify).
     /// Used only for UI alignment (outgoing bubbles), not for auth decisions.
     func currentUserID() -> String? {
@@ -928,6 +938,12 @@ actor APIClient {
             if http.statusCode == 401 {
                 throw APIClientError.unauthorized
             }
+            // Place-bid (and bond confirm) may return 402 with requires_bid_bond.
+            if http.statusCode == 402,
+               let bondCents = Self.extractBidBondAmountCents(from: data)
+            {
+                throw APIClientError.bidBondRequired(bondAmountCents: bondCents)
+            }
             // Prefer gateway `{ "error": "..." }` message when present.
             if let apiMessage = Self.extractAPIErrorMessage(from: data), !apiMessage.isEmpty {
                 throw APIClientError.httpStatus(http.statusCode, detail: apiMessage)
@@ -948,6 +964,24 @@ actor APIClient {
         if let error = body.error, !error.isEmpty { return error }
         if let message = body.message, !message.isEmpty { return message }
         return nil
+    }
+
+    /// Parses Wave-4 bid-bond 402 body: `{ "requires_bid_bond": true, "bond_amount_cents": N }`.
+    private static func extractBidBondAmountCents(from data: Data) -> Int64? {
+        struct BidBondBody: Decodable {
+            let requiresBidBond: Bool?
+            let bondAmountCents: Int64?
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let body = try? decoder.decode(BidBondBody.self, from: data),
+              body.requiresBidBond == true,
+              let cents = body.bondAmountCents,
+              cents > 0
+        else {
+            return nil
+        }
+        return cents
     }
 }
 
@@ -1143,6 +1177,8 @@ enum APIClientError: Error, LocalizedError {
     case unauthorized
     case httpStatus(Int, detail: String = "")
     case decoding(String)
+    /// Place-bid returned 402 with `requires_bid_bond: true` and a bond amount.
+    case bidBondRequired(bondAmountCents: Int64)
 
     var isUnauthorized: Bool {
         if case .unauthorized = self { return true }
@@ -1153,6 +1189,18 @@ enum APIClientError: Error, LocalizedError {
     var isForbidden: Bool {
         if case .httpStatus(let code, _) = self, code == 403 { return true }
         return false
+    }
+
+    /// First-time listing bid needs a Stripe SetupIntent bond (Wave 4).
+    var isBidBondRequired: Bool {
+        if case .bidBondRequired = self { return true }
+        return false
+    }
+
+    /// Bond amount from a 402 place-bid response, if present.
+    var bidBondAmountCents: Int64? {
+        if case .bidBondRequired(let cents) = self { return cents }
+        return nil
     }
 
     var errorDescription: String? {
@@ -1170,6 +1218,8 @@ enum APIClientError: Error, LocalizedError {
             return detail.isEmpty ? "API error (\(code))." : detail
         case .decoding(let message):
             return message
+        case .bidBondRequired(let cents):
+            return "A bid bond of \(MoneyFormat.usd(cents: cents)) is required before your first bid on this listing."
         }
     }
 }

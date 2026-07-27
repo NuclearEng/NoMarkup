@@ -24,6 +24,15 @@ struct ListingDetailView: View {
     @State private var bidStatusMessage: String?
     @State private var bidStatusIsError = false
 
+    /// Place-bid 402 → user must post a one-time SetupIntent bond before retrying.
+    @State private var showBidBondAlert = false
+    @State private var pendingBidCents: Int64?
+    @State private var bidBondAmountCents: Int64?
+    @State private var isPostingBond = false
+
+    @State private var retractingBidID: String?
+    @State private var isRetractingBid = false
+
     @State private var isBuyingNow = false
     @State private var buyNowStatusMessage: String?
     @State private var buyNowStatusIsError = false
@@ -158,6 +167,21 @@ struct ListingDetailView: View {
                         }
                     }
             }
+        }
+        .alert("Bid bond required", isPresented: $showBidBondAlert) {
+            Button("Post bond") {
+                Task { await postBidBondAndRetry() }
+            }
+            Button("Open on web") {
+                showWebSafari = true
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            let amount = bidBondAmountCents.map { MoneyFormat.usd(cents: $0) } ?? "a small deposit"
+            Text(
+                "First-time bidders post a one-time bond of \(amount) so auctions stay honest. "
+                    + "It’s released when you complete or lose the auction. Authorize a card, then your bid is placed."
+            )
         }
     }
 
@@ -402,42 +426,95 @@ struct ListingDetailView: View {
     private func listingBidRow(row: ListingBidRow, rank: Int) -> some View {
         let isWinning = row.isWinning == true || (rank == 1 && sortedLadder.first?.id == row.id)
 
-        HStack(alignment: .center, spacing: 12) {
-            Text("#\(rank)")
-                .font(.caption.weight(.bold).monospacedDigit())
-                .foregroundStyle(isWinning ? BrandTheme.success : BrandTheme.textSecondary)
-                .frame(width: 28, alignment: .leading)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+                Text("#\(rank)")
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .foregroundStyle(isWinning ? BrandTheme.bidWinning : BrandTheme.textSecondary)
+                    .frame(width: 28, alignment: .leading)
 
-            Text(row.displayName)
-                .font(.body.weight(.medium))
-                .foregroundStyle(BrandTheme.textPrimary)
-                .lineLimit(1)
+                Text(row.displayName)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                    .lineLimit(1)
 
-            Spacer(minLength: 8)
+                Spacer(minLength: 8)
 
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(row.displayAmount)
-                    .font(.body.weight(.bold).monospacedDigit())
-                    .foregroundStyle(BrandTheme.goldBright)
-                if isWinning {
-                    Text("Winning")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(BrandTheme.success)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(BrandTheme.success.opacity(0.15), in: Capsule())
-                        .accessibilityLabel("Winning bid")
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(row.displayAmount)
+                        .font(.body.weight(.bold).monospacedDigit())
+                        .foregroundStyle(BrandTheme.goldBright)
+                    if isWinning {
+                        Text("Winning")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrandTheme.bidWinning)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(BrandTheme.bidWinning.opacity(0.15), in: Capsule())
+                            .accessibilityLabel("Winning bid")
+                    }
+                }
+            }
+            .frame(minHeight: 44)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                isWinning
+                    ? "Rank \(rank), winning, \(row.displayName), \(row.displayAmount)"
+                    : "Rank \(rank), \(row.displayName), \(row.displayAmount)"
+            )
+
+            // eBay-style 60s retract for the viewer's leading active bid only.
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                if canRetract(row, now: context.date) {
+                    Button(role: .destructive) {
+                        Task { await retractListingBid(row) }
+                    } label: {
+                        if retractingBidID == row.id {
+                            ProgressView()
+                                .tint(BrandTheme.destructive)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            let remaining = retractSecondsRemaining(row, now: context.date)
+                            Label(
+                                remaining.map { "Retract bid (\($0)s)" } ?? "Retract bid",
+                                systemImage: "arrow.uturn.backward"
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(BrandTheme.destructive)
+                    .disabled(isRetractingBid || isPlacingBid || isPostingBond)
+                    .accessibilityHint("Retract your high bid within 60 seconds of placing it")
                 }
             }
         }
         .padding(.vertical, 4)
-        .frame(minHeight: 44)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            isWinning
-                ? "Rank \(rank), winning, \(row.displayName), \(row.displayAmount)"
-                : "Rank \(rank), \(row.displayName), \(row.displayAmount)"
-        )
+    }
+
+    /// Only the signed-in user's current high bid within 60s of creation may retract.
+    private func canRetract(_ row: ListingBidRow, now: Date = Date()) -> Bool {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        guard let me = currentUserID, !me.isEmpty else { return false }
+        guard let bidder = row.bidderId, bidder == me else { return false }
+        let isLeading = row.isWinning == true || sortedLadder.first?.id == row.id
+        guard isLeading else { return false }
+        guard let createdAt = row.createdAt,
+              let created = CatalogDateFormat.parseISO(createdAt)
+        else {
+            return false
+        }
+        return now.timeIntervalSince(created) < 60
+    }
+
+    private func retractSecondsRemaining(_ row: ListingBidRow, now: Date) -> Int? {
+        guard let createdAt = row.createdAt,
+              let created = CatalogDateFormat.parseISO(createdAt)
+        else {
+            return nil
+        }
+        let remaining = 60 - Int(now.timeIntervalSince(created))
+        return remaining > 0 ? remaining : nil
     }
 
     // MARK: - Buy now
@@ -492,7 +569,7 @@ struct ListingDetailView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
-                    .disabled(isBuyingNow || isPlacingBid)
+                    .disabled(isBuyingNow || isPlacingBid || isPostingBond)
                     .accessibilityLabel("Buy now for \(priceLabel) with Apple Pay")
                 }
             } header: {
@@ -542,6 +619,49 @@ struct ListingDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if isPostingBond {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .tint(BrandTheme.accent)
+                        Text("Authorizing bid bond…")
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.warning)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .accessibilityLabel("Authorizing bid bond")
+                }
+
+                if let bondCents = bidBondAmountCents, pendingBidCents != nil, !isPostingBond {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(
+                            "One-time bid bond \(MoneyFormat.usd(cents: bondCents)) is required before this bid."
+                        )
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(BrandTheme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                        Button {
+                            Task { await postBidBondAndRetry() }
+                        } label: {
+                            Text("Post bond")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(BrandTheme.warning)
+                        .disabled(isPlacingBid || isBuyingNow)
+                        .accessibilityHint("Authorize a card for the bid bond, then place your bid")
+
+                        Button {
+                            showWebSafari = true
+                        } label: {
+                            Text("Post bond on web instead")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(BrandTheme.goldBright)
+                    }
+                }
+
                 Button {
                     Task { await placeListingBid() }
                 } label: {
@@ -558,6 +678,7 @@ struct ListingDetailView: View {
                 .tint(BrandTheme.accent)
                 .disabled(
                     isPlacingBid
+                        || isPostingBond
                         || isBuyingNow
                         || bidAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 )
@@ -566,7 +687,7 @@ struct ListingDetailView: View {
         } header: {
             Text("Place a bid").brandSectionHeader()
         } footer: {
-            Text("Goods are forward auctions — bid above the current high bid to take the lead.")
+            Text("Goods are forward auctions — bid above the current high bid to take the lead. First-time bidders may need a refundable bid bond.")
                 .foregroundStyle(BrandTheme.textSecondary)
         }
     }
@@ -977,14 +1098,163 @@ struct ListingDetailView: View {
             return
         }
 
+        await submitListingBid(amountCents: cents, clearBondGate: true)
+    }
+
+    /// Shared place-bid path used by the form and post-bond retry.
+    @MainActor
+    private func submitListingBid(amountCents: Int64, clearBondGate: Bool) async {
         isPlacingBid = true
         defer { isPlacingBid = false }
 
         do {
-            _ = try await APIClient.shared.placeListingBid(listingId: listingID, amountCents: cents)
+            _ = try await APIClient.shared.placeListingBid(
+                listingId: listingID,
+                amountCents: amountCents
+            )
             bidStatusIsError = false
-            bidStatusMessage = "Bid placed: \(MoneyFormat.usd(cents: cents))."
+            bidStatusMessage = "Bid placed: \(MoneyFormat.usd(cents: amountCents))."
             bidAmountText = ""
+            pendingBidCents = nil
+            bidBondAmountCents = nil
+            await load()
+        } catch let error as APIClientError where error.isBidBondRequired {
+            let bondCents = error.bidBondAmountCents ?? 0
+            pendingBidCents = amountCents
+            bidBondAmountCents = bondCents > 0 ? bondCents : nil
+            bidStatusIsError = true
+            if bondCents > 0 {
+                bidStatusMessage =
+                    "A one-time bid bond of \(MoneyFormat.usd(cents: bondCents)) is required before your first bid."
+            } else {
+                bidStatusMessage = error.localizedDescription
+            }
+            if clearBondGate {
+                showBidBondAlert = true
+            }
+        } catch let error as APIClientError where error.isUnauthorized {
+            bidStatusIsError = true
+            bidStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            bidStatusIsError = true
+            bidStatusMessage = error.localizedDescription
+        }
+    }
+
+    /// Mint bond → SetupIntent (or dev short-circuit) → confirm → retry place bid.
+    @MainActor
+    private func postBidBondAndRetry() async {
+        bidStatusMessage = nil
+        bidStatusIsError = false
+
+        guard !auth.isScaffoldSession else {
+            bidStatusIsError = true
+            bidStatusMessage =
+                "Browse-only mode has no API credentials. Sign in against a live gateway to post a bond."
+            return
+        }
+
+        let intendedCents: Int64
+        if let pending = pendingBidCents {
+            intendedCents = pending
+        } else if let fromField = MoneyFormat.cents(fromDollarsText: bidAmountText) {
+            intendedCents = fromField
+        } else {
+            bidStatusIsError = true
+            bidStatusMessage = "Enter a valid bid amount before posting a bond."
+            return
+        }
+
+        isPostingBond = true
+        defer { isPostingBond = false }
+
+        do {
+            let bond = try await APIClient.shared.createListingBidBond(
+                listingId: listingID,
+                intendedBidCents: intendedCents
+            )
+            bidBondAmountCents = bond.bondAmountCents
+
+            if bond.isDevSetupSecret {
+                // Gateway issued a sentinel — no Stripe; confirm directly (dev only).
+                _ = try await APIClient.shared.confirmListingBidBond(
+                    listingId: listingID,
+                    bondId: bond.bondId
+                )
+            } else if bond.isStripeSetupSecret {
+                try await RailACheckout.presentSetupIntent(
+                    clientSecret: bond.setupIntentClientSecret
+                )
+                _ = try await APIClient.shared.confirmListingBidBond(
+                    listingId: listingID,
+                    bondId: bond.bondId
+                )
+            } else {
+                bidStatusIsError = true
+                bidStatusMessage =
+                    "Could not authorize the bond on this device. Open the listing on the web to post your bond, then retry the bid here."
+                return
+            }
+
+            bidStatusIsError = false
+            bidStatusMessage = "Bond authorized. Placing your bid…"
+            pendingBidCents = intendedCents
+            await submitListingBid(amountCents: intendedCents, clearBondGate: false)
+        } catch let error as RailACheckout.CheckoutError where error.isCanceled {
+            bidStatusIsError = false
+            bidStatusMessage = "Bond authorization canceled. Post the bond to place your bid."
+        } catch let error as RailACheckout.CheckoutError {
+            bidStatusIsError = true
+            switch error {
+            case .stripeNotConfigured, .missingClientSecret:
+                bidStatusMessage =
+                    "Apple Pay / card setup isn’t available in this build. Open the listing on the web to post your bond, then retry here."
+            default:
+                bidStatusMessage = error.localizedDescription
+            }
+        } catch let error as APIClientError where error.isUnauthorized {
+            bidStatusIsError = true
+            bidStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch let error as APIClientError where error.isBidBondRequired {
+            // Confirm returned 402 — SetupIntent not succeeded yet.
+            bidStatusIsError = true
+            bidStatusMessage =
+                "Your payment method isn’t confirmed yet. Try Post bond again, or open the listing on the web."
+        } catch {
+            bidStatusIsError = true
+            bidStatusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func retractListingBid(_ row: ListingBidRow) async {
+        bidStatusMessage = nil
+        bidStatusIsError = false
+
+        guard !auth.isScaffoldSession else {
+            bidStatusIsError = true
+            bidStatusMessage = "Browse-only mode cannot retract bids."
+            return
+        }
+
+        isRetractingBid = true
+        retractingBidID = row.id
+        defer {
+            isRetractingBid = false
+            retractingBidID = nil
+        }
+
+        do {
+            let response = try await APIClient.shared.retractListingBid(
+                listingId: listingID,
+                bidId: row.id
+            )
+            if let listing = response.listing {
+                detail = listing
+            }
+            bidStatusIsError = false
+            bidStatusMessage = "Bid retracted."
+            await loadBids()
             await load()
         } catch let error as APIClientError where error.isUnauthorized {
             bidStatusIsError = true

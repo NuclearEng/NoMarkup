@@ -1204,6 +1204,89 @@ struct JobBidsResponse: Codable, Sendable {
     let bids: [JobBidEntry]
 }
 
+// MARK: - Live auction state (optional light poll)
+
+/// Snapshot from `GET /api/v1/jobs/{id}/auction/state`.
+/// All fields optional — proto/JSON shapes vary and the endpoint may be gated.
+struct LiveAuctionState: Decodable, Sendable, Hashable {
+    var jobId: String?
+    var lowestBidCents: Int64?
+    var bidCount: Int?
+    var auctionEndsAt: String?
+    var snipeExtensionCount: Int?
+    var maxSnipeExtensions: Int?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = try c.decodeIfPresent(String.self, forKey: .jobId)
+        lowestBidCents = Self.decodeInt64(c, forKey: .lowestBidCents)
+        bidCount = Self.decodeInt(c, forKey: .bidCount)
+        auctionEndsAt = Self.decodeTimestampString(c, forKey: .auctionEndsAt)
+        snipeExtensionCount = Self.decodeInt(c, forKey: .snipeExtensionCount)
+        maxSnipeExtensions = Self.decodeInt(c, forKey: .maxSnipeExtensions)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case jobId
+        case lowestBidCents
+        case bidCount
+        case auctionEndsAt
+        case snipeExtensionCount
+        case maxSnipeExtensions
+    }
+
+    private static func decodeInt64(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> Int64? {
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: key) { return v }
+        if let v = try? c.decodeIfPresent(Int.self, forKey: key) { return Int64(v) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key), let v = Int64(s) { return v }
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return Int64(d) }
+        return nil
+    }
+
+    private static func decodeInt(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> Int? {
+        if let v = try? c.decodeIfPresent(Int.self, forKey: key) { return v }
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: key) { return Int(v) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key), let v = Int(s) { return v }
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return Int(d) }
+        return nil
+    }
+
+    /// Accepts ISO-8601 string, or nested `{ "seconds": N }` / number unix seconds.
+    private static func decodeTimestampString(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> String? {
+        if let s = try? c.decodeIfPresent(String.self, forKey: key), !s.isEmpty {
+            return s
+        }
+        if let n = try? c.decodeIfPresent(Double.self, forKey: key) {
+            let date = Date(timeIntervalSince1970: n)
+            return ISO8601DateFormatter().string(from: date)
+        }
+        if let n = try? c.decodeIfPresent(Int64.self, forKey: key) {
+            let date = Date(timeIntervalSince1970: TimeInterval(n))
+            return ISO8601DateFormatter().string(from: date)
+        }
+        // Nested protobuf-style object: { "seconds": ..., "nanos": ... }
+        struct ProtoTimestamp: Decodable {
+            var seconds: Int64?
+            var nanos: Int32?
+        }
+        if let ts = try? c.decodeIfPresent(ProtoTimestamp.self, forKey: key),
+           let seconds = ts.seconds {
+            let date = Date(timeIntervalSince1970: TimeInterval(seconds))
+            return ISO8601DateFormatter().string(from: date)
+        }
+        return nil
+    }
+}
+
 // MARK: - My bids (account)
 
 /// Nested listing snapshot on `GET /api/v1/listings/bids/mine`.
@@ -1273,6 +1356,19 @@ struct MyJobBidRow: Codable, Sendable, Hashable, Identifiable {
             return "Job · \(String(jobId.prefix(8)))…"
         }
         return "Service bid"
+    }
+
+    /// Active service bids can be withdrawn via `DELETE /api/v1/bids/{id}`.
+    var isWithdrawable: Bool {
+        let s = (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return s == "active" || s == "open" || s == "pending"
+    }
+
+    /// Returns a copy marked withdrawn for optimistic UI updates.
+    func markedWithdrawn() -> MyJobBidRow {
+        var copy = self
+        copy.status = "withdrawn"
+        return copy
     }
 }
 

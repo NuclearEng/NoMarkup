@@ -46,6 +46,33 @@ enum RailACheckout {
 
         try configureStripe()
 
+        let configuration = makeConfiguration()
+        let sheet = PaymentSheet(
+            paymentIntentClientSecret: secret,
+            configuration: configuration
+        )
+        try await present(sheet: sheet)
+    }
+
+    /// Presents PaymentSheet for a Stripe **SetupIntent** (bid-bond pre-auth).
+    /// Same Apple Pay / card surface as PaymentIntent checkout; does not charge.
+    static func presentSetupIntent(clientSecret: String) async throws {
+        let secret = clientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard secret.hasPrefix("seti_"), secret.contains("_secret_") else {
+            throw CheckoutError.missingClientSecret
+        }
+
+        try configureStripe()
+
+        let configuration = makeConfiguration()
+        let sheet = PaymentSheet(
+            setupIntentClientSecret: secret,
+            configuration: configuration
+        )
+        try await present(sheet: sheet)
+    }
+
+    private static func makeConfiguration() -> PaymentSheet.Configuration {
         var configuration = PaymentSheet.Configuration()
         configuration.merchantDisplayName = AppConfig.appDisplayName
         configuration.allowsDelayedPaymentMethods = false
@@ -58,12 +85,10 @@ enum RailACheckout {
                 merchantCountryCode: AppConfig.applePayMerchantCountryCode
             )
         }
+        return configuration
+    }
 
-        let sheet = PaymentSheet(
-            paymentIntentClientSecret: secret,
-            configuration: configuration
-        )
-
+    private static func present(sheet: PaymentSheet) async throws {
         guard let presenter = UIApplication.shared.nmTopViewController() else {
             throw CheckoutError.noPresenter
         }

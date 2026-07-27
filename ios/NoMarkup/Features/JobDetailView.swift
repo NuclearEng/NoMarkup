@@ -7,6 +7,7 @@ struct JobDetailView: View {
     var preview: JobSummary?
 
     @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var detail: JobDetail?
     @State private var isLoading = false
@@ -27,6 +28,13 @@ struct JobDetailView: View {
     @State private var awardStatusMessage: String?
     @State private var awardStatusIsError = false
 
+    @State private var withdrawingBidID: String?
+    @State private var withdrawStatusMessage: String?
+    @State private var withdrawStatusIsError = false
+
+    /// Soft live-auction overlay (lowest bid / ends-at) from optional poll.
+    @State private var liveLowestBidCents: Int64?
+
     init(jobID: String, preview: JobSummary? = nil) {
         self.jobID = jobID
         self.preview = preview
@@ -41,9 +49,14 @@ struct JobDetailView: View {
             .appending(path: jobID)
     }
 
-    /// Reverse auction: lowest amount first; rank #1 is leading.
+    /// Reverse auction: lowest amount first; rank #1 is leading. Withdrawn bids sort last.
     private var sortedLadder: [JobBidEntry] {
         bidEntries.sorted { lhs, rhs in
+            let leftWithdrawn = bidStatusIsWithdrawn(lhs)
+            let rightWithdrawn = bidStatusIsWithdrawn(rhs)
+            if leftWithdrawn != rightWithdrawn {
+                return !leftWithdrawn
+            }
             let a = lhs.bid?.amountCents ?? Int64.max
             let b = rhs.bid?.amountCents ?? Int64.max
             if a != b { return a < b }
@@ -52,7 +65,18 @@ struct JobDetailView: View {
     }
 
     private var leadingBidCents: Int64? {
-        sortedLadder.first?.bid?.amountCents
+        if let ladder = sortedLadder.first(where: { !bidStatusIsWithdrawn($0) })?.bid?.amountCents {
+            return ladder
+        }
+        if let live = liveLowestBidCents, live > 0 {
+            return live
+        }
+        return nil
+    }
+
+    private func bidStatusIsWithdrawn(_ entry: JobBidEntry) -> Bool {
+        let status = (entry.bid?.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return status == "withdrawn"
     }
 
     /// Customer who posted the job (JWT `sub` matches `job.customer_id`).
@@ -77,6 +101,23 @@ struct JobDetailView: View {
         default:
             return false
         }
+    }
+
+    /// Light live-auction poll while the reverse auction is still open.
+    private var isAuctionActiveForPolling: Bool {
+        let status = (detail?.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch status {
+        case "active", "open", "bidding":
+            break
+        default:
+            return false
+        }
+        if let ends = detail?.auctionEndsAt,
+           let date = CatalogDateFormat.parseISO(ends),
+           date < Date() {
+            return false
+        }
+        return true
     }
 
     var body: some View {
@@ -112,6 +153,9 @@ struct JobDetailView: View {
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
+        .task(id: auctionPollIdentity) {
+            await pollLiveAuctionStateLoop()
+        }
         .refreshable { await load() }
         .confirmationDialog(
             "Award this bid?",
@@ -321,10 +365,18 @@ struct JobDetailView: View {
         if let leading = leadingBidCents {
             return HeroPrice(amount: MoneyFormat.usd(cents: leading), caption: "Leading bid (lowest)")
         }
+        if let live = liveLowestBidCents, live > 0 {
+            return HeroPrice(amount: MoneyFormat.usd(cents: live), caption: "Leading bid (lowest)")
+        }
         if let start = job.startingBidCents {
             return HeroPrice(amount: MoneyFormat.usd(cents: start), caption: "Starting bid")
         }
         return nil
+    }
+
+    /// Task identity: restart poll loop when job / active flag / foreground changes.
+    private var auctionPollIdentity: String {
+        "\(jobID)|\(isAuctionActiveForPolling)|\(scenePhase == .active)"
     }
 
     // MARK: - Bid ladder
@@ -383,8 +435,15 @@ struct JobDetailView: View {
                             .foregroundStyle(awardStatusIsError ? BrandTheme.destructive : BrandTheme.success)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    if let withdrawStatusMessage {
+                        Text(withdrawStatusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(withdrawStatusIsError ? BrandTheme.destructive : BrandTheme.success)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     ForEach(Array(sortedLadder.enumerated()), id: \.offset) { index, entry in
-                        bidLadderRow(entry: entry, rank: index + 1, isLeading: index == 0)
+                        let isLeading = index == 0 && !bidStatusIsWithdrawn(entry)
+                        bidLadderRow(entry: entry, rank: index + 1, isLeading: isLeading)
                     }
                 }
             }
@@ -430,6 +489,7 @@ struct JobDetailView: View {
             && !alreadyAwarded
             && entry.bid?.id != nil
             && (detail?.status ?? "").lowercased() != "awarded"
+        let showWithdraw = isOwnWithdrawableBid(entry)
 
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
@@ -443,6 +503,11 @@ struct JobDetailView: View {
                         .font(.body.weight(.medium))
                         .foregroundStyle(BrandTheme.textPrimary)
                         .lineLimit(1)
+                    if isOwnBid(entry) {
+                        Text("Your bid")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(BrandTheme.bidActive)
+                    }
                     if entry.displayTrust != "—" {
                         Text("Trust · \(entry.displayTrust)")
                             .font(.caption2)
@@ -464,6 +529,14 @@ struct JobDetailView: View {
                             .padding(.vertical, 3)
                             .background(BrandTheme.success.opacity(0.15), in: Capsule())
                             .accessibilityLabel("Awarded bid")
+                    } else if bidStatus == "withdrawn" {
+                        Text("Withdrawn")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(BrandTheme.textSecondary.opacity(0.15), in: Capsule())
+                            .accessibilityLabel("Withdrawn bid")
                     } else if isLeading {
                         Text("Leading")
                             .font(.caption2.weight(.bold))
@@ -474,6 +547,25 @@ struct JobDetailView: View {
                             .accessibilityLabel("Leading bid")
                     }
                 }
+            }
+
+            if showWithdraw {
+                Button(role: .destructive) {
+                    Task { await withdrawOwnBid(entry) }
+                } label: {
+                    if withdrawingBidID == entry.bid?.id {
+                        ProgressView()
+                            .tint(BrandTheme.destructive)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label("Withdraw my bid", systemImage: "arrow.uturn.backward")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(BrandTheme.destructive)
+                .disabled(withdrawingBidID != nil)
+                .accessibilityLabel("Withdraw your bid of \(entry.displayAmount)")
             }
 
             if showAward {
@@ -508,6 +600,25 @@ struct JobDetailView: View {
                 ? "Rank \(rank), leading, \(entry.displayName), \(entry.displayAmount)"
                 : "Rank \(rank), \(entry.displayName), \(entry.displayAmount)"
         )
+    }
+
+    private func isOwnBid(_ entry: JobBidEntry) -> Bool {
+        guard let providerId = entry.bid?.providerId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !providerId.isEmpty,
+              let uid = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !uid.isEmpty
+        else {
+            return false
+        }
+        return providerId.caseInsensitiveCompare(uid) == .orderedSame
+    }
+
+    private func isOwnWithdrawableBid(_ entry: JobBidEntry) -> Bool {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        guard isOwnBid(entry) else { return false }
+        guard let bidId = entry.bid?.id, !bidId.isEmpty else { return false }
+        let status = (entry.bid?.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return status == "active" || status == "open" || status == "pending" || status.isEmpty
     }
 
     // MARK: - Place bid (providers)
@@ -708,6 +819,47 @@ struct JobDetailView: View {
     }
 
     @MainActor
+    private func withdrawOwnBid(_ entry: JobBidEntry) async {
+        withdrawStatusMessage = nil
+        withdrawStatusIsError = false
+        guard let bidId = entry.bid?.id, !bidId.isEmpty else {
+            withdrawStatusIsError = true
+            withdrawStatusMessage = "This bid has no id and cannot be withdrawn."
+            return
+        }
+        guard isOwnWithdrawableBid(entry) else {
+            withdrawStatusIsError = true
+            withdrawStatusMessage = "Only your active bids can be withdrawn."
+            return
+        }
+        guard withdrawingBidID == nil else { return }
+
+        withdrawingBidID = bidId
+        defer { withdrawingBidID = nil }
+
+        do {
+            try await APIClient.shared.withdrawJobBid(id: bidId)
+            withdrawStatusIsError = false
+            withdrawStatusMessage = "Bid withdrawn: \(entry.displayAmount)."
+            // Optimistic local status so the button disappears immediately.
+            if let idx = bidEntries.firstIndex(where: { $0.bid?.id == bidId }) {
+                var updated = bidEntries[idx]
+                var core = updated.bid
+                core?.status = "withdrawn"
+                updated.bid = core
+                bidEntries[idx] = updated
+            }
+            await load()
+        } catch let error as APIClientError where error.isUnauthorized {
+            withdrawStatusIsError = true
+            withdrawStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            withdrawStatusIsError = true
+            withdrawStatusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
     private func load() async {
         isLoading = detail == nil
         errorMessage = nil
@@ -728,6 +880,8 @@ struct JobDetailView: View {
         }
 
         await loadBids()
+        // Soft live-state refresh (ignore failures).
+        await refreshLiveAuctionState()
     }
 
     @MainActor
@@ -757,6 +911,51 @@ struct JobDetailView: View {
         } catch {
             bidEntries = []
             ladderState = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Polls live auction state every 10s while the scene is active and the auction is open.
+    /// Decode/network failures are ignored (endpoint may be feature-gated).
+    private func pollLiveAuctionStateLoop() async {
+        guard isAuctionActiveForPolling, scenePhase == .active else { return }
+        // Immediate soft refresh, then every 10s until cancelled.
+        await refreshLiveAuctionState()
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            guard scenePhase == .active, isAuctionActiveForPolling else { return }
+            await refreshLiveAuctionState()
+        }
+    }
+
+    @MainActor
+    private func refreshLiveAuctionState() async {
+        guard isAuctionActiveForPolling else { return }
+        do {
+            let state = try await APIClient.shared.fetchJobAuctionState(jobId: jobID)
+            applyLiveAuctionState(state)
+        } catch {
+            // Optional endpoint — ignore 404 / decode / network failures.
+        }
+    }
+
+    @MainActor
+    private func applyLiveAuctionState(_ state: LiveAuctionState) {
+        if let lowest = state.lowestBidCents, lowest > 0 {
+            liveLowestBidCents = lowest
+        }
+        if var job = detail {
+            if let count = state.bidCount {
+                job.bidCount = count
+            }
+            if let ends = state.auctionEndsAt, !ends.isEmpty {
+                job.auctionEndsAt = ends
+            }
+            detail = job
         }
     }
 }

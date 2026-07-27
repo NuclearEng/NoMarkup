@@ -19,6 +19,9 @@ struct MyBidsView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var needsSignIn = false
+    @State private var withdrawingBidID: String?
+    @State private var withdrawMessage: String?
+    @State private var withdrawIsError = false
 
     var body: some View {
         Group {
@@ -104,15 +107,44 @@ struct MyBidsView: View {
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 case .services:
+                    if let withdrawMessage {
+                        Section {
+                            Text(withdrawMessage)
+                                .font(.footnote)
+                                .foregroundStyle(withdrawIsError ? BrandTheme.destructive : BrandTheme.success)
+                                .listRowBackground(BrandTheme.navyElevated)
+                        }
+                    }
                     Section {
                         ForEach(jobBids) { bid in
                             jobBidRow(bid)
                                 .listRowBackground(BrandTheme.navyElevated)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    if bid.isWithdrawable {
+                                        Button(role: .destructive) {
+                                            Task { await withdrawServiceBid(bid) }
+                                        } label: {
+                                            Label("Withdraw", systemImage: "arrow.uturn.backward")
+                                        }
+                                        .disabled(withdrawingBidID != nil)
+                                        .accessibilityLabel("Withdraw service bid")
+                                    }
+                                }
+                                .contextMenu {
+                                    if bid.isWithdrawable {
+                                        Button(role: .destructive) {
+                                            Task { await withdrawServiceBid(bid) }
+                                        } label: {
+                                            Label("Withdraw bid", systemImage: "arrow.uturn.backward")
+                                        }
+                                        .disabled(withdrawingBidID != nil)
+                                    }
+                                }
                         }
                     } header: {
                         Text("\(jobBids.count) bid\(jobBids.count == 1 ? "" : "s")").brandSectionHeader()
                     } footer: {
-                        Text("Reverse auction: providers compete down. Lower price is more competitive — the market sets the rate.")
+                        Text("Reverse auction: providers compete down. Lower price is more competitive — the market sets the rate. Swipe active bids to withdraw.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
@@ -199,6 +231,22 @@ struct MyBidsView: View {
                         .font(.caption2)
                         .foregroundStyle(BrandTheme.textSecondary.opacity(0.85))
                 }
+                if withdrawingBidID == bid.id {
+                    ProgressView()
+                        .tint(BrandTheme.accent)
+                        .controlSize(.small)
+                }
+            }
+            if bid.isWithdrawable {
+                Button(role: .destructive) {
+                    Task { await withdrawServiceBid(bid) }
+                } label: {
+                    Text(withdrawingBidID == bid.id ? "Withdrawing…" : "Withdraw bid")
+                        .font(.caption.weight(.semibold))
+                        .frame(minHeight: 44)
+                }
+                .disabled(withdrawingBidID != nil)
+                .accessibilityLabel("Withdraw service bid of \(bid.displayAmount)")
             }
         }
         .padding(.vertical, 4)
@@ -227,6 +275,7 @@ struct MyBidsView: View {
         isLoading = true
         errorMessage = nil
         needsSignIn = false
+        withdrawMessage = nil
         defer { isLoading = false }
 
         do {
@@ -246,6 +295,38 @@ struct MyBidsView: View {
             if currentListIsEmpty {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    @MainActor
+    private func withdrawServiceBid(_ bid: MyJobBidRow) async {
+        guard bid.isWithdrawable else { return }
+        guard !auth.isScaffoldSession, auth.isAuthenticated else {
+            withdrawIsError = true
+            withdrawMessage = "Sign in required to withdraw a service bid."
+            return
+        }
+        guard withdrawingBidID == nil else { return }
+
+        withdrawingBidID = bid.id
+        withdrawMessage = nil
+        withdrawIsError = false
+        defer { withdrawingBidID = nil }
+
+        do {
+            try await APIClient.shared.withdrawJobBid(id: bid.id)
+            if let idx = jobBids.firstIndex(where: { $0.id == bid.id }) {
+                jobBids[idx] = bid.markedWithdrawn()
+            }
+            withdrawIsError = false
+            withdrawMessage = "Bid withdrawn: \(bid.displayAmount)."
+        } catch let error as APIClientError where error.isUnauthorized {
+            withdrawIsError = true
+            withdrawMessage = "Sign in required. Your session is missing or expired — please sign in again."
+            needsSignIn = true
+        } catch {
+            withdrawIsError = true
+            withdrawMessage = error.localizedDescription
         }
     }
 }

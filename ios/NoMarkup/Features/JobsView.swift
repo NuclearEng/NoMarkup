@@ -17,9 +17,11 @@ struct JobsView: View {
     @State private var pagination: PaginationMeta?
     @State private var myPagination: PaginationMeta?
     @State private var isLoading = false
+    @State private var isLoadingMore = false
     @State private var errorMessage: String?
     @State private var needsSignIn = false
     @State private var searchText = ""
+    @State private var loadMoreError: String?
 
     var body: some View {
         NavigationStack {
@@ -122,6 +124,17 @@ struct JobsView: View {
                     }
                 }
 
+                if pagination?.resolvedHasNext == true {
+                    Section {
+                        loadMoreFooter(
+                            isLoadingMore: isLoadingMore,
+                            error: loadMoreError
+                        ) {
+                            Task { await load(reset: false) }
+                        }
+                    }
+                }
+
                 Section {
                     Text(LocationPurposeCopy.systemWhenInUseUsageDescription)
                         .font(.caption)
@@ -207,33 +220,102 @@ struct JobsView: View {
                         Text("My jobs").brandSectionHeader()
                     }
                 }
+
+                if myPagination?.resolvedHasNext == true {
+                    Section {
+                        loadMoreFooter(
+                            isLoadingMore: isLoadingMore,
+                            error: loadMoreError
+                        ) {
+                            Task { await load(reset: false) }
+                        }
+                    }
+                }
             }
             .brandListBackground()
         }
+    }
+
+    @ViewBuilder
+    private func loadMoreFooter(
+        isLoadingMore: Bool,
+        error: String?,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let error, !error.isEmpty {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.destructive)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button(action: action) {
+                if isLoadingMore {
+                    ProgressView()
+                        .tint(BrandTheme.accent)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                } else {
+                    Text("Load more")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+            }
+            .buttonStyle(.bordered)
+            .tint(BrandTheme.accent)
+            .disabled(isLoadingMore)
+            .accessibilityLabel("Load more jobs")
+            .accessibilityHint("Fetches the next page and appends to the list")
+        }
+        .listRowBackground(BrandTheme.navyElevated)
     }
 
     @MainActor
     private func load(reset: Bool) async {
         if reset {
             isLoading = true
+            loadMoreError = nil
+        } else {
+            guard !isLoadingMore else { return }
+            let hasNext: Bool = {
+                switch segment {
+                case .browse: return pagination?.resolvedHasNext == true
+                case .mine: return myPagination?.resolvedHasNext == true
+                }
+            }()
+            guard hasNext else { return }
+            isLoadingMore = true
+            loadMoreError = nil
         }
         errorMessage = nil
         needsSignIn = false
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            isLoadingMore = false
+        }
+
+        let pageSize = 40
 
         switch segment {
         case .browse:
+            let nextPage = reset ? 1 : (pagination?.resolvedPage ?? 1) + 1
             do {
                 let response = try await APIClient.shared.fetchJobs(
-                    page: 1,
-                    pageSize: 40,
+                    page: nextPage,
+                    pageSize: pageSize,
                     q: searchText
                 )
-                jobs = response.jobs
+                if reset {
+                    jobs = response.jobs
+                } else {
+                    let existing = Set(jobs.map(\.id))
+                    jobs.append(contentsOf: response.jobs.filter { !existing.contains($0.id) })
+                }
                 pagination = response.pagination
             } catch {
-                if jobs.isEmpty {
+                if reset, jobs.isEmpty {
                     errorMessage = error.localizedDescription
+                } else if !reset {
+                    loadMoreError = error.localizedDescription
                 }
             }
         case .mine:
@@ -242,17 +324,29 @@ struct JobsView: View {
                 myPagination = nil
                 return
             }
+            let nextPage = reset ? 1 : (myPagination?.resolvedPage ?? 1) + 1
             do {
-                let response = try await APIClient.shared.fetchMyJobs(page: 1, pageSize: 40)
-                myJobs = response.jobs
+                let response = try await APIClient.shared.fetchMyJobs(page: nextPage, pageSize: pageSize)
+                if reset {
+                    myJobs = response.jobs
+                } else {
+                    let existing = Set(myJobs.map(\.id))
+                    myJobs.append(contentsOf: response.jobs.filter { !existing.contains($0.id) })
+                }
                 myPagination = response.pagination
             } catch let error as APIClientError where error.isUnauthorized {
-                myJobs = []
-                myPagination = nil
-                needsSignIn = true
+                if reset {
+                    myJobs = []
+                    myPagination = nil
+                    needsSignIn = true
+                } else {
+                    loadMoreError = error.localizedDescription
+                }
             } catch {
-                if myJobs.isEmpty {
+                if reset, myJobs.isEmpty {
                     errorMessage = error.localizedDescription
+                } else if !reset {
+                    loadMoreError = error.localizedDescription
                 }
             }
         }

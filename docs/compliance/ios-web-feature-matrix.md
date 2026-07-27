@@ -31,13 +31,15 @@ Legend:
 | Job detail + reverse bid + award | bids, award | **live** | Owner award |
 | **Jobs map** | GET /jobs/map | **live** | MapKit `JobsMapView` |
 | Sell listing | POST /listings | **live** | `CreateListingView` + photos |
-| Marketplace browse / detail | listings, bids, buy-now | **live** | + watch + **best offer** |
-| My bids (goods + services) | bids/mine | **live** | |
+| Marketplace browse / detail | listings, bids, buy-now | **live** | + watch + best offer + **bid bond** + **retract** |
+| My bids (goods + services) | bids/mine, DELETE bids | **live** | + **withdraw service bid** |
 | Watchlist | watch, me/watchlist | **live** | |
+| Browse pagination | jobs/listings page | **live** | **Load more** on Jobs + Marketplace |
 | **Saved searches** | me/saved-searches | **live** | `SavedSearchesView` |
 | **Seller analytics** | me/seller-analytics | **live** | `SellerAnalyticsView` |
 | Orders + escrow + dispute/no-show | orders/* | **live** | pay, confirm pickup, seller confirm, dispute, no-show |
-| Messages + send | channels/messages | **live** | REST + **5s poll** on open thread |
+| Messages + send | channels/messages, channels/{id}/read | **live** | REST + 5s poll + **mark channel read** |
+| Job live auction state | jobs/{id}/auction/state | **partial** | 10s poll while active (ignore 404) |
 | Notifications mark-read | notifications | **live** | mark one / all / badge |
 | **APNs device register** | notifications/devices | **live** | `PushRegistration` + aps-environment |
 | Legal / support content | — | **web-handoff** | Safari (policy pages) |

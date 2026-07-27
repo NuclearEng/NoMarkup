@@ -435,6 +435,10 @@ struct ChatThreadView: View {
             if sorted.map(\.id) != messages.map(\.id) {
                 messages = sorted
             }
+            // Mark read on open / pull-to-refresh only — not on the quiet 5s poll.
+            if showLoading {
+                await markChannelReadBestEffort()
+            }
         } catch let error as APIClientError where error.isUnauthorized {
             if showLoading {
                 messages = []
@@ -477,11 +481,24 @@ struct ChatThreadView: View {
             if currentUserID == nil {
                 currentUserID = await APIClient.shared.currentUserID()
             }
+            // Keep read cursor current after a successful send.
+            await markChannelReadBestEffort()
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
             sendError = "Session expired. Sign in again to send."
         } catch {
             sendError = error.localizedDescription
+        }
+    }
+
+    /// POST `/api/v1/channels/{id}/read` — best-effort; never surfaces as a thread error.
+    @MainActor
+    private func markChannelReadBestEffort() async {
+        guard canCompose else { return }
+        do {
+            try await APIClient.shared.markChannelRead(channelID: channel.id)
+        } catch {
+            // Unread badges may lag until next open; message load/send still succeeded.
         }
     }
 }

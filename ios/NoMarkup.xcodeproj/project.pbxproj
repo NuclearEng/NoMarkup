@@ -53,6 +53,7 @@
 		A10000000000000000000032 /* ContractsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000032 /* ContractsView.swift */; };
 		A10000000000000000000033 /* ContractDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000033 /* ContractDetailView.swift */; };
 		A10000000000000000000050 /* APIClient+Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000050 /* APIClient+Platform.swift */; };
+		A10000000000000000000058 /* APIClient+Jobs.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000058 /* APIClient+Jobs.swift */; };
 		A10000000000000000000051 /* JobsMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000051 /* JobsMapView.swift */; };
 		A10000000000000000000052 /* PushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000052 /* PushRegistration.swift */; };
 		A10000000000000000000053 /* ImageUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000053 /* ImageUploader.swift */; };
@@ -112,6 +113,7 @@
 		B10000000000000000000033 /* ContractDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContractDetailView.swift; sourceTree = "<group>"; };
 		C10000000000000000000001 /* NoMarkup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NoMarkup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000050 /* APIClient+Platform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Platform.swift"; sourceTree = "<group>"; };
+		B10000000000000000000058 /* APIClient+Jobs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Jobs.swift"; sourceTree = "<group>"; };
 		B10000000000000000000051 /* JobsMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsMapView.swift; sourceTree = "<group>"; };
 		B10000000000000000000052 /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
 		B10000000000000000000053 /* ImageUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageUploader.swift; sourceTree = "<group>"; };
@@ -225,6 +227,7 @@
 				B10000000000000000000040 /* APIClient+Commerce.swift */,
 				B10000000000000000000031 /* APIClient+Contracts.swift */,
 				B10000000000000000000050 /* APIClient+Platform.swift */,
+				B10000000000000000000058 /* APIClient+Jobs.swift */,
 				B10000000000000000000017 /* Models.swift */,
 				B10000000000000000000030 /* Models+Contracts.swift */,
 				B10000000000000000000020 /* FeatureFlags.swift */,
@@ -433,6 +436,7 @@
 				A10000000000000000000032 /* ContractsView.swift in Sources */,
 				A10000000000000000000033 /* ContractDetailView.swift in Sources */,
 				A10000000000000000000050 /* APIClient+Platform.swift in Sources */,
+				A10000000000000000000058 /* APIClient+Jobs.swift in Sources */,
 				A10000000000000000000051 /* JobsMapView.swift in Sources */,
 				A10000000000000000000052 /* PushRegistration.swift in Sources */,
 				A10000000000000000000053 /* ImageUploader.swift in Sources */,

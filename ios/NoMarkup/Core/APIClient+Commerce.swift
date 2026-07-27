@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Commerce API (Best-Offer, saved searches, seller analytics, order disputes)
+// MARK: - Commerce API (Best-Offer, bid bond, retract, saved searches, seller analytics, order disputes)
 
 extension APIClient {
     // MARK: Best-Offer
@@ -146,6 +146,57 @@ extension APIClient {
             authorized: .required
         )
     }
+
+    // MARK: Listing bid bond + retract
+
+    /// POST `/api/v1/listings/{id}/bid-bond` — mint SetupIntent + pending bond row.
+    /// First-time bidders hit this after place-bid returns 402 `requires_bid_bond`.
+    @discardableResult
+    func createListingBidBond(
+        listingId: String,
+        intendedBidCents: Int64
+    ) async throws -> CreateListingBidBondResponse {
+        guard intendedBidCents > 0 else {
+            throw APIClientError.httpStatus(400, detail: "intended_bid_cents must be positive")
+        }
+        let body = CreateListingBidBondBody(intendedBidCents: intendedBidCents)
+        return try await postJSON(
+            pathComponents: ["api", "v1", "listings", listingId, "bid-bond"],
+            body: body,
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/listings/{id}/bid-bond/confirm` — flip pending → authorized after Stripe SetupIntent succeeds.
+    @discardableResult
+    func confirmListingBidBond(
+        listingId: String,
+        bondId: String
+    ) async throws -> ConfirmListingBidBondResponse {
+        let trimmed = bondId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "bond_id is required")
+        }
+        let body = ConfirmListingBidBondBody(bondId: trimmed)
+        return try await postJSON(
+            pathComponents: ["api", "v1", "listings", listingId, "bid-bond", "confirm"],
+            body: body,
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/listings/{id}/bids/{bidId}/retract` — eBay-style 60s window for the leading active bid.
+    @discardableResult
+    func retractListingBid(
+        listingId: String,
+        bidId: String
+    ) async throws -> RetractListingBidResponse {
+        try await postJSON(
+            pathComponents: ["api", "v1", "listings", listingId, "bids", bidId, "retract"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
 }
 
 // MARK: - Request bodies (snake_case via encoder)
@@ -178,4 +229,49 @@ private struct FileListingDisputeBody: Encodable {
 
 private struct ReportNoShowBody: Encodable {
     let notes: String
+}
+
+private struct CreateListingBidBondBody: Encodable {
+    let intendedBidCents: Int64
+}
+
+private struct ConfirmListingBidBondBody: Encodable {
+    let bondId: String
+}
+
+// MARK: - Bid bond / retract response models
+
+/// `POST /api/v1/listings/{id}/bid-bond` success body.
+struct CreateListingBidBondResponse: Codable, Sendable {
+    let bondId: String
+    let setupIntentClientSecret: String
+    let bondAmountCents: Int64
+
+    /// Dev stacks return sentinel secrets when Stripe is not wired.
+    var isDevSetupSecret: Bool {
+        let secret = setupIntentClientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        return secret.hasPrefix("dev_bond_seti_") || secret.hasPrefix("dev_seti_")
+    }
+
+    /// Real Stripe SetupIntent client secrets start with `seti_`.
+    var isStripeSetupSecret: Bool {
+        let secret = setupIntentClientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        return secret.hasPrefix("seti_") && secret.contains("_secret_")
+    }
+}
+
+/// `POST /api/v1/listings/{id}/bid-bond/confirm` success body.
+struct ConfirmListingBidBondResponse: Codable, Sendable {
+    var authorized: Bool?
+    var bondId: String?
+
+    var isAuthorized: Bool {
+        authorized == true
+    }
+}
+
+/// `POST /api/v1/listings/{id}/bids/{bidId}/retract` success body.
+struct RetractListingBidResponse: Codable, Sendable {
+    var bidId: String?
+    var listing: ListingDetail?
 }

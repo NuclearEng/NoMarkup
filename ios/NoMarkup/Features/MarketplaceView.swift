@@ -5,7 +5,9 @@ struct MarketplaceView: View {
     @State private var listings: [ListingSummary] = []
     @State private var pagination: PaginationMeta?
     @State private var isLoading = false
+    @State private var isLoadingMore = false
     @State private var errorMessage: String?
+    @State private var loadMoreError: String?
     @State private var searchText = ""
 
     var body: some View {
@@ -74,6 +76,38 @@ struct MarketplaceView: View {
                         Text("Listings").brandSectionHeader()
                     }
                 }
+
+                if pagination?.resolvedHasNext == true {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if let loadMoreError, !loadMoreError.isEmpty {
+                                Text(loadMoreError)
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.destructive)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Button {
+                                Task { await load(reset: false) }
+                            } label: {
+                                if isLoadingMore {
+                                    ProgressView()
+                                        .tint(BrandTheme.accent)
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                } else {
+                                    Text("Load more")
+                                        .font(.body.weight(.semibold))
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(BrandTheme.accent)
+                            .disabled(isLoadingMore)
+                            .accessibilityLabel("Load more listings")
+                            .accessibilityHint("Fetches the next page and appends to the list")
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+                    }
+                }
             }
             .brandListBackground()
         }
@@ -83,21 +117,40 @@ struct MarketplaceView: View {
     private func load(reset: Bool) async {
         if reset {
             isLoading = true
+            loadMoreError = nil
+        } else {
+            guard !isLoadingMore else { return }
+            guard pagination?.resolvedHasNext == true else { return }
+            isLoadingMore = true
+            loadMoreError = nil
         }
         errorMessage = nil
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            isLoadingMore = false
+        }
+
+        let pageSize = 40
+        let nextPage = reset ? 1 : (pagination?.resolvedPage ?? 1) + 1
 
         do {
             let response = try await APIClient.shared.fetchListings(
-                page: 1,
-                pageSize: 40,
+                page: nextPage,
+                pageSize: pageSize,
                 q: searchText
             )
-            listings = response.listings
+            if reset {
+                listings = response.listings
+            } else {
+                let existing = Set(listings.map(\.id))
+                listings.append(contentsOf: response.listings.filter { !existing.contains($0.id) })
+            }
             pagination = response.pagination
         } catch {
-            if listings.isEmpty {
+            if reset, listings.isEmpty {
                 errorMessage = error.localizedDescription
+            } else if !reset {
+                loadMoreError = error.localizedDescription
             }
             // Keep previous rows on refresh failure; surface via error only when empty.
         }
