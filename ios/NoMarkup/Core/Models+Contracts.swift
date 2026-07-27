@@ -286,7 +286,8 @@ struct RecurringInstancesListResponse: Codable, Sendable {
 /// Approve/complete envelope. Money fields present when gateway CreatePayment
 /// succeeds (manual approve or auto-approve on complete). Snake_case via
 /// APIClient convertFromSnakeCase. Never invents payment_id / client_secret.
-struct RecurringInstanceEnvelope: Codable, Sendable {
+/// Decode-only: `ContractPayment` is response-only (Decodable) so this cannot be Encodable.
+struct RecurringInstanceEnvelope: Decodable, Sendable {
     var instance: ContractRecurringInstance?
     /// Present when gateway CreatePayment succeeded for this visit (FR-18 residual).
     var paymentId: String?
@@ -322,6 +323,99 @@ struct RecurringApproveResult: Sendable {
     }
 }
 
+/// FR-5.4 local terms snapshot from `contracts.terms_json.local_terms`.
+/// Gateway projects only scalar fields (string/number/bool) for safe display.
+/// `amount` is free-text notes from chat (not a cents wire field) — show as-is.
+struct ContractLocalTerms: Codable, Sendable, Hashable {
+    var paymentType: String?
+    var paymentTiming: String?
+    var amount: String?
+    var milestones: String?
+    var description: String?
+    var acceptedBy: String?
+    var acceptedAt: String?
+    var source: String?
+    var channelId: String?
+    var proposedMessageId: String?
+    var boundAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case paymentType
+        case paymentTiming
+        case amount
+        case milestones
+        case description
+        case acceptedBy
+        case acceptedAt
+        case source
+        case channelId
+        case proposedMessageId
+        case boundAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        paymentType = Self.decodeFlexibleString(c, forKey: .paymentType)
+        paymentTiming = Self.decodeFlexibleString(c, forKey: .paymentTiming)
+        amount = Self.decodeFlexibleString(c, forKey: .amount)
+        milestones = Self.decodeFlexibleString(c, forKey: .milestones)
+        description = Self.decodeFlexibleString(c, forKey: .description)
+        acceptedBy = Self.decodeFlexibleString(c, forKey: .acceptedBy)
+        acceptedAt = Self.decodeFlexibleString(c, forKey: .acceptedAt)
+        source = Self.decodeFlexibleString(c, forKey: .source)
+        channelId = Self.decodeFlexibleString(c, forKey: .channelId)
+        proposedMessageId = Self.decodeFlexibleString(c, forKey: .proposedMessageId)
+        boundAt = Self.decodeFlexibleString(c, forKey: .boundAt)
+    }
+
+    /// True when any party-facing field is present (matches web `Object.keys` check).
+    var hasDisplayableContent: Bool {
+        paymentLabel != nil
+            || !(amount ?? "").isEmpty
+            || !(milestones ?? "").isEmpty
+            || !(description ?? "").isEmpty
+            || !(acceptedAt ?? "").isEmpty
+    }
+
+    /// Prefer payment_timing, fall back to payment_type (web parity).
+    var paymentLabel: String? {
+        let raw = (paymentTiming ?? paymentType)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !raw.isEmpty else { return nil }
+        return StatusChipStyle.displayLabel(raw)
+    }
+
+    var boundAtAward: Bool {
+        (boundAt ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "award"
+    }
+
+    private static func decodeFlexibleString(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> String? {
+        if let s = try? c.decodeIfPresent(String.self, forKey: key) {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        if let n = try? c.decodeIfPresent(Int64.self, forKey: key) {
+            return String(n)
+        }
+        if let n = try? c.decodeIfPresent(Int.self, forKey: key) {
+            return String(n)
+        }
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) {
+            if d.rounded() == d {
+                return String(Int64(d))
+            }
+            return String(d)
+        }
+        if let b = try? c.decodeIfPresent(Bool.self, forKey: key) {
+            return b ? "true" : "false"
+        }
+        return nil
+    }
+}
+
 /// Full contract from `GET /api/v1/contracts/{id}` (flat map; change_orders optional).
 struct ContractDetail: Codable, Sendable, Hashable, Identifiable {
     let id: String
@@ -348,6 +442,8 @@ struct ContractDetail: Codable, Sendable, Hashable, Identifiable {
     var changeOrders: [ContractChangeOrder]?
     /// Present when the contract has a recurring_configs row (FR-18).
     var recurring: ContractRecurringConfig? = nil
+    /// Chat/award-bound local terms (FR-5.4). Absent when never accepted.
+    var localTerms: ContractLocalTerms? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -373,6 +469,7 @@ struct ContractDetail: Codable, Sendable, Hashable, Identifiable {
         case milestones
         case changeOrders
         case recurring
+        case localTerms
     }
 
     init(from decoder: Decoder) throws {
@@ -408,6 +505,7 @@ struct ContractDetail: Codable, Sendable, Hashable, Identifiable {
         milestones = try c.decodeIfPresent([ContractMilestone].self, forKey: .milestones)
         changeOrders = try c.decodeIfPresent([ContractChangeOrder].self, forKey: .changeOrders)
         recurring = try c.decodeIfPresent(ContractRecurringConfig.self, forKey: .recurring)
+        localTerms = try c.decodeIfPresent(ContractLocalTerms.self, forKey: .localTerms)
     }
 
     private static func decodeFlexibleInt64(

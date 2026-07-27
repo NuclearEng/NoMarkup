@@ -1370,8 +1370,13 @@ func (h *ContractHandler) resolveContractCustomerID(ctx context.Context, contrac
 // recurring-instance-pay:{instanceID} dedupes approve + auto-approve complete.
 //
 // On CreatePayment failure, FR-18.8 partial: best-effort PauseRecurring
-// (contract stays intact; config pauses only). Webhook charge-failure pause and
-// off-session auto-charge with FR-16.7 retries remain residual.
+// (contract stays intact; config pauses only). Charge-failure pause after Stripe
+// payment_intent.payment_failed is owned by the payment service (job mesh
+// PauseRecurring). Resume on successful visit pay lives on
+// PaymentHandler.ProcessPayment (same FR-18.8). Residual: automatic off-session
+// charge + FR-16.7 day-0/3/7 retries (not wired); webhook-only capture without
+// ProcessPayment does not resume (services use manual capture +
+// POST /payments/{id}/process).
 func (h *ContractHandler) attachRecurringInstancePayment(
 	ctx context.Context,
 	result map[string]interface{},
@@ -1448,8 +1453,11 @@ func (h *ContractHandler) attachRecurringInstancePayment(
 			)
 			result["payment_residual"] = "create_payment_failed"
 			result["payment_error"] = "Could not create escrow PaymentIntent for this visit. Visit is approved; pay via POST /payments with recurring_instance_id when ready."
-			// Honest residual: this path mints an on-session PI only; automatic
-			// off-session charge is not wired (FR-18.8 / FR-16.7 full path residual).
+			// Honest residual: this path mints an on-session PI only. Automatic
+			// off-session charge + FR-16.7 day-0/3/7 retries are not wired
+			// (FR-18.8 full path residual). Customer pays via POST /payments
+			// + PaymentSheet + POST /payments/{id}/process — resume-on-success
+			// is wired on ProcessPayment when status was paused.
 			result["off_session_charge_residual"] = "not_wired"
 			h.pauseRecurringAfterPaymentFailure(ctx, result, contractID, instanceID, customerID, source)
 			return

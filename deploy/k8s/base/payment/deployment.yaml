@@ -55,6 +55,10 @@ spec:
             # resolve in-cluster, and every notification is silently dropped.
             - name: NOTIFICATION_SERVICE_ADDR
               value: "notification:50059"
+            # FR-18.8: pause recurring on payment_intent.payment_failed when the
+            # payment row has recurring_instance_id. ContractService lives on job.
+            - name: JOB_SERVICE_ADDR
+              value: "job:50052"
             - name: APP_VERSION
               valueFrom:
                 configMapKeyRef:

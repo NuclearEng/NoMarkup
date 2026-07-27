@@ -221,6 +221,9 @@ services:
       # default is localhost, which is wrong inside a container: every
       # notification would be dropped silently.
       NOTIFICATION_SERVICE_ADDR: "notification:50059"
+      # FR-18.8: pause recurring config on payment_intent.payment_failed for
+      # payments with recurring_instance_id (job ContractService).
+      JOB_SERVICE_ADDR: "job:50052"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: "payment-service"
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"

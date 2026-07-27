@@ -28,3 +28,9 @@ func TestPaymentService_SetInstallmentPaymentHandler_AcceptsNil(t *testing.T) {
 	svc := newTestPaymentService(&mockPaymentRepo{}, nil)
 	assert.NotPanics(t, func() { svc.SetInstallmentPaymentHandler(nil) })
 }
+
+func TestPaymentService_SetRecurringPaymentFailureHandler_AcceptsNil(t *testing.T) {
+	t.Parallel()
+	svc := newTestPaymentService(&mockPaymentRepo{}, nil)
+	assert.NotPanics(t, func() { svc.SetRecurringPaymentFailureHandler(nil) })
+}

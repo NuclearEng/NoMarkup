@@ -14,14 +14,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
-	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 )
 
 // PaymentHandler handles HTTP endpoints for payments.
 type PaymentHandler struct {
 	paymentClient paymentv1.PaymentServiceClient
+	// contractClient resumes paused recurring configs after a successful visit
+	// payment (FR-18.8). Optional: nil → process/capture still succeeds; resume
+	// is best-effort only and must never fail the money path.
+	contractClient contractv1.ContractServiceClient
 	// db backs the instant-payout ledger (instant_payouts). Other gateway
 	// handlers query Postgres directly via pgxpool; we follow that pattern
 	// rather than adding a new gRPC RPC. May be nil in unit tests that don't
@@ -33,6 +38,12 @@ type PaymentHandler struct {
 // pgx pool, used for the instant-payout ledger (idempotency + daily cap).
 func NewPaymentHandler(paymentClient paymentv1.PaymentServiceClient, db *pgxpool.Pool) *PaymentHandler {
 	return &PaymentHandler{paymentClient: paymentClient, db: db}
+}
+
+// SetContractClient wires FR-18.8 resume-after-visit-payment on ProcessPayment.
+// Safe to leave unset in tests that never hit the recurring path.
+func (h *PaymentHandler) SetContractClient(c contractv1.ContractServiceClient) {
+	h.contractClient = c
 }
 
 // contractNumbersByID reads the human-readable contract_number for the given
@@ -341,6 +352,12 @@ type processPaymentRequest struct {
 }
 
 // ProcessPayment handles POST /api/v1/payments/{id}/process.
+//
+// On successful capture (status escrow), when the payment is for a recurring
+// visit (recurring_instance_id set), FR-18.8 best-effort resumes a paused
+// recurring config so visits generate again after the customer pays. Resume
+// failures never fail the payment response (fail-soft residual fields only).
+// Off-session auto-charge + FR-16.7 retry schedule remain residual.
 func (h *PaymentHandler) ProcessPayment(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -368,7 +385,163 @@ func (h *PaymentHandler) ProcessPayment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoPaymentToJSON(resp.GetPayment()))
+	payment := resp.GetPayment()
+	result := protoPaymentToJSON(payment)
+	// FR-18.8: money path already succeeded — resume must not undo or fail it.
+	h.resumeRecurringAfterPaymentSuccess(r.Context(), result, payment)
+	writeJSON(w, http.StatusOK, result)
+}
+
+// resumeRecurringAfterPaymentSuccess implements FR-18.8 resume half: when a
+// visit payment captures successfully, resume the contract's recurring config
+// if it is paused (typically after CreatePayment failure paused it). Always
+// resume when status=paused — there is no pause_reason column. Fail-soft:
+// lookup/resume errors only add residual fields; payment JSON already stands.
+// No-ops for non-recurring payments and when the config is not paused.
+func (h *PaymentHandler) resumeRecurringAfterPaymentSuccess(
+	ctx context.Context,
+	result map[string]interface{},
+	payment *paymentv1.Payment,
+) {
+	if payment == nil {
+		return
+	}
+	instanceID := payment.GetRecurringInstanceId()
+	if instanceID == "" {
+		// Milestone / one-shot escrow — not a visit payment.
+		return
+	}
+	// ProcessPayment returns escrow on capture success. Defensive: only resume
+	// on funded statuses (never invent success from pending/failed).
+	switch payment.GetStatus() {
+	case paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW,
+		paymentv1.PaymentStatus_PAYMENT_STATUS_RELEASED,
+		paymentv1.PaymentStatus_PAYMENT_STATUS_COMPLETED:
+		// ok
+	default:
+		slog.InfoContext(ctx, "FR-18.8: skip resume — visit payment not in funded status",
+			"payment_id", payment.GetId(),
+			"instance_id", instanceID,
+			"status", paymentStatusToString(payment.GetStatus()),
+		)
+		return
+	}
+
+	contractID := payment.GetContractId()
+	customerID := payment.GetCustomerId()
+	if contractID == "" {
+		result["recurring_resume_residual"] = "contract_unresolved"
+		slog.WarnContext(ctx, "FR-18.8: cannot resume recurring after payment success (no contract id)",
+			"payment_id", payment.GetId(),
+			"instance_id", instanceID,
+		)
+		return
+	}
+
+	if h.contractClient == nil {
+		result["recurring_resume_residual"] = "contract_service_unwired"
+		slog.WarnContext(ctx, "FR-18.8: contract client unwired; cannot resume after visit payment (payment kept)",
+			"payment_id", payment.GetId(),
+			"instance_id", instanceID,
+			"contract_id", contractID,
+		)
+		return
+	}
+	if customerID == "" {
+		result["recurring_resume_residual"] = "customer_unresolved"
+		slog.WarnContext(ctx, "FR-18.8: cannot resume recurring after payment success (no customer id; payment kept)",
+			"payment_id", payment.GetId(),
+			"instance_id", instanceID,
+			"contract_id", contractID,
+		)
+		return
+	}
+
+	cfgResp, err := h.contractClient.GetRecurringConfig(ctx, &contractv1.GetRecurringConfigRequest{
+		ContractId: contractID,
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "FR-18.8: GetRecurringConfig failed after payment success (payment kept)",
+			"payment_id", payment.GetId(),
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"error", err,
+		)
+		result["recurring_resume_residual"] = "config_lookup_failed"
+		return
+	}
+	cfg := cfgResp.GetConfig()
+	if cfg == nil || cfg.GetId() == "" {
+		slog.WarnContext(ctx, "FR-18.8: no recurring config to resume after payment success (payment kept)",
+			"payment_id", payment.GetId(),
+			"instance_id", instanceID,
+			"contract_id", contractID,
+		)
+		result["recurring_resume_residual"] = "config_missing"
+		return
+	}
+
+	result["recurring_id"] = cfg.GetId()
+	status := cfg.GetStatus()
+	if status == "active" {
+		// Already generating visits — surface status; no Resume RPC.
+		result["recurring_status"] = "active"
+		result["recurring_resumed"] = false
+		slog.InfoContext(ctx, "FR-18.8: recurring already active after visit payment (no-op)",
+			"payment_id", payment.GetId(),
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+		)
+		return
+	}
+	if status != "paused" {
+		// cancelled / other — do not force-resume; leave alone.
+		result["recurring_status"] = status
+		result["recurring_resume_residual"] = "not_paused"
+		slog.InfoContext(ctx, "FR-18.8: skip resume after payment success — config not paused (payment kept)",
+			"payment_id", payment.GetId(),
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+			"status", status,
+		)
+		return
+	}
+
+	resumeResp, resumeErr := h.contractClient.ResumeRecurring(ctx, &contractv1.ResumeRecurringRequest{
+		RecurringId: cfg.GetId(),
+		UserId:      customerID,
+	})
+	if resumeErr != nil {
+		slog.WarnContext(ctx, "FR-18.8: ResumeRecurring failed after payment success (payment kept)",
+			"payment_id", payment.GetId(),
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+			"error", resumeErr,
+		)
+		result["recurring_resume_residual"] = "resume_failed"
+		result["recurring_status"] = "paused"
+		return
+	}
+
+	resumedCfg := resumeResp.GetConfig()
+	result["recurring_resumed"] = true
+	result["recurring_status"] = "active"
+	if resumedCfg != nil {
+		result["recurring_config"] = protoRecurringConfigToJSON(resumedCfg)
+		if st := resumedCfg.GetStatus(); st != "" {
+			result["recurring_status"] = st
+		}
+	}
+	slog.InfoContext(ctx, "FR-18.8: recurring resumed after successful visit payment",
+		"payment_id", payment.GetId(),
+		"instance_id", instanceID,
+		"contract_id", contractID,
+		"recurring_id", cfg.GetId(),
+		"customer_id", customerID,
+	)
 }
 
 // ListPayments handles GET /api/v1/payments.

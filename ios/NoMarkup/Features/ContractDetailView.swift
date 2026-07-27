@@ -300,6 +300,8 @@ struct ContractDetailView: View {
             }
             .listRowBackground(BrandTheme.navyElevated)
 
+            localTermsSection(contract)
+
             Section {
                 partyRow(
                     title: "Customer",
@@ -379,6 +381,81 @@ struct ContractDetailView: View {
             documentsSection(contract)
         }
         .brandListBackground()
+    }
+
+    /// FR-5.4: agreed local terms from chat Accept (or award residual bind).
+    /// Mirrors web contract detail `local_terms` card. Amount is free-text notes
+    /// from chat (not cents wire) — display as-is; never treat as payment input.
+    @ViewBuilder
+    private func localTermsSection(_ contract: ContractDetail) -> some View {
+        if let terms = contract.localTerms, terms.hasDisplayableContent {
+            Section {
+                if let payment = terms.paymentLabel {
+                    LabeledContent("Payment type") {
+                        Text(payment)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    .accessibilityLabel("Payment type \(payment)")
+                }
+                if let amount = terms.amount, !amount.isEmpty {
+                    LabeledContent("Amount notes") {
+                        Text(amount)
+                            .font(.subheadline.weight(.medium).monospacedDigit())
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .multilineTextAlignment(.trailing)
+                            .textSelection(.enabled)
+                    }
+                    .accessibilityLabel("Amount notes \(amount)")
+                }
+                if let milestones = terms.milestones, !milestones.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Milestones")
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                        Text(milestones)
+                            .font(.subheadline)
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Milestones \(milestones)")
+                }
+                if let description = terms.description, !description.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Notes")
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                        Text(description)
+                            .font(.subheadline)
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Notes \(description)")
+                }
+                if let acceptedAt = terms.acceptedAt, !acceptedAt.isEmpty {
+                    LabeledContent("Accepted at") {
+                        Text(CatalogDateFormat.friendlyDateTime(acceptedAt))
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                }
+            } header: {
+                Text("Agreed local terms").brandSectionHeader()
+            } footer: {
+                Text(
+                    terms.boundAtAward
+                        ? "Payment terms accepted in chat and applied when the contract was created."
+                        : "Payment terms accepted in chat."
+                )
+                .foregroundStyle(BrandTheme.textSecondary)
+            }
+            .listRowBackground(BrandTheme.navyElevated)
+        }
     }
 
     /// Party-only exact service address + Get Directions (FR-10.4).

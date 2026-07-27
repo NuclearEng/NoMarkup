@@ -92,8 +92,13 @@ extension APIClient {
         )
     }
 
-    /// PUT `/api/v1/providers/me/availability` — instant-match enablement + available-now.
-    /// Response: `{ "instant_enabled", "instant_available" }`.
+    /// PUT `/api/v1/providers/me/availability` — instant-match enablement + available-now + weekly windows.
+    ///
+    /// Body: `{ enabled, available_now, schedule: [{ day, start_time, end_time }] }`.
+    /// Day codes: `mon`…`sun`; times: `HH:MM`. Empty `schedule` writes SQL null and
+    /// **clears** any previously saved windows — always re-send retained windows.
+    /// Response: `{ "instant_enabled", "instant_available" }` (schedule not echoed).
+    /// Role: gateway `RequireProvider`. There is no GET for schedule today.
     @discardableResult
     func setMyProviderAvailability(
         enabled: Bool,
@@ -711,6 +716,8 @@ struct ProviderInstantOfferActionResponse: Codable, Sendable, Hashable {
     }
 }
 
+/// Weekly Instant window for `PUT /providers/me/availability`.
+/// `day`: mon|tue|wed|thu|fri|sat|sun · `startTime`/`endTime`: `HH:MM` (local).
 struct ProviderAvailabilityWindow: Codable, Sendable, Hashable {
     var day: String
     var startTime: String

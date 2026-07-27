@@ -31,6 +31,24 @@ func newEvent(t *testing.T, eventID, eventType string, payload any) stripe.Event
 
 // --- payment_intent.payment_failed ---
 
+// fakeRecurringFailHook records PauseOnPaymentFailed invocations for FR-18.8 tests.
+type fakeRecurringFailHook struct {
+	calls []struct {
+		contractID, customerID, instanceID, paymentID string
+	}
+	err error
+}
+
+func (f *fakeRecurringFailHook) PauseOnPaymentFailed(
+	_ context.Context,
+	contractID, customerID, recurringInstanceID, paymentID string,
+) error {
+	f.calls = append(f.calls, struct {
+		contractID, customerID, instanceID, paymentID string
+	}{contractID, customerID, recurringInstanceID, paymentID})
+	return f.err
+}
+
 func TestHandleWebhook_PaymentIntentFailed(t *testing.T) {
 	t.Parallel()
 
@@ -85,6 +103,141 @@ func TestHandleWebhook_PaymentIntentFailed(t *testing.T) {
 		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
 		require.NoError(t, err, "unknown payment should not fail the webhook (Stripe should not retry)")
 		assert.False(t, updateCalled)
+	})
+
+	// FR-18.8: recurring_instance_id payments pause the schedule on charge fail.
+	t.Run("pauses_recurring_when_instance_linked", func(t *testing.T) {
+		t.Parallel()
+		event := newEvent(t, "evt_failed_recurring_1", "payment_intent.payment_failed", stripe.PaymentIntent{
+			ID: "pi_recurring_fail",
+		})
+		instanceID := "inst-42"
+		hook := &fakeRecurringFailHook{}
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return &domain.Payment{
+					ID:                  "pmt-rec-1",
+					ContractID:          "ctr-1",
+					CustomerID:          "cust-1",
+					RecurringInstanceID: &instanceID,
+					Status:              "processing",
+				}, nil
+			},
+			updatePaymentStatusFn: func(_ context.Context, _, status string) error {
+				assert.Equal(t, "failed", status)
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+		svc.SetRecurringPaymentFailureHandler(hook)
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		require.Len(t, hook.calls, 1)
+		assert.Equal(t, "ctr-1", hook.calls[0].contractID)
+		assert.Equal(t, "cust-1", hook.calls[0].customerID)
+		assert.Equal(t, "inst-42", hook.calls[0].instanceID)
+		assert.Equal(t, "pmt-rec-1", hook.calls[0].paymentID)
+	})
+
+	t.Run("skips_pause_when_no_recurring_instance", func(t *testing.T) {
+		t.Parallel()
+		event := newEvent(t, "evt_failed_nonrec_1", "payment_intent.payment_failed", stripe.PaymentIntent{
+			ID: "pi_plain_fail",
+		})
+		hook := &fakeRecurringFailHook{}
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return &domain.Payment{
+					ID:         "pmt-plain",
+					ContractID: "ctr-2",
+					CustomerID: "cust-2",
+					Status:     "processing",
+				}, nil
+			},
+			updatePaymentStatusFn: func(_ context.Context, _, _ string) error { return nil },
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+		svc.SetRecurringPaymentFailureHandler(hook)
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.Empty(t, hook.calls, "non-recurring payments must not trigger FR-18.8 pause")
+	})
+
+	t.Run("pause_error_is_fail_soft_webhook_still_acks", func(t *testing.T) {
+		t.Parallel()
+		event := newEvent(t, "evt_failed_recurring_soft", "payment_intent.payment_failed", stripe.PaymentIntent{
+			ID: "pi_recurring_soft",
+		})
+		instanceID := "inst-soft"
+		hook := &fakeRecurringFailHook{err: errors.New("job mesh down")}
+		var statusUpdate string
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return &domain.Payment{
+					ID:                  "pmt-soft",
+					ContractID:          "ctr-soft",
+					CustomerID:          "cust-soft",
+					RecurringInstanceID: &instanceID,
+					Status:              "processing",
+				}, nil
+			},
+			updatePaymentStatusFn: func(_ context.Context, _, status string) error {
+				statusUpdate = status
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+		svc.SetRecurringPaymentFailureHandler(hook)
+
+		// Fail-soft: pause error must NOT fail the webhook (Stripe would retry).
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.Equal(t, "failed", statusUpdate)
+		require.Len(t, hook.calls, 1)
+	})
+
+	t.Run("no_hook_still_marks_failed", func(t *testing.T) {
+		t.Parallel()
+		event := newEvent(t, "evt_failed_no_hook", "payment_intent.payment_failed", stripe.PaymentIntent{
+			ID: "pi_no_hook",
+		})
+		instanceID := "inst-no-hook"
+		var statusUpdate string
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return &domain.Payment{
+					ID:                  "pmt-no-hook",
+					ContractID:          "ctr-nh",
+					CustomerID:          "cust-nh",
+					RecurringInstanceID: &instanceID,
+					Status:              "processing",
+				}, nil
+			},
+			updatePaymentStatusFn: func(_ context.Context, _, status string) error {
+				statusUpdate = status
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+		// deliberately no SetRecurringPaymentFailureHandler
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.Equal(t, "failed", statusUpdate)
 	})
 }
 

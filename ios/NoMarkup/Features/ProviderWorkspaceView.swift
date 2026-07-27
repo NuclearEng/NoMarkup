@@ -3,7 +3,11 @@ import SwiftUI
 /// Provider workspace lite — own profile, instant availability, streaks, licenses.
 /// Not full Business OS (no employees / tax / expenses / working capital).
 ///
-/// APIs: `GET|PATCH /providers/me`, `PUT …/availability`, `GET …/streaks`, `GET …/licenses`.
+/// APIs: `GET|PATCH /providers/me`, `PUT …/availability` (instant + weekly windows),
+/// `GET …/streaks`, `GET …/licenses`.
+///
+/// Security: gateway `RequireProvider` on `/providers/me/*`; UI also gates on
+/// `hasProviderRole` so customers never hit the write path from this surface.
 struct ProviderWorkspaceView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -16,6 +20,10 @@ struct ProviderWorkspaceView: View {
     @State private var businessName = ""
     @State private var bio = ""
     @State private var instantAvailable = false
+    /// Local weekly Instant windows (`day` = mon…sun, times = HH:MM).
+    /// Residual: GET `/providers/me` does not return `instant_schedule`, so this
+    /// cannot be hydrated from the server after cold start / reinstall.
+    @State private var scheduleDays: [ProviderScheduleDayDraft] = ProviderScheduleDayDraft.blankWeek()
     @State private var paymentTiming = "completion"
     @State private var cancellationPolicy = ""
     @State private var warrantyTerms = ""
@@ -23,6 +31,7 @@ struct ProviderWorkspaceView: View {
     @State private var isUploadingPortfolio = false
     @State private var isSavingTerms = false
     @State private var isSavingPortfolio = false
+    @State private var isSavingSchedule = false
 
     @State private var isLoading = false
     @State private var isSaving = false
@@ -148,7 +157,7 @@ struct ProviderWorkspaceView: View {
                 }
                 .tint(BrandTheme.accent)
                 .frame(minHeight: 44)
-                .disabled(isTogglingInstant || isSaving)
+                .disabled(isTogglingInstant || isSaving || isSavingSchedule)
                 .accessibilityHint("Toggles instant availability for job offers")
 
                 if let enabled = profile?.instantEnabled {
@@ -170,6 +179,71 @@ struct ProviderWorkspaceView: View {
                 Text("Availability").brandSectionHeader()
             } footer: {
                 Text("Turn Available now on to receive Instant jobs. Open the inbox to accept or decline live offers.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            Section {
+                ForEach($scheduleDays) { $day in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle(isOn: $day.isEnabled) {
+                            Text(day.label)
+                                .foregroundStyle(BrandTheme.textPrimary)
+                        }
+                        .tint(BrandTheme.accent)
+                        .frame(minHeight: 44)
+                        .accessibilityLabel("\(day.label) available")
+                        .disabled(isSavingSchedule || isTogglingInstant)
+
+                        if day.isEnabled {
+                            HStack(spacing: 12) {
+                                DatePicker(
+                                    "Start",
+                                    selection: $day.startTime,
+                                    displayedComponents: .hourAndMinute
+                                )
+                                .labelsHidden()
+                                .frame(minHeight: 44)
+                                .accessibilityLabel("\(day.label) start time")
+
+                                Text("to")
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.textSecondary)
+
+                                DatePicker(
+                                    "End",
+                                    selection: $day.endTime,
+                                    displayedComponents: .hourAndMinute
+                                )
+                                .labelsHidden()
+                                .frame(minHeight: 44)
+                                .accessibilityLabel("\(day.label) end time")
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Button {
+                    Task { await saveSchedule() }
+                } label: {
+                    HStack {
+                        if isSavingSchedule {
+                            ProgressView()
+                                .tint(BrandTheme.accent)
+                        }
+                        Text(isSavingSchedule ? "Saving schedule…" : "Save weekly schedule")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .frame(minHeight: 48)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .disabled(isSavingSchedule || isTogglingInstant || isSaving)
+                .accessibilityHint("Uploads weekly Instant availability windows to the server")
+            } header: {
+                Text("Weekly schedule").brandSectionHeader()
+            } footer: {
+                Text("Optional day windows (local time, HH:MM) sent with Instant availability. Available now still works without a schedule. Saved windows are not returned by the API yet — re-enter them after reinstall.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -639,12 +713,24 @@ struct ProviderWorkspaceView: View {
         isTogglingInstant = true
         defer { isTogglingInstant = false }
 
+        // Always re-send the local schedule: PUT replaces `instant_schedule`
+        // and an empty body wipes any previously saved windows server-side.
+        let windows: [ProviderAvailabilityWindow]
+        do {
+            windows = try buildScheduleWindows()
+        } catch {
+            instantAvailable = previous
+            errorMessage = error.localizedDescription
+            return
+        }
+
         do {
             // Turning available-now on also enables the instant program flag.
             let enabled = value || (profile?.isInstantEnabled ?? false)
             let response = try await APIClient.shared.setMyProviderAvailability(
                 enabled: enabled || value,
-                availableNow: value
+                availableNow: value,
+                schedule: windows
             )
             if var p = profile {
                 p.instantEnabled = response.instantEnabled ?? (enabled || value)
@@ -656,9 +742,144 @@ struct ProviderWorkspaceView: View {
         } catch let error as APIClientError where error.isUnauthorized {
             instantAvailable = previous
             needsSignIn = true
+        } catch let error as APIClientError where error.isForbidden {
+            instantAvailable = previous
+            hasProviderRole = false
+            errorMessage = "Provider role required. Enable it in Profile settings."
         } catch {
             instantAvailable = previous
             errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func saveSchedule() async {
+        errorMessage = nil
+        statusMessage = nil
+
+        let windows: [ProviderAvailabilityWindow]
+        do {
+            windows = try buildScheduleWindows()
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+
+        isSavingSchedule = true
+        defer { isSavingSchedule = false }
+
+        // Keep current available-now; enable the Instant program when either
+        // the provider is live now or they have any weekly windows configured.
+        let enabled = instantAvailable
+            || !windows.isEmpty
+            || (profile?.isInstantEnabled ?? false)
+
+        do {
+            let response = try await APIClient.shared.setMyProviderAvailability(
+                enabled: enabled,
+                availableNow: instantAvailable,
+                schedule: windows
+            )
+            if var p = profile {
+                p.instantEnabled = response.instantEnabled ?? enabled
+                p.instantAvailable = response.instantAvailable ?? instantAvailable
+                profile = p
+            }
+            instantAvailable = response.instantAvailable ?? instantAvailable
+            let dayCount = windows.count
+            statusMessage = dayCount == 0
+                ? "Weekly schedule cleared."
+                : "Weekly schedule saved (\(dayCount) day\(dayCount == 1 ? "" : "s"))."
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch let error as APIClientError where error.isForbidden {
+            hasProviderRole = false
+            errorMessage = "Provider role required. Enable it in Profile settings."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Builds API windows from enabled day rows; validates start < end.
+    private func buildScheduleWindows() throws -> [ProviderAvailabilityWindow] {
+        var windows: [ProviderAvailabilityWindow] = []
+        for day in scheduleDays where day.isEnabled {
+            let start = ProviderScheduleDayDraft.formatTime(day.startTime)
+            let end = ProviderScheduleDayDraft.formatTime(day.endTime)
+            guard start < end else {
+                throw ProviderScheduleValidationError.invalidRange(day: day.label)
+            }
+            windows.append(
+                ProviderAvailabilityWindow(day: day.dayCode, startTime: start, endTime: end)
+            )
+        }
+        return windows
+    }
+}
+
+// MARK: - Weekly schedule draft (local UI state)
+
+/// One weekday row for the Instant schedule editor.
+/// Wire codes match proto `AvailabilityWindow.day` (`mon`…`sun`).
+struct ProviderScheduleDayDraft: Identifiable, Hashable, Sendable {
+    let dayCode: String
+    let label: String
+    var isEnabled: Bool
+    var startTime: Date
+    var endTime: Date
+
+    var id: String { dayCode }
+
+    static func blankWeek() -> [ProviderScheduleDayDraft] {
+        let defaults = Self.defaultStartEnd()
+        return [
+            ("mon", "Monday"),
+            ("tue", "Tuesday"),
+            ("wed", "Wednesday"),
+            ("thu", "Thursday"),
+            ("fri", "Friday"),
+            ("sat", "Saturday"),
+            ("sun", "Sunday"),
+        ].map { code, label in
+            ProviderScheduleDayDraft(
+                dayCode: code,
+                label: label,
+                isEnabled: false,
+                startTime: defaults.start,
+                endTime: defaults.end
+            )
+        }
+    }
+
+    static func formatTime(_ date: Date) -> String {
+        timeFormatter.string(from: date)
+    }
+
+    private static func defaultStartEnd() -> (start: Date, end: Date) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let now = Date()
+        let start = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: now) ?? now
+        let end = calendar.date(bySettingHour: 17, minute: 0, second: 0, of: now) ?? now
+        return (start, end)
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        f.timeZone = .current
+        return f
+    }()
+}
+
+private enum ProviderScheduleValidationError: LocalizedError {
+    case invalidRange(day: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidRange(let day):
+            return "\(day): end time must be after start time."
         }
     }
 }

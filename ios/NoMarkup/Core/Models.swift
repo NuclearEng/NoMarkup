@@ -2518,6 +2518,48 @@ struct MyListingBidEntry: Codable, Sendable, Hashable, Identifiable {
     var isWinning: Bool {
         bid?.isWinning == true
     }
+
+    /// Listing id for `POST …/listings/{id}/bids/{bidId}/retract`.
+    var listingIdForAPI: String? {
+        if let id = listing?.id?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+            return id
+        }
+        if let id = bid?.listingId?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+            return id
+        }
+        return nil
+    }
+
+    /// Bid id for retract; nil when the nested bid is missing.
+    var bidIdForAPI: String? {
+        guard let id = bid?.id.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty else {
+            return nil
+        }
+        return id
+    }
+
+    /// eBay-style 60s retract: leading/winning bid only, within 60s of placement.
+    /// Server re-checks ownership + window — this is UI-only gating.
+    func canRetract(now: Date = Date()) -> Bool {
+        guard isWinning else { return false }
+        guard listingIdForAPI != nil, bidIdForAPI != nil else { return false }
+        guard let createdAt = bid?.createdAt,
+              let created = CatalogDateFormat.parseISO(createdAt)
+        else {
+            return false
+        }
+        return now.timeIntervalSince(created) < 60
+    }
+
+    func retractSecondsRemaining(now: Date = Date()) -> Int? {
+        guard let createdAt = bid?.createdAt,
+              let created = CatalogDateFormat.parseISO(createdAt)
+        else {
+            return nil
+        }
+        let remaining = 60 - Int(now.timeIntervalSince(created))
+        return remaining > 0 ? remaining : nil
+    }
 }
 
 struct MyListingBidsResponse: Codable, Sendable {

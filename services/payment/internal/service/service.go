@@ -44,6 +44,21 @@ type MarketplacePaymentHandler interface {
 	HandleListingPaymentIntentSucceeded(ctx context.Context, paymentIntentID string) error
 }
 
+// RecurringPaymentFailureHandler pauses a recurring schedule when a
+// recurring-instance PaymentIntent fails (FR-18.8). Never cancels the contract
+// or the recurring config — pause only. Fail-soft: the payment webhook
+// always acks Stripe even if pause fails.
+//
+// Concrete implementation: payment/internal/client.ContractClient (job service
+// GetRecurringConfig + PauseRecurring).
+type RecurringPaymentFailureHandler interface {
+	// PauseOnPaymentFailed looks up the contract's recurring config and pauses
+	// it when status is active. Idempotent for already-paused configs.
+	// contractID / customerID come from the payments row; recurringInstanceID
+	// is for logging/correlation only (pause is per config, not per instance).
+	PauseOnPaymentFailed(ctx context.Context, contractID, customerID, recurringInstanceID, paymentID string) error
+}
+
 // FeatureFlagChecker dual-gates product flags against fee_config (SEC-GATE-03 /
 // R6.2 lead_gen). When nil (unit tests), fee_config alone controls lead-gen.
 // Production wires a Postgres-backed checker so fee_config.lead_gen_enabled
@@ -61,9 +76,13 @@ type PaymentService struct {
 	subHook          SubscriptionWebhookHandler
 	installmentHook  InstallmentPaymentHandler
 	marketplaceHook  MarketplacePaymentHandler
-	webhookValidator WebhookEventValidator
-	underwriter      Underwriter
-	trust            ProviderTrustSource
+	// recurringFailHook pauses recurrence after payment_intent.payment_failed
+	// for payments with recurring_instance_id (FR-18.8). Optional: when nil,
+	// status still flips to failed and a residual is logged.
+	recurringFailHook RecurringPaymentFailureHandler
+	webhookValidator  WebhookEventValidator
+	underwriter       Underwriter
+	trust             ProviderTrustSource
 	// customers provisions and records the user's Stripe Customer + saved cards.
 	// Optional so existing tests that construct PaymentService directly keep
 	// compiling; every path that needs it degrades explicitly and fail-closed
@@ -111,6 +130,13 @@ func (s *PaymentService) SetInstallmentPaymentHandler(h InstallmentPaymentHandle
 // SetMarketplaceHandler wires the goods-marketplace webhook delegate.
 func (s *PaymentService) SetMarketplaceHandler(h MarketplacePaymentHandler) {
 	s.marketplaceHook = h
+}
+
+// SetRecurringPaymentFailureHandler wires FR-18.8 pause-on-charge-failure.
+// When nil, payment_intent.payment_failed still marks the payment failed but
+// does not pause recurrence (honest residual until job mesh is dialable).
+func (s *PaymentService) SetRecurringPaymentFailureHandler(h RecurringPaymentFailureHandler) {
+	s.recurringFailHook = h
 }
 
 // SetUnderwriter wires the deterministic underwriting engine. When set,

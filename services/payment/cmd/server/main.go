@@ -208,6 +208,20 @@ func main() {
 	// events (customer.subscription.*, invoice.*) to the subscription service.
 	paymentSvc.SetSubscriptionWebhookHandler(subscriptionSvc)
 
+	// FR-18.8: on payment_intent.payment_failed for a payment with
+	// recurring_instance_id, pause the recurring config via job ContractService.
+	// Dial is lazy; a missing job mesh only means pause residual (payment still
+	// flips to failed). Never cancel the contract from this path.
+	jobAddr := envOrDefault("JOB_SERVICE_ADDR", "localhost:50052")
+	if contractClient, err := paymentclient.NewContractClient(jobAddr); err != nil {
+		slog.Error("failed to create contract client; FR-18.8 pause-on-payment-failed residual until job mesh reachable",
+			"error", err, "addr", jobAddr)
+	} else {
+		paymentSvc.SetRecurringPaymentFailureHandler(contractClient)
+		defer func() { _ = contractClient.Close() }()
+		slog.Info("FR-18.8 recurring payment-failure pause wired", "addr", jobAddr)
+	}
+
 	// Installment (BNPL) and insurance live under the same PaymentService proto
 	// surface, so their domain services are attached to the main gRPC server
 	// rather than registered as separate services.

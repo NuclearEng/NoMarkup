@@ -33,6 +33,11 @@ struct MyBidsView: View {
     @State private var withdrawMessage: String?
     @State private var withdrawIsError = false
 
+    /// Goods eBay-style 60s retract (leading bid only).
+    @State private var retractingBidID: String?
+    @State private var retractMessage: String?
+    @State private var retractIsError = false
+
     @State private var serviceSort: ServiceSort = .newest
     @State private var loweringBid: MyJobBidRow?
     @State private var lowerAmountText = ""
@@ -135,15 +140,34 @@ struct MyBidsView: View {
             List {
                 switch segment {
                 case .goods:
+                    if let retractMessage {
+                        Section {
+                            Text(retractMessage)
+                                .font(.footnote)
+                                .foregroundStyle(retractIsError ? BrandTheme.destructive : BrandTheme.success)
+                                .listRowBackground(BrandTheme.navyElevated)
+                        }
+                    }
                     Section {
                         ForEach(listingBids) { entry in
                             listingBidRow(entry)
                                 .listRowBackground(BrandTheme.navyElevated)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    if entry.canRetract() {
+                                        Button(role: .destructive) {
+                                            Task { await retractListingBid(entry) }
+                                        } label: {
+                                            Label("Retract", systemImage: "arrow.uturn.backward")
+                                        }
+                                        .disabled(retractingBidID != nil)
+                                        .accessibilityLabel("Retract goods bid")
+                                    }
+                                }
                         }
                     } header: {
                         Text("\(listingBids.count) bid\(listingBids.count == 1 ? "" : "s")").brandSectionHeader()
                     } footer: {
-                        Text("Forward auction: highest bid leads. Winning status reflects the live ladder on each listing.")
+                        Text("Forward auction: highest bid leads. Winning high bids can be retracted within 60 seconds of placement.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 case .services:
@@ -244,10 +268,24 @@ struct MyBidsView: View {
     private func listingBidRow(_ entry: MyListingBidEntry) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text(entry.displayTitle)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .lineLimit(2)
+                Group {
+                    if let listingId = entry.listingIdForAPI {
+                        NavigationLink {
+                            ListingDetailView(listingID: listingId)
+                        } label: {
+                            Text(entry.displayTitle)
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                        }
+                    } else {
+                        Text(entry.displayTitle)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .lineLimit(2)
+                    }
+                }
                 Spacer(minLength: 8)
                 Text(entry.displayAmount)
                     .font(.subheadline.weight(.semibold).monospacedDigit())
@@ -276,10 +314,40 @@ struct MyBidsView: View {
                         .font(.caption2)
                         .foregroundStyle(BrandTheme.textSecondary.opacity(0.85))
                 }
+                if retractingBidID == entry.id {
+                    ProgressView()
+                        .tint(BrandTheme.accent)
+                        .controlSize(.small)
+                }
+            }
+            // eBay-style 60s retract for the viewer's leading active bid only.
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                if entry.canRetract(now: context.date) {
+                    Button(role: .destructive) {
+                        Task { await retractListingBid(entry) }
+                    } label: {
+                        if retractingBidID == entry.id {
+                            ProgressView()
+                                .tint(BrandTheme.destructive)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        } else {
+                            let remaining = entry.retractSecondsRemaining(now: context.date)
+                            Label(
+                                remaining.map { "Retract bid (\($0)s)" } ?? "Retract bid",
+                                systemImage: "arrow.uturn.backward"
+                            )
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                    }
+                    .tint(BrandTheme.destructive)
+                    .disabled(retractingBidID != nil)
+                    .accessibilityHint("Retract your high bid within 60 seconds of placing it")
+                }
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
@@ -467,6 +535,7 @@ struct MyBidsView: View {
         errorMessage = nil
         needsSignIn = false
         withdrawMessage = nil
+        retractMessage = nil
         lowerBidMessage = nil
         defer { isLoading = false }
 
@@ -487,6 +556,51 @@ struct MyBidsView: View {
             if currentListIsEmpty {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    /// POST `/api/v1/listings/{id}/bids/{bidId}/retract` — 60s window, leading bid only.
+    /// Auth required; server re-validates ownership + window (UI gate is best-effort).
+    @MainActor
+    private func retractListingBid(_ entry: MyListingBidEntry) async {
+        retractMessage = nil
+        retractIsError = false
+
+        guard !auth.isScaffoldSession, auth.isAuthenticated else {
+            retractIsError = true
+            retractMessage = "Sign in required to retract a goods bid."
+            return
+        }
+        guard entry.canRetract() else {
+            retractIsError = true
+            retractMessage = "Only your winning bid can be retracted within 60 seconds of placement."
+            return
+        }
+        guard let listingId = entry.listingIdForAPI, let bidId = entry.bidIdForAPI else {
+            retractIsError = true
+            retractMessage = "Missing listing or bid id — open the listing to retract."
+            return
+        }
+        guard retractingBidID == nil else { return }
+
+        retractingBidID = entry.id
+        defer { retractingBidID = nil }
+
+        do {
+            _ = try await APIClient.shared.retractListingBid(
+                listingId: listingId,
+                bidId: bidId
+            )
+            listingBids.removeAll { $0.id == entry.id }
+            retractIsError = false
+            retractMessage = "Bid retracted: \(entry.displayAmount)."
+        } catch let error as APIClientError where error.isUnauthorized {
+            retractIsError = true
+            retractMessage = "Sign in required. Your session is missing or expired — please sign in again."
+            needsSignIn = true
+        } catch {
+            retractIsError = true
+            retractMessage = error.localizedDescription
         }
     }
 

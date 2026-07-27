@@ -335,6 +335,8 @@ func main() {
 	// PaymentService (proto consolidated — no separate sub-clients), so they
 	// share the single paymentClient.
 	paymentHandler := handler.NewPaymentHandler(paymentClient, dbPool)
+	// FR-18.8: after successful ProcessPayment on a visit PI, resume paused recurring.
+	paymentHandler.SetContractClient(contractClient)
 	insuranceHandler := handler.NewInsuranceHandler(paymentClient)
 	// Webhook handler receives raw payloads and forwards them to backend services
 	// which perform Stripe signature verification via stripe.webhooks.constructEvent().
