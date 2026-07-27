@@ -27,29 +27,31 @@ enum AppConfig {
     /// Gateway HTTP base (no trailing slash).
     ///
     /// Resolution:
-    /// 1. `NOMARKUP_API_BASE_URL` env (scheme / CI)
-    /// 2. Info.plist `APIBaseURL` when non-empty
-    /// 3. **DEBUG + Simulator only:** `http://localhost:8080` (Mac gateway)
-    /// 4. Physical device / Release: `https://api.no-markup.com`
+    /// 1. `NOMARKUP_API_BASE_URL` env (scheme / CI / Xcode scheme)
+    /// 2. **DEBUG + Simulator:** `http://127.0.0.1:8081` (local `make dev` gateway)
+    /// 3. Info.plist `APIBaseURL` when non-empty (device LAN IP or staging)
+    /// 4. Release: `https://api.no-markup.com`
     ///
-    /// A phone cannot reach the Mac’s `localhost` — device builds must use
-    /// staging/prod or a LAN IP via env / plist.
+    /// Simulator prefers localhost over a stale LAN IP in Info.plist so live
+    /// auctions from the Mac stack are reachable. A physical phone cannot use
+    /// localhost — set Info.plist / env to your Mac’s LAN IP (`:8081`).
     static var apiBaseURL: URL {
         if let env = ProcessInfo.processInfo.environment["NOMARKUP_API_BASE_URL"],
            let url = URL(string: env), !env.isEmpty {
             return url
         }
 
+        #if DEBUG && targetEnvironment(simulator)
+        // Local gateway (bin/dev) listens on 8081 in current dogfood; override via env.
+        return URL(string: "http://127.0.0.1:8081")!
+        #endif
+
         if let plist = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String,
            let url = URL(string: plist), !plist.isEmpty {
             return url
         }
 
-        #if DEBUG && targetEnvironment(simulator)
-        return URL(string: "http://localhost:8080")!
-        #else
         return URL(string: "https://api.no-markup.com")!
-        #endif
     }
 
     static var apiBaseURLString: String {

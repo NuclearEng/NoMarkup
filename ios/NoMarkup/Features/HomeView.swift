@@ -36,6 +36,8 @@ struct HomeView: View {
                     if jobTotal != nil || listingTotal != nil {
                         statsStrip
                     }
+                    // Featured open floor (auction_type=live) — not sealed reverse.
+                    liveFloorFeatureSection
                     howItWorksSection
                     liveAuctionsSection
                     marketplaceStrip
@@ -283,12 +285,55 @@ struct HomeView: View {
         }
     }
 
+    // MARK: - Featured live floor (auction_type == live)
+
+    /// True open-floor reverse auctions (not sealed). Pinned so dogfood is unmissable.
+    private var liveFloorJobs: [JobSummary] {
+        jobs.filter {
+            ($0.auctionType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "live"
+        }
+    }
+
+    @ViewBuilder
+    private var liveFloorFeatureSection: some View {
+        if !liveFloorJobs.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    sectionEyebrow("Live open floor")
+                    Spacer(minLength: 8)
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(BrandTheme.success)
+                                .frame(width: 8, height: 8)
+                            Text("LIVE")
+                                .font(.system(size: 11, weight: .black, design: .rounded))
+                                .foregroundStyle(BrandTheme.success)
+                        }
+                    }
+                    .accessibilityLabel("Live open-floor reverse auctions")
+                }
+
+                Text("Providers bid down in public. Lowest trusted bid leads.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(BrandTheme.textSecondary)
+
+                ForEach(liveFloorJobs.prefix(3)) { job in
+                    NavigationLink(value: job) {
+                        LiveFloorFeatureCard(job: job)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
     // MARK: - Live auctions
 
     private var liveAuctionsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline) {
-                sectionEyebrow("Live reverse auctions")
+                sectionEyebrow("Open reverse auctions")
                 Spacer(minLength: 8)
                 if let jobTotal, jobTotal > 0 {
                     Text("\(jobTotal) open")
@@ -546,10 +591,15 @@ struct HomeView: View {
             async let listingsResponse = APIClient.shared.fetchListings(page: 1, pageSize: 3)
             let jobsResult = try await jobsResponse
             let listingsResult = try await listingsResponse
-            // Surface live auctions only — closed seed rows buried the open reverse auction.
+            // Open auctions only — pin auction_type=live first so the open floor is on top.
             let liveJobs = jobsResult.jobs
                 .filter { Self.isLiveAuctionStatus($0.status) }
-                .sorted { Self.endsSooner(lhs: $0.auctionEndsAt, rhs: $1.auctionEndsAt) }
+                .sorted { a, b in
+                    let aLive = (a.auctionType ?? "").lowercased() == "live"
+                    let bLive = (b.auctionType ?? "").lowercased() == "live"
+                    if aLive != bLive { return aLive && !bLive }
+                    return Self.endsSooner(lhs: a.auctionEndsAt, rhs: b.auctionEndsAt)
+                }
             let liveListings = listingsResult.listings
                 .filter { Self.isLiveAuctionStatus($0.status) }
                 .sorted { Self.endsSooner(lhsDate: $0.auctionEndsAt, rhsDate: $1.auctionEndsAt) }
@@ -617,6 +667,97 @@ private struct HowItWorksRow: View {
         .padding(.top, index == 1 ? 14 : 0)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Step \(index): \(title). \(detail)")
+    }
+}
+
+// MARK: - Featured open-floor card (auction_type = live)
+
+private struct LiveFloorFeatureCard: View {
+    let job: JobSummary
+
+    private var heroPrice: String {
+        if let start = job.startingBidCents, start > 0 {
+            return MoneyFormat.usd(cents: start)
+        }
+        return job.displayPrice ?? "—"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                TimelineView(.periodic(from: .now, by: 0.8)) { context in
+                    let pulse = Int(context.date.timeIntervalSince1970 * 2) % 2 == 0
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(BrandTheme.success.opacity(pulse ? 1 : 0.35))
+                            .frame(width: 9, height: 9)
+                        Text("LIVE · OPEN FLOOR")
+                            .font(.system(size: 11, weight: .black, design: .rounded))
+                            .tracking(0.6)
+                            .foregroundStyle(BrandTheme.success)
+                    }
+                }
+                Spacer(minLength: 8)
+                if let ends = job.auctionEndsAt {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        let label = CatalogDateFormat.countdownLabel(iso: ends, now: context.date) ?? "—"
+                        Text(label)
+                            .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(BrandTheme.navy)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(BrandTheme.goldBright))
+                    }
+                }
+            }
+
+            Text(job.displayTitle)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(BrandTheme.textPrimary)
+                .lineLimit(2)
+
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
+                Text(heroPrice)
+                    .font(.system(size: 32, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+                Text("budget · bid down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .textCase(.uppercase)
+            }
+
+            HStack(spacing: 12) {
+                Label("\(job.bidCount ?? 0) bids", systemImage: "arrow.down.circle.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                if let location = job.locationLabel {
+                    Label(location, systemImage: "mappin")
+                        .font(.system(size: 13))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Text("Enter floor")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(BrandTheme.goldBright)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(BrandTheme.goldBright)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(BrandTheme.gradientCardFace)
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(BrandTheme.success.opacity(0.55), lineWidth: 1.5)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Live open-floor reverse auction \(job.displayTitle), budget \(heroPrice)")
+        .accessibilityHint("Opens the live reverse auction floor")
     }
 }
 

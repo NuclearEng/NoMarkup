@@ -247,8 +247,12 @@ struct JobDetailView: View {
     @ViewBuilder
     private func detailContent(_ job: JobDetail) -> some View {
         List {
-            // Auction first — hero, place bid (dollars), live ladder, soft live feed.
-            auctionHeroSection(job)
+            // Auction first — open-floor arena (live) or sealed hero, then bid / ladder / feed.
+            if isLiveAuctionType || liveAuctionStateAvailable {
+                liveReverseAuctionArena(job)
+            } else {
+                auctionHeroSection(job)
+            }
             placeBidSection(job)
             bidLadderSection(job)
             liveFeedSection
@@ -282,20 +286,114 @@ struct JobDetailView: View {
                     Text("Customer").brandSectionHeader()
                 }
             }
-
-            Section {
-                Text("Contracts and advanced auction tools remain on the website.")
-                    .font(.footnote)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                Button {
-                    showWebSafari = true
-                } label: {
-                    Label("Open on web", systemImage: "safari")
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }
-            }
         }
         .brandListBackground()
+    }
+
+    // MARK: - Live open-floor reverse auction (unmissable)
+
+    /// Public reverse auction floor: pulse LIVE badge, leading bid, countdown, market strip.
+    @ViewBuilder
+    private func liveReverseAuctionArena(_ job: JobDetail) -> some View {
+        Section {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 10) {
+                    TimelineView(.periodic(from: .now, by: 0.7)) { context in
+                        let on = Int(context.date.timeIntervalSince1970 * 2.5) % 2 == 0
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(BrandTheme.success.opacity(on ? 1 : 0.3))
+                                .frame(width: 10, height: 10)
+                            Text("LIVE · REVERSE AUCTION")
+                                .font(.system(size: 12, weight: .black, design: .rounded))
+                                .tracking(0.8)
+                                .foregroundStyle(BrandTheme.success)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    if let status = job.status, !status.isEmpty {
+                        StatusChipView(
+                            label: StatusChipStyle.displayLabel(status),
+                            style: StatusChipStyle.forStatus(status)
+                        )
+                    }
+                }
+
+                Text(job.displayTitle)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(arenaLeadingLabel)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .textCase(.uppercase)
+                    Text(arenaLeadingAmount)
+                        .font(.system(size: 40, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(BrandTheme.goldBright)
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(1)
+                    Text("Providers bid down · lowest trusted bid leads")
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(arenaLeadingLabel) \(arenaLeadingAmount)")
+
+                if let start = job.startingBidCents, start > 0,
+                   let leading = arenaLeadingCents, leading > 0, leading < start {
+                    let saved = start - leading
+                    let pct = Int((Double(saved) / Double(start) * 100.0).rounded())
+                    Text("Saved \(MoneyFormat.usd(cents: saved)) vs starting (\(pct)%)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(BrandTheme.success)
+                }
+
+                marketIntelligenceStrip(job)
+
+                HStack(spacing: 12) {
+                    if job.auctionEndsAt != nil {
+                        liveCountdownChip(iso: job.auctionEndsAt)
+                    }
+                    bidCountChip(job: job)
+                    if liveAuctionStateAvailable {
+                        Text("Live feed on")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrandTheme.success)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(BrandTheme.success.opacity(0.12)))
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+        } header: {
+            Text("Auction floor").brandSectionHeader()
+        } footer: {
+            Text("Open floor — bid amounts are public. Feed refreshes every few seconds while open.")
+                .foregroundStyle(BrandTheme.textSecondary)
+        }
+    }
+
+    private var arenaLeadingCents: Int64? {
+        if let live = liveLowestBidCents, live > 0 { return live }
+        if let ladder = leadingBidCents, ladder > 0 { return ladder }
+        return detail?.startingBidCents
+    }
+
+    private var arenaLeadingAmount: String {
+        if let c = arenaLeadingCents, c > 0 {
+            return MoneyFormat.usd(cents: c)
+        }
+        return "—"
+    }
+
+    private var arenaLeadingLabel: String {
+        if liveLowestBidCents != nil || leadingBidCents != nil {
+            return "Leading bid"
+        }
+        return "Starting budget"
     }
 
     @ViewBuilder
@@ -500,10 +598,11 @@ struct JobDetailView: View {
         return t == "live"
     }
 
-    /// Soft Live feed when the job is live-typed or the state endpoint already answered.
+    /// Soft Live feed when the job is live-typed, state endpoint answered, or we have events.
     private var shouldShowLiveFeed: Bool {
-        guard isLiveAuctionType || liveAuctionStateAvailable else { return false }
-        return isAuctionActiveForPolling || !auctionEvents.isEmpty
+        if isLiveAuctionType { return true }
+        if liveAuctionStateAvailable { return true }
+        return !auctionEvents.isEmpty
     }
 
     /// Public amounts for live auctions / owners; sealed non-owners only see activity labels.
@@ -727,7 +826,9 @@ struct JobDetailView: View {
                     Text("Live feed").brandSectionHeader()
                 }
             } footer: {
-                Text("Refreshes every 10 seconds while the auction is open.")
+                Text(isLiveAuctionType
+                    ? "Open floor · refreshes every few seconds while the auction is open."
+                    : "Refreshes while the auction is open.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
@@ -1413,21 +1514,27 @@ struct JobDetailView: View {
         }
     }
 
-    /// Polls live auction state + events every 10s while the scene is active and the auction is open.
+    /// Polls live auction state + events while the scene is active and the auction is open.
+    /// Open-floor (`auction_type=live`) polls every 3s; sealed/active polls every 10s.
     /// Decode/network failures are ignored (endpoints may be feature-gated → 404).
     private func pollLiveAuctionStateLoop() async {
-        guard isAuctionActiveForPolling, scenePhase == .active else { return }
-        // Immediate soft refresh, then every 10s until cancelled.
+        // Always try once so a live job surfaces the arena even if status parsing lags.
         await refreshLiveAuctionState()
         await refreshLiveAuctionEvents()
+        guard scenePhase == .active else { return }
         while !Task.isCancelled {
+            let interval: UInt64 = (isLiveAuctionType || liveAuctionStateAvailable)
+                ? 3_000_000_000
+                : 10_000_000_000
             do {
-                try await Task.sleep(nanoseconds: 10_000_000_000)
+                try await Task.sleep(nanoseconds: interval)
             } catch {
                 return
             }
             guard !Task.isCancelled else { return }
-            guard scenePhase == .active, isAuctionActiveForPolling else { return }
+            guard scenePhase == .active else { return }
+            // Keep polling while open, or while live type (re-check after close still ok soft-fail).
+            if !isAuctionActiveForPolling && !isLiveAuctionType { return }
             await refreshLiveAuctionState()
             await refreshLiveAuctionEvents()
         }
@@ -1451,7 +1558,8 @@ struct JobDetailView: View {
 
     @MainActor
     private func refreshLiveAuctionState() async {
-        guard isAuctionActiveForPolling else { return }
+        // Always attempt for live-typed jobs; for others only while auction is open.
+        if !isLiveAuctionType && !isAuctionActiveForPolling { return }
         do {
             let state = try await APIClient.shared.fetchJobAuctionState(jobId: jobID)
             applyLiveAuctionState(state)
@@ -1462,7 +1570,7 @@ struct JobDetailView: View {
 
     @MainActor
     private func refreshLiveAuctionEvents() async {
-        guard isAuctionActiveForPolling || isLiveAuctionType || liveAuctionStateAvailable else { return }
+        if !isLiveAuctionType && !isAuctionActiveForPolling && !liveAuctionStateAvailable { return }
         do {
             let events = try await APIClient.shared.fetchJobAuctionEvents(jobId: jobID)
             auctionEvents = events

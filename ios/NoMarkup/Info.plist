@@ -53,10 +53,9 @@
 		<string>remote-notification</string>
 	</array>
 	<!--
-	  API base for physical device + Release packaging.
-	  Simulator DEBUG ignores this and uses http://localhost:8080 (see AppConfig).
-	  For on-device testing against the Mac native stack, point at the Mac LAN IP
-	  (Gateway :8080). Switch back to https://api.no-markup.com when DNS/prod is live.
+	  API base for physical device builds (Simulator DEBUG uses 127.0.0.1:8081 — see AppConfig).
+	  Point this at your Mac's current LAN IP + gateway port (usually :8081) for device dogfood.
+	  Switch back to https://api.no-markup.com when DNS/prod is live.
 	-->
 	<key>APIBaseURL</key>
 	<string>http://192.168.1.101:8081</string>
