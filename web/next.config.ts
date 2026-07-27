@@ -48,6 +48,28 @@ const nextConfig: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typedRoutes: true,
   poweredByHeader: false,
+  // PERF-16: tree-shake barrel packages so only used icons/components land
+  // in the client graph (lucide alone is imported from ~185 call sites).
+  experimental: {
+    optimizePackageImports: [
+      'lucide-react',
+      '@radix-ui/react-avatar',
+      '@radix-ui/react-checkbox',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-label',
+      '@radix-ui/react-popover',
+      '@radix-ui/react-progress',
+      '@radix-ui/react-select',
+      '@radix-ui/react-separator',
+      '@radix-ui/react-slider',
+      '@radix-ui/react-slot',
+      '@radix-ui/react-switch',
+      '@radix-ui/react-tabs',
+      '@radix-ui/react-tooltip',
+      '@tanstack/react-query',
+    ],
+  },
   images: {
     // Prefer AVIF over WebP when the browser sends Accept: image/avif.
     // Next.js's image optimizer falls back to WebP, then JPEG/PNG, when
@@ -77,6 +99,27 @@ const nextConfig: NextConfig = {
         // Apply security headers to every response except static asset cache files.
         source: '/:path*',
         headers: SECURITY_HEADERS,
+      },
+      // PERF-15: long-cache fingerprinted Next assets. Content hashes change
+      // on every rebuild so immutable is safe. Source maps stay no-store via
+      // Sentry/config defaults.
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      {
+        source: '/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
       },
     ];
   },

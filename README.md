@@ -163,6 +163,21 @@ Other security posture:
 - Next.js edge middleware soft-gates dashboard routes (session indicators); gateway JWT remains authoritative
 - **Deploy:** not production-ready until `DEPLOY_PROVISIONED=true`, secrets, cluster, and migrations (through **073**) are real — see `docs/operations/provisioning-checklist.md` and `docs/launch-checklist.md`
 
+### Feature flags & live auction gates (FE-15)
+
+Backend flags live in Postgres (`feature_flags`) and are enforced with
+`RequireFlag` on money/product routes (production fail-closed). Notable seeds
+and **env kill switches**:
+
+| Flag / env | Default intent | Notes |
+|---|---|---|
+| `live_auction` | seed **true** (migration 013) | Live WS order-book arena. Gateway routes also require the flag. |
+| `spectator_mode` | seed **false** | Anonymous auction watch; separate from live_auction. |
+| `ENABLE_LIVE_AUCTION` | ops kill switch (gateway/handler) | **AND**ed with `live_auction` / `spectator_mode` on live/spectator paths. Set `true` for local dogfood of the live state API. |
+| `NEXT_PUBLIC_ENABLE_LIVE_AUCTION` | web UI gate | Client-side hide of live-arena chrome when unset/false. Not authz — JWT + RequireFlag still rule the API. |
+
+See `docs/launch-checklist.md` and `docs/compliance/capability-matrix.md` for the full flag list.
+
 ## License
 
 Proprietary. All rights reserved.

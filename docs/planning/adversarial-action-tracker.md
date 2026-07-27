@@ -27,11 +27,11 @@
 | P0 — Money integrity | 0 | 0 | 27 | 1 | 0 | 28 |
 | P0 — Security fail-closed | 0 | 0 | 14 | 3 | 1 | 18 |
 | P0 — Production deploy / ops | 14 | 2 | 12 | 0 | 0 | 28 |
-| P1 — North Star performance | 11 | 0 | 0 | 5 | 0 | 16 |
+| P1 — North Star performance | 7 | 0 | 4 | 5 | 0 | 16 |
 | P1 — CI / testing enforcers | 9 | 0 | 2 | 5 | 0 | 16 |
-| P1 — Frontend / a11y / honesty | 9 | 0 | 2 | 5 | 0 | 16 |
+| P1 — Frontend / a11y / honesty | 7 | 0 | 4 | 5 | 0 | 16 |
 | P2 — Architecture / polish | 12 | 0 | 0 | 6 | 0 | 18 |
-| **All** | **55** | **2** | **57** | **25** | **1** | **140** |
+| **All** | **49** | **2** | **63** | **25** | **1** | **140** |
 
 The separate **DOC** table (18 rows) is a cross-reference of the language-only demotions already
 reflected in the `Demoted` column above — it is not 18 additional items.
@@ -139,7 +139,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 
 | ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
 |----|-------|-----|------|----------|--------|--------|--------|-------|
-| **GAP-008** / PERF-01 | No field LCP/INP/CLS (RUM) | BLOCKER | web | no web-vitals | Ship web-vitals → Sentry/backend | p75 dashboards exist | Open | |
+| **GAP-008** / PERF-01 | No field LCP/INP/CLS (RUM) | BLOCKER | web | no web-vitals | Ship web-vitals → Sentry/backend | p75 dashboards exist | **Done** 2026-07-27 — `report-web-vitals.ts` + `WebVitalsReporter` in root layout; LCP/INP/CLS/FCP/TTFB → Sentry metrics (prod) / console (dev) | |
 | PERF-02 | No Lighthouse CI / budget gates | BLOCKER | ci | workflows | Lighthouse CI on `/`, marketplace, jobs | PR fails over budget | Open | |
 | PERF-03 | Lab LCP ~3.8–4s fails North Star 1.5s | BLOCKER | web | layout, `/`, `/jobs` | RSC + perf work until measured under bar **or** demote North Star language | Field/lab under declared gate | **Demoted** language 2026-07-09; perf work still Open | |
 | PERF-04 | Service worker is kill-switch (anti-cache) | BLOCKER | web | `public/sw.js`, ServiceWorkerRegistrar | Real SW behind prod flag **or** remove PWA claims | SW caches or claim removed | **Demoted** claim 2026-07-09; real SW still Open | |
@@ -149,12 +149,12 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | PERF-08 | Accepted overages `/jobs/[id]` 375kB, `/jobs/new` 309kB unenforced | MINOR | docs/ci | performance.md | Encode exceptions in CI allowlist | Regression only if new | Open | |
 | PERF-09 | Criterion benches not in CI; no p99 asserts | MAJOR | ci/engines | benches/ | Nightly `cargo bench` + threshold or demote claim | Bench fail on regression | **Demoted** claim 2026-07-09; CI bench still Open | |
 | PERF-10 | k6 load tests not in CI; mock auth | MAJOR | tests/load | `tests/load/` | Nightly k6 against staging with real tokens | Artifacts + thresholds | Open (claim already non-asserted in docs) | |
-| PERF-11 | Prometheus alerts looser than budgets (bid 5ms vs 1ms) | MAJOR | monitoring | alerts.yml | Align alerts to CLAUDE budgets | Alert thresholds = budgets | Open | |
+| PERF-11 | Prometheus alerts looser than budgets (bid 5ms vs 1ms) | MAJOR | monitoring | alerts.yml | Align alerts to CLAUDE budgets | Alert thresholds = budgets | **Done** 2026-07-27 — `NoMarkupBidProcessingSlow` p99 `> 0.001` (1ms) | |
 | PERF-12 | Stale docs: recharts claim; aggressive SW principle | DOC | docs | performance.md | Fix recharts (removed); SW truth | Docs match package.json | **Demoted** 2026-07-09 | |
 | PERF-13 | No TTFB/curl evidence for edge JSON | MAJOR | ops | — | Script `curl -w` against CDN | Artifact in CI/smoke | Open | |
 | PERF-14 | HTML cannot edge-cache (CSP nonce) — stretch 300ms impossible | DOC | claims | CLAUDE §14 | Keep DATA-cache strategy; remove MPA edge-HTML implication | Claims honest | **Demoted** 2026-07-09 | |
-| PERF-15 | Static asset Cache-Control not set in next.config | MINOR | web | next.config | Long-cache hashed assets | Headers present | Open | |
-| PERF-16 | `optimizePackageImports` absent | MINOR | web | next.config | Enable for lucide/etc. | Bundle delta | Open | |
+| PERF-15 | Static asset Cache-Control not set in next.config | MINOR | web | next.config | Long-cache hashed assets | Headers present | **Done** 2026-07-27 — `next.config.ts` `/_next/static` + `/static` → `max-age=31536000, immutable` | |
+| PERF-16 | `optimizePackageImports` absent | MINOR | web | next.config | Enable for lucide/etc. | Bundle delta | **Done** 2026-07-27 — `experimental.optimizePackageImports` for lucide-react + radix + tanstack | |
 
 ---
 
@@ -189,7 +189,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | FE-02 | ~81/95 pages client — “RSC-first default” false | MAJOR | web | `app/**/page.tsx` | Convert public LCP routes; stop claiming default | Client page % drops; docs match | **Demoted** claim 2026-07-09; conversions still Open | |
 | FE-03 | Raw hex pervasive (~180 hits); “never hex” false | MAJOR | web | components + globals | Tokens + Tailwind brand colors; ban arbitrary hex in components | Lint rule / grep CI | Open | |
 | FE-04 | Loader2/spinners vs “Skeleton only” | MAJOR | web | many pages | Skeleton/ContentLoader for page load; spinner for button pending | Audit key routes | Open | |
-| FE-05 | PWA manifest + install without working SW | MAJOR | web | pwa components | Wire SW or remove install UX | No dead PWA promise | Open | |
+| FE-05 | PWA manifest + install without working SW | MAJOR | web | pwa components | Wire SW or remove install UX | No dead PWA promise | **Done** 2026-07-27 — install UI is no-op (`InstallPrompt`); SW registrar only unregisters kill-switch `sw.js` (no offline PWA promise) | |
 | FE-06 | Goods spectate “LIVE” without WS / weak errors | MAJOR | web | marketplace spectate | WS + isError/retry; honest connection state | Live = real stream | **Done** 2026-07-27 — LIVE honesty on marketplace spectate, job spectate, and JobDetail (badge only when spectator/auction socket is open) | |
 | FE-07 | Sub-44px checkbox/select/slider | MAJOR | web | ui primitives | 44×44 hit areas | Touch audit | Open | |
 | FE-08 | Silent error rails (TrendingRail null) | MINOR | web | rails | Error/empty states | Retry UI | Open | |
@@ -199,7 +199,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | FE-12 | Win-probability bars are hard-coded cosmetics | MAJOR | product | BidCard | Real model **or** remove “intelligence” claim | UI labels honest | **Demoted** claim 2026-07-09; real model still Open | |
 | FE-13 | GPS check-in: no geo-fence vs job site | MAJOR | product | workspace | Server proximity check **or** demote “verified on-site” | Spoof rejected or claim gone | **Demoted** claim 2026-07-09; geo-fence still Open | |
 | FE-14 | Goods double-blind 8-dim reviews claim false | MAJOR | product | README + reviews | Implement goods reviews **or** kill claim | README true | **Demoted** claim 2026-07-09; goods reviews still Open | |
-| FE-15 | Live auction env-gated without README disclosure | MAJOR | product | ENABLE_LIVE_AUCTION | Document flag; seed defaults | README notes gate | Open | |
+| FE-15 | Live auction env-gated without README disclosure | MAJOR | product | ENABLE_LIVE_AUCTION | Document flag; seed defaults | README notes gate | **Done** 2026-07-27 — README feature-flag table: `live_auction` / `spectator_mode` / `ENABLE_LIVE_AUCTION` / `NEXT_PUBLIC_ENABLE_LIVE_AUCTION` | |
 | FE-16 | Insurance competition / legal flag-off sold as features | MAJOR | product | seed flags + README | Label “preview / off by default” | Marketing = seed state | **Demoted** claim 2026-07-09 | |
 
 ---
