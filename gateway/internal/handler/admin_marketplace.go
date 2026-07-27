@@ -262,6 +262,14 @@ func (h *AdminMarketplaceHandler) CancelListing(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "failed to cancel listing")
 		return
 	}
+	// Admin cancel has no winner: release every authorized bond. Fail-soft.
+	if n, rerr := releaseAuthorizedBidBondsForListing(r.Context(), h.db, id, ""); rerr != nil {
+		slog.WarnContext(r.Context(), "admin cancel listing: bid bond release failed",
+			"listing_id", id, "error", rerr)
+	} else if n > 0 {
+		slog.InfoContext(r.Context(), "admin cancel listing: released authorized bid bonds",
+			"listing_id", id, "released_count", n)
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"listing_id": id,
 		"status":     "cancelled",

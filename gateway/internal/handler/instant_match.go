@@ -11,17 +11,17 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/cache"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 const (
-	instantMatchTTL     = 20 * time.Minute
+	instantMatchTTL      = 20 * time.Minute
 	instantMatchOfferTTL = 15 * time.Minute
 )
 
@@ -794,9 +794,23 @@ func (h *InstantMatchHandler) notifyInstantOfferToProviders(
 		argN += 2
 	}
 
-	q += fmt.Sprintf(`
+	// Prefer nearer providers when the job has geo; otherwise trust-first.
+	// Distance reuses the same MakePoint params already bound for ST_DWithin.
+	if matchCtx.HasGeo {
+		lngParam, latParam := argN-2, argN-1
+		q += fmt.Sprintf(`
+		 ORDER BY ST_Distance(
+		   pp.service_location::geography,
+		   ST_SetSRID(ST_MakePoint($%d, $%d), 4326)::geography
+		 ) ASC,
+		 COALESCE(ts.overall_score, 50.0) DESC,
+		 pp.user_id
+		 LIMIT $%d`, lngParam, latParam, argN)
+	} else {
+		q += fmt.Sprintf(`
 		 ORDER BY COALESCE(ts.overall_score, 50.0) DESC, pp.user_id
 		 LIMIT $%d`, argN)
+	}
 	args = append(args, maxFanOut)
 
 	rows, err := h.db.Query(ctx, q, args...)
@@ -854,6 +868,11 @@ func (h *InstantMatchHandler) notifyInstantOfferToProviders(
 
 // notifyInstantAcceptedToCustomer emits offer_accepted / bid_awarded-style
 // notice to the job owner when Instant is claimed.
+//
+// Body is enriched with provider business_name (or display_name) and trust tier
+// when userClient/db can load them — e.g. "Acme Plumbing (Trusted) accepted
+// your Instant request at $X.". Fail-soft: any lookup error keeps the generic
+// body so the award notification still lands.
 func (h *InstantMatchHandler) notifyInstantAcceptedToCustomer(
 	ctx context.Context,
 	providerID, customerID, jobID, contractID string,
@@ -867,6 +886,9 @@ func (h *InstantMatchHandler) notifyInstantAcceptedToCustomer(
 	if amountCents > 0 {
 		body = fmt.Sprintf("A provider accepted your Instant request at $%.2f.", float64(amountCents)/100)
 	}
+	if enriched := h.instantAcceptedNotificationBody(ctx, providerID, amountCents); enriched != "" {
+		body = enriched
+	}
 	actionURL := "/jobs/" + jobID
 	entityType, entityID := "job", jobID
 	if contractID != "" {
@@ -878,3 +900,133 @@ func (h *InstantMatchHandler) notifyInstantAcceptedToCustomer(
 		title, body, actionURL, entityType, entityID)
 }
 
+// instantAcceptedNotificationBody builds an enriched accept body when the
+// provider's public name can be resolved. Empty string means "use generic".
+func (h *InstantMatchHandler) instantAcceptedNotificationBody(
+	ctx context.Context,
+	providerID string,
+	amountCents int64,
+) string {
+	name, tierLabel := h.loadInstantProviderNotifyIdentity(ctx, providerID)
+	if name == "" {
+		return ""
+	}
+	if tierLabel != "" {
+		if amountCents > 0 {
+			return fmt.Sprintf("%s (%s) accepted your Instant request at $%.2f.",
+				name, tierLabel, float64(amountCents)/100)
+		}
+		return fmt.Sprintf("%s (%s) accepted your Instant request.", name, tierLabel)
+	}
+	if amountCents > 0 {
+		return fmt.Sprintf("%s accepted your Instant request at $%.2f.",
+			name, float64(amountCents)/100)
+	}
+	return fmt.Sprintf("%s accepted your Instant request.", name)
+}
+
+// loadInstantProviderNotifyIdentity resolves a provider's public label + trust
+// tier for the customer accept notification. Prefer userClient (profile
+// business_name + trust, display_name fallback); fall back to a single SQL
+// join when only db is available. Fail-soft on every error path.
+func (h *InstantMatchHandler) loadInstantProviderNotifyIdentity(
+	ctx context.Context,
+	providerID string,
+) (name, tierLabel string) {
+	if providerID == "" {
+		return "", ""
+	}
+
+	if h.userClient != nil {
+		resp, err := h.userClient.GetProviderProfile(ctx, &userv1.GetProviderProfileRequest{
+			UserId: providerID,
+		})
+		if err != nil {
+			slog.WarnContext(ctx, "instant match: provider profile for accept notify failed",
+				"provider_id", providerID,
+				"error", err,
+			)
+		} else if p := resp.GetProfile(); p != nil {
+			name = strings.TrimSpace(p.GetBusinessName())
+			if ts := p.GetTrustScore(); ts != nil {
+				tierLabel = trustTierNotifyLabel(ts.GetTier())
+			}
+		}
+		if name == "" {
+			if names, nameErr := batchGetDisplayNames(ctx, h.userClient, []string{providerID}); nameErr != nil {
+				slog.WarnContext(ctx, "instant match: provider display name for accept notify failed",
+					"provider_id", providerID,
+					"error", nameErr,
+				)
+			} else {
+				name = strings.TrimSpace(names[providerID])
+			}
+		}
+		if name != "" {
+			return name, tierLabel
+		}
+	}
+
+	if h.db == nil {
+		return "", ""
+	}
+	var businessName, displayName, tier *string
+	err := h.db.QueryRow(ctx, `
+		SELECT pp.business_name, u.display_name, ts.tier
+		  FROM users u
+		  LEFT JOIN provider_profiles pp ON pp.user_id = u.id
+		  LEFT JOIN trust_scores ts
+		    ON ts.user_id = u.id AND ts.role = 'provider'
+		 WHERE u.id = $1 AND u.deleted_at IS NULL`,
+		providerID,
+	).Scan(&businessName, &displayName, &tier)
+	if err != nil {
+		slog.WarnContext(ctx, "instant match: provider notify identity SQL failed",
+			"provider_id", providerID,
+			"error", err,
+		)
+		return "", ""
+	}
+	if businessName != nil && strings.TrimSpace(*businessName) != "" {
+		name = strings.TrimSpace(*businessName)
+	} else if displayName != nil {
+		name = strings.TrimSpace(*displayName)
+	}
+	if tier != nil {
+		tierLabel = trustTierStringNotifyLabel(*tier)
+	}
+	return name, tierLabel
+}
+
+// trustTierNotifyLabel is the customer-facing trust label used in Instant
+// accept notifications (e.g. "Trusted"). Empty for unspecified / under_review.
+func trustTierNotifyLabel(t commonv1.TrustTier) string {
+	switch t {
+	case commonv1.TrustTier_TRUST_TIER_NEW:
+		return "New"
+	case commonv1.TrustTier_TRUST_TIER_RISING:
+		return "Rising"
+	case commonv1.TrustTier_TRUST_TIER_TRUSTED:
+		return "Trusted"
+	case commonv1.TrustTier_TRUST_TIER_TOP_RATED:
+		return "Top Rated"
+	default:
+		return ""
+	}
+}
+
+// trustTierStringNotifyLabel maps DB tier text to the same customer-facing labels.
+func trustTierStringNotifyLabel(tier string) string {
+	switch strings.ToLower(strings.TrimSpace(tier)) {
+	case "new":
+		return "New"
+	case "rising":
+		return "Rising"
+	case "trusted":
+		return "Trusted"
+	case "top_rated":
+		return "Top Rated"
+	default:
+		return ""
+	}
+}

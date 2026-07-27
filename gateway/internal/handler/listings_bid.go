@@ -445,11 +445,7 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 	// and a nonexistent listing 404s, instead of all returning a
 	// misleading 402.
 	if requiresBond {
-		writeJSON(w, http.StatusPaymentRequired, map[string]interface{}{
-			"requires_bid_bond": true,
-			"bond_amount_cents": bondCents,
-			"error":             "a bid bond is required before your first bid on this listing",
-		})
+		writeJSON(w, http.StatusPaymentRequired, bidBondRequiredPayload(bondCents, "bid"))
 		return
 	}
 
@@ -902,60 +898,10 @@ func formatRFC3339OrNull(t time.Time) interface{} {
 	return t.UTC().Format(time.RFC3339)
 }
 
-// bidBondCheck returns (true, requiredBondCents) iff this user must post a
-// bond before placing the bid. The check has three short-circuits:
-//
-//  1. h.db is nil → returns false (dev/sandbox stacks without DB skip the
-//     check; placeBidTx will already 503 on its own guard).
-//  2. The user has at least one historical bid_bonds row in 'released'
-//     status → trusted; skip the gate forever.
-//  3. The user already holds an 'authorized' bond on THIS listing → they
-//     have posted + confirmed a bond for this auction and may keep bidding
-//     (including raising past 10× the posted amount) without re-gating.
-//
-// Only a genuine first-time bidder on this listing — no authorized bond at
-// all — is gated (return true) and asked to post one.
-//
-// Errors are treated as "let the bid through" rather than block — the
-// audit pipeline still records the bid, and a follow-up cron can clamp
-// abuse. We log loudly so ops notices.
+// bidBondCheck is a thin wrapper around the package-level gate shared with
+// CreateOffer. See bidBondCheck in bid_bonds.go for the full policy.
 func (h *ListingsHandler) bidBondCheck(ctx context.Context, userID, listingID string, intendedBidCents int64) (needsBond bool, requiredCents int64) {
-	if h.db == nil {
-		return false, 0
-	}
-	required := requiredBondCents(intendedBidCents)
-
-	var hasReleased bool
-	if err := h.db.QueryRow(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM bid_bonds
-			 WHERE user_id = $1 AND status = 'released'
-		)`, userID).Scan(&hasReleased); err != nil {
-		slog.WarnContext(ctx, "bid bond released-history lookup failed", "error", err, "user_id", userID)
-		return false, 0
-	}
-	if hasReleased {
-		return false, 0
-	}
-
-	// An existing authorized bond on THIS listing waives the gate — but only
-	// up to what the bond actually covers. Bare existence is not enough: a
-	// $5 floor bond posted against a $50 opening bid must not silently
-	// underwrite a later $10,000 raise, or the bond stops being proportional
-	// to what a no-show would cost the seller. A raise past the covered
-	// amount re-gates and asks for a bond sized to the new bid.
-	covered, err := activeBondCovers(ctx, h.db, userID, listingID, required)
-	if err != nil {
-		slog.WarnContext(ctx, "bid bond authorized lookup failed", "error", err, "user_id", userID, "listing_id", listingID)
-		return false, 0
-	}
-	if covered {
-		return false, 0
-	}
-
-	// No authorized bond for this (listing, bidder): genuine first-time
-	// bidder on this auction → gate.
-	return true, required
+	return bidBondCheck(ctx, h.db, userID, listingID, intendedBidCents)
 }
 
 // MyListings handles GET /api/v1/listings/mine — seller's own listings.

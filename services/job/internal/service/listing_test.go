@@ -30,6 +30,7 @@ type mockListingRepo struct {
 	getBidsFn            func(ctx context.Context, listingID string, page, pageSize int) ([]*domain.ListingBid, *domain.Pagination, error)
 	findEndedFn          func(ctx context.Context, limit int) ([]string, error)
 	closeAuctionFn       func(ctx context.Context, listingID string) (*domain.Listing, *domain.ListingOrder, error)
+	releaseBondsFn       func(ctx context.Context, listingID, excludeUserID string) (int64, error)
 	getOrderFn           func(ctx context.Context, orderID string) (*domain.ListingOrder, error)
 	confirmPickupFn      func(ctx context.Context, orderID, buyerID string) (*domain.ListingOrder, error)
 	fileDisputeFn        func(ctx context.Context, orderID, filingUserID, disputeType, description string, evidenceURLs []string) (string, *domain.ListingOrder, error)
@@ -68,6 +69,9 @@ func (m *mockListingRepo) FindEndedAuctions(ctx context.Context, limit int) ([]s
 	return nil, nil
 }
 func (m *mockListingRepo) ReleaseAuthorizedBidBonds(ctx context.Context, listingID, excludeUserID string) (int64, error) {
+	if m.releaseBondsFn != nil {
+		return m.releaseBondsFn(ctx, listingID, excludeUserID)
+	}
 	return 0, nil
 }
 
@@ -179,6 +183,67 @@ func fmtHours(h int32) string {
 	default:
 		return "?"
 	}
+}
+
+// --- CancelListing bid-bond closeout ---
+
+func TestCancelListing_ReleasesAllAuthorizedBidBonds(t *testing.T) {
+	t.Parallel()
+	var releaseListingID, releaseExclude string
+	var releaseCalls int
+	repo := &mockListingRepo{
+		cancelListingFn: func(ctx context.Context, listingID, sellerID, reason string) (*domain.Listing, error) {
+			return &domain.Listing{ID: listingID, SellerID: sellerID, Status: "cancelled"}, nil
+		},
+		releaseBondsFn: func(ctx context.Context, listingID, excludeUserID string) (int64, error) {
+			releaseCalls++
+			releaseListingID = listingID
+			releaseExclude = excludeUserID
+			return 3, nil
+		},
+	}
+	s := NewListingService(repo)
+	l, err := s.CancelListing(context.Background(), "listing-1", "seller-1", "changed mind")
+	require.NoError(t, err)
+	assert.Equal(t, "cancelled", l.Status)
+	assert.Equal(t, 1, releaseCalls, "must release bonds once after successful cancel")
+	assert.Equal(t, "listing-1", releaseListingID)
+	assert.Equal(t, "", releaseExclude, "cancel has no winner — release everyone")
+}
+
+func TestCancelListing_BondReleaseFailSoft(t *testing.T) {
+	t.Parallel()
+	// Cancel already committed at the repo; bond release must not poison the result.
+	repo := &mockListingRepo{
+		cancelListingFn: func(ctx context.Context, listingID, sellerID, reason string) (*domain.Listing, error) {
+			return &domain.Listing{ID: listingID, SellerID: sellerID, Status: "cancelled"}, nil
+		},
+		releaseBondsFn: func(ctx context.Context, listingID, excludeUserID string) (int64, error) {
+			return 0, errors.New("db down")
+		},
+	}
+	s := NewListingService(repo)
+	l, err := s.CancelListing(context.Background(), "listing-2", "seller-1", "policy")
+	require.NoError(t, err, "bond release failure is fail-soft")
+	assert.Equal(t, "cancelled", l.Status)
+}
+
+func TestCancelListing_RepoErrorSkipsBondRelease(t *testing.T) {
+	t.Parallel()
+	releaseCalls := 0
+	repo := &mockListingRepo{
+		cancelListingFn: func(ctx context.Context, listingID, sellerID, reason string) (*domain.Listing, error) {
+			return nil, errors.New("not found")
+		},
+		releaseBondsFn: func(ctx context.Context, listingID, excludeUserID string) (int64, error) {
+			releaseCalls++
+			return 0, nil
+		},
+	}
+	s := NewListingService(repo)
+	_, err := s.CancelListing(context.Background(), "listing-x", "seller-1", "n/a")
+	require.Error(t, err)
+	assert.Equal(t, 0, releaseCalls, "must not release bonds when cancel itself failed")
 }
 
 // --- PlaceListingBid forward-direction tests ---

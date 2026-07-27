@@ -20,19 +20,18 @@
 
 ## Summary dashboard
 
-**Recounted 2026-07-25 by parsing the tables below** (the previous dashboard — P0 28 / P1 32 /
-P2 24 / 102 total — did not match the rows it summarised; the tables actually hold 140 code/ops rows).
+**Recounted 2026-07-27 wave26 by parsing the tables below** (140 code/ops rows).
 
 | Section | Open | Partial | Done | Demoted | Founder-Action | Total |
 |---------|------|---------|------|---------|----------------|-------|
-| P0 — Money integrity | 11 | 1 | 15 | 1 | 0 | 28 |
-| P0 — Security fail-closed | 4 | 1 | 9 | 3 | 1 | 18 |
+| P0 — Money integrity | 5 | 0 | 22 | 1 | 0 | 28 |
+| P0 — Security fail-closed | 4 | 0 | 10 | 3 | 1 | 18 |
 | P0 — Production deploy / ops | 16 | 2 | 10 | 0 | 0 | 28 |
 | P1 — North Star performance | 11 | 0 | 0 | 5 | 0 | 16 |
 | P1 — CI / testing enforcers | 9 | 0 | 2 | 5 | 0 | 16 |
-| P1 — Frontend / a11y / honesty | 11 | 0 | 0 | 5 | 0 | 16 |
+| P1 — Frontend / a11y / honesty | 9 | 0 | 2 | 5 | 0 | 16 |
 | P2 — Architecture / polish | 12 | 0 | 0 | 6 | 0 | 18 |
-| **All** | **74** | **4** | **36** | **25** | **1** | **140** |
+| **All** | **66** | **2** | **46** | **25** | **1** | **140** |
 
 The separate **DOC** table (18 rows) is a cross-reference of the language-only demotions already
 reflected in the `Demoted` column above — it is not 18 additional items.
@@ -58,19 +57,19 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | MON-11 | Instant payout: Stripe call before durable ledger claim | MAJOR | gateway | `payment.go` InstantPayout handler | Claim ledger/advisory lock **then** Stripe with same idempotency key | Crash after Stripe: no double on retry | **Done** 2026-07-25 — `payment.go:787-799` ledger claimed under advisory lock before Stripe | |
 | **GAP-004** / MON-12 | Webhook dedup swallows retries after failed processing | BLOCKER | payment | `webhook.go` + `RecordStripeEventStart` | Skip only when `processed_at IS NOT NULL` (or lease) | Fail handler → Stripe retry reprocesses | **Done** 2026-07-25 — `services/payment/internal/service/webhook.go:70-135` skips only when `processed_at` set | |
 | MON-13 | Concurrent services refund can over-capture | BLOCKER | payment | CreateRefund path | Row lock / CAS on refunded amount + Stripe key | Concurrent refunds total ≤ amount | **Done** 2026-07-25 — `service.go:636-644` UpdateRefundCAS | |
-| MON-14 | `CapturePaymentIntent` / `ProcessPayment` no idempotency + race | MAJOR | payment | `stripe.go`, `service.go` | Key capture; CAS status pending→processing | Double ProcessPayment → one capture | Open | |
+| MON-14 | `CapturePaymentIntent` / `ProcessPayment` no idempotency + race | MAJOR | payment | `stripe.go`, `service.go` | Key capture; CAS status pending→processing | Double ProcessPayment → one capture | **Done** 2026-07-27 — `service.go` ProcessPayment CAS pending→processing + `capture:<paymentID>` key; `stripe.go` CapturePaymentIntent requires idem; `money_concurrency_test.go` TestProcessPayment_Concurrent_ExactlyOneCapture | |
 | MON-15 | BNPL: provider paid before first customer charge; off-session PI unkeyed | MAJOR | payment | `installment.go`, `CreateOffSessionPaymentIntent` | Charge/authorize customer first **or** compensate; add Stripe keys | Cron retry does not double-charge | Open | |
-| MON-16 | Working capital `RequestAdvance` credit TOCTOU | MAJOR | payment | `advance.go` | Advisory lock / serializable credit check | Concurrent RequestAdvance ≤ line | Open | |
-| MON-17 | Goods dispute resolve does not stamp `stripe_transfer_id` | MAJOR | payment | `listing_charge.go` dispute path | Use same stamp path as release; single idempotency key family | Dispute transfer once; no re-pay race | Open | |
+| MON-16 | Working capital `RequestAdvance` credit TOCTOU | MAJOR | payment | `advance.go` | Advisory lock / serializable credit check | Concurrent RequestAdvance ≤ line | **Done** 2026-07-27 — `advance.go` RequestAdvance wraps credit check + CreateAdvance in `WithProviderAdvisoryLock` | |
+| MON-17 | Goods dispute resolve does not stamp `stripe_transfer_id` | MAJOR | payment | `listing_charge.go` dispute path | Use same stamp path as release; single idempotency key family | Dispute transfer once; no re-pay race | **Done** 2026-07-27 — `listing_charge.go` ResolveListingDispute uses `listing-release:<orderID>` + `MarkListingOrderTransferred`; test asserts stamp | |
 | MON-18 | Goods auto-release vs dispute file race (no FOR UPDATE) | MAJOR | payment/job | AutoRelease + FileListingDispute | Lock order row before act | Concurrent release+dispute → safe end state | Open | |
-| MON-19 | Services award missing `job.status == active` under lock | MAJOR | bidding | `engines/bidding/src/engine.rs` | Check job active under FOR UPDATE | Cannot award non-active job | Open | |
+| MON-19 | Services award missing `job.status == active` under lock | MAJOR | bidding | `engines/bidding/src/engine.rs` | Check job active under FOR UPDATE | Cannot award non-active job | **Done** 2026-07-27 — `engines/bidding/src/engine.rs` award_bid FOR UPDATE + `job.status != "active"` → AuctionNotActive | |
 | MON-20 | Goods fee 5% vs README 8%+2%; fee not always persisted on charge | MAJOR | product/payment | gateway fee bps; listing_charge | Align fee policy; persist fee_cents on charge | Charged fee = released fee | Open | |
 | MON-21 | Client can under-pay contract (amount ≤ contract, no cumulative check) | MAJOR | payment | CreatePayment | Enforce milestone/total paid ≤ contract | Underpay path rejected or tracked | Open | |
 | MON-22 | Listing bids / BIN / offers lack **required** Idempotency-Key | MAJOR | gateway | router + listings_bid + offers | Require middleware on money closeouts (or document optional) | Missing key → 400 if claim retained | **Done** 2026-07-25 — `gateway/internal/router/router.go:740-797` RequireIdempotencyKey on bid/BIN/offers | |
 | MON-23 | Contract tip records cents without Stripe rail | MAJOR | gateway | `quote_templates.go` | Wire PI or remove tip ledger until paid | Tip never creates unfunded liability | **Done** | ChargeContractTip off-session + transfer + CAS tip_amount; RequireIdempotencyKey |
 | MON-24 | Fee math via float64 truncation | MINOR | payment | advance/platform fee paths | Integer basis-points only | Property: fee_cents exact | **Done** 2026-07-27 — advance APR/service fee + instant payout use integer half-up/`feeFromBPS` (`advance.go`, `domain/advance_pricing.go`, `instant_payout.go`; gateway mirrors) | |
 | MON-25 | CI: concurrent money races not in pipeline | BLOCKER | ci | `tests/integration/*` excluded | Run double-spend / release races in CI | Required check green | **Done** 2026-07-25 — `.github/workflows/ci.yml` `fullstack-security-test` boots the compose stack and runs `tests/integration/` (double-spend + ownership + auth bypass) and the live-stack payment idempotency test; hard `needs:` of `build` | |
-| MON-26 | Sequential-only refund tests insufficient | MAJOR | test | payment security tests | Add concurrent refund/release tests | Tests fail on current code | Open | |
+| MON-26 | Sequential-only refund tests insufficient | MAJOR | test | payment security tests | Add concurrent refund/release tests | Tests fail on current code | **Done** 2026-07-27 — `money_concurrency_test.go` Concurrent ReleaseEscrow / CreateRefund full+partial / ProcessPayment | |
 | MON-27 | Working capital fee story: factor 1.06–1.18 vs 3%+APR booking | DOC/P1 | product | README + `RequestAdvance` | One fee model in product + code + Fees table | Docs match booking path | **Demoted** 2026-07-09 (docs: factor=limit, 3%+APR=booking) | |
 | MON-28 | Platform transfer paths that already key well — preserve | — | payment | CreatePlatformTransfer, marketplace keys | Do not regress existing keys on advance/marketplace | Regression suite green | Open | |
 
@@ -195,7 +194,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | FE-07 | Sub-44px checkbox/select/slider | MAJOR | web | ui primitives | 44×44 hit areas | Touch audit | Open | |
 | FE-08 | Silent error rails (TrendingRail null) | MINOR | web | rails | Error/empty states | Retry UI | Open | |
 | FE-09 | Raw `<img>` for Mapbox/MFA | MINOR | web | map + MFA | Exception documented or next/image | Do-not list honest | Open | |
-| FE-10 | ListingBidPanel `<a href="/login">` | MINOR | web | ListingBidPanel | Use `Link` | Client nav | Open | |
+| FE-10 | ListingBidPanel `<a href="/login">` | MINOR | web | ListingBidPanel | Use `Link` | Client nav | **Done** 2026-07-27 — `web/src/components/marketplace/ListingBidPanel.tsx` uses `next/link` Link for /login | |
 | FE-11 | prefers-reduced-motion incomplete for utility animations | MINOR | web | globals + components | Cover pulse/spin utilities | reduced-motion test | Open | |
 | FE-12 | Win-probability bars are hard-coded cosmetics | MAJOR | product | BidCard | Real model **or** remove “intelligence” claim | UI labels honest | **Demoted** claim 2026-07-09; real model still Open | |
 | FE-13 | GPS check-in: no geo-fence vs job site | MAJOR | product | workspace | Server proximity check **or** demote “verified on-site” | Spoof rejected or claim gone | **Demoted** claim 2026-07-09; geo-fence still Open | |
@@ -304,6 +303,7 @@ Do in this order for **CONDITIONAL-GO** (not full SOTA):
 | 2026-07-25 | **Row-by-row status pass.** The 2026-07-09 "Post-implementation validation" section warned the rows above were stale; they were. 38 rows updated against the current tree, each with file:line evidence in its Status cell: **Done** — MON-01…13, MON-22, MON-25, SEC-01/GAP-005, SEC-02, SEC-03, SEC-04, SEC-06, SEC-08, SEC-09, SEC-10, SEC-18, OPS-01, OPS-03, OPS-05, OPS-06, OPS-13, OPS-15, OPS-16, OPS-27, QA-09, QA-12. **Partial** — MON-24 (advance fee math still float64), SEC-16 (RS384/512 still accepted), OPS-11 (pricing/underwriting unscraped), OPS-22 (ingress/TLS runbook still missing). Confirmed **still Open**: SEC-11 (`style-src 'unsafe-inline'`, `web/src/middleware.ts:161`), OPS-09 (otel-collector `exporters: [debug]` only, `deploy/k8s/base/otel-collector/configmap.yaml:46-54`), OPS-18, OPS-28. Summary dashboard recomputed by parsing the tables. |
 | 2026-07-27 | **MON-24 Done** — advance APR/service-fee and instant-payout fee paths converted from float64 to integer basis-point math (`prorateHalfUp` / half-up service fee / `feeFromBPS` + min floor). |
 | 2026-07-27 | **SEC-16 Done** — JWT `WithValidMethods` RS256-only (`auth.go`); RS384/RS512 rejected in middleware tests. **FE-06 Done** — LIVE honesty on marketplace + job spectate + JobDetail. Guarantee claim routes gated with `RequireFlag(nomarkup_guarantee)` (contracts + admin). |
+| 2026-07-27 | **wave26 verification pass.** Grep-confirmed Done (already fixed in tree): **MON-14** ProcessPayment CAS pending→processing + `capture:<id>` (`service.go`, `stripe.go`, concurrent test); **MON-16** `WithProviderAdvisoryLock` on RequestAdvance (`advance.go`); **MON-17** dispute resolve stamps transfer via `MarkListingOrderTransferred` + `listing-release:<orderID>` (`listing_charge.go`); **MON-19** award_bid active check under FOR UPDATE (`engines/bidding/src/engine.rs`); **MON-26** concurrent refund/release/capture tests (`money_concurrency_test.go`); **FE-10** ListingBidPanel `Link` to /login. **MON-24** / **SEC-16** already Done (reconfirmed integer fee math + RS256-only). Left **Open**: MON-15 (BNPL order residual review), MON-18 (FileListingDispute still unlocked; claim commits before transfer). Dashboard recount: Open 66 / Partial 2 / Done 46 / Demoted 25 / FA 1. |
 | 2026-07-25 | **MON-25 / QA-12 closed by CI change:** `.github/workflows/ci.yml` gains `fullstack-security-test`, which boots the docker-compose stack (`tests/integration/docker-compose.ci.yml` overlay) and runs the Tier-1 suites — 4 × `TestAuthBypass_*`, `TestDoubleSpend_ParallelAwardsCreateOneContract`, `TestOwnership_CrossAccountReadIsRejected` — plus the live-stack `TestIdempotency_PaymentDoubleSubmit`. Before this, every one of those tests was behind `//go:build integration` and ran in **no** CI job. Also fixes N11 and (partly) N7/N9's execution venue. |
 
 ---

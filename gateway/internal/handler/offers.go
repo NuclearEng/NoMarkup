@@ -183,6 +183,16 @@ func (h *OffersHandler) CreateOffer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Bid bond gate (parity with place bid): first-time buyers without an
+	// authorized bond covering ≥10% of the offer (floor $5) must post a
+	// bond before CreateOffer accepts. After listing/authz/block/UGC
+	// validations so a self-offer 403s and an inactive listing 409s rather
+	// than a misleading 402. Fail-open on lookup errors (same as place bid).
+	if needsBond, requiredBond := bidBondCheck(r.Context(), h.db, claims.UserID, listingID, req.AmountCents); needsBond {
+		writeJSON(w, http.StatusPaymentRequired, bidBondRequiredPayload(requiredBond, "offer"))
+		return
+	}
+
 	message := strings.TrimSpace(req.Message)
 	var msgArg interface{}
 	if message != "" {

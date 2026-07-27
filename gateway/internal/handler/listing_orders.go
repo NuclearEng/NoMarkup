@@ -597,6 +597,12 @@ func nullIfEmpty(s string) interface{} {
 	return s
 }
 
+// bidBondShouldCaptureOnNoShow: only when the absent party is the buyer
+// (they posted the marketplace bid bond). Seller no-show never forfeits it.
+func bidBondShouldCaptureOnNoShow(absentID, buyerID string) bool {
+	return absentID != "" && buyerID != "" && absentID == buyerID
+}
+
 // captureBuyerBidBondOnNoShow charges an authorized bid bond when the buyer
 // is the no-show party. Fail-soft: no-show counters already committed; bond
 // capture failure only logs residual (ops can retry). Uses ChargePromotion's

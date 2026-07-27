@@ -2,12 +2,6 @@ package handler
 
 import "testing"
 
-// bidBondShouldCaptureOnNoShow documents when ReportNoShow should attempt
-// forfeit: only when the absent party is the buyer (they posted the bond).
-func bidBondShouldCaptureOnNoShow(absentID, buyerID string) bool {
-	return absentID != "" && buyerID != "" && absentID == buyerID
-}
-
 func TestBidBondShouldCaptureOnNoShow(t *testing.T) {
 	t.Parallel()
 	if !bidBondShouldCaptureOnNoShow("buyer-1", "buyer-1") {

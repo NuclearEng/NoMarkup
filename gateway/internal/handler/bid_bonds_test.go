@@ -254,3 +254,54 @@ func TestBidBondConfirmPersistWithPM(t *testing.T) {
 
 // _ guarantees middleware import survives even if all other tests skip.
 var _ = middleware.Claims{}
+
+// TestBidBondCheck_NilDB documents the fail-open short-circuit used by both
+// place-bid and CreateOffer when the gateway has no pool (dev/sandbox).
+func TestBidBondCheck_NilDB(t *testing.T) {
+	t.Parallel()
+	needs, cents := bidBondCheck(t.Context(), nil, "user", "listing", 10000)
+	if needs || cents != 0 {
+		t.Fatalf("nil db: needs=%v cents=%d, want false/0", needs, cents)
+	}
+}
+
+// TestBidBondRequiredPayload pins the shared 402 body shape for place-bid
+// and CreateOffer. Drift in keys would break the web client's bond flow.
+func TestBidBondRequiredPayload(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		action string
+		want   string
+	}{
+		{"bid", "a bid bond is required before your first bid on this listing"},
+		{"offer", "a bid bond is required before your first offer on this listing"},
+		{"", "a bid bond is required before your first bid on this listing"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run("action="+tc.action, func(t *testing.T) {
+			t.Parallel()
+			p := bidBondRequiredPayload(1234, tc.action)
+			if p["requires_bid_bond"] != true {
+				t.Errorf("requires_bid_bond = %v, want true", p["requires_bid_bond"])
+			}
+			if p["bond_amount_cents"] != int64(1234) {
+				t.Errorf("bond_amount_cents = %v, want 1234", p["bond_amount_cents"])
+			}
+			if p["error"] != tc.want {
+				t.Errorf("error = %q, want %q", p["error"], tc.want)
+			}
+		})
+	}
+}
+
+// TestReleaseAuthorizedBidBondsForListing_EmptyListingID is the cancel /
+// close fail-soft guard: never touch the table without a listing id.
+func TestReleaseAuthorizedBidBondsForListing_EmptyListingID(t *testing.T) {
+	t.Parallel()
+	n, err := releaseAuthorizedBidBondsForListing(t.Context(), nil, "", "")
+	if err != nil || n != 0 {
+		t.Fatalf("empty listing: n=%d err=%v", n, err)
+	}
+}
+

@@ -184,6 +184,9 @@ func (s *ListingService) CancelListing(ctx context.Context, listingID, sellerID,
 	if s.search != nil {
 		removeListingFromSearchWithRetry(s.search, listingID, "cancel")
 	}
+	// Cancel has no winner: release every authorized bid bond for this listing.
+	// Fail-soft — cancel already succeeded; a release failure is logged for ops.
+	s.releaseListingBidBonds(ctx, listingID, "")
 	return l, nil
 }
 
@@ -286,13 +289,14 @@ func (s *ListingService) CloseListingAuction(ctx context.Context, listingID stri
 
 // releaseListingBidBonds fail-soft releases authorized bonds. excludeUserID
 // is the winner to keep authorized until escrow is funded (empty = all).
+// Used on auction close, cancel, and no-sale expiry.
 func (s *ListingService) releaseListingBidBonds(ctx context.Context, listingID, excludeUserID string) {
 	if s.repo == nil || listingID == "" {
 		return
 	}
 	n, err := s.repo.ReleaseAuthorizedBidBonds(ctx, listingID, excludeUserID)
 	if err != nil {
-		slog.WarnContext(ctx, "listing close: bid bond release failed (auction still closed)",
+		slog.WarnContext(ctx, "listing: bid bond release failed (primary action already committed)",
 			"listing_id", listingID,
 			"exclude_user_id", excludeUserID,
 			"error", err,
@@ -300,7 +304,7 @@ func (s *ListingService) releaseListingBidBonds(ctx context.Context, listingID, 
 		return
 	}
 	if n > 0 {
-		slog.InfoContext(ctx, "listing close: released authorized bid bonds",
+		slog.InfoContext(ctx, "listing: released authorized bid bonds",
 			"listing_id", listingID,
 			"released_count", n,
 			"exclude_user_id", excludeUserID,

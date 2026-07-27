@@ -718,6 +718,16 @@ func (h *ListingsHandler) CancelListing(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Cancel has no winner: release every authorized bond. Fail-soft —
+	// cancel already committed; a release failure is logged for ops.
+	if n, rerr := releaseAuthorizedBidBondsForListing(r.Context(), h.db, id, ""); rerr != nil {
+		slog.WarnContext(r.Context(), "cancel listing: bid bond release failed",
+			"listing_id", id, "error", rerr)
+	} else if n > 0 {
+		slog.InfoContext(r.Context(), "cancel listing: released authorized bid bonds",
+			"listing_id", id, "released_count", n)
+	}
+
 	listing, err := h.loadListingJSON(r.Context(), id)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "cancel listing post-load failed", "error", err, "id", id)

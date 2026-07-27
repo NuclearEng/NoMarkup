@@ -166,6 +166,65 @@ func activeBondCovers(ctx context.Context, db *pgxpool.Pool, userID, listingID s
 	return amount >= requiredCents, nil
 }
 
+// bidBondCheck returns (true, requiredBondCents) iff this user must post a
+// bond before placing a bid or creating an offer of intendedBidCents.
+// Shared by place-bid and CreateOffer so the gate cannot drift.
+//
+// Short-circuits:
+//  1. db is nil → false (dev/sandbox stacks without DB skip the check)
+//  2. user has any historical 'released' bond → trusted; skip forever
+//  3. user holds an 'authorized' bond on THIS listing covering required cents
+//
+// Errors fail open (let the action through) and log loudly so ops notices —
+// same policy as the original place-bid gate.
+func bidBondCheck(ctx context.Context, db *pgxpool.Pool, userID, listingID string, intendedBidCents int64) (needsBond bool, requiredCents int64) {
+	if db == nil {
+		return false, 0
+	}
+	required := requiredBondCents(intendedBidCents)
+
+	hasReleased, err := hasReleasedBond(ctx, db, userID)
+	if err != nil {
+		slog.WarnContext(ctx, "bid bond released-history lookup failed", "error", err, "user_id", userID)
+		return false, 0
+	}
+	if hasReleased {
+		return false, 0
+	}
+
+	// An existing authorized bond on THIS listing waives the gate — but only
+	// up to what the bond actually covers. Bare existence is not enough: a
+	// $5 floor bond posted against a $50 opening bid must not silently
+	// underwrite a later $10,000 raise, or the bond stops being proportional
+	// to what a no-show would cost the seller. A raise past the covered
+	// amount re-gates and asks for a bond sized to the new amount.
+	covered, err := activeBondCovers(ctx, db, userID, listingID, required)
+	if err != nil {
+		slog.WarnContext(ctx, "bid bond authorized lookup failed", "error", err, "user_id", userID, "listing_id", listingID)
+		return false, 0
+	}
+	if covered {
+		return false, 0
+	}
+
+	// No authorized bond covering this amount for this (listing, user):
+	// genuine first-time participant on this auction → gate.
+	return true, required
+}
+
+// bidBondRequiredPayload is the shared 402 body for place-bid and CreateOffer.
+// action is the noun in the error string ("bid" or "offer").
+func bidBondRequiredPayload(requiredCents int64, action string) map[string]interface{} {
+	if action == "" {
+		action = "bid"
+	}
+	return map[string]interface{}{
+		"requires_bid_bond": true,
+		"bond_amount_cents": requiredCents,
+		"error":             "a bid bond is required before your first " + action + " on this listing",
+	}
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // JSON shapes
 // ─────────────────────────────────────────────────────────────────────────
