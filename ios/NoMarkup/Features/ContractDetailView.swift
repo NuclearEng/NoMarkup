@@ -12,7 +12,10 @@ struct ContractDetailView: View {
     @State private var errorMessage: String?
     @State private var statusMessage: String?
     @State private var statusIsError = false
-    @State private var isActing = false
+    /// Title of the lifecycle action currently in flight; only that button shows a spinner.
+    @State private var actingActionTitle: String?
+    /// Title of the button that opened a confirmation dialog (used when confirm runs the action).
+    @State private var pendingConfirmActionTitle: String?
     @State private var actingMilestoneID: String?
     @State private var currentUserID: String?
     @State private var showCancelConfirm = false
@@ -48,14 +51,22 @@ struct ContractDetailView: View {
                 showApproveCompletionConfirm: $showApproveCompletionConfirm,
                 pendingMilestoneApproveID: $pendingMilestoneApproveID,
                 onCancel: {
-                    Task { await runAction { try await APIClient.shared.cancelContract(id: contractID) } }
+                    Task {
+                        await runAction(title: pendingConfirmActionTitle ?? "Cancel contract") {
+                            try await APIClient.shared.cancelContract(id: contractID)
+                        }
+                    }
                 },
                 onMarkComplete: {
-                    Task { await runAction { try await APIClient.shared.completeContract(id: contractID) } }
+                    Task {
+                        await runAction(title: pendingConfirmActionTitle ?? "Mark complete") {
+                            try await APIClient.shared.completeContract(id: contractID)
+                        }
+                    }
                 },
                 onApproveCompletion: {
                     Task {
-                        await runAction {
+                        await runAction(title: pendingConfirmActionTitle ?? "Approve completion") {
                             try await APIClient.shared.approveContractCompletion(id: contractID)
                         }
                     }
@@ -268,7 +279,9 @@ struct ContractDetailView: View {
                             tint: BrandTheme.accent,
                             prominent: true
                         ) {
-                            await runAction { try await APIClient.shared.acceptContract(id: contract.id) }
+                            await runAction(title: "Accept contract") {
+                                try await APIClient.shared.acceptContract(id: contract.id)
+                            }
                         }
                     } else {
                         Text("You accepted — waiting for the other party.")
@@ -281,6 +294,7 @@ struct ContractDetailView: View {
                         tint: BrandTheme.destructive,
                         prominent: false
                     ) {
+                        pendingConfirmActionTitle = "Decline / cancel"
                         showCancelConfirm = true
                     }
                 }
@@ -293,7 +307,9 @@ struct ContractDetailView: View {
                             tint: BrandTheme.accent,
                             prominent: true
                         ) {
-                            await runAction { try await APIClient.shared.startContract(id: contract.id) }
+                            await runAction(title: "Start work") {
+                                try await APIClient.shared.startContract(id: contract.id)
+                            }
                         }
                     }
                     if isProvider && contract.hasStarted && !contract.hasCompletedMark {
@@ -303,6 +319,7 @@ struct ContractDetailView: View {
                             tint: BrandTheme.success,
                             prominent: true
                         ) {
+                            pendingConfirmActionTitle = "Mark complete"
                             showMarkCompleteConfirm = true
                         }
                     }
@@ -318,6 +335,7 @@ struct ContractDetailView: View {
                             tint: BrandTheme.success,
                             prominent: true
                         ) {
+                            pendingConfirmActionTitle = "Approve completion"
                             showApproveCompletionConfirm = true
                         }
                     }
@@ -327,6 +345,7 @@ struct ContractDetailView: View {
                         tint: BrandTheme.destructive,
                         prominent: false
                     ) {
+                        pendingConfirmActionTitle = "Cancel contract"
                         showCancelConfirm = true
                     }
                     actionButton(
@@ -381,10 +400,11 @@ struct ContractDetailView: View {
         prominent: Bool,
         action: @escaping () async -> Void
     ) -> some View {
+        let isThisActing = actingActionTitle == title
         Button {
             Task { await action() }
         } label: {
-            if isActing {
+            if isThisActing {
                 ProgressView()
                     .tint(prominent ? BrandTheme.navy : BrandTheme.accent)
                     .frame(maxWidth: .infinity, minHeight: 44)
@@ -395,7 +415,7 @@ struct ContractDetailView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(tint)
-        .disabled(isActing || actingMilestoneID != nil)
+        .disabled(actingActionTitle != nil || actingMilestoneID != nil)
         .accessibilityHint(title)
     }
 
@@ -465,7 +485,7 @@ struct ContractDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.teal)
-                .disabled(isActing || actingMilestoneID != nil)
+                .disabled(actingActionTitle != nil || actingMilestoneID != nil)
             }
 
             if isCustomer && milestone.canApproveAsCustomer && contract.normalizedStatus == "active" {
@@ -483,7 +503,7 @@ struct ContractDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.success)
-                .disabled(isActing || actingMilestoneID != nil)
+                .disabled(actingActionTitle != nil || actingMilestoneID != nil)
                 .accessibilityHint("Confirm before approving this milestone payment step")
             }
         }
@@ -526,11 +546,12 @@ struct ContractDetailView: View {
     }
 
     @MainActor
-    private func runAction(_ work: () async throws -> ContractDetail) async {
-        isActing = true
+    private func runAction(title: String, _ work: () async throws -> ContractDetail) async {
+        actingActionTitle = title
+        pendingConfirmActionTitle = nil
         statusMessage = nil
         statusIsError = false
-        defer { isActing = false }
+        defer { actingActionTitle = nil }
         do {
             contract = try await work()
             statusIsError = false

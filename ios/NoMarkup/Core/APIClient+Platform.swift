@@ -160,12 +160,13 @@ extension APIClient {
         )
         if confirmed.contentTypeValid == false {
             let reason = confirmed.actualContentType?.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw APIClientError.httpStatus(
-                400,
-                detail: (reason?.isEmpty == false)
-                    ? "Upload rejected: \(reason!)"
-                    : "Upload rejected: content type invalid."
-            )
+            let detail: String
+            if let reason, !reason.isEmpty {
+                detail = "Upload rejected: \(reason)"
+            } else {
+                detail = "Upload rejected: content type invalid."
+            }
+            throw APIClientError.httpStatus(400, detail: detail)
         }
         let publicURL = confirmed.confirmedUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !publicURL.isEmpty else {

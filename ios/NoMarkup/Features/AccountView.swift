@@ -12,8 +12,9 @@ struct AccountView: View {
     @State private var sessionEmail: String?
     @State private var sessionUserID: String?
     @State private var unreadNotificationCount = 0
-    @State private var exportShareURL: URL?
-    @State private var showExportShare = false
+    @State private var exportShareItem: ExportShareItem?
+    /// Held separately so dismiss can delete the temp file after `sheet(item:)` clears the item.
+    @State private var exportTempFileURL: URL?
 
     var body: some View {
         NavigationStack {
@@ -283,12 +284,10 @@ struct AccountView: View {
                 }
             }
             #if canImport(UIKit)
-            .sheet(isPresented: $showExportShare, onDismiss: {
+            .sheet(item: $exportShareItem, onDismiss: {
                 cleanupExportShareFile()
-            }) {
-                if let exportShareURL {
-                    ActivityShareSheet(items: [exportShareURL])
-                }
+            }) { item in
+                ActivityShareSheet(items: [item.url])
             }
             #endif
         }
@@ -345,10 +344,10 @@ struct AccountView: View {
         do {
             let data = try await APIClient.shared.exportMyData()
             let url = try writeExportTempFile(data: data)
-            exportShareURL = url
             exportIsError = false
             exportMessage = "Export ready (\(data.count) bytes). Choose where to save or share."
-            showExportShare = true
+            exportTempFileURL = url
+            exportShareItem = ExportShareItem(url: url)
         } catch {
             exportIsError = true
             exportMessage = error.localizedDescription
@@ -367,11 +366,18 @@ struct AccountView: View {
     }
 
     private func cleanupExportShareFile() {
-        if let exportShareURL {
-            try? FileManager.default.removeItem(at: exportShareURL)
+        if let exportTempFileURL {
+            try? FileManager.default.removeItem(at: exportTempFileURL)
         }
-        exportShareURL = nil
+        exportTempFileURL = nil
+        exportShareItem = nil
     }
+}
+
+/// Identifiable wrapper so export uses `sheet(item:)` and never presents an empty sheet.
+private struct ExportShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
 }
 
 #if canImport(UIKit)

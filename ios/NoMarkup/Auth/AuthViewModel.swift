@@ -24,29 +24,47 @@ final class AuthViewModel: ObservableObject {
 
     private let tokenStore = KeychainTokenStore()
     private let api = APIClient.shared
+    /// NotificationCenter token for mid-session expiry (posted by APIClient).
+    /// `nonisolated(unsafe)` so `deinit` can remove the observer without MainActor hop.
+    nonisolated(unsafe) private var sessionExpiredObserver: NSObjectProtocol?
 
     init() {
         restoreSessionIfPossible()
+        observeSessionExpired()
     }
 
-    /// Restore from Keychain. If access is missing but a refresh token remains, attempt
-    /// a silent refresh (APIClient also retries once on 401 mid-session).
+    deinit {
+        if let sessionExpiredObserver {
+            NotificationCenter.default.removeObserver(sessionExpiredObserver)
+        }
+    }
+
+    /// Restore from Keychain.
+    ///
+    /// - Access and/or refresh present → optimistic signed-in (no login flash).
+    /// - Refresh present → always attempt background `refreshSession()` on cold start so an
+    ///   expired access token never lands the user in a 401 storm on first authed call.
+    /// - APIClient still single-flight-refreshes once on mid-session 401s.
     private func restoreSessionIfPossible() {
         do {
-            if let access = try tokenStore.read(.accessToken), !access.isEmpty {
-                isAuthenticated = true
+            let access = try tokenStore.read(.accessToken)
+            let refresh = try tokenStore.read(.refreshToken)
+            let hasAccess = access.map { !$0.isEmpty } ?? false
+            let hasRefresh = refresh.map { !$0.isEmpty } ?? false
+
+            guard hasAccess || hasRefresh else {
+                isAuthenticated = false
                 isScaffoldSession = false
                 return
             }
-            if let refresh = try tokenStore.read(.refreshToken), !refresh.isEmpty {
-                // Optimistic signed-in while refresh runs so tabs don't flash login.
-                isAuthenticated = true
-                isScaffoldSession = false
-                Task { await restoreViaRefresh() }
-                return
-            }
-            isAuthenticated = false
+
+            // Optimistic signed-in while (optional) refresh runs so RootView doesn't flash login.
+            isAuthenticated = true
             isScaffoldSession = false
+
+            if hasRefresh {
+                Task { await restoreViaRefresh() }
+            }
         } catch {
             // Non-fatal: start signed out.
             isAuthenticated = false
@@ -54,16 +72,61 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    /// Silent token refresh when only the refresh token survived (access expired/cleared).
+    /// Proactive / silent refresh on cold start (single-flight via APIClient).
     private func restoreViaRefresh() async {
         do {
             _ = try await api.refreshSession()
             isScaffoldSession = false
             isAuthenticated = true
+        } catch let error as APIClientError where error.isUnauthorized {
+            // Definitive auth failure — clear session so RootView returns to LoginView.
+            handleDefinitiveAuthFailure(reason: .refreshRejected)
         } catch {
-            try? tokenStore.clearSession()
-            isAuthenticated = false
-            isScaffoldSession = false
+            // Transient (network / 5xx): keep optimistic session if tokens remain.
+            // Mid-session 401s will re-attempt refresh via APIClient; if that fails
+            // definitively, `NoMarkupSessionExpired` drives sign-out.
+        }
+    }
+
+    // MARK: - Session expiry (APIClient → NotificationCenter → AuthViewModel)
+
+    private func observeSessionExpired() {
+        sessionExpiredObserver = NotificationCenter.default.addObserver(
+            forName: .noMarkupSessionExpired,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleSessionExpiredNotification()
+            }
+        }
+    }
+
+    /// Called when APIClient posts `.noMarkupSessionExpired` after a 401 that
+    /// remains after (or without) a refresh attempt. Does not tear down scaffold browse.
+    func handleSessionExpiredNotification() {
+        guard !isScaffoldSession else { return }
+        guard isAuthenticated else { return }
+        handleDefinitiveAuthFailure(reason: .sessionExpired)
+    }
+
+    private enum AuthFailureReason {
+        case refreshRejected
+        case sessionExpired
+    }
+
+    /// Clear tokens + UI auth state. Only path that flips `isAuthenticated` false on
+    /// server-confirmed auth death (not network blips).
+    private func handleDefinitiveAuthFailure(reason: AuthFailureReason) {
+        try? tokenStore.clearSession()
+        isAuthenticated = false
+        isScaffoldSession = false
+        password = ""
+        clearMFAState()
+        errorMessage = nil
+        switch reason {
+        case .refreshRejected, .sessionExpired:
+            statusMessage = "Your session expired. Please sign in again."
         }
     }
 

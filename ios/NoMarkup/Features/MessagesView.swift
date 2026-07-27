@@ -182,6 +182,7 @@ struct ChatThreadView: View {
     let channel: ChatChannelSummary
 
     @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.scenePhase) private var scenePhase
     @State private var messages: [ChatMessage] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -241,6 +242,7 @@ struct ChatThreadView: View {
         .task(id: channel.id) {
             // Quiet poll every 5s while the thread stays open; cancels on disappear / id change.
             // Stops when signed out / session invalid so we don't thrash 401s.
+            // Pauses network work while the app is backgrounded / inactive; resumes when active.
             while !Task.isCancelled {
                 do {
                     try await Task.sleep(nanoseconds: Self.pollIntervalNanoseconds)
@@ -251,6 +253,7 @@ struct ChatThreadView: View {
                 if needsSignIn || auth.isScaffoldSession || !auth.isAuthenticated {
                     break
                 }
+                guard scenePhase == .active else { continue }
                 await loadMessages(showLoading: false)
             }
         }

@@ -3,6 +3,7 @@ import SwiftUI
 /// Notification inbox — list, mark-one-read, mark-all-read, unread count.
 struct NotificationsView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var items: [AppNotification] = []
     @State private var isLoading = false
@@ -12,6 +13,9 @@ struct NotificationsView: View {
     @State private var isMarkingAll = false
     @State private var actionMessage: String?
     @State private var markingID: String?
+
+    /// Quiet list refresh while the screen is open and the app is active.
+    private static let quietRefreshIntervalNanoseconds: UInt64 = 30_000_000_000
 
     private var localUnreadCount: Int {
         items.filter(\.unread).count
@@ -51,7 +55,7 @@ struct NotificationsView: View {
                     message: errorMessage,
                     actionTitle: "Try again"
                 ) {
-                    Task { await load() }
+                    Task { await load(showLoading: true) }
                 }
             } else if items.isEmpty {
                 BrandEmptyState(
@@ -121,8 +125,23 @@ struct NotificationsView: View {
                 }
             }
         }
-        .task { await load() }
-        .refreshable { await load() }
+        .task { await load(showLoading: true) }
+        .task {
+            // Quiet refresh every 30s only while signed in and scene is active.
+            // Cancels when the view disappears; no Timer.scheduledTimer.
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: Self.quietRefreshIntervalNanoseconds)
+                } catch {
+                    break
+                }
+                guard !Task.isCancelled else { break }
+                guard scenePhase == .active else { continue }
+                guard auth.isAuthenticated, !auth.isScaffoldSession, !needsSignIn else { continue }
+                await load(showLoading: false)
+            }
+        }
+        .refreshable { await load(showLoading: true) }
     }
 
     private var navigationTitleText: String {
@@ -196,7 +215,7 @@ struct NotificationsView: View {
     }
 
     @MainActor
-    private func load() async {
+    private func load(showLoading: Bool = true) async {
         if auth.isScaffoldSession || !auth.isAuthenticated {
             items = []
             unreadCount = 0
@@ -204,11 +223,17 @@ struct NotificationsView: View {
             return
         }
 
-        isLoading = true
-        errorMessage = nil
+        if showLoading {
+            isLoading = true
+            errorMessage = nil
+            actionMessage = nil
+        }
         needsSignIn = false
-        actionMessage = nil
-        defer { isLoading = false }
+        defer {
+            if showLoading {
+                isLoading = false
+            }
+        }
 
         do {
             let response = try await APIClient.shared.fetchNotifications(page: 1, pageSize: 40)
@@ -220,8 +245,10 @@ struct NotificationsView: View {
                 unreadCount = items.filter(\.unread).count
             }
         } catch let error as APIClientError where error.isUnauthorized {
-            items = []
-            unreadCount = 0
+            if showLoading {
+                items = []
+                unreadCount = 0
+            }
             needsSignIn = true
         } catch {
             if items.isEmpty {

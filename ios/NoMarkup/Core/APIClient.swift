@@ -875,32 +875,49 @@ actor APIClient {
             throw APIClientError.unreachable
         }
 
-        // Single retry on 401 for authenticated calls: refresh access token, then re-issue.
-        if !didRefresh,
-           auth != .none,
+        // Single retry on 401 for authenticated calls: single-flight refresh, then re-issue.
+        // On definitive failure (refresh rejected / no refresh token / still 401 after retry),
+        // post `.noMarkupSessionExpired` so AuthViewModel can sign out on the main actor.
+        // APIClient never clears Keychain / UI state itself (actor boundary + scaffold safety).
+        if auth != .none,
            let http = response as? HTTPURLResponse,
-           http.statusCode == 401,
-           let refresh = try? tokenStore.read(.refreshToken),
-           !refresh.isEmpty
+           http.statusCode == 401
         {
-            do {
-                _ = try await refreshSession()
-                return try await perform(
-                    method: method,
-                    pathComponents: pathComponents,
-                    query: query,
-                    body: body,
-                    auth: auth,
-                    headers: headers,
-                    didRefresh: true
-                )
-            } catch {
-                // Fall through to original 401 surface if refresh fails.
+            if !didRefresh {
+                let hasRefresh = (try? tokenStore.read(.refreshToken)).map { !$0.isEmpty } ?? false
+                if hasRefresh {
+                    do {
+                        _ = try await refreshSession()
+                        return try await perform(
+                            method: method,
+                            pathComponents: pathComponents,
+                            query: query,
+                            body: body,
+                            auth: auth,
+                            headers: headers,
+                            didRefresh: true
+                        )
+                    } catch {
+                        // Refresh failed completely — notify AuthViewModel; surface original 401.
+                        Self.postSessionExpired()
+                    }
+                } else {
+                    // No refresh token — session cannot be recovered.
+                    Self.postSessionExpired()
+                }
+            } else {
+                // Already refreshed once for this request; still 401 → definitive.
+                Self.postSessionExpired()
             }
         }
 
         try Self.throwIfNeeded(response: response, data: data)
         return data
+    }
+
+    /// Notify the main-actor auth layer that the session is dead. Does not clear tokens.
+    private static func postSessionExpired() {
+        NotificationCenter.default.post(name: .noMarkupSessionExpired, object: nil)
     }
 
     private static func throwIfNeeded(response: URLResponse, data: Data) throws {
@@ -1110,6 +1127,15 @@ struct ListingReportResponse: Codable, Sendable {
         }
         return "Thanks — your report was submitted."
     }
+}
+
+// MARK: - Session notifications
+
+extension Notification.Name {
+    /// Posted by `APIClient` when an authenticated request gets 401 after refresh fails
+    /// (or there is no refresh token). `AuthViewModel` observes this and signs out.
+    /// Raw name: `NoMarkupSessionExpired`.
+    static let noMarkupSessionExpired = Notification.Name("NoMarkupSessionExpired")
 }
 
 enum APIClientError: Error, LocalizedError {

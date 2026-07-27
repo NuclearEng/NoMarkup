@@ -210,6 +210,7 @@ struct LoginView: View {
     private var primaryActions: some View {
         VStack(spacing: 12) {
             Button {
+                guard !auth.isLoading else { return }
                 Task { await auth.login() }
             } label: {
                 Group {

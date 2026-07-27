@@ -224,6 +224,9 @@ struct PhotoPickSection: View {
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(BrandTheme.textPrimary, BrandTheme.navy.opacity(0.75))
                     .font(.system(size: 20))
+                    // Expand hit target to HIG 44×44 without enlarging the glyph.
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .offset(x: 6, y: -6)
