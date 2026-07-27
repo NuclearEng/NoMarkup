@@ -229,14 +229,21 @@ extension APIClient {
             throw APIClientError.httpStatus(400, detail: "intended_bid_cents must be positive")
         }
         let body = CreateListingBidBondBody(intendedBidCents: intendedBidCents)
-        // Stable per listing+amount so double-tap / retry cannot mint duplicate SetupIntents.
-        let idem = "bid-bond:\(listingId):\(intendedBidCents)"
-        return try await postJSON(
-            pathComponents: ["api", "v1", "listings", listingId, "bid-bond"],
-            body: body,
-            authorized: .required,
-            headers: ["Idempotency-Key": idem]
-        )
+        // Sticky UUID keyed by listing+amount (web parity). Retries reuse; clear on success.
+        let opKey = "bid-bond:\(listingId):\(intendedBidCents)"
+        let headers = idempotencyHeader(for: opKey)
+        do {
+            let response: CreateListingBidBondResponse = try await postJSON(
+                pathComponents: ["api", "v1", "listings", listingId, "bid-bond"],
+                body: body,
+                authorized: .required,
+                headers: headers
+            )
+            clearIdempotencyKey(opKey)
+            return response
+        } catch {
+            throw error
+        }
     }
 
     /// POST `/api/v1/listings/{id}/bid-bond/confirm` — flip pending → authorized after Stripe SetupIntent succeeds.
@@ -251,13 +258,20 @@ extension APIClient {
             throw APIClientError.httpStatus(400, detail: "bond_id is required")
         }
         let body = ConfirmListingBidBondBody(bondId: trimmed)
-        let idem = "bid-bond-confirm:\(listingId):\(trimmed)"
-        return try await postJSON(
-            pathComponents: ["api", "v1", "listings", listingId, "bid-bond", "confirm"],
-            body: body,
-            authorized: .required,
-            headers: ["Idempotency-Key": idem]
-        )
+        let opKey = "bid-bond-confirm:\(listingId):\(trimmed)"
+        let headers = idempotencyHeader(for: opKey)
+        do {
+            let response: ConfirmListingBidBondResponse = try await postJSON(
+                pathComponents: ["api", "v1", "listings", listingId, "bid-bond", "confirm"],
+                body: body,
+                authorized: .required,
+                headers: headers
+            )
+            clearIdempotencyKey(opKey)
+            return response
+        } catch {
+            throw error
+        }
     }
 
     /// POST `/api/v1/listings/{id}/bids/{bidId}/retract` — eBay-style 60s window for the leading active bid.

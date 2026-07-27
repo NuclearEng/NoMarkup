@@ -14,6 +14,11 @@ actor APIClient {
     /// Single-flight refresh so parallel 401s don't rotate the refresh token twice.
     private var refreshTask: Task<AuthTokenPair, Error>?
 
+    /// Sticky Idempotency-Key map (web `idempotencyHeader` parity).
+    /// Logical operation id → header value. Retries reuse the same key until
+    /// `clearIdempotencyKey` after a terminal success so intentional re-attempts mint fresh.
+    private var idempotencyKeyByOperation: [String: String] = [:]
+
     init(
         session: URLSession = .shared,
         tokenStore: KeychainTokenStore? = nil
@@ -24,6 +29,30 @@ actor APIClient {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         decoder.dateDecodingStrategy = .iso8601
         self.decoder = decoder
+    }
+
+    // MARK: - Sticky Idempotency-Key (money mutations)
+
+    /// Returns `Idempotency-Key` header for a stable logical operation id.
+    /// Same `operationKey` reuses one UUID across retries / double-taps until cleared.
+    func idempotencyHeader(for operationKey: String) -> [String: String] {
+        let trimmed = operationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return ["Idempotency-Key": UUID().uuidString]
+        }
+        if let existing = idempotencyKeyByOperation[trimmed] {
+            return ["Idempotency-Key": existing]
+        }
+        let minted = UUID().uuidString
+        idempotencyKeyByOperation[trimmed] = minted
+        return ["Idempotency-Key": minted]
+    }
+
+    /// Drop a stored key so the next call for this operation mints a fresh one.
+    func clearIdempotencyKey(_ operationKey: String) {
+        let trimmed = operationKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        idempotencyKeyByOperation.removeValue(forKey: trimmed)
     }
 
     /// Shared keychain for extension modules (auth) so login/refresh share one store.
@@ -420,33 +449,48 @@ actor APIClient {
 
     /// POST `/api/v1/jobs/{id}/bids` — auth required (provider role on server).
     /// Body: `{ "amount_cents": N }`
-    /// Idempotency-Key: `job-bid:{jobId}:{amountCents}:{uuid}` (money-adjacent; safe retries).
+    /// Idempotency-Key: sticky UUID keyed by `job-bid:{jobId}:{amountCents}` (web parity).
+    /// Retries reuse the same key; cleared only after definitive success.
     @discardableResult
     func placeJobBid(jobId: String, amountCents: Int64) async throws -> Data {
         let body = AmountCentsBody(amountCents: amountCents)
-        let idem = "job-bid:\(jobId):\(amountCents):\(UUID().uuidString)"
-        return try await postData(
-            pathComponents: ["api", "v1", "jobs", jobId, "bids"],
-            body: body,
-            authorized: .required,
-            headers: ["Idempotency-Key": idem]
-        )
+        let opKey = "job-bid:\(jobId):\(amountCents)"
+        let headers = idempotencyHeader(for: opKey)
+        do {
+            let data = try await postData(
+                pathComponents: ["api", "v1", "jobs", jobId, "bids"],
+                body: body,
+                authorized: .required,
+                headers: headers
+            )
+            clearIdempotencyKey(opKey)
+            return data
+        } catch {
+            // Keep sticky key so network/double-tap retries can dedupe.
+            throw error
+        }
     }
 
     /// POST `/api/v1/listings/{id}/bids` — auth required.
     /// Body: `{ "amount_cents": N }` (optional `max_bid_cents` omitted for MVP).
-    /// Idempotency-Key required by gateway middleware (MON-06/22).
+    /// Idempotency-Key sticky by `listing-bid:{listingId}:{amountCents}` (MON-06/22 + web parity).
     @discardableResult
     func placeListingBid(listingId: String, amountCents: Int64) async throws -> Data {
         let body = AmountCentsBody(amountCents: amountCents)
-        // Unique per attempt so intentional re-bids are not blocked as replays.
-        let idem = "listing-bid:\(listingId):\(amountCents):\(UUID().uuidString)"
-        return try await postData(
-            pathComponents: ["api", "v1", "listings", listingId, "bids"],
-            body: body,
-            authorized: .required,
-            headers: ["Idempotency-Key": idem]
-        )
+        let opKey = "listing-bid:\(listingId):\(amountCents)"
+        let headers = idempotencyHeader(for: opKey)
+        do {
+            let data = try await postData(
+                pathComponents: ["api", "v1", "listings", listingId, "bids"],
+                body: body,
+                authorized: .required,
+                headers: headers
+            )
+            clearIdempotencyKey(opKey)
+            return data
+        } catch {
+            throw error
+        }
     }
 
     /// GET `/api/v1/jobs/{id}/bids` — reverse-auction ladder (job owner / auth required).

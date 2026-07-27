@@ -689,6 +689,14 @@ private struct HomeJobCard: View {
         job.bidCount ?? 0
     }
 
+    /// H1.4 home parity — typical reverse-auction band from starting bid when present.
+    private var marketBandCaption: String? {
+        guard let start = job.startingBidCents, start > 0,
+              let estimate = MarketRangeMath.reverseAuctionBand(startingBidCents: start)
+        else { return nil }
+        return "\(estimate.source.titleLabel): \(estimate.rangeCaption)"
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             // Leading gold rail
@@ -743,6 +751,15 @@ private struct HomeJobCard: View {
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("\(budgetCaption) \(price)")
                     }
+                }
+
+                // Market band (H1.4 home parity) — budget ceiling → typical reverse-auction room.
+                if let marketBandCaption {
+                    Text(marketBandCaption)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .lineLimit(1)
+                        .accessibilityLabel(marketBandCaption)
                 }
 
                 // Intelligence row: location · bids · live countdown
@@ -849,6 +866,9 @@ private struct HomeJobCard: View {
         var parts: [String] = [auctionBadgeLabel, job.displayTitle]
         if let price = budgetAmount {
             parts.append("\(budgetCaption) \(price)")
+        }
+        if let marketBandCaption {
+            parts.append(marketBandCaption)
         }
         if bidCountValue > 0 {
             parts.append("\(bidCountValue) bids")

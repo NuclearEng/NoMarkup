@@ -11,7 +11,7 @@
 
 | Check | Result |
 |-------|--------|
-| 1. Idempotency-Key on listed money mutations | **PASS (middleware)** — job bid, listing bid, buy-now, order pay, bid-bond create/confirm: gateway enforces + web/iOS send headers. Residual: handler durable dedup for job bid/bond; iOS job-bid key UUID-per-call (SEC-GATE-07) |
+| 1. Idempotency-Key on listed money mutations | **PASS (middleware + sticky clients)** — job bid, listing bid, buy-now, order pay, bid-bond create/confirm: gateway enforces + web/iOS send headers. **iOS sticky keys** (web parity): `APIClient.idempotencyHeader(for:)` + clear-on-success for job/listing bid, bond create/confirm, payment release. Residual: handler durable SQL dedup for job bid/bond (SEC-GATE-07 class) |
 | 2. No force-unwraps in iOS money paths | **PASS** |
 | 3. `iOSHardOffKeys` still enforced | **PASS** |
 | 4. Amounts are `Int64` cents in API bodies | **PASS** (iOS encode + gateway decode) |
@@ -47,12 +47,12 @@ Header name is `Idempotency-Key` (`idempotencyKeyHeader` at line 55).
 
 ### Gateway — route mounts
 
-**Job bid — auth only, no idempotency middleware:**
+**Job bid — auth + RequireIdempotencyKey (MON-06/22 parity with listing bids):**
 
 ```256:258:gateway/internal/router/router.go
-		r.With(authMW.Handler).Post("/{id}/bids", bidHandler.PlaceBid)
-		r.With(authMW.Handler).Post("/{id}/bids/accept-offer", bidHandler.AcceptOffer)
-		r.With(authMW.Handler).Post("/{id}/bids/{bidID}/award", bidHandler.AwardBid)
+		// MON-06/22: money-adjacent mutation requires Idempotency-Key (parity with listing bids).
+		r.With(authMW.Handler, middleware.RequireIdempotencyKey(cacheClient)).
+			Post("/{id}/bids", bidHandler.PlaceBid)
 ```
 
 **Listing bid / buy-now / order pay — RequireIdempotencyKey:**

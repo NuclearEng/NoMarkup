@@ -391,15 +391,22 @@ extension APIClient {
             throw APIClientError.httpStatus(400, detail: "Payment id is required.")
         }
         let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Fresh key per attempt so a prior failed attempt does not poison retries;
-        // success is still deduped server-side by CAS escrow→released.
-        let idem = "payment-release:\(id):\(UUID().uuidString)"
-        return try await postJSON(
-            pathComponents: ["api", "v1", "payments", id, "release"],
-            body: ContractsReleasePaymentBody(reason: trimmedReason),
-            authorized: .required,
-            headers: ["Idempotency-Key": idem]
-        )
+        // Sticky key for release retries (double-tap / flaky network). Cleared on success
+        // so a later intentional re-release attempt (after refund/re-escrow) mints fresh.
+        let opKey = "payment-release:\(id)"
+        let headers = idempotencyHeader(for: opKey)
+        do {
+            let payment: ContractPayment = try await postJSON(
+                pathComponents: ["api", "v1", "payments", id, "release"],
+                body: ContractsReleasePaymentBody(reason: trimmedReason),
+                authorized: .required,
+                headers: headers
+            )
+            clearIdempotencyKey(opKey)
+            return payment
+        } catch {
+            throw error
+        }
     }
 }
 
