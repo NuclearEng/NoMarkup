@@ -1,14 +1,21 @@
 'use client';
 
 import { AlertTriangle, Check, CheckCheck, Loader2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { useChannel, useMarkRead, useMessages } from '@/hooks/useChannels';
+import {
+  useChannel,
+  useMarkRead,
+  useMessages,
+  useRespondToTerms,
+} from '@/hooks/useChannels';
+import { getApiErrorMessage } from '@/lib/api';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
-import { MESSAGE_TYPE } from '@/types';
+import { CHANNEL_STATUS, MESSAGE_TYPE } from '@/types';
 import type { ChatMessage } from '@/types';
 
 function formatDateSeparator(dateString: string): string {
@@ -38,8 +45,27 @@ function isSameDay(a: string, b: string): boolean {
   );
 }
 
-function isProposedTermsMessage(content: string): boolean {
-  return content.startsWith('[Proposed Terms]');
+function normalizedMessageType(message: ChatMessage): string {
+  return (message.message_type ?? '').trim().toLowerCase();
+}
+
+/** True for system-style pills including terms accept/reject outcomes. */
+function isSystemStyleMessage(message: ChatMessage): boolean {
+  const t = normalizedMessageType(message);
+  return (
+    t === MESSAGE_TYPE.SYSTEM ||
+    t === MESSAGE_TYPE.TERMS_ACCEPTED ||
+    t === MESSAGE_TYPE.TERMS_REJECTED
+  );
+}
+
+/**
+ * Local-terms proposal (FR-8.9 / FR-5.4). Native path uses `message_type=proposed_terms`;
+ * legacy web path may encode as plain text with a `[Proposed Terms]` body prefix.
+ */
+function isProposedTermsMessage(message: ChatMessage): boolean {
+  if (normalizedMessageType(message) === MESSAGE_TYPE.PROPOSED_TERMS) return true;
+  return message.content.trimStart().startsWith('[Proposed Terms]');
 }
 
 interface ParsedTerms {
@@ -50,7 +76,7 @@ interface ParsedTerms {
 }
 
 function parseProposedTerms(content: string): ParsedTerms | null {
-  if (!isProposedTermsMessage(content)) return null;
+  if (!content.trimStart().startsWith('[Proposed Terms]')) return null;
 
   const lines = content.split('\n');
   let paymentType = '';
@@ -84,9 +110,20 @@ function parseProposedTerms(content: string): ParsedTerms | null {
   return { paymentType, amount, milestones, description };
 }
 
-function ProposedTermsCard({ content }: { content: string }) {
+function ProposedTermsCard({
+  content,
+  canRespond,
+  isResponding,
+  onAccept,
+  onReject,
+}: {
+  content: string;
+  canRespond: boolean;
+  isResponding: boolean;
+  onAccept: () => void;
+  onReject: () => void;
+}) {
   const terms = parseProposedTerms(content);
-  if (!terms) return null;
 
   return (
     <Card className="border-primary/30 bg-primary/5">
@@ -94,32 +131,71 @@ function ProposedTermsCard({ content }: { content: string }) {
         <p className="text-xs font-semibold uppercase tracking-wide text-primary">
           Proposed Terms
         </p>
-        <div className="grid gap-1.5 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Payment</span>
-            <span className="font-medium capitalize">{terms.paymentType.replace(/_/g, ' ')}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Amount</span>
-            <span className="font-semibold">{terms.amount}</span>
-          </div>
-          {terms.milestones ? (
-            <div>
-              <span className="text-muted-foreground">Milestones</span>
-              <div className="mt-1 space-y-0.5 pl-2 text-xs">
-                {terms.milestones.split('\n').map((m, i) => (
-                  <p key={`ms-${String(i)}`}>{m}</p>
-                ))}
+        {terms ? (
+          <div className="grid gap-1.5 text-sm">
+            <div className="flex justify-between gap-3">
+              <span className="text-muted-foreground">Payment</span>
+              <span className="font-medium capitalize">
+                {terms.paymentType.replace(/_/g, ' ')}
+              </span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-muted-foreground">Amount</span>
+              <span className="font-semibold">{terms.amount}</span>
+            </div>
+            {terms.milestones ? (
+              <div>
+                <span className="text-muted-foreground">Milestones</span>
+                <div className="mt-1 space-y-0.5 pl-2 text-xs">
+                  {terms.milestones.split('\n').map((m, i) => (
+                    <p key={`ms-${String(i)}`}>{m}</p>
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : null}
-          {terms.description ? (
-            <div>
-              <span className="text-muted-foreground">Scope</span>
-              <p className="mt-0.5 text-xs">{terms.description}</p>
-            </div>
-          ) : null}
-        </div>
+            ) : null}
+            {terms.description ? (
+              <div>
+                <span className="text-muted-foreground">Scope</span>
+                <p className="mt-0.5 text-xs">{terms.description}</p>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <p className="whitespace-pre-wrap break-words text-sm">{content}</p>
+        )}
+
+        {canRespond ? (
+          <div className="flex gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="min-h-[44px] flex-1"
+              disabled={isResponding}
+              onClick={onReject}
+              aria-label="Reject proposed terms"
+            >
+              Reject
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="min-h-[44px] flex-1"
+              disabled={isResponding}
+              onClick={onAccept}
+              aria-label="Accept proposed terms"
+            >
+              {isResponding ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                  Saving…
+                </>
+              ) : (
+                'Accept'
+              )}
+            </Button>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -148,13 +224,21 @@ function MessageBubble({
   isOwnMessage,
   senderLabel,
   isLastRead,
+  canRespondToTerms,
+  isRespondingToTerms,
+  onAcceptTerms,
+  onRejectTerms,
 }: {
   message: ChatMessage;
   isOwnMessage: boolean;
   senderLabel: string;
   isLastRead: boolean;
+  canRespondToTerms: boolean;
+  isRespondingToTerms: boolean;
+  onAcceptTerms: () => void;
+  onRejectTerms: () => void;
 }) {
-  if (message.message_type === MESSAGE_TYPE.SYSTEM) {
+  if (isSystemStyleMessage(message)) {
     return (
       <div className="flex justify-center py-2">
         <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
@@ -164,7 +248,7 @@ function MessageBubble({
     );
   }
 
-  const isTermsProposal = isProposedTermsMessage(message.content);
+  const isTermsProposal = isProposedTermsMessage(message);
 
   return (
     <div
@@ -192,7 +276,13 @@ function MessageBubble({
             <span className="italic text-muted-foreground">This message was deleted</span>
           </div>
         ) : isTermsProposal ? (
-          <ProposedTermsCard content={message.content} />
+          <ProposedTermsCard
+            content={message.content}
+            canRespond={canRespondToTerms}
+            isResponding={isRespondingToTerms}
+            onAccept={onAcceptTerms}
+            onReject={onRejectTerms}
+          />
         ) : (
           <div
             className={cn(
@@ -222,8 +312,44 @@ function MessageBubble({
   );
 }
 
+/**
+ * Customer may Accept/Reject only the latest open proposed-terms card that is
+ * not theirs. Hides controls once any later terms_accepted/terms_rejected exists
+ * (explicit response). Server re-enforces customer-only + membership.
+ */
+function canRespondToProposedTerms(
+  message: ChatMessage,
+  messages: ChatMessage[],
+  opts: {
+    isChannelCustomer: boolean;
+    channelComposable: boolean;
+    currentUserId: string | undefined;
+  },
+): boolean {
+  if (!opts.channelComposable || !opts.isChannelCustomer || !opts.currentUserId) {
+    return false;
+  }
+  if (message.sender_id === opts.currentUserId) return false;
+  if (!isProposedTermsMessage(message)) return false;
+
+  const idx = messages.findIndex((m) => m.id === message.id);
+  if (idx < 0) return false;
+
+  const later = messages.slice(idx + 1);
+  const alreadyResponded = later.some((msg) => {
+    const t = normalizedMessageType(msg);
+    return t === MESSAGE_TYPE.TERMS_ACCEPTED || t === MESSAGE_TYPE.TERMS_REJECTED;
+  });
+  if (alreadyResponded) return false;
+
+  // Prefer only the newest proposed-terms message.
+  const laterProposal = later.some((msg) => isProposedTermsMessage(msg));
+  return !laterProposal;
+}
+
 export function MessageThread({ channelId }: { channelId: string }) {
   const [beforeCursor, setBeforeCursor] = useState<string | undefined>(undefined);
+  const [respondingMessageId, setRespondingMessageId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
@@ -231,6 +357,7 @@ export function MessageThread({ channelId }: { channelId: string }) {
   const didInitialScrollRef = useRef(false);
   const user = useAuthStore((state) => state.user);
   const markRead = useMarkRead();
+  const respondToTerms = useRespondToTerms();
   // A channel has exactly two parties, so label incoming bubbles with the other
   // party's display name (own bubbles say "You") instead of the raw sender UUID.
   const { data: channelData } = useChannel(channelId);
@@ -238,6 +365,10 @@ export function MessageThread({ channelId }: { channelId: string }) {
   const otherPartyName =
     (user?.id === channel?.customer_id ? channel?.provider_name : channel?.customer_name) ??
     'Member';
+
+  const isChannelCustomer = !!user?.id && !!channel?.customer_id && user.id === channel.customer_id;
+  const channelComposable =
+    channel?.status !== CHANNEL_STATUS.CLOSED && channel?.status !== CHANNEL_STATUS.READ_ONLY;
 
   const { data, isLoading, isError } = useMessages(channelId, {
     before: beforeCursor,
@@ -249,11 +380,13 @@ export function MessageThread({ channelId }: { channelId: string }) {
   // normalize to ascending order here. This also makes messages[0] the OLDEST
   // message (the correct `before` cursor for load-older pagination) and makes
   // the bottom sentinel line up with the newest message (the scroll target).
-  const messages = [...(data?.messages ?? [])].sort((a, b) => {
-    const delta = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    // Stable tiebreak on id so equal timestamps keep a deterministic order.
-    return delta !== 0 ? delta : a.id.localeCompare(b.id);
-  });
+  const messages = useMemo(() => {
+    return [...(data?.messages ?? [])].sort((a, b) => {
+      const delta = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      // Stable tiebreak on id so equal timestamps keep a deterministic order.
+      return delta !== 0 ? delta : a.id.localeCompare(b.id);
+    });
+  }, [data?.messages]);
   const hasMore = data?.has_more ?? false;
 
   // Determine the last message read by the other party.
@@ -354,6 +487,36 @@ export function MessageThread({ channelId }: { channelId: string }) {
     }
   }
 
+  async function handleRespondToTerms(message: ChatMessage, accepted: boolean) {
+    if (
+      !canRespondToProposedTerms(message, messages, {
+        isChannelCustomer,
+        channelComposable,
+        currentUserId: user?.id,
+      })
+    ) {
+      return;
+    }
+    setRespondingMessageId(message.id);
+    try {
+      await respondToTerms.mutateAsync({ channelId, accepted });
+      toast.success(accepted ? 'Terms accepted.' : 'Terms rejected.');
+      // Best-effort mark-read after consent message lands.
+      void markRead.mutateAsync(channelId).catch(() => {
+        // Unread badges may lag; respond already succeeded.
+      });
+    } catch (err) {
+      toast.error(
+        getApiErrorMessage(
+          err,
+          accepted ? 'Failed to accept terms.' : 'Failed to reject terms.',
+        ),
+      );
+    } finally {
+      setRespondingMessageId(null);
+    }
+  }
+
   if (isLoading && !beforeCursor) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -407,6 +570,11 @@ export function MessageThread({ channelId }: { channelId: string }) {
           const prevMessage = index > 0 ? messages[index - 1] : undefined;
           const showDateSeparator =
             !prevMessage || !isSameDay(prevMessage.created_at, message.created_at);
+          const canRespond = canRespondToProposedTerms(message, messages, {
+            isChannelCustomer,
+            channelComposable,
+            currentUserId: user?.id,
+          });
 
           return (
             <div key={message.id}>
@@ -424,6 +592,14 @@ export function MessageThread({ channelId }: { channelId: string }) {
                 isOwnMessage={user?.id === message.sender_id}
                 senderLabel={user?.id === message.sender_id ? 'You' : otherPartyName}
                 isLastRead={message.id === lastReadOwnMessageId}
+                canRespondToTerms={canRespond}
+                isRespondingToTerms={respondingMessageId === message.id}
+                onAcceptTerms={() => {
+                  void handleRespondToTerms(message, true);
+                }}
+                onRejectTerms={() => {
+                  void handleRespondToTerms(message, false);
+                }}
               />
             </div>
           );

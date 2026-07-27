@@ -656,10 +656,16 @@ struct ProviderInstantOffer: Codable, Sendable, Hashable, Identifiable {
     var expiresAt: String?
     var amountCents: Int64?
 
-    /// Stable list identity (job id, or ephemeral fallback if wire is incomplete).
+    /// Stable list identity — must never mint a fresh UUID per access (breaks ForEach).
+    /// Incomplete wire rows use a deterministic fallback; UI filters them via `hasValidJobId`.
     var id: String {
         let j = jobId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return j.isEmpty ? UUID().uuidString : j
+        if !j.isEmpty { return j }
+        let title = jobTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let exp = expiresAt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let amount = amountCents.map(String.init) ?? ""
+        let composite = [title, exp, amount].joined(separator: "|")
+        return composite.isEmpty ? "instant-offer-unknown" : "instant-offer-\(composite)"
     }
 
     var displayTitle: String {

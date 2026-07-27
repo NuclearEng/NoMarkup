@@ -10,6 +10,8 @@ import {
   useSendMessage,
   useMarkRead,
   useUnreadCount,
+  useSendProposedTerms,
+  useRespondToTerms,
 } from '@/hooks/useChannels';
 import type { Channel, ChannelsResponse, ChatMessage, MessagesResponse } from '@/types';
 
@@ -308,5 +310,110 @@ describe('useUnreadCount', () => {
 
     expect(result.current.fetchStatus).toBe('idle');
     expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+  });
+});
+
+describe('useSendProposedTerms', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('posts to proposed-terms and invalidates message caches', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      ...mockMessage,
+      id: 'terms-1',
+      message_type: 'proposed_terms',
+    });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useSendProposedTerms(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      channelId: 'ch-1',
+      input: {
+        payment_type: 'completion',
+        amount: '$250.00',
+        description: 'Scope',
+      },
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/channels/ch-1/proposed-terms',
+      {
+        payment_type: 'completion',
+        amount: '$250.00',
+        milestones: '',
+        description: 'Scope',
+      },
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['messages', 'ch-1'] });
+  });
+});
+
+describe('useRespondToTerms', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('posts accepted true to terms/respond and invalidates message caches', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      ...mockMessage,
+      id: 'resp-1',
+      message_type: 'terms_accepted',
+    });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useRespondToTerms(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ channelId: 'ch-1', accepted: true });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/channels/ch-1/terms/respond',
+      { accepted: true },
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['messages', 'ch-1'] });
+  });
+
+  it('posts accepted false to terms/respond for Reject', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      ...mockMessage,
+      id: 'resp-2',
+      message_type: 'terms_rejected',
+    });
+
+    const { result } = renderHook(() => useRespondToTerms(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ channelId: 'ch-1', accepted: false });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/channels/ch-1/terms/respond',
+      { accepted: false },
+    );
   });
 });

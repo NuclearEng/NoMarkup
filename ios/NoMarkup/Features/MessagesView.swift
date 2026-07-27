@@ -1117,6 +1117,7 @@ struct ChatThreadView: View {
         guard canRespondToProposedTerms(message) else { return }
         termsRespondingMessageID = message.id
         termsRespondError = nil
+        sendError = nil
         defer { termsRespondingMessageID = nil }
 
         do {
@@ -1128,10 +1129,16 @@ struct ChatThreadView: View {
             await markChannelReadBestEffort()
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
-            termsRespondError = "Session expired. Sign in again to respond to terms."
+            // Surface on the composer banner (termsRespondError alone is not rendered).
+            let msg = "Session expired. Sign in again to respond to terms."
+            termsRespondError = msg
+            sendError = msg
         } catch {
-            termsRespondError = error.localizedDescription
-            sendError = error.localizedDescription
+            let msg = error.localizedDescription.isEmpty
+                ? (accepted ? "Failed to accept terms." : "Failed to reject terms.")
+                : error.localizedDescription
+            termsRespondError = msg
+            sendError = msg
         }
     }
 

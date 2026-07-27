@@ -10,8 +10,10 @@ package service
 //
 // No new schema. No new gRPC contract RPC — chat already shares the primary
 // Postgres and the same pattern is used for bid access checks (PGBidChecker).
-// If there is no live contract (pre-award chat), accept still succeeds and the
-// residual is "consent recorded, nothing to bind yet."
+// If there is no live contract (pre-award chat), accept still succeeds and
+// consent is recorded with contract_override_applied=false /
+// no_live_contract. Job CreateContractFromAward closes that residual via
+// PendingLocalTermsApplier (mirrored SQL; fail-soft on award).
 
 import (
 	"context"
@@ -87,11 +89,13 @@ func (b *PGLocalTermsBinder) ApplyLocalTerms(
 	paymentTiming *string,
 	termsJSON []byte,
 ) (string, error) {
-	if b == nil || b.pool == nil {
-		return "", fmt.Errorf("local terms binder: no database pool configured")
-	}
+	// Empty party set is a deliberate residual (no eligible contract) — check
+	// before pool so miswired binders still fail soft on incomplete identity.
 	if jobID == "" || customerID == "" || providerID == "" {
 		return "", nil
+	}
+	if b == nil || b.pool == nil {
+		return "", fmt.Errorf("local terms binder: no database pool configured")
 	}
 	if len(termsJSON) == 0 {
 		termsJSON = []byte(`{}`)

@@ -467,11 +467,16 @@ extension APIClient {
     }
 
     /// POST `/api/v1/contracts/{id}/recurring/instances/{instanceId}/complete` — provider.
+    ///
+    /// Status completion is always durable. When the schedule has auto-approve,
+    /// the gateway may also CreatePayment (as the contract customer) and return
+    /// a real PaymentIntent `client_secret`. Absence of `client_secret` is
+    /// residual — never invent money.
     @discardableResult
     func completeRecurringInstance(
         contractId: String,
         instanceId: String
-    ) async throws -> ContractRecurringInstance {
+    ) async throws -> RecurringApproveResult {
         let response: RecurringInstanceEnvelope = try await postJSON(
             pathComponents: [
                 "api", "v1", "contracts", contractId,
@@ -480,10 +485,10 @@ extension APIClient {
             body: EmptyJSONObject(),
             authorized: .required
         )
-        guard let instance = response.instance else {
-            throw APIClientError.httpStatus(502, detail: "Instance missing from complete response.")
-        }
-        return instance
+        return try Self.recurringVisitMoneyResult(
+            response,
+            missingDetail: "Instance missing from complete response."
+        )
     }
 
     /// POST `/api/v1/contracts/{id}/recurring/instances/{instanceId}/approve` — customer.
@@ -504,8 +509,19 @@ extension APIClient {
             body: EmptyJSONObject(),
             authorized: .required
         )
+        return try Self.recurringVisitMoneyResult(
+            response,
+            missingDetail: "Instance missing from approve response."
+        )
+    }
+
+    /// Maps approve/complete envelope → result with optional real PI fields only.
+    private static func recurringVisitMoneyResult(
+        _ response: RecurringInstanceEnvelope,
+        missingDetail: String
+    ) throws -> RecurringApproveResult {
         guard let instance = response.instance else {
-            throw APIClientError.httpStatus(502, detail: "Instance missing from approve response.")
+            throw APIClientError.httpStatus(502, detail: missingDetail)
         }
         // Prefer top-level client_secret; fall back to nested payment map if present.
         let secret = response.clientSecret

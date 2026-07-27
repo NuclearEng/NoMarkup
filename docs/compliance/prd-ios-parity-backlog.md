@@ -118,7 +118,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 **Consumer iOS product surface for PRD MVP depth is largely implemented.** Remaining unchecked items are:
 1. **Human/ops-gated** (ASC, device smoke sign-off, always-on review API, Apple Pay domain file, Google iOS client IDs in Console)
 2. **Accepted risk / licenses** (MON-14–18, R6.2–R6.6, Checkr, mTLS, StoreKit B2)
-3. **Thin polish residuals** (pre-award terms re-apply on award; unique payment-per-instance; auto-approve charge; goods participant realtime)
+3. **Thin polish residuals** (unique payment-per-instance; off-session auto-charge; dual-PI guard on recurring)
 
 
 
@@ -220,3 +220,5 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | 2026-07-27 wave6 | Proposed terms Accept/Reject E2E; channel last_read Seen; auction spectator WS; OAuth unlink; marketplace offer buyer pay; MFA/age already prior |
 
 | 2026-07-27 wave7 | Local terms bind on accept; provider propose sheet; marketplace spectate WS; FR-18 approve→CreatePayment + iOS Pay visit |
+
+| 2026-07-27 wave8 | Pre-award local terms re-apply on award; auto-approve→CreatePayment; web terms Accept/Reject + propose API; security tests |

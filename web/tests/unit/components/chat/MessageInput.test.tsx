@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mutateAsync = vi.fn((..._args: unknown[]) => Promise.resolve({}));
+const proposeMutateAsync = vi.fn((..._args: unknown[]) => Promise.resolve({}));
 const isPendingState = { value: false };
+const isProposePendingState = { value: false };
 
 vi.mock('@/hooks/useChannels', () => ({
   useSendMessage: () => ({
@@ -12,6 +14,16 @@ vi.mock('@/hooks/useChannels', () => ({
       return isPendingState.value;
     },
   }),
+  useSendProposedTerms: () => ({
+    mutateAsync: proposeMutateAsync,
+    get isPending(): boolean {
+      return isProposePendingState.value;
+    },
+  }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 const sendTypingMock = vi.fn();
@@ -55,8 +67,11 @@ beforeAll(() => {
 beforeEach(() => {
   mutateAsync.mockClear();
   mutateAsync.mockImplementation(() => Promise.resolve({}));
+  proposeMutateAsync.mockClear();
+  proposeMutateAsync.mockImplementation(() => Promise.resolve({}));
   sendTypingMock.mockClear();
   isPendingState.value = false;
+  isProposePendingState.value = false;
 });
 
 afterEach(() => {
@@ -123,8 +138,19 @@ describe('MessageInput', () => {
     expect(mutateAsync).toHaveBeenCalled();
   });
 
-  it('shows the propose-terms form when toggle is clicked', () => {
+  it('hides the propose-terms control when canProposeTerms is false', () => {
     render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+    expect(screen.queryByLabelText('Propose terms')).toBeNull();
+  });
+
+  it('shows the propose-terms form when toggle is clicked (provider)', () => {
+    render(
+      <MessageInput
+        channelId="chan-1"
+        channelStatus={CHANNEL_STATUS.ACTIVE}
+        canProposeTerms
+      />,
+    );
     actSync(() => {
       fireEvent.click(screen.getByLabelText('Propose terms'));
     });
@@ -230,7 +256,13 @@ describe('MessageInput', () => {
   });
 
   it('renders the propose-terms cancel button and closes the form', () => {
-    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+    render(
+      <MessageInput
+        channelId="chan-1"
+        channelStatus={CHANNEL_STATUS.ACTIVE}
+        canProposeTerms
+      />,
+    );
     actSync(() => {
       fireEvent.click(screen.getByLabelText('Propose terms'));
     });
@@ -244,7 +276,13 @@ describe('MessageInput', () => {
 
   it('shows the milestones textarea when milestone payment type is selected', async () => {
     const user = userEvent.setup();
-    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+    render(
+      <MessageInput
+        channelId="chan-1"
+        channelStatus={CHANNEL_STATUS.ACTIVE}
+        canProposeTerms
+      />,
+    );
     actSync(() => {
       fireEvent.click(screen.getByLabelText('Propose terms'));
     });
@@ -258,7 +296,13 @@ describe('MessageInput', () => {
   });
 
   it('keeps the Send Proposal button disabled until both amount and description are filled', () => {
-    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+    render(
+      <MessageInput
+        channelId="chan-1"
+        channelStatus={CHANNEL_STATUS.ACTIVE}
+        canProposeTerms
+      />,
+    );
     actSync(() => {
       fireEvent.click(screen.getByLabelText('Propose terms'));
     });
@@ -279,8 +323,14 @@ describe('MessageInput', () => {
     expect((sendProposalBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('sends a formatted [Proposed Terms] message when the proposal is submitted', async () => {
-    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+  it('posts to proposed-terms endpoint when the proposal is submitted', async () => {
+    render(
+      <MessageInput
+        channelId="chan-1"
+        channelStatus={CHANNEL_STATUS.ACTIVE}
+        canProposeTerms
+      />,
+    );
     actSync(() => {
       fireEvent.click(screen.getByLabelText('Propose terms'));
     });
@@ -297,14 +347,24 @@ describe('MessageInput', () => {
     });
     await flushAsync();
 
-    expect(mutateAsync).toHaveBeenCalled();
-    const firstCall = mutateAsync.mock.calls[0]?.[0] as
-      | { channelId: string; input: { content: string } }
+    // Must use the dedicated proposed-terms path (not plain text messages)
+    // so message_type=proposed_terms and Accept can bind contract metadata.
+    expect(mutateAsync).not.toHaveBeenCalled();
+    expect(proposeMutateAsync).toHaveBeenCalled();
+    const firstCall = proposeMutateAsync.mock.calls[0]?.[0] as
+      | {
+          channelId: string;
+          input: {
+            payment_type: string;
+            amount: string;
+            description: string;
+          };
+        }
       | undefined;
     expect(firstCall?.channelId).toBe('chan-1');
-    expect(firstCall?.input.content).toContain('[Proposed Terms]');
-    expect(firstCall?.input.content).toContain('Amount: $250');
-    expect(firstCall?.input.content).toContain('Half upfront');
+    expect(firstCall?.input.payment_type).toBe('completion');
+    expect(firstCall?.input.amount).toContain('250');
+    expect(firstCall?.input.description).toContain('Half upfront');
   });
 
   it('does not send when the textarea is empty and the send button is force-clicked', () => {
@@ -329,9 +389,15 @@ describe('MessageInput', () => {
 
   // ---- DEEPENING TESTS ----
 
-  it('shows "Sending..." in the Send Proposal button when sendMessage is pending (line 144)', () => {
-    isPendingState.value = true;
-    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+  it('shows "Sending..." in the Send Proposal button when proposed-terms mutation is pending', () => {
+    isProposePendingState.value = true;
+    render(
+      <MessageInput
+        channelId="chan-1"
+        channelStatus={CHANNEL_STATUS.ACTIVE}
+        canProposeTerms
+      />,
+    );
     actSync(() => {
       fireEvent.click(screen.getByLabelText('Propose terms'));
     });
@@ -364,9 +430,15 @@ describe('MessageInput', () => {
     expect(mutateAsync).not.toHaveBeenCalled();
   });
 
-  it('includes Milestones section when milestone payment-type and a milestones value is provided (line 216 truthy branch)', async () => {
+  it('includes milestones on proposed-terms body when milestone payment-type is selected', async () => {
     const user = userEvent.setup();
-    render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
+    render(
+      <MessageInput
+        channelId="chan-1"
+        channelStatus={CHANNEL_STATUS.ACTIVE}
+        canProposeTerms
+      />,
+    );
     actSync(() => {
       fireEvent.click(screen.getByLabelText('Propose terms'));
     });
@@ -394,12 +466,16 @@ describe('MessageInput', () => {
     });
     await flushAsync();
 
-    expect(mutateAsync).toHaveBeenCalled();
-    const firstCall = mutateAsync.mock.calls[0]?.[0] as
-      | { channelId: string; input: { content: string } }
+    expect(proposeMutateAsync).toHaveBeenCalled();
+    const firstCall = proposeMutateAsync.mock.calls[0]?.[0] as
+      | {
+          channelId: string;
+          input: { payment_type: string; milestones: string; description: string };
+        }
       | undefined;
-    expect(firstCall?.input.content).toContain('Milestones:');
-    expect(firstCall?.input.content).toContain('Phase 1 - 50%');
+    expect(firstCall?.input.payment_type).toBe('milestone');
+    expect(firstCall?.input.milestones).toContain('Phase 1 - 50%');
+    expect(firstCall?.input.description).toContain('Two phase delivery');
   });
 
   it('does not throw inside resizeTextarea when ref is unattached (line 171 no-ref branch)', () => {

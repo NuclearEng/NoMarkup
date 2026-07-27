@@ -2,6 +2,7 @@
 
 import { FileText, Send, X } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import { QuickReplyTemplates } from '@/components/chat/QuickReplyTemplates';
 import { Button } from '@/components/ui/button';
@@ -14,8 +15,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useSendMessage } from '@/hooks/useChannels';
+import { useSendMessage, useSendProposedTerms } from '@/hooks/useChannels';
 import { useSendTypingIndicator } from '@/hooks/useWebSocket';
+import { getApiErrorMessage } from '@/lib/api';
 import { chatMessageSchema } from '@/lib/validations';
 import { CHANNEL_STATUS } from '@/types';
 
@@ -27,6 +29,26 @@ interface ProposedTerms {
   amount: string;
   milestones: string;
   description: string;
+}
+
+/**
+ * Format dollars form input as a display amount for POST …/proposed-terms.
+ * Amount is a human-readable USD string (server stores it on the proposal body);
+ * integer-cent conversion for contract binding is done server-side from metadata.
+ */
+function formatProposedAmountDisplay(raw: string): string {
+  const cleaned = raw.trim().replace(/[$,\s]/g, '');
+  const n = Number.parseFloat(cleaned);
+  if (!Number.isFinite(n) || n <= 0) {
+    // Fall back to user text with a $ prefix when parse fails but non-empty.
+    const t = raw.trim();
+    if (!t) return '';
+    return t.startsWith('$') ? t : `$${t}`;
+  }
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(n);
 }
 
 function ProposeTermsForm({
@@ -152,20 +174,28 @@ function ProposeTermsForm({
 export function MessageInput({
   channelId,
   channelStatus,
+  /**
+   * Provider-only Propose Terms control. Parent must set true only when JWT
+   * user is the channel provider; server still enforces provider-only on POST.
+   */
+  canProposeTerms = false,
 }: {
   channelId: string;
   channelStatus: string;
+  canProposeTerms?: boolean;
 }) {
   const [content, setContent] = useState('');
   const [showProposeTerms, setShowProposeTerms] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendMessage = useSendMessage();
+  const sendProposedTerms = useSendProposedTerms();
   const sendTypingIndicator = useSendTypingIndicator(channelId);
 
   const isDisabled =
     channelStatus === CHANNEL_STATUS.READ_ONLY || channelStatus === CHANNEL_STATUS.CLOSED;
 
   const isValid = chatMessageSchema.safeParse(content).success;
+  const isPending = sendMessage.isPending || sendProposedTerms.isPending;
 
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current;
@@ -187,7 +217,7 @@ export function MessageInput({
   }
 
   function handleSubmit() {
-    if (!isValid || sendMessage.isPending) return;
+    if (!isValid || isPending) return;
 
     void sendMessage
       .mutateAsync({ channelId, input: { content: content.trim() } })
@@ -231,23 +261,30 @@ export function MessageInput({
   }
 
   function handleProposeTerms(terms: ProposedTerms) {
-    const termsMessage = [
-      '[Proposed Terms]',
-      `Payment Type: ${terms.paymentType}`,
-      `Amount: $${terms.amount}`,
-      terms.milestones ? `Milestones:\n${terms.milestones}` : '',
-      `Description: ${terms.description}`,
-    ]
-      .filter(Boolean)
-      .join('\n');
+    // POST …/proposed-terms (not plain text) so message_type=proposed_terms and
+    // Accept can bind metadata onto the live contract (FR-5.4).
+    const amount = formatProposedAmountDisplay(terms.amount);
+    if (!amount) {
+      toast.error('Enter a valid amount.');
+      return;
+    }
 
-    void sendMessage
-      .mutateAsync({ channelId, input: { content: termsMessage } })
+    void sendProposedTerms
+      .mutateAsync({
+        channelId,
+        input: {
+          payment_type: terms.paymentType,
+          amount,
+          milestones: terms.milestones,
+          description: terms.description,
+        },
+      })
       .then(() => {
         setShowProposeTerms(false);
+        toast.success('Proposed terms sent. Waiting for customer Accept or Reject.');
       })
-      .catch(() => {
-        // Error handled by TanStack Query
+      .catch((err) => {
+        toast.error(getApiErrorMessage(err, 'Failed to send proposed terms.'));
       });
   }
 
@@ -263,27 +300,29 @@ export function MessageInput({
 
   return (
     <div className="border-t p-3">
-      {showProposeTerms ? (
+      {showProposeTerms && canProposeTerms ? (
         <ProposeTermsForm
           onSubmit={handleProposeTerms}
           onCancel={() => { setShowProposeTerms(false); }}
-          isPending={sendMessage.isPending}
+          isPending={sendProposedTerms.isPending}
         />
       ) : (
         <>
           <QuickReplyTemplates onSelect={handleTemplateSelect} className="-mx-3 -mt-3 mb-2" />
           <div className="flex items-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11 shrink-0"
-              onClick={() => { setShowProposeTerms(true); }}
-              aria-label="Propose terms"
-              title="Propose Terms"
-            >
-              <FileText className="h-4 w-4" aria-hidden="true" />
-            </Button>
+            {canProposeTerms ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 shrink-0"
+                onClick={() => { setShowProposeTerms(true); }}
+                aria-label="Propose terms"
+                title="Propose Terms"
+              >
+                <FileText className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            ) : null}
             <div className="relative flex-1">
               <textarea
                 ref={textareaRef}
@@ -292,7 +331,7 @@ export function MessageInput({
                 onKeyDown={handleKeyDown}
                 placeholder="Type a message..."
                 rows={1}
-                disabled={sendMessage.isPending}
+                disabled={isPending}
                 className="flex min-h-[44px] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Message input"
               />
@@ -301,7 +340,7 @@ export function MessageInput({
               type="button"
               size="icon"
               className="h-11 w-11 shrink-0"
-              disabled={!isValid || sendMessage.isPending}
+              disabled={!isValid || isPending}
               onClick={handleSubmit}
               aria-label="Send message"
             >

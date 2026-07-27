@@ -70,6 +70,11 @@ function ActiveThread({ channelId }: { channelId: string }) {
     return name && name.trim() ? name : 'Conversation';
   })();
 
+  // Propose Terms is provider-only (UI gate). Server still enforces party checks
+  // on POST …/proposed-terms; never rely on this alone for authorization.
+  const canProposeTerms =
+    !!me?.id && !!data?.channel?.provider_id && me.id === data.channel.provider_id;
+
   const isBlocked = (() => {
     if (!otherPartyId) return false;
     return (blocksQuery.data?.blocks ?? []).some(
@@ -103,7 +108,11 @@ function ActiveThread({ channelId }: { channelId: string }) {
       ) : null}
       <MessageThread channelId={channelId} />
       <TypingIndicator channelId={channelId} otherPartyName={otherPartyName} />
-      <MessageInput channelId={channelId} channelStatus={channelStatus} />
+      <MessageInput
+        channelId={channelId}
+        channelStatus={channelStatus}
+        canProposeTerms={canProposeTerms}
+      />
     </div>
   );
 }

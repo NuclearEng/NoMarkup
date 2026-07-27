@@ -345,10 +345,11 @@ func (s *Service) SendProposedTerms(ctx context.Context, channelID, senderID str
 //
 // On accepted=true, when a LocalTermsBinder is wired and the channel has a
 // job_id, attempts to bind the latest proposed terms onto the live contract
-// (payment_timing + terms_json). Pre-award channels with no contract leave a
-// residual: consent is recorded, override is skipped. Binder failures are
-// logged and stamped on message metadata but do not fail Accept (consent is
-// the primary product signal).
+// (payment_timing + terms_json). Pre-award channels with no contract record
+// consent with override skipped (no_live_contract); job CreateContractFromAward
+// re-applies via PendingLocalTermsApplier. Binder failures are logged and
+// stamped on message metadata but do not fail Accept (consent is the primary
+// product signal).
 func (s *Service) RespondToTerms(ctx context.Context, channelID, customerID string, accepted bool) (*domain.Message, error) {
 	ch, err := s.repo.GetChannel(ctx, channelID, customerID)
 	if err != nil {

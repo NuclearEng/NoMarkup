@@ -1170,7 +1170,11 @@ struct JobDetailView: View {
                         Text("LIVE")
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(BrandTheme.accent)
-                            .accessibilityLabel("WebSocket connected")
+                            .accessibilityLabel(
+                                isSpectatorSocketLive && !isParticipantSocketLive
+                                    ? "Public live feed connected, briefly delayed"
+                                    : "Live auction WebSocket connected"
+                            )
                     }
                 }
             } footer: {

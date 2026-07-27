@@ -10,11 +10,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -42,8 +42,9 @@ func NewContractHandler(contractClient contractv1.ContractServiceClient, userCli
 	return &ContractHandler{contractClient: contractClient, userClient: userClient, db: db}
 }
 
-// SetPaymentClient wires CreatePayment for POST …/recurring/instances/{id}/approve.
-// Safe to leave unset in tests that never hit the approve money path.
+// SetPaymentClient wires CreatePayment for recurring-instance approve and for
+// auto-approve on complete (FR-18). Safe to leave unset in tests that never hit
+// the money path.
 func (h *ContractHandler) SetPaymentClient(c paymentv1.PaymentServiceClient) {
 	h.paymentClient = c
 }
@@ -286,7 +287,7 @@ func (h *ContractHandler) ListContracts(w http.ResponseWriter, r *http.Request) 
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -504,8 +505,8 @@ func (h *ContractHandler) CancelContract(w http.ResponseWriter, r *http.Request)
 // --- Change Order handlers ---
 
 type createChangeOrderRequest struct {
-	Description        string `json:"description"`
-	AmountDeltaCents   int64  `json:"amount_delta_cents"`
+	Description      string `json:"description"`
+	AmountDeltaCents int64  `json:"amount_delta_cents"`
 }
 
 // CreateChangeOrder handles POST /api/v1/contracts/{id}/change-orders.
@@ -1172,10 +1173,22 @@ func (h *ContractHandler) ListRecurringInstances(w http.ResponseWriter, r *http.
 }
 
 // CompleteRecurringInstance handles POST .../recurring/instances/{instanceId}/complete.
+//
+// Status completion is always durable via the contract service (provider-only).
+// When the recurring config has auto_approve, the job service marks the instance
+// approved in the same write. The gateway then best-effort creates a real
+// services PaymentIntent for the contract customer (CreatePayment requires the
+// contract customer — never the provider actor). Failure to create a PI does
+// NOT roll back completion/auto-approval and does NOT invent a stub payment_id.
 func (h *ContractHandler) CompleteRecurringInstance(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 	instanceID := chi.URLParam(r, "instanceId")
@@ -1191,9 +1204,32 @@ func (h *ContractHandler) CompleteRecurringInstance(w http.ResponseWriter, r *ht
 		writeGRPCError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"instance": protoRecurringInstanceToJSON(resp.GetInstance()),
-	})
+	inst := resp.GetInstance()
+	result := map[string]interface{}{
+		"instance": protoRecurringInstanceToJSON(inst),
+	}
+	// Non-auto-approve path: provider marked complete only; customer will approve
+	// (and pay) separately. No money orchestration here.
+	if inst == nil || !inst.GetAutoApproved() {
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
+	// Auto-approve: create PI as the contract customer (not the provider caller).
+	customerID, custErr := h.resolveContractCustomerID(r.Context(), contractID, claims.UserID)
+	if custErr != nil || customerID == "" {
+		slog.WarnContext(r.Context(), "recurring instance complete auto-approve: customer unresolved (completion kept)",
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"error", custErr,
+		)
+		result["payment_residual"] = "customer_unresolved"
+		result["payment_error"] = "Visit completed and auto-approved, but customer could not be resolved for escrow PaymentIntent. Customer can pay via POST /payments with recurring_instance_id."
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+	h.attachRecurringInstancePayment(r.Context(), result, contractID, instanceID, customerID, inst.GetAmountCents(), "complete_auto_approve")
+	writeJSON(w, http.StatusOK, result)
 }
 
 // ApproveRecurringInstance handles POST .../recurring/instances/{instanceId}/approve.
@@ -1243,31 +1279,70 @@ func (h *ContractHandler) ApproveRecurringInstance(w http.ResponseWriter, r *htt
 	if inst != nil {
 		amountCents = inst.GetAmountCents()
 	}
+	// Customer is the authenticated approver — CreatePayment requires contract customer.
+	h.attachRecurringInstancePayment(r.Context(), result, contractID, instanceID, claims.UserID, amountCents, "approve")
+	writeJSON(w, http.StatusOK, result)
+}
+
+// resolveContractCustomerID loads the contract as requestingUserID (party) and
+// returns the customer id. Empty string + error when lookup fails.
+func (h *ContractHandler) resolveContractCustomerID(ctx context.Context, contractID, requestingUserID string) (string, error) {
+	if h.contractClient == nil {
+		return "", nil
+	}
+	resp, err := h.contractClient.GetContract(ctx, &contractv1.GetContractRequest{
+		ContractId:       contractID,
+		RequestingUserId: requestingUserID,
+	})
+	if err != nil {
+		return "", err
+	}
+	if c := resp.GetContract(); c != nil {
+		return c.GetCustomerId(), nil
+	}
+	return "", nil
+}
+
+// attachRecurringInstancePayment best-effort CreatePayment for an approved
+// recurring visit. Mutates result with payment_id / client_secret / residual.
+// Never invents payment_id or client_secret. customerID must be the contract
+// customer (payment service enforces ownership). Sticky idempotency key
+// recurring-instance-pay:{instanceID} dedupes approve + auto-approve complete.
+func (h *ContractHandler) attachRecurringInstancePayment(
+	ctx context.Context,
+	result map[string]interface{},
+	contractID, instanceID, customerID string,
+	amountCents int64,
+	source string,
+) {
 	if h.paymentClient == nil {
-		// Honest residual: approval stands; no money path without payment mesh.
+		// Honest residual: status stands; no money path without payment mesh.
 		result["payment_residual"] = "payment_service_unwired"
-		writeJSON(w, http.StatusOK, result)
 		return
 	}
 	if amountCents <= 0 {
 		result["payment_residual"] = "instance_amount_missing"
-		writeJSON(w, http.StatusOK, result)
+		return
+	}
+	if customerID == "" {
+		result["payment_residual"] = "customer_unresolved"
 		return
 	}
 
-	// Sticky server-side key: one PI per instance across approve retries.
-	// CreatePayment stores this as payments.idempotency_key (unique).
+	// Sticky server-side key: one PI per instance across approve retries and
+	// auto-approve complete. CreatePayment stores this as payments.idempotency_key.
 	idemKey := "recurring-instance-pay:" + instanceID
-	payResp, payErr := h.paymentClient.CreatePayment(r.Context(), &paymentv1.CreatePaymentRequest{
+	payResp, payErr := h.paymentClient.CreatePayment(ctx, &paymentv1.CreatePaymentRequest{
 		ContractId:          contractID,
 		RecurringInstanceId: instanceID,
-		CustomerId:          claims.UserID,
+		CustomerId:          customerID,
 		AmountCents:         amountCents,
 		IdempotencyKey:      idemKey,
 	})
 	if payErr != nil {
-		// Approval already committed — surface residual, never fake a payment.
-		slog.WarnContext(r.Context(), "recurring instance approve: CreatePayment failed (approval kept)",
+		// Status already committed — surface residual, never fake a payment.
+		slog.WarnContext(ctx, "recurring instance: CreatePayment failed (status kept)",
+			"source", source,
 			"instance_id", instanceID,
 			"contract_id", contractID,
 			"amount_cents", amountCents,
@@ -1275,7 +1350,6 @@ func (h *ContractHandler) ApproveRecurringInstance(w http.ResponseWriter, r *htt
 		)
 		result["payment_residual"] = "create_payment_failed"
 		result["payment_error"] = "Could not create escrow PaymentIntent for this visit. Visit is approved; pay via POST /payments with recurring_instance_id when ready."
-		writeJSON(w, http.StatusOK, result)
 		return
 	}
 
@@ -1290,7 +1364,6 @@ func (h *ContractHandler) ApproveRecurringInstance(w http.ResponseWriter, r *htt
 		// PI row may exist without a confirmable secret (misconfig). Honest residual.
 		result["payment_residual"] = "client_secret_missing"
 	}
-	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *ContractHandler) resolveRecurringConfig(r *http.Request, contractID string) (*contractv1.RecurringConfig, error) {
@@ -1308,12 +1381,12 @@ func protoRecurringConfigToJSON(cfg *contractv1.RecurringConfig) map[string]inte
 		return map[string]interface{}{}
 	}
 	result := map[string]interface{}{
-		"id":          cfg.GetId(),
-		"contract_id": cfg.GetContractId(),
-		"frequency":   recurrenceFrequencyToString(cfg.GetFrequency()),
-		"rate_cents":  cfg.GetRateCents(),
+		"id":           cfg.GetId(),
+		"contract_id":  cfg.GetContractId(),
+		"frequency":    recurrenceFrequencyToString(cfg.GetFrequency()),
+		"rate_cents":   cfg.GetRateCents(),
 		"auto_approve": cfg.GetAutoApprove(),
-		"status":      cfg.GetStatus(),
+		"status":       cfg.GetStatus(),
 	}
 	if cfg.GetNextOccurrence() != nil {
 		result["next_occurrence"] = formatTimestamp(cfg.GetNextOccurrence())
@@ -1326,10 +1399,10 @@ func protoRecurringInstanceToJSON(inst *contractv1.RecurringInstance) map[string
 		return map[string]interface{}{}
 	}
 	result := map[string]interface{}{
-		"id":           inst.GetId(),
-		"recurring_id": inst.GetRecurringId(),
-		"status":       inst.GetStatus(),
-		"amount_cents": inst.GetAmountCents(),
+		"id":            inst.GetId(),
+		"recurring_id":  inst.GetRecurringId(),
+		"status":        inst.GetStatus(),
+		"amount_cents":  inst.GetAmountCents(),
 		"auto_approved": inst.GetAutoApproved(),
 	}
 	if inst.GetOccurrenceDate() != nil {

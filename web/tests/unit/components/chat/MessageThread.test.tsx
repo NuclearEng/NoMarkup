@@ -11,21 +11,32 @@ beforeAll(() => {
 });
 
 const markReadMutate = vi.fn(() => Promise.resolve({}));
+const respondToTermsMutate = vi.fn(() => Promise.resolve({ id: 'terms-resp-1' }));
 
 vi.mock('@/hooks/useChannels', () => ({
   useMessages: vi.fn(),
   useMarkRead: () => ({ mutateAsync: markReadMutate, isPending: false }),
-  // MessageThread reads the channel to resolve sender display names for bubbles.
+  useRespondToTerms: () => ({
+    mutateAsync: respondToTermsMutate,
+    isPending: false,
+  }),
+  // MessageThread reads the channel to resolve sender display names for bubbles
+  // and to decide customer-only Accept/Reject for proposed terms.
   useChannel: () => ({
     data: {
       channel: {
-        customer_id: 'cust-1',
+        customer_id: 'user-me',
         provider_id: 'prov-1',
         customer_name: 'Jane Customer',
         provider_name: 'Mike Provider',
+        status: 'active',
       },
     },
   }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('@/stores/auth-store', () => ({
@@ -75,6 +86,8 @@ function makeMsg(overrides: Partial<ChatMessage> = {}): ChatMessage {
 beforeEach(() => {
   mockAuth();
   markReadMutate.mockClear();
+  respondToTermsMutate.mockClear();
+  respondToTermsMutate.mockImplementation(() => Promise.resolve({ id: 'terms-resp-1' }));
   scrollIntoViewSpy.mockClear();
 });
 
@@ -188,6 +201,116 @@ describe('MessageThread', () => {
     expect(screen.getByText(/\$1,500/)).toBeDefined();
     expect(screen.getByText(/Roof patch and cleanup/)).toBeDefined();
     expect(screen.getByText('Demo - $500')).toBeDefined();
+  });
+
+  it('shows Accept/Reject on the latest open proposal for the channel customer', () => {
+    const termsContent = [
+      '[Proposed Terms]',
+      'Payment Type: completion',
+      'Amount: $900',
+      'Description: Gutters',
+    ].join('\n');
+    setMessages({
+      messages: [
+        makeMsg({
+          id: 't-open',
+          sender_id: 'prov-1',
+          content: termsContent,
+          message_type: MESSAGE_TYPE.PROPOSED_TERMS,
+        }),
+      ],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    expect(screen.getByLabelText('Accept proposed terms')).toBeDefined();
+    expect(screen.getByLabelText('Reject proposed terms')).toBeDefined();
+  });
+
+  it('hides Accept/Reject after a later terms_accepted message', () => {
+    const termsContent = [
+      '[Proposed Terms]',
+      'Payment Type: completion',
+      'Amount: $900',
+      'Description: Gutters',
+    ].join('\n');
+    setMessages({
+      messages: [
+        makeMsg({
+          id: 't-old',
+          sender_id: 'prov-1',
+          content: termsContent,
+          message_type: MESSAGE_TYPE.PROPOSED_TERMS,
+          created_at: '2026-04-01T11:00:00Z',
+        }),
+        makeMsg({
+          id: 't-acc',
+          sender_id: 'user-me',
+          content: 'Customer accepted the proposed terms.',
+          message_type: MESSAGE_TYPE.TERMS_ACCEPTED,
+          created_at: '2026-04-01T11:05:00Z',
+        }),
+      ],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    expect(screen.queryByLabelText('Accept proposed terms')).toBeNull();
+    expect(screen.getByText(/Customer accepted the proposed terms/)).toBeDefined();
+  });
+
+  it('posts terms/respond with accepted:true when customer Accepts', async () => {
+    const termsContent = [
+      '[Proposed Terms]',
+      'Payment Type: completion',
+      'Amount: $900',
+      'Description: Gutters',
+    ].join('\n');
+    setMessages({
+      messages: [
+        makeMsg({
+          id: 't-open',
+          sender_id: 'prov-1',
+          content: termsContent,
+          message_type: MESSAGE_TYPE.PROPOSED_TERMS,
+        }),
+      ],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    fireEvent.click(screen.getByLabelText('Accept proposed terms'));
+    await waitFor(() => {
+      expect(respondToTermsMutate).toHaveBeenCalledWith({
+        channelId: 'chan-1',
+        accepted: true,
+      });
+    });
+  });
+
+  it('posts terms/respond with accepted:false when customer Rejects', async () => {
+    const termsContent = [
+      '[Proposed Terms]',
+      'Payment Type: completion',
+      'Amount: $900',
+      'Description: Gutters',
+    ].join('\n');
+    setMessages({
+      messages: [
+        makeMsg({
+          id: 't-open',
+          sender_id: 'prov-1',
+          content: termsContent,
+          message_type: MESSAGE_TYPE.PROPOSED_TERMS,
+        }),
+      ],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    fireEvent.click(screen.getByLabelText('Reject proposed terms'));
+    await waitFor(() => {
+      expect(respondToTermsMutate).toHaveBeenCalledWith({
+        channelId: 'chan-1',
+        accepted: false,
+      });
+    });
   });
 
   it('inserts a date separator between messages from different days', () => {

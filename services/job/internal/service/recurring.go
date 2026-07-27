@@ -334,7 +334,9 @@ func (s *ContractService) CompleteRecurringInstance(ctx context.Context, instanc
 	inst.Status = "completed"
 	inst.CompletedAt = &now
 
-	// Auto-approve if configured (FR-18.3) — marks approved without payment wire.
+	// Auto-approve if configured (FR-18.3) — status only. Job service has no
+	// Stripe client; gateway CompleteRecurringInstance orchestrates CreatePayment
+	// (real PI + client_secret) after this write when auto_approved is true.
 	cfg, cfgErr := s.contractRepo.GetRecurringConfigByID(ctx, inst.RecurringID)
 	if cfgErr == nil && cfg.AutoApprove {
 		inst.ApprovedAt = &now

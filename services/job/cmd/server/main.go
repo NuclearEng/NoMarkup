@@ -219,7 +219,11 @@ func main() {
 	}
 
 	// Wire up contract service (shares same repo/pool).
+	// FR-5.4 residual: on award, apply chat-accepted local terms that were
+	// consented pre-contract (terms_accepted with no live contract at Accept).
+	// Fail-soft inside CreateContractFromAward — never blocks award.
 	contractService := service.NewContractService(repo, repo)
+	contractService.SetPendingLocalTermsApplier(service.NewPGPendingLocalTermsApplier(pool))
 	contractSrv := grpcserver.NewContractServer(contractService)
 
 	// Wire up review service (shares same repo/pool).

@@ -13,6 +13,9 @@ import (
 type ContractService struct {
 	contractRepo domain.ContractRepository
 	jobRepo      domain.JobRepository
+	// pendingTerms applies chat-accepted local terms when the contract is
+	// created after a pre-award Accept (FR-5.4 residual). Nil = skip.
+	pendingTerms PendingLocalTermsApplier
 }
 
 // NewContractService creates a new contract service.
@@ -21,6 +24,12 @@ func NewContractService(contractRepo domain.ContractRepository, jobRepo domain.J
 		contractRepo: contractRepo,
 		jobRepo:      jobRepo,
 	}
+}
+
+// SetPendingLocalTermsApplier wires FR-5.4 residual: apply pre-award accepted
+// chat local terms onto the new contract. Optional; nil keeps award path only.
+func (s *ContractService) SetPendingLocalTermsApplier(a PendingLocalTermsApplier) {
+	s.pendingTerms = a
 }
 
 // CreateContractFromAward creates a contract from a bid award.
@@ -64,14 +73,61 @@ func (s *ContractService) CreateContractFromAward(
 		slog.Warn("failed to update job status to contract_pending", "job_id", jobID, "error", err)
 	}
 
+	// FR-5.4 residual: customer may have accepted proposed terms in chat
+	// before this contract existed. Bind them now. Fail soft — award must
+	// never fail because terms re-apply failed.
+	created = s.applyPendingLocalTermsSoft(ctx, created)
+
 	slog.Info("contract created from award",
 		"contract_id", created.ID,
 		"job_id", jobID,
 		"bid_id", bidID,
 		"amount_cents", amountCents,
+		"payment_timing", created.PaymentTiming,
 	)
 
 	return created, nil
+}
+
+// applyPendingLocalTermsSoft runs PendingLocalTermsApplier after award.
+// Never returns an error to the award path; logs and returns the original
+// contract when apply fails or is a no-op.
+func (s *ContractService) applyPendingLocalTermsSoft(ctx context.Context, created *domain.Contract) *domain.Contract {
+	if s.pendingTerms == nil || created == nil {
+		return created
+	}
+	boundID, err := s.pendingTerms.ApplyPendingLocalTerms(
+		ctx, created.JobID, created.CustomerID, created.ProviderID,
+	)
+	if err != nil {
+		slog.Warn("pending local terms apply failed after award (fail-soft)",
+			"contract_id", created.ID,
+			"job_id", created.JobID,
+			"customer_id", created.CustomerID,
+			"provider_id", created.ProviderID,
+			"error", err,
+		)
+		return created
+	}
+	if boundID == "" {
+		return created
+	}
+	// Re-load so response reflects payment_timing / terms_json bind.
+	updated, err := s.contractRepo.GetContract(ctx, created.ID)
+	if err != nil {
+		slog.Warn("pending local terms applied but re-fetch failed",
+			"contract_id", created.ID,
+			"bound_contract_id", boundID,
+			"error", err,
+		)
+		return created
+	}
+	slog.Info("pending local terms applied after award",
+		"contract_id", updated.ID,
+		"job_id", updated.JobID,
+		"payment_timing", updated.PaymentTiming,
+	)
+	return updated
 }
 
 // AcceptContract validates user is party and within deadline, then accepts.

@@ -96,6 +96,69 @@ export function useMarkRead() {
   });
 }
 
+/** Body for POST …/proposed-terms (provider-only; server enforces party + role). */
+export interface SendProposedTermsInput {
+  payment_type: string;
+  amount: string;
+  milestones?: string;
+  description?: string;
+}
+
+/**
+ * POST `/api/v1/channels/{id}/proposed-terms` — provider proposes local terms.
+ * Does not bind the contract; customer Accept/Reject is a separate call.
+ * Server enforces provider-only + channel membership (never trust client role alone).
+ */
+export function useSendProposedTerms() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (variables: { channelId: string; input: SendProposedTermsInput }) => {
+      const raw = await api.post<Record<string, unknown>>(
+        `/api/v1/channels/${variables.channelId}/proposed-terms`,
+        {
+          payment_type: variables.input.payment_type,
+          amount: variables.input.amount,
+          milestones: variables.input.milestones ?? '',
+          description: variables.input.description ?? '',
+        },
+      );
+      return raw as unknown as ChatMessage;
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['messages', variables.channelId] });
+      void queryClient.invalidateQueries({ queryKey: ['channels'] });
+      void queryClient.invalidateQueries({ queryKey: ['channel', variables.channelId] });
+      void queryClient.invalidateQueries({ queryKey: ['unread-count'] });
+    },
+  });
+}
+
+/**
+ * POST `/api/v1/channels/{id}/terms/respond` — customer Accept/Reject of proposed terms.
+ * Body: `{ accepted: true | false }` (required; gateway 400 if omitted — never default-accept).
+ * Server enforces customer-only + channel membership.
+ */
+export function useRespondToTerms() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (variables: { channelId: string; accepted: boolean }) => {
+      const raw = await api.post<Record<string, unknown>>(
+        `/api/v1/channels/${variables.channelId}/terms/respond`,
+        { accepted: variables.accepted },
+      );
+      return raw as unknown as ChatMessage;
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['messages', variables.channelId] });
+      void queryClient.invalidateQueries({ queryKey: ['channels'] });
+      void queryClient.invalidateQueries({ queryKey: ['channel', variables.channelId] });
+      void queryClient.invalidateQueries({ queryKey: ['unread-count'] });
+    },
+  });
+}
+
 export function useUnreadCount() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   return useQuery({

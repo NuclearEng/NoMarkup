@@ -757,6 +757,12 @@ export const MESSAGE_TYPE = {
   FILE: 'file',
   SYSTEM: 'system',
   CONTACT_SHARE: 'contact_share',
+  /** Provider local-terms proposal (POST …/proposed-terms). */
+  PROPOSED_TERMS: 'proposed_terms',
+  /** Customer Accept of proposed terms (POST …/terms/respond accepted:true). */
+  TERMS_ACCEPTED: 'terms_accepted',
+  /** Customer Reject of proposed terms (POST …/terms/respond accepted:false). */
+  TERMS_REJECTED: 'terms_rejected',
 } as const;
 export type MessageType = (typeof MESSAGE_TYPE)[keyof typeof MESSAGE_TYPE];
 
