@@ -78,6 +78,8 @@ struct JobDetailView: View {
     /// Public delayed spectator stream (`GET /ws/auction/{jobId}/spectate`) for
     /// logged-out and non-participant viewers. No JWT; PII stripped server-side.
     @StateObject private var spectatorSocket = SpectatorWebSocketClient()
+    /// Concurrent public spectators from WS `spectator_count` (shown when spectating).
+    @State private var liveSpectatorCount: Int = 0
     /// Throttle ladder refetch when WS bid frames arrive in a burst.
     @State private var lastLadderInvalidateAt: Date = .distantPast
 
@@ -1175,6 +1177,12 @@ struct JobDetailView: View {
                                     ? "Public live feed connected, briefly delayed"
                                     : "Live auction WebSocket connected"
                             )
+                    }
+                    if isSpectatorSocketLive && !isParticipantSocketLive && liveSpectatorCount > 0 {
+                        Text("\(liveSpectatorCount) watching")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .accessibilityLabel("\(liveSpectatorCount) people watching live")
                     }
                 }
             } footer: {
@@ -2307,6 +2315,7 @@ struct JobDetailView: View {
     private func runSpectatorSocketLifecycle() async {
         guard shouldAttemptSpectatorSocket else {
             spectatorSocket.disconnect()
+            liveSpectatorCount = 0
             return
         }
 
@@ -2389,9 +2398,8 @@ struct JobDetailView: View {
                 refreshLadder: false,
                 applyAmountToLeader: canShowPublicEventAmounts
             )
-        case .spectatorCount:
-            // Count is public but not shown in v1 soft feed chrome.
-            break
+        case .spectatorCount(let count):
+            liveSpectatorCount = max(0, count)
         case .error:
             // Non-fatal; HTTP poll covers recovery.
             break

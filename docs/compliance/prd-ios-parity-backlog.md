@@ -175,7 +175,7 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 ### P2 — Growth, Instant, platform
 
 - [x] **§13 Instant** — Customer emergency CTA + provider offer accept/decline (iOS); web post + JobDetail re-request  
-- [x] **FR-1.1 / realtime** — Google native OAuth (PKCE+id_token) + chat WS; APNs registration already; job auction native WS (`AuctionWebSocketClient` / `/ws/auction/{jobId}`) with HTTP poll fallback; spectator `/spectate` residual
+- [x] **FR-1.1 / realtime** — Google native OAuth (PKCE+id_token) + chat WS; APNs registration already; job auction native WS + public spectate (web job detail guests + dedicated page; iOS detail); marketplace spectate; LIVE honesty (FE-06)
 - [x] **§11 share cards** — Savings / review share cards via ShareLink  
 - [~] **Apple docs Phases 5–7** (process residual; 0–4 done) — Framework/ASC ops reviews + refresh stale `capability-matrix` / privacy inventory headers  
 - [~] **Deploy / mTLS** (ops/infra residual) — `DEPLOY_PROVISIONED` + gRPC mesh mTLS (S9.8 / SEC-GATE-09)  
@@ -252,3 +252,4 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | 2026-07-27 wave16 | Web RecurringSchedule visit-pay + FR-18.8 pause dual-party notify; empty-userID fail-closed + `requesting_user_id` on Get/List recurring; iOS Seen polish (poll-based) |
 | 2026-07-27 wave17 | Chat live `read_receipt` WS on MarkRead; web last_read watermark Seen + Sent/Seen labels; iOS peer watermark patch from WS frame |
 | 2026-07-27 wave18 | Recurring instance `approved_at` wire + list `payment_id`/`payment_status`/`payment_funded` enrichment; residual Pay for any approved visit; hide Pay when funded |
+| 2026-07-27 wave19 | Chat unread exact COUNT (exclude own + watermark on send); web job detail spectator feed + LIVE honesty; gateway spectate PII tests; iOS job spectator count chip |

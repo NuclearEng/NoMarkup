@@ -102,9 +102,27 @@ export default function SpectatorPage() {
               <span className="hidden sm:inline">Back</span>
             </Link>
             <div className="h-4 w-px bg-white/10" />
-            <Badge className="gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400">
-              <Radio className="h-3 w-3 animate-pulse" />
-              LIVE
+            <Badge className="gap-1 border-white/10 bg-white/5 text-xs text-white/70">
+              <Radio className="h-3 w-3" aria-hidden="true" />
+              SPECTATE
+            </Badge>
+            {/* LIVE only when the spectator socket is open — never claim live without connection (FE-06). */}
+            <Badge
+              className={
+                isConnected
+                  ? 'gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400'
+                  : error
+                    ? 'gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400'
+                    : 'gap-1 border-amber-500/20 bg-amber-500/10 text-xs text-amber-300'
+              }
+              aria-live="polite"
+            >
+              {isConnected ? (
+                <Wifi className="h-3 w-3 animate-pulse" aria-hidden="true" />
+              ) : (
+                <WifiOff className="h-3 w-3" aria-hidden="true" />
+              )}
+              {isConnected ? 'LIVE' : error ? 'OFFLINE' : 'CONNECTING'}
             </Badge>
           </div>
 

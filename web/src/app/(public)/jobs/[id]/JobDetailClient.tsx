@@ -45,6 +45,7 @@ import { useBidCount, useBidsForJob } from '@/hooks/useBids';
 import { useCountdown } from '@/hooks/useCountdown';
 import { useCreateInstantMatch } from '@/hooks/useInstantMatch';
 import { useJob } from '@/hooks/useJobs';
+import { useSpectatorTerminal } from '@/hooks/useSpectatorTerminal';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { JOB_STATUS, USER_ROLE } from '@/types';
@@ -92,8 +93,28 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
     job.status === JOB_STATUS.ACTIVE &&
     !auctionExpired;
 
-  // Terminal hook for live auctions (only connects when isLiveAuction)
-  const terminal = useAuctionTerminal(isLiveAuction ? jobId : undefined);
+  // Participant auction WS is authz-gated (owner or bidder). Guests and
+  // non-participants use the public delayed spectate stream (FR-1.1).
+  const isAuctionParticipant =
+    isLiveAuction && isAuthenticated && (isJobOwner || existingBid !== null);
+  const isSpectatorFeed = isLiveAuction && !isAuctionParticipant;
+  const participantTerminal = useAuctionTerminal(isAuctionParticipant ? jobId : undefined);
+  const spectatorTerminal = useSpectatorTerminal(isSpectatorFeed ? jobId : undefined);
+  const terminal = isAuctionParticipant
+    ? {
+        sim: participantTerminal.sim,
+        providers: participantTerminal.providers,
+        isConnected: participantTerminal.isConnected,
+        error: participantTerminal.error,
+        spectatorCount: 0,
+      }
+    : {
+        sim: spectatorTerminal.sim,
+        providers: spectatorTerminal.providers,
+        isConnected: spectatorTerminal.isConnected,
+        error: spectatorTerminal.error,
+        spectatorCount: spectatorTerminal.spectatorCount,
+      };
 
   const auctionEndsAt = useMemo(
     () => job?.auction_ends_at ?? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
@@ -216,10 +237,38 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 <span className="hidden sm:inline">Job Details</span>
               </Link>
               <div className="h-4 w-px bg-white/10" />
-              <Badge className="gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400">
-                <Radio className="h-3 w-3 animate-pulse" />
-                LIVE
+              {/* LIVE only when the active socket is open (participant or spectate). */}
+              <Badge
+                className={
+                  terminal.isConnected
+                    ? 'gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400'
+                    : terminal.error
+                      ? 'gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400'
+                      : 'gap-1 border-amber-500/20 bg-amber-500/10 text-xs text-amber-300'
+                }
+                aria-live="polite"
+              >
+                {terminal.isConnected ? (
+                  <Radio className="h-3 w-3 animate-pulse" aria-hidden="true" />
+                ) : (
+                  <WifiOff className="h-3 w-3" aria-hidden="true" />
+                )}
+                {terminal.isConnected
+                  ? isSpectatorFeed
+                    ? 'LIVE · SPECTATE'
+                    : 'LIVE'
+                  : terminal.error
+                    ? 'OFFLINE'
+                    : 'CONNECTING'}
               </Badge>
+              {isSpectatorFeed ? (
+                <Link
+                  href={`/auctions/${jobId}/spectate` as Route}
+                  className="hidden text-xs text-white/50 underline-offset-2 hover:text-white/80 hover:underline sm:inline"
+                >
+                  Full spectate
+                </Link>
+              ) : null}
               {isProvider && (
                 <Badge className="gap-1 border-amber-500/20 bg-amber-500/10 text-xs text-amber-400">
                   <Gavel className="h-3 w-3" />
@@ -239,8 +288,14 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
               )}
             </div>
 
-            {/* Right side: connection status */}
+            {/* Right side: connection status + spectator count when spectating */}
             <div className="flex items-center gap-3">
+              {isSpectatorFeed && terminal.isConnected && terminal.spectatorCount > 0 ? (
+                <div className="hidden items-center gap-1.5 text-xs text-white/60 sm:flex">
+                  <Users className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{String(terminal.spectatorCount)} watching</span>
+                </div>
+              ) : null}
               <div
                 className={`flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs ${
                   terminal.isConnected
@@ -252,7 +307,9 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 role="status"
                 aria-label={
                   terminal.isConnected
-                    ? 'Connected to live auction'
+                    ? isSpectatorFeed
+                      ? 'Connected to live spectate stream'
+                      : 'Connected to live auction'
                     : terminal.error
                       ? 'Connection error'
                       : 'Connecting to live auction'
@@ -261,7 +318,9 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 {terminal.isConnected ? (
                   <>
                     <Wifi className="h-3 w-3" />
-                    <span className="hidden sm:inline">Connected</span>
+                    <span className="hidden sm:inline">
+                      {isSpectatorFeed ? 'Spectating' : 'Connected'}
+                    </span>
                   </>
                 ) : terminal.error ? (
                   <>
