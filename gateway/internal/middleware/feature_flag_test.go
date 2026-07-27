@@ -106,6 +106,7 @@ func TestRequireFlag_regulatedMoneyKeys_production_nilDB_503(t *testing.T) {
 		"instant_payout",
 		"lead_gen",
 		"legal_services",
+		"nomarkup_guarantee",
 	}
 	for _, key := range keys {
 		key := key

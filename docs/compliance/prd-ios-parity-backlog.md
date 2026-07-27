@@ -105,7 +105,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 |------|-----|-----|
 | Chat | FR-8 | Attachments/search + native WS/typing + last_read Seen + live `read_receipt` WS shipped |
 | Recurring | FR-18 | Lifecycle + roll-forward + approve/complete CreatePayment + off-session + FR-16.7 due-row gateway retry **shipped**; iOS surfaces `off_session_charged` + payment retry count / next retry when present |
-| Instant | §13 | iOS + web Instant schedule GET/PUT + hydrate; ListProviderOffers/Accept **consume schedule** (wave12); push/ETA/AI Phase 2 residual |
+| Instant | §13 | Schedule consume + **in-app fan-out** + accept customer notify + honest `providers_notified` (wave21). Residual: geo/trust filters, live ETA/AI Phase 2 |
 | Digital subs | FR-12 | Read-only tiers; StoreKit deferred |
 | Social OAuth | FR-1.1 | **Google native shipped** (ASWebAuth+PKCE → `/auth/google/native`); needs `GOOGLE_IOS_CLIENT_ID` + reverse URL scheme for dogfood. Facebook still not on iOS |
 | Admin / fraud UI | FR-7/13 | Correctly **web-only** |
@@ -254,3 +254,4 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | 2026-07-27 wave18 | Recurring instance `approved_at` wire + list `payment_id`/`payment_status`/`payment_funded` enrichment; residual Pay for any approved visit; hide Pay when funded |
 | 2026-07-27 wave19 | Chat unread exact COUNT (exclude own + watermark on send); web job detail spectator feed + LIVE honesty; gateway spectate PII tests; iOS job spectator count chip |
 | 2026-07-27 wave20 | Marketplace watcher_count = max(page pings, WS spectators) across listing JSON, ping-viewer, spectate broadcast, watchlist |
+| 2026-07-27 wave21 | Instant in-app fan-out + accept customer notify + honest providers_notified; MON-21 payment cap; SEC-16 RS256; RequireFlag guarantee; MessageThread remake-read; JobDetail spectate tests; FE-06/route-map honesty |

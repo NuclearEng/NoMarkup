@@ -480,19 +480,29 @@ export function MessageThread({ channelId }: { channelId: string }) {
     [messages, user?.id, peerLastReadISO],
   );
 
-  // Mark channel as read when viewing
-  useEffect(() => {
-    if (channelId) {
-      void markRead.mutateAsync(channelId).catch(() => {
-        // Silently handle mark-read failures
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channelId]);
-
   const lastMessage = messages[messages.length - 1];
   const lastMessageId = lastMessage?.id ?? null;
   const lastMessageIsOwn = !!lastMessage && lastMessage.sender_id === user?.id;
+  const prevChannelIdForReadRef = useRef<string | null>(null);
+
+  // Mark channel as read when the thread is open. Always fire on channel
+  // switch; re-fire when the newest message id changes and that message is
+  // from the peer (inbound) so unread clears without leaving the thread.
+  // Skip own-outbound last messages to avoid thrash / loops with send.
+  useEffect(() => {
+    if (!channelId) return;
+
+    const channelChanged = prevChannelIdForReadRef.current !== channelId;
+    prevChannelIdForReadRef.current = channelId;
+
+    if (!channelChanged && (lastMessageIsOwn || !lastMessageId)) return;
+
+    void markRead.mutateAsync(channelId).catch(() => {
+      // Silently handle mark-read failures
+    });
+    // markRead identity is unstable; channelId + last message identity drive this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channelId, lastMessageId, lastMessageIsOwn]);
 
   // Auto-scroll the newest message into view when a new one arrives.
   //

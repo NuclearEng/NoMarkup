@@ -18,6 +18,8 @@ interface ProviderOffersResponse {
 interface InstantMatchResponse {
   status: string;
   expires_at: string;
+  /** Schedule-eligible Instant providers that received in-app fan-out. */
+  providers_notified?: number;
 }
 
 export function useProviderOffers() {
@@ -74,22 +76,44 @@ export function useCreateInstantMatch(jobId: string) {
     mutationFn: () =>
       api.post<InstantMatchResponse>(`/api/v1/jobs/${jobId}/instant-match`),
     onSuccess: (data) => {
-      // Customer can request instant match after post (JobDetail) as well as at
-      // publish time. Surface expiry so they know the offer window is finite.
-      if (data.expires_at) {
-        const when = new Date(data.expires_at);
-        const label = Number.isNaN(when.getTime())
-          ? data.expires_at
-          : when.toLocaleString(undefined, {
+      // Honest copy: providers_notified is the schedule-eligible Instant fan-out
+      // count (in-app). Providers also discover offers by polling the inbox.
+      const n =
+        typeof data.providers_notified === 'number' && data.providers_notified >= 0
+          ? data.providers_notified
+          : null;
+      const when = data.expires_at ? new Date(data.expires_at) : null;
+      const expiresLabel =
+        when && !Number.isNaN(when.getTime())
+          ? when.toLocaleString(undefined, {
               month: 'short',
               day: 'numeric',
               hour: 'numeric',
               minute: '2-digit',
-            });
-        toast.success(`Instant match sent. Offers expire ${label}.`);
-      } else {
-        toast.success('Instant match requested. Nearby providers have been notified.');
+            })
+          : data.expires_at;
+
+      if (n === 0) {
+        toast.message(
+          expiresLabel
+            ? `Instant offer is live until ${expiresLabel}, but no providers are currently available for Instant. Keep the auction open or re-request later.`
+            : 'Instant offer is live, but no providers are currently available for Instant. Keep the auction open or re-request later.',
+        );
+        return;
       }
+      if (n !== null && n > 0) {
+        toast.success(
+          expiresLabel
+            ? `Instant match sent to ${String(n)} available provider${n === 1 ? '' : 's'}. Offers expire ${expiresLabel}.`
+            : `Instant match sent to ${String(n)} available provider${n === 1 ? '' : 's'}.`,
+        );
+        return;
+      }
+      toast.success(
+        expiresLabel
+          ? `Instant match sent. Offers expire ${expiresLabel}.`
+          : 'Instant match sent. Providers with Instant availability will see the offer.',
+      );
     },
     onError: (err) => {
       toast.error(getApiErrorMessage(err, 'Failed to start instant match.'));

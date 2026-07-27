@@ -66,6 +66,9 @@ vi.mock('@/lib/constants', () => ({ ENABLE_LIVE_AUCTION: true }));
 vi.mock('@/hooks/useAuctionTerminal', () => ({
   useAuctionTerminal: vi.fn(),
 }));
+vi.mock('@/hooks/useSpectatorTerminal', () => ({
+  useSpectatorTerminal: vi.fn(),
+}));
 vi.mock('@/hooks/useBids', () => ({
   useBidCount: vi.fn(),
   useBidsForJob: vi.fn(),
@@ -89,6 +92,7 @@ vi.mock('@/stores/auth-store', () => ({
 
 const { useJob } = await import('@/hooks/useJobs');
 const { useAuctionTerminal } = await import('@/hooks/useAuctionTerminal');
+const { useSpectatorTerminal } = await import('@/hooks/useSpectatorTerminal');
 const { useBidCount, useBidsForJob, usePlaceBid } = await import('@/hooks/useBids');
 const { useCountdown } = await import('@/hooks/useCountdown');
 const { useCreateInstantMatch } = await import('@/hooks/useInstantMatch');
@@ -169,12 +173,22 @@ function setHooks(opts: {
   vi.mocked(useCountdown).mockReturnValue(
     opts.countdown ?? { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
   );
-  vi.mocked(useAuctionTerminal).mockReturnValue({
+  const terminalResult = {
     sim: {},
     providers: [],
     isConnected: opts.terminal?.isConnected ?? false,
     error: opts.terminal?.error ?? null,
-  } as unknown as ReturnType<typeof useAuctionTerminal>);
+    spectatorCount: 0,
+  };
+  // JobDetail picks participant vs spectator feed; both hooks are always
+  // called (one with jobId, one with undefined). Mock both so guest LIVE
+  // uses the spectate path honestly.
+  vi.mocked(useAuctionTerminal).mockReturnValue(
+    terminalResult as unknown as ReturnType<typeof useAuctionTerminal>,
+  );
+  vi.mocked(useSpectatorTerminal).mockReturnValue(
+    terminalResult as unknown as ReturnType<typeof useSpectatorTerminal>,
+  );
 }
 
 // The client island requires jobId + initialJob props. The mocked useJob hook
@@ -295,7 +309,37 @@ describe('(public)/jobs/[id]/page', () => {
     });
     renderClient();
     expect(screen.getByTestId('terminal-grid')).toBeDefined();
+    // Guest/unauthenticated uses the public spectator feed.
+    expect(screen.getByText('LIVE · SPECTATE')).toBeDefined();
+  });
+
+  it('shows LIVE · SPECTATE for a guest when the spectator terminal is connected', () => {
+    setAuth({ user: null, isAuthenticated: false });
+    setHooks({
+      job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
+      countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
+      terminal: { isConnected: true },
+    });
+    renderClient();
+    expect(screen.getByText('LIVE · SPECTATE')).toBeDefined();
+    expect(screen.queryByText(/^LIVE$/)).toBeNull();
+    expect(useSpectatorTerminal).toHaveBeenCalled();
+  });
+
+  it('shows LIVE (participant path) for the job owner on a live auction', () => {
+    setAuth({
+      user: { id: 'cust-1', roles: ['customer'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
+      countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
+      terminal: { isConnected: true },
+    });
+    renderClient();
     expect(screen.getByText('LIVE')).toBeDefined();
+    expect(screen.queryByText('LIVE · SPECTATE')).toBeNull();
+    expect(useAuctionTerminal).toHaveBeenCalled();
   });
 
   it('falls back to the standard layout when a live auction is expired', () => {
@@ -374,24 +418,24 @@ describe('(public)/jobs/[id]/page', () => {
     expect(screen.getByText('Owner')).toBeDefined();
   });
 
-  it('renders Disconnected status when the live terminal reports an error', () => {
+  it('renders OFFLINE status when the live terminal reports an error', () => {
     setHooks({
       job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
       countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: false, error: new Error('boom') },
     });
     renderClient();
-    expect(screen.getByText('Disconnected')).toBeDefined();
+    expect(screen.getByText('OFFLINE')).toBeDefined();
   });
 
-  it('renders Connecting status before the live terminal connects', () => {
+  it('renders CONNECTING status before the live terminal connects', () => {
     setHooks({
       job: { ...baseJob, auction_type: 'live', auction_ends_at: '2099-01-01T00:00:00Z' },
       countdown: { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
       terminal: { isConnected: false, error: null },
     });
     renderClient();
-    expect(screen.getByText('Connecting')).toBeDefined();
+    expect(screen.getByText('CONNECTING')).toBeDefined();
   });
 
   it('renders the location address in the live header when present', () => {

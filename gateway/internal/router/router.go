@@ -669,9 +669,11 @@ func New(
 				// Disputes
 				r.Post("/{id}/disputes", contractHandler.OpenDispute)
 
-				// Guarantee claims
-				r.Post("/{id}/guarantee-claim", contractHandler.SubmitGuaranteeClaim)
-				r.Get("/{id}/guarantee-claim", contractHandler.GetGuaranteeClaim)
+				// Guarantee claims — money path; gate so flag-off is API-off.
+				r.With(middleware.RequireFlag(dbPool, cacheClient, "nomarkup_guarantee")).
+					Post("/{id}/guarantee-claim", contractHandler.SubmitGuaranteeClaim)
+				r.With(middleware.RequireFlag(dbPool, cacheClient, "nomarkup_guarantee")).
+					Get("/{id}/guarantee-claim", contractHandler.GetGuaranteeClaim)
 
 				// No-show / abandonment
 				r.Post("/{id}/report-noshow", contractHandler.ReportNoShow)
@@ -1034,8 +1036,10 @@ func New(
 				r.Post("/{id}/resolve", adminDisputesHandler.ResolveDispute)
 			})
 
-			// Guarantee claims
+			// Guarantee claims — money path (payout on review); RequireFlag so
+			// flag-off cannot list or disburse via admin API alone.
 			r.Route("/guarantee-claims", func(r chi.Router) {
+				r.Use(middleware.RequireFlag(dbPool, cacheClient, "nomarkup_guarantee"))
 				r.Get("/", adminDisputesHandler.ListGuaranteeClaims)
 				r.Put("/{id}/review", adminDisputesHandler.ReviewGuaranteeClaim)
 			})

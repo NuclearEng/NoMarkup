@@ -672,9 +672,9 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                         : 'Request Instant match'}
                     </Button>
                     <p className="text-muted-foreground text-xs">
-                      Notifies nearby providers at your Instant Accept price
-                      ({formatCents(job.offer_accepted_cents ?? 0)}). Auction stays open until a
-                      provider accepts.
+                      Sends an Instant offer at your Accept price (
+                      {formatCents(job.offer_accepted_cents ?? 0)}) to providers with Instant
+                      availability. Auction stays open until a provider accepts.
                     </p>
                   </div>
                 ) : null}

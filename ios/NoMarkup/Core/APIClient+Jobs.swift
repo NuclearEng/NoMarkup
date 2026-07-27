@@ -204,6 +204,8 @@ private struct RepostJobBody: Encodable {
 struct InstantMatchCreateResponse: Codable, Sendable, Hashable {
     var status: String?
     var expiresAt: String?
+    /// Schedule-eligible Instant providers that received in-app fan-out.
+    var providersNotified: Int?
 
     var displayStatus: String {
         let s = status?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

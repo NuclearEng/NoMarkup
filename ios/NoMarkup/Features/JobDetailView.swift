@@ -1858,13 +1858,33 @@ struct JobDetailView: View {
         do {
             let response = try await APIClient.shared.createInstantMatch(jobId: jobID)
             instantMatchIsError = false
-            if let expires = response.expiresAt?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !expires.isEmpty
-            {
-                let when = CatalogDateFormat.friendlyDateTime(expires)
+            let n = response.providersNotified
+            let expiresLabel: String? = {
+                guard let expires = response.expiresAt?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !expires.isEmpty
+                else { return nil }
+                return CatalogDateFormat.friendlyDateTime(expires)
+            }()
+            if let n, n == 0 {
+                if let when = expiresLabel {
+                    instantMatchMessage =
+                        "Instant offer is live until \(when), but no providers are currently available for Instant. Keep the auction open or re-request later."
+                } else {
+                    instantMatchMessage =
+                        "Instant offer is live, but no providers are currently available for Instant. Keep the auction open or re-request later."
+                }
+            } else if let n, n > 0 {
+                let providers = n == 1 ? "1 available provider" : "\(n) available providers"
+                if let when = expiresLabel {
+                    instantMatchMessage = "Instant match sent to \(providers). Offers expire \(when)."
+                } else {
+                    instantMatchMessage = "Instant match sent to \(providers)."
+                }
+            } else if let when = expiresLabel {
                 instantMatchMessage = "Instant match sent. Offers expire \(when)."
             } else {
-                instantMatchMessage = "Instant match requested. Nearby providers have been notified."
+                instantMatchMessage =
+                    "Instant match sent. Providers with Instant availability will see the offer."
             }
         } catch let error as APIClientError where error.isUnauthorized {
             // Soft-fail: surface toast-style inline error; keep auction UI usable.

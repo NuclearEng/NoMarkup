@@ -158,6 +158,84 @@ describe('MessageThread', () => {
     expect(markReadMutate).toHaveBeenCalledWith('chan-42');
   });
 
+  it('re-marks read when a peer inbound message arrives while the thread is open', async () => {
+    setMessages({ messages: sampleMessages, has_more: false });
+    const { rerender } = render(<MessageThread channelId="chan-42" />);
+    expect(markReadMutate).toHaveBeenCalledTimes(1);
+
+    const withPeerInbound = [
+      ...sampleMessages,
+      makeMsg({
+        id: 'msg-peer-new',
+        sender_id: 'user-other',
+        content: 'new peer message',
+        created_at: '2026-04-01T11:15:00Z',
+      }),
+    ];
+    setMessages({ messages: withPeerInbound, has_more: false });
+    rerender(<MessageThread channelId="chan-42" />);
+
+    await waitFor(() => {
+      expect(markReadMutate).toHaveBeenCalledTimes(2);
+    });
+    expect(markReadMutate).toHaveBeenLastCalledWith('chan-42');
+  });
+
+  it('does not re-mark read when only an own outbound message arrives', async () => {
+    setMessages({ messages: sampleMessages, has_more: false });
+    const { rerender } = render(<MessageThread channelId="chan-42" />);
+    expect(markReadMutate).toHaveBeenCalledTimes(1);
+
+    const withOwnOutbound = [
+      ...sampleMessages,
+      makeMsg({
+        id: 'msg-own-new',
+        sender_id: 'user-me',
+        content: 'my new message',
+        created_at: '2026-04-01T11:15:00Z',
+      }),
+    ];
+    setMessages({ messages: withOwnOutbound, has_more: false });
+    rerender(<MessageThread channelId="chan-42" />);
+
+    // Allow any scheduled effects to settle; mark-read must stay at open-only.
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        resolve(null);
+      });
+    });
+    expect(markReadMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails soft when mark-read rejects on peer inbound', async () => {
+    markReadMutate.mockRejectedValueOnce(new Error('network'));
+    setMessages({ messages: sampleMessages, has_more: false });
+    const { rerender } = render(<MessageThread channelId="chan-42" />);
+    await waitFor(() => {
+      expect(markReadMutate).toHaveBeenCalledTimes(1);
+    });
+
+    markReadMutate.mockRejectedValueOnce(new Error('network'));
+    const withPeerInbound = [
+      ...sampleMessages,
+      makeMsg({
+        id: 'msg-peer-soft',
+        sender_id: 'user-other',
+        content: 'soft-fail inbound',
+        created_at: '2026-04-01T11:20:00Z',
+      }),
+    ];
+    setMessages({ messages: withPeerInbound, has_more: false });
+    // Must not throw / surface unhandled rejection.
+    expect(() => {
+      rerender(<MessageThread channelId="chan-42" />);
+    }).not.toThrow();
+    await waitFor(() => {
+      expect(markReadMutate).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByText('soft-fail inbound')).toBeDefined();
+  });
+
   it('renders a deleted message placeholder for is_deleted messages', () => {
     setMessages({
       messages: [makeMsg({ id: 'd-1', is_deleted: true, content: 'redacted-original' })],

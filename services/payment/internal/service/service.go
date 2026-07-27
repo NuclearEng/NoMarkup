@@ -275,6 +275,43 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 	if input.AmountCents > contract.AmountCents {
 		return nil, "", fmt.Errorf("create payment: amount exceeds contract: %w", domain.ErrInvalidAmount)
 	}
+	// MON-21: cumulative cap. Per-call amount <= contract still allows under-pay
+	// stacks (e.g. $500 × 3 on a $700 job). Sum existing in-flight + funded
+	// payments for this contract and reject when paidSoFar + amount would exceed
+	// the contract total. Failed / fully refunded / chargeback do not count
+	// (they free capacity); partially_refunded still counts its full amount.
+	existing, err := s.repo.GetPaymentsForContract(ctx, input.ContractID)
+	if err != nil {
+		return nil, "", fmt.Errorf("create payment: load contract payments: %w", err)
+	}
+	var paidSoFar int64
+	for _, p := range existing {
+		if paymentCountsTowardContractCap(p.Status) {
+			paidSoFar += p.AmountCents
+		}
+	}
+	if paidSoFar+input.AmountCents > contract.AmountCents {
+		// Soft-replay of the same idempotency / recurring key must still work:
+		// the prior insert already counts toward paidSoFar, so a naive cap would
+		// reject retries. Only block NEW over-cap creates.
+		canSoftReplay := input.IdempotencyKey != "" ||
+			(input.RecurringInstanceID != nil && *input.RecurringInstanceID != "")
+		if canSoftReplay {
+			replay, secret, replayErr := s.softReplayCreatePayment(ctx, input)
+			if replayErr == nil {
+				return replay, secret, nil
+			}
+			// No prior row → genuine new create over the cap. Surface other
+			// soft-replay failures (ownership, missing PI) as-is.
+			if !errors.Is(replayErr, domain.ErrPaymentNotFound) {
+				return nil, "", replayErr
+			}
+		}
+		return nil, "", fmt.Errorf(
+			"create payment: cumulative payments %d + amount %d exceed contract %d: %w",
+			paidSoFar, input.AmountCents, contract.AmountCents, domain.ErrInvalidAmount,
+		)
+	}
 	// Derive the payee from the contract; never trust the client's provider_id.
 	input.ProviderID = contract.ProviderID
 
@@ -417,6 +454,20 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 	}
 
 	return payment, clientSecret, nil
+}
+
+
+// paymentCountsTowardContractCap reports whether a payment status commits
+// (or still holds) funds against the contract total for MON-21 cumulative cap.
+// Counts: pending, processing, escrow, released, completed, partially_refunded.
+// Does not count: failed, refunded (full), chargeback, disputed, unknown.
+func paymentCountsTowardContractCap(status string) bool {
+	switch status {
+	case "pending", "processing", "escrow", "released", "completed", "partially_refunded":
+		return true
+	default:
+		return false
+	}
 }
 
 // offSessionAttemptFromIdempotencyKey parses trailing ":attempt-N" from a

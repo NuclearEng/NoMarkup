@@ -214,15 +214,28 @@ func (h *InstantMatchHandler) CreateInstantMatch(w http.ResponseWriter, r *http.
 	redisKey := jobOfferKey(jobID)
 	h.cache.SetJSON(r.Context(), redisKey, rec, instantMatchTTL)
 
+	// Fan-out in-app notifications to eligible Instant providers (fail-soft).
+	// Makes "providers notified" honest; providers still also poll the inbox.
+	notified := h.notifyInstantOfferToProviders(
+		r.Context(),
+		claims.UserID,
+		jobID,
+		job.GetTitle(),
+		rec.AmountCents,
+		expiresAt,
+	)
+
 	slog.Info("instant match created",
 		"job_id", jobID,
 		"customer_id", claims.UserID,
 		"expires_at", expiresAt,
+		"providers_notified", notified,
 	)
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"status":     "offer_sent",
-		"expires_at": expiresAt.Format(time.RFC3339),
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":             "offer_sent",
+		"expires_at":         expiresAt.Format(time.RFC3339),
+		"providers_notified": notified,
 	})
 }
 
@@ -446,21 +459,23 @@ func (h *InstantMatchHandler) AcceptOffer(w http.ResponseWriter, r *http.Request
 	// We need the job's customer_id (the contract's other party); the accept
 	// claims only carry the provider. Fetch the job to resolve it.
 	contractID := ""
-	if h.contractClient != nil {
-		jobResp, jobErr := h.jobClient.GetJob(ctx, &jobv1.GetJobRequest{
-			JobId:            jobID,
-			RequestingUserId: claims.UserID,
-		})
-		if jobErr != nil {
-			// The bid is already awarded; the contract is missing. Don't 500
-			// the provider — log loudly for ops recovery and return the award.
-			slog.Error("instant match: failed to load job for contract creation (manual recovery required)",
-				"job_id", jobID,
-				"provider_id", claims.UserID,
-				"bid_id", awardedBid.GetId(),
-				"error", jobErr,
-			)
-		} else if job := jobResp.GetJob().GetJob(); job != nil {
+	customerID := ""
+	jobResp, jobErr := h.jobClient.GetJob(ctx, &jobv1.GetJobRequest{
+		JobId:            jobID,
+		RequestingUserId: claims.UserID,
+	})
+	if jobErr != nil {
+		// The bid is already awarded; the contract is missing. Don't 500
+		// the provider — log loudly for ops recovery and return the award.
+		slog.Error("instant match: failed to load job for contract creation (manual recovery required)",
+			"job_id", jobID,
+			"provider_id", claims.UserID,
+			"bid_id", awardedBid.GetId(),
+			"error", jobErr,
+		)
+	} else if job := jobResp.GetJob().GetJob(); job != nil {
+		customerID = job.GetCustomerId()
+		if h.contractClient != nil {
 			contractResp, contractErr := h.contractClient.CreateContractFromAward(ctx, &contractv1.CreateContractFromAwardRequest{
 				JobId:         jobID,
 				BidId:         awardedBid.GetId(),
@@ -481,6 +496,12 @@ func (h *InstantMatchHandler) AcceptOffer(w http.ResponseWriter, r *http.Request
 				contractID = contractResp.GetContract().GetId()
 			}
 		}
+	}
+
+	// Notify customer that a provider accepted Instant (PRD step 5 minus ETA).
+	// Fail-soft; award already stands.
+	if customerID != "" {
+		h.notifyInstantAcceptedToCustomer(ctx, claims.UserID, customerID, jobID, contractID, awardedBid.GetAmountCents())
 	}
 
 	slog.Info("instant match offer accepted",
@@ -554,5 +575,101 @@ func (h *InstantMatchHandler) DeclineOffer(w http.ResponseWriter, r *http.Reques
 	)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "declined"})
+}
+
+// notifyInstantOfferToProviders fans out job_matched in-app notifications to
+// Instant-eligible providers. Fail-soft; returns how many recipients were
+// attempted (preference suppression still counts as notified attempt at DB
+// layer only when insert happens — we count eligibility + emit call).
+//
+// Eligibility: instant_enabled + (available_now OR in schedule window), same
+// gate as ListProviderOffers. Geo/category/trust filters remain Phase 2.
+func (h *InstantMatchHandler) notifyInstantOfferToProviders(
+	ctx context.Context,
+	customerID, jobID, jobTitle string,
+	amountCents int64,
+	expiresAt time.Time,
+) int {
+	if h.db == nil || jobID == "" {
+		return 0
+	}
+	// Cap fan-out so a global Instant opt-in list cannot stall the HTTP request.
+	const maxFanOut = 100
+	rows, err := h.db.Query(ctx, `
+		SELECT user_id::text
+		  FROM provider_profiles
+		 WHERE instant_enabled = true
+		 LIMIT $1`, maxFanOut)
+	if err != nil {
+		slog.WarnContext(ctx, "instant match: provider fan-out query failed",
+			"job_id", jobID,
+			"error", err,
+		)
+		return 0
+	}
+	defer rows.Close()
+
+	title := "Instant job available"
+	body := "A customer needs help now"
+	if jobTitle != "" {
+		body = fmt.Sprintf("%s — Instant accept at $%.2f", jobTitle, float64(amountCents)/100)
+	} else if amountCents > 0 {
+		body = fmt.Sprintf("Instant accept at $%.2f", float64(amountCents)/100)
+	}
+	actionURL := "/provider/offers"
+	if expiresAt.After(time.Now()) {
+		// keep short body; expiry is on the inbox card
+		_ = expiresAt
+	}
+
+	notified := 0
+	for rows.Next() {
+		var providerID string
+		if scanErr := rows.Scan(&providerID); scanErr != nil {
+			continue
+		}
+		if providerID == "" || providerID == customerID {
+			continue
+		}
+		if !h.providerEligibleForInstantFanOut(ctx, providerID) {
+			continue
+		}
+		emitNotification(ctx, h.db, customerID, providerID, "job_matched",
+			title, body, actionURL, "job", jobID)
+		notified++
+	}
+	if err := rows.Err(); err != nil {
+		slog.WarnContext(ctx, "instant match: provider fan-out rows error",
+			"job_id", jobID,
+			"error", err,
+		)
+	}
+	return notified
+}
+
+// notifyInstantAcceptedToCustomer emits offer_accepted / bid_awarded-style
+// notice to the job owner when Instant is claimed.
+func (h *InstantMatchHandler) notifyInstantAcceptedToCustomer(
+	ctx context.Context,
+	providerID, customerID, jobID, contractID string,
+	amountCents int64,
+) {
+	if customerID == "" {
+		return
+	}
+	title := "Instant match accepted"
+	body := "A provider accepted your Instant request."
+	if amountCents > 0 {
+		body = fmt.Sprintf("A provider accepted your Instant request at $%.2f.", float64(amountCents)/100)
+	}
+	actionURL := "/jobs/" + jobID
+	entityType, entityID := "job", jobID
+	if contractID != "" {
+		actionURL = "/contracts/" + contractID
+		entityType, entityID = "contract", contractID
+	}
+	// offer_accepted is a known NOTIFICATION_TYPE; bid_awarded used for auction awards.
+	emitNotification(ctx, h.db, providerID, customerID, "offer_accepted",
+		title, body, actionURL, entityType, entityID)
 }
 

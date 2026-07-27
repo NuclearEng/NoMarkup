@@ -222,6 +222,173 @@ func TestPaymentService_CreatePayment_DerivesProviderFromContract(t *testing.T) 
 	assert.Equal(t, "prov-real", stored.ProviderID, "payee must come from the contract, never the client body")
 }
 
+// --- MON-21 cumulative contract payment cap ---
+
+func TestPaymentService_CreatePayment_RejectsCumulativeOverCap(t *testing.T) {
+	t.Parallel()
+	// Contract $700; existing escrow $500 → second $300 would total $800.
+	repo := reconcileRepo(70000)
+	repo.getPaymentsForContractFn = func(_ context.Context, contractID string) ([]*domain.Payment, error) {
+		assert.Equal(t, "contract-1", contractID)
+		return []*domain.Payment{{
+			ID: "pay-prior", ContractID: contractID, AmountCents: 50000, Status: "escrow",
+		}}, nil
+	}
+	created := false
+	repo.createPaymentFn = func(_ context.Context, _ *domain.Payment) error {
+		created = true
+		return nil
+	}
+	svc := newTestPaymentService(repo, nil)
+
+	_, _, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		ProviderID:     "prov-1",
+		AmountCents:    30000,
+		IdempotencyKey: "idem-overcap-new",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidAmount), "cumulative over-cap must wrap ErrInvalidAmount, got %v", err)
+	assert.Contains(t, err.Error(), "cumulative")
+	assert.False(t, created, "must not insert a payment when over the contract cap")
+}
+
+func TestPaymentService_CreatePayment_AllowsUnderCapPartial(t *testing.T) {
+	t.Parallel()
+	// Contract $700; existing $400 escrow → $300 more is exact remaining.
+	repo := reconcileRepo(70000)
+	repo.getPaymentsForContractFn = func(_ context.Context, _ string) ([]*domain.Payment, error) {
+		return []*domain.Payment{{
+			ID: "pay-prior", AmountCents: 40000, Status: "escrow",
+		}}, nil
+	}
+	var stored *domain.Payment
+	repo.createPaymentFn = func(_ context.Context, p *domain.Payment) error { stored = p; return nil }
+	repo.getPaymentFn = func(_ context.Context, _ string) (*domain.Payment, error) { return stored, nil }
+	svc := newTestPaymentService(repo, nil)
+
+	payment, _, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		ProviderID:     "prov-1",
+		AmountCents:    30000,
+		IdempotencyKey: "idem-under-cap",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, payment)
+	assert.Equal(t, int64(30000), stored.AmountCents)
+}
+
+func TestPaymentService_CreatePayment_FailedAndRefundedDoNotCountTowardCap(t *testing.T) {
+	t.Parallel()
+	// Contract $700. Failed $500 + fully refunded $500 do not count; new $700 ok.
+	repo := reconcileRepo(70000)
+	repo.getPaymentsForContractFn = func(_ context.Context, _ string) ([]*domain.Payment, error) {
+		return []*domain.Payment{
+			{ID: "pay-fail", AmountCents: 50000, Status: "failed"},
+			{ID: "pay-ref", AmountCents: 50000, Status: "refunded"},
+			{ID: "pay-cb", AmountCents: 50000, Status: "chargeback"},
+		}, nil
+	}
+	var stored *domain.Payment
+	repo.createPaymentFn = func(_ context.Context, p *domain.Payment) error { stored = p; return nil }
+	repo.getPaymentFn = func(_ context.Context, _ string) (*domain.Payment, error) { return stored, nil }
+	svc := newTestPaymentService(repo, nil)
+
+	_, _, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		ProviderID:     "prov-1",
+		AmountCents:    70000,
+		IdempotencyKey: "idem-after-failed",
+	})
+	require.NoError(t, err, "failed/refunded/chargeback must free capacity")
+	require.NotNil(t, stored)
+}
+
+func TestPaymentService_CreatePayment_PartiallyRefundedCountsTowardCap(t *testing.T) {
+	t.Parallel()
+	// Contract $700; partially_refunded $700 still counts full amount → new $1 rejected.
+	repo := reconcileRepo(70000)
+	repo.getPaymentsForContractFn = func(_ context.Context, _ string) ([]*domain.Payment, error) {
+		return []*domain.Payment{{
+			ID: "pay-partial", AmountCents: 70000, Status: "partially_refunded", RefundAmountCents: 10000,
+		}}, nil
+	}
+	svc := newTestPaymentService(repo, nil)
+
+	_, _, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		ProviderID:     "prov-1",
+		AmountCents:    1,
+		IdempotencyKey: "idem-after-partial",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidAmount))
+}
+
+func TestPaymentService_CreatePayment_SoftReplayStillWorksWhenAtCap(t *testing.T) {
+	t.Parallel()
+	// Prior create already filled the contract; retry same idempotency key must soft-replay.
+	const key = "idem-at-cap-replay"
+	existing := &domain.Payment{
+		ID:                    "pay-full",
+		ContractID:            "contract-1",
+		CustomerID:            "cust-1",
+		ProviderID:            "prov-real",
+		AmountCents:           70000,
+		Status:                "pending",
+		StripePaymentIntentID: "pi_dev_" + key,
+		IdempotencyKey:        key,
+	}
+	repo := reconcileRepo(70000)
+	repo.getPaymentsForContractFn = func(_ context.Context, _ string) ([]*domain.Payment, error) {
+		return []*domain.Payment{existing}, nil
+	}
+	repo.getPaymentByIdempotencyKeyFn = func(_ context.Context, k string) (*domain.Payment, error) {
+		if k == key {
+			return existing, nil
+		}
+		return nil, domain.ErrPaymentNotFound
+	}
+	created := false
+	repo.createPaymentFn = func(_ context.Context, _ *domain.Payment) error {
+		created = true
+		return nil
+	}
+	svc := newTestPaymentService(repo, nil)
+	// Seed DevStore so soft-replay can re-read a real client_secret (same as
+	// SoftReplayIdempotencyKey). Without this, pending soft-replay fail-closes.
+	svc.stripe.DevStore().RecordPaymentIntent(existing.StripePaymentIntentID, "", 70000, "pi_dev_secret_"+key)
+
+	payment, secret, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		ProviderID:     "prov-1",
+		AmountCents:    70000,
+		IdempotencyKey: key,
+	})
+	require.NoError(t, err, "soft-replay of same key must not be blocked by cumulative cap")
+	require.NotNil(t, payment)
+	assert.Equal(t, "pay-full", payment.ID)
+	assert.NotEmpty(t, secret, "pending soft-replay should re-issue client_secret")
+	assert.False(t, created, "must not insert a second payment on soft-replay")
+}
+
+func TestPaymentCountsTowardContractCap(t *testing.T) {
+	t.Parallel()
+	counting := []string{"pending", "processing", "escrow", "released", "completed", "partially_refunded"}
+	for _, s := range counting {
+		assert.True(t, paymentCountsTowardContractCap(s), s)
+	}
+	nonCounting := []string{"failed", "refunded", "chargeback", "disputed", ""}
+	for _, s := range nonCounting {
+		assert.False(t, paymentCountsTowardContractCap(s), s)
+	}
+}
+
 // --- CreatePayment dual-PI soft-replay (recurring_instance_id UNIQUE) ---
 
 func TestPaymentService_CreatePayment_SoftReplayRecurringInstance(t *testing.T) {

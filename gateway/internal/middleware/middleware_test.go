@@ -179,6 +179,72 @@ func TestAuthMiddleware_claims_in_context(t *testing.T) {
 	assert.Equal(t, []string{"admin", "provider"}, capturedClaims.Roles)
 }
 
+// signTestJWTWithMethod signs claims with an explicit RSA signing method
+// (RS256/RS384/RS512). Used to prove SEC-16 rejects non-RS256 algs.
+func signTestJWTWithMethod(t *testing.T, key *rsa.PrivateKey, method jwt.SigningMethod, subject string, expiresAt time.Time) string {
+	t.Helper()
+	claims := tokenClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    defaultJWTIssuer,
+			Audience:  jwt.ClaimStrings{defaultJWTAudience},
+			Subject:   subject,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
+		Email: "test@example.com",
+		Roles: []string{"customer"},
+	}
+	token := jwt.NewWithClaims(method, claims)
+	signed, err := token.SignedString(key)
+	require.NoError(t, err)
+	return signed
+}
+
+// SEC-16: WithValidMethods must accept RS256 only — RS384/RS512 are valid RSA
+// family algs but are not allowed for access tokens.
+func TestAuthMiddleware_rejects_non_RS256(t *testing.T) {
+	t.Parallel()
+
+	key := generateTestKeyPair(t)
+	authMw := NewAuthMiddleware(&key.PublicKey, nil)
+	exp := time.Now().Add(15 * time.Minute)
+
+	tests := []struct {
+		name   string
+		method jwt.SigningMethod
+	}{
+		{name: "RS384_rejected", method: jwt.SigningMethodRS384},
+		{name: "RS512_rejected", method: jwt.SigningMethodRS512},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tok := signTestJWTWithMethod(t, key, tt.method, "user-rs", exp)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			req.Header.Set("Authorization", "Bearer "+tok)
+			rec := httptest.NewRecorder()
+
+			authMw.Handler(okHandler()).ServeHTTP(rec, req)
+
+			assert.Equal(t, http.StatusUnauthorized, rec.Code)
+			assert.Contains(t, rec.Body.String(), "invalid or expired token")
+		})
+	}
+
+	t.Run("RS256_accepted", func(t *testing.T) {
+		t.Parallel()
+		tok := signTestJWTWithMethod(t, key, jwt.SigningMethodRS256, "user-rs256", exp)
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		authMw.Handler(okHandler()).ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "user-rs256", rec.Header().Get("X-User-ID"))
+	})
+}
+
 // --- RequireAdmin tests ---
 
 func TestRequireAdmin(t *testing.T) {
