@@ -2,7 +2,11 @@
 
 > **Canonical visual + narrative:** `qa/showcase/index.html`  
 > All product surfaces (web dark shell, iOS native, marketing, icons) align to this document.  
-> If code and this file diverge, **fix code** (or update this file only when the showcase deliberately changes).
+> If code and this file diverge, **fix code** (or update this file only when the showcase deliberately changes).  
+>  
+> **Living implementation program:** [`docs/compliance/showcase-living-checklist.md`](../compliance/showcase-living-checklist.md)  
+> — maps every showcase capability to `live` / `partial` / `blocked-compliance` with security + performance gates.  
+> Work continues until that checklist’s definition of done is met.
 
 ---
 

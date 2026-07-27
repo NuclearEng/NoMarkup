@@ -41,6 +41,9 @@ struct JobDetailView: View {
     /// Soft live-auction overlay (lowest bid / ends-at) from optional poll.
     @State private var liveLowestBidCents: Int64?
 
+    /// Showcase H1.4/H1.5 — market range + savings strip (soft-fail if no FPI data).
+    @State private var fairPrice: FairPriceResponse?
+
     init(jobID: String, preview: JobSummary? = nil) {
         self.jobID = jobID
         self.preview = preview
@@ -375,6 +378,15 @@ struct JobDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityLabel("Providers bid down — lowest trusted bid can win")
 
+                if isSealedAuction {
+                    Text("Sealed auction — other providers cannot see bid amounts. Only the job owner sees the full ladder.")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                marketIntelligenceStrip(job)
+
                 HStack(spacing: 12) {
                     if job.auctionEndsAt != nil {
                         liveCountdownChip(iso: job.auctionEndsAt)
@@ -387,16 +399,110 @@ struct JobDetailView: View {
         }
     }
 
+    /// Showcase market-range + savings strip (H1.4 / H1.5). Soft-fails when FPI has no data.
+    @ViewBuilder
+    private func marketIntelligenceStrip(_ job: JobDetail) -> some View {
+        let rangeText = marketRangeLabel(job: job)
+        let savingsText = savingsLabel(job: job)
+        if rangeText != nil || savingsText != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                if let rangeText {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Market range")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .textCase(.uppercase)
+                        Spacer(minLength: 8)
+                        Text(rangeText)
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.goldBright)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Market range \(rangeText)")
+                }
+                if let savingsText {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Est. savings vs starting")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .textCase(.uppercase)
+                        Spacer(minLength: 8)
+                        Text(savingsText)
+                            .font(.subheadline.weight(.bold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.success)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Estimated savings \(savingsText)")
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(BrandTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(BrandTheme.gold.opacity(0.2), lineWidth: 1)
+            )
+        }
+    }
+
+    private func marketRangeLabel(job: JobDetail) -> String? {
+        if let fair = fairPrice, fair.isUsable {
+            let lo = fair.p25Cents ?? fair.ciLoCents
+            let hi = fair.p75Cents ?? fair.ciHiCents
+            if let lo, let hi, lo > 0, hi >= lo {
+                let n = fair.nEff.map { Int($0.rounded()) } ?? 0
+                let pts = n > 0 ? " · \(n) data pts" : ""
+                return "\(MoneyFormat.usd(cents: lo)) – \(MoneyFormat.usd(cents: hi))\(pts)"
+            }
+            if let mid = fair.priceCents, mid > 0 {
+                return "Median ≈ \(MoneyFormat.usd(cents: mid))"
+            }
+        }
+        // Fallback: starting bid is the reverse-auction ceiling (showcase budget anchor).
+        if let start = job.startingBidCents, start > 0 {
+            return "Budget ceiling \(MoneyFormat.usd(cents: start))"
+        }
+        return nil
+    }
+
+    private func savingsLabel(job: JobDetail) -> String? {
+        guard let start = job.startingBidCents, start > 0 else { return nil }
+        guard let leading = leadingBidCents, leading > 0, leading < start else { return nil }
+        let saved = start - leading
+        let pct = Int((Double(saved) / Double(start) * 100.0).rounded())
+        return "\(MoneyFormat.usd(cents: saved)) (\(pct)%)"
+    }
+
+    private var isSealedAuction: Bool {
+        let t = (detail?.auctionType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return t == "sealed" || t.isEmpty
+    }
+
+    private var isLiveAuctionType: Bool {
+        let t = (detail?.auctionType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return t == "live"
+    }
+
     private var reverseAuctionBadge: some View {
-        let isLive = isAuctionActiveForPolling
+        let active = isAuctionActiveForPolling
+        let label: String
+        if active, isLiveAuctionType {
+            label = "LIVE · reverse auction"
+        } else if active, isSealedAuction {
+            label = "LIVE · sealed reverse"
+        } else if isSealedAuction {
+            label = "Sealed reverse auction"
+        } else {
+            label = active ? "LIVE · reverse auction" : "Reverse auction"
+        }
         return HStack(spacing: 6) {
-            if isLive {
+            if active {
                 Circle()
                     .fill(BrandTheme.success)
                     .frame(width: 7, height: 7)
                     .accessibilityHidden(true)
             }
-            Text(isLive ? "LIVE · reverse auction" : "Reverse auction")
+            Text(label)
                 .font(.caption.weight(.bold))
                 .foregroundStyle(BrandTheme.goldBright)
         }
@@ -406,7 +512,7 @@ struct JobDetailView: View {
             Capsule()
                 .strokeBorder(BrandTheme.gold, lineWidth: 1.5)
         )
-        .accessibilityLabel(isLive ? "Live reverse auction" : "Reverse auction")
+        .accessibilityLabel(label)
     }
 
     @ViewBuilder
@@ -1060,6 +1166,24 @@ struct JobDetailView: View {
         await loadBids()
         // Soft live-state refresh (ignore failures).
         await refreshLiveAuctionState()
+        await loadFairPrice()
+    }
+
+    /// Soft market-range fetch for showcase intelligence strip (never blocks hero).
+    @MainActor
+    private func loadFairPrice() async {
+        let categoryId = detail?.categoryId?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !categoryId.isEmpty else {
+            fairPrice = nil
+            return
+        }
+        do {
+            let price = try await APIClient.shared.fetchFairPrice(categoryId: categoryId, side: 1)
+            fairPrice = price.isUsable ? price : nil
+        } catch {
+            fairPrice = nil
+        }
     }
 
     @MainActor
