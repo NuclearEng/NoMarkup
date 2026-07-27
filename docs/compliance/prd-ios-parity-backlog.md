@@ -114,16 +114,18 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 
 ## 4. Unified backlog (execute in order)
 
-### Engineering residual status (2026-07-27 wave15)
+### Engineering residual status (2026-07-27 wave21 — eng loop closed)
 
-**Consumer iOS product surface for PRD MVP depth is largely implemented.** Remaining unchecked items are:
-1. **Human/ops-gated** (ASC, device smoke sign-off, always-on review API, Apple Pay domain file, Google iOS client IDs in Console)
-2. **Accepted risk / licenses** (MON-14–18, R6.2–R6.6, Checkr, mTLS, StoreKit B2)
-3. **Thin polish residuals (honest, as of wave15):**
-   - **FR-16.7 due-row auto-charge + UX** — **shipped (gateway + webhook + client project)**: cron CreatePayment `attempt-N`; `payment_intent.payment_failed` joins 3-strike schedule; config GET/JSON projects `payment_retry_count` / `next_retry_at` when non-zero; iOS/web recurring sections show count + next auto-retry. Residual: live Stripe dogfood of full day-0/3/7 path.
-   - **Instant AI / ETA / push polish** — schedule window **is** consumed on ListProviderOffers + Accept (wave12); H:MM parse edge hardened (wave15). Phase 2 residual only.
-   - **Chat receipts polish** — **shipped (wave17)**: MarkRead publishes live `read_receipt` WS; web last_read watermark Seen + Sent/Seen labels; iOS patches peer watermark on frame. Residual: delivery receipts out of scope.
-   - **FR-18 per-instance pay** — approve/auto-approve CreatePayment + soft-replay + off-session + iOS/web pay CTAs + scheduled retry cron + durable `approved_at` + list `payment_funded` enrichment **shipped**. Residual: live Stripe dogfood.
+**Consumer product + shippable eng for PRD MVP depth is implemented (waves 1–21).** Remaining unchecked items are:
+1. **Human/ops-gated** (ASC, device smoke sign-off, always-on review API, Apple Pay domain file, Google iOS client IDs in Console, live Stripe dogfood)
+2. **Accepted risk / licenses** (MON-14–18 ADR, R6.2–R6.6, Checkr, mTLS arming, StoreKit B2)
+3. **True product Phase 2 (not eng polish):** Instant geo/trust ranking, live GPS ETA, AI recommendation; delivery receipts
+4. **Shipped thin residuals (do not re-open as eng backlog):**
+   - **FR-16.7 / FR-18** — 3-strike, due-row CreatePayment, visit-pay web/iOS, approved_at, payment_funded
+   - **Instant** — schedule consume + in-app `job_matched` fan-out + accept notify + honest `providers_notified` (wave21)
+   - **Chat FR-8** — WS/typing/Seen/read_receipt/exact unread/re-mark-read while focused
+   - **Spectator FR-1.1** — job+marketplace spectate, LIVE honesty (FE-06 Done), unified watcher_count
+   - **Money/auth** — MON-21 cumulative cap; SEC-16 RS256-only; RequireFlag on guarantee claims
 
 Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted residual · **`[~] ops`** = human/ops only (not an eng task)
 
