@@ -211,9 +211,15 @@ type ProviderProfile struct {
 	ServiceAddress           string
 	EINTIN                   string
 	InsurancePolicyNumber    string
-	Latitude                 *float64
-	Longitude                *float64
-	ServiceRadiusKm          float64
+	// InsuranceProvider is a carrier name (not encrypted — not personal data).
+	InsuranceProvider string
+	// InsuranceExpiry is YYYY-MM-DD when set; empty when unset.
+	InsuranceExpiry string
+	// InsuranceCoverageCents is liability limit in integer cents; 0 = unset.
+	InsuranceCoverageCents int64
+	Latitude               *float64
+	Longitude              *float64
+	ServiceRadiusKm        float64
 	DefaultPaymentTiming     string
 	DefaultMilestoneJSON     []byte
 	CancellationPolicy       string
@@ -283,6 +289,10 @@ type UpdateProviderInput struct {
 	// read — callers pass and receive plaintext.
 	EINTIN                *string
 	InsurancePolicyNumber *string
+	// Insurance metadata (migration 012) — not secretbox-encrypted.
+	InsuranceProvider      *string
+	InsuranceExpiry        *string // YYYY-MM-DD or empty to clear
+	InsuranceCoverageCents *int64  // cents; 0 clears
 }
 
 // GlobalTermsInput holds provider global terms settings.

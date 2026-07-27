@@ -450,6 +450,11 @@ message ProviderProfile {
   // Empty string means "not set". Never expose on unauthenticated surfaces.
   string ein_tin = 25;
   string insurance_policy_number = 26;
+  // Insurance metadata (migration 012). Carrier name is not PII; still owner-only
+  // on HTTP to avoid leaking business details on public profiles.
+  string insurance_provider = 27;
+  string insurance_expiry = 28; // YYYY-MM-DD or empty
+  int64 insurance_coverage_cents = 29;
 }
 
 message MilestoneTemplate {
@@ -513,6 +518,9 @@ message UpdateProviderProfileRequest {
   // the user service encrypts before write. Omitted = leave existing value.
   optional string ein_tin = 7;
   optional string insurance_policy_number = 8;
+  optional string insurance_provider = 9;
+  optional string insurance_expiry = 10; // YYYY-MM-DD or "" to clear
+  optional int64 insurance_coverage_cents = 11;
 }
 
 message UpdateProviderProfileResponse {

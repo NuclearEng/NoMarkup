@@ -235,6 +235,12 @@ export interface ProviderProfile {
    * profiles. Empty string when not set.
    */
   insurance_policy_number?: string | null;
+  /** Owner GET/PATCH only. Carrier name (not encrypted). */
+  insurance_provider?: string | null;
+  /** Owner GET/PATCH only. YYYY-MM-DD or empty. */
+  insurance_expiry?: string | null;
+  /** Owner GET/PATCH only. Liability limit in integer cents. */
+  insurance_coverage_cents?: number | null;
   jobs_completed: number;
   avg_response_time_minutes: number | null;
   on_time_rate: number | null;
@@ -291,6 +297,10 @@ export interface UpdateProviderInput {
   ein_tin?: string;
   /** Insurance policy number — PII at rest; omit to leave unchanged. */
   insurance_policy_number?: string;
+  insurance_provider?: string;
+  /** YYYY-MM-DD */
+  insurance_expiry?: string;
+  insurance_coverage_cents?: number;
 }
 
 export interface GlobalTermsInput {

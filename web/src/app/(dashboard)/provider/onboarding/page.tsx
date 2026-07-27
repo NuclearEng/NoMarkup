@@ -193,33 +193,39 @@ function BusinessInfoStep({
     },
   });
 
-  // Prefill form when existing profile data arrives. EIN/TIN and policy number
-  // are owner-only PII returned by GET /providers/me (C2). Carrier name /
-  // expiry / coverage are still UI-only until a later contract extension.
+  // Prefill form when existing profile data arrives. EIN/TIN, policy number,
+  // and insurance metadata are owner-only fields from GET /providers/me.
   useEffect(() => {
     if (existingProfile) {
+      const coverageCents = existingProfile.insurance_coverage_cents;
       form.reset({
         businessName: existingProfile.business_name ?? '',
         bio: existingProfile.bio ?? '',
         serviceAddress: existingProfile.service_address ?? '',
         einTin: existingProfile.ein_tin ?? '',
-        insuranceProvider: '',
+        insuranceProvider: existingProfile.insurance_provider ?? '',
         insurancePolicyNumber: existingProfile.insurance_policy_number ?? '',
-        insuranceExpiry: '',
-        insuranceCoverageDollars: undefined,
+        insuranceExpiry: existingProfile.insurance_expiry ?? '',
+        insuranceCoverageDollars:
+          coverageCents != null && coverageCents > 0
+            ? Math.round(coverageCents / 100)
+            : undefined,
       });
     }
   }, [existingProfile, form]);
 
   async function onSubmit(values: BusinessInfoFormValues) {
-    // Only send PII fields when the user entered a value so an empty form
-    // field does not wipe a previously stored EIN/policy on re-submit.
+    // Only send optional identity fields when the user entered a value so an
+    // empty form field does not wipe previously stored data on re-submit.
     const payload: {
       business_name: string;
       bio?: string;
       service_address?: string;
       ein_tin?: string;
       insurance_policy_number?: string;
+      insurance_provider?: string;
+      insurance_expiry?: string;
+      insurance_coverage_cents?: number;
     } = {
       business_name: values.businessName,
       bio: values.bio || undefined,
@@ -232,6 +238,21 @@ function BusinessInfoStep({
     const policy = values.insurancePolicyNumber?.trim();
     if (policy) {
       payload.insurance_policy_number = policy;
+    }
+    const carrier = values.insuranceProvider?.trim();
+    if (carrier) {
+      payload.insurance_provider = carrier;
+    }
+    const expiry = values.insuranceExpiry?.trim();
+    if (expiry) {
+      payload.insurance_expiry = expiry;
+    }
+    if (
+      values.insuranceCoverageDollars != null &&
+      Number.isFinite(values.insuranceCoverageDollars) &&
+      values.insuranceCoverageDollars > 0
+    ) {
+      payload.insurance_coverage_cents = Math.round(values.insuranceCoverageDollars * 100);
     }
     await updateProvider.mutateAsync(payload);
     onNext();

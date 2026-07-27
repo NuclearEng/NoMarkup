@@ -37,14 +37,17 @@ func NewProviderHandler(userClient userv1.UserServiceClient, trustClient trustv1
 }
 
 type updateProviderRequest struct {
-	BusinessName          *string  `json:"business_name,omitempty"`
-	Bio                   *string  `json:"bio,omitempty"`
-	Address               *string  `json:"service_address,omitempty"`
-	Latitude              *float64 `json:"latitude,omitempty"`
-	Longitude             *float64 `json:"longitude,omitempty"`
-	RadiusKm              *float64 `json:"service_radius_km,omitempty"`
-	EINTIN                *string  `json:"ein_tin,omitempty"`
-	InsurancePolicyNumber *string  `json:"insurance_policy_number,omitempty"`
+	BusinessName           *string  `json:"business_name,omitempty"`
+	Bio                    *string  `json:"bio,omitempty"`
+	Address                *string  `json:"service_address,omitempty"`
+	Latitude               *float64 `json:"latitude,omitempty"`
+	Longitude              *float64 `json:"longitude,omitempty"`
+	RadiusKm               *float64 `json:"service_radius_km,omitempty"`
+	EINTIN                 *string  `json:"ein_tin,omitempty"`
+	InsurancePolicyNumber  *string  `json:"insurance_policy_number,omitempty"`
+	InsuranceProvider      *string  `json:"insurance_provider,omitempty"`
+	InsuranceExpiry        *string  `json:"insurance_expiry,omitempty"`
+	InsuranceCoverageCents *int64   `json:"insurance_coverage_cents,omitempty"`
 }
 
 type setTermsRequest struct {
@@ -132,13 +135,16 @@ func (h *ProviderHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	grpcReq := &userv1.UpdateProviderProfileRequest{
-		UserId:                claims.UserID,
-		BusinessName:          req.BusinessName,
-		Bio:                   req.Bio,
-		ServiceAddress:        req.Address,
-		ServiceRadiusKm:       req.RadiusKm,
-		EinTin:                req.EINTIN,
-		InsurancePolicyNumber: req.InsurancePolicyNumber,
+		UserId:                 claims.UserID,
+		BusinessName:           req.BusinessName,
+		Bio:                    req.Bio,
+		ServiceAddress:         req.Address,
+		ServiceRadiusKm:        req.RadiusKm,
+		EinTin:                 req.EINTIN,
+		InsurancePolicyNumber:  req.InsurancePolicyNumber,
+		InsuranceProvider:      req.InsuranceProvider,
+		InsuranceExpiry:        req.InsuranceExpiry,
+		InsuranceCoverageCents: req.InsuranceCoverageCents,
 	}
 	if req.Latitude != nil && req.Longitude != nil {
 		grpcReq.ServiceLocation = &commonv1.Location{
@@ -932,6 +938,10 @@ func protoProviderToJSON(p *userv1.ProviderProfile, includePII bool) map[string]
 		// Decrypted by the user service; owner-only. Empty string = not set.
 		result["ein_tin"] = p.GetEinTin()
 		result["insurance_policy_number"] = p.GetInsurancePolicyNumber()
+		// Insurance metadata — owner-only (not secretbox, still not public).
+		result["insurance_provider"] = p.GetInsuranceProvider()
+		result["insurance_expiry"] = p.GetInsuranceExpiry()
+		result["insurance_coverage_cents"] = p.GetInsuranceCoverageCents()
 	}
 
 	if loc := p.GetServiceLocation(); loc != nil {

@@ -572,12 +572,15 @@ func (s *Server) GetProviderProfile(ctx context.Context, req *userv1.GetProvider
 
 func (s *Server) UpdateProviderProfile(ctx context.Context, req *userv1.UpdateProviderProfileRequest) (*userv1.UpdateProviderProfileResponse, error) {
 	input := domain.UpdateProviderInput{
-		BusinessName:          req.BusinessName,
-		Bio:                   req.Bio,
-		ServiceAddress:        req.ServiceAddress,
-		ServiceRadiusKm:       req.ServiceRadiusKm,
-		EINTIN:                req.EinTin,
-		InsurancePolicyNumber: req.InsurancePolicyNumber,
+		BusinessName:           req.BusinessName,
+		Bio:                    req.Bio,
+		ServiceAddress:         req.ServiceAddress,
+		ServiceRadiusKm:        req.ServiceRadiusKm,
+		EINTIN:                 req.EinTin,
+		InsurancePolicyNumber:  req.InsurancePolicyNumber,
+		InsuranceProvider:      req.InsuranceProvider,
+		InsuranceExpiry:        req.InsuranceExpiry,
+		InsuranceCoverageCents: req.InsuranceCoverageCents,
 	}
 	if req.ServiceLocation != nil {
 		lat := req.ServiceLocation.GetLatitude()
@@ -1342,8 +1345,11 @@ func domainProviderToProto(p *domain.ProviderProfile) *userv1.ProviderProfile {
 		StripeOnboardingComplete: p.StripeOnboardingComplete,
 		MemberSince:              timestamppb.New(p.CreatedAt),
 		// Owner-path PII (encrypted at rest). Public HTTP handlers MUST strip.
-		EinTin:                p.EINTIN,
-		InsurancePolicyNumber: p.InsurancePolicyNumber,
+		EinTin:                 p.EINTIN,
+		InsurancePolicyNumber:  p.InsurancePolicyNumber,
+		InsuranceProvider:      p.InsuranceProvider,
+		InsuranceExpiry:        p.InsuranceExpiry,
+		InsuranceCoverageCents: p.InsuranceCoverageCents,
 	}
 
 	if p.Latitude != nil && p.Longitude != nil {

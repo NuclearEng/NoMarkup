@@ -123,8 +123,9 @@ PostGIS types. The spatial DDL is untested on the real target version.
 - Gateway `PATCH /providers/me` forwards; `protoProviderToJSON(includePII)` —
   owner true, public GET `/providers/{id}` false (never leaks tax IDs).
 - Web onboarding sends non-empty EIN/policy; prefills from owner GET.
-- Residual: `insurance_provider` / expiry / coverage_cents still UI-only (no
-  domain write path yet; not PII-encrypted columns).
+- Residual closed: `insurance_provider` / expiry / coverage_cents now on proto
+  update + owner GET; not secretbox (carrier name is not personal data) but
+  still stripped from public profiles.
 
 ### C4. No SCA notification type — **shipped 2026-07-27**
 - Proto `NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED = 45`.

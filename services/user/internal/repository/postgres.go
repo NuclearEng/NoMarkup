@@ -489,6 +489,7 @@ func (r *PostgresRepository) CreateProviderProfile(ctx context.Context, userID s
 		ON CONFLICT (user_id) DO UPDATE SET updated_at = now()
 		RETURNING id, user_id, business_name, bio, service_address,
 		          ein_tin, insurance_policy_number,
+		          insurance_provider, insurance_expiry, insurance_coverage_cents,
 		          ST_Y(service_location) AS lat, ST_X(service_location) AS lng,
 		          service_radius_km, default_payment_timing, default_milestone_json,
 		          cancellation_policy, warranty_terms, instant_enabled, instant_schedule,
@@ -507,6 +508,7 @@ func (r *PostgresRepository) GetProviderProfile(ctx context.Context, userID stri
 	query := `
 		SELECT id, user_id, business_name, bio, service_address,
 		       ein_tin, insurance_policy_number,
+		       insurance_provider, insurance_expiry, insurance_coverage_cents,
 		       ST_Y(service_location) AS lat, ST_X(service_location) AS lng,
 		       service_radius_km, default_payment_timing, default_milestone_json,
 		       cancellation_policy, warranty_terms, instant_enabled, instant_schedule,
@@ -600,6 +602,35 @@ func (r *PostgresRepository) UpdateProviderProfile(ctx context.Context, userID s
 		args = append(args, *input.ServiceRadiusKm)
 		argIdx++
 	}
+	// Insurance metadata (migration 012) — plaintext carrier name / date / cents.
+	if input.InsuranceProvider != nil {
+		setClauses = append(setClauses, fmt.Sprintf("insurance_provider = $%d", argIdx))
+		args = append(args, *input.InsuranceProvider)
+		argIdx++
+	}
+	if input.InsuranceExpiry != nil {
+		// Empty string clears the DATE column (NULL). Non-empty must be YYYY-MM-DD.
+		if *input.InsuranceExpiry == "" {
+			setClauses = append(setClauses, "insurance_expiry = NULL")
+		} else {
+			setClauses = append(setClauses, fmt.Sprintf("insurance_expiry = $%d::date", argIdx))
+			args = append(args, *input.InsuranceExpiry)
+			argIdx++
+		}
+	}
+	if input.InsuranceCoverageCents != nil {
+		cents := *input.InsuranceCoverageCents
+		if cents < 0 {
+			cents = 0
+		}
+		if cents == 0 {
+			setClauses = append(setClauses, "insurance_coverage_cents = NULL")
+		} else {
+			setClauses = append(setClauses, fmt.Sprintf("insurance_coverage_cents = $%d", argIdx))
+			args = append(args, cents)
+			argIdx++
+		}
+	}
 
 	if len(setClauses) == 0 {
 		return r.GetProviderProfile(ctx, userID)
@@ -613,6 +644,7 @@ func (r *PostgresRepository) UpdateProviderProfile(ctx context.Context, userID s
 		WHERE user_id = $%d
 		RETURNING id, user_id, business_name, bio, service_address,
 		          ein_tin, insurance_policy_number,
+		          insurance_provider, insurance_expiry, insurance_coverage_cents,
 		          ST_Y(service_location) AS lat, ST_X(service_location) AS lng,
 		          service_radius_km, default_payment_timing, default_milestone_json,
 		          cancellation_policy, warranty_terms, instant_enabled, instant_schedule,
@@ -1175,10 +1207,14 @@ func scanProviderProfile(row pgx.Row, cipher *crypto.Cipher) (*domain.ProviderPr
 	var p domain.ProviderProfile
 	var businessName, bio, serviceAddress, cancellationPolicy, warrantyTerms, stripeAccountID *string
 	var einTin, insurancePolicy *string
+	var insuranceProvider *string
+	var insuranceExpiry *time.Time
+	var insuranceCoverageCents *int64
 	var piiEncrypted bool
 	err := row.Scan(
 		&p.ID, &p.UserID, &businessName, &bio, &serviceAddress,
 		&einTin, &insurancePolicy,
+		&insuranceProvider, &insuranceExpiry, &insuranceCoverageCents,
 		&p.Latitude, &p.Longitude,
 		&p.ServiceRadiusKm, &p.DefaultPaymentTiming, &p.DefaultMilestoneJSON,
 		&cancellationPolicy, &warrantyTerms, &p.InstantEnabled, &p.InstantSchedule,
@@ -1204,6 +1240,15 @@ func scanProviderProfile(row pgx.Row, cipher *crypto.Cipher) (*domain.ProviderPr
 	}
 	if stripeAccountID != nil {
 		p.StripeAccountID = *stripeAccountID
+	}
+	if insuranceProvider != nil {
+		p.InsuranceProvider = *insuranceProvider
+	}
+	if insuranceExpiry != nil {
+		p.InsuranceExpiry = insuranceExpiry.UTC().Format("2006-01-02")
+	}
+	if insuranceCoverageCents != nil {
+		p.InsuranceCoverageCents = *insuranceCoverageCents
 	}
 	if serviceAddress != nil {
 		plain, err := cipher.DecryptStringOrPassthrough(*serviceAddress)
