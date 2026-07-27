@@ -38,6 +38,7 @@
 		A10000000000000000000025 /* BrandTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000025 /* BrandTheme.swift */; };
 		A10000000000000000000026 /* MyBidsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000026 /* MyBidsView.swift */; };
 		A10000000000000000000027 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000027 /* NotificationsView.swift */; };
+		A10000000000000000000028 /* NoMarkupIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000028 /* NoMarkupIcon.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -73,6 +74,7 @@
 		B10000000000000000000025 /* BrandTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandTheme.swift; sourceTree = "<group>"; };
 		B10000000000000000000026 /* MyBidsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBidsView.swift; sourceTree = "<group>"; };
 		B10000000000000000000027 /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000028 /* NoMarkupIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupIcon.swift; sourceTree = "<group>"; };
 		C10000000000000000000001 /* NoMarkup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NoMarkup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -145,6 +147,7 @@
 				B10000000000000000000020 /* FeatureFlags.swift */,
 				B10000000000000000000021 /* RailACheckout.swift */,
 				B10000000000000000000025 /* BrandTheme.swift */,
+				B10000000000000000000028 /* NoMarkupIcon.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -287,6 +290,7 @@
 				A10000000000000000000022 /* MyOrdersView.swift in Sources */,
 				A10000000000000000000026 /* MyBidsView.swift in Sources */,
 				A10000000000000000000027 /* NotificationsView.swift in Sources */,
+				A10000000000000000000028 /* NoMarkupIcon.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -424,7 +428,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGNING_ALLOWED = YES;
 				CODE_SIGNING_REQUIRED = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 6L6565278C;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -458,7 +462,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGNING_ALLOWED = YES;
 				CODE_SIGNING_REQUIRED = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 6L6565278C;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;

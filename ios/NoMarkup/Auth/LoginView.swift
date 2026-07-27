@@ -38,15 +38,21 @@ struct LoginView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            (
-                Text("No")
-                    .foregroundColor(BrandTheme.textPrimary)
-                + Text("Markup")
-                    .foregroundColor(BrandTheme.gold)
-            )
-            .font(.largeTitle.weight(.heavy))
-            .accessibilityLabel("NoMarkup")
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                NoMarkupIcon(showWordmark: false, size: 56)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    (
+                        Text("No")
+                            .foregroundColor(BrandTheme.textPrimary)
+                        + Text("Markup")
+                            .foregroundColor(BrandTheme.gold)
+                    )
+                    .font(.largeTitle.weight(.heavy))
+                    .accessibilityLabel("NoMarkup")
+                }
+            }
 
             Text("The Market Sets The Price. Not The Markup.")
                 .font(.system(.title3, design: .serif).weight(.semibold))

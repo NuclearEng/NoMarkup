@@ -7,8 +7,8 @@ interface BrandMarkProps {
 }
 
 /**
- * Terminal monogram — bold gold **N** + downward chevron (reverse auction / price down).
- * Matches app icon master 37 (`brand/ICON_DECISION.md`), not jewelry dual-ring seal.
+ * Champagne-metal monogram — crystal **M** + down arrow (reverse auction / price down).
+ * Matches SpringBoard App Icon master (`brand/app-icon-champagne-m.png` / ICON_DECISION.md).
  * Colors via currentColor / brand CSS vars only (no raw hex).
  */
 export function BrandMark({ className, title }: BrandMarkProps) {
@@ -24,19 +24,36 @@ export function BrandMark({ className, title }: BrandMarkProps) {
       aria-hidden={decorative ? true : undefined}
       aria-label={decorative ? undefined : title}
     >
-      {/* Geometric N — thick strokes for small sizes */}
+      {/* Soft seal ring */}
+      <rect
+        x="1.25"
+        y="1.25"
+        width="29.5"
+        height="29.5"
+        rx="7"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        opacity="0.45"
+      />
+      {/* Crystal M */}
       <path
-        d="M9 24V8h2.6l7.2 11.4V8H23v16h-2.6l-7.2-11.4V24H9z"
+        d="M8.5 23V9h3.1l3.15 9.2L17.9 9H21v14h-2.55v-9.1L15.2 23h-1.9l-3.25-9.1V23H8.5z"
         fill="currentColor"
       />
-      {/* Down chevron — reverse auction / costs down (showcase product signal) */}
+      {/* Down arrow — price / reverse auction */}
       <path
-        d="M12 25.5 L16 28.5 L20 25.5"
+        d="M22.2 14.2 L25.5 18.8 L28.8 14.2"
         stroke="var(--brand-gold-bright)"
-        strokeWidth="1.75"
+        strokeWidth="1.85"
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
+      />
+      <path
+        d="M25.5 11.2 V18.5"
+        stroke="var(--brand-gold-bright)"
+        strokeWidth="1.85"
+        strokeLinecap="round"
       />
     </svg>
   );

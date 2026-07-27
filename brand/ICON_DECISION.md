@@ -1,35 +1,46 @@
-# App icon — terminal marketplace master
+# App icon — champagne metal M↓ master
 
 **Date:** 2026-07-26  
-**Master:** candidate **37** → `app-icon-1024.png`  
-**Positioning:** Bloomberg Terminal for a reverse-auction marketplace  
-**SSOT:** `docs/brand/showcase-ssot.md` (tokens) · this file (icon only)
+**Master:** champagne **M↓** → `app-icon-1024.png` / `app-icon-champagne-m.png`  
+**Positioning:** Premium reverse-auction marketplace — crystal monogram on brushed gold  
+**SSOT tokens:** `docs/brand/showcase-ssot.md` · **icon lock:** this file
 
 ## Spec
 
 | Element | Choice |
 |---------|--------|
-| Field | **Pure black `#000000`** (terminal) — not shell `#07080b` |
-| Mark | High-chroma amber-gold **N** |
-| Signal | Downward chevron = reverse auction / costs down |
-| Texture | Flat / slight grain only — max 60pt pop |
-| Not used | Diamond, silk, jewelry, dual-ring seal as the sole story |
+| Field | Brushed **champagne gold** metal (full-bleed RGB) |
+| Mark | Crystal-white capital **M** with holographic prism edges |
+| Signal | **Downward arrow** integrated with monogram = reverse auction / price down |
+| Wordmark | **NoMarkup** under mark (homescreen master includes caption) |
+| Rings | Dual thin gold seal rings |
+| Not current | Terminal black + amber **N** (archived) |
 
-## Canvas: pure black vs product shell
+## Files
 
-- **Icon PNG field:** `#000000` — verified on shipped `brand/app-icon-1024.png`, `web/public/app-icon-1024.png`, iOS `AppIcon-1024.png`.  
-- **App chrome / showcase body:** `#07080b` — intentional lift for UI; do not force icon canvas to match unless brand revises this file.  
-- Small **code-generated** favicons may use `#07080b` as a browser-tile approximation; they are not the App Store master.
+| Path | Role |
+|------|------|
+| `brand/app-icon-1024.png` | Master archive copy |
+| `brand/app-icon-champagne-m.png` | Named master |
+| `brand/app-icon-preview-120.png` | SpringBoard-scale preview |
+| `ios/.../AppIcon-1024.png` | **iOS home screen / App Store** |
+| `web/public/app-icon-1024.png` + `icons/*` | Web / PWA |
+| `brand/app-icon-terminal-master-37-archive.png` | Previous terminal N master (archive) |
 
 ## Mission fit
 
-- **Brand:** N = NoMarkup  
-- **Product:** Chevron = price competition downward  
-- **Fair market:** Terminal seriousness, not lead-gen junk or luxury vault  
-- **SpringBoard:** Amber on black competes with Tips yellow / Instagram chroma  
+- **M** = Markup (name punch)  
+- **↓** = competition drives price down  
+- **Gold metal** = trust / craft / quality — not flea-market junk  
+- **SpringBoard** = competes with glossy social icons  
 
-## Alts (archive — not current master)
+## In-app
 
-- `app-icon-terminal-alt-36.png` — grid/order-book texture  
-- `app-icon-terminal-alt-38.png` — multi-chevron cascade  
-- Diamond / SOTA-seal / silk candidates under `brand/` — historical only  
+- SwiftUI: `ios/NoMarkup/Core/NoMarkupIcon.swift`  
+- Web mark: `web/src/components/layout/BrandMark.tsx` (M↓)
+
+## App Store notes
+
+- 1024×1024 RGB, **no alpha**  
+- Apple applies home-screen mask — canvas is full-bleed metal  
+- After install: delete app + reinstall or reboot if SpringBoard caches old icon  

@@ -6,13 +6,13 @@ export const size = {
 };
 export const contentType = 'image/png';
 
-/** Apple touch icon: pure black + amber N + down chevron (master 37 silhouette). */
+/** Apple touch icon: champagne metal + crystal M↓ (homescreen master). */
 export default function AppleIcon() {
   return new ImageResponse(
     (
       <div
         style={{
-          background: '#000000',
+          background: 'linear-gradient(145deg, #f0dfa0 0%, #d4b55a 35%, #c9a84c 60%, #a08839 100%)',
           width: '100%',
           height: '100%',
           display: 'flex',
@@ -24,30 +24,43 @@ export default function AppleIcon() {
       >
         <span
           style={{
-            fontSize: 100,
-            color: '#c9a84c',
-            fontWeight: 800,
+            fontSize: 96,
+            color: '#faf8f4',
+            fontWeight: 900,
             fontFamily: 'sans-serif',
             letterSpacing: '-0.05em',
             lineHeight: 1,
             display: 'flex',
-            marginTop: -8,
+            marginTop: -12,
+            textShadow: '0 2px 4px rgba(0,0,0,0.35)',
           }}
         >
-          N
+          M
         </span>
-        {/* Down chevron — reverse auction signal */}
         <div
           style={{
             display: 'flex',
-            marginTop: 4,
+            marginTop: 2,
             width: 0,
             height: 0,
-            borderLeft: '14px solid transparent',
-            borderRight: '14px solid transparent',
-            borderTop: '16px solid #e4c566',
+            borderLeft: '16px solid transparent',
+            borderRight: '16px solid transparent',
+            borderTop: '18px solid #f5f0e4',
           }}
         />
+        <span
+          style={{
+            fontSize: 14,
+            color: 'rgba(255,255,255,0.92)',
+            fontWeight: 600,
+            fontFamily: 'sans-serif',
+            marginTop: 10,
+            letterSpacing: '0.02em',
+            display: 'flex',
+          }}
+        >
+          NoMarkup
+        </span>
       </div>
     ),
     {

@@ -92,19 +92,20 @@
 
 | Item | Spec |
 |------|------|
-| **Master** | Candidate **37** — see `brand/ICON_DECISION.md` |
-| **Mark** | High-chroma amber-gold **N** + optional down-chevron (reverse auction) |
-| **Field** | **Pure black `#000000`** (terminal) — sampled on shipped 1024 masters |
-| **Not** | Jewelry diamond-only seal, champagne silk, UHNW vault plaque |
+| **Master** | Champagne metal **M↓** — see `brand/ICON_DECISION.md` |
+| **Mark** | Crystal-white capital **M** + down arrow (reverse auction / price down) |
+| **Field** | Brushed champagne-gold metal, full-bleed RGB |
+| **Wordmark** | **NoMarkup** under monogram on homescreen master |
+| **Archived** | Terminal pure black + amber **N** (master 37) → `brand/app-icon-terminal-master-37-archive.png` |
 
-### Icon canvas: pure black vs shell `#07080b`
+### Icon canvas vs product shell
 
-| Layer | Hex | Why |
-|-------|-----|-----|
-| **App icon outer field** | `#000000` | Terminal SpringBoard pop; master 37 and shipped `app-icon-1024.png` (brand / web / iOS) are pure black at corners |
-| **In-product dark shell** | `#07080b` | Showcase body / nav / chrome — slightly lifted so UI is not crushed pure black |
+| Layer | Spec | Why |
+|-------|------|-----|
+| **App icon field** | Champagne brushed gold (full-bleed) | SpringBoard pop vs Tips / social |
+| **In-product dark shell** | `#07080b` | Showcase body / nav / chrome |
 
-Do **not** “correct” icon canvas to `#07080b` without a deliberate brand decision. Code-generated favicons (`web/src/app/icon.tsx`, `apple-icon.tsx`) currently use shell `#07080b` — acceptable as a small browser tile approximation, not a second master.
+Favicons and `BrandMark` follow the M↓ silhouette (not a second brand).
 
 ---
 
@@ -125,20 +126,20 @@ Status key: **aligned** · **partial** · **out of scope** · **docs fixed** (wa
 |---------|-------------|--------|
 | Showcase (master) | `qa/showcase/index.html` | **aligned** |
 | Token SSOT | this file | **aligned** |
-| Mission north star | `docs/brand/mission-brand-north-star.md` | **aligned** (narrative; icon brief points at master 37) |
-| Billionaire-seller bar | `docs/brand/billionaire-seller-standard.md` | **partial** — craft bar OK; icon lines must not override terminal master |
+| Mission north star | `docs/brand/mission-brand-north-star.md` | **aligned** (narrative; icon = M↓ champagne) |
+| Billionaire-seller bar | `docs/brand/billionaire-seller-standard.md` | **partial** — craft bar OK; product icon is champagne M↓ |
 | Design system doc | `docs/design-system.md` | **aligned** (showcase stack + tokens) |
 | CLAUDE.md §4 | HIG + brand type | **aligned** (showcase stack named; HIG “clarity” ≠ system-only type) |
 | Web dark tokens | `web/src/styles/globals.css` `.dark` | **aligned** (`#07080b`, gold scale, font maps) |
 | Web fonts | `web/src/app/layout.tsx` + Tailwind `@theme` | **aligned** Instrument / Syne / Outfit / JetBrains |
 | Wordmark | `web/src/components/layout/Logo.tsx` | **aligned** No + gold Markup, Syne |
-| Brand mark SVG | `web/src/components/layout/BrandMark.tsx` | **partial** — dual rings + crown diamond (seal-era); not terminal monogram |
+| Brand mark SVG | `web/src/components/layout/BrandMark.tsx` | **aligned** M↓ monogram |
 | Landing hero | `web/src/app/(public)/LandingPageClient.tsx` | **aligned** tagline + `font-display` + mono eyebrow |
 | PWA manifest | `web/public/manifest.json` | **aligned** `theme_color` / `background_color` `#07080b` |
 | Next `themeColor` | `web/src/app/layout.tsx` | **aligned** `#07080b` |
-| Favicon / Apple touch | `web/src/app/icon.tsx`, `apple-icon.tsx` | **partial** — N on `#07080b`, no chevron terminal art |
-| App icon 1024 masters | `brand/`, `web/public/`, iOS AppIcon | **aligned** pure black field, terminal N (master 37) |
-| PWA icon PNGs | `web/public/icons/icon-*.png` | **aligned** if generated from master (do not reintroduce diamond seal) |
+| Favicon / Apple touch | `web/src/app/icon.tsx`, `apple-icon.tsx` | **aligned** champagne M↓ silhouette |
+| App icon 1024 masters | `brand/`, `web/public/`, iOS AppIcon | **aligned** champagne metal M↓ + NoMarkup |
+| PWA icon PNGs | `web/public/icons/icon-*.png` | **aligned** from champagne master |
 | iOS `BrandTheme` | `ios/NoMarkup/Core/BrandTheme.swift` | **aligned** hex table |
 | iOS AccentColor | `Assets.xcassets/AccentColor` | **aligned** brand gold (verify catalog if CTAs drift) |
 | iOS home / login voice | `HomeView.swift` (tagline shipped) | **aligned** voice; system serif ≈ display |
@@ -161,7 +162,7 @@ Status key: **aligned** · **partial** · **out of scope** · **docs fixed** (wa
 | Wordmark | `web/src/components/layout/Logo.tsx` | No + gold Markup, Syne |
 | iOS theme | `ios/NoMarkup/Core/BrandTheme.swift` | Hex table above |
 | Design system notes | `docs/design-system.md` | Points here for brand |
-| App icon | Terminal amber **N** on **pure black** (`brand/ICON_DECISION.md` master 37) | Not jewelry diamond as sole story |
+| App icon | Champagne metal **M↓** + NoMarkup (`brand/ICON_DECISION.md`) | SpringBoard / App Store master |
 | Landing hero | `web/src/app/(public)/LandingPageClient.tsx` | Tagline + Instrument display + mono labels |
 | iOS home / login | `HomeView.swift`, `LoginView.swift` | Same voice as showcase |
 
@@ -172,5 +173,5 @@ Status key: **aligned** · **partial** · **out of scope** · **docs fixed** (wa
 1. Edit showcase first (or in the same PR as token code).  
 2. Update this file’s tables.  
 3. Propagate web + iOS + any hardcoded hex (`#07080b`, gold scale).  
-4. Icon masters: keep pure black canvas unless explicitly revised in `ICON_DECISION.md`.  
+4. Icon masters: follow `ICON_DECISION.md` (current: champagne M↓ full-bleed gold).  
 5. Do not invent a third palette in feature work.

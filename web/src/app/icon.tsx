@@ -6,16 +6,17 @@ export const size = {
 };
 export const contentType = 'image/png';
 
-/** Favicon: terminal amber N + down chevron on pure black (master 37 silhouette). */
+/** Favicon: champagne metal + crystal M↓ (SpringBoard master silhouette). */
 export default function Icon() {
   return new ImageResponse(
     (
       <div
         style={{
-          background: '#000000',
+          background: 'linear-gradient(145deg, #e8d48a 0%, #c9a84c 40%, #a08839 100%)',
           width: '100%',
           height: '100%',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: '7px',
@@ -24,30 +25,28 @@ export default function Icon() {
       >
         <span
           style={{
-            fontSize: 18,
-            color: '#c9a84c',
-            fontWeight: 800,
+            fontSize: 17,
+            color: '#f8f6f0',
+            fontWeight: 900,
             fontFamily: 'sans-serif',
             letterSpacing: '-0.04em',
             lineHeight: 1,
             display: 'flex',
             marginTop: -2,
+            textShadow: '0 1px 1px rgba(0,0,0,0.35)',
           }}
         >
-          N
+          M
         </span>
         <div
           style={{
-            position: 'absolute',
-            bottom: 4,
-            width: 10,
-            height: 5,
-            borderLeft: '1.5px solid #e4c566',
-            borderBottom: '1.5px solid #e4c566',
-            borderRight: '1.5px solid #e4c566',
-            borderTop: 'none',
-            transform: 'rotate(45deg) scale(0.55)',
-            opacity: 0.95,
+            display: 'flex',
+            marginTop: 1,
+            width: 0,
+            height: 0,
+            borderLeft: '4px solid transparent',
+            borderRight: '4px solid transparent',
+            borderTop: '5px solid #f5f0e4',
           }}
         />
       </div>
