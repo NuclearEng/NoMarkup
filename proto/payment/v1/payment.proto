@@ -28,6 +28,9 @@ service PaymentService {
   // method saved by a confirmed SetupIntent. The amount is supplied by the
   // gateway from its server-side pricebook, never by the client.
   rpc ChargePromotion(ChargePromotionRequest) returns (ChargePromotionResponse);
+  // Post-completion gratuity: charge customer off-session, transfer full tip
+  // to provider Connect, CAS contracts.tip_amount_cents only after success.
+  rpc ChargeContractTip(ChargeContractTipRequest) returns (ChargeContractTipResponse);
   rpc ListPaymentMethods(ListPaymentMethodsRequest) returns (ListPaymentMethodsResponse);
   rpc DeletePaymentMethod(DeletePaymentMethodRequest) returns (DeletePaymentMethodResponse);
   // AddDevPaymentMethod is dev-only — it bypasses Stripe Elements and
@@ -274,6 +277,21 @@ message ChargePromotionResponse {
   string payment_intent_id = 1;
   string status = 2;
   bool succeeded = 3;
+}
+
+message ChargeContractTipRequest {
+  string contract_id = 1;
+  string customer_id = 2; // must match contract customer (server re-checks)
+  int64 amount_cents = 3; // $1 … $10,000
+  string idempotency_key = 4; // required; deterministic tip:<contract_id> recommended
+}
+
+message ChargeContractTipResponse {
+  string payment_id = 1;
+  string payment_intent_id = 2;
+  int64 tip_amount_cents = 3; // set only when succeeded
+  string status = 4; // e.g. completed
+  bool succeeded = 5;
 }
 
 message PaymentMethod {

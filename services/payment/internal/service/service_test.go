@@ -389,6 +389,9 @@ func (m *mockPaymentRepo) GetContractForPayment(ctx context.Context, contractID 
 		Status:      "active",
 	}, nil
 }
+func (m *mockPaymentRepo) SetContractTipIfZero(_ context.Context, _ string, _ int64) (bool, error) {
+	return true, nil
+}
 func (m *mockPaymentRepo) GetMilestonesForContract(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error) {
 	if m.getMilestonesForContractFn != nil {
 		return m.getMilestonesForContractFn(ctx, contractID)

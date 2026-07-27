@@ -435,7 +435,7 @@ func main() {
 	// handler implementations live in agent Q's owned files.
 	categoryQuestionsHandler := handler.NewCategoryQuestionsHandler(dbPool)
 	quoteTemplatesHandler := handler.NewQuoteTemplatesHandler(dbPool)
-	contractTipHandler := handler.NewContractTipHandler(dbPool)
+	contractTipHandler := handler.NewContractTipHandler(dbPool, paymentClient)
 	calendarExportHandler := handler.NewCalendarExportHandler(dbPool, publicKey, piiCipher)
 	marketsHandler := handler.NewMarketsHandler(dbPool)
 	adminMarketsHandler := handler.NewAdminMarketsHandler(dbPool)

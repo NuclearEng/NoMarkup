@@ -210,10 +210,11 @@ func (r *PostgresRepository) GetContractDetail(ctx context.Context, contractID s
 func (r *PostgresRepository) GetContractForPayment(ctx context.Context, contractID string) (*domain.ContractForPayment, error) {
 	c := &domain.ContractForPayment{}
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, customer_id, provider_id, amount_cents, status
+		SELECT id, customer_id, provider_id, amount_cents, status,
+		       COALESCE(tip_amount_cents, 0)
 		FROM contracts
 		WHERE id = $1 AND deleted_at IS NULL`, contractID).Scan(
-		&c.ID, &c.CustomerID, &c.ProviderID, &c.AmountCents, &c.Status,
+		&c.ID, &c.CustomerID, &c.ProviderID, &c.AmountCents, &c.Status, &c.TipAmountCents,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -222,6 +223,23 @@ func (r *PostgresRepository) GetContractForPayment(ctx context.Context, contract
 		return nil, fmt.Errorf("get contract for payment: %w", err)
 	}
 	return c, nil
+}
+
+// SetContractTipIfZero CAS-sets tip_amount_cents only when still 0.
+// Returns true when this call won the race and recorded the tip.
+func (r *PostgresRepository) SetContractTipIfZero(ctx context.Context, contractID string, tipAmountCents int64) (bool, error) {
+	if tipAmountCents <= 0 {
+		return false, fmt.Errorf("set contract tip: amount must be positive")
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE contracts
+		   SET tip_amount_cents = $2, updated_at = now()
+		 WHERE id = $1 AND COALESCE(tip_amount_cents, 0) = 0 AND deleted_at IS NULL`,
+		contractID, tipAmountCents)
+	if err != nil {
+		return false, fmt.Errorf("set contract tip: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // GetMilestonesForContract fetches milestones for a contract.

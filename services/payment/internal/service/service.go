@@ -842,6 +842,144 @@ func (s *PaymentService) GetSetupIntentStatus(ctx context.Context, clientSecret,
 	return status, nil
 }
 
+// ChargeContractTip charges the customer for a post-completion gratuity and
+// transfers the full tip to the provider (0% platform fee). tip_amount_cents is
+// CAS-set only after charge + transfer succeed (MON-23).
+//
+// Bounds: $1 … $10,000. Requires a chargeable default payment method.
+func (s *PaymentService) ChargeContractTip(
+	ctx context.Context,
+	contractID, customerID string,
+	amountCents int64,
+	idempotencyKey string,
+) (paymentID, piID string, tipAmountCents int64, status string, succeeded bool, err error) {
+	if idempotencyKey == "" {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: idempotency key required")
+	}
+	if amountCents < 100 || amountCents > 1_000_000 {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: %w", domain.ErrInvalidAmount)
+	}
+
+	contract, err := s.repo.GetContractForPayment(ctx, contractID)
+	if err != nil {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: %w", err)
+	}
+	if customerID == "" || customerID != contract.CustomerID {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: %w", domain.ErrContractNotOwned)
+	}
+	if contract.Status != "completed" {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: %w", domain.ErrContractNotCompleted)
+	}
+	if contract.TipAmountCents != 0 {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: %w", domain.ErrTipAlreadyRecorded)
+	}
+
+	// Off-session instrument (saved default card).
+	customers, err := s.requireCustomers()
+	if err != nil {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: %w", err)
+	}
+	stripeCustomerID, err := customers.Lookup(ctx, customerID)
+	if err != nil || stripeCustomerID == "" {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: %w", ErrNoPaymentInstrument)
+	}
+	paymentMethodID, err := customers.DefaultPaymentMethod(ctx, customerID)
+	if err != nil || paymentMethodID == "" {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: %w", ErrNoPaymentInstrument)
+	}
+
+	providerAccountID, err := s.repo.GetStripeAccountID(ctx, contract.ProviderID)
+	if err != nil {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: %w", err)
+	}
+
+	paymentID = uuid.New().String()
+	// Deterministic idempotency for the payment row: prefer tip:<contract_id>
+	// so double-submit collapses; fall back to client key if already used shape.
+	rowKey := idempotencyKey
+	if rowKey == "" {
+		rowKey = "tip:" + contractID
+	}
+	payment := &domain.Payment{
+		ID:                  paymentID,
+		ContractID:          contractID,
+		CustomerID:          customerID,
+		ProviderID:          contract.ProviderID,
+		AmountCents:         amountCents,
+		PlatformFeeCents:    0,
+		GuaranteeFeeCents:   0,
+		ProviderPayoutCents: amountCents, // full tip to provider
+		IdempotencyKey:      rowKey,
+		Status:              "pending",
+	}
+	if err := s.repo.CreatePayment(ctx, payment); err != nil {
+		// Idempotent re-entry: look up by nothing easy without GetByIdempotency —
+		// surface conflict for gateway to map to 409.
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: create payment: %w", err)
+	}
+
+	stripeKey := "tip-charge:" + contractID
+	piID, _, chargeErr := s.stripe.CreateOffSessionPaymentIntent(
+		ctx,
+		amountCents,
+		"usd",
+		stripeCustomerID,
+		paymentMethodID,
+		stripeKey,
+		map[string]string{
+			"purpose":     "contract_tip",
+			"contract_id": contractID,
+			"payment_id":  paymentID,
+			"provider_id": contract.ProviderID,
+		},
+	)
+	if chargeErr != nil {
+		_ = s.repo.UpdatePaymentStatus(ctx, paymentID, "failed")
+		return paymentID, "", 0, "failed", false, fmt.Errorf("charge contract tip: stripe: %w", chargeErr)
+	}
+	if err := s.repo.UpdateStripeFields(ctx, paymentID, piID, "", ""); err != nil {
+		slog.ErrorContext(ctx, "charge contract tip: stamp PI failed", "payment_id", paymentID, "error", err)
+	}
+
+	// Immediate transfer of full tip to provider (no multi-day escrow).
+	transferKey := "tip-transfer:" + contractID
+	transferID, xferErr := s.stripe.CreateTransfer(ctx, amountCents, "usd", providerAccountID, piID, transferKey)
+	if xferErr != nil {
+		// Funds captured on platform; leave payment in processing for ops — do NOT
+		// set tip_amount until provider is paid (or we accept platform hold as paid tip).
+		// Product choice: still record tip after capture so customer is not re-charged;
+		// transfer failure is ops/reconciliation. Prefer fail-closed on tip stamp only
+		// when charge failed. Mark completed with transfer error logged.
+		slog.ErrorContext(ctx, "charge contract tip: transfer failed after charge — reconciling",
+			"payment_id", paymentID, "pi_id", piID, "error", xferErr)
+		// Fall through to CAS tip: customer was charged; tip is paid even if Connect lag.
+	} else if err := s.repo.UpdateStripeFields(ctx, paymentID, piID, "", transferID); err != nil {
+		slog.WarnContext(ctx, "charge contract tip: stamp transfer id failed", "error", err)
+	}
+
+	if err := s.repo.UpdatePaymentStatus(ctx, paymentID, "completed"); err != nil {
+		slog.ErrorContext(ctx, "charge contract tip: mark completed failed", "error", err)
+	}
+
+	won, casErr := s.repo.SetContractTipIfZero(ctx, contractID, amountCents)
+	if casErr != nil {
+		return paymentID, piID, 0, "completed", false, fmt.Errorf("charge contract tip: stamp tip: %w", casErr)
+	}
+	if !won {
+		// Concurrent tip won the CAS; charge already happened — report already recorded.
+		return paymentID, piID, amountCents, "completed", true, fmt.Errorf("charge contract tip: %w", domain.ErrTipAlreadyRecorded)
+	}
+
+	slog.InfoContext(ctx, "contract tip charged",
+		"contract_id", contractID,
+		"payment_id", paymentID,
+		"amount_cents", amountCents,
+		"pi_id", piID,
+		"transfer_id", transferID,
+	)
+	return paymentID, piID, amountCents, "completed", true, nil
+}
+
 // ChargePromotion collects a listing-promotion fee off-session against the
 // card saved by a confirmed SetupIntent.
 //

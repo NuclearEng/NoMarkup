@@ -252,7 +252,7 @@ extension APIClient {
     // MARK: Tip
 
     /// POST `/api/v1/contracts/{id}/tip` body: `{ "amount_cents": N }` ($1…$10,000).
-    /// Note: gateway may return 501 until Stripe tip capture is wired (MON-23).
+    /// Sticky Idempotency-Key `tip:{contractId}`; charges default payment method off-session.
     @discardableResult
     func tipContract(id: String, amountCents: Int64) async throws -> ContractTipResponse {
         guard amountCents >= 100 else {
@@ -261,11 +261,20 @@ extension APIClient {
         guard amountCents <= 1_000_000 else {
             throw APIClientError.httpStatus(400, detail: "Tip cannot exceed $10,000.00.")
         }
-        return try await postJSON(
-            pathComponents: ["api", "v1", "contracts", id, "tip"],
-            body: ContractsTipBody(amountCents: amountCents),
-            authorized: .required
-        )
+        let opKey = "tip:\(id)"
+        let headers = idempotencyHeader(for: opKey)
+        do {
+            let response: ContractTipResponse = try await postJSON(
+                pathComponents: ["api", "v1", "contracts", id, "tip"],
+                body: ContractsTipBody(amountCents: amountCents),
+                authorized: .required,
+                headers: headers
+            )
+            clearIdempotencyKey(opKey)
+            return response
+        } catch {
+            throw error
+        }
     }
 
     // MARK: Guarantee claim

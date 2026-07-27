@@ -26,6 +26,7 @@ const (
 	PaymentService_CreateSetupIntent_FullMethodName              = "/nomarkup.payment.v1.PaymentService/CreateSetupIntent"
 	PaymentService_GetSetupIntentStatus_FullMethodName           = "/nomarkup.payment.v1.PaymentService/GetSetupIntentStatus"
 	PaymentService_ChargePromotion_FullMethodName                = "/nomarkup.payment.v1.PaymentService/ChargePromotion"
+	PaymentService_ChargeContractTip_FullMethodName              = "/nomarkup.payment.v1.PaymentService/ChargeContractTip"
 	PaymentService_ListPaymentMethods_FullMethodName             = "/nomarkup.payment.v1.PaymentService/ListPaymentMethods"
 	PaymentService_DeletePaymentMethod_FullMethodName            = "/nomarkup.payment.v1.PaymentService/DeletePaymentMethod"
 	PaymentService_AddDevPaymentMethod_FullMethodName            = "/nomarkup.payment.v1.PaymentService/AddDevPaymentMethod"
@@ -99,6 +100,9 @@ type PaymentServiceClient interface {
 	// method saved by a confirmed SetupIntent. The amount is supplied by the
 	// gateway from its server-side pricebook, never by the client.
 	ChargePromotion(ctx context.Context, in *ChargePromotionRequest, opts ...grpc.CallOption) (*ChargePromotionResponse, error)
+	// Post-completion gratuity: charge customer off-session, transfer full tip
+	// to provider Connect, CAS contracts.tip_amount_cents only after success.
+	ChargeContractTip(ctx context.Context, in *ChargeContractTipRequest, opts ...grpc.CallOption) (*ChargeContractTipResponse, error)
 	ListPaymentMethods(ctx context.Context, in *ListPaymentMethodsRequest, opts ...grpc.CallOption) (*ListPaymentMethodsResponse, error)
 	DeletePaymentMethod(ctx context.Context, in *DeletePaymentMethodRequest, opts ...grpc.CallOption) (*DeletePaymentMethodResponse, error)
 	// AddDevPaymentMethod is dev-only — it bypasses Stripe Elements and
@@ -254,6 +258,16 @@ func (c *paymentServiceClient) ChargePromotion(ctx context.Context, in *ChargePr
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ChargePromotionResponse)
 	err := c.cc.Invoke(ctx, PaymentService_ChargePromotion_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) ChargeContractTip(ctx context.Context, in *ChargeContractTipRequest, opts ...grpc.CallOption) (*ChargeContractTipResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChargeContractTipResponse)
+	err := c.cc.Invoke(ctx, PaymentService_ChargeContractTip_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -799,6 +813,9 @@ type PaymentServiceServer interface {
 	// method saved by a confirmed SetupIntent. The amount is supplied by the
 	// gateway from its server-side pricebook, never by the client.
 	ChargePromotion(context.Context, *ChargePromotionRequest) (*ChargePromotionResponse, error)
+	// Post-completion gratuity: charge customer off-session, transfer full tip
+	// to provider Connect, CAS contracts.tip_amount_cents only after success.
+	ChargeContractTip(context.Context, *ChargeContractTipRequest) (*ChargeContractTipResponse, error)
 	ListPaymentMethods(context.Context, *ListPaymentMethodsRequest) (*ListPaymentMethodsResponse, error)
 	DeletePaymentMethod(context.Context, *DeletePaymentMethodRequest) (*DeletePaymentMethodResponse, error)
 	// AddDevPaymentMethod is dev-only — it bypasses Stripe Elements and
@@ -910,6 +927,9 @@ func (UnimplementedPaymentServiceServer) GetSetupIntentStatus(context.Context, *
 }
 func (UnimplementedPaymentServiceServer) ChargePromotion(context.Context, *ChargePromotionRequest) (*ChargePromotionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ChargePromotion not implemented")
+}
+func (UnimplementedPaymentServiceServer) ChargeContractTip(context.Context, *ChargeContractTipRequest) (*ChargeContractTipResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ChargeContractTip not implemented")
 }
 func (UnimplementedPaymentServiceServer) ListPaymentMethods(context.Context, *ListPaymentMethodsRequest) (*ListPaymentMethodsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPaymentMethods not implemented")
@@ -1210,6 +1230,24 @@ func _PaymentService_ChargePromotion_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PaymentServiceServer).ChargePromotion(ctx, req.(*ChargePromotionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_ChargeContractTip_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChargeContractTipRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).ChargeContractTip(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_ChargeContractTip_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).ChargeContractTip(ctx, req.(*ChargeContractTipRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2184,6 +2222,10 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ChargePromotion",
 			Handler:    _PaymentService_ChargePromotion_Handler,
+		},
+		{
+			MethodName: "ChargeContractTip",
+			Handler:    _PaymentService_ChargeContractTip_Handler,
 		},
 		{
 			MethodName: "ListPaymentMethods",

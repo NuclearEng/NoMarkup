@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useAcceptanceExpired } from '@/hooks/useContracts';
-import { api, getApiErrorMessage } from '@/lib/api';
+import { api, clearIdempotencyKey, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import {
   CONTRACT_STATUS_CLASSES,
   DEFAULT_STATUS_CLASS,
@@ -236,9 +236,9 @@ interface TipWidgetProps {
 /**
  * Inline tip composer with 10/15/20% presets + custom dollar entry.
  *
- * On submit POSTs to `/api/v1/contracts/{id}/tip`. The endpoint
- * inserts the tip row only — the live Stripe charge is documented in
- * the gateway handler comment and tracked in PLAN §6.5.
+ * On submit POSTs to `/api/v1/contracts/{id}/tip` with a sticky Idempotency-Key.
+ * Server charges the customer's default card off-session and records tip_amount
+ * only after payment succeeds (MON-23).
  */
 function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
   const queryClient = useQueryClient();
@@ -266,9 +266,13 @@ function TipWidget({ contractId, suggestedAmountCents }: TipWidgetProps) {
     setSubmitting(true);
     setError(null);
     try {
-      await api.post<ContractTipResponse>(`/api/v1/contracts/${contractId}/tip`, {
-        amount_cents: amountCents,
-      });
+      const opKey = `tip:${contractId}`;
+      await api.post<ContractTipResponse>(
+        `/api/v1/contracts/${contractId}/tip`,
+        { amount_cents: amountCents },
+        idempotencyHeader(opKey),
+      );
+      clearIdempotencyKey(opKey);
       setSuccess(true);
       // Refresh the contract (detail) and contracts (list) so the recorded
       // tip is reflected and the widget retires itself on next render.

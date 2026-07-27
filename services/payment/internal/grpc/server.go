@@ -140,6 +140,26 @@ func (s *Server) ChargePromotion(ctx context.Context, req *paymentv1.ChargePromo
 	}, nil
 }
 
+func (s *Server) ChargeContractTip(ctx context.Context, req *paymentv1.ChargeContractTipRequest) (*paymentv1.ChargeContractTipResponse, error) {
+	paymentID, piID, tipCents, st, ok, err := s.svc.ChargeContractTip(
+		ctx,
+		req.GetContractId(),
+		req.GetCustomerId(),
+		req.GetAmountCents(),
+		req.GetIdempotencyKey(),
+	)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.ChargeContractTipResponse{
+		PaymentId:       paymentID,
+		PaymentIntentId: piID,
+		TipAmountCents:  tipCents,
+		Status:          st,
+		Succeeded:       ok,
+	}, nil
+}
+
 func (s *Server) ListPaymentMethods(ctx context.Context, req *paymentv1.ListPaymentMethodsRequest) (*paymentv1.ListPaymentMethodsResponse, error) {
 	methods, err := s.svc.ListPaymentMethods(ctx, req.GetCustomerId())
 	if err != nil {
@@ -667,6 +687,22 @@ func paymentStatusToString(s paymentv1.PaymentStatus) string {
 
 // mapDomainError maps domain errors to gRPC status errors.
 func mapDomainError(err error) error {
+	if err == nil {
+		return nil
+	}
+	// Tip / payment-instrument sentinels (wrapped with %w).
+	switch {
+	case errors.Is(err, domain.ErrTipAlreadyRecorded):
+		return status.Error(codes.AlreadyExists, "tip already recorded")
+	case errors.Is(err, domain.ErrContractNotCompleted):
+		return status.Error(codes.FailedPrecondition, "contract is not completed")
+	case errors.Is(err, domain.ErrContractNotOwned):
+		return status.Error(codes.PermissionDenied, "only the customer can tip")
+	case errors.Is(err, service.ErrNoPaymentInstrument):
+		return status.Error(codes.FailedPrecondition, "add a payment method before tipping")
+	case errors.Is(err, domain.ErrStripeAccountNotFound):
+		return status.Error(codes.FailedPrecondition, "provider is not set up to receive payouts")
+	}
 	switch {
 	case errors.Is(err, domain.ErrPaymentNotFound):
 		return status.Error(codes.NotFound, "payment not found")

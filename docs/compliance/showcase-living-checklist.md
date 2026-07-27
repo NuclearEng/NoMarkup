@@ -216,7 +216,7 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 |------|--------|
 | Auth / session / offline | `live` |
 | Dual-rail create/browse/bid/award | `live` (badges, countdown, market strip, live feed poll, sticky bid Idempotency-Key) |
-| Contracts advanced | `live` (escrow release CTA + goods handshake next actions) / `partial` tip 501 possible |
+| Contracts advanced | `live` (escrow release, goods handshake, tip charge via ChargeContractTip) |
 | Social (follow/feed/reviews) | `live` |
 | Provider workspace lite | `live` (verification doc upload path shipped; admin review still partial) |
 | Growth (NPS, referrals, markets, savings) | `live` |
@@ -313,6 +313,7 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | 2026-07-26 | R2 bid-bond SQL idempotency | **live** — col + soft replay | migration `109_bid_bond_idempotency`; `bid_bonds.go` CreateBidBond |
 | 2026-07-26 | Multi-payment guarantee allocation | **live** — oldest-first slices across contract payments | `allocateGuaranteeRefunds`; `refundGuaranteePayout` |
 | 2026-07-26 | Job PlaceBid soft-replay on AlreadyExists | **live** — matching amount returns existing active bid | `bid.go` PlaceBid + `loadActiveProviderBid` |
+| 2026-07-26 | Contract tip Stripe charge (MON-23) | **live** — off-session charge + transfer + CAS tip_amount; RequireIdempotencyKey | `ChargeContractTip`; `ContractTipHandler.Tip`; iOS/web sticky key |
 | 2026-07-26 | Regulated rails graduation docs + iOS status stub | R6.2–R6.6 stay **`blocked-compliance`** (honest); path-to-live-flagged documented; iOS hard-offs unchanged | `docs/compliance/regulated-rails-live-flagged.md`; `RegulatedRailsStatusView`; Account under Plan limits |
 | 2026-07-26 | Escrow release path (C3.4) | **live** — services release + goods mutual handshake next actions | `ContractDetailView.releasePayment`; `MyOrdersView` nextAction / confirm CTAs |
 | 2026-07-26 | Provider verification upload (C3.5 / P1#7) | **partial closer** — provider list+upload E2E path shipped; admin review open | `VerificationDocumentsView` |

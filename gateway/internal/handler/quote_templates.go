@@ -32,6 +32,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
@@ -333,12 +334,14 @@ func (h *QuoteTemplatesHandler) IncrementUse(w http.ResponseWriter, r *http.Requ
 
 // ContractTipHandler exposes the tip endpoint.
 type ContractTipHandler struct {
-	db *pgxpool.Pool
+	db            *pgxpool.Pool
+	paymentClient paymentv1.PaymentServiceClient
 }
 
 // NewContractTipHandler returns a ContractTipHandler.
-func NewContractTipHandler(db *pgxpool.Pool) *ContractTipHandler {
-	return &ContractTipHandler{db: db}
+// paymentClient is required in production for ChargeContractTip (MON-23).
+func NewContractTipHandler(db *pgxpool.Pool, paymentClient paymentv1.PaymentServiceClient) *ContractTipHandler {
+	return &ContractTipHandler{db: db, paymentClient: paymentClient}
 }
 
 type tipRequest struct {
@@ -352,14 +355,15 @@ const (
 	maxTipCents = 1000000 // $10,000
 )
 
-// Tip refuses unpaid tip recording until Stripe charge wiring exists (MON-23).
-// Previously this path wrote tip_amount_cents without capturing funds, which
-// made tips appear paid in the ledger/UI with no corresponding PaymentIntent.
+// Tip charges a post-completion gratuity via payment ChargeContractTip (MON-23).
+// tip_amount_cents is set only after off-session charge (+ transfer) succeeds.
 func (h *ContractTipHandler) Tip(w http.ResponseWriter, r *http.Request) {
-	// Auth + basic validation still run so clients get actionable errors for
-	// missing claims / bad ids / out-of-range amounts rather than a bare 501.
 	if h.db == nil {
 		writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+	if h.paymentClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "payment service unavailable")
 		return
 	}
 	claims, ok := middleware.GetClaims(r.Context())
@@ -381,8 +385,7 @@ func (h *ContractTipHandler) Tip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ownership / status pre-check so we don't 501 for callers who would never
-	// be allowed to tip (clearer than a blanket "not implemented").
+	// Ownership / status pre-check for clear 4xx before payment service.
 	var status string
 	var customerID string
 	var existingTip int64
@@ -411,12 +414,44 @@ func (h *ContractTipHandler) Tip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// MON-23: do not record tip cents as paid without Stripe.
-	slog.InfoContext(r.Context(), "tip refused: payment not wired",
+	idem := r.Header.Get("Idempotency-Key")
+	if idem == "" {
+		// Prefer sticky client key; fall back to deterministic per-contract key.
+		idem = "tip:" + contractID
+	}
+
+	resp, perr := h.paymentClient.ChargeContractTip(r.Context(), &paymentv1.ChargeContractTipRequest{
+		ContractId:     contractID,
+		CustomerId:     claims.UserID,
+		AmountCents:    req.AmountCents,
+		IdempotencyKey: idem,
+	})
+	if perr != nil {
+		slog.WarnContext(r.Context(), "tip charge failed",
+			"contract_id", contractID,
+			"customer_id", claims.UserID,
+			"amount_cents", req.AmountCents,
+			"error", perr,
+		)
+		writeGRPCError(w, perr)
+		return
+	}
+	if !resp.GetSucceeded() {
+		writeError(w, http.StatusPaymentRequired, "tip payment did not succeed; add a payment method and retry")
+		return
+	}
+
+	slog.InfoContext(r.Context(), "tip charged",
 		"contract_id", contractID,
 		"customer_id", claims.UserID,
-		"amount_cents", req.AmountCents,
+		"amount_cents", resp.GetTipAmountCents(),
+		"payment_id", resp.GetPaymentId(),
 	)
-	writeError(w, http.StatusNotImplemented, "tips require payment")
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"tip_amount_cents":   resp.GetTipAmountCents(),
+		"payment_id":         resp.GetPaymentId(),
+		"payment_intent_id":  resp.GetPaymentIntentId(),
+		"status":             resp.GetStatus(),
+	})
 }
 

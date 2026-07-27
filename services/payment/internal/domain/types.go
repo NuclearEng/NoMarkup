@@ -23,6 +23,10 @@ var (
 	ErrNotAuthorizedActor    = errors.New("actor not authorized for this operation")
 	ErrStripeAccountNotFound = errors.New("stripe account not found")
 	ErrPlatformBankAccountNotFound = errors.New("platform bank account not found")
+	// ErrTipAlreadyRecorded is returned when contracts.tip_amount_cents is already non-zero.
+	ErrTipAlreadyRecorded = errors.New("tip already recorded")
+	// ErrContractNotCompleted is returned when a tip is attempted on a non-completed contract.
+	ErrContractNotCompleted = errors.New("contract is not completed")
 )
 
 // Payment represents a platform payment.
@@ -384,11 +388,12 @@ type ContractDetail struct {
 // payee) and the contract amount (to bound the charge). Never trust the client
 // for these — see PaymentService.CreatePayment.
 type ContractForPayment struct {
-	ID          string
-	CustomerID  string
-	ProviderID  string
-	AmountCents int64
-	Status      string
+	ID             string
+	CustomerID     string
+	ProviderID     string
+	AmountCents    int64
+	Status         string
+	TipAmountCents int64 // 0 = not yet tipped
 }
 
 // MilestoneDetail holds milestone info for invoice line items.
@@ -427,6 +432,9 @@ type PaymentRepository interface {
 	// GetContractForPayment loads the parties + amount of a non-deleted contract
 	// so payment/installment flows can reconcile client input server-side.
 	GetContractForPayment(ctx context.Context, contractID string) (*ContractForPayment, error)
+	// SetContractTipIfZero CAS-sets contracts.tip_amount_cents only when still 0.
+	// Returns true when this call won the race and recorded the tip.
+	SetContractTipIfZero(ctx context.Context, contractID string, tipAmountCents int64) (bool, error)
 	// SetStripeOnboardingComplete flips the provider_profiles.stripe_onboarding_complete
 	// flag for the user owning the given Stripe Connect account ID. Wired off
 	// the account.updated webhook so the local DB stays in sync with Stripe.

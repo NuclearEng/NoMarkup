@@ -675,7 +675,9 @@ func New(
 				// Post-completion tip / gratuity (Wave 5 audit Section H).
 				// Customer-only enforcement is internal to the handler;
 				// RequirePartyAccess above already screens out non-parties.
-				r.Post("/{id}/tip", contractTipHandler.Tip)
+				// Money mutation: Idempotency-Key required (MON-23 / MON-06).
+				r.With(middleware.RequireIdempotencyKey(cacheClient)).
+					Post("/{id}/tip", contractTipHandler.Tip)
 			})
 		})
 
