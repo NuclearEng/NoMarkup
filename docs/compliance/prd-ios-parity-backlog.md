@@ -101,12 +101,12 @@ Still describe hard-offs (must reconcile before submit):
 
 | Area | PRD | Gap |
 |------|-----|-----|
-| Onboarding | FR-1.5–1.9 | No guided flow; no email-verify UI; no phone OTP |
-| Job form / repost | FR-3.1, 3.5, 3.10 | Missing recurrence, offer-accepted, schedule, property; no repost |
-| Bidding | FR-4.3–4.7 | No lower-bid, accept-offer, multi-sort/filter |
+| Onboarding | FR-1.5–1.9 | **VerificationCenter** email/phone OTP live; guided multi-step wizard still open |
+| Job form / repost | FR-3.1, 3.5, 3.10 | Recurrence / offer-accepted / property on PostJob; **repost still open** |
+| Bidding | FR-4.3–4.7 | **Lower bid + accept-offer + price/trust sort** live |
 | Chat | FR-8 | Poll only; no typing/WS/attachments/search/terms |
 | Payments | FR-9 | Services PaymentSheet capture + fee UX thin vs goods |
-| Maps | FR-10.4–10.6 | No Get Directions; no property on post |
+| Maps | FR-10.4–10.6 | **Get Directions** (party exact address) + property on post |
 | Recurring | FR-18 | Backend Unimplemented + no iOS lifecycle |
 | Properties | FR-19 | List/CRUD-lite only; no dashboard/spend/history |
 | Instant | §13 | Backend match route; no customer emergency CTA |
