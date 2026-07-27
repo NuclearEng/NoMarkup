@@ -1,37 +1,53 @@
 import { expect, test } from '@playwright/test';
 
+/**
+ * Job browse / create smoke E2E.
+ * QA-07: real outcomes (URL, labels, empty-state titles) — not "any link count".
+ */
+
 test.describe('Job flows', () => {
   test.describe('Job creation', () => {
     test('navigates to job posting form', async ({ page }) => {
       await page.goto('/jobs/new');
-      // Should show the job posting form or redirect to login if unauthenticated.
-      await page.waitForURL(/\/(jobs\/new|login)/);
+      await page.waitForURL(/\/(jobs\/new|login)/, { timeout: 10_000 });
+      if (page.url().includes('/login')) {
+        await expect(page.getByLabel(/email/i)).toBeVisible();
+        return;
+      }
+      await expect(page).toHaveURL(/\/jobs\/new/);
     });
 
     test('job posting form renders required fields', async ({ page }) => {
       await page.goto('/jobs/new');
-      // AuthGuard redirects unauthenticated users to /login.
       const redirected = await page
         .waitForURL(/\/login/, { timeout: 8_000 })
         .then(() => true)
         .catch(() => false);
-      if (redirected) return;
+      if (redirected) {
+        await expect(page.getByLabel(/email/i)).toBeVisible();
+        return;
+      }
       await expect(page.getByLabel(/title/i)).toBeVisible();
       await expect(page.getByLabel(/description/i)).toBeVisible();
     });
 
     test('shows validation errors for empty job form submission', async ({ page }) => {
       await page.goto('/jobs/new');
-      if (page.url().includes('/login')) {
+      if (page.url().includes('/login') || (await page.getByLabel(/email/i).isVisible().catch(() => false))) {
+        // Still resolving auth or already redirected.
+        const onLogin = page.url().includes('/login');
+        if (onLogin) {
+          await expect(page.getByLabel(/email/i)).toBeVisible();
+          return;
+        }
+      }
+      const submitButton = page.getByRole('button', { name: /post|create|submit|publish/i });
+      if (!(await submitButton.isVisible().catch(() => false))) {
+        test.skip(true, 'job form submit control not rendered (auth or multi-step wizard)');
         return;
       }
-      // Attempt to submit without filling required fields.
-      const submitButton = page.getByRole('button', { name: /post|create|submit|publish/i });
-      if (await submitButton.isVisible()) {
-        await submitButton.click();
-        // Should show validation errors for required fields.
-        await expect(page.getByText(/required|title|description/i).first()).toBeVisible();
-      }
+      await submitButton.click();
+      await expect(page.getByText(/required|title|description/i).first()).toBeVisible();
     });
   });
 
@@ -39,58 +55,59 @@ test.describe('Job flows', () => {
     test('renders jobs page', async ({ page }) => {
       await page.goto('/jobs');
       await expect(page).toHaveURL(/\/jobs/);
+      await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible({
+        timeout: 10_000,
+      });
     });
 
     test('displays job cards or empty state', async ({ page }) => {
       await page.goto('/jobs');
-      // Should either show job cards or an empty state message.
-      const hasJobs = await page.getByRole('link', { name: /./i }).count();
-      const hasEmptyState = await page.getByText(/no jobs|no results|browse/i).count();
-      expect(hasJobs > 0 || hasEmptyState > 0).toBeTruthy();
+      await expect(page).toHaveURL(/\/jobs/);
+      // Specific empty / error titles from JobsSearchClient — not "any link".
+      const emptyOrError = page.getByText(
+        /No jobs found|Failed to load jobs|No open jobs|no jobs match/i,
+      );
+      const jobCard = page.locator('a[href*="/jobs/"]').filter({ hasNotText: /new|mine|post/i });
+      await expect(emptyOrError.or(jobCard).first()).toBeVisible({ timeout: 15_000 });
     });
   });
 
   test.describe('Job detail', () => {
     test('shows not found or job content for detail page', async ({ page }) => {
       await page.goto('/jobs/test-job-id');
-      // Wait for either job content heading or not-found text to appear.
-      await Promise.race([
-        page.getByRole('heading').first().waitFor({ timeout: 10_000 }),
-        page
-          .getByText(/not found|error|unavailable/i)
-          .first()
-          .waitFor({ timeout: 10_000 }),
-      ]).catch(() => {});
-      const hasContent = await page.getByRole('heading').count();
-      const hasNotFound = await page.getByText(/not found|error|unavailable/i).count();
-      expect(hasContent > 0 || hasNotFound > 0).toBeTruthy();
+      // Prefer specific not-found title over any heading (layout always has headings).
+      const notFound = page.getByText('Job not found');
+      const bidUi = page.getByRole('button', { name: /place bid|submit bid|^bid$/i });
+      const jobTitle = page.getByRole('heading', { level: 1 });
+      await expect(notFound.or(bidUi).or(jobTitle).first()).toBeVisible({ timeout: 15_000 });
+      // If we only got a generic h1, it must not be an unhandled blank shell —
+      // Job not found or bid UI should cover backendless CI; with a real job the
+      // h1 is the job title (asserted via jobTitle above).
     });
   });
 
   test.describe('Job search and filtering', () => {
     test('search input is present on jobs page', async ({ page }) => {
       await page.goto('/jobs');
+      await expect(page).toHaveURL(/\/jobs/);
       const searchInput = page.getByPlaceholder(/search|find/i);
       const categoryFilter = page.getByRole('combobox');
-      // At least one of search input or category filter should be present.
-      const hasSearch = await searchInput.count();
-      const hasFilter = await categoryFilter.count();
-      expect(hasSearch > 0 || hasFilter > 0).toBeTruthy();
+      await expect(searchInput.or(categoryFilter).first()).toBeVisible({ timeout: 10_000 });
     });
 
     test('URL updates with search query params', async ({ page }) => {
       await page.goto('/jobs?q=plumbing');
       await expect(page).toHaveURL(/\/jobs/);
+      await expect(page).toHaveURL(/q=plumbing/);
     });
   });
 
   test.describe('Accessibility', () => {
     test('jobs page has proper heading hierarchy', async ({ page }) => {
       await page.goto('/jobs');
-      const h1 = page.getByRole('heading', { level: 1 });
-      const headingCount = await h1.count();
-      // Should have at least one h1 heading.
-      expect(headingCount).toBeGreaterThanOrEqual(1);
+      await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible({
+        timeout: 10_000,
+      });
     });
   });
 });

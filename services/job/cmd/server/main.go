@@ -176,13 +176,15 @@ func main() {
 	listingHydrate := buildListingHydrator(pool, trustRanking)
 	listingService := service.NewListingService(listingRepo).WithSearch(listingSearchEngine, listingHydrate)
 
-	// Optional Redis client — used only for the best-effort auction-close
-	// notification seam (auction_won / auction_expired). The auction-close
-	// worker functions correctly without it; failures here never block the
-	// money path. Wire it only if REDIS_URL is set.
+	// Optional Redis client — auction-close notification seam (auction_won /
+	// auction_expired) + ARC-16 durable Meilisearch reindex retry queue.
+	// Search is fail-soft (not money): without REDIS_URL, in-process 3-shot
+	// retries still run and exhaustion dead-letters with a pageable metric.
+	// Wire it only if REDIS_URL is set.
+	var searchRetryQ *service.SearchRetryQueue
 	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
 		if opt, perr := redis.ParseURL(redisURL); perr != nil {
-			slog.Warn("auction-close: invalid REDIS_URL, notifications disabled", "error", perr)
+			slog.Warn("redis: invalid REDIS_URL, auction notifications + search durable retry disabled", "error", perr)
 		} else {
 			rdb := redis.NewClient(opt)
 			defer func() { _ = rdb.Close() }()
@@ -191,7 +193,17 @@ func main() {
 			}
 			listingService = listingService.WithRedis(rdb)
 			slog.Info("auction-close: redis notification seam enabled")
+
+			// ARC-16: durable search reindex queue (jobs + listings share one ZSET).
+			searchRetryQ = service.NewSearchRetryQueue(rdb).
+				WithJobHandlers(repo, searchEngine).
+				WithListingHandlers(listingRepo, listingSearchEngine, listingHydrate)
+			jobService = jobService.WithSearchRetryQueue(searchRetryQ)
+			listingService = listingService.WithSearchRetryQueue(searchRetryQ)
+			slog.Info("search durable retry queue enabled (ARC-16)")
 		}
+	} else {
+		slog.Info("REDIS_URL unset: search durable retry disabled (in-process retries + dead-letter metric only)")
 	}
 
 	// Wire up provider matching engine.
@@ -330,6 +342,17 @@ func main() {
 		envDuration("RECURRING_PAYMENT_RETRY_INTERVAL", time.Hour),
 		envDuration("RECURRING_PAYMENT_RETRY_INITIAL_DELAY", 45*time.Second),
 		envInt("RECURRING_PAYMENT_RETRY_BATCH", 100),
+	)
+
+	// ARC-16: durable Meilisearch reindex worker. Claims due tasks from the
+	// Redis ZSET every 30s (default), re-fetches entity state from Postgres,
+	// and re-applies index/remove. No-ops when REDIS_URL was unset.
+	service.RunSearchRetryCron(
+		sigCtx,
+		searchRetryQ,
+		envDuration("SEARCH_RETRY_INTERVAL", 30*time.Second),
+		envDuration("SEARCH_RETRY_INITIAL_DELAY", 20*time.Second),
+		int64(envInt("SEARCH_RETRY_BATCH", 50)),
 	)
 
 	go func() {

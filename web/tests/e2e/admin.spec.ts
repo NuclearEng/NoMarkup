@@ -1,15 +1,28 @@
 import { expect, test } from '@playwright/test';
 
+/**
+ * Admin smoke E2E (unauthenticated CI path = login redirect).
+ * QA-07: assert URL + login form or admin-specific chrome — never
+ * `hasButtons > 1 || hasEmpty` style ORs that pass on any shell.
+ */
+
 /** Navigate to a protected route and wait for the auth check to resolve. */
 async function gotoProtected(page: import('@playwright/test').Page, url: string) {
   await page.goto(url);
-  // AuthGuard redirects unauthenticated users to /login. Wait for either
-  // the redirect or page content to appear.
   const redirected = await page
     .waitForURL(/\/login/, { timeout: 5_000 })
     .then(() => true)
     .catch(() => false);
   return redirected;
+}
+
+async function expectLoginOr(page: import('@playwright/test').Page, redirected: boolean) {
+  if (redirected) {
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByLabel(/email/i)).toBeVisible();
+    return true;
+  }
+  return false;
 }
 
 test.describe('Admin flows', () => {
@@ -22,84 +35,112 @@ test.describe('Admin flows', () => {
 
     test('admin dashboard shows overview metrics when accessible', async ({ page }) => {
       const redirected = await gotoProtected(page, '/admin');
-      if (redirected) return;
-      await page.waitForLoadState('networkidle');
-      const hasMetrics = await page.getByText(/users|jobs|revenue|metrics/i).count();
-      const hasNav = await page.getByRole('navigation').count();
-      expect(hasMetrics > 0 || hasNav > 0).toBeTruthy();
+      if (await expectLoginOr(page, redirected)) return;
+      // Admin-specific markers — not "any navigation".
+      await expect(
+        page
+          .getByRole('heading', { name: /Admin Overview/i })
+          .or(page.getByText('Total Users', { exact: true }))
+          .or(page.getByText(/access denied|unauthorized|forbidden/i))
+          .first(),
+      ).toBeVisible({ timeout: 15_000 });
     });
   });
 
   test.describe('User management', () => {
     test('admin users page loads or redirects', async ({ page }) => {
-      await gotoProtected(page, '/admin/users');
+      const redirected = await gotoProtected(page, '/admin/users');
+      if (await expectLoginOr(page, redirected)) return;
+      await expect(page).toHaveURL(/\/admin\/users/);
     });
 
     test('user management shows user list or access denied', async ({ page }) => {
       const redirected = await gotoProtected(page, '/admin/users');
-      if (redirected) return;
-      await page.waitForLoadState('networkidle');
-      const hasUsers = await page.getByRole('row').count();
-      const hasSearch = await page.getByPlaceholder(/search|find/i).count();
-      const hasAccessDenied = await page.getByText(/access denied|unauthorized/i).count();
-      expect(hasUsers > 0 || hasSearch > 0 || hasAccessDenied > 0).toBeTruthy();
+      if (await expectLoginOr(page, redirected)) return;
+      await expect(
+        page
+          .getByRole('heading', { name: /User Management/i })
+          .or(page.getByText(/access denied|unauthorized|forbidden/i))
+          .first(),
+      ).toBeVisible({ timeout: 15_000 });
+      const denied = await page.getByText(/access denied|unauthorized|forbidden/i).count();
+      if (denied > 0) return;
+      // Table with users, search, or empty admin queue copy.
+      const search = page.getByPlaceholder(/search|find/i);
+      const rows = page.getByRole('row');
+      const empty = page.getByText(/no users|no results|no .* found/i);
+      await expect(search.or(rows).or(empty).first()).toBeVisible({ timeout: 15_000 });
     });
   });
 
   test.describe('Fraud queue', () => {
     test('fraud queue page loads or redirects', async ({ page }) => {
-      await gotoProtected(page, '/admin/fraud');
+      const redirected = await gotoProtected(page, '/admin/fraud');
+      if (await expectLoginOr(page, redirected)) return;
+      await expect(page).toHaveURL(/\/admin\/fraud/);
     });
 
     test('fraud queue shows alerts or empty state', async ({ page }) => {
       const redirected = await gotoProtected(page, '/admin/fraud');
-      if (redirected) return;
-      await page.waitForLoadState('networkidle');
-      const hasAlerts = await page.getByRole('row').count();
-      const hasButtons = await page.getByRole('button').count();
-      const hasEmpty = await page
-        .getByText(/no alerts|no fraud|no signals|queue is empty|alerts found/i)
-        .count();
-      const hasAccessDenied = await page.getByText(/access denied|unauthorized/i).count();
-      expect(hasAlerts > 0 || hasButtons > 1 || hasEmpty > 0 || hasAccessDenied > 0).toBeTruthy();
+      if (await expectLoginOr(page, redirected)) return;
+      await expect(
+        page
+          .getByRole('heading', { name: /fraud|alerts|signals/i })
+          .or(page.getByText(/access denied|unauthorized|forbidden/i))
+          .first(),
+      ).toBeVisible({ timeout: 15_000 });
+      const denied = await page.getByText(/access denied|unauthorized|forbidden/i).count();
+      if (denied > 0) return;
+      const empty = page.getByText(
+        /no alerts|no fraud|no signals|queue is empty|alerts found|no results/i,
+      );
+      const rows = page.getByRole('row');
+      await expect(empty.or(rows).first()).toBeVisible({ timeout: 15_000 });
     });
   });
 
   test.describe('Disputes', () => {
     test('disputes page loads or redirects', async ({ page }) => {
-      await gotoProtected(page, '/admin/disputes');
+      const redirected = await gotoProtected(page, '/admin/disputes');
+      if (await expectLoginOr(page, redirected)) return;
+      await expect(page).toHaveURL(/\/admin\/disputes/);
     });
 
     test('disputes page shows dispute list or empty state', async ({ page }) => {
       const redirected = await gotoProtected(page, '/admin/disputes');
-      if (redirected) return;
-      await page.waitForLoadState('networkidle');
-      const hasDisputes = await page.getByRole('row').count();
-      const hasEmpty = await page
-        .getByText(/no disputes|no results|queue is empty|disputes found/i)
-        .count();
-      const hasAccessDenied = await page.getByText(/access denied|unauthorized/i).count();
-      expect(hasDisputes > 0 || hasEmpty > 0 || hasAccessDenied > 0).toBeTruthy();
+      if (await expectLoginOr(page, redirected)) return;
+      await expect(
+        page
+          .getByRole('heading', { name: /dispute/i })
+          .or(page.getByText(/access denied|unauthorized|forbidden/i))
+          .first(),
+      ).toBeVisible({ timeout: 15_000 });
+      const denied = await page.getByText(/access denied|unauthorized|forbidden/i).count();
+      if (denied > 0) return;
+      const empty = page.getByText(/no disputes|no results|queue is empty|disputes found/i);
+      const rows = page.getByRole('row');
+      await expect(empty.or(rows).first()).toBeVisible({ timeout: 15_000 });
     });
   });
 
   test.describe('Accessibility', () => {
     test('admin pages have proper heading hierarchy', async ({ page }) => {
       const redirected = await gotoProtected(page, '/admin');
-      if (redirected) return;
-      const headings = page.getByRole('heading');
-      expect(await headings.count()).toBeGreaterThanOrEqual(1);
+      if (await expectLoginOr(page, redirected)) return;
+      await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 10_000 });
     });
 
     test('admin tables have proper structure', async ({ page }) => {
       const redirected = await gotoProtected(page, '/admin/users');
-      if (redirected) return;
+      if (await expectLoginOr(page, redirected)) return;
       await page.waitForLoadState('networkidle');
       const tables = page.getByRole('table');
-      if ((await tables.count()) > 0) {
-        const headers = page.getByRole('columnheader');
-        expect(await headers.count()).toBeGreaterThanOrEqual(1);
+      if ((await tables.count()) === 0) {
+        // Empty / denied without a table — still must not be a blank shell.
+        await expect(page.getByRole('heading').first()).toBeVisible();
+        return;
       }
+      await expect(page.getByRole('columnheader').first()).toBeVisible();
     });
   });
 });

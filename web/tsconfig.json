@@ -39,8 +39,12 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "next-env.d.ts",
-    ".next-prod/types/**/*.ts"
+    // Alternate production distDirs (PERF-07 bundle check / PERF-02 LHCI) —
+    // Next may rewrite this list on build; keep both so typecheck works after
+    // either isolated build.
+    ".next-prod/types/**/*.ts",
+    ".next-lhci/types/**/*.ts",
+    "next-env.d.ts"
   ],
   "exclude": [
     "node_modules"

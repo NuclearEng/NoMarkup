@@ -196,10 +196,21 @@ component tested in loading / success / error / empty states.
 ### Backend — Go
 ```go
 // Coverage target: 80% line coverage minimum. Every exported function tested.
-// Table-driven, parallel. DB tests: testcontainers-go (real Postgres), never mock the DB for
-// repository tests; use rollback transactions for isolation. HTTP: httptest.NewServer.
+// Table-driven, parallel. DB tests: real Postgres via the CI PostGIS service
+// container (GitHub Actions) — not testcontainers-go in this tree. HTTP: httptest.
 // gRPC: bufconn in-process. Integration tests gated with //go:build integration
 ```
+
+**CI map (honest, QA-11):**
+
+| Surface | Unit in CI | `//go:build integration` in CI |
+|---------|------------|--------------------------------|
+| `gateway` | `gateway-test` | `go-integration-test` (`-short`) |
+| `services/user`, `job`, `payment` | `services-test` matrix | `go-integration-test` (`-short`); money races / live idempotency also in `fullstack-security-test` / `money-race-tests` |
+| `services/chat`, `services/notification` | `services-test` matrix (`go test ./... -race`) | **None** — no integration packages exist under those modules |
+| Live stack (`tests/integration/`) | n/a | `fullstack-security-test` — boots compose **without** `chat` (and without `web`/`imaging`/`minio`); `notification` container may run but is not covered by a service-level integration suite |
+
+Do not claim “all Go services have integration coverage in CI.” Closing the chat/notification gap means adding real `//go:build integration` tests (DB/WS/push paths) **and** wiring them into `go-integration-test` (and/or starting `chat` in the fullstack job when a suite needs it) — not an empty green step.
 
 ### Backend — Rust
 ```rust

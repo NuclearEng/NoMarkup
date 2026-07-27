@@ -55,9 +55,13 @@ test.describe('Provider: Provider Dashboard', () => {
     await expect(page.getByText('Total Earnings', { exact: true }).first()).toBeVisible();
 
     // Edit profile link/button
-    const editLink = page.getByRole('link', { name: /Edit Profile/i });
-    const editButton = page.getByRole('button', { name: /Edit Profile/i });
-    expect((await editLink.count()) > 0 || (await editButton.count()) > 0).toBeTruthy();
+    await expect(
+      page
+        .getByRole('link', { name: /Edit Profile/i })
+        .or(page.getByRole('button', { name: /Edit Profile/i }))
+        .first(),
+    ).toBeVisible({ timeout: 10_000 });
+
 
     // Trust Score section (may still be loading; just check page has headings)
     expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
@@ -83,7 +87,7 @@ test.describe('Provider: Onboarding', () => {
     const bio = page.getByLabel(/Bio/i).or(page.getByPlaceholder(/bio/i));
 
     // At least one form field should be visible on step 1
-    expect((await businessName.count()) > 0 || (await bio.count()) > 0).toBeTruthy();
+    await expect(businessName.or(bio).first()).toBeVisible({ timeout: 10_000 });
   });
 });
 
@@ -95,11 +99,12 @@ test.describe('Provider: Browse Jobs', () => {
     await expectHasHeadings(page);
     await expectNotErrorPage(page);
 
-    const searchInput = page.getByPlaceholder(/search|find/i);
-    const combobox = page.getByRole('combobox');
-    expect((await searchInput.count()) > 0 || (await combobox.count()) > 0).toBeTruthy();
+    await expect(
+      page.getByPlaceholder(/search|find/i).or(page.getByRole('combobox')).first(),
+    ).toBeVisible({ timeout: 10_000 });
   });
 });
+
 
 test.describe('Provider: My Bids', () => {
   test('loads /bids and shows tabs', async ({ page }) => {
@@ -231,14 +236,17 @@ test.describe('Provider: Analytics', () => {
     await expectNotErrorPage(page);
     await page.waitForTimeout(3_000);
 
-    // Check for provider-specific metric content
-    const hasMetrics =
-      (await page.getByText(/Win Rate/i).count()) > 0 ||
-      (await page.getByText(/On-Time Rate/i).count()) > 0;
-    const hasHeadings = (await page.getByRole('heading').count()) > 0;
-    expect(hasMetrics || hasHeadings).toBeTruthy();
+    // Provider analytics chrome — not "any heading" (QA-07).
+    await expect(
+      page
+        .getByText(/Win Rate/i)
+        .or(page.getByText(/On-Time Rate/i))
+        .or(page.getByText(/Total Earnings|Active Bids|Jobs Completed/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
+
 
 test.describe('Provider: Profile', () => {
   test('shows provider role badge and provider information', async ({ page }) => {

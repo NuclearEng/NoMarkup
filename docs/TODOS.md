@@ -129,7 +129,7 @@ All 14 paths now closed (commit `68d5cbf`):
 - ✅ JSON decode helper + 67 silent-decode handler sites migrated to `decodeJSON` (decode errors now surface to client for field-name-mismatch debugging)
 - ✅ Chat access control fail-closed (`services/chat/internal/service/service.go:50-58`)
 - ✅ Token revocation atomic via single-tx `SuspendUserAndRevokeTokens` / `BanUserAndRevokeTokens` (no half-state where user is suspended but tokens still authenticate)
-- ✅ Search indexing retry queue: 3-attempt exponential backoff for index AND remove (symmetric `removeJobFromSearchWithRetry`); durable Redis-backed queue tracked as follow-up TODO in `services/job/internal/service/job.go`
+- ✅ Search indexing retry queue: 3-attempt exponential backoff for index AND remove (symmetric `removeJobFromSearchWithRetry`); durable Redis-backed queue (ARC-16, 2026-07-27) in `search_retry_queue.go` — ZSET `search:retry`, 30s worker, max 5 durable attempts, Prometheus + DEAD-LETTER log
 - ✅ Email templates use `html/template` (XSS-safe)
 - ✅ SMS dev-mode at `slog.Warn` with explicit "OTP will not be delivered" message
 - ✅ Fraud engine has zero raw `.unwrap()` in production paths
@@ -140,7 +140,7 @@ Discovered in 2026-03-28 CEO review. All fail silently with zero test coverage.
 - **JSON decode helper:** Create `decodeJSON[T](w, r, *T) bool` in `gateway/internal/handler/response.go`. Fix 6 handlers: `job.go:283`, `payment.go:37,258,433`, `subscription.go:145`, `contract.go:335`
 - **Chat access control:** Fail closed when bid checker errors (`services/chat/internal/service/service.go:52-58`). Return `ErrServiceUnavailable`, don't allow access.
 - **Token revocation blocking:** Return error if `RevokeAllUserTokens` fails in `services/user/internal/service/admin.go:28,49`. Don't proceed with suspension/ban.
-- **Search indexing retry queue:** On Meilisearch failure in `services/job/internal/service/job.go:58,100,114,128,143`, push job ID to Redis retry queue. Background goroutine retries every 30s. Alert after 3 failures.
+- **Search indexing retry queue:** ✅ DONE (ARC-16) — in-process 3-shot + Redis ZSET durable queue (`search:retry`); worker every 30s; dead-letter after 5 durable attempts with `search_retry_dead_letter_total` + ERROR log.
 - **Email template HTML escaping:** Switch from `text/template` to `html/template` in `services/notification/internal/service/email.go:127`.
 - **SMS dev mode warning:** Change `slog.Info` to `slog.Warn` in `services/notification/internal/service/sms.go:39`. Add `X-Dev-Mode: true` response header.
 - **Fraud engine unwrap fix:** Replace `unwrap()` with pattern match in `engines/fraud/src/engine.rs:1499`.

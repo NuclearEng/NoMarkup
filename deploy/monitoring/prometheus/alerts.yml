@@ -79,7 +79,9 @@ groups:
             The gateway deployment in namespace {{ $labels.namespace }} has had
             0 available replicas for more than 2 minutes. All client traffic is
             blocked. This is a total service outage.
+          # Pods zero → DB/deps first; public HTTPS fail with healthy pods → ingress/TLS.
           runbook: "docs/runbooks/02-database-master-down.md"
+          runbook_edge: "docs/runbooks/10-ingress-tls.md"
 
       - alert: NoMarkupServiceDown
         expr: |
@@ -109,8 +111,10 @@ groups:
           description: >-
             The overall 5xx error rate has been {{ $value | humanizePercentage }}
             for the last 5 minutes, exceeding the 1% threshold. Performance
-            budget requires < 0.1% error rate.
+            budget requires < 0.1% error rate. Auth/payments first; edge 502/504
+            see docs/runbooks/10-ingress-tls.md.
           runbook: "docs/runbooks/README.md"
+          runbook_edge: "docs/runbooks/10-ingress-tls.md"
 
   # ---------------------------------------------------------------------------
   # P0 — Security (page immediately)
@@ -390,8 +394,10 @@ groups:
           description: >-
             Active WebSocket connections have decreased by more than 20% in the
             last 5 minutes. This may indicate a chat/auction service crash,
-            network partition, or load balancer issue.
+            network partition, or load balancer issue. Pub/sub first; WS edge
+            upgrade/timeouts → docs/runbooks/10-ingress-tls.md.
           runbook: "docs/runbooks/07-redis-degraded.md"
+          runbook_edge: "docs/runbooks/10-ingress-tls.md"
 
       # Requires contract status tracking metrics from the job/contract service.
       # Uses HTTP status codes on dispute endpoints as a proxy.

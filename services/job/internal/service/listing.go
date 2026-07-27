@@ -39,6 +39,9 @@ type ListingService struct {
 	// nil, the indexed document carries only the bare fields the listing
 	// already has — search still works against title/description.
 	hydrate ListingHydrator
+	// retryQ is optional (ARC-16). When non-nil, Meilisearch failures that
+	// exhaust in-process retries escalate to the shared Redis durable queue.
+	retryQ *SearchRetryQueue
 }
 
 // NewListingService wires a ListingService against a repository.
@@ -59,6 +62,13 @@ func (s *ListingService) WithRedis(rdb *redis.Client) *ListingService {
 func (s *ListingService) WithSearch(search *ListingSearchEngine, hydrate ListingHydrator) *ListingService {
 	s.search = search
 	s.hydrate = hydrate
+	return s
+}
+
+// WithSearchRetryQueue attaches the durable Meilisearch retry queue (ARC-16).
+// Returns the service for chaining. Safe to call with nil (no-op).
+func (s *ListingService) WithSearchRetryQueue(q *SearchRetryQueue) *ListingService {
+	s.retryQ = q
 	return s
 }
 
@@ -94,7 +104,7 @@ func (s *ListingService) CreateListing(ctx context.Context, sellerID string, inp
 	)
 	// Search indexing — only published listings are searchable.
 	if listing.Status == "active" && s.search != nil {
-		indexListingWithRetry(s.search, listing, s.hydrate, "create")
+		indexListingWithRetry(s.search, listing, s.hydrate, "create", s.retryQ)
 	}
 	// Followable-seller fan-out: publish a `notify:seller_new_listing:{seller_id}`
 	// Redis event so the notification service can fan to followers.
@@ -169,7 +179,7 @@ func (s *ListingService) UpdateListing(ctx context.Context, listingID, sellerID 
 	}
 	// Re-index when the listing is currently active. Drafts aren't searchable.
 	if l != nil && l.Status == "active" && s.search != nil {
-		indexListingWithRetry(s.search, l, s.hydrate, "update")
+		indexListingWithRetry(s.search, l, s.hydrate, "update", s.retryQ)
 	}
 	return l, nil
 }
@@ -182,7 +192,7 @@ func (s *ListingService) CancelListing(ctx context.Context, listingID, sellerID,
 	}
 	slog.Info("listing cancelled", "listing_id", listingID, "seller_id", sellerID, "reason", reason)
 	if s.search != nil {
-		removeListingFromSearchWithRetry(s.search, listingID, "cancel")
+		removeListingFromSearchWithRetry(s.search, listingID, "cancel", s.retryQ)
 	}
 	// Cancel has no winner: release every authorized bid bond for this listing.
 	// Fail-soft — cancel already succeeded; a release failure is logged for ops.
@@ -225,14 +235,14 @@ func (s *ListingService) publishBidPlaced(ctx context.Context, input domain.Plac
 		return
 	}
 	payload := map[string]interface{}{
-		"type":            "bid_placed",
-		"listing_id":      input.ListingID,
-		"bidder_id":       input.BidderID,
-		"amount_cents":    input.AmountCents,
+		"type":                  "bid_placed",
+		"listing_id":            input.ListingID,
+		"bidder_id":             input.BidderID,
+		"amount_cents":          input.AmountCents,
 		"snipe_extension":       res.SnipeExtensionTriggered,
 		"snipe_extension_count": res.SnipeExtensionCount,
 		"new_auction_ends_at":   res.NewAuctionEndsAt.UTC().Format(time.RFC3339),
-		"timestamp":       time.Now().UTC().Format(time.RFC3339Nano),
+		"timestamp":             time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -282,7 +292,7 @@ func (s *ListingService) CloseListingAuction(ctx context.Context, listingID stri
 	}
 	// Sold or expired listings should disappear from search.
 	if s.search != nil {
-		removeListingFromSearchWithRetry(s.search, listingID, "close")
+		removeListingFromSearchWithRetry(s.search, listingID, "close", s.retryQ)
 	}
 	return l, o, nil
 }

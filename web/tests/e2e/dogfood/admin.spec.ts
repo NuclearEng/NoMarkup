@@ -109,20 +109,29 @@ test.describe('Admin: User Management', () => {
     await expectPageLoaded(page, /User Management/i);
     await page.waitForTimeout(2_000);
 
-    // Check for action buttons (may not exist if no users in table)
+    // Seeded stack must render the users table (or a real empty state) — never
+    // `expect(true)` as a vacuous pass (QA-07).
+    await expectTableOrEmpty(page);
+
     const table = page.locator('table');
-    if ((await table.count()) > 0) {
-      const rows = table.first().locator('tbody tr');
-      if ((await rows.count()) > 0) {
-        const suspendBtns = page.getByRole('button', { name: /Suspend/i });
-        const banBtns = page.getByRole('button', { name: /Ban/i });
-        expect((await suspendBtns.count()) > 0 || (await banBtns.count()) > 0).toBeTruthy();
-      }
+    if ((await table.count()) === 0) {
+      return; // empty-state path already asserted above
     }
-    // If no table/rows, that's acceptable
-    expect(true).toBeTruthy();
+    const rows = table.first().locator('tbody tr');
+    const rowCount = await rows.count();
+    if (rowCount === 0) {
+      return;
+    }
+    // Seed users exist → moderation actions must be on the row.
+    await expect(
+      page
+        .getByRole('button', { name: /Suspend/i })
+        .or(page.getByRole('button', { name: /Ban/i }))
+        .first(),
+    ).toBeVisible({ timeout: 10_000 });
   });
 });
+
 
 test.describe('Admin: User Detail', () => {
   test('loads user detail page for seed customer user', async ({ page }) => {
@@ -194,17 +203,15 @@ test.describe('Admin: Payment Administration', () => {
     await expectHasHeadings(page);
     await page.waitForTimeout(2_000);
 
-    // Find fee percentage input and fill it
+    // Fee form is required on this page (sibling test asserts count ≥ 1).
+    // Do not vacuous-pass when missing (QA-07).
     const feeInputs = page.locator('input[type="number"]');
-    if ((await feeInputs.count()) > 0) {
-      await feeInputs.first().fill('10.0');
-      expect(await feeInputs.first().inputValue()).toBe('10.0');
-    } else {
-      // Fee config section may not be visible — acceptable
-      expect(true).toBeTruthy();
-    }
+    await expect(feeInputs.first()).toBeVisible({ timeout: 15_000 });
+    await feeInputs.first().fill('10.0');
+    await expect(feeInputs.first()).toHaveValue('10.0');
   });
 });
+
 
 test.describe('Admin: Verification Queue', () => {
   test('renders page', async ({ page }) => {

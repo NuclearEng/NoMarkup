@@ -22,6 +22,7 @@ claim the bar is already met**.
 | DATA-layer CDN (`writeCachedJSON`) | shipped | **Real** — public listings/catalog JSON cacheable |
 | Service worker | offline/instant repeat | **Kill-switch only** (`public/sw.js` unregisters + purges) |
 | Criterion / k6 | enforce budgets | **Local / scripts only — not CI** |
+| Lighthouse lab (`/`, `/marketplace`, `/jobs`) | regression floors | **Partial (PERF-02)** — `npm run lighthouse:ci`; CI optional (PR soft / nightly hard); not North Star |
 
 ## JS budgets (React-floor-aware — measured, not aspirational)
 | Surface | First Load JS budget |
@@ -113,3 +114,39 @@ For **public JSON** TTFB (not HTML), use [`scripts/cdn-ttfb-sample.sh`](../scrip
 public edge host for CDN numbers and optionally `--write-md` an artifact. This is a **measurement
 recipe**, not live CDN proof or a CI gate — companion LAN catalog p50/p95 remains
 [`scripts/api-p95-sample.sh`](../scripts/api-p95-sample.sh).
+
+## Lighthouse CI (PERF-02 — Partial)
+
+Lab Lighthouse against a production standalone Next server for **`/`**, **`/marketplace`**,
+**`/jobs`**.
+
+| How | Command / job |
+|-----|----------------|
+| Local | `cd web && npm run lighthouse:ci` (builds into `.next-lhci`, boots standalone on `:3011`, asserts) |
+| Deeper sample | `LHCI_NUMBER_OF_RUNS=3 npm run lighthouse:ci` |
+| Reuse build | `LHCI_SKIP_BUILD=1 npm run lighthouse:ci` |
+| CI | `.github/workflows/ci.yml` job **`lighthouse-budget`** — PR + nightly schedule + `workflow_dispatch` |
+
+**CI posture (honest Partial):**
+- **Not a hard PR gate** — `continue-on-error: true` on `pull_request` so merge is not blocked.
+- **Nightly / workflow_dispatch hard-fail** when regression floors break (signal without PR noise).
+- Does **not** join the `build` `needs` chain.
+- No live gateway in the job — public routes fail-soft (empty catalogs). Scores are **lab**, not field.
+
+**Config:** [`web/lighthouserc.cjs`](../web/lighthouserc.cjs) + wrapper
+[`web/scripts/run-lighthouse-ci.mjs`](../web/scripts/run-lighthouse-ci.mjs).
+
+| Metric | CI regression floor (asserted) | Stretch / North Star (not asserted) |
+|--------|--------------------------------|-------------------------------------|
+| Performance score | ≥ 0.30 | ≥ 0.90 |
+| Accessibility score | ≥ 0.70 | ≥ 0.95 (product a11y is jsx-a11y + axe) |
+| LCP (lab) | ≤ 12s | field P75 < 1.5s; lab stretch < 2.5s |
+| CLS (lab) | ≤ 0.50 | < 0.05 |
+| TBT / TTI | warn only (3s / 15s) | — |
+
+Floors exist to catch catastrophic regressions, not to claim North Star. Local smoke
+(2026-07-27, desktop preset, empty API): Performance ~0.8–0.98, LCP ~1.0–1.2s, homepage
+CLS ~0.23–0.38 — **do not treat those as field RUM**. Ratchet floors down only after repeated
+green runs; never raise without updating this table.
+
+Reports land in `web/lighthouse-reports/` (gitignored); CI uploads them as artifacts.

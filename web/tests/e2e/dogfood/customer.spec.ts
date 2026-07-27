@@ -221,14 +221,17 @@ test.describe('Customer: My Jobs', () => {
     await expectHasHeadings(page);
     await expectNotErrorPage(page);
 
-    // The page either shows job cards or an empty state — both are valid
-    const hasContent =
-      (await page.getByRole('tab').count()) > 0 ||
-      (await page.getByText(/no.*job/i).count()) > 0 ||
-      (await page.getByRole('link').count()) > 0;
-    expect(hasContent).toBeTruthy();
+    // Job cards, tabs, or empty copy — not "any link" in chrome (QA-07).
+    await expect(
+      page
+        .getByRole('tab')
+        .or(page.getByText(/no.*job|haven't posted|no results/i))
+        .or(page.locator('a[href*="/jobs/"]').filter({ hasNotText: /new|mine/i }))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
+
 
 test.describe('Customer: Contracts', () => {
   test('loads /contracts and shows heading and tabs', async ({ page }) => {
@@ -343,10 +346,14 @@ test.describe('Customer: Analytics', () => {
     await expectNotErrorPage(page);
     await page.waitForTimeout(3_000);
 
-    // Verify analytics content rendered
-    const hasSelector = (await page.getByRole('combobox').count()) > 0;
-    const hasHeadings = (await page.getByRole('heading').count()) > 0;
-    expect(hasSelector || hasHeadings).toBeTruthy();
+    // Analytics must show a period control and/or metric chrome — heading alone
+    // is not enough (QA-07).
+    await expect(
+      page
+        .getByRole('combobox')
+        .or(page.getByText(/spend|jobs posted|saved|period|last \d+ days/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -358,11 +365,15 @@ test.describe('Customer: Messages', () => {
     await expectPageLoaded(page, /Messages/i);
     await expectNotErrorPage(page);
 
-    const emptyState = page.getByText(/Select a conversation/i);
-    const channelList = page.getByRole('navigation');
-    expect((await emptyState.count()) > 0 || (await channelList.count()) > 0).toBeTruthy();
+    await expect(
+      page
+        .getByText(/Select a conversation|No messages yet/i)
+        .or(page.getByRole('listitem'))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
+
 
 test.describe('Customer: Notifications', () => {
   test('loads /notifications and shows content', async ({ page }) => {
@@ -383,11 +394,11 @@ test.describe('Customer: Public Pages (while logged in)', () => {
     await expectNotErrorPage(page);
     await expectHasHeadings(page);
 
-    const searchInput = page.getByPlaceholder(/search|find/i);
-    const filterCombobox = page.getByRole('combobox');
-    const hasSearchOrFilter = (await searchInput.count()) > 0 || (await filterCombobox.count()) > 0;
-    expect(hasSearchOrFilter).toBeTruthy();
+    await expect(
+      page.getByPlaceholder(/search|find/i).or(page.getByRole('combobox')).first(),
+    ).toBeVisible({ timeout: 10_000 });
   });
+
 
   test('providers page loads', async ({ page }) => {
     await loginAs(page, 'customer');

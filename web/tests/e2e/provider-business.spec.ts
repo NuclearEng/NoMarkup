@@ -34,18 +34,18 @@ test.describe('Provider Business OS — unauthenticated routes redirect to login
       await page.goto(route);
       await page.waitForLoadState('domcontentloaded');
 
-      // Either redirected to /login or showing an unauthenticated/session
-      // banner. The frontend uses both patterns depending on the layout
-      // (server-redirect vs client-side auth wrapper); accept either.
-      const url = page.url();
-      const onLogin = url.includes('/login');
-      const onAuthGate =
-        (await page.getByText(/sign in|log in to continue|session expired/i).count()) > 0;
-
-      expect(onLogin || onAuthGate).toBe(true);
+      // Real auth outcomes only — login URL or visible auth-gate copy (QA-07).
+      if (page.url().includes('/login')) {
+        await expect(page.getByLabel(/email/i)).toBeVisible();
+        return;
+      }
+      await expect(
+        page.getByText(/sign in|log in to continue|session expired/i).first(),
+      ).toBeVisible({ timeout: 10_000 });
     });
   }
 });
+
 
 test.describe('Provider Business OS — page structure smoke (auth-aware)', () => {
   // These tests pre-seed a session via the dev OAuth bypass cookie if the
@@ -94,21 +94,22 @@ test.describe('Provider Business OS — page structure smoke (auth-aware)', () =
     await page.goto('/provider/business/expenses');
     await page.waitForLoadState('domcontentloaded');
 
-    // Without filling description / amount, the submit button stays disabled
-    // OR the submission triggers an inline validation message. Either path is
-    // acceptable; we just need to verify NO request is fired with bad data.
-    const submitBtn = page.getByRole('button', { name: /add expense|save expense|submit/i }).first();
-    if (await submitBtn.isVisible()) {
-      const isDisabled = await submitBtn.isDisabled();
-      if (!isDisabled) {
-        await submitBtn.click();
-        // Browser-native validation messages should fire on the required inputs.
-        const descRequired =
-          (await page.getByText(/description.*required|please fill/i).count()) > 0;
-        expect(descRequired || isDisabled).toBe(true);
-      }
+    // Without required fields: submit stays disabled OR click surfaces validation.
+    const submitBtn = page
+      .getByRole('button', { name: /add expense|save expense|submit/i })
+      .first();
+    await expect(submitBtn).toBeVisible({ timeout: 10_000 });
+    if (await submitBtn.isDisabled()) {
+      // Disabled-until-valid is the real outcome.
+      expect(await submitBtn.isDisabled()).toBe(true);
+      return;
     }
+    await submitBtn.click();
+    await expect(
+      page.getByText(/description.*required|please fill|required/i).first(),
+    ).toBeVisible({ timeout: 5_000 });
   });
+
 
   test('Working Capital page renders advance request form', async ({ page }) => {
     await page.goto('/provider/advances');

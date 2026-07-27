@@ -22,11 +22,22 @@ type JobService struct {
 	search   *SearchEngine
 	matching *MatchingService
 	notifier NotificationSender
+	// retryQ is optional (ARC-16). When non-nil, Meilisearch failures that
+	// exhaust in-process retries are escalated to a Redis-backed durable
+	// queue. nil-safe — search still fails soft without Redis.
+	retryQ *SearchRetryQueue
 }
 
 // NewJobService creates a new job service.
 func NewJobService(repo domain.JobRepository, search *SearchEngine) *JobService {
 	return &JobService{repo: repo, search: search}
+}
+
+// WithSearchRetryQueue attaches the durable Meilisearch retry queue (ARC-16).
+// Returns the service for chaining. Safe to call with nil (no-op).
+func (s *JobService) WithSearchRetryQueue(q *SearchRetryQueue) *JobService {
+	s.retryQ = q
+	return s
 }
 
 // SetMatchingService wires in the provider matching engine.
@@ -424,7 +435,8 @@ func (s *JobService) AdminRemoveJob(ctx context.Context, jobID, reason, adminID 
 
 // indexJobWithRetry attempts to index a job in Meilisearch with up to 3 retries
 // using exponential backoff (1s, 2s, 4s). Runs in a goroutine so it does not
-// block the response to the caller. If all attempts fail, the final error is logged.
+// block the response to the caller. On exhaustion, escalates to the durable
+// Redis retry queue (ARC-16) when wired; otherwise dead-letters with metric.
 func (s *JobService) indexJobWithRetry(job *domain.Job, operation string) {
 	jobID := job.ID
 
@@ -447,12 +459,18 @@ func (s *JobService) indexJobWithRetry(job *domain.Job, operation string) {
 			}
 
 			if attempt == maxAttempts {
-				slog.Error("SEARCH INDEX FAILED — job will not appear in search results (all retries exhausted)",
+				slog.Error("SEARCH INDEX FAILED — escalating to durable retry (in-process retries exhausted)",
 					"job_id", jobID,
 					"operation", operation,
 					"attempts", maxAttempts,
 					"error", err,
 				)
+				escalateToDurableQueue(s.retryQ, SearchRetryTask{
+					Index:     searchRetryIndexJobs,
+					Op:        searchRetryOpIndex,
+					EntityID:  jobID,
+					Operation: operation,
+				})
 				return
 			}
 
@@ -471,11 +489,8 @@ func (s *JobService) indexJobWithRetry(job *domain.Job, operation string) {
 
 // removeJobFromSearchWithRetry attempts to delete a job from the Meilisearch
 // index with up to 3 retries (exponential backoff 1s, 2s, 4s). Runs in a
-// goroutine. If all attempts fail, a stale entry may remain in search results;
-// the final error is logged at ERROR level for the alerting pipeline.
-//
-// TODO(durable-retry): persistent Redis-backed retry queue per security audit
-// recommendation — would survive service restarts. Tracked in docs/TODOS.md.
+// goroutine. On exhaustion, escalates to the durable Redis retry queue
+// (ARC-16) when wired; otherwise dead-letters with metric + ERROR log.
 func (s *JobService) removeJobFromSearchWithRetry(jobID, operation string) {
 	go func() {
 		const maxAttempts = 3
@@ -496,12 +511,18 @@ func (s *JobService) removeJobFromSearchWithRetry(jobID, operation string) {
 			}
 
 			if attempt == maxAttempts {
-				slog.Error("SEARCH REMOVAL FAILED — job may remain in search results (all retries exhausted)",
+				slog.Error("SEARCH REMOVAL FAILED — escalating to durable retry (in-process retries exhausted)",
 					"job_id", jobID,
 					"operation", operation,
 					"attempts", maxAttempts,
 					"error", err,
 				)
+				escalateToDurableQueue(s.retryQ, SearchRetryTask{
+					Index:     searchRetryIndexJobs,
+					Op:        searchRetryOpRemove,
+					EntityID:  jobID,
+					Operation: operation,
+				})
 				return
 			}
 

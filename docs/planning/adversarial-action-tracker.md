@@ -20,18 +20,18 @@
 
 ## Summary dashboard
 
-**Recounted 2026-07-27** (OPS-09 Partial) (140 code/ops rows).
+**Recounted 2026-07-27** (OPS-22 + QA-11 closed) (140 code/ops rows).
 
 | Section | Open | Partial | Done | Demoted | Founder-Action | Total |
 |---------|------|---------|------|---------|----------------|-------|
 | P0 — Money integrity | 0 | 0 | 27 | 1 | 0 | 28 |
 | P0 — Security fail-closed | 0 | 0 | 14 | 3 | 1 | 18 |
-| P0 — Production deploy / ops | 12 | 2 | 14 | 0 | 0 | 28 |
+| P0 — Production deploy / ops | 12 | 1 | 15 | 0 | 0 | 28 |
 | P1 — North Star performance | 5 | 1 | 5 | 5 | 0 | 16 |
-| P1 — CI / testing enforcers | 7 | 0 | 4 | 5 | 0 | 16 |
+| P1 — CI / testing enforcers | 6 | 0 | 5 | 5 | 0 | 16 |
 | P1 — Frontend / a11y / honesty | 4 | 0 | 7 | 5 | 0 | 16 |
 | P2 — Architecture / polish | 7 | 0 | 4 | 7 | 0 | 18 |
-| **All** | **36** | **3** | **74** | **26** | **1** | **140** |
+| **All** | **35** | **2** | **76** | **26** | **1** | **140** |
 
 The separate **DOC** table (18 rows) is a cross-reference of the language-only demotions already
 reflected in the `Demoted` column above — it is not 18 additional items.
@@ -125,7 +125,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | OPS-19 | No egress NetworkPolicies | MAJOR | k8s | network-policy | Egress allowlist for Stripe, DB, Redis, S3 | Default-deny egress tested | Open | |
 | OPS-20 | Staging `namePrefix` breaks service DNS | MAJOR | k8s | staging overlay | Fix or document required overrides | Staging boots | Open | |
 | OPS-21 | Docker main “push” does not login/push | MAJOR | ci | ci.yml | docker login + push or rename step | Images in registry | Open | |
-| OPS-22 | Missing runbooks: Redis, Meili, ingress/TLS, migration fail | MAJOR | docs | runbooks/ | Add runbooks | Linked from alerts | **Partial** 2026-07-25 — `docs/runbooks/07-redis-degraded.md`, `08-meilisearch-degraded.md`, `09-migration-job.md` shipped; ingress/TLS runbook still missing | |
+| OPS-22 | Missing runbooks: Redis, Meili, ingress/TLS, migration fail | MAJOR | docs | runbooks/ | Add runbooks | Linked from alerts | **Done** 2026-07-27 — full set: `07-redis-degraded.md`, `08-meilisearch-degraded.md`, `09-migration-job.md`, `10-ingress-tls.md`; index `docs/runbooks/README.md`; alerts `runbook_edge` → `10-ingress-tls.md` | |
 | OPS-23 | Alert runbook URLs point off-repo | MINOR | monitoring | alerts.yml | Point to `docs/runbooks/` | Links resolve | **Done** 2026-07-27 — `alerts.yml` runbook → `docs/runbooks/*.md`; index `docs/runbooks/README.md` | |
 | OPS-24 | Cloudflare CDN claim with zero config in repo | DOC | ops | CLAUDE / checklist | Add CF config or demote claim | Edge rules documented | Open | Founder-Action |
 | OPS-25 | Vault client exists; no prod wiring | MAJOR | gateway | vault package | Wire ESO/Vault for secrets | Prod secrets not file-mounted only | Open | Founder-Action |
@@ -140,7 +140,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | ID | Title | Sev | Area | Location | Action | Verify | Status | Owner |
 |----|-------|-----|------|----------|--------|--------|--------|-------|
 | **GAP-008** / PERF-01 | No field LCP/INP/CLS (RUM) | BLOCKER | web | no web-vitals | Ship web-vitals → Sentry/backend | p75 dashboards exist | **Done** 2026-07-27 — `report-web-vitals.ts` + `WebVitalsReporter` in root layout; LCP/INP/CLS/FCP/TTFB → Sentry metrics (prod) / console (dev) | |
-| PERF-02 | No Lighthouse CI / budget gates | BLOCKER | ci | workflows | Lighthouse CI on `/`, marketplace, jobs | PR fails over budget | Open | |
+| PERF-02 | No Lighthouse CI / budget gates | BLOCKER | ci | workflows | Lighthouse CI on `/`, marketplace, jobs | PR fails over budget | **Partial** 2026-07-27 — `@lhci/cli` + `web/lighthouserc.cjs` + `npm run lighthouse:ci` (standalone `.next-lhci`, routes `/` `/marketplace` `/jobs`); CI job `lighthouse-budget` on PR (continue-on-error) + nightly schedule (hard fail) + workflow_dispatch. **Regression floors only** (perf ≥0.30, LCP ≤12s, CLS ≤0.50) — not North Star, not a merge gate. Promote to Done when floors ratchet under product bar **and** PR is hard-fail | |
 | PERF-03 | Lab LCP ~3.8–4s fails North Star 1.5s | BLOCKER | web | layout, `/`, `/jobs` | RSC + perf work until measured under bar **or** demote North Star language | Field/lab under declared gate | **Demoted** language 2026-07-09; perf work still Open | |
 | PERF-04 | Service worker is kill-switch (anti-cache) | BLOCKER | web | `public/sw.js`, ServiceWorkerRegistrar | Real SW behind prod flag **or** remove PWA claims | SW caches or claim removed | **Demoted** claim 2026-07-09; real SW still Open | |
 | PERF-05 | Homepage `/` is full `'use client'` | MAJOR | web | `(public)/page.tsx` | RSC shell + islands | First paint HTML content | **Done** 2026-07-27 (partial island) — async RSC `page.tsx` + metadata + server pricing seed → `LandingPageClient`; hero/demo still client. Residual: more static HTML above island if LCP needs it | |
@@ -168,11 +168,11 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | QA-04 | testcontainers claimed but zero deps | DOC | docs | CLAUDE, investor-faq | Remove claim; document GH Actions Postgres | Docs true | **Demoted** 2026-07-09 | |
 | QA-05 | Husky pre-commit claimed; none installed | DOC | web | package.json | Add husky **or** demote to Claude-hooks-only | Commit path enforced or claim gone | **Demoted** 2026-07-09 | |
 | QA-06 | E2E full funnel not in CI (backendless; dogfood excluded) | BLOCKER | ci | e2e-test job | Boot stack + SEED_PASSWORD dogfood **or** demote funnel claim | register→job→bid→pay→chat in CI | **Demoted** claim 2026-07-09; CI funnel still Open if desired | |
-| QA-07 | Vacuous E2E asserts (`expect(a\|\|b\|\|c)`) | MAJOR | web | e2e specs | Assert real outcomes | Fail on broken UI | Open | |
+| QA-07 | Vacuous E2E asserts (`expect(a\|\|b\|\|c)`) | MAJOR | web | e2e specs | Assert real outcomes | Fail on broken UI | **Partial** 2026-07-27 — Replaced always-true / `a\|\|b\|\|c` patterns in core smoke + dogfood: `bid`, `chat`, `payment`, `job`, `live-auction`, `admin`, `contract`, `marketplace` (bid UI + gap test→skip), `provider-business` (auth + expense), dogfood `admin`/`customer`/`provider`. Pattern now: login URL+form, page heading, or specific empty/content locators via `locator.or().toBeVisible()`; stack-gated live-auction UI no longer passes on "Job not found". Residual (not Done): dogfood still soft on some pages; no full re-audit of every early-return without assert; sealed/live seed job IDs still fictional for flag-on+stack runs | |
 | QA-08 | Chromium-only E2E in CI | MINOR | ci | playwright | Optional webkit/firefox nightly | Cross-browser job | Open | |
 | QA-09 | `verify-proto` not in `build.needs` | MINOR | ci | ci.yml | Add needs edge | Proto drift blocks build | **Done** 2026-07-25 — `.github/workflows/ci.yml` `build.needs` includes `verify-proto` | |
 | QA-10 | security-scan not coupled to CI build | MAJOR | ci | branch protection | Require security jobs for merge | Proven required checks | Open | Founder-Action |
-| QA-11 | Integration: chat/notification excluded | MAJOR | ci | go-integration-test | Add suites or document gap | Coverage map honest | Open | |
+| QA-11 | Integration: chat/notification excluded | MAJOR | ci | go-integration-test | Add suites or document gap | Coverage map honest | **Done** 2026-07-27 (doc honesty) — no `//go:build integration` under `services/chat` or `services/notification`; unit still in `services-test` matrix; gap + CI map in `docs/conventions.md` + comments on `go-integration-test` / `fullstack-security-test` in `.github/workflows/ci.yml`. Live chat integration suites remain a future code task, not claimed green | |
 | QA-12 | `-short` skips bid-race + payment idempotency live tests | MAJOR | ci | integration job | Run non-short for money races (dedicated job) | Race tests execute | **Done** 2026-07-25 — `fullstack-security-test` runs the live-stack `TestIdempotency_PaymentDoubleSubmit` non-short; `money-race-tests` now passes `-tags integration` so it at least compiles on every PR | |
 | QA-13 | payment `repository/` ~0 tests | MAJOR | payment | repository/ | Repo tests for money SQL | Coverage on repos | **Done** 2026-07-27 — `//go:build integration` suites: `payment_cas_integration_test.go` (ClaimPaymentStatus CAS + concurrency, UpdateRefundCAS prior/cap + concurrency, ClaimListingOrderForRelease pending stamp / eligibility / MON-18 dispute race) plus existing `money_invariants_integration_test.go`, `listing_settlement_integration_test.go`, `customer_integration_test.go`. Run: `cd services/payment && go test -tags=integration -run 'TestPaymentCAS\|TestRefundCAS\|TestListingOrderClaim' ./internal/repository/` | |
 | QA-14 | Claude-only hooks not git-enforced | MINOR | tooling | .claude/hooks | Document scope; optional pre-commit | Team knows bypass | **Done** 2026-07-27 (docs) — `CLAUDE.md` §10: Claude Code hooks only, **no Husky**; DOC-07 already demoted husky claim; scope explicit so team knows git pre-commit is not the gate | |
@@ -223,7 +223,7 @@ reflected in the `Demoted` column above — it is not 18 additional items.
 | ARC-13 | Insurance competition sample deductible / no carrier APIs | P2 | payment | insurance_competition | Real carrier integration or demote | Quotes realistic | Open | |
 | ARC-14 | Legal services flag-off scaffold | P2 | product | legal routes | Launch criteria + flag on | Legal GA checklist | Open | |
 | ARC-15 | Fair price index flag seed history | MINOR | flags | migrations | Ensure prod seed intent clear | Flag state documented | **Done** 2026-07-27 — seed `false` in `database/migrations/013_feature_flags.up.sql:18`; intent documented in `docs/compliance/capability-matrix.md` / `app-review-notes.md` (`fair_price_index` false) + launch-checklist “do not enable without data” | |
-| ARC-16 | Search reindex durable retry TODO | MINOR | job | search | Durable queue | No silent drop | Open | |
+| ARC-16 | Search reindex durable retry TODO | MINOR | job | search | Durable queue | No silent drop | **Done** 2026-07-27 — Redis ZSET `search:retry` + 30s worker + in-process 3-shot escalate; metrics `search_retry_*` + DEAD-LETTER log; listings parity; no Redis → dead-letter metric (not silent) | |
 | ARC-17 | GDPR email “TODO real email” | MINOR | user | GDPR paths | Wire SendGrid | Email arrives | Open | |
 | ARC-18 | Spectator anonymization / delay — keep tested | — | chat | spectator | Preserve under load | Tests green | **Done** 2026-07-27 — code + tests green: `spectator_ws.go` / `marketplace_spectator_ws.go` (3s delay, PII strip); `spectator_anonymize_test.go` (`TestSpectatorEventDelayIsThreeSeconds`, `TestAnonymizeEvent_stripsPII`, `TestAnonymizeListingEvent_stripsPII`) | |
 
@@ -313,6 +313,7 @@ Do in this order for **CONDITIONAL-GO** (not full SOTA):
 | 2026-07-27 | **PERF-13 Partial** — shipped `scripts/cdn-ttfb-sample.sh` (curl `-w` TTFB via `time_starttransfer` + cache headers; default local `/api/v1/pricing` + `/api/v1/markets`; `--write-md` artifact recipe). Docs: one paragraph in `docs/performance.md`. Not live CDN proof / not CI gate. Dashboard: Open 37 / Partial 2 / Done 74 / Demoted 26 / FA 1. |
 | 2026-07-27 | **ARC-09 Done** (doc honesty, no dual-write rewrite). Primary goods writes = gateway SQL (`listings_write.go`, `listings_bid.go`). `proto/listing/v1/listing.proto` header + `docs/architecture.md` + `docs/marketplace.md` mark listing gRPC secondary/unused (no job ListingServer, no gateway listing client). Dashboard: Open 38 / Partial 1 / Done 74 / Demoted 26 / FA 1. |
 | 2026-07-27 | **OPS-09 Partial** — OTel collector dual-export `debug` + `otlphttp/backend` with env from `otel-collector-backend` ConfigMap (`deploy/k8s/base/otel-collector/{configmap,backend-configmap,deployment}.yaml`); runbook `docs/operations/otel-collector.md`. No SaaS credentials; durable traces still need a real OTLP/HTTP URL at deploy. Dashboard: Open 36 / Partial 3 / Done 74 / Demoted 26 / FA 1. |
+| 2026-07-27 | **OPS-22 Done** — residual ingress/TLS runbook shipped: `docs/runbooks/10-ingress-tls.md` (symptoms, `nomarkup-tls`, Cloudflare SSL modes, nginx ingress, WS edge, gateway plain-HTTP). Linked from `docs/runbooks/README.md` + `alerts.yml` `runbook_edge`. Redis/Meili/migration already present. **QA-11 Done** (doc honesty) — chat/notification have no integration packages; conventions CI map + `ci.yml` comments; unit matrix unchanged. Dashboard: Open 35 / Partial 2 / Done 76 / Demoted 26 / FA 1. |
 
 ---
 
@@ -351,7 +352,7 @@ Hostile re-audit after agent-team implementation. Evidence-based.
 | GAP-005 | **PASS** | Production RequireFlag fail-closed |
 | GAP-006 | **PASS** | INTERNAL_WS_SECRET required non-dev |
 | GAP-007 | **PASS** (in-repo) | NP labels, real deploy.yml, terraform modules; cluster not provisioned |
-| GAP-008 | **PARTIAL** | web-vitals, RSC `/`+`/jobs`, SW honesty; no Lighthouse/field gate |
+| GAP-008 | **PARTIAL** | web-vitals, RSC `/`+`/jobs`, SW honesty; Lighthouse lab floors (PERF-02 Partial, not PR-blocking); no field RUM gate |
 | GAP-009 | **PASS** | Engine inventory matches Cargo.toml |
 
 ### Tests green (local)

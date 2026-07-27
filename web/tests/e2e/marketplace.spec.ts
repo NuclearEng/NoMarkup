@@ -179,16 +179,11 @@ test.describe('Goods marketplace', () => {
         await link.click();
         await page.waitForLoadState('networkidle');
 
-        // Either a bid input or a "place bid" button should be visible.
-        const bidInput = page
+        // Real bid UI — not a vacuous boolean OR (QA-07).
+        const bidUi = page
           .locator('input[name="bid"], input[type="number"][name*="amount"]')
-          .first();
-        const placeBidBtn = page
-          .getByRole('button', { name: /place bid|increase bid|bid \$/i })
-          .first();
-        const hasInput = await bidInput.isVisible().catch(() => false);
-        const hasBtn = await placeBidBtn.isVisible().catch(() => false);
-        expect(hasInput || hasBtn).toBeTruthy();
+          .or(page.getByRole('button', { name: /place bid|increase bid|bid \$/i }));
+        await expect(bidUi.first()).toBeVisible({ timeout: 15_000 });
       }
     });
 
@@ -253,11 +248,15 @@ test.describe('Goods marketplace', () => {
       //   3. seed data: listingDisputedID — escrow disputed
       //   4. listing_orders handler integration tests (gateway)
       //
-      // See /tmp/nomarkup-readiness/marketplace/e2e-results.md for the
-      // explicit gap list and follow-up steps.
-      expect(true).toBe(true);
+      // Skip (not a green vacuous pass — QA-07) until a seed + clock-control
+      // harness exists for browser-driven close.
+      test.skip(
+        true,
+        'browser cannot advance auction_ends_at; covered by seed + gateway listing_orders tests',
+      );
     });
   });
+
 
   test.describe('Admin moderation surface', () => {
     test('admin /admin/listings renders or redirects', async ({ page }) => {

@@ -18,9 +18,10 @@
 //	close (no bids) → RemoveListing  (status flips to 'expired')
 //
 // The retry pattern (3-attempt exponential backoff, fire-and-forget
-// goroutine) is identical to JobService.indexJobWithRetry — see
-// job.go:398. We use the same structured-log levels so the alerting
-// pipeline picks up failures uniformly across both index types.
+// goroutine + durable Redis escalation on exhaustion) is identical to
+// JobService.indexJobWithRetry. We use the same structured-log levels
+// and ARC-16 durable queue so the alerting pipeline picks up failures
+// uniformly across both index types.
 package service
 
 import (
@@ -467,8 +468,9 @@ func buildListingDoc(l *domain.Listing, hydrate ListingHydrator, trustRanking bo
 
 // indexListingWithRetry mirrors job.go's indexJobWithRetry: 3 attempts
 // with exponential backoff (1s, 2s, 4s) inside a goroutine so callers
-// don't block. Failures are logged at ERROR after exhaustion.
-func indexListingWithRetry(se *ListingSearchEngine, l *domain.Listing, hydrate ListingHydrator, operation string) {
+// don't block. On exhaustion, escalates to the durable Redis queue
+// (ARC-16) when retryQ is non-nil.
+func indexListingWithRetry(se *ListingSearchEngine, l *domain.Listing, hydrate ListingHydrator, operation string, retryQ *SearchRetryQueue) {
 	if se == nil || l == nil {
 		return
 	}
@@ -489,12 +491,18 @@ func indexListingWithRetry(se *ListingSearchEngine, l *domain.Listing, hydrate L
 				return
 			}
 			if attempt == maxAttempts {
-				slog.Error("LISTING SEARCH INDEX FAILED — listing will not appear in search results (all retries exhausted)",
+				slog.Error("LISTING SEARCH INDEX FAILED — escalating to durable retry (in-process retries exhausted)",
 					"listing_id", listingID,
 					"operation", operation,
 					"attempts", maxAttempts,
 					"error", err,
 				)
+				escalateToDurableQueue(retryQ, SearchRetryTask{
+					Index:     searchRetryIndexListings,
+					Op:        searchRetryOpIndex,
+					EntityID:  listingID,
+					Operation: operation,
+				})
 				return
 			}
 			backoff := time.Duration(1<<(attempt-1)) * time.Second
@@ -511,7 +519,8 @@ func indexListingWithRetry(se *ListingSearchEngine, l *domain.Listing, hydrate L
 }
 
 // removeListingFromSearchWithRetry mirrors removeJobFromSearchWithRetry.
-func removeListingFromSearchWithRetry(se *ListingSearchEngine, listingID, operation string) {
+// On exhaustion, escalates to the durable Redis queue (ARC-16).
+func removeListingFromSearchWithRetry(se *ListingSearchEngine, listingID, operation string, retryQ *SearchRetryQueue) {
 	if se == nil || listingID == "" {
 		return
 	}
@@ -531,12 +540,18 @@ func removeListingFromSearchWithRetry(se *ListingSearchEngine, listingID, operat
 				return
 			}
 			if attempt == maxAttempts {
-				slog.Error("LISTING SEARCH REMOVE FAILED — stale entry may remain (all retries exhausted)",
+				slog.Error("LISTING SEARCH REMOVE FAILED — escalating to durable retry (in-process retries exhausted)",
 					"listing_id", listingID,
 					"operation", operation,
 					"attempts", maxAttempts,
 					"error", err,
 				)
+				escalateToDurableQueue(retryQ, SearchRetryTask{
+					Index:     searchRetryIndexListings,
+					Op:        searchRetryOpRemove,
+					EntityID:  listingID,
+					Operation: operation,
+				})
 				return
 			}
 			backoff := time.Duration(1<<(attempt-1)) * time.Second

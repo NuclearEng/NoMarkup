@@ -7,6 +7,7 @@
     "build": "next build",
     "analyze": "ANALYZE=true next build",
     "check:bundle": "node scripts/check-bundle-size.mjs",
+    "lighthouse:ci": "node scripts/run-lighthouse-ci.mjs",
     "start": "next start",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -67,6 +68,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@lhci/cli": "^0.15.1",
     "@next/bundle-analyzer": "^16.2.7",
     "@playwright/test": "^1.0.0",
     "@tailwindcss/postcss": "^4.0.0",
