@@ -341,6 +341,13 @@ struct UserProfile: Codable, Sendable, Hashable, Identifiable {
     var hasCustomerRole: Bool {
         (roles ?? []).contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "customer" }
     }
+
+    /// Profile needs the guided onboarding wizard when display name or phone is missing (FR-1.5/1.6).
+    var isOnboardingIncomplete: Bool {
+        let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let phoneValue = phone?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty || phoneValue.isEmpty
+    }
 }
 
 private struct EnableRoleRequestBody: Encodable {

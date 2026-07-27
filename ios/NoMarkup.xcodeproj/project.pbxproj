@@ -10,6 +10,9 @@
 		A100000000000000000000AF /* DirectionsHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AF /* DirectionsHelper.swift */; };
 		A100000000000000000000B0 /* VerificationCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B0 /* VerificationCenterView.swift */; };
 		A100000000000000000000B1 /* MarketRangeBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B1 /* MarketRangeBar.swift */; };
+		A100000000000000000000B4 /* ProviderInstantOffersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B4 /* ProviderInstantOffersView.swift */; };
+		A100000000000000000000B2 /* PropertyDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B2 /* PropertyDetailView.swift */; };
+		A100000000000000000000B3 /* OnboardingWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B3 /* OnboardingWizardView.swift */; };
 		A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AE /* BusinessFeaturesHubView.swift */; };
 		A100000000000000000000AD /* Models+RegulatedRails.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AD /* Models+RegulatedRails.swift */; };
 		A100000000000000000000AC /* APIClient+RegulatedRails.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AC /* APIClient+RegulatedRails.swift */; };
@@ -106,6 +109,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B100000000000000000000B4 /* ProviderInstantOffersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderInstantOffersView.swift; sourceTree = "<group>"; };
 		B100000000000000000000AE /* BusinessFeaturesHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessFeaturesHubView.swift; sourceTree = "<group>"; };
 		B100000000000000000000AD /* Models+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+RegulatedRails.swift"; sourceTree = "<group>"; };
 		B100000000000000000000AC /* APIClient+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+RegulatedRails.swift"; sourceTree = "<group>"; };
@@ -204,7 +208,9 @@
 		B100000000000000000000A9 /* TrustScoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustScoreView.swift; sourceTree = "<group>"; };
 		B100000000000000000000AF /* DirectionsHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionsHelper.swift; sourceTree = "<group>"; };
 		B100000000000000000000B0 /* VerificationCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationCenterView.swift; sourceTree = "<group>"; };
+		B100000000000000000000B3 /* OnboardingWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWizardView.swift; sourceTree = "<group>"; };
 		B100000000000000000000B1 /* MarketRangeBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketRangeBar.swift; sourceTree = "<group>"; };
+		B100000000000000000000B2 /* PropertyDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PropertyDetailView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -358,9 +364,11 @@
 				B100000000000000000000A1 /* JobDraftsView.swift */,
 				B1000000000000000000000C /* MessagesView.swift */,
 				B1000000000000000000000D /* AccountView.swift */,
+				B100000000000000000000B3 /* OnboardingWizardView.swift */,
 				B100000000000000000000B0 /* VerificationCenterView.swift */,
 				B10000000000000000000054 /* ProfileSettingsView.swift */,
 				B10000000000000000000079 /* ProviderWorkspaceView.swift */,
+				B100000000000000000000B4 /* ProviderInstantOffersView.swift */,
 				B10000000000000000000061 /* SecuritySettingsView.swift */,
 				B10000000000000000000062 /* NotificationPreferencesView.swift */,
 				B10000000000000000000063 /* PaymentMethodsView.swift */,
@@ -377,6 +385,7 @@
 				B10000000000000000000076 /* BlockedUsersView.swift */,
 				B10000000000000000000075 /* WishlistView.swift */,
 				B10000000000000000000074 /* PropertiesView.swift */,
+				B100000000000000000000B2 /* PropertyDetailView.swift */,
 				B10000000000000000000073 /* ProviderDetailView.swift */,
 				B10000000000000000000072 /* ProvidersView.swift */,
 				B10000000000000000000080 /* FollowingView.swift */,
@@ -574,6 +583,7 @@
 				A10000000000000000000076 /* BlockedUsersView.swift in Sources */,
 				A10000000000000000000075 /* WishlistView.swift in Sources */,
 				A10000000000000000000074 /* PropertiesView.swift in Sources */,
+				A100000000000000000000B2 /* PropertyDetailView.swift in Sources */,
 				A10000000000000000000073 /* ProviderDetailView.swift in Sources */,
 				A10000000000000000000072 /* ProvidersView.swift in Sources */,
 				A10000000000000000000080 /* FollowingView.swift in Sources */,
@@ -588,6 +598,8 @@
 				A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */,
 				A100000000000000000000AF /* DirectionsHelper.swift in Sources */,
 				A100000000000000000000B0 /* VerificationCenterView.swift in Sources */,
+				A100000000000000000000B3 /* OnboardingWizardView.swift in Sources */,
+				A100000000000000000000B4 /* ProviderInstantOffersView.swift in Sources */,
 				A100000000000000000000B1 /* MarketRangeBar.swift in Sources */,
 				A100000000000000000000AD /* Models+RegulatedRails.swift in Sources */,
 				A100000000000000000000AC /* APIClient+RegulatedRails.swift in Sources */,

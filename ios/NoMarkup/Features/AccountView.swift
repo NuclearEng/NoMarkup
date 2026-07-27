@@ -15,10 +15,46 @@ struct AccountView: View {
     @State private var exportShareItem: ExportShareItem?
     /// Held separately so dismiss can delete the temp file after `sheet(item:)` clears the item.
     @State private var exportTempFileURL: URL?
+    /// Profile missing display name and/or phone — show “Finish setup” (FR-1.5/1.6).
+    @State private var profileNeedsSetup = false
+    @State private var showOnboardingWizard = false
 
     var body: some View {
         NavigationStack {
             List {
+                if profileNeedsSetup && auth.isAuthenticated && !auth.isScaffoldSession {
+                    Section {
+                        Button {
+                            showOnboardingWizard = true
+                        } label: {
+                            HStack(alignment: .center, spacing: 12) {
+                                Image(systemName: "list.bullet.clipboard.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(BrandTheme.goldBright)
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Finish setup")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(BrandTheme.textPrimary)
+                                    Text("Add a display name and phone, or enable provider — takes a minute.")
+                                        .font(.caption)
+                                        .foregroundStyle(BrandTheme.textSecondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                                    .accessibilityHidden(true)
+                            }
+                            .frame(minHeight: 44)
+                        }
+                        .listRowBackground(BrandTheme.surfaceRaised)
+                        .accessibilityHint("Opens the guided setup wizard")
+                        .accessibilityIdentifier("account.finishSetup")
+                    }
+                }
+
                 Section {
                     if auth.isScaffoldSession {
                         Label("Browse-only session", systemImage: "hammer.fill")
@@ -73,6 +109,15 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Edit provider bio, availability, streaks, and licenses")
+
+                    NavigationLink {
+                        ProviderInstantOffersView()
+                    } label: {
+                        Label("Instant offers", systemImage: "bolt.badge.clock")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Provider inbox: accept or decline emergency Instant match jobs")
 
                     NavigationLink {
                         SecuritySettingsView()
@@ -507,18 +552,31 @@ struct AccountView: View {
             .task {
                 await refreshSessionHints()
                 await refreshUnreadCount()
+                await refreshOnboardingBanner()
             }
             .onChange(of: auth.isAuthenticated) { _, _ in
                 Task {
                     await refreshSessionHints()
                     await refreshUnreadCount()
+                    await refreshOnboardingBanner()
                 }
             }
             .onChange(of: auth.isScaffoldSession) { _, _ in
                 Task {
                     await refreshSessionHints()
                     await refreshUnreadCount()
+                    await refreshOnboardingBanner()
                 }
+            }
+            .sheet(isPresented: $showOnboardingWizard, onDismiss: {
+                Task { await refreshOnboardingBanner() }
+            }) {
+                NavigationStack {
+                    OnboardingWizardView()
+                }
+                .environmentObject(auth)
+                .preferredColorScheme(.dark)
+                .tint(BrandTheme.accent)
             }
             #if canImport(UIKit)
             .sheet(item: $exportShareItem, onDismiss: {
@@ -568,6 +626,24 @@ struct AccountView: View {
             unreadNotificationCount = try await APIClient.shared.fetchUnreadNotificationCount()
         } catch {
             // Non-blocking badge — leave previous value on transient failure.
+        }
+    }
+
+    /// Show Account “Finish setup” when display name or phone is missing (FR-1.5/1.6).
+    @MainActor
+    private func refreshOnboardingBanner() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            profileNeedsSetup = false
+            return
+        }
+        do {
+            let me = try await APIClient.shared.fetchMe()
+            profileNeedsSetup = me.isOnboardingIncomplete
+            if let email = me.email, !email.isEmpty, auth.email.isEmpty {
+                auth.email = email
+            }
+        } catch {
+            // Non-blocking banner — leave previous value on transient failure.
         }
     }
 

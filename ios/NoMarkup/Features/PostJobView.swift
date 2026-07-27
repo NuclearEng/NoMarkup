@@ -1,10 +1,14 @@
 import SwiftUI
 
 /// Native create flow for service reverse-auction jobs (`POST /api/v1/jobs`).
+/// Pass `preferInstantMatch: true` from the Home “I need help now” CTA (§13 Instant).
 struct PostJobView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+
+    /// When true, opens with Instant match selected (emergency funnel).
+    var preferInstantMatch: Bool = false
 
     @State private var title = ""
     @State private var description = ""
@@ -16,9 +20,14 @@ struct PostJobView: View {
     @State private var marketRange: MarketRangeResponse?
     @State private var durationHours = 24
     @State private var publish = true
+    /// §13 Instant — after publish, POST `/jobs/{id}/instant-match` (requires accept-now price).
+    @State private var useInstantMatch = false
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var createdJob: JobDetail?
+    /// Set when Instant match was requested after create (success / soft-fail messaging).
+    @State private var instantMatchStatus: InstantMatchCreateResponse?
+    @State private var instantMatchSoftError: String?
     @State private var photoURLs: [String] = []
     @State private var isUploadingPhotos = false
     @State private var properties: [PropertyItem] = []
@@ -27,8 +36,8 @@ struct PostJobView: View {
     @State private var isRecurring = false
     @State private var recurrenceFrequency = "monthly"
 
-    /// Job service allows 0…168 hours; common presets for the picker.
-    private let durationOptions = [24, 48, 72, 168]
+    /// Job service allows 0…168 hours; Instant MVP uses a short 2h window.
+    private let durationOptions = [2, 24, 48, 72, 168]
     private let recurrenceOptions = ["weekly", "biweekly", "monthly"]
 
     var body: some View {
@@ -55,7 +64,7 @@ struct PostJobView: View {
                 formContent
             }
         }
-        .navigationTitle("Post a job")
+        .navigationTitle(useInstantMatch ? "Need help now" : "Post a job")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -68,7 +77,14 @@ struct PostJobView: View {
         .onChange(of: selectedPropertyId) { _, newId in
             applyPropertySelection(id: newId)
         }
+        .onChange(of: useInstantMatch) { _, enabled in
+            applyInstantMatchDefaults(enabled: enabled)
+        }
         .task {
+            if preferInstantMatch {
+                useInstantMatch = true
+                applyInstantMatchDefaults(enabled: true)
+            }
             await loadProperties()
         }
     }
@@ -78,10 +94,36 @@ struct PostJobView: View {
     private var formContent: some View {
         Form {
             Section {
-                Text("Describe the work and set a starting budget. Providers bid down in a reverse auction — fair market rates, not lead-gen markup.")
-                    .font(.subheadline)
+                Text(
+                    useInstantMatch
+                        ? "Emergency intake: describe the issue, set an accept-now price, and we’ll notify available Instant providers. First to accept wins at that price."
+                        : "Describe the work and set a starting budget. Providers bid down in a reverse auction — fair market rates, not lead-gen markup."
+                )
+                .font(.subheadline)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                Picker("Matching", selection: $useInstantMatch) {
+                    Text("Run an auction").tag(false)
+                    Text("I need help now").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(minHeight: 44)
+                .accessibilityLabel("How to find a provider")
+                .accessibilityHint("Auction lets providers compete on price. Instant match notifies available providers immediately.")
+
+                if useInstantMatch {
+                    Text(
+                        "Instant jobs use a short window and require an accept-now price. Providers see that price; the first verified provider to accept is awarded."
+                    )
+                    .font(.caption)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                }
+            } header: {
+                Text("Speed").brandSectionHeader()
             }
 
             Section {
@@ -146,44 +188,63 @@ struct PostJobView: View {
                 DollarAmountField(
                     text: $startingBidText,
                     placeholder: "100.00",
-                    accessibilityLabelText: "Starting bid in dollars — reverse auction, providers bid lower"
+                    accessibilityLabelText: useInstantMatch
+                        ? "Starting budget in dollars — upper bound for Instant pricing"
+                        : "Starting bid in dollars — reverse auction, providers bid lower"
                 )
 
-                Picker("Auction length", selection: $durationHours) {
-                    ForEach(durationOptions, id: \.self) { hours in
-                        Text(durationLabel(hours)).tag(hours)
-                    }
-                }
-                .frame(minHeight: 44)
-                .accessibilityLabel("Auction duration")
-
-                Toggle("Publish immediately", isOn: $publish)
-                    .frame(minHeight: 44)
-                    .tint(BrandTheme.accent)
-
-                DollarAmountField(
-                    text: $offerAcceptedText,
-                    placeholder: "Optional",
-                    accessibilityLabelText: "Offer accepted price in dollars — optional"
-                )
-
-                Toggle("Recurring job", isOn: $isRecurring)
-                    .frame(minHeight: 44)
-                    .tint(BrandTheme.accent)
-
-                if isRecurring {
-                    Picker("Frequency", selection: $recurrenceFrequency) {
-                        ForEach(recurrenceOptions, id: \.self) { freq in
-                            Text(freq.capitalized).tag(freq)
+                if !useInstantMatch {
+                    Picker("Auction length", selection: $durationHours) {
+                        ForEach(durationOptions.filter { $0 != 2 }, id: \.self) { hours in
+                            Text(durationLabel(hours)).tag(hours)
                         }
                     }
                     .frame(minHeight: 44)
+                    .accessibilityLabel("Auction duration")
+
+                    Toggle("Publish immediately", isOn: $publish)
+                        .frame(minHeight: 44)
+                        .tint(BrandTheme.accent)
+                } else {
+                    LabeledContent("Window") {
+                        Text(durationLabel(durationHours))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Instant match window \(durationLabel(durationHours))")
+                }
+
+                DollarAmountField(
+                    text: $offerAcceptedText,
+                    placeholder: useInstantMatch ? "Required accept-now price" : "Optional",
+                    accessibilityLabelText: useInstantMatch
+                        ? "Accept-now price in dollars — required for Instant match"
+                        : "Offer accepted price in dollars — optional"
+                )
+
+                if !useInstantMatch {
+                    Toggle("Recurring job", isOn: $isRecurring)
+                        .frame(minHeight: 44)
+                        .tint(BrandTheme.accent)
+
+                    if isRecurring {
+                        Picker("Frequency", selection: $recurrenceFrequency) {
+                            ForEach(recurrenceOptions, id: \.self) { freq in
+                                Text(freq.capitalized).tag(freq)
+                            }
+                        }
+                        .frame(minHeight: 44)
+                    }
                 }
             } header: {
-                Text("Auction").brandSectionHeader()
+                Text(useInstantMatch ? "Instant price" : "Auction").brandSectionHeader()
             } footer: {
-                Text("Starting bid is the maximum you’re willing to open at. Providers compete by bidding lower. Optional offer-accepted price lets providers lock that amount without auto-award.")
-                    .foregroundStyle(BrandTheme.textSecondary)
+                Text(
+                    useInstantMatch
+                        ? "Accept-now price is what providers are awarded if they accept. Keep it at or below your starting budget. Instant match cannot run without it."
+                        : "Starting bid is the maximum you’re willing to open at. Providers compete by bidding lower. Optional offer-accepted price lets providers lock that amount without auto-award."
+                )
+                .foregroundStyle(BrandTheme.textSecondary)
             }
 
             Section {
@@ -262,7 +323,7 @@ struct PostJobView: View {
                             ProgressView()
                                 .tint(BrandTheme.ctaLabelOnGold)
                         }
-                        Text(publish ? "Post job" : "Save draft")
+                        Text(submitButtonTitle)
                             .frame(maxWidth: .infinity)
                     }
                     .frame(minHeight: 48)
@@ -270,7 +331,11 @@ struct PostJobView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
                 .disabled(!canSubmit || isSubmitting)
-                .accessibilityHint("Creates the reverse-auction job on the server")
+                .accessibilityHint(
+                    useInstantMatch
+                        ? "Creates the job and requests Instant match from available providers"
+                        : "Creates the reverse-auction job on the server"
+                )
 
                 Button {
                     openWebPostJob()
@@ -292,20 +357,36 @@ struct PostJobView: View {
     @ViewBuilder
     private func successContent(_ job: JobDetail) -> some View {
         VStack(spacing: 20) {
-            Image(systemName: "checkmark.seal.fill")
+            Image(systemName: useInstantMatch ? "bolt.badge.checkmark.fill" : "checkmark.seal.fill")
                 .font(.system(size: 40, weight: .medium))
                 .foregroundStyle(BrandTheme.success)
                 .accessibilityHidden(true)
 
-            Text(publish ? "Job posted" : "Draft saved")
+            Text(successHeadline)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(BrandTheme.textPrimary)
 
-            Text("“\(job.displayTitle)” is ready as a reverse auction. Providers can bid down from your starting budget.")
+            Text(successDetail(for: job))
                 .font(.subheadline)
                 .foregroundStyle(BrandTheme.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let soft = instantMatchSoftError, !soft.isEmpty {
+                Text(soft)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.warning)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let expires = instantMatchStatus?.expiresAt,
+               let label = CatalogDateFormat.countdownLabel(iso: expires)
+            {
+                Text(label.replacingOccurrences(of: "Ends", with: "Offer"))
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+            }
 
             NavigationLink {
                 JobDetailView(jobID: job.id, preview: nil)
@@ -327,18 +408,50 @@ struct PostJobView: View {
         .brandScreenBackground()
     }
 
+    private var successHeadline: String {
+        if useInstantMatch {
+            if instantMatchStatus != nil {
+                return "Instant match sent"
+            }
+            return "Job posted"
+        }
+        return publish ? "Job posted" : "Draft saved"
+    }
+
+    private func successDetail(for job: JobDetail) -> String {
+        if useInstantMatch {
+            if instantMatchStatus != nil {
+                return "“\(job.displayTitle)” is live. Available Instant providers can accept at your accept-now price. You’ll be notified when someone claims it."
+            }
+            return "“\(job.displayTitle)” was created as a reverse auction. Instant match could not be started — open the job or try again from web."
+        }
+        return "“\(job.displayTitle)” is ready as a reverse auction. Providers can bid down from your starting budget."
+    }
+
+    private var submitButtonTitle: String {
+        if useInstantMatch {
+            return "Request Instant match"
+        }
+        return publish ? "Post job" : "Save draft"
+    }
+
     // MARK: - Validation / submit
 
     private var canSubmit: Bool {
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let d = description.trimmingCharacters(in: .whitespacesAndNewlines)
         let c = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasOfferIfInstant: Bool = {
+            guard useInstantMatch else { return true }
+            return MoneyFormat.cents(fromDollarsText: offerAcceptedText) != nil
+        }()
         return !t.isEmpty
             && t.count <= 200
             && !d.isEmpty
             && d.count <= 5000
             && !c.isEmpty
             && MoneyFormat.cents(fromDollarsText: startingBidText) != nil
+            && hasOfferIfInstant
             && !isSubmitting
             && !isUploadingPhotos
     }
@@ -347,15 +460,31 @@ struct PostJobView: View {
         if hours >= 168 {
             return "7 days"
         }
+        if hours == 2 {
+            return "2 hours"
+        }
         if hours == 24 {
             return "24 hours"
         }
         return "\(hours) hours"
     }
 
+    private func applyInstantMatchDefaults(enabled: Bool) {
+        if enabled {
+            // MVP Instant: short live window + always publish (cannot match a draft).
+            durationHours = 2
+            publish = true
+            isRecurring = false
+        } else if durationHours == 2 {
+            durationHours = 24
+        }
+    }
+
     @MainActor
     private func submit() async {
         errorMessage = nil
+        instantMatchStatus = nil
+        instantMatchSoftError = nil
 
         guard !auth.isScaffoldSession else {
             errorMessage =
@@ -392,7 +521,20 @@ struct PostJobView: View {
         }
         var offerCents: Int64?
         let offerTrimmed = offerAcceptedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !offerTrimmed.isEmpty {
+        if useInstantMatch {
+            // Server requires offer_accepted_cents before CreateInstantMatch.
+            guard !offerTrimmed.isEmpty,
+                  let oc = MoneyFormat.cents(fromDollarsText: offerAcceptedText)
+            else {
+                errorMessage = "Enter an accept-now price for Instant match (for example 250.00)."
+                return
+            }
+            if let err = BidAmountRules.validateOfferAccepted(startingCents: cents, offerCents: oc) {
+                errorMessage = err
+                return
+            }
+            offerCents = oc
+        } else if !offerTrimmed.isEmpty {
             guard let oc = MoneyFormat.cents(fromDollarsText: offerAcceptedText) else {
                 errorMessage = "Enter a valid offer-accepted amount in dollars, or leave it blank."
                 return
@@ -415,24 +557,42 @@ struct PostJobView: View {
                 : locationAddress.trimmingCharacters(in: .whitespacesAndNewlines))
             : nil
 
+        // Instant always publishes — matching a draft is invalid.
+        let shouldPublish = useInstantMatch ? true : publish
+        let auctionHours = useInstantMatch ? min(max(durationHours, 2), 2) : durationHours
+
         do {
             let job = try await APIClient.shared.createJob(
                 title: trimmedTitle,
                 description: trimmedDescription,
                 categoryId: trimmedCategory,
-                auctionDurationHours: durationHours,
+                auctionDurationHours: auctionHours,
                 startingBidCents: cents,
                 locationAddress: freeformAddress,
                 locationLat: nil,
                 locationLng: nil,
-                publish: publish,
+                publish: shouldPublish,
                 scheduleType: "flexible",
                 photoUrls: photoURLs,
                 propertyId: propertyId.isEmpty ? nil : propertyId,
                 offerAcceptedCents: offerCents,
-                isRecurring: isRecurring,
-                recurrenceFrequency: isRecurring ? recurrenceFrequency : nil
+                isRecurring: useInstantMatch ? false : isRecurring,
+                recurrenceFrequency: (!useInstantMatch && isRecurring) ? recurrenceFrequency : nil
             )
+
+            if useInstantMatch {
+                do {
+                    instantMatchStatus = try await APIClient.shared.createInstantMatch(jobId: job.id)
+                } catch let error as APIClientError {
+                    // Non-fatal — job exists; Instant fan-out failed (matches web JobPostingForm).
+                    instantMatchSoftError =
+                        "Job created, but Instant match failed: \(error.localizedDescription)"
+                } catch {
+                    instantMatchSoftError =
+                        "Job created, but Instant match failed: \(error.localizedDescription)"
+                }
+            }
+
             createdJob = job
         } catch let error as APIClientError {
             errorMessage = error.localizedDescription

@@ -22,6 +22,10 @@ final class AuthViewModel: ObservableObject {
     /// Scaffold-only: when true, "Continue offline (scaffold)" enables tab chrome without tokens.
     @Published private(set) var isScaffoldSession = false
 
+    /// After register, RootTabView presents `OnboardingWizardView` once (non-blocking).
+    /// Cleared when the sheet is presented or on sign-out.
+    @Published var shouldPresentOnboarding = false
+
     /// True while any auth network operation is in flight.
     /// LoginView uses this to disable email submit, SIWA, and scaffold while loading.
     var isBusy: Bool { isLoading }
@@ -167,6 +171,7 @@ final class AuthViewModel: ObservableObject {
         try? tokenStore.clearSession()
         isAuthenticated = false
         isScaffoldSession = false
+        shouldPresentOnboarding = false
         clearSensitiveInMemoryFields()
         errorMessage = nil
         switch reason {
@@ -314,6 +319,8 @@ final class AuthViewModel: ObservableObject {
             isScaffoldSession = false
             isAuthenticated = true
             statusMessage = "Account created. You’re signed in."
+            // FR-1.5: guided setup (phone / optional provider) without blocking register.
+            shouldPresentOnboarding = true
             notifyAuthSucceeded()
         } catch {
             errorMessage = error.localizedDescription
@@ -399,6 +406,7 @@ final class AuthViewModel: ObservableObject {
         }
         isAuthenticated = false
         isScaffoldSession = false
+        shouldPresentOnboarding = false
         clearSensitiveInMemoryFields()
         errorMessage = nil
         statusMessage = nil

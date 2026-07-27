@@ -412,6 +412,28 @@ struct PropertyItem: Codable, Sendable, Hashable, Identifiable {
     var primaryLabel: String? {
         isPrimary == true ? "Primary" : nil
     }
+
+    var notesDisplay: String? {
+        let n = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return n.isEmpty ? nil : n
+    }
+}
+
+/// Active / upcoming job counts for one property (FR-19.2 summary cards).
+struct PropertyJobCounts: Sendable, Hashable {
+    var active: Int = 0
+    var upcoming: Int = 0
+
+    var hasAny: Bool { active > 0 || upcoming > 0 }
+
+    static func from(jobs: [JobSummary]) -> PropertyJobCounts {
+        var counts = PropertyJobCounts()
+        for job in jobs {
+            if job.isActiveWork { counts.active += 1 }
+            if job.isUpcomingWork { counts.upcoming += 1 }
+        }
+        return counts
+    }
 }
 
 struct PropertiesResponse: Codable, Sendable {

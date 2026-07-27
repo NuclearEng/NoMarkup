@@ -197,6 +197,8 @@ func (s *ContractService) CancelRecurring(ctx context.Context, recurringID, user
 
 // ListRecurringInstances lists occurrences for a contract's recurring config.
 // Accepts either contract_id lookup path (gateway) after resolving config.
+// Lazy roll-forward: for active configs, create up to 4 upcoming scheduled
+// instances when next_occurrence is due (FR-18.1 generator without a cron).
 func (s *ContractService) ListRecurringInstances(
 	ctx context.Context,
 	recurringID, requestingUserID string,
@@ -209,11 +211,106 @@ func (s *ContractService) ListRecurringInstances(
 	if _, err := s.requireContractParty(ctx, cfg.ContractID, requestingUserID); err != nil {
 		return nil, nil, fmt.Errorf("list recurring instances: %w", err)
 	}
+	cfg, err = s.maybeExpirePaused(ctx, cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list recurring instances: %w", err)
+	}
+	if rollErr := s.ensureUpcomingRecurringInstances(ctx, cfg); rollErr != nil {
+		// Fail-soft: still return existing rows.
+		slog.Warn("recurring roll-forward failed",
+			"recurring_id", recurringID, "error", rollErr)
+	}
 	instances, pagination, err := s.contractRepo.ListRecurringInstances(ctx, recurringID, page, pageSize)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list recurring instances: %w", err)
 	}
 	return instances, pagination, nil
+}
+
+// ensureUpcomingRecurringInstances creates scheduled instances for dates that
+// should already exist (next_occurrence ≤ today+horizon) up to maxGenerate.
+// Idempotent: skips dates that already have a row (unique by occurrence_date if
+// enforced; otherwise we scan the list).
+func (s *ContractService) ensureUpcomingRecurringInstances(ctx context.Context, cfg *domain.RecurringConfig) error {
+	if cfg == nil || cfg.Status != "active" {
+		return nil
+	}
+	if cfg.NoticePeriodEnd != nil && !time.Now().UTC().Before(*cfg.NoticePeriodEnd) {
+		// Past notice after cancel path — do not generate.
+		return nil
+	}
+	const maxGenerate = 4
+	const horizonDays = 90
+
+	existing, _, err := s.contractRepo.ListRecurringInstances(ctx, cfg.ID, 1, 200)
+	if err != nil {
+		return fmt.Errorf("list for roll-forward: %w", err)
+	}
+	have := make(map[string]struct{}, len(existing))
+	for _, inst := range existing {
+		if inst == nil {
+			continue
+		}
+		have[inst.OccurrenceDate.UTC().Format("2006-01-02")] = struct{}{}
+	}
+
+	today := time.Now().UTC()
+	y, m, d := today.Date()
+	cursor := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	// Start from next_occurrence if it's in the future of last known date.
+	if !cfg.NextOccurrence.IsZero() {
+		n := dateOnlyUTC(cfg.NextOccurrence)
+		if n.Before(cursor) {
+			// Catch up from next_occurrence while still generating future slots.
+			cursor = n
+		} else {
+			cursor = n
+		}
+	}
+
+	horizon := time.Date(y, m, d, 0, 0, 0, 0, time.UTC).AddDate(0, 0, horizonDays)
+	created := 0
+	nextAfter := cfg.NextOccurrence
+	for created < maxGenerate && !cursor.After(horizon) {
+		key := cursor.Format("2006-01-02")
+		if _, ok := have[key]; !ok {
+			_, cerr := s.contractRepo.CreateRecurringInstance(ctx, &domain.RecurringInstance{
+				RecurringID:    cfg.ID,
+				ContractID:     cfg.ContractID,
+				OccurrenceDate: cursor,
+				Status:         "scheduled",
+				AmountCents:    cfg.RateCents,
+			})
+			if cerr != nil {
+				// Unique violation on duplicate date is fine — continue.
+				slog.Debug("recurring instance create skip",
+					"recurring_id", cfg.ID, "date", key, "error", cerr)
+			} else {
+				have[key] = struct{}{}
+				created++
+			}
+		}
+		nextAfter = nextOccurrenceFrom(cursor, cfg.Frequency)
+		cursor = nextAfter
+	}
+
+	// Advance next_occurrence to the first date without an instance or beyond horizon.
+	if !nextAfter.IsZero() && (cfg.NextOccurrence.IsZero() || nextAfter.After(cfg.NextOccurrence)) {
+		cfg.NextOccurrence = nextAfter
+		if _, uerr := s.contractRepo.UpdateRecurringConfig(ctx, cfg); uerr != nil {
+			return fmt.Errorf("advance next_occurrence: %w", uerr)
+		}
+	}
+	if created > 0 {
+		slog.Info("recurring roll-forward created instances",
+			"recurring_id", cfg.ID, "created", created, "next", cfg.NextOccurrence)
+	}
+	return nil
+}
+
+func dateOnlyUTC(t time.Time) time.Time {
+	y, m, d := t.UTC().Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 // CompleteRecurringInstance marks an occurrence complete (provider only).

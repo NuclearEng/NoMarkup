@@ -109,7 +109,7 @@ Still describe hard-offs (must reconcile before submit):
 | Maps | FR-10.4–10.6 | **Get Directions** (party exact address) + property on post |
 | Recurring | FR-18 | Backend Unimplemented + no iOS lifecycle |
 | Properties | FR-19 | List/CRUD-lite only; no dashboard/spend/history |
-| Instant | §13 | Backend match route; no customer emergency CTA |
+| Instant | §13 | **iOS Instant shipped** — Home “I need help now” + PostJob Instant + provider offers inbox; residual: push/ETA/AI match (PRD Phase 2) |
 | Digital subs | FR-12 | Read-only tiers; StoreKit deferred |
 | Social OAuth | FR-1.1 | Google/Facebook not on iOS |
 | Admin / fraud UI | FR-7/13 | Correctly **web-only** |
@@ -129,8 +129,8 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial / accepted residual
 - [ ] **ASC ops** — Team signing, ASC app record, 1024 icon, 6.7" + 12.9" screenshots, privacy labels, age rating, free-tier Review Notes paste  
 - [ ] **PRE-05 review backend** — Always-on review API + seed + `APPLE_NATIVE_CLIENT_ID` + Stripe `pk_` for Apple Pay dogfood  
 - [ ] **Device smoke** — Human-execute `device-smoke-checklist.md` + sign `launch-board.md` (auto smoke ≠ signed)  
-- [~] **FR-18 recurring** — Config/instances/pause/resume/cancel + iOS timeline shipped; scheduler roll-forward + Stripe per-instance still residual  
-- [~] **FR-1.5–1.9 onboarding** — Email/phone **VerificationCenterView** live; full guided multi-step wizard still open  
+- [~] **FR-18 recurring** — Config/instances/pause/resume/cancel + lazy roll-forward on list; Stripe per-instance pay still residual  
+- [x] **FR-1.5–1.9 onboarding** — VerificationCenter + multi-step OnboardingWizardView (skip-friendly) shipped  
 - [x] **FR-3 job form + repost** — Full job form (recurrence, offer-accepted, schedule, property) + repost UX  
 - [x] **FR-4 bid advanced** — Lower bid, accept-offer, sort/filter bids on iOS  
 - [x] **FR-9 services pay** — Services escrow PaymentSheet capture + fee breakdown (not goods-only)  
@@ -144,15 +144,15 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial / accepted residual
 - [x] **Perf gate close** — Mark parent `perf-gate-2026-07-26.md` PASS from samples; optional BrandAppIcon true 1x/2x/3x  
 - [x] **FR-5 profile terms** — Portfolio upload UI + global terms editor + local terms in chat  
 - [x] **FR-6 review polish** — Category sub-ratings, respond to review, flag review on iOS  
-- [ ] **FR-8 chat parity** — Native WS / typing / receipts, attachments, search, proposed terms  
+- [~] **FR-8 chat parity** — Attachments + search + 2.5s poll shipped; native WS/typing/receipts residual  
 - [x] **FR-11 market bars** — Real p25/p50/p75 range bars on post + bid sheet (`/analytics/market/range`)  
-- [ ] **FR-19 property dash** — Summary cards, edit, history drill-in, property picker on jobs  
+- [x] **FR-19 property dash** — Summary cards, edit, history drill-in, property picker on jobs  
 - [x] **FR-15/16 evidence** — Revision 200-char + cap UI; dispute/guarantee evidence upload in-app  
 - [x] **FR-17.5 deep links** — Notification tap → job / contract / chat / payment  
 
 ### P2 — Growth, Instant, platform
 
-- [ ] **§13 Instant** — Customer emergency CTA + provider offer accept/decline inbox on iOS  
+- [x] **§13 Instant** — Customer emergency CTA + provider offer accept/decline inbox on iOS  
 - [ ] **FR-1.1 / realtime** — Google OAuth on iOS; native chat/auction WS (poll OK interim); claim APNs only if real  
 - [ ] **§11 share cards** — Savings / review share cards via ShareLink  
 - [ ] **Apple docs Phases 5–7** — Framework/ASC ops reviews + refresh stale `capability-matrix` / privacy inventory headers  
@@ -205,3 +205,4 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial / accepted residual
 
 | 2026-07-27 | Wave: doc hygiene, RequireFlag SEC-GATE-03 + tests, FR-4 lower/accept-offer, FR-10 directions+property, FR-1 verify center, FR-3 post fields, FR-6 category ratings, FR-17 deep links, perf-gate PASS close |
 | 2026-07-27 wave2 | FR-9 pay escrow, FR-18 recurring partial, repost, review respond/flag, market bars, evidence photos, FR-5 terms/portfolio |
+| 2026-07-27 wave3 | Chat photos/search, Instant funnel, property dashboard, onboarding wizard, recurring roll-forward |

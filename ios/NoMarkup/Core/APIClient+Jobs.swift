@@ -129,6 +129,23 @@ extension APIClient {
         )
     }
 
+    /// POST `/api/v1/jobs/{id}/instant-match` — customer-owned job only.
+    /// Broadcasts a pending Instant offer (Redis, ~15 min). Requires `offer_accepted_cents` on the job
+    /// (server rejects without it). Empty body. Response: `{ "status", "expires_at" }`.
+    /// Role: customer + job owner (gateway enforces; never invent offers client-side).
+    @discardableResult
+    func createInstantMatch(jobId: String) async throws -> InstantMatchCreateResponse {
+        let trimmed = jobId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "jobs", trimmed, "instant-match"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
     /// POST `/api/v1/jobs/{id}/repost` — owner creates a new auction from a closed/expired/
     /// cancelled (or zero-bid closed) job (FR-3.5 / FR-3.10). Previous bids do not carry over.
     /// Optional overrides let the customer tweak starting bid / duration / title / description.
@@ -179,4 +196,21 @@ private struct RepostJobBody: Encodable {
     let startingBidCents: Int64?
     let offerAcceptedCents: Int64?
     let auctionDurationHours: Int?
+}
+
+// MARK: - Instant match (customer create)
+
+/// `POST /api/v1/jobs/{id}/instant-match` response.
+struct InstantMatchCreateResponse: Codable, Sendable, Hashable {
+    var status: String?
+    var expiresAt: String?
+
+    var displayStatus: String {
+        let s = status?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return s.isEmpty ? "offer_sent" : s
+    }
+
+    var isOfferSent: Bool {
+        displayStatus.lowercased() == "offer_sent" || displayStatus.lowercased() == "pending"
+    }
 }

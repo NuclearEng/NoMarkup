@@ -1834,7 +1834,7 @@ struct JobDetailView: View {
         defer { isLoading = false }
 
         if auth.isAuthenticated, !auth.isScaffoldSession {
-            currentUserID = APIClient.shared.currentUserID()
+            currentUserID = await APIClient.shared.currentUserID()
         } else {
             currentUserID = nil
         }

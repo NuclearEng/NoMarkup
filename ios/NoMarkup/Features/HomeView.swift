@@ -14,6 +14,8 @@ struct HomeView: View {
     @State private var catalogError: String?
     @State private var isLoadingCatalog = false
     @State private var showPostJob = false
+    /// When true, post sheet opens with Instant match preselected (§13).
+    @State private var postJobPreferInstant = false
     @State private var showSellItem = false
 
     private var signedInLabel: String? {
@@ -62,9 +64,11 @@ struct HomeView: View {
             }
             .task { await refreshHome() }
             .refreshable { await refreshHome() }
-            .sheet(isPresented: $showPostJob) {
+            .sheet(isPresented: $showPostJob, onDismiss: {
+                postJobPreferInstant = false
+            }) {
                 NavigationStack {
-                    PostJobView()
+                    PostJobView(preferInstantMatch: postJobPreferInstant)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("Close") { showPostJob = false }
@@ -169,6 +173,17 @@ struct HomeView: View {
                 .brandPrimaryButton()
                 .accessibilityHint("Opens the Jobs tab")
 
+                // §13 Instant — emergency funnel (create job + instant-match).
+                Button {
+                    postJobPreferInstant = true
+                    showPostJob = true
+                } label: {
+                    Label("I need help now", systemImage: "bolt.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .brandGhostButton()
+                .accessibilityHint("Opens emergency Instant match: post a job and notify available providers")
+
                 HStack(spacing: 10) {
                     Button {
                         selectedRootTab?.wrappedValue = .marketplace
@@ -179,6 +194,7 @@ struct HomeView: View {
                     .accessibilityHint("Opens the Marketplace tab")
 
                     Button {
+                        postJobPreferInstant = false
                         showPostJob = true
                     } label: {
                         Text("Post a job")

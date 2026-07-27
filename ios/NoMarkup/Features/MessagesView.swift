@@ -1,14 +1,25 @@
+import PhotosUI
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Chat channel inbox — `GET /api/v1/channels` (auth). Thread detail loads + sends messages.
 ///
 /// ## Real-time SLA (REST poll substitute for WebSocket)
 /// Native iOS does **not** open a chat WebSocket. While a thread is open,
-/// `ChatThreadView` quietly re-fetches messages every **~5 seconds** (active
+/// `ChatThreadView` quietly re-fetches messages every **~2.5 seconds** (active
 /// app only; cancels on leave / sign-out / background). Inbox list loads on
 /// appear and pull-to-refresh — it does not auto-poll. Documented so product
 /// and compliance can treat REST polling as the supported live substitute
 /// until native `/ws` chat ships.
+///
+/// ## FR-8 (iOS max practical without WS)
+/// - Photo attach via PhotosPicker → `ImageUploader` (job_photo context) →
+///   `POST …/messages` with `message_type: image` + confirmed URL as content
+/// - Mark read on open / pull-to-refresh / after send
+/// - Local in-thread search over loaded messages
+/// - **Residual:** typing indicators, read receipts UI, native WebSocket
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -91,8 +102,8 @@ struct MessagesView: View {
                         Text("Inbox").brandSectionHeader()
                     }
                 } footer: {
-                    // Honesty: no native chat WebSocket — open threads poll REST ~5s.
-                    Text("Open a conversation for live updates every few seconds. Inbox refreshes when you pull down. Native WebSocket chat is not required for this substitute.")
+                    // Honesty: no native chat WebSocket — open threads poll REST ~2.5s.
+                    Text("Open a conversation for live updates every few seconds. Attach photos from the thread composer. Inbox refreshes when you pull down. Native WebSocket / typing are not on this client yet.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
@@ -203,13 +214,20 @@ struct ChatThreadView: View {
     @State private var showWebSafari = false
     @State private var draft = ""
     @State private var isSending = false
+    @State private var isUploadingPhoto = false
     @State private var sendError: String?
     @State private var currentUserID: String?
+    @State private var searchText = ""
+    @State private var photoPickerItem: PhotosPickerItem?
+    #if canImport(UIKit)
+    @State private var showCamera = false
+    @State private var cameraImage: UIImage?
+    #endif
     @FocusState private var composerFocused: Bool
 
     /// Poll interval while the thread is open (cancelled when the view disappears).
-    /// Product SLA: ~5s REST refresh substitutes for chat WebSocket on iOS.
-    private static let pollIntervalNanoseconds: UInt64 = 5_000_000_000
+    /// Product SLA: ~2.5s REST refresh substitutes for chat WebSocket on iOS (was ~5s).
+    private static let pollIntervalNanoseconds: UInt64 = 2_500_000_000
 
     private var webMessagesURL: URL {
         AppConfig.publicWebBaseURL.appending(path: "messages")
@@ -222,13 +240,25 @@ struct ChatThreadView: View {
     private var canSend: Bool {
         canCompose
             && !isSending
+            && !isUploadingPhoto
             && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var canAttachPhoto: Bool {
+        canCompose && !isSending && !isUploadingPhoto
     }
 
     /// Show the poll-SLA caption once the thread has content or is idle (not
     /// full-screen loading / hard empty-error shells that already fill chrome).
     private var showsLiveUpdateCaption: Bool {
         !needsSignIn && !(isLoading && messages.isEmpty) && errorMessage == nil
+    }
+
+    /// Local filter over loaded messages (no server search endpoint).
+    private var displayedMessages: [ChatMessage] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return messages }
+        return messages.filter { $0.matchesSearch(q) }
     }
 
     var body: some View {
@@ -248,6 +278,7 @@ struct ChatThreadView: View {
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .searchable(text: $searchText, prompt: "Search this conversation")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -260,10 +291,11 @@ struct ChatThreadView: View {
         }
         .task {
             currentUserID = await APIClient.shared.currentUserID()
-            await loadMessages(showLoading: true)
+            // Open thread: load + mark read (auth required path inside helper).
+            await loadMessages(showLoading: true, markRead: true)
         }
         .task(id: channel.id) {
-            // Quiet poll every 5s while the thread stays open; cancels on disappear / id change.
+            // Quiet poll every ~2.5s while the thread stays open; cancels on disappear / id change.
             // Stops when signed out / session invalid so we don't thrash 401s.
             // Pauses network work while the app is backgrounded / inactive; resumes when active.
             while !Task.isCancelled {
@@ -277,10 +309,13 @@ struct ChatThreadView: View {
                     break
                 }
                 guard scenePhase == .active else { continue }
-                await loadMessages(showLoading: false)
+                // Poll only — mark-read is open/refresh/send, not every quiet tick.
+                await loadMessages(showLoading: false, markRead: false)
             }
         }
-        .refreshable { await loadMessages(showLoading: false) }
+        .refreshable {
+            await loadMessages(showLoading: false, markRead: true)
+        }
         .sheet(isPresented: $showWebSafari) {
             NavigationStack {
                 LegalWebView(title: "Messages on web", url: webMessagesURL)
@@ -292,9 +327,23 @@ struct ChatThreadView: View {
                     }
             }
         }
+        #if canImport(UIKit)
+        .sheet(isPresented: $showCamera) {
+            CameraImagePicker(image: $cameraImage)
+                .ignoresSafeArea()
+        }
+        .onChange(of: cameraImage) { _, image in
+            guard let image else { return }
+            Task { await uploadAndSendCamera(image) }
+        }
+        #endif
+        .onChange(of: photoPickerItem) { _, item in
+            guard let item else { return }
+            Task { await uploadAndSendPhoto(item) }
+        }
     }
 
-    /// Subtle honesty caption: open threads refresh on a quiet ~5s REST poll.
+    /// Subtle honesty caption: open threads refresh on a quiet ~2.5s REST poll.
     private var liveUpdateCaption: some View {
         HStack(spacing: 6) {
             Image(systemName: "arrow.triangle.2.circlepath")
@@ -337,7 +386,7 @@ struct ChatThreadView: View {
                 systemImage: "exclamationmark.triangle",
                 message: errorMessage,
                 actionTitle: "Try again",
-                action: { Task { await loadMessages() } },
+                action: { Task { await loadMessages(showLoading: true, markRead: true) } },
                 secondaryActionTitle: "Open on web",
                 secondaryAction: { showWebSafari = true }
             )
@@ -346,14 +395,20 @@ struct ChatThreadView: View {
                 title: "No messages yet",
                 systemImage: "text.bubble",
                 message: canCompose
-                    ? "Say hello below — your first message starts the thread. Messages are plain text only (don’t paste scripts or HTML). Pull to refresh anytime."
+                    ? "Say hello below or attach a photo — your first message starts the thread. Messages are plain text or platform photos (don’t paste scripts or HTML). Pull to refresh anytime."
                     : "This channel has no messages yet."
+            )
+        } else if displayedMessages.isEmpty {
+            BrandEmptyState(
+                title: "No matches",
+                systemImage: "magnifyingglass",
+                message: "No messages in this thread match “\(searchText.trimmingCharacters(in: .whitespacesAndNewlines))”. Clear search to see the full conversation."
             )
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(messages) { message in
+                        ForEach(displayedMessages) { message in
                             MessageBubbleRow(
                                 message: message,
                                 isMine: isMine(message)
@@ -365,15 +420,17 @@ struct ChatThreadView: View {
                     .padding(.vertical, 12)
                 }
                 .background(BrandTheme.navy)
-                .onChange(of: messages.count) { _, _ in
-                    if let lastID = messages.last?.id {
+                .onChange(of: displayedMessages.count) { _, _ in
+                    // Only auto-scroll when not filtering (search active would jump oddly).
+                    guard searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                    if let lastID = displayedMessages.last?.id {
                         withAnimation(.easeOut(duration: 0.2)) {
                             proxy.scrollTo(lastID, anchor: .bottom)
                         }
                     }
                 }
                 .onAppear {
-                    if let lastID = messages.last?.id {
+                    if let lastID = displayedMessages.last?.id {
                         proxy.scrollTo(lastID, anchor: .bottom)
                     }
                 }
@@ -395,7 +452,55 @@ struct ChatThreadView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack(alignment: .bottom, spacing: 10) {
+            HStack(alignment: .bottom, spacing: 8) {
+                // Photo attach — library (PhotosPicker). Upload uses our imaging pipeline only.
+                PhotosPicker(
+                    selection: $photoPickerItem,
+                    matching: .images,
+                    photoLibrary: .shared()
+                ) {
+                    Group {
+                        if isUploadingPhoto {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(BrandTheme.accent)
+                        } else {
+                            Image(systemName: "photo.on.rectangle")
+                                .font(.system(size: 22))
+                                .foregroundStyle(
+                                    canAttachPhoto
+                                        ? BrandTheme.accent
+                                        : BrandTheme.textSecondary.opacity(0.5)
+                                )
+                        }
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                }
+                .disabled(!canAttachPhoto)
+                .accessibilityLabel("Attach photo")
+                .accessibilityHint("Upload a photo from your library to this conversation")
+
+                #if canImport(UIKit)
+                Button {
+                    showCamera = true
+                } label: {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(
+                            canAttachPhoto && UIImagePickerController.isSourceTypeAvailable(.camera)
+                                ? BrandTheme.accent
+                                : BrandTheme.textSecondary.opacity(0.5)
+                        )
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canAttachPhoto || !UIImagePickerController.isSourceTypeAvailable(.camera))
+                .accessibilityLabel("Take photo")
+                .accessibilityHint("Capture a photo with the camera for this conversation")
+                #endif
+
                 TextField("Message", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .foregroundStyle(BrandTheme.textPrimary)
@@ -408,11 +513,11 @@ struct ChatThreadView: View {
                             .strokeBorder(BrandTheme.gold.opacity(0.15), lineWidth: 1)
                     )
                     .focused($composerFocused)
-                    .disabled(!canCompose || isSending)
+                    .disabled(!canCompose || isSending || isUploadingPhoto)
                     .accessibilityLabel("Message")
 
                 Button {
-                    Task { await send() }
+                    Task { await sendText() }
                 } label: {
                     Group {
                         if isSending {
@@ -447,11 +552,9 @@ struct ChatThreadView: View {
     }
 
     @MainActor
-    private func loadMessages(showLoading: Bool = true) async {
+    private func loadMessages(showLoading: Bool = true, markRead: Bool = false) async {
         if showLoading {
             isLoading = true
-        }
-        if showLoading {
             errorMessage = nil
         }
         needsSignIn = false
@@ -478,8 +581,7 @@ struct ChatThreadView: View {
             if sorted.map(\.id) != messages.map(\.id) {
                 messages = sorted
             }
-            // Mark read on open / pull-to-refresh only — not on the quiet 5s poll.
-            if showLoading {
+            if markRead {
                 await markChannelReadBestEffort()
             }
         } catch let error as APIClientError where error.isUnauthorized {
@@ -495,7 +597,7 @@ struct ChatThreadView: View {
     }
 
     @MainActor
-    private func send() async {
+    private func sendText() async {
         guard canCompose else {
             sendError = "Sign in with a real account to send messages."
             return
@@ -510,21 +612,15 @@ struct ChatThreadView: View {
         do {
             let created = try await APIClient.shared.sendChannelMessage(
                 channelID: channel.id,
-                content: text
+                content: text,
+                messageType: "text"
             )
             draft = ""
             composerFocused = false
-            // Prefer server message; fall back to optimistic row if decode was sparse.
-            if messages.contains(where: { $0.id == created.id }) {
-                // already present (unlikely)
-            } else {
-                messages.append(created)
-                messages.sort { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
-            }
+            appendMessageIfNeeded(created)
             if currentUserID == nil {
                 currentUserID = await APIClient.shared.currentUserID()
             }
-            // Keep read cursor current after a successful send.
             await markChannelReadBestEffort()
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
@@ -532,6 +628,84 @@ struct ChatThreadView: View {
         } catch {
             sendError = error.localizedDescription
         }
+    }
+
+    /// Photos library → imaging upload (`job_photo`) → chat message `message_type: image`.
+    @MainActor
+    private func uploadAndSendPhoto(_ item: PhotosPickerItem) async {
+        guard canCompose else {
+            sendError = "Sign in with a real account to send photos."
+            photoPickerItem = nil
+            return
+        }
+        isUploadingPhoto = true
+        sendError = nil
+        defer {
+            isUploadingPhoto = false
+            photoPickerItem = nil
+        }
+
+        do {
+            // Imaging allow-list has no dedicated chat context; job_photo is the public-photo path.
+            let url = try await ImageUploader.upload(item: item, context: .job)
+            let created = try await APIClient.shared.sendChannelImageMessage(
+                channelID: channel.id,
+                imageURL: url
+            )
+            appendMessageIfNeeded(created)
+            if currentUserID == nil {
+                currentUserID = await APIClient.shared.currentUserID()
+            }
+            await markChannelReadBestEffort()
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+            sendError = "Session expired. Sign in again to send photos."
+        } catch {
+            sendError = error.localizedDescription
+        }
+    }
+
+    #if canImport(UIKit)
+    @MainActor
+    private func uploadAndSendCamera(_ image: UIImage) async {
+        guard canCompose else {
+            sendError = "Sign in with a real account to send photos."
+            cameraImage = nil
+            return
+        }
+        isUploadingPhoto = true
+        sendError = nil
+        defer {
+            isUploadingPhoto = false
+            cameraImage = nil
+        }
+
+        do {
+            let url = try await ImageUploader.upload(uiImage: image, context: .job)
+            let created = try await APIClient.shared.sendChannelImageMessage(
+                channelID: channel.id,
+                imageURL: url
+            )
+            appendMessageIfNeeded(created)
+            if currentUserID == nil {
+                currentUserID = await APIClient.shared.currentUserID()
+            }
+            await markChannelReadBestEffort()
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+            sendError = "Session expired. Sign in again to send photos."
+        } catch {
+            sendError = error.localizedDescription
+        }
+    }
+    #endif
+
+    private func appendMessageIfNeeded(_ created: ChatMessage) {
+        if messages.contains(where: { $0.id == created.id }) {
+            return
+        }
+        messages.append(created)
+        messages.sort { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
     }
 
     /// POST `/api/v1/channels/{id}/read` — best-effort; never surfaces as a thread error.
@@ -546,6 +720,8 @@ struct ChatThreadView: View {
     }
 }
 
+// MARK: - Bubble
+
 private struct MessageBubbleRow: View {
     let message: ChatMessage
     let isMine: Bool
@@ -555,15 +731,12 @@ private struct MessageBubbleRow: View {
             if isMine { Spacer(minLength: 48) }
 
             VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
-                // Plain `Text` only — never attributed HTML (XSS-safe).
-                Text(message.displayBody)
-                    .font(.body)
-                    .foregroundStyle(isMine ? BrandTheme.ctaLabelOnGold : BrandTheme.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(isMine ? .trailing : .leading)
+                bubbleContent
 
                 HStack(spacing: 6) {
-                    if let type = message.messageType, type != "text", !type.isEmpty {
+                    if let type = message.messageType,
+                       message.normalizedType != "text",
+                       !type.isEmpty {
                         Text(type.replacingOccurrences(of: "_", with: " ").capitalized)
                             .font(.caption2)
                     }
@@ -593,7 +766,53 @@ private struct MessageBubbleRow: View {
         }
         .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(isMine ? "You: \(message.displayBody)" : message.displayBody)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    @ViewBuilder
+    private var bubbleContent: some View {
+        if message.isImageMessage, let url = message.safeImageURL {
+            // Platform photo only — AsyncImage loads https/http absolute URL from content.
+            // Plain Text fallback if decode fails; never HTML / attributed string.
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: 240, maxHeight: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                case .failure:
+                    Label("Photo unavailable", systemImage: "photo")
+                        .font(.subheadline)
+                        .foregroundStyle(isMine ? BrandTheme.ctaLabelOnGold : BrandTheme.textSecondary)
+                default:
+                    ProgressView()
+                        .tint(isMine ? BrandTheme.navy : BrandTheme.accent)
+                        .frame(width: 120, height: 90)
+                }
+            }
+            .accessibilityLabel("Photo")
+        } else if message.isImageMessage {
+            // Image type without a safe URL — never render content as HTML.
+            Label("Photo", systemImage: "photo")
+                .font(.body)
+                .foregroundStyle(isMine ? BrandTheme.ctaLabelOnGold : BrandTheme.textPrimary)
+        } else {
+            // Plain `Text` only — never attributed HTML (XSS-safe).
+            Text(message.displayBody)
+                .font(.body)
+                .foregroundStyle(isMine ? BrandTheme.ctaLabelOnGold : BrandTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(isMine ? .trailing : .leading)
+        }
+    }
+
+    private var accessibilityText: String {
+        if message.isImageMessage {
+            return isMine ? "You sent a photo" : "Photo"
+        }
+        return isMine ? "You: \(message.displayBody)" : message.displayBody
     }
 }
 

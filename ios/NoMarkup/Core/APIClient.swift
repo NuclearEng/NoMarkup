@@ -357,17 +357,50 @@ actor APIClient {
 
     // MARK: - Authenticated catalog / chat
 
-    /// GET `/api/v1/jobs/mine?page=&page_size=` — owner-scoped jobs (Bearer required).
-    func fetchMyJobs(page: Int = 1, pageSize: Int = 20) async throws -> JobsMineResponse {
-        let items = [
+    /// GET `/api/v1/jobs/mine?page=&page_size=&property_id=&status=` — owner-scoped jobs (Bearer required).
+    /// `property_id` filters to one saved service location (FR-19 property dashboard).
+    func fetchMyJobs(
+        page: Int = 1,
+        pageSize: Int = 20,
+        propertyId: String? = nil,
+        status: String? = nil
+    ) async throws -> JobsMineResponse {
+        var items = [
             URLQueryItem(name: "page", value: String(max(1, page))),
             URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
         ]
+        if let propertyId {
+            let trimmed = propertyId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                items.append(URLQueryItem(name: "property_id", value: trimmed))
+            }
+        }
+        if let status {
+            let trimmed = status.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                items.append(URLQueryItem(name: "status", value: trimmed))
+            }
+        }
         return try await getJSON(
             pathComponents: ["api", "v1", "jobs", "mine"],
             query: items,
             authorized: true
         )
+    }
+
+    /// GET `/api/v1/jobs/mine?property_id=` — job history for one property (FR-19.3).
+    ///
+    /// Gateway filters customer jobs by `property_id` on the mine route (not the public list).
+    func fetchJobs(
+        propertyId: String,
+        page: Int = 1,
+        pageSize: Int = 50
+    ) async throws -> JobsMineResponse {
+        let trimmed = propertyId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Property id is required.")
+        }
+        return try await fetchMyJobs(page: page, pageSize: pageSize, propertyId: trimmed)
     }
 
     /// GET `/api/v1/channels?page=&page_size=` — chat inbox (Bearer required).
@@ -395,26 +428,64 @@ actor APIClient {
         )
     }
 
-    /// POST `/api/v1/channels/{id}/messages` — send a text message (Bearer required).
-    /// Body: `{ "content": "...", "message_type": "text" }`. Returns the created message (201).
+    /// POST `/api/v1/channels/{id}/messages` — send a message (Bearer required).
+    /// Body: `{ "content": "...", "message_type": "text"|"image"|"file" }`.
+    /// - **text**: plain body (no HTML). Empty rejected.
+    /// - **image**: `content` is the public CDN URL from our imaging upload pipeline
+    ///   (`ImageUploader` → upload-url → PUT → confirm). Gateway accepts `message_type: image`
+    ///   and stores `content` as the URL (no separate attachments array on the REST body).
+    /// Returns the created message (201).
     @discardableResult
     func sendChannelMessage(
         channelID: String,
         content: String,
         messageType: String = "text"
     ) async throws -> ChatMessage {
+        let type = messageType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let wireType = (type.isEmpty || type == "text") ? "text" : type
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            throw APIClientError.httpStatus(400, detail: "Message cannot be empty.")
+
+        if wireType == "text" {
+            guard !trimmed.isEmpty else {
+                throw APIClientError.httpStatus(400, detail: "Message cannot be empty.")
+            }
+        } else if wireType == "image" {
+            // Image messages must carry a URL from our upload flow (https preferred).
+            guard !trimmed.isEmpty else {
+                throw APIClientError.httpStatus(400, detail: "Image URL is required.")
+            }
+            guard let url = URL(string: trimmed),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "https" || scheme == "http",
+                  url.host != nil
+            else {
+                throw APIClientError.httpStatus(400, detail: "Image URL must be an absolute http(s) URL from upload.")
+            }
+        } else {
+            guard !trimmed.isEmpty else {
+                throw APIClientError.httpStatus(400, detail: "Message cannot be empty.")
+            }
         }
+
         guard trimmed.count <= 2000 else {
             throw APIClientError.httpStatus(400, detail: "Message must be at most 2000 characters.")
         }
-        let body = SendMessageRequestBody(content: trimmed, messageType: messageType)
+        let body = SendMessageRequestBody(content: trimmed, messageType: wireType)
         return try await postJSON(
             pathComponents: ["api", "v1", "channels", channelID, "messages"],
             body: body,
             authorized: .required
+        )
+    }
+
+    /// Upload via imaging pipeline then POST chat message with `message_type: image`.
+    /// Uses `job_photo` storage context (imaging allow-list has no dedicated chat context).
+    @discardableResult
+    func sendChannelImageMessage(channelID: String, imageURL: String) async throws -> ChatMessage {
+        try await sendChannelMessage(
+            channelID: channelID,
+            content: imageURL,
+            messageType: "image"
         )
     }
 

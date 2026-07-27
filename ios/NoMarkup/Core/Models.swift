@@ -850,6 +850,8 @@ struct JobApproximateAddress: Codable, Sendable, Hashable {
 struct JobSummary: Codable, Sendable, Hashable, Identifiable {
     let id: String
     var customerId: String?
+    /// Present on owner-scoped mine list when the job is tied to a saved property (FR-19).
+    var propertyId: String? = nil
     var title: String?
     var description: String?
     var status: String?
@@ -874,6 +876,30 @@ struct JobSummary: Codable, Sendable, Hashable, Identifiable {
     var displayTitle: String {
         let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return t.isEmpty ? "Untitled job" : t
+    }
+
+    var normalizedStatus: String {
+        (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// Live auction or work currently in progress (property dashboard "active").
+    var isActiveWork: Bool {
+        switch normalizedStatus {
+        case "active", "open", "live", "bidding", "in_progress":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Awarded / contract pending — scheduled or soon-to-start work (property dashboard "upcoming").
+    var isUpcomingWork: Bool {
+        switch normalizedStatus {
+        case "awarded", "contract_pending":
+            return true
+        default:
+            return false
+        }
     }
 
     var displayPrice: String? {
@@ -990,7 +1016,7 @@ struct JobDetail: Codable, Sendable, Hashable, Identifiable {
     init(from summary: JobSummary) {
         id = summary.id
         customerId = summary.customerId
-        propertyId = nil
+        propertyId = summary.propertyId
         title = summary.title
         description = summary.description
         status = summary.status
@@ -1057,18 +1083,57 @@ struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     var isRead: Bool?
     var createdAt: String?
 
+    /// Normalized message_type from gateway (`text` | `image` | `file` | `system` | `contact_share`).
+    var normalizedType: String {
+        (messageType ?? "text").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    var isImageMessage: Bool { normalizedType == "image" }
+
+    /// Inbox / accessibility body. Image/file never surface raw CDN URLs in lists.
     var displayBody: String {
-        let raw = content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if raw.isEmpty {
-            switch messageType {
-            case "image": return "Photo"
-            case "file": return "File"
-            case "system": return "System message"
-            case "contact_share": return "Contact shared"
-            default: return "Message"
-            }
+        switch normalizedType {
+        case "image":
+            return "Photo"
+        case "file":
+            return "File"
+        case "system":
+            let raw = content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return raw.isEmpty ? "System message" : raw
+        case "contact_share":
+            return "Contact shared"
+        default:
+            let raw = content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return raw.isEmpty ? "Message" : raw
         }
-        return raw
+    }
+
+    /// HTTPS (or local-dev HTTP) image URL when `message_type == image` and content is a plain absolute URL.
+    /// Never returns non-http(s) schemes (no `javascript:`, `data:`, HTML).
+    /// Prefer URLs from our imaging upload pipeline (`confirmed_url`); arbitrary http(s) may still
+    /// decode but the composer only attaches via `ImageUploader`.
+    var safeImageURL: URL? {
+        guard isImageMessage else { return nil }
+        let raw = content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !raw.isEmpty, raw.count <= 2000 else { return nil }
+        // Reject whitespace / angle brackets that would indicate HTML injection attempts.
+        guard !raw.contains(where: { $0.isWhitespace || $0 == "<" || $0 == ">" }) else { return nil }
+        guard let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http",
+              let host = url.host, !host.isEmpty
+        else { return nil }
+        return url
+    }
+
+    /// Case-insensitive match for in-thread search (local filter on loaded messages).
+    func matchesSearch(_ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return true }
+        if displayBody.localizedCaseInsensitiveContains(q) { return true }
+        if let content, content.localizedCaseInsensitiveContains(q) { return true }
+        if normalizedType.localizedCaseInsensitiveContains(q) { return true }
+        return false
     }
 }
 

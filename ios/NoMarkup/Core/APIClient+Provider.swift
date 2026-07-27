@@ -112,6 +112,47 @@ extension APIClient {
         )
     }
 
+    // MARK: Instant match offers (provider inbox)
+
+    /// GET `/api/v1/provider/offers` — pending Instant match jobs (provider role required).
+    /// Server scans Redis for live offers; never fabricate offers client-side.
+    func fetchProviderInstantOffers() async throws -> [ProviderInstantOffer] {
+        let wrapped: ProviderInstantOffersResponse = try await getJSON(
+            pathComponents: ["api", "v1", "provider", "offers"],
+            authorized: true
+        )
+        return wrapped.offers ?? []
+    }
+
+    /// POST `/api/v1/provider/offers/{jobId}/accept` — first provider to accept wins.
+    /// May mint a contract (`contract_id`). Provider role + live offer required.
+    @discardableResult
+    func acceptProviderInstantOffer(jobId: String) async throws -> ProviderInstantOfferActionResponse {
+        let trimmed = jobId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "provider", "offers", trimmed, "accept"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/provider/offers/{jobId}/decline` — scoped to this provider only.
+    @discardableResult
+    func declineProviderInstantOffer(jobId: String) async throws -> ProviderInstantOfferActionResponse {
+        let trimmed = jobId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "provider", "offers", trimmed, "decline"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
     // MARK: Streaks
 
     /// GET `/api/v1/providers/me/streaks` — raw JSON array of streak rows.
@@ -604,6 +645,64 @@ struct ProviderCategoriesResponse: Codable, Sendable {
 struct ProviderAvailabilityResponse: Codable, Sendable, Hashable {
     var instantEnabled: Bool?
     var instantAvailable: Bool?
+}
+
+// MARK: - Instant match offer models
+
+/// One pending Instant offer from `GET /api/v1/provider/offers`.
+struct ProviderInstantOffer: Codable, Sendable, Hashable, Identifiable {
+    var jobId: String?
+    var jobTitle: String?
+    var expiresAt: String?
+    var amountCents: Int64?
+
+    /// Stable list identity (job id, or ephemeral fallback if wire is incomplete).
+    var id: String {
+        let j = jobId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return j.isEmpty ? UUID().uuidString : j
+    }
+
+    var displayTitle: String {
+        let t = jobTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "Emergency job" : t
+    }
+
+    var displayAmount: String {
+        MoneyFormat.usd(cents: amountCents ?? 0)
+    }
+
+    /// Parsed expiry; nil if missing / unparseable.
+    var expiresAtDate: Date? {
+        guard let raw = expiresAt?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        return CatalogDateFormat.parseISO(raw)
+    }
+
+    var isExpired: Bool {
+        guard let date = expiresAtDate else { return false }
+        return date.timeIntervalSinceNow <= 0
+    }
+
+    var hasValidJobId: Bool {
+        let j = jobId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !j.isEmpty
+    }
+}
+
+struct ProviderInstantOffersResponse: Codable, Sendable {
+    var offers: [ProviderInstantOffer]?
+}
+
+/// Accept/decline response (`status`, optional `contract_id`).
+struct ProviderInstantOfferActionResponse: Codable, Sendable, Hashable {
+    var status: String?
+    var contractId: String?
+
+    var displayStatus: String {
+        let s = status?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return s.isEmpty ? "ok" : s
+    }
 }
 
 struct ProviderAvailabilityWindow: Codable, Sendable, Hashable {

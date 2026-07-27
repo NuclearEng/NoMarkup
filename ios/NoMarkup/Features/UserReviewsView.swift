@@ -265,7 +265,9 @@ struct UserReviewsView: View {
             currentUserID = nil
             return
         }
-        currentUserID = APIClient.shared.currentUserID()
+        Task { @MainActor in
+            currentUserID = await APIClient.shared.currentUserID()
+        }
     }
 
     @MainActor

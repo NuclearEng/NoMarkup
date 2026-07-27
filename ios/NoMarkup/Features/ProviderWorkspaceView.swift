@@ -158,8 +158,19 @@ struct ProviderWorkspaceView: View {
                     }
                     .frame(minHeight: 44)
                 }
+
+                NavigationLink {
+                    ProviderInstantOffersView()
+                } label: {
+                    Label("Instant offers inbox", systemImage: "bolt.badge.clock")
+                }
+                .frame(minHeight: 44)
+                .accessibilityHint("Accept or decline emergency Instant match requests")
             } header: {
                 Text("Availability").brandSectionHeader()
+            } footer: {
+                Text("Turn Available now on to receive Instant jobs. Open the inbox to accept or decline live offers.")
+                    .foregroundStyle(BrandTheme.textSecondary)
             }
 
             if let cats = profile?.serviceCategories, !cats.isEmpty {

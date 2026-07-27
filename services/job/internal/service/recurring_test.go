@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -84,6 +85,18 @@ func (r *recurringTestRepo) ListRecurringInstances(_ context.Context, recurringI
 		}
 	}
 	return out, &domain.Pagination{TotalCount: len(out), Page: page, PageSize: pageSize, TotalPages: 1}, nil
+}
+
+func (r *recurringTestRepo) CreateRecurringInstance(_ context.Context, inst *domain.RecurringInstance) (*domain.RecurringInstance, error) {
+	if r.instances == nil {
+		r.instances = map[string]*domain.RecurringInstance{}
+	}
+	cp := *inst
+	if cp.ID == "" {
+		cp.ID = fmt.Sprintf("inst-%d", len(r.instances)+1)
+	}
+	r.instances[cp.ID] = &cp
+	return &cp, nil
 }
 
 func TestPauseResumeRecurring(t *testing.T) {
@@ -231,6 +244,41 @@ func TestCancelRecurringSetsNotice(t *testing.T) {
 	}
 	if cancelled.CancelledBy == nil || *cancelled.CancelledBy != customer {
 		t.Fatalf("cancelled_by: %v", cancelled.CancelledBy)
+	}
+}
+
+func TestListRecurringInstancesRollForward(t *testing.T) {
+	t.Parallel()
+	const (
+		customer = "cust-1"
+		provider = "prov-1"
+		contract = "ctr-1"
+		recID    = "rec-1"
+	)
+	// Next occurrence is today — list should create scheduled instances.
+	today := time.Now().UTC()
+	y, m, d := today.Date()
+	occ := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	repo := &recurringTestRepo{
+		contract: &domain.Contract{
+			ID: contract, CustomerID: customer, ProviderID: provider, Status: "active",
+		},
+		cfg: &domain.RecurringConfig{
+			ID: recID, ContractID: contract, Frequency: "weekly", RateCents: 5000,
+			Status: "active", NextOccurrence: occ,
+		},
+		instances: map[string]*domain.RecurringInstance{},
+	}
+	svc := NewContractService(repo, nil)
+	list, _, err := svc.ListRecurringInstances(context.Background(), recID, customer, 1, 50)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) == 0 {
+		t.Fatal("expected roll-forward to create at least one instance")
+	}
+	if len(repo.instances) == 0 {
+		t.Fatal("repo should hold created instances")
 	}
 }
 

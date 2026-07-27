@@ -1,15 +1,19 @@
 import SwiftUI
 
-/// Customer saved service addresses — `GET|POST|DELETE /api/v1/properties`.
+/// Customer multi-property dashboard — FR-19.
+/// List / add / edit / delete via `GET|POST|PUT|DELETE /api/v1/properties`.
+/// Summary active/upcoming counts via `GET /api/v1/jobs/mine?property_id=`.
 struct PropertiesView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
     @State private var properties: [PropertyItem] = []
+    @State private var jobCounts: [String: PropertyJobCounts] = [:]
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var showAddSheet = false
+    @State private var editingProperty: PropertyItem?
     @State private var deletingID: String?
 
     var body: some View {
@@ -80,11 +84,22 @@ struct PropertiesView: View {
         .sheet(isPresented: $showAddSheet) {
             AddPropertySheet { created in
                 properties.insert(created, at: 0)
+                jobCounts[created.id] = PropertyJobCounts()
                 statusIsError = false
                 statusMessage = "Added “\(created.displayNickname)”."
                 showAddSheet = false
             } onCancel: {
                 showAddSheet = false
+            }
+        }
+        .sheet(item: $editingProperty) { property in
+            EditPropertySheet(property: property) { updated in
+                applyUpdated(updated)
+                statusIsError = false
+                statusMessage = "Updated “\(updated.displayNickname)”."
+                editingProperty = nil
+            } onCancel: {
+                editingProperty = nil
             }
         }
     }
@@ -103,8 +118,28 @@ struct PropertiesView: View {
 
             Section {
                 ForEach(properties) { property in
-                    propertyRow(property)
-                        .listRowBackground(BrandTheme.navyElevated)
+                    NavigationLink {
+                        PropertyDetailView(property: property) { updated in
+                            applyUpdated(updated)
+                        }
+                    } label: {
+                        propertyRow(property)
+                    }
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityHint("Opens property detail and job history")
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            Task { await delete(property) }
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        Button {
+                            editingProperty = property
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(BrandTheme.accent)
+                    }
                 }
                 .onDelete { indexSet in
                     Task { await delete(at: indexSet) }
@@ -113,7 +148,7 @@ struct PropertiesView: View {
                 Text("\(properties.count) propert\(properties.count == 1 ? "y" : "ies")")
                     .brandSectionHeader()
             } footer: {
-                Text("Addresses are used when posting reverse-auction jobs. Exact location is protected at rest on the server.")
+                Text("Tap a property for job history. Active and upcoming counts use jobs linked to that address. PostJob still lets you pick which property a new auction is for.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
@@ -122,23 +157,38 @@ struct PropertiesView: View {
 
     @ViewBuilder
     private func propertyRow(_ property: PropertyItem) -> some View {
+        let counts = jobCounts[property.id] ?? PropertyJobCounts()
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(property.displayNickname)
-                    .font(.headline)
-                    .foregroundStyle(BrandTheme.textPrimary)
+                HStack(spacing: 8) {
+                    Text(property.displayNickname)
+                        .font(.headline)
+                        .foregroundStyle(BrandTheme.textPrimary)
+                    if property.isPrimary == true {
+                        Text("PRIMARY")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrandTheme.navy)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(BrandTheme.accent, in: Capsule())
+                    }
+                }
                 ForEach(property.addressLines, id: \.self) { line in
                     Text(line)
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
-                if let notes = property.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
-                   !notes.isEmpty {
+                if let notes = property.notesDisplay {
                     Text(notes)
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(2)
                 }
+                HStack(spacing: 10) {
+                    countBadge(label: "Active", count: counts.active, emphasize: counts.active > 0)
+                    countBadge(label: "Upcoming", count: counts.upcoming, emphasize: counts.upcoming > 0)
+                }
+                .padding(.top, 2)
             }
             Spacer(minLength: 8)
             if deletingID == property.id {
@@ -149,6 +199,44 @@ struct PropertiesView: View {
         .padding(.vertical, 4)
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel(for: property, counts: counts))
+    }
+
+    private func countBadge(label: String, count: Int, emphasize: Bool) -> some View {
+        Text("\(label) \(count)")
+            .font(.caption2.weight(.semibold).monospacedDigit())
+            .foregroundStyle(emphasize ? BrandTheme.goldBright : BrandTheme.textSecondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                (emphasize ? BrandTheme.goldBright.opacity(0.12) : BrandTheme.navy.opacity(0.35)),
+                in: Capsule()
+            )
+    }
+
+    private func accessibilityLabel(for property: PropertyItem, counts: PropertyJobCounts) -> String {
+        var parts = [property.displayNickname]
+        parts.append(contentsOf: property.addressLines)
+        if let notes = property.notesDisplay {
+            parts.append(notes)
+        }
+        parts.append("\(counts.active) active jobs")
+        parts.append("\(counts.upcoming) upcoming jobs")
+        return parts.joined(separator: ", ")
+    }
+
+    private func applyUpdated(_ updated: PropertyItem) {
+        if let idx = properties.firstIndex(where: { $0.id == updated.id }) {
+            properties[idx] = updated
+        }
+        // Primary flag is exclusive server-side for many backends — re-clear others locally.
+        if updated.isPrimary == true {
+            for i in properties.indices where properties[i].id != updated.id {
+                if properties[i].isPrimary == true {
+                    properties[i].isPrimary = false
+                }
+            }
+        }
     }
 
     @MainActor
@@ -160,6 +248,7 @@ struct PropertiesView: View {
 
         do {
             properties = try await APIClient.shared.fetchProperties().properties
+            await loadJobCounts(for: properties)
         } catch {
             if properties.isEmpty {
                 errorMessage = error.localizedDescription
@@ -167,22 +256,60 @@ struct PropertiesView: View {
         }
     }
 
+    /// Fetches per-property job lists in parallel (`jobs/mine?property_id=`) and derives active/upcoming counts.
+    @MainActor
+    private func loadJobCounts(for properties: [PropertyItem]) async {
+        guard !properties.isEmpty else {
+            jobCounts = [:]
+            return
+        }
+
+        var next: [String: PropertyJobCounts] = [:]
+        await withTaskGroup(of: (String, PropertyJobCounts).self) { group in
+            for property in properties {
+                group.addTask {
+                    do {
+                        let response = try await APIClient.shared.fetchJobs(
+                            propertyId: property.id,
+                            pageSize: 100
+                        )
+                        return (property.id, PropertyJobCounts.from(jobs: response.jobs))
+                    } catch {
+                        return (property.id, PropertyJobCounts())
+                    }
+                }
+            }
+            for await (id, counts) in group {
+                next[id] = counts
+            }
+        }
+        jobCounts = next
+    }
+
     @MainActor
     private func delete(at offsets: IndexSet) async {
-        statusMessage = nil
-        statusIsError = false
         for index in offsets {
             guard properties.indices.contains(index) else { continue }
-            let property = properties[index]
-            deletingID = property.id
-            do {
-                try await APIClient.shared.deleteProperty(id: property.id)
-                properties.removeAll { $0.id == property.id }
-            } catch {
-                statusIsError = true
-                statusMessage = error.localizedDescription
-            }
-            deletingID = nil
+            await delete(properties[index])
+        }
+    }
+
+    @MainActor
+    private func delete(_ property: PropertyItem) async {
+        statusMessage = nil
+        statusIsError = false
+        deletingID = property.id
+        defer { deletingID = nil }
+
+        do {
+            try await APIClient.shared.deleteProperty(id: property.id)
+            properties.removeAll { $0.id == property.id }
+            jobCounts.removeValue(forKey: property.id)
+            statusIsError = false
+            statusMessage = "Removed “\(property.displayNickname)”."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
         }
     }
 }

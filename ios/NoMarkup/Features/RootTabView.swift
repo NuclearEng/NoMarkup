@@ -3,7 +3,10 @@ import SwiftUI
 /// Primary signed-in chrome: Home, Marketplace, Jobs, Messages, Account.
 /// Native TabView — not a WKWebView of the website (App Store Guideline 4.2).
 struct RootTabView: View {
+    @EnvironmentObject private var auth: AuthViewModel
     @State private var selectedTab: Tab = .home
+    /// Post-register guided setup (FR-1.5) — sheet, never blocks register completion.
+    @State private var showOnboardingWizard = false
 
     enum Tab: Hashable {
         case home
@@ -42,6 +45,26 @@ struct RootTabView: View {
         }
         .environment(\.selectedRootTab, $selectedTab)
         .accessibilityIdentifier("root.tabview")
+        .onChange(of: auth.shouldPresentOnboarding) { _, shouldShow in
+            guard shouldShow, !auth.isScaffoldSession else { return }
+            auth.shouldPresentOnboarding = false
+            showOnboardingWizard = true
+        }
+        .onAppear {
+            // Cover the race where register sets the flag before RootTabView mounts.
+            if auth.shouldPresentOnboarding, !auth.isScaffoldSession {
+                auth.shouldPresentOnboarding = false
+                showOnboardingWizard = true
+            }
+        }
+        .sheet(isPresented: $showOnboardingWizard) {
+            NavigationStack {
+                OnboardingWizardView()
+            }
+            .environmentObject(auth)
+            .preferredColorScheme(.dark)
+            .tint(BrandTheme.accent)
+        }
     }
 }
 

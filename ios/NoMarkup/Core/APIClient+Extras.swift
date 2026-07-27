@@ -85,6 +85,31 @@ extension APIClient {
         )
     }
 
+    /// PUT `/api/v1/properties/{id}` — update nickname, notes, and/or primary flag.
+    /// Gateway has no PATCH; address is immutable on update (create a new property to change street).
+    @discardableResult
+    func updateProperty(
+        id: String,
+        nickname: String? = nil,
+        notes: String? = nil,
+        isPrimary: Bool? = nil
+    ) async throws -> PropertyItem {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Property id is required.")
+        }
+        let body = UpdatePropertyRequestBody(
+            nickname: nickname.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) },
+            notes: notes.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) },
+            isPrimary: isPrimary
+        )
+        return try await putJSON(
+            pathComponents: ["api", "v1", "properties", trimmed],
+            body: body,
+            authorized: .required
+        )
+    }
+
     /// DELETE `/api/v1/properties/{id}` — 204 No Content.
     func deleteProperty(id: String) async throws {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -671,6 +696,13 @@ private struct CreatePropertyRequestBody: Encodable {
     let address: CreatePropertyAddressBody
     let notes: String
     let isPrimary: Bool
+}
+
+/// PUT body for `/api/v1/properties/{id}` — all fields optional; gateway merges non-nil.
+private struct UpdatePropertyRequestBody: Encodable {
+    let nickname: String?
+    let notes: String?
+    let isPrimary: Bool?
 }
 
 private struct CreateWishlistItemBody: Encodable {
