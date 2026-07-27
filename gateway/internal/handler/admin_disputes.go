@@ -7,29 +7,43 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // AdminDisputesHandler handles admin dispute management endpoints.
 //
-// db is the gateway pool, used ONLY to resolve a resolved dispute's two contract
-// parties (customer_id/provider_id) so BOTH are notified that their dispute was
-// resolved. nil-safe: a nil pool degrades to "no notification".
+// db is the gateway pool, used to resolve contract parties for notifications
+// and (R1) to locate refundable payments for guarantee claim payouts.
+// paymentClient issues CreateRefund on approved guarantee payouts; nil-safe
+// fail-closed when payout_cents > 0.
 type AdminDisputesHandler struct {
 	contractClient contractv1.ContractServiceClient
+	paymentClient  paymentv1.PaymentServiceClient
 	db             *pgxpool.Pool
 }
 
 // NewAdminDisputesHandler creates a new AdminDisputesHandler.
-func NewAdminDisputesHandler(contractClient contractv1.ContractServiceClient, db *pgxpool.Pool) *AdminDisputesHandler {
-	return &AdminDisputesHandler{contractClient: contractClient, db: db}
+// paymentClient may be nil (tests); production must pass the payment gRPC client
+// so guarantee approve with payout can call CreateRefund.
+func NewAdminDisputesHandler(
+	contractClient contractv1.ContractServiceClient,
+	db *pgxpool.Pool,
+	paymentClient paymentv1.PaymentServiceClient,
+) *AdminDisputesHandler {
+	return &AdminDisputesHandler{
+		contractClient: contractClient,
+		paymentClient:  paymentClient,
+		db:             db,
+	}
 }
 
 // notifyDisputeResolved tells BOTH contract parties (customer + provider) that
@@ -247,6 +261,11 @@ func (h *AdminDisputesHandler) ListGuaranteeClaims(w http.ResponseWriter, r *htt
 
 // ReviewGuaranteeClaim handles PUT /api/v1/admin/guarantee-claims/{id}/review.
 // Admin approves or rejects a guarantee claim.
+//
+// R1 money path: when approved with payout_cents > 0, the gateway issues a
+// payment CreateRefund (admin actor) BEFORE resolving the dispute so a failed
+// refund never leaves a "resolved + payout booked" claim with no Stripe refund.
+// CreateRefund is CAS-safe on the payment row; dispute resolve is CAS on open status.
 func (h *AdminDisputesHandler) ReviewGuaranteeClaim(w http.ResponseWriter, r *http.Request) {
 	claimID := chi.URLParam(r, "id")
 	if !isValidUUID(claimID) {
@@ -277,6 +296,7 @@ func (h *AdminDisputesHandler) ReviewGuaranteeClaim(w http.ResponseWriter, r *ht
 	resolutionType := "dismissed"
 	guaranteeOutcome := "denied"
 	refundCents := int64(0)
+	var refundedPaymentID string
 	if body.Approved {
 		resolutionType = "guarantee_invoked"
 		guaranteeOutcome = "refund"
@@ -292,14 +312,21 @@ func (h *AdminDisputesHandler) ReviewGuaranteeClaim(w http.ResponseWriter, r *ht
 			writeError(w, http.StatusBadRequest, "payout amount must not be negative")
 			return
 		}
-		if refundCents > 0 && h.db != nil {
-			var capCents int64
+		var contractID string
+		var capCents int64
+		var alreadyPaid bool
+		if refundCents > 0 {
+			if h.db == nil {
+				writeError(w, http.StatusServiceUnavailable, "database unavailable for payout verification")
+				return
+			}
+			var paidAt *time.Time
 			err := h.db.QueryRow(r.Context(), `
-				SELECT c.amount_cents
+				SELECT c.id::text, c.amount_cents, d.guarantee_paid_at
 				  FROM disputes d
 				  JOIN contracts c ON c.id = d.contract_id
 				 WHERE d.id = $1`, claimID,
-			).Scan(&capCents)
+			).Scan(&contractID, &capCents, &paidAt)
 			switch {
 			case errors.Is(err, pgx.ErrNoRows):
 				// Fall through — the service layer maps a missing dispute to 404.
@@ -313,6 +340,41 @@ func (h *AdminDisputesHandler) ReviewGuaranteeClaim(w http.ResponseWriter, r *ht
 					"payout exceeds the covered contract amount ("+formatCentsUSD(capCents)+")")
 				return
 			}
+			alreadyPaid = paidAt != nil
+
+			// Fail closed: money must move before we mark the claim resolved.
+			// If guarantee_paid_at is set, skip CreateRefund (retry after resolve fail).
+			if contractID != "" && !alreadyPaid {
+				paymentID, refundErr := h.refundGuaranteePayout(
+					r.Context(),
+					adminClaims.UserID,
+					claimID,
+					contractID,
+					refundCents,
+					body.ResolutionNotes,
+				)
+				if refundErr != nil {
+					writeError(w, refundErr.status, refundErr.message)
+					return
+				}
+				refundedPaymentID = paymentID
+				// Stamp paid_at so a second approve cannot double-refund.
+				if _, stampErr := h.db.Exec(r.Context(), `
+					UPDATE disputes
+					   SET guarantee_payout_cents = $2,
+					       guarantee_reviewed_by = $3::uuid,
+					       guarantee_reviewed_at = now(),
+					       guarantee_paid_at = now(),
+					       updated_at = now()
+					 WHERE id = $1
+					   AND guarantee_paid_at IS NULL`,
+					claimID, refundCents, adminClaims.UserID,
+				); stampErr != nil {
+					slog.ErrorContext(r.Context(), "guarantee review: stamp paid_at failed after refund",
+						"error", stampErr, "claim_id", claimID, "payment_id", paymentID)
+					// Money already moved — continue to resolve; ops can reconcile stamp.
+				}
+			}
 		}
 	}
 
@@ -325,13 +387,135 @@ func (h *AdminDisputesHandler) ReviewGuaranteeClaim(w http.ResponseWriter, r *ht
 		GuaranteeOutcome:  guaranteeOutcome,
 	})
 	if err != nil {
+		// Refund already succeeded: log hard so ops can reconcile if resolve fails.
+		if refundedPaymentID != "" {
+			slog.ErrorContext(r.Context(), "guarantee review: refund succeeded but dispute resolve failed — manual reconcile",
+				"error", err,
+				"claim_id", claimID,
+				"payment_id", refundedPaymentID,
+				"payout_cents", refundCents,
+			)
+		}
 		writeGRPCError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	out := map[string]interface{}{
 		"guarantee_claim": disputeToJSON(resp.GetDispute()),
+	}
+	if refundedPaymentID != "" {
+		out["refund_payment_id"] = refundedPaymentID
+		out["refund_amount_cents"] = refundCents
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// guaranteeRefundError is a typed HTTP error for the money path.
+type guaranteeRefundError struct {
+	status  int
+	message string
+}
+
+func (e *guaranteeRefundError) Error() string { return e.message }
+
+// refundGuaranteePayout locates a refundable contract payment and calls CreateRefund
+// as admin. Fail-closed: no payment client, no eligible payment, or Stripe/service
+// failure → error without resolving the dispute.
+func (h *AdminDisputesHandler) refundGuaranteePayout(
+	ctx context.Context,
+	adminID, claimID, contractID string,
+	payoutCents int64,
+	reason string,
+) (paymentID string, err *guaranteeRefundError) {
+	if h.paymentClient == nil {
+		return "", &guaranteeRefundError{
+			status:  http.StatusServiceUnavailable,
+			message: "payment service unavailable; cannot pay out guarantee claim",
+		}
+	}
+	if h.db == nil {
+		return "", &guaranteeRefundError{
+			status:  http.StatusServiceUnavailable,
+			message: "database unavailable; cannot pay out guarantee claim",
+		}
+	}
+
+	// Prefer the most recent payment that still has refundable balance and is
+	// in a refundable status (matches payment CreateRefund allow-list).
+	var pid string
+	var amountCents, alreadyRefunded int64
+	var status string
+	qerr := h.db.QueryRow(ctx, `
+		SELECT id::text, amount_cents, COALESCE(refund_amount_cents, 0), status
+		  FROM payments
+		 WHERE contract_id = $1
+		   AND status IN ('escrow', 'released', 'completed', 'partially_refunded')
+		   AND amount_cents - COALESCE(refund_amount_cents, 0) > 0
+		 ORDER BY created_at DESC
+		 LIMIT 1`, contractID,
+	).Scan(&pid, &amountCents, &alreadyRefunded, &status)
+	if errors.Is(qerr, pgx.ErrNoRows) {
+		return "", &guaranteeRefundError{
+			status:  http.StatusConflict,
+			message: "no refundable payment on this contract; cannot pay out guarantee claim",
+		}
+	}
+	if qerr != nil {
+		slog.ErrorContext(ctx, "guarantee refund: payment lookup failed",
+			"error", qerr, "contract_id", contractID, "claim_id", claimID)
+		return "", &guaranteeRefundError{
+			status:  http.StatusInternalServerError,
+			message: "failed to locate contract payment for guarantee payout",
+		}
+	}
+	remaining := amountCents - alreadyRefunded
+	if payoutCents > remaining {
+		return "", &guaranteeRefundError{
+			status: http.StatusBadRequest,
+			message: fmt.Sprintf(
+				"payout exceeds refundable payment balance (%s remaining on payment)",
+				formatCentsUSD(remaining),
+			),
+		}
+	}
+
+	refundReason := reason
+	if refundReason == "" {
+		refundReason = "guarantee claim payout"
+	}
+	// Tag reason with claim id for audit (payment refund_reason column).
+	refundReason = fmt.Sprintf("guarantee-claim:%s: %s", claimID, refundReason)
+	if len(refundReason) > 500 {
+		refundReason = refundReason[:500]
+	}
+
+	resp, rerr := h.paymentClient.CreateRefund(ctx, &paymentv1.CreateRefundRequest{
+		PaymentId:       pid,
+		AmountCents:     payoutCents,
+		Reason:          refundReason,
+		InitiatedBy:     adminID,
+		ActorIsAdmin:    true,
+		SystemInitiated: false,
 	})
+	if rerr != nil {
+		slog.ErrorContext(ctx, "guarantee refund: CreateRefund failed",
+			"error", rerr, "payment_id", pid, "claim_id", claimID, "payout_cents", payoutCents)
+		return "", &guaranteeRefundError{
+			status:  http.StatusBadGateway,
+			message: "payment refund failed; claim left open for retry",
+		}
+	}
+	if resp.GetPayment() != nil && resp.GetPayment().GetId() != "" {
+		pid = resp.GetPayment().GetId()
+	}
+	slog.InfoContext(ctx, "guarantee claim refund issued",
+		"claim_id", claimID,
+		"payment_id", pid,
+		"payout_cents", payoutCents,
+		"admin_id", adminID,
+		"prior_status", status,
+	)
+	return pid, nil
 }
 
 // ---------------------------------------------------------------------------

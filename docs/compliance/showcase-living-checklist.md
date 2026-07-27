@@ -88,7 +88,7 @@
 | W2.3 | Providers submit sealed/competitive bids | `live` | web, ios | placeJobBid; dollars UI | role provider; idempotency | retries | — |
 | W2.4 | Trust scores / badges on bids | `live` | ios | Bid trust chip → `TrustScoreView` (`JobDetailView.trustChip`); composite + 4 dims via `fetchUserTrustScore` | no client trust invent; server scores | n/a | — |
 | W2.5 | Choose provider / award | `live` | web, ios | award bid | owner only | n/a | — |
-| W2.6 | Milestone tracking + guarantee | `live` | web, ios | Milestones: submit/approve + **request revision** (iOS); guarantee claim file/read; fund metrics from payments/disputes | actor rules escrow | n/a | Refund money path on claim approve remains separate (C3.8 honesty) |
+| W2.6 | Milestone tracking + guarantee | `live` | web, ios | Milestones: submit/approve + request revision (iOS); guarantee claim file/read; admin payout → CreateRefund (C3.8) | actor rules escrow | n/a | — |
 | W2.7 | Verified reviews after completion | `live` | web, ios | contract reviews | auth parties | n/a | — |
 
 ---
@@ -104,7 +104,7 @@
 | C3.5 | Identity & license verification | `live` | web, ios | Provider: `VerificationDocumentsView` list+upload + licenses; admin review is **web** (`/admin/verification`) — iOS `n/a-client` for admin | PII; 10 MB; server MIME | n/a | Optional web upload UX polish |
 | C3.6 | AI fraud detection | `live` | engines | Fraud **heuristics v1** live in fraud engine; ONNX ML remains `roadmap` (M5.3) — product copy must not claim ML | server-only | p99 budget | M5.3 for ONNX |
 | C3.7 | Transaction-verified reviews | `live` | web, ios | reviews on contracts | auth | n/a | — |
-| C3.8 | Work completion guarantee | `live` | web, ios | Claim file/read E2E; admin review records outcome; **refund is separate payment path** (honest copy); fund SUM from fees | claim authz; payout cap | n/a | Optional auto-refund glue on admin approve |
+| C3.8 | Work completion guarantee | `live` | web, ios | Claim file/read E2E; **admin approve with payout_cents calls CreateRefund** (admin actor) before resolve; `guarantee_paid_at` stamp blocks double-pay; fund metrics SUM fees | claim authz; payout cap; fail-closed no payment | n/a | Multi-payment allocation optional |
 
 ---
 
@@ -309,6 +309,8 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | 2026-07-26 | Guarantee fund metrics + milestone revision | **T4.6/W2.6/C3.8 live** — platform metrics SUM fees/claims; iOS request revision | `analytics.go` GetPlatformMetrics; `requestMilestoneRevision`; `ContractDetailView` |
 | 2026-07-26 | R6.1 goods take rate from fee config | **live** — gateway/job/payment read `platform_fee_config`; charge SSOT | `MarketplaceSellerFeeCents`; `listingMarketplaceFeeCents`; job `marketplaceSellerFeeCents` |
 | 2026-07-26 | Idempotency middleware: 2xx-only cache | **fixed** — 5xx/4xx no longer sticky for 24h | `gateway/internal/middleware/idempotency.go` `isIdempotencyCacheable` |
+| 2026-07-26 | R1 guarantee approve → CreateRefund | **live** — refund before resolve; paid_at stamp | `admin_disputes.go` ReviewGuaranteeClaim |
+| 2026-07-26 | R2 bid-bond SQL idempotency | **live** — col + soft replay | migration `109_bid_bond_idempotency`; `bid_bonds.go` CreateBidBond |
 | 2026-07-26 | Regulated rails graduation docs + iOS status stub | R6.2–R6.6 stay **`blocked-compliance`** (honest); path-to-live-flagged documented; iOS hard-offs unchanged | `docs/compliance/regulated-rails-live-flagged.md`; `RegulatedRailsStatusView`; Account under Plan limits |
 | 2026-07-26 | Escrow release path (C3.4) | **live** — services release + goods mutual handshake next actions | `ContractDetailView.releasePayment`; `MyOrdersView` nextAction / confirm CTAs |
 | 2026-07-26 | Provider verification upload (C3.5 / P1#7) | **partial closer** — provider list+upload E2E path shipped; admin review open | `VerificationDocumentsView` |

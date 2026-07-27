@@ -1079,7 +1079,7 @@ struct ContractDetailView: View {
             } header: {
                 Text("NoMarkup Guarantee").brandSectionHeader()
             } footer: {
-                Text("Claims are reviewed by support. Approved claim outcomes are recorded server-side; any refund uses the separate payment refund path (no client money math). Evidence uploads are available on the web dashboard.")
+                Text("Claims are reviewed by support. When support approves a payout, the platform refunds the contract payment server-side (no client money math). Evidence uploads are available on the web dashboard.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
             .listRowBackground(BrandTheme.navyElevated)

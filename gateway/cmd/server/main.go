@@ -359,7 +359,7 @@ func main() {
 	adminUsersHandler := handler.NewAdminUsersHandler(userClient)
 	adminVerificationHandler := handler.NewAdminVerificationHandler(userClient)
 	adminJobsHandler := handler.NewAdminJobsHandler(jobClient)
-	adminDisputesHandler := handler.NewAdminDisputesHandler(contractClient, dbPool)
+	adminDisputesHandler := handler.NewAdminDisputesHandler(contractClient, dbPool, paymentClient)
 	adminReviewsHandler := handler.NewAdminReviewsHandler(reviewClient)
 	adminPaymentsHandler := handler.NewAdminPaymentsHandler(paymentClient)
 	adminBankingHandler := handler.NewAdminBankingHandler(paymentClient)

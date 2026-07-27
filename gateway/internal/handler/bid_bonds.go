@@ -171,6 +171,41 @@ func (h *BidBondHandler) CreateBidBond(w http.ResponseWriter, r *http.Request) {
 
 	bondCents := requiredBondCents(req.IntendedBidCents)
 
+	// Durable SQL soft-replay (R2): same Idempotency-Key + user + listing
+	// returns the prior bond without minting another SetupIntent. Middleware
+	// Redis covers the happy path; this survives Redis loss / TTL.
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+	if idempotencyKey != "" {
+		var priorID, priorSecret string
+		var priorAmount int64
+		lookupErr := h.db.QueryRow(r.Context(), `
+			SELECT id::text, stripe_pi_id, amount_cents
+			  FROM bid_bonds
+			 WHERE user_id = $1 AND listing_id = $2 AND idempotency_key = $3
+			 LIMIT 1`,
+			claims.UserID, listingID, idempotencyKey,
+		).Scan(&priorID, &priorSecret, &priorAmount)
+		switch {
+		case lookupErr == nil:
+			slog.InfoContext(r.Context(), "bid-bond create idempotency replay",
+				"listing_id", listingID, "user_id", claims.UserID, "bond_id", priorID)
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"bond_id":                    priorID,
+				"setup_intent_client_secret": priorSecret,
+				"bond_amount_cents":          priorAmount,
+				"idempotent_replay":          true,
+			})
+			return
+		case errors.Is(lookupErr, pgx.ErrNoRows):
+			// fall through to mint
+		default:
+			slog.ErrorContext(r.Context(), "bid-bond idempotency lookup failed",
+				"error", lookupErr, "listing_id", listingID)
+			writeError(w, http.StatusInternalServerError, "idempotency lookup failed")
+			return
+		}
+	}
+
 	// Mint the SetupIntent. If the payment service is not wired, fall back
 	// to a sentinel client_secret so dev environments can still exercise
 	// the flow end-to-end.
@@ -196,14 +231,43 @@ func (h *BidBondHandler) CreateBidBond(w http.ResponseWriter, r *http.Request) {
 	// Persist the bond row in 'pending'. stripe_pi_id is NOT NULL UNIQUE
 	// in the schema, so we use the client_secret as a stable key — Stripe
 	// SetupIntent client_secrets are unique per intent.
+	// idempotency_key is optional for legacy clients; middleware requires it
+	// on this money route so production always has a key.
 	var bondID string
+	var idemArg interface{}
+	if idempotencyKey != "" {
+		idemArg = idempotencyKey
+	}
 	err = h.db.QueryRow(r.Context(), `
-		INSERT INTO bid_bonds (user_id, listing_id, stripe_pi_id, amount_cents, status)
-		VALUES ($1, $2, $3, $4, 'pending')
+		INSERT INTO bid_bonds (user_id, listing_id, stripe_pi_id, amount_cents, status, idempotency_key)
+		VALUES ($1, $2, $3, $4, 'pending', $5)
 		RETURNING id`,
-		claims.UserID, listingID, clientSecret, bondCents,
+		claims.UserID, listingID, clientSecret, bondCents, idemArg,
 	).Scan(&bondID)
 	if err != nil {
+		// Concurrent create with same key: soft-replay prior row (may leave an
+		// orphan SetupIntent — payment service treats extra seti as harmless).
+		if idempotencyKey != "" {
+			var priorID, priorSecret string
+			var priorAmount int64
+			if replayErr := h.db.QueryRow(r.Context(), `
+				SELECT id::text, stripe_pi_id, amount_cents
+				  FROM bid_bonds
+				 WHERE user_id = $1 AND listing_id = $2 AND idempotency_key = $3
+				 LIMIT 1`,
+				claims.UserID, listingID, idempotencyKey,
+			).Scan(&priorID, &priorSecret, &priorAmount); replayErr == nil {
+				slog.InfoContext(r.Context(), "bid-bond create idempotency race replay",
+					"listing_id", listingID, "user_id", claims.UserID, "bond_id", priorID)
+				writeJSON(w, http.StatusOK, map[string]interface{}{
+					"bond_id":                    priorID,
+					"setup_intent_client_secret": priorSecret,
+					"bond_amount_cents":          priorAmount,
+					"idempotent_replay":          true,
+				})
+				return
+			}
+		}
 		slog.ErrorContext(r.Context(), "bid-bond insert failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to record bond")
 		return
