@@ -27,6 +27,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
@@ -74,29 +75,76 @@ func listingMinIncrementForPrice(priceCents int64) int64 {
 }
 
 const (
-	// listingPlatformFeeBps is the total seller-side marketplace fee in basis
-	// points (MON-20). Product rate card is 8% platform + 2% guarantee =
-	// 10% total (1000 bps). listing_orders only has a single fee_cents column
-	// (no split platform/guarantee fields on goods orders), so we store the
-	// combined 1000 bps. Services-side jobs use separate platform_fee_cents +
-	// guarantee_fee_cents (800+200); goods use this single total.
-	// Must match services/job listing_repo closeout fee.
-	listingPlatformFeeBps int64 = 1000 // 8% platform + 2% guarantee
+	// listingPlatformFeeBpsDefault is the last-resort combined take (8%+2%)
+	// when platform_fee_config cannot be read. Production mint paths load the
+	// active default row (R6.1); this constant only keeps tests/offline paths safe.
+	listingPlatformFeeBpsDefault int64 = 1000
 )
 
-// listingPlatformFeeCents computes the platform fee on a closeout amount,
-// rounding any fractional cent UP (so the platform never under-charges).
-// Mirrors the auction-close computation exactly. amountCents must be > 0;
-// a non-positive amount yields 0.
-func listingPlatformFeeCents(amountCents int64) int64 {
-	if amountCents <= 0 {
+// listingPlatformFeeCentsFromBPS computes fee_cents for amount at the given
+// combined bps, rounding any fractional cent UP.
+func listingPlatformFeeCentsFromBPS(amountCents, feeBps int64) int64 {
+	if amountCents <= 0 || feeBps <= 0 {
 		return 0
 	}
-	fee := amountCents * listingPlatformFeeBps / 10000
-	if amountCents*listingPlatformFeeBps%10000 != 0 {
+	fee := amountCents * feeBps / 10000
+	if amountCents*feeBps%10000 != 0 {
 		fee++
 	}
 	return fee
+}
+
+// listingPlatformFeeCents is the historical test helper (default 1000 bps).
+// Prefer listingMarketplaceFeeCents when a DB pool is available.
+func listingPlatformFeeCents(amountCents int64) int64 {
+	return listingPlatformFeeCentsFromBPS(amountCents, listingPlatformFeeBpsDefault)
+}
+
+// listingMarketplaceFeeCents loads platform_fee_config (default active row) and
+// returns fee_cents for amount. Mirrors payment MarketplaceSellerFeeCents and
+// job listing_repo.marketplaceSellerFeeCents. db may be nil → default bps.
+func listingMarketplaceFeeCents(ctx context.Context, db *pgxpool.Pool, amountCents int64) int64 {
+	if amountCents <= 0 {
+		return 0
+	}
+	if db == nil {
+		return listingPlatformFeeCentsFromBPS(amountCents, listingPlatformFeeBpsDefault)
+	}
+	var feePct, guaranteePct float64
+	var minFee int64
+	var maxFee *int64
+	err := db.QueryRow(ctx, `
+		SELECT fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents
+		FROM platform_fee_config
+		WHERE category_id IS NULL AND active = true
+		ORDER BY effective_from DESC
+		LIMIT 1`).Scan(&feePct, &guaranteePct, &minFee, &maxFee)
+	if err != nil {
+		return listingPlatformFeeCentsFromBPS(amountCents, listingPlatformFeeBpsDefault)
+	}
+	bps := listingRateToBPS(feePct) + listingRateToBPS(guaranteePct)
+	if bps <= 0 {
+		bps = listingPlatformFeeBpsDefault
+	}
+	fee := listingPlatformFeeCentsFromBPS(amountCents, bps)
+	if fee < minFee {
+		fee = minFee
+	}
+	if maxFee != nil && *maxFee > 0 && fee > *maxFee {
+		fee = *maxFee
+	}
+	return fee
+}
+
+func listingRateToBPS(rate float64) int64 {
+	if rate <= 0 {
+		return 0
+	}
+	bps := int64(rate*10000 + 0.5)
+	if bps > 99999 {
+		return 99999
+	}
+	return bps
 }
 
 type placeListingBidRequest struct {
@@ -1252,9 +1300,9 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 
 	// Create the order row in pending_payment — never held without a PI
 	// (MON-06). Pickup/release only apply once ChargeListingWinner +
-	// payment_intent.succeeded promote the order to held. Platform fee
-	// matches auction-close / accepted-offer (listingPlatformFeeCents).
-	feeCents := listingPlatformFeeCents(buyNowCents.Int64)
+	// payment_intent.succeeded promote the order to held. Platform fee from
+	// platform_fee_config (R6.1) — same source as auction-close / charge.
+	feeCents := listingMarketplaceFeeCents(r.Context(), h.db, buyNowCents.Int64)
 	var orderID string
 	err = tx.QueryRow(r.Context(), `
 		INSERT INTO listing_orders (

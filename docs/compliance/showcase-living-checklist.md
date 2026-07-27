@@ -136,7 +136,7 @@
 
 | ID | Capability | Status | Clients | Evidence | Security | Perf | Next |
 |----|------------|--------|---------|----------|----------|------|------|
-| R6.1 | Marketplace take rate | `partial` | gateway, payment | fee calc paths | money integrity | n/a | Production fee config + audits |
+| R6.1 | Marketplace take rate | `live` | gateway, payment, job | Services: `CalculateFees` ← `platform_fee_config`. Goods: mint + charge load same table (`listingMarketplaceFeeCents` / `marketplaceSellerFeeCents` / `MarketplaceSellerFeeCents`); admin fee-config edits apply; clients display server `fee_cents` only | money integrity; integer bps | n/a | Optional per-goods-category rows; lead-gen still services-only |
 | R6.2 | Outcome lead-gen 10% | `blocked-compliance` | gateway, payment, web admin | Fee model + admin fee_config + breakdown line; flag key exists **without** `RequireFlag` on money routes; no consumer lead product CTA; iOS hard-off | fee stacking + dual-gate | n/a | See [path to live-flagged](#path-to-live-flagged-regulated-rails-r62r66) |
 | R6.3 | Provider working capital | `blocked-compliance` | gateway, web | **Scaffolding:** `/providers/me/advances*` + `RequireFlag`; web `/provider/advances` + admin; iOS hard-off + status list only | lending + money races | n/a | Path doc — not `live-flagged` until licenses + E2E + security |
 | R6.4 | Customer BNPL | `blocked-compliance` | gateway, web | **Scaffolding:** installment-plans API + `RequireFlag`; web contract selector + `/payments/installments/[id]`; iOS hard-off | consumer credit + 3.1.x | n/a | Path doc — residual money integrity before `live-flagged` |
@@ -307,6 +307,8 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | 2026-07-26 | H1.3 live feed + H1.4/H1.5 market/savings | **live** — 10s poll feed; FPI/category/band strip; home market caption | `JobDetailView`; `HomeJobCard.marketBandCaption`; dogfood job `99c799e1-…` state+events 200 |
 | 2026-07-26 | Full feature E2E re-run | **72 pass / 0 fail / 1 skip** | `API_BASE=http://127.0.0.1:8081 ./scripts/ios-full-feature-e2e.sh` |
 | 2026-07-26 | Guarantee fund metrics + milestone revision | **T4.6/W2.6/C3.8 live** — platform metrics SUM fees/claims; iOS request revision | `analytics.go` GetPlatformMetrics; `requestMilestoneRevision`; `ContractDetailView` |
+| 2026-07-26 | R6.1 goods take rate from fee config | **live** — gateway/job/payment read `platform_fee_config`; charge SSOT | `MarketplaceSellerFeeCents`; `listingMarketplaceFeeCents`; job `marketplaceSellerFeeCents` |
+| 2026-07-26 | Idempotency middleware: 2xx-only cache | **fixed** — 5xx/4xx no longer sticky for 24h | `gateway/internal/middleware/idempotency.go` `isIdempotencyCacheable` |
 | 2026-07-26 | Regulated rails graduation docs + iOS status stub | R6.2–R6.6 stay **`blocked-compliance`** (honest); path-to-live-flagged documented; iOS hard-offs unchanged | `docs/compliance/regulated-rails-live-flagged.md`; `RegulatedRailsStatusView`; Account under Plan limits |
 | 2026-07-26 | Escrow release path (C3.4) | **live** — services release + goods mutual handshake next actions | `ContractDetailView.releasePayment`; `MyOrdersView` nextAction / confirm CTAs |
 | 2026-07-26 | Provider verification upload (C3.5 / P1#7) | **partial closer** — provider list+upload E2E path shipped; admin review open | `VerificationDocumentsView` |

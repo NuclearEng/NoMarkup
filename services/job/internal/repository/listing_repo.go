@@ -682,13 +682,10 @@ func (r *ListingPostgresRepository) CloseListingAuction(ctx context.Context, lis
 		return nil, nil, fmt.Errorf("close listing mark sold: %w", err)
 	}
 
-	// Compute platform fee. MON-20: 8% platform + 2% guarantee = 1000 bps
-	// total seller-side. listing_orders has a single fee_cents column (no
-	// split fields on goods), so we store the combined total. Round any
-	// fractional cent UP so the platform never under-charges. Must match
-	// gateway listingPlatformFeeBps.
-	const feeBps = 1000 // 8% platform + 2% guarantee
-	feeCents := (*currentBid)*feeBps/10000 + boolToInt64((*currentBid)*feeBps%10000 != 0)
+	// R6.1: platform_fee_config (fee% + guarantee%) → combined fee_cents.
+	// Same active default row as payment GetDefaultFeeConfig; charge path
+	// recomputes from the same table so mint and charge stay aligned.
+	feeCents := r.marketplaceSellerFeeCents(ctx, *currentBid)
 
 	// MON-06 / goods auction close: insert as pending_payment, NOT held.
 	// held requires a captured PaymentIntent (payment_intent_id set via
@@ -734,6 +731,68 @@ func boolToInt64(b bool) int64 {
 		return 1
 	}
 	return 0
+}
+
+// marketplaceSellerFeeCents loads platform_fee_config default row and computes
+// listing_orders.fee_cents. Mirrors payment MarketplaceSellerFeeCents:
+// combined bps = rateToBPS(fee%) + rateToBPS(guarantee%), feeFromBPS ceiling,
+// then min/max. Fail closed to 8%+2% (1000 bps) when the row is missing.
+func (r *ListingPostgresRepository) marketplaceSellerFeeCents(ctx context.Context, amountCents int64) int64 {
+	if amountCents <= 0 {
+		return 0
+	}
+	var feePct, guaranteePct float64
+	var minFee int64
+	var maxFee *int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT fee_percentage, guarantee_percentage, min_fee_cents, max_fee_cents
+		FROM platform_fee_config
+		WHERE category_id IS NULL AND active = true
+		ORDER BY effective_from DESC
+		LIMIT 1`).Scan(&feePct, &guaranteePct, &minFee, &maxFee)
+	if err != nil {
+		// Documented default take when config missing (seed 0.08+0.02).
+		return listingFeeFromBPS(amountCents, 1000)
+	}
+	bps := listingRateToBPS(feePct) + listingRateToBPS(guaranteePct)
+	if bps <= 0 {
+		bps = 1000
+	}
+	fee := listingFeeFromBPS(amountCents, bps)
+	if fee < minFee {
+		fee = minFee
+	}
+	if maxFee != nil && *maxFee > 0 && fee > *maxFee {
+		fee = *maxFee
+	}
+	return fee
+}
+
+// listingRateToBPS / listingFeeFromBPS mirror payment money.go (NUMERIC→bps +
+// ceiling rem). Duplicated here so job service does not import payment.
+func listingRateToBPS(rate float64) int64 {
+	if rate <= 0 {
+		return 0
+	}
+	bps := int64(rate*10000 + 0.5) // round half away from zero for positive rates
+	if bps > 99999 {
+		return 99999
+	}
+	return bps
+}
+
+func listingFeeFromBPS(amountCents, bps int64) int64 {
+	if amountCents <= 0 || bps <= 0 {
+		return 0
+	}
+	const scale int64 = 10000
+	whole := (amountCents / scale) * bps
+	rem := (amountCents % scale) * bps
+	fee := whole + rem/scale
+	if rem%scale != 0 {
+		fee++
+	}
+	return fee
 }
 
 func (r *ListingPostgresRepository) GetListingOrder(ctx context.Context, orderID string) (*domain.ListingOrder, error) {

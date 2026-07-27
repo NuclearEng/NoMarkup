@@ -70,12 +70,14 @@ type cachedResponse struct {
 // POST and PUT requests. GET, DELETE, and other methods pass through
 // without requiring the header.
 //
-// When a request arrives with a previously-seen Idempotency-Key, the
-// middleware returns the cached response and sets the
-// X-Idempotency-Replayed header to "true".
+// When a request arrives with a previously-seen Idempotency-Key that
+// produced a successful (2xx) response, the middleware returns the cached
+// response and sets the X-Idempotency-Replayed header to "true". Non-2xx
+// outcomes (including 5xx and 429) are not persisted so retries with the
+// same key can re-attempt after a transient failure.
 //
-// Pass nil for cacheClient to disable caching (the middleware will still
-// require the header but will not deduplicate).
+// Pass nil for cacheClient to refuse money mutations (fail closed) rather
+// than silently drop the idempotency guarantee.
 func RequireIdempotencyKey(cacheClient *cache.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -204,10 +206,15 @@ func RequireIdempotencyKey(cacheClient *cache.Client) func(http.Handler) http.Ha
 			}
 			next.ServeHTTP(recorder, r)
 
-			// Cache the response so subsequent requests with the same key
-			// receive an identical reply. Skip caching if the response body
-			// exceeds the size limit to avoid bloating Redis.
-			if cacheClient != nil {
+			// Cache ONLY successful (2xx) responses for replay. Caching 5xx
+			// (or 429) under a sticky Idempotency-Key traps clients on a
+			// transient failure for the full TTL — a retry with the same key
+			// would re-serve the error instead of re-attempting the mutation.
+			// 4xx validation failures are also left uncached so callers can
+			// fix the request body and retry with the same key.
+			// Skip caching if the response body exceeds the size limit to
+			// avoid bloating Redis.
+			if cacheClient != nil && isIdempotencyCacheable(recorder.statusCode) {
 				if recorder.body.Len() <= maxIdempotencyCacheSize {
 					resp := cachedResponse{
 						StatusCode: recorder.statusCode,
@@ -243,6 +250,14 @@ func replayCachedResponse(w http.ResponseWriter, resp cachedResponse, key string
 			"error", err,
 		)
 	}
+}
+
+// isIdempotencyCacheable reports whether a response status should be
+// persisted for Idempotency-Key replay. Only 2xx successes are sticky —
+// 5xx/429 and other non-success codes must remain retriable with the
+// same key.
+func isIdempotencyCacheable(statusCode int) bool {
+	return statusCode >= 200 && statusCode < 300
 }
 
 // idempotencyRecorder captures the response status code and body so

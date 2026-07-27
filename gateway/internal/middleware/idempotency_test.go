@@ -338,3 +338,120 @@ func TestIdempotency_keyIsScopedPerRoute(t *testing.T) {
 	assert.Contains(t, rec2.Body.String(), "subscriptions",
 		"a different route must not replay the previous route's response")
 }
+
+
+// Transient failures must not be sticky. Caching a 5xx under the client's
+// Idempotency-Key for 24h traps retries on the error instead of re-attempting
+// the mutation once the underlying service recovers.
+func TestIdempotency_doesNotCache5xx(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	key := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	callCount := 0
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"upstream unavailable"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"pay_recovered"}`))
+	}))
+
+	// First attempt: transient 500 — must reach the handler and must not stick.
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil)
+	req1.Header.Set(idempotencyKeyHeader, key)
+	handler.ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusInternalServerError, rec1.Code)
+	assert.Empty(t, rec1.Header().Get("X-Idempotency-Replayed"))
+
+	// Retry with the same key: handler must re-execute and succeed.
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil)
+	req2.Header.Set(idempotencyKeyHeader, key)
+	handler.ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusCreated, rec2.Code)
+	assert.Contains(t, rec2.Body.String(), "pay_recovered")
+	assert.Empty(t, rec2.Header().Get("X-Idempotency-Replayed"))
+	assert.Equal(t, 2, callCount, "5xx responses must not be cached for replay")
+}
+
+// 429 / 503 are also transient and must not pin the client for the full TTL.
+func TestIdempotency_doesNotCache429Or503(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			key := uniqueKey(t)
+			mw := RequireIdempotencyKey(cacheClient)
+
+			callCount := 0
+			handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				callCount++
+				if callCount == 1 {
+					w.WriteHeader(status)
+					_, _ = w.Write([]byte(`{"error":"try later"}`))
+					return
+				}
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"id":"pay_ok"}`))
+			}))
+
+			rec1 := httptest.NewRecorder()
+			req1 := httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil)
+			req1.Header.Set(idempotencyKeyHeader, key)
+			handler.ServeHTTP(rec1, req1)
+			require.Equal(t, status, rec1.Code)
+
+			rec2 := httptest.NewRecorder()
+			req2 := httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil)
+			req2.Header.Set(idempotencyKeyHeader, key)
+			handler.ServeHTTP(rec2, req2)
+			assert.Equal(t, http.StatusCreated, rec2.Code)
+			assert.Equal(t, 2, callCount, "status %d must not be cached", status)
+		})
+	}
+}
+
+// Successful 2xx responses remain sticky so true retries do not re-execute.
+func TestIdempotency_caches2xxOnly(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	key := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	callCount := 0
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		callCount++
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"pay_ok"}`))
+	}))
+
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/payments", nil)
+		req.Header.Set(idempotencyKeyHeader, key)
+		handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+	}
+	assert.Equal(t, 1, callCount)
+}
+
+func TestIsIdempotencyCacheable(t *testing.T) {
+	t.Parallel()
+	assert.True(t, isIdempotencyCacheable(200))
+	assert.True(t, isIdempotencyCacheable(201))
+	assert.True(t, isIdempotencyCacheable(204))
+	assert.False(t, isIdempotencyCacheable(400))
+	assert.False(t, isIdempotencyCacheable(409))
+	assert.False(t, isIdempotencyCacheable(429))
+	assert.False(t, isIdempotencyCacheable(500))
+	assert.False(t, isIdempotencyCacheable(503))
+}

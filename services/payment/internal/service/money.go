@@ -21,11 +21,10 @@ import "math"
 //
 //	    Rationale: (a) the platform must never under-collect; (b) it is the
 //	    only rounding convention actually written down in this repo —
-//	    services/job/internal/repository/listing_repo.go computes the goods
-//	    fee as `(*currentBid)*feeBps/10000 + roundup` and PERSISTS it on
-//	    listing_orders.fee_cents. That persisted value is the authority for a
-//	    goods order, so the payment-side recompute has to match it exactly or
-//	    the buyer is charged a total that disagrees with the order row.
+//	    goods fee rates load from platform_fee_config (fee%+guarantee% → bps)
+//	    and feeFromBPS (or the job/gateway mirror) ceilings rem. Charge path
+//	    recomputes and re-persists listing_orders.fee_cents so mint and charge
+//	    stay aligned when both read the same active config row.
 //
 //	roundHalfUpFromBPS — round to the nearest cent, ties away from zero.
 //	    Used for statutory sales tax (state authorities specify half-up; a

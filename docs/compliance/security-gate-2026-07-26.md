@@ -17,6 +17,9 @@
 | 4. Amounts are `Int64` cents in API bodies | **PASS** (iOS encode + gateway decode) |
 | 5. confirm-pickup / seller-confirm exist + auth-gated | **PASS** |
 | Residual money races (MON-14–18 etc.) | **Open** — tracked; not closed by this gate |
+| Idempotency Redis cache policy | **PASS** — 2xx-only replay (5xx/4xx retriable with same key) |
+| Goods take rate vs fee config | **PASS** — R6.1 wires mint+charge to `platform_fee_config` |
+| Guarantee approve → CreateRefund | **OPEN** — dispute bookkeeping only; separate money sprint |
 
 **Gate overall:** **PASS WITH GAPS** — middleware Idempotency-Key gaps closed same day; production money races (MON-14–18) and iOS hard-off rails remain separate.
 

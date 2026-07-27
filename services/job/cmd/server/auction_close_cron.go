@@ -41,7 +41,7 @@ func envInt(key string, def int) int {
 //   - winning bid at/above any reserve → highest bidder wins, a
 //     listing_orders row is created in escrow_status='pending_payment'
 //     (NOT held — held requires a captured PaymentIntent; see MON-06),
-//     with seller-side fee 1000 bps (8% platform + 2% guarantee, MON-20).
+//     with seller-side fee from platform_fee_config (fee%+guarantee%, R6.1).
 //     The listing flips to status='sold', and the winning bid is 'awarded'.
 //
 //     This worker deliberately stops there — it does not talk to the payment

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
 
 // Marketplace escrow lifecycle for goods.
@@ -226,15 +227,11 @@ func (noopMarketplaceNotifier) NotifyDisputeResolved(_ context.Context, _, _, _,
 type MarketplaceConfig struct {
 	AutoReleaseAfter      time.Duration // default 14d
 	DisputeWindowAfter    time.Duration // dispute allowed up to: pickup_confirmed_at + this duration (default 24h)
-	// MarketplaceFeeBps is the combined seller-side take (platform + guarantee)
-	// in integer basis points. MON-20: aligned with services 8% + 2% = 10%
-	// (1000 bps). Single fee_cents column.
-	//
-	// MONEY: this MUST stay identical to `feeBps` in
-	// services/job/internal/repository/listing_repo.go, which computes and
-	// PERSISTS listing_orders.fee_cents at auction close using the same
-	// round-fractional-cent-UP rule. The two paths compute the same number; if
-	// they disagree the buyer is charged a total that contradicts the order row.
+	// MarketplaceFeeBps is a TEST/LEGACY override for the combined seller-side
+	// take in basis points. Production charge paths load rates from
+	// platform_fee_config (fee_percentage + guarantee_percentage) via
+	// FeeConfigLoader. When the loader is set, this field is ignored.
+	// Kept so unit tests can force a known bps without a fee-config mock.
 	MarketplaceFeeBps int64
 
 	// PaymentWindow is how long a buyer has to fund an order minted in
@@ -246,13 +243,49 @@ type MarketplaceConfig struct {
 }
 
 // DefaultMarketplaceConfig returns the v1 defaults.
+// MarketplaceFeeBps remains 1000 as a documented fallback when no FeeConfigLoader
+// is wired (tests); production wires platform_fee_config (seeded 8%+2%).
 func DefaultMarketplaceConfig() MarketplaceConfig {
 	return MarketplaceConfig{
 		AutoReleaseAfter:   14 * 24 * time.Hour,
 		DisputeWindowAfter: 24 * time.Hour,
 		PaymentWindow:      72 * time.Hour,
-		MarketplaceFeeBps:  1000, // 8% platform + 2% guarantee (MON-20)
+		MarketplaceFeeBps:  1000, // fallback only — prefer FeeConfigLoader
 	}
+}
+
+// FeeConfigLoader loads platform_fee_config for goods take-rate (R6.1).
+// Implemented by payment PostgresRepository (GetDefaultFeeConfig / GetFeeConfig).
+type FeeConfigLoader interface {
+	GetDefaultFeeConfig(ctx context.Context) (*domain.FeeConfig, error)
+	GetFeeConfig(ctx context.Context, categoryID string) (*domain.FeeConfig, error)
+}
+
+// MarketplaceSellerFeeCents computes listing_orders.fee_cents from fee config.
+// Combined platform + guarantee rates as one bps sum (single fee_cents column),
+// ceiling fractional cents, then min/max floor/cap on the combined fee.
+// Lead-gen is services-only and is intentionally omitted for goods.
+func MarketplaceSellerFeeCents(amountCents int64, fc *domain.FeeConfig) int64 {
+	if amountCents <= 0 {
+		return 0
+	}
+	if fc == nil {
+		fc = domain.DefaultFeeConfig()
+	}
+	bps := rateToBPS(fc.FeePercentage) + rateToBPS(fc.GuaranteePercentage)
+	if bps <= 0 {
+		// Corrupt/zero config — use documented default take (8%+2%).
+		bps = rateToBPS(domain.DefaultFeeConfig().FeePercentage) +
+			rateToBPS(domain.DefaultFeeConfig().GuaranteePercentage)
+	}
+	fee := feeFromBPS(amountCents, bps)
+	if fee < fc.MinFeeCents {
+		fee = fc.MinFeeCents
+	}
+	if fc.MaxFeeCents != nil && *fc.MaxFeeCents > 0 && fee > *fc.MaxFeeCents {
+		fee = *fc.MaxFeeCents
+	}
+	return fee
 }
 
 // MarketplaceService implements the goods escrow + pickup + release flow.
@@ -268,6 +301,8 @@ type MarketplaceService struct {
 	notifier MarketplaceNotifier
 	cfg      MarketplaceConfig
 	now      func() time.Time // injectable for tests
+	// feeLoader reads platform_fee_config. When nil, MarketplaceFeeBps / DefaultFeeConfig.
+	feeLoader FeeConfigLoader
 
 	// buyers resolves a buyer's Stripe Customer and default payment method so an
 	// auction win can be collected off-session. Optional: when nil the sweeper
@@ -405,6 +440,28 @@ func (s *MarketplaceService) SetConfig(cfg MarketplaceConfig) {
 	}
 }
 
+// SetFeeConfigLoader wires platform_fee_config for goods take-rate (R6.1).
+// Production must call this so admin fee-config edits apply to marketplace charges.
+func (s *MarketplaceService) SetFeeConfigLoader(l FeeConfigLoader) {
+	s.feeLoader = l
+}
+
+// resolveMarketplaceFeeCents is the charge-path SSOT for listing_orders.fee_cents.
+// Prefer live fee config; fall back to cfg.MarketplaceFeeBps; last resort DefaultFeeConfig.
+func (s *MarketplaceService) resolveMarketplaceFeeCents(ctx context.Context, amountCents int64) int64 {
+	if s.feeLoader != nil {
+		if fc, err := s.feeLoader.GetDefaultFeeConfig(ctx); err == nil && fc != nil {
+			return MarketplaceSellerFeeCents(amountCents, fc)
+		}
+		// Soft-fail: log and continue to bps/default rather than fail the charge.
+		// Admin misconfig must not brick all goods settlement.
+	}
+	if s.cfg.MarketplaceFeeBps > 0 {
+		return feeFromBPS(amountCents, s.cfg.MarketplaceFeeBps)
+	}
+	return MarketplaceSellerFeeCents(amountCents, domain.DefaultFeeConfig())
+}
+
 // SetClock injects a deterministic clock for tests.
 func (s *MarketplaceService) SetClock(now func() time.Time) {
 	if now != nil {
@@ -484,13 +541,10 @@ func (s *MarketplaceService) ChargeListingWinner(ctx context.Context, orderID st
 		return nil, fmt.Errorf("charge listing winner: order in status %q: %w", order.EscrowStatus, ErrInvalidEscrowState)
 	}
 
-	// Compute fee + tax. The fee may already be on the order (if marketplace
-	// service computed it), but recompute here as the source of truth.
-	// MONEY: integer bps math with the fractional cent rounded UP — byte-for-byte
-	// the rule used by listing_repo.CloseListing when it persisted
-	// listing_orders.fee_cents. Previously this truncated, so the buyer's total
-	// could be 1c below the fee already recorded on the order.
-	feeCents := feeFromBPS(order.AmountCents, s.cfg.MarketplaceFeeBps)
+	// Compute fee + tax. Recompute fee as SSOT from platform_fee_config (R6.1)
+	// so mint-time and charge-time stay aligned when both load the same config.
+	// MONEY: integer bps math with fractional cent rounded UP.
+	feeCents := s.resolveMarketplaceFeeCents(ctx, order.AmountCents)
 	taxState, taxCents := ComputeTaxCentsForZip(order.AmountCents, order.PickupZipCode)
 	totalCents := order.AmountCents + feeCents + taxCents
 

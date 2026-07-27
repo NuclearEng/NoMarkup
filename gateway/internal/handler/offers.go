@@ -724,9 +724,9 @@ func (h *OffersHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Mint the order in pending_payment — never held without a PI
-		// (MON-06). Same platform fee as auction win / buy-now
-		// (listingPlatformFeeCents = 8%+2% total).
-		feeCents := listingPlatformFeeCents(amountCents)
+		// (MON-06). Same platform fee as auction win / buy-now from
+		// platform_fee_config (R6.1).
+		feeCents := listingMarketplaceFeeCents(r.Context(), h.db, amountCents)
 		var orderID string
 		if err := tx.QueryRow(r.Context(), `
 			INSERT INTO listing_orders (

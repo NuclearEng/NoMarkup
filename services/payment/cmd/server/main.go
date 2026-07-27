@@ -237,6 +237,8 @@ func main() {
 	marketplaceRepo := repository.NewMarketplaceRepository(pool)
 	marketplaceSvc := service.NewMarketplaceService(marketplaceRepo, stripeSvc)
 	marketplaceSvc.SetAccountResolver(repo) // GetStripeAccountID → acct_*
+	// R6.1: goods take rate from platform_fee_config (same repo as services CalculateFees).
+	marketplaceSvc.SetFeeConfigLoader(repo)
 	// Buyer-side Stripe Customer + default card, so the settlement sweeper can
 	// collect an auction win off-session.
 	marketplaceSvc.SetCustomerProvisioner(customerProvisioner)
