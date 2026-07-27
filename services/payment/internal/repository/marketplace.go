@@ -100,6 +100,26 @@ func (r *MarketplaceRepository) UpdateListingOrderEscrowStatus(
 	return nil
 }
 
+// ReleaseAuthorizedBidBondForUser releases the winner's authorized bid bond
+// after escrow is funded. Idempotent if already released/captured.
+func (r *MarketplaceRepository) ReleaseAuthorizedBidBondForUser(ctx context.Context, listingID, userID string) (int64, error) {
+	if listingID == "" || userID == "" {
+		return 0, nil
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE bid_bonds
+		   SET status = 'released', updated_at = now()
+		 WHERE listing_id = $1
+		   AND user_id = $2
+		   AND status = 'authorized'`,
+		listingID, userID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("release winner bid bond: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // UpdateListingOrderPaymentIntent stamps the PI id, idempotency key, tax,
 // fee, and auto-release deadline on the order.
 func (r *MarketplaceRepository) UpdateListingOrderPaymentIntent(

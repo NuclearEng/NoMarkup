@@ -101,5 +101,6 @@ Bid bonds persist a capturable PaymentMethod on authorize (migration
 gateway charges the authorized bond off-session (`ChargePromotion` against the
 SetupIntent secret + amount, idempotency `bid-bond-capture:{bond_id}`) and CAS
 `authorized → captured`. Fail-soft if no bond / charge fails (no-show counters
-still stand). Seller no-show does not forfeit the buyer bond. Release-on-win/lose
-remains a separate residual.
+still stand). Seller no-show does not forfeit the buyer bond. **Release:** losers'
+authorized bonds are released when the auction closes (or buy-now sells);
+the winner's bond is released when escrow moves to `held` after payment.

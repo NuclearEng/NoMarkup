@@ -270,14 +270,42 @@ func (s *ListingService) CloseListingAuction(ctx context.Context, listingID stri
 			"amount_cents", o.AmountCents,
 			"fee_cents", o.FeeCents,
 		)
+		// Losers: release authorized bid bonds. Winner keeps bond until pay (held).
+		s.releaseListingBidBonds(ctx, listingID, o.BuyerID)
 	} else {
 		slog.Info("listing auction expired with no bids", "listing_id", l.ID)
+		// No sale: release every authorized bond for this listing.
+		s.releaseListingBidBonds(ctx, listingID, "")
 	}
 	// Sold or expired listings should disappear from search.
 	if s.search != nil {
 		removeListingFromSearchWithRetry(s.search, listingID, "close")
 	}
 	return l, o, nil
+}
+
+// releaseListingBidBonds fail-soft releases authorized bonds. excludeUserID
+// is the winner to keep authorized until escrow is funded (empty = all).
+func (s *ListingService) releaseListingBidBonds(ctx context.Context, listingID, excludeUserID string) {
+	if s.repo == nil || listingID == "" {
+		return
+	}
+	n, err := s.repo.ReleaseAuthorizedBidBonds(ctx, listingID, excludeUserID)
+	if err != nil {
+		slog.WarnContext(ctx, "listing close: bid bond release failed (auction still closed)",
+			"listing_id", listingID,
+			"exclude_user_id", excludeUserID,
+			"error", err,
+		)
+		return
+	}
+	if n > 0 {
+		slog.InfoContext(ctx, "listing close: released authorized bid bonds",
+			"listing_id", listingID,
+			"released_count", n,
+			"exclude_user_id", excludeUserID,
+		)
+	}
 }
 
 // CloseEndedAuctions resolves auctions whose deadline has passed but that are

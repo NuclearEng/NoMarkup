@@ -101,6 +101,40 @@ func bidBondAuthorizedPaymentMethod(bondID, stripePaymentMethodID string, devNil
 	return stripePaymentMethodID, true
 }
 
+// releaseAuthorizedBidBondsForListing CAS-updates authorized → released for
+// a listing. excludeUserID keeps the winner authorized until escrow funds
+// (empty = release everyone, e.g. buy-now closeout of losers only when set
+// to winner). Fail-soft: returns rows affected; errors are logged by callers.
+func releaseAuthorizedBidBondsForListing(ctx context.Context, db *pgxpool.Pool, listingID, excludeUserID string) (int64, error) {
+	if db == nil || listingID == "" {
+		return 0, nil
+	}
+	if excludeUserID == "" {
+		tag, err := db.Exec(ctx, `
+			UPDATE bid_bonds
+			   SET status = 'released', updated_at = now()
+			 WHERE listing_id = $1 AND status = 'authorized'`,
+			listingID,
+		)
+		if err != nil {
+			return 0, err
+		}
+		return tag.RowsAffected(), nil
+	}
+	tag, err := db.Exec(ctx, `
+		UPDATE bid_bonds
+		   SET status = 'released', updated_at = now()
+		 WHERE listing_id = $1
+		   AND status = 'authorized'
+		   AND user_id <> $2`,
+		listingID, excludeUserID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 // hasReleasedBond returns true if the user has at least one historical
 // 'released' bid_bonds row — they're considered trusted and skip the
 // pre-auth gate. Errors fall through to "treat as untrusted" (defensive).

@@ -260,3 +260,4 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | 2026-07-27 wave22 | Instant notify geo/category/trust prefilter; bid-bond `stripe_payment_method_id` on authorize; MON-24 integer advance/instant fee math |
 | 2026-07-27 wave23 | Instant List/Accept use same geo/category/trust prefilter as notify (close inbox/accept skew) |
 | 2026-07-27 wave24 | Bid-bond forfeit on buyer no-show (ReportNoShow → off-session capture → captured status) |
+| 2026-07-27 wave25 | Bid-bond release: losers on auction close/buy-now; winner on escrow held |

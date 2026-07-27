@@ -156,6 +156,9 @@ type MarketplaceRepository interface {
 	// paid-out order. This is the durable "already paid" marker that lets the
 	// auto-release worker reconcile handshake-released orders exactly once.
 	MarkListingOrderTransferred(ctx context.Context, orderID, transferID string) error
+	// ReleaseAuthorizedBidBondForUser releases the buyer's authorized bid bond
+	// after escrow is funded (winner path). Returns rows affected.
+	ReleaseAuthorizedBidBondForUser(ctx context.Context, listingID, userID string) (int64, error)
 
 	CreateMarketplaceDispute(ctx context.Context, d *MarketplaceDispute) error
 	GetMarketplaceDispute(ctx context.Context, disputeID string) (*MarketplaceDispute, error)
@@ -637,7 +640,36 @@ func (s *MarketplaceService) HandleListingPaymentIntentSucceeded(ctx context.Con
 		"order_id", order.ID,
 		"pi_id", paymentIntentID,
 	)
+	// Winner paid: release their authorized bid bond (losers already released
+	// at auction close). Fail-soft — escrow is already held.
+	s.releaseWinnerBidBond(ctx, order)
 	return nil
+}
+
+// releaseWinnerBidBond flips the buyer's authorized bond for this listing to
+// released after escrow is funded. Idempotent if already released/captured.
+func (s *MarketplaceService) releaseWinnerBidBond(ctx context.Context, order *MarketplaceListingOrder) {
+	if order == nil || order.ListingID == "" || order.BuyerID == "" {
+		return
+	}
+	// MarketplaceRepository exposes the shared pool via a small helper.
+	n, err := s.repo.ReleaseAuthorizedBidBondForUser(ctx, order.ListingID, order.BuyerID)
+	if err != nil {
+		slog.WarnContext(ctx, "listing held: winner bid bond release failed (escrow still held)",
+			"order_id", order.ID,
+			"listing_id", order.ListingID,
+			"buyer_id", order.BuyerID,
+			"error", err,
+		)
+		return
+	}
+	if n > 0 {
+		slog.InfoContext(ctx, "listing held: released winner bid bond",
+			"order_id", order.ID,
+			"listing_id", order.ListingID,
+			"buyer_id", order.BuyerID,
+		)
+	}
 }
 
 // --- Pickup confirmation flow ---

@@ -67,6 +67,10 @@ func (m *mockListingRepo) FindEndedAuctions(ctx context.Context, limit int) ([]s
 	}
 	return nil, nil
 }
+func (m *mockListingRepo) ReleaseAuthorizedBidBonds(ctx context.Context, listingID, excludeUserID string) (int64, error) {
+	return 0, nil
+}
+
 func (m *mockListingRepo) CloseListingAuction(ctx context.Context, listingID string) (*domain.Listing, *domain.ListingOrder, error) {
 	return m.closeAuctionFn(ctx, listingID)
 }

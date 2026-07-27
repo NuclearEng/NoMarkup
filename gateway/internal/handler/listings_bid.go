@@ -1328,6 +1328,16 @@ func (h *ListingsHandler) BuyItNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Release other bidders' authorized bonds; buy-now winner keeps theirs
+	// until escrow is held (payment path). Fail-soft.
+	if n, rerr := releaseAuthorizedBidBondsForListing(r.Context(), h.db, id, claims.UserID); rerr != nil {
+		slog.WarnContext(r.Context(), "buy-now: bond release for losers failed",
+			"listing_id", id, "error", rerr)
+	} else if n > 0 {
+		slog.InfoContext(r.Context(), "buy-now: released loser bid bonds",
+			"listing_id", id, "released_count", n)
+	}
+
 	// Best-effort spectator stream notification so the live scoreboard
 	// closes the auction in real time. No previous bidder context to
 	// propagate — this is a closeout, not an outbid event.

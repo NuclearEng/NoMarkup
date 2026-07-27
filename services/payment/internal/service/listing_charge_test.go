@@ -61,6 +61,13 @@ func newMockRepo() *mockMarketplaceRepo {
 	}
 }
 
+func (m *mockMarketplaceRepo) ReleaseAuthorizedBidBondForUser(_ context.Context, listingID, userID string) (int64, error) {
+	// No bond table in unit mock — no-op success.
+	_ = listingID
+	_ = userID
+	return 0, nil
+}
+
 // --- Settlement sweeper surface ---
 
 func (m *mockMarketplaceRepo) ListListingOrdersAwaitingPayment(_ context.Context, limit int) ([]*PendingListingOrder, error) {

@@ -906,6 +906,41 @@ func (r *ListingPostgresRepository) FileListingDispute(ctx context.Context, orde
 	return disputeID, o, nil
 }
 
+// ReleaseAuthorizedBidBonds CAS-updates authorized bid bonds for a listing to
+// released. When excludeUserID is non-empty (auction winner), that user's bond
+// is left authorized until payment funds escrow. Fail-soft callers ignore errors.
+func (r *ListingPostgresRepository) ReleaseAuthorizedBidBonds(ctx context.Context, listingID, excludeUserID string) (int64, error) {
+	if listingID == "" {
+		return 0, nil
+	}
+	var tag interface{ RowsAffected() int64 }
+	var err error
+	if excludeUserID == "" {
+		t, e := r.pool.Exec(ctx, `
+			UPDATE bid_bonds
+			   SET status = 'released', updated_at = now()
+			 WHERE listing_id = $1
+			   AND status = 'authorized'`,
+			listingID,
+		)
+		tag, err = t, e
+	} else {
+		t, e := r.pool.Exec(ctx, `
+			UPDATE bid_bonds
+			   SET status = 'released', updated_at = now()
+			 WHERE listing_id = $1
+			   AND status = 'authorized'
+			   AND user_id <> $2`,
+			listingID, excludeUserID,
+		)
+		tag, err = t, e
+	}
+	if err != nil {
+		return 0, fmt.Errorf("release authorized bid bonds: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // generateUUID returns a fresh UUID v4 string.
 func generateUUID() string {
 	return uuid.NewString()

@@ -159,6 +159,10 @@ type ListingRepository interface {
 	// Auction lifecycle
 	FindEndedAuctions(ctx context.Context, limit int) ([]string, error)
 	CloseListingAuction(ctx context.Context, listingID string) (*Listing, *ListingOrder, error)
+	// ReleaseAuthorizedBidBonds flips bid_bonds authorized→released for a
+	// listing. excludeUserID keeps the winner's bond until payment (empty =
+	// release all, e.g. expired auction).
+	ReleaseAuthorizedBidBonds(ctx context.Context, listingID, excludeUserID string) (int64, error)
 
 	// Post-award
 	GetListingOrder(ctx context.Context, orderID string) (*ListingOrder, error)

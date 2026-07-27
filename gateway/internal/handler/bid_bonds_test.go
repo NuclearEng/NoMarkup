@@ -153,6 +153,14 @@ func TestBidBondTimingConstants(t *testing.T) {
 //   - dev nil-client short-circuit → sentinel pm_dev_<bond_id>
 //
 // Soft-replay of already-authorized rows never calls this helper (legacy NULL OK).
+func TestReleaseAuthorizedBidBondsForListing_nilDB(t *testing.T) {
+	t.Parallel()
+	n, err := releaseAuthorizedBidBondsForListing(t.Context(), nil, "listing", "user")
+	if err != nil || n != 0 {
+		t.Fatalf("nil db: n=%d err=%v", n, err)
+	}
+}
+
 func TestBidBondAuthorizedPaymentMethod(t *testing.T) {
 	t.Parallel()
 	bondID := "22222222-2222-2222-2222-222222222222"
