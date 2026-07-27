@@ -41,7 +41,8 @@ func (r *PostgresRepository) CreateReview(ctx context.Context, review *domain.Re
 	if completedAt == nil {
 		return nil, fmt.Errorf("create review: contract is not completed")
 	}
-	windowEnds := completedAt.Add(14 * 24 * time.Hour)
+	// 90-day review window (marketplace-standard; was 14d and expired dogfood contracts).
+	windowEnds := completedAt.Add(90 * 24 * time.Hour)
 
 	// Derive reviewer_role from the legacy Direction string if the caller
 	// populated only one of them. Persistent column is reviewer_role.
@@ -397,7 +398,8 @@ func (r *PostgresRepository) CheckReviewEligibility(ctx context.Context, contrac
 		return &domain.ReviewEligibility{Eligible: false}, nil
 	}
 
-	windowCloses := completedAt.Add(14 * 24 * time.Hour)
+	// 90-day review window after completion.
+	windowCloses := completedAt.Add(90 * 24 * time.Hour)
 
 	// Check if already reviewed.
 	var alreadyReviewed bool
@@ -469,7 +471,7 @@ func (r *PostgresRepository) PublishPendingReviews(ctx context.Context, contract
 			return fmt.Errorf("publish pending reviews lookup contract: %w", err)
 		}
 		if completedAt != nil {
-			windowCloses := completedAt.Add(14 * 24 * time.Hour)
+			windowCloses := completedAt.Add(90 * 24 * time.Hour)
 			if time.Now().After(windowCloses) {
 				shouldPublish = true
 			}

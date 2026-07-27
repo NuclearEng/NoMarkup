@@ -59,6 +59,9 @@ struct ContractDetailView: View {
     @State private var tipAmountText = ""
     @State private var isSubmittingTip = false
 
+    /// Share sheet for authenticated document downloads.
+    @State private var documentShareItem: ExportFileShareItem?
+
     private var heldEscrowPayments: [ContractPayment] {
         contractPayments.filter(\.isHeldInEscrow)
     }
@@ -88,6 +91,11 @@ struct ContractDetailView: View {
                     Task { await load() }
                 }
             ))
+            #if canImport(UIKit)
+            .sheet(item: $documentShareItem) { item in
+                ActivityShareSheet(items: [item.url])
+            }
+            #endif
             .alert(
                 "Request milestone revision",
                 isPresented: Binding(
@@ -1092,17 +1100,25 @@ struct ContractDetailView: View {
     private func documentsSection(_ contract: ContractDetail) -> some View {
         Section {
             actionButton(
-                title: "Open contract PDF",
+                title: "Download contract document",
                 systemImage: "doc.richtext",
                 tint: BrandTheme.teal,
                 prominent: false
             ) {
                 await openContractPDF(contract)
             }
+            actionButton(
+                title: "Download invoice",
+                systemImage: "doc.text",
+                tint: BrandTheme.accent,
+                prominent: false
+            ) {
+                await openContractInvoice(contract)
+            }
         } header: {
             Text("Documents").brandSectionHeader()
         } footer: {
-            Text("Opens the export URL in Safari when available.")
+            Text("Downloads an authenticated HTML summary or invoice and opens the share sheet so you can Save/Print/AirDrop.")
                 .foregroundStyle(BrandTheme.textSecondary)
         }
         .listRowBackground(BrandTheme.navyElevated)
@@ -1368,27 +1384,47 @@ struct ContractDetailView: View {
 
     @MainActor
     private func openContractPDF(_ contract: ContractDetail) async {
-        actingActionTitle = "Open contract PDF"
+        actingActionTitle = "Download contract document"
         statusMessage = nil
         statusIsError = false
         defer { actingActionTitle = nil }
         do {
-            guard let url = try await APIClient.shared.fetchContractPDFURL(id: contract.id) else {
-                statusIsError = true
-                statusMessage = "No PDF URL is available for this contract yet."
-                return
-            }
-            #if canImport(UIKit)
-            await MainActor.run {
-                UIApplication.shared.open(url)
-            }
-            #endif
+            let file = try await APIClient.shared.downloadContractDocument(id: contract.id)
+            let url = try writeContractTempFile(data: file.data, filename: file.filename)
+            documentShareItem = ExportFileShareItem(url: url)
             statusIsError = false
-            statusMessage = "Opened contract PDF."
+            statusMessage = "Contract document ready — choose Save or Share."
         } catch {
             statusIsError = true
             statusMessage = error.localizedDescription
         }
+    }
+
+    @MainActor
+    private func openContractInvoice(_ contract: ContractDetail) async {
+        actingActionTitle = "Download invoice"
+        statusMessage = nil
+        statusIsError = false
+        defer { actingActionTitle = nil }
+        do {
+            let data = try await APIClient.shared.downloadContractInvoice(id: contract.id)
+            let url = try writeContractTempFile(
+                data: data,
+                filename: "invoice-\(String(contract.id.prefix(8))).html"
+            )
+            documentShareItem = ExportFileShareItem(url: url)
+            statusIsError = false
+            statusMessage = "Invoice ready — choose Save or Share."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    private func writeContractTempFile(data: Data, filename: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        try data.write(to: url, options: .atomic)
+        return url
     }
 }
 
@@ -1638,44 +1674,78 @@ private struct LeaveReviewSheet: View {
     @State private var rating = 5
     @State private var comment = ""
     @State private var isSubmitting = false
+    @State private var isLoadingEligibility = true
+    @State private var eligibility: ReviewEligibility?
     @State private var errorMessage: String?
+
+    private var commentCount: Int {
+        comment.trimmingCharacters(in: .whitespacesAndNewlines).count
+    }
+
+    private var canSubmit: Bool {
+        !isSubmitting
+            && commentCount >= 50
+            && (eligibility?.isEligible == true)
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Stepper(value: $rating, in: 1 ... 5) {
-                        HStack {
-                            Text("Rating")
-                            Spacer()
-                            Text("\(rating) / 5")
-                                .font(.body.weight(.semibold).monospacedDigit())
-                                .foregroundStyle(BrandTheme.goldBright)
-                        }
+                if isLoadingEligibility {
+                    Section {
+                        ProgressView("Checking eligibility…")
+                            .tint(BrandTheme.accent)
+                            .listRowBackground(BrandTheme.navyElevated)
                     }
-                    .listRowBackground(BrandTheme.navyElevated)
-
-                    HStack(spacing: 4) {
-                        ForEach(1 ... 5, id: \.self) { star in
-                            Image(systemName: star <= rating ? "star.fill" : "star")
-                                .foregroundStyle(star <= rating ? BrandTheme.goldBright : BrandTheme.textSecondary)
-                                .onTapGesture { rating = star }
-                                .frame(minWidth: 44, minHeight: 44)
-                                .contentShape(Rectangle())
-                        }
+                } else if let eligibility, !eligibility.isEligible {
+                    Section {
+                        Text(eligibility.blockedReason ?? "Not eligible to review.")
+                            .font(.subheadline)
+                            .foregroundStyle(BrandTheme.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    } header: {
+                        Text("Not available").brandSectionHeader()
                     }
-                    .listRowBackground(BrandTheme.navyElevated)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Rating \(rating) of 5 stars")
-
-                    TextField("Comment (optional)", text: $comment, axis: .vertical)
-                        .lineLimit(3 ... 8)
+                } else {
+                    Section {
+                        Stepper(value: $rating, in: 1 ... 5) {
+                            HStack {
+                                Text("Rating")
+                                Spacer()
+                                Text("\(rating) / 5")
+                                    .font(.body.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(BrandTheme.goldBright)
+                            }
+                        }
                         .listRowBackground(BrandTheme.navyElevated)
-                } header: {
-                    Text("Review").brandSectionHeader()
-                } footer: {
-                    Text("Reviews are double-blind: they become visible once both parties have submitted.")
-                        .foregroundStyle(BrandTheme.textSecondary)
+
+                        HStack(spacing: 4) {
+                            ForEach(1 ... 5, id: \.self) { star in
+                                Image(systemName: star <= rating ? "star.fill" : "star")
+                                    .foregroundStyle(star <= rating ? BrandTheme.goldBright : BrandTheme.textSecondary)
+                                    .onTapGesture { rating = star }
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Rating \(rating) of 5 stars")
+
+                        TextField("Comment (required, 50+ characters)", text: $comment, axis: .vertical)
+                            .lineLimit(4 ... 10)
+                            .listRowBackground(BrandTheme.navyElevated)
+                        Text("\(commentCount) / 50 minimum")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(commentCount >= 50 ? BrandTheme.success : BrandTheme.warning)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    } header: {
+                        Text("Review").brandSectionHeader()
+                    } footer: {
+                        Text("Reviews are double-blind: they become visible once both parties have submitted. Window is 90 days after completion.")
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
                 }
 
                 if let errorMessage {
@@ -1703,7 +1773,7 @@ private struct LeaveReviewSheet: View {
                     Button("Submit") {
                         Task { await submit() }
                     }
-                    .disabled(isSubmitting)
+                    .disabled(!canSubmit)
                     .fontWeight(.semibold)
                 }
             }
@@ -1715,9 +1785,24 @@ private struct LeaveReviewSheet: View {
                         .background(BrandTheme.navy.opacity(0.4))
                 }
             }
+            .task { await loadEligibility() }
         }
         .tint(BrandTheme.accent)
         .preferredColorScheme(.dark)
+    }
+
+    @MainActor
+    private func loadEligibility() async {
+        isLoadingEligibility = true
+        defer { isLoadingEligibility = false }
+        do {
+            eligibility = try await APIClient.shared.fetchReviewEligibility(contractId: contractID)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            // Allow form if eligibility endpoint fails — server still enforces.
+            eligibility = ReviewEligibility(eligible: true, alreadyReviewed: false, reviewWindowClosesAt: nil)
+        }
     }
 
     @MainActor

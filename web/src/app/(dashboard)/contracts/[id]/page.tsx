@@ -3,6 +3,8 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  Download,
+  FileText,
   Heart,
   Loader2,
   Play,
@@ -52,6 +54,8 @@ import { useSavings } from '@/hooks/useBids';
 import { useContractInstallmentPlan, useInstallmentSchedule } from '@/hooks/useInstallments';
 import { useReviewEligibility } from '@/hooks/useReviews';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
+import { api } from '@/lib/api';
+import { printAuthenticatedDocument } from '@/lib/print';
 import { formatCents } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { CHANGE_ORDER_STATUS, CONTRACT_STATUS, MILESTONE_STATUS } from '@/types';
@@ -99,6 +103,8 @@ export default function ContractDetailPage() {
   const [showChangeOrderForm, setShowChangeOrderForm] = useState(false);
   const [changeOrderDescription, setChangeOrderDescription] = useState('');
   const [changeOrderAmount, setChangeOrderAmount] = useState('');
+  const [docAction, setDocAction] = useState<'document' | 'invoice' | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
 
   // Called unconditionally (hooks rule) — safe before data loads: returns false
   // for a missing/non-pending contract. True only when the acceptance window
@@ -143,6 +149,36 @@ export default function ContractDetailPage() {
   // Find savings for this contract's job (for the share card)
   const jobSavings = allSavings?.find((s) => s.job_id === contract.job_id);
   const contractSavingsCents = jobSavings?.savings_cents ?? 0;
+
+  async function handleDownloadDocument() {
+    setDocError(null);
+    setDocAction('document');
+    try {
+      await printAuthenticatedDocument(`/api/v1/contracts/${contract.id}/document.pdf`);
+    } catch {
+      setDocError('Failed to open contract document. Please try again.');
+    } finally {
+      setDocAction(null);
+    }
+  }
+
+  async function handleDownloadInvoice() {
+    setDocError(null);
+    setDocAction('invoice');
+    try {
+      // Ensure an invoice row exists (idempotent create), then print HTML body.
+      try {
+        await api.post<{ invoice_url: string }>(`/api/v1/contracts/${contract.id}/invoice`);
+      } catch {
+        // Already generated or not yet payable — still try download.
+      }
+      await printAuthenticatedDocument(`/api/v1/contracts/${contract.id}/invoice/download`);
+    } catch {
+      setDocError('Failed to open invoice. It may require a completed payment first.');
+    } finally {
+      setDocAction(null);
+    }
+  }
 
   function handleStartWork() {
     startWork.mutate(contract.id);
@@ -693,6 +729,63 @@ export default function ContractDetailPage() {
         </Card>
       ) : null}
 
+      {/* Documents — authenticated HTML contract summary + invoice */}
+      {(isCustomer || isProvider) ? (
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+          <CardHeader>
+            <h3 className="gold-text flex items-center gap-2 text-sm font-semibold">
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              Documents
+            </h3>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-zinc-300 text-xs">
+              Download a printable contract summary or invoice. Opens the system print dialog for
+              Save as PDF / print.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[44px] flex-1 gap-2"
+                disabled={docAction !== null}
+                onClick={() => {
+                  void handleDownloadDocument();
+                }}
+              >
+                {docAction === 'document' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                )}
+                Contract document
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[44px] flex-1 gap-2"
+                disabled={docAction !== null}
+                onClick={() => {
+                  void handleDownloadInvoice();
+                }}
+              >
+                {docAction === 'invoice' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                )}
+                Invoice
+              </Button>
+            </div>
+            {docError ? (
+              <p className="text-destructive text-sm" role="alert">
+                {docError}
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/* Tip the provider (for completed contracts, customer only).
           Mirrors the list-card affordance so a customer who lands on the
           detail page after completion can tip from here too. Shows the
@@ -740,7 +833,7 @@ export default function ContractDetailPage() {
 }
 
 function ReviewSection({ contractId }: { contractId: string }) {
-  const { data: eligibility, isLoading } = useReviewEligibility(contractId);
+  const { data: eligibility, isLoading, isError } = useReviewEligibility(contractId);
 
   if (isLoading) {
     return (
@@ -752,7 +845,32 @@ function ReviewSection({ contractId }: { contractId: string }) {
     );
   }
 
-  if (!eligibility) return null;
+  if (isError || !eligibility) {
+    return (
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+        <CardHeader>
+          <h3 className="gold-text text-lg font-semibold">Reviews</h3>
+        </CardHeader>
+        <CardContent>
+          <Link href={`/contracts/${contractId}/review` as Route} className="block">
+            <Button className="min-h-[44px] w-full gap-2">
+              <Star className="h-4 w-4" aria-hidden="true" />
+              Leave a Review
+            </Button>
+          </Link>
+          <p className="text-zinc-400 mt-2 text-xs">
+            Could not check eligibility — open the form and the server will enforce the 90-day window.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const windowClosed =
+    !eligibility.eligible &&
+    !eligibility.already_reviewed &&
+    !!eligibility.review_window_closes_at &&
+    new Date(eligibility.review_window_closes_at) < new Date();
 
   return (
     <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
@@ -772,10 +890,15 @@ function ReviewSection({ contractId }: { contractId: string }) {
             <Star className="h-4 w-4 shrink-0" aria-hidden="true" />
             You have already reviewed this contract.
           </div>
+        ) : windowClosed ? (
+          <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/50 p-3 text-sm text-zinc-300">
+            <Star className="h-4 w-4 shrink-0" aria-hidden="true" />
+            The 90-day review window for this contract has closed.
+          </div>
         ) : (
           <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/50 p-3 text-sm text-zinc-300">
             <Star className="h-4 w-4 shrink-0" aria-hidden="true" />
-            The review window for this contract has closed.
+            Not eligible yet — the contract must be completed and within 90 days of completion.
           </div>
         )}
       </CardContent>

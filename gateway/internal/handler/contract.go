@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"html"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -810,9 +811,12 @@ func (h *ContractHandler) ReportAbandonment(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, protoContractToJSON(resp.GetContract()))
 }
 
-// --- Contract PDF export ---
+// --- Contract PDF / document export ---
 
 // ExportPDF handles GET /api/v1/contracts/{id}/pdf.
+// Returns a relative path that clients resolve against the API base and fetch
+// with auth (see DownloadContractDocument). Absolute URLs are avoided so the
+// same response works for localhost, LAN, and production.
 func (h *ContractHandler) ExportPDF(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -826,17 +830,110 @@ func (h *ContractHandler) ExportPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.contractClient.ExportContractPDF(r.Context(), &contractv1.ExportContractPDFRequest{
+	// Confirm the contract exists for this party (RequirePartyAccess already
+	// gated the route; still validate via service when available).
+	if _, err := h.contractClient.ExportContractPDF(r.Context(), &contractv1.ExportContractPDFRequest{
 		ContractId: contractID,
-	})
-	if err != nil {
+	}); err != nil {
 		writeGRPCError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"pdf_url": resp.GetPdfUrl(),
+		"pdf_url": "/api/v1/contracts/" + contractID + "/document.pdf",
 	})
+}
+
+// DownloadContractDocument handles GET /api/v1/contracts/{id}/document.pdf.
+// Serves an HTML contract summary (printable) with attachment disposition.
+// Auth is required; party access is enforced by router middleware.
+func (h *ContractHandler) DownloadContractDocument(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+
+	resp, err := h.contractClient.GetContract(r.Context(), &contractv1.GetContractRequest{
+		ContractId:       contractID,
+		RequestingUserId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	c := resp.GetContract()
+	if c == nil {
+		writeError(w, http.StatusNotFound, "contract not found")
+		return
+	}
+
+	body := buildContractDocumentHTML(c)
+	filenameID := contractID
+	if len(filenameID) > 8 {
+		filenameID = filenameID[:8]
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"contract-"+filenameID+".html\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(body))
+}
+
+func buildContractDocumentHTML(c *contractv1.Contract) string {
+	title := c.GetJobTitle()
+	if title == "" {
+		title = "Contract"
+	}
+	status := contractStatusToString(c.GetStatus())
+	num := c.GetContractNumber()
+	if num == "" {
+		num = c.GetId()
+	}
+	amount := formatCentsUSD(c.GetAmountCents())
+	created := formatTimestamp(c.GetCreatedAt())
+	completed := ""
+	if c.GetCompletedAt() != nil {
+		completed = formatTimestamp(c.GetCompletedAt())
+	}
+	esc := html.EscapeString
+	// Minimal printable HTML — clients open/share via authenticated download.
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contract ` + esc(num) + `</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem; color: #111; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  .meta { color: #555; margin-bottom: 1.5rem; }
+  table { border-collapse: collapse; width: 100%; max-width: 36rem; }
+  th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #ddd; }
+  th { width: 40%; color: #555; font-weight: 600; }
+  .footer { margin-top: 2rem; font-size: 0.85rem; color: #777; }
+</style>
+</head>
+<body>
+  <h1>` + esc(title) + `</h1>
+  <p class="meta">NoMarkup contract summary · printable HTML</p>
+  <table>
+    <tr><th>Contract number</th><td>` + esc(num) + `</td></tr>
+    <tr><th>Status</th><td>` + esc(status) + `</td></tr>
+    <tr><th>Amount</th><td>` + esc(amount) + `</td></tr>
+    <tr><th>Customer ID</th><td>` + esc(c.GetCustomerId()) + `</td></tr>
+    <tr><th>Provider ID</th><td>` + esc(c.GetProviderId()) + `</td></tr>
+    <tr><th>Created</th><td>` + esc(created) + `</td></tr>
+    <tr><th>Completed</th><td>` + esc(completed) + `</td></tr>
+  </table>
+  <p class="footer">Generated for the signed-in party. Do not share publicly.</p>
+</body>
+</html>`
 }
 
 // --- Proto to JSON conversion helpers ---

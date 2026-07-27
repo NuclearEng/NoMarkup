@@ -659,8 +659,9 @@ func New(
 				r.Post("/{id}/report-noshow", contractHandler.ReportNoShow)
 				r.Post("/{id}/report-abandonment", contractHandler.ReportAbandonment)
 
-				// PDF export
+				// PDF / document export (JSON locator + authenticated download body)
 				r.Get("/{id}/pdf", contractHandler.ExportPDF)
+				r.Get("/{id}/document.pdf", contractHandler.DownloadContractDocument)
 
 				// Invoice generation
 				r.Post("/{id}/invoice", taxHandler.GenerateInvoice)

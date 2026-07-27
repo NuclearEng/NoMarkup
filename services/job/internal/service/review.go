@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
@@ -33,6 +34,10 @@ func (s *ReviewService) CreateReview(ctx context.Context, contractID, reviewerID
 		return nil, fmt.Errorf("create review: %w", domain.ErrAlreadyReviewed)
 	}
 	if !elig.Eligible {
+		// Distinguish closed window so clients show an actionable message.
+		if !elig.WindowClosesAt.IsZero() && time.Now().After(elig.WindowClosesAt) {
+			return nil, fmt.Errorf("create review: %w", domain.ErrReviewWindowClosed)
+		}
 		return nil, fmt.Errorf("create review: %w", domain.ErrNotEligible)
 	}
 

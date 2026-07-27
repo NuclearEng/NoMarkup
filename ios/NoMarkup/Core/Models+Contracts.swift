@@ -726,6 +726,28 @@ struct ContractReviewResponse: Codable, Sendable, Hashable {
     var status: String?
 }
 
+/// GET `/api/v1/contracts/{id}/reviews/eligibility`
+struct ReviewEligibility: Codable, Sendable, Hashable {
+    var eligible: Bool?
+    var alreadyReviewed: Bool?
+    var reviewWindowClosesAt: String?
+
+    var isEligible: Bool { eligible == true }
+    var hasAlreadyReviewed: Bool { alreadyReviewed == true }
+
+    /// Human-readable reason when not eligible.
+    var blockedReason: String? {
+        if hasAlreadyReviewed {
+            return "You already left a review for this contract."
+        }
+        if isEligible { return nil }
+        if let closes = reviewWindowClosesAt, !closes.isEmpty {
+            return "The review window closed on \(CatalogDateFormat.friendlyDateTime(closes))."
+        }
+        return "This contract is not eligible for review yet (must be completed and within the review window)."
+    }
+}
+
 // MARK: Guarantee claim reason options
 
 enum GuaranteeClaimReason: String, CaseIterable, Identifiable, Sendable {

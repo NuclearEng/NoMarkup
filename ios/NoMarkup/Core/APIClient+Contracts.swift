@@ -147,6 +147,7 @@ extension APIClient {
 
     /// POST `/api/v1/contracts/{id}/reviews`
     /// Body: `{ "overall_rating": N, "comment": "..." }` (CreateReview handler).
+    /// Server requires comment ≥ 50 characters and review window eligibility.
     @discardableResult
     func createContractReview(
         id: String,
@@ -155,10 +156,24 @@ extension APIClient {
     ) async throws -> ContractReviewResponse {
         let clamped = min(5, max(1, rating))
         let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 50 else {
+            throw APIClientError.httpStatus(
+                400,
+                detail: "Review comment must be at least 50 characters (currently \(trimmed.count))."
+            )
+        }
         return try await postJSON(
             pathComponents: ["api", "v1", "contracts", id, "reviews"],
             body: ContractsCreateReviewBody(overallRating: Int32(clamped), comment: trimmed),
             authorized: .required
+        )
+    }
+
+    /// GET `/api/v1/contracts/{id}/reviews/eligibility`
+    func fetchReviewEligibility(contractId: String) async throws -> ReviewEligibility {
+        try await getJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "reviews", "eligibility"],
+            authorized: true
         )
     }
 
@@ -341,21 +356,55 @@ extension APIClient {
         )
     }
 
-    // MARK: PDF export
+    // MARK: PDF / document export
 
-    /// GET `/api/v1/contracts/{id}/pdf` → `{ "pdf_url": "..." }` for Safari open.
+    /// GET `/api/v1/contracts/{id}/pdf` → `{ "pdf_url": "..." }` (relative path).
     func fetchContractPDFURL(id: String) async throws -> URL? {
         let response: ContractPDFResponse = try await getJSON(
             pathComponents: ["api", "v1", "contracts", id, "pdf"],
             authorized: true
         )
         guard let raw = response.pdfUrl?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty,
-              let url = URL(string: raw)
+              !raw.isEmpty
         else {
             return nil
         }
-        return url
+        if let absolute = URL(string: raw), absolute.scheme != nil {
+            return absolute
+        }
+        // Relative path from gateway (e.g. /api/v1/contracts/{id}/document.pdf)
+        let path = raw.hasPrefix("/") ? String(raw.dropFirst()) : raw
+        return AppConfig.apiBaseURL.appending(path: path)
+    }
+
+    /// Authenticated download of the contract document (HTML body).
+    /// Prefer `document.pdf` path; falls back to invoice HTML download.
+    func downloadContractDocument(id: String) async throws -> (data: Data, filename: String) {
+        do {
+            let data = try await perform(
+                method: "GET",
+                pathComponents: ["api", "v1", "contracts", id, "document.pdf"],
+                query: [],
+                body: nil as EmptyBody?,
+                auth: .required
+            )
+            return (data, "contract-\(String(id.prefix(8))).html")
+        } catch {
+            // Fallback: invoice HTML is a real party document when PDF path fails.
+            let data = try await downloadContractInvoice(id: id)
+            return (data, "invoice-\(String(id.prefix(8))).html")
+        }
+    }
+
+    /// GET `/api/v1/contracts/{id}/invoice/download` — HTML invoice bytes.
+    func downloadContractInvoice(id: String) async throws -> Data {
+        try await perform(
+            method: "GET",
+            pathComponents: ["api", "v1", "contracts", id, "invoice", "download"],
+            query: [],
+            body: nil as EmptyBody?,
+            auth: .required
+        )
     }
 
     // MARK: Payments / escrow release (services)
