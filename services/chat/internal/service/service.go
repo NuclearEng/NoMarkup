@@ -259,19 +259,29 @@ func DetectContactInfo(content string) bool {
 }
 
 // SendProposedTerms sends a PROPOSED_TERMS message type with structured data
-// (FR-8.9). The terms are stored as JSON metadata on the message.
+// (FR-8.9 / FR-5.4). Provider-only. Terms JSON is stored in metadata; content
+// uses the web-compatible `[Proposed Terms]` body so clients can parse fields.
+// This does NOT bind contract local terms — binding requires an explicit
+// customer accept via RespondToTerms (and a future contract override path).
 func (s *Service) SendProposedTerms(ctx context.Context, channelID, senderID string, terms map[string]interface{}) (*domain.Message, error) {
 	ch, err := s.repo.GetChannel(ctx, channelID, senderID)
 	if err != nil {
 		return nil, err
 	}
 
+	if ch.CustomerID != senderID && ch.ProviderID != senderID {
+		return nil, fmt.Errorf("send proposed terms: %w", domain.ErrNotChannelMember)
+	}
 	if ch.ProviderID != senderID {
-		return nil, fmt.Errorf("send proposed terms: only the provider can propose terms")
+		return nil, fmt.Errorf("send proposed terms: %w", domain.ErrOnlyProviderCanPropose)
 	}
 
 	if ch.Status == "closed" || ch.Status == "read_only" {
 		return nil, fmt.Errorf("send proposed terms: %w", domain.ErrChannelClosed)
+	}
+
+	if terms == nil {
+		terms = map[string]interface{}{}
 	}
 
 	metadataJSON, err := json.Marshal(terms)
@@ -279,15 +289,16 @@ func (s *Service) SendProposedTerms(ctx context.Context, channelID, senderID str
 		return nil, fmt.Errorf("send proposed terms: marshal terms: %w", err)
 	}
 
-	// Build a human-readable summary for the content.
-	content := "Proposed terms sent. Please review."
+	content := formatProposedTermsContent(terms)
+	flagged := DetectContactInfo(content)
 
 	msg := &domain.Message{
-		ChannelID:   channelID,
-		SenderID:    senderID,
-		MessageType: domain.MessageTypeProposedTerms,
-		Content:     content,
-		MetadataJSON: metadataJSON,
+		ChannelID:          channelID,
+		SenderID:           senderID,
+		MessageType:        domain.MessageTypeProposedTerms,
+		Content:            content,
+		MetadataJSON:       metadataJSON,
+		FlaggedContactInfo: flagged,
 	}
 
 	result, err := s.repo.SendMessage(ctx, msg)
@@ -297,7 +308,7 @@ func (s *Service) SendProposedTerms(ctx context.Context, channelID, senderID str
 
 	if s.pubsub != nil {
 		if err := s.pubsub.Publish(ctx, channelID, *result); err != nil {
-			slog.Error("failed to publish proposed terms to pubsub",
+			slog.ErrorContext(ctx, "failed to publish proposed terms to pubsub",
 				"channel_id", channelID,
 				"message_id", result.ID,
 				"sender_id", senderID,
@@ -306,41 +317,62 @@ func (s *Service) SendProposedTerms(ctx context.Context, channelID, senderID str
 		}
 	}
 
-	slog.Info("proposed terms sent",
+	slog.InfoContext(ctx, "proposed terms sent",
 		"channel_id", channelID,
 		"sender_id", senderID,
+		"message_id", result.ID,
+		"flagged_contact_info", flagged,
+		// Explicit: proposal alone never binds local terms on a contract.
+		"binding", false,
 	)
 
 	return result, nil
 }
 
-// RespondToTerms sends a system message indicating the customer accepted or
-// rejected the proposed terms.
+// RespondToTerms records the customer's explicit Accept or Reject of proposed
+// local terms (FR-8.9 / FR-5.4). Customer-only; party membership required.
+// Posts terms_accepted / terms_rejected — this is the explicit consent signal.
+// Contract local-terms override application remains a separate residual (no
+// silent binding from chat alone beyond this recorded accept message).
 func (s *Service) RespondToTerms(ctx context.Context, channelID, customerID string, accepted bool) (*domain.Message, error) {
 	ch, err := s.repo.GetChannel(ctx, channelID, customerID)
 	if err != nil {
 		return nil, err
 	}
 
+	if ch.CustomerID != customerID && ch.ProviderID != customerID {
+		return nil, fmt.Errorf("respond to terms: %w", domain.ErrNotChannelMember)
+	}
 	if ch.CustomerID != customerID {
-		return nil, fmt.Errorf("respond to terms: only the customer can respond")
+		return nil, fmt.Errorf("respond to terms: %w", domain.ErrOnlyCustomerCanRespond)
+	}
+
+	if ch.Status == "closed" || ch.Status == "read_only" {
+		return nil, fmt.Errorf("respond to terms: %w", domain.ErrChannelClosed)
 	}
 
 	action := "rejected"
+	msgType := domain.MessageTypeTermsRejected
 	if accepted {
 		action = "accepted"
+		msgType = domain.MessageTypeTermsAccepted
 	}
 
 	content := fmt.Sprintf("Customer %s the proposed terms.", action)
-	metadata, _ := json.Marshal(map[string]interface{}{
-		"action":     action,
+	metadata, err := json.Marshal(map[string]interface{}{
+		"action":       action,
 		"responded_by": customerID,
+		// Consent is explicit Accept/Reject only — never inferred from read/silence.
+		"explicit_consent": true,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("respond to terms: marshal metadata: %w", err)
+	}
 
 	msg := &domain.Message{
 		ChannelID:    channelID,
 		SenderID:     customerID,
-		MessageType:  domain.MessageTypeSystem,
+		MessageType:  msgType,
 		Content:      content,
 		MetadataJSON: metadata,
 	}
@@ -352,14 +384,60 @@ func (s *Service) RespondToTerms(ctx context.Context, channelID, customerID stri
 
 	if s.pubsub != nil {
 		if err := s.pubsub.Publish(ctx, channelID, *result); err != nil {
-			slog.Error("failed to publish terms response to pubsub",
+			slog.ErrorContext(ctx, "failed to publish terms response to pubsub",
 				"channel_id", channelID,
 				"message_id", result.ID,
+				"customer_id", customerID,
 				"action", action,
 				"error", err,
 			)
 		}
 	}
 
+	slog.InfoContext(ctx, "proposed terms response",
+		"channel_id", channelID,
+		"customer_id", customerID,
+		"message_id", result.ID,
+		"action", action,
+		"accepted", accepted,
+		// Chat records explicit consent; applying override onto contracts is residual.
+		"contract_override_applied", false,
+	)
+
 	return result, nil
+}
+
+// formatProposedTermsContent builds the web-compatible body so iOS/web parsers
+// (prefix `[Proposed Terms]`) can render structured cards.
+func formatProposedTermsContent(terms map[string]interface{}) string {
+	var b strings.Builder
+	b.WriteString("[Proposed Terms]")
+	writeTermLine := func(label string, keys ...string) {
+		s := termString(terms, keys...)
+		if s == "" {
+			return
+		}
+		b.WriteByte('\n')
+		b.WriteString(label)
+		b.WriteString(": ")
+		b.WriteString(s)
+	}
+	// Accept both snake_case (API) and camelCase (web-shaped) keys.
+	writeTermLine("Payment Type", "payment_type", "paymentType")
+	writeTermLine("Amount", "amount")
+	writeTermLine("Milestones", "milestones")
+	writeTermLine("Description", "description")
+	return b.String()
+}
+
+func termString(m map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := m[k]; ok && v != nil {
+			s := strings.TrimSpace(fmt.Sprint(v))
+			if s != "" && s != "<nil>" {
+				return s
+			}
+		}
+	}
+	return ""
 }

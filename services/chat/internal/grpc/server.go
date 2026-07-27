@@ -146,6 +146,42 @@ func (s *Server) MarkRead(ctx context.Context, req *chatv1.MarkReadRequest) (*ch
 	return &chatv1.MarkReadResponse{}, nil
 }
 
+// SendProposedTerms — provider-only local-terms proposal (FR-8.9 / FR-5.4).
+func (s *Server) SendProposedTerms(ctx context.Context, req *chatv1.SendProposedTermsRequest) (*chatv1.SendProposedTermsResponse, error) {
+	terms := map[string]interface{}{}
+	if v := strings.TrimSpace(req.GetPaymentType()); v != "" {
+		terms["payment_type"] = v
+	}
+	if v := strings.TrimSpace(req.GetAmount()); v != "" {
+		terms["amount"] = v
+	}
+	if v := strings.TrimSpace(req.GetMilestones()); v != "" {
+		terms["milestones"] = v
+	}
+	if v := strings.TrimSpace(req.GetDescription()); v != "" {
+		terms["description"] = v
+	}
+
+	msg, err := s.svc.SendProposedTerms(ctx, req.GetChannelId(), req.GetSenderId(), terms)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &chatv1.SendProposedTermsResponse{
+		Message: domainMessageToProto(msg),
+	}, nil
+}
+
+// RespondToTerms — customer-only explicit Accept/Reject (no silent binding).
+func (s *Server) RespondToTerms(ctx context.Context, req *chatv1.RespondToTermsRequest) (*chatv1.RespondToTermsResponse, error) {
+	msg, err := s.svc.RespondToTerms(ctx, req.GetChannelId(), req.GetUserId(), req.GetAccepted())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &chatv1.RespondToTermsResponse{
+		Message: domainMessageToProto(msg),
+	}, nil
+}
+
 func (s *Server) SendTypingIndicator(ctx context.Context, req *chatv1.SendTypingIndicatorRequest) (*chatv1.SendTypingIndicatorResponse, error) {
 	err := s.svc.SendTypingIndicator(ctx, req.GetChannelId(), req.GetUserId())
 	if err != nil {
@@ -189,6 +225,13 @@ func domainChannelToProto(ch *domain.Channel) *chatv1.Channel {
 		UnreadCount: int32(ch.UnreadCount),
 		CreatedAt:   timestamppb.New(ch.CreatedAt),
 		UpdatedAt:   timestamppb.New(ch.UpdatedAt),
+	}
+
+	if ch.CustomerLastReadAt != nil {
+		pb.CustomerLastReadAt = timestamppb.New(*ch.CustomerLastReadAt)
+	}
+	if ch.ProviderLastReadAt != nil {
+		pb.ProviderLastReadAt = timestamppb.New(*ch.ProviderLastReadAt)
 	}
 
 	if ch.LastMessage != nil {
@@ -249,6 +292,12 @@ func protoMessageTypeToString(mt chatv1.MessageType) string {
 		return "system"
 	case chatv1.MessageType_MESSAGE_TYPE_CONTACT_SHARE:
 		return "contact_share"
+	case chatv1.MessageType_MESSAGE_TYPE_PROPOSED_TERMS:
+		return "proposed_terms"
+	case chatv1.MessageType_MESSAGE_TYPE_TERMS_ACCEPTED:
+		return "terms_accepted"
+	case chatv1.MessageType_MESSAGE_TYPE_TERMS_REJECTED:
+		return "terms_rejected"
 	default:
 		return "text"
 	}
@@ -266,6 +315,12 @@ func stringToProtoMessageType(s string) chatv1.MessageType {
 		return chatv1.MessageType_MESSAGE_TYPE_SYSTEM
 	case "contact_share":
 		return chatv1.MessageType_MESSAGE_TYPE_CONTACT_SHARE
+	case "proposed_terms":
+		return chatv1.MessageType_MESSAGE_TYPE_PROPOSED_TERMS
+	case "terms_accepted":
+		return chatv1.MessageType_MESSAGE_TYPE_TERMS_ACCEPTED
+	case "terms_rejected":
+		return chatv1.MessageType_MESSAGE_TYPE_TERMS_REJECTED
 	default:
 		return chatv1.MessageType_MESSAGE_TYPE_UNSPECIFIED
 	}
@@ -284,12 +339,18 @@ func mapDomainError(err error) error {
 		return status.Error(codes.NotFound, "channel not found")
 	case errors.Is(err, domain.ErrNotChannelMember):
 		return status.Error(codes.PermissionDenied, "not a member of this channel")
+	case errors.Is(err, domain.ErrOnlyProviderCanPropose):
+		return status.Error(codes.PermissionDenied, "only the provider can propose terms")
+	case errors.Is(err, domain.ErrOnlyCustomerCanRespond):
+		return status.Error(codes.PermissionDenied, "only the customer can respond to proposed terms")
 	case errors.Is(err, domain.ErrChannelClosed):
 		return status.Error(codes.FailedPrecondition, "channel is closed or read-only")
 	case errors.Is(err, domain.ErrMessageNotFound):
 		return status.Error(codes.NotFound, "message not found")
 	case errors.Is(err, domain.ErrEmptyMessage):
 		return status.Error(codes.InvalidArgument, "message content is empty")
+	case errors.Is(err, domain.ErrTermsAlreadyPending):
+		return status.Error(codes.FailedPrecondition, "proposed terms already pending")
 	case errors.Is(err, domain.ErrNoBidForChat):
 		// Predictable precondition (provider has no active bid on the job) —
 		// must not 500. FailedPrecondition → gateway 422.

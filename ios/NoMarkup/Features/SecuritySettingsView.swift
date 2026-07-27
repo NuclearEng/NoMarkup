@@ -32,6 +32,15 @@ struct SecuritySettingsView: View {
     @State private var mfaError: String?
     @State private var mfaStatus: String?
 
+    // Connected OAuth accounts (ASR-5.1.1.v — list + lockout-safe unlink).
+    @State private var oauthAccounts: [OAuthAccount] = []
+    @State private var isLoadingOAuth = false
+    @State private var oauthLoadError: String?
+    @State private var oauthStatusMessage: String?
+    @State private var oauthError: String?
+    @State private var unlinkingProvider: String?
+    @State private var confirmUnlinkProvider: String?
+
     var body: some View {
         Group {
             if auth.isScaffoldSession {
@@ -63,7 +72,39 @@ struct SecuritySettingsView: View {
         .task {
             await loadAgeStatus()
             await loadMFAProfile()
+            await loadOAuthAccounts()
         }
+        .confirmationDialog(
+            unlinkDialogTitle,
+            isPresented: Binding(
+                get: { confirmUnlinkProvider != nil },
+                set: { if !$0 { confirmUnlinkProvider = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Disconnect", role: .destructive) {
+                if let provider = confirmUnlinkProvider {
+                    Task { await unlinkOAuth(provider) }
+                }
+                confirmUnlinkProvider = nil
+            }
+            Button("Cancel", role: .cancel) {
+                confirmUnlinkProvider = nil
+            }
+        } message: {
+            Text(
+                "You can reconnect later by signing in with that provider. Disconnecting is blocked if it would leave you with no way to sign in — set a password first if this is your only method."
+            )
+        }
+    }
+
+    private var unlinkDialogTitle: String {
+        if let provider = confirmUnlinkProvider {
+            let label = oauthAccounts.first(where: { $0.provider.lowercased() == provider })?.displayName
+                ?? provider.capitalized
+            return "Disconnect \(label)?"
+        }
+        return "Disconnect account?"
     }
 
     private var formContent: some View {
@@ -126,6 +167,15 @@ struct SecuritySettingsView: View {
                 Text("Two-factor authentication").brandSectionHeader()
             } footer: {
                 Text("Use an authenticator app (1Password, Authy, Google Authenticator). Store backup codes offline — each works once.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            Section {
+                connectedAccountsSection
+            } header: {
+                Text("Connected accounts").brandSectionHeader()
+            } footer: {
+                Text("Social sign-in providers linked to this account. Disconnect is blocked server-side if it would leave you with no way to sign in.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -458,7 +508,145 @@ struct SecuritySettingsView: View {
         raw.filter(\.isNumber)
     }
 
+    // MARK: - Connected accounts
+
+    @ViewBuilder
+    private var connectedAccountsSection: some View {
+        if isLoadingOAuth && oauthAccounts.isEmpty {
+            HStack {
+                ProgressView()
+                    .tint(BrandTheme.accent)
+                Text("Loading connected accounts…")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            .frame(minHeight: 44)
+        } else if let oauthLoadError {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(oauthLoadError)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.destructive)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Retry") {
+                    Task { await loadOAuthAccounts() }
+                }
+                .frame(minHeight: 44)
+            }
+        } else if oauthAccounts.isEmpty {
+            Text("No social accounts connected. You sign in with email and password (or Sign in with Apple / Google when you use them).")
+                .font(.subheadline)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .accessibilityIdentifier("connectedAccounts.empty")
+        } else {
+            ForEach(oauthAccounts) { account in
+                HStack(spacing: 12) {
+                    Image(systemName: account.systemImage)
+                        .foregroundStyle(BrandTheme.goldBright)
+                        .frame(width: 28, height: 28)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(account.displayName)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textPrimary)
+                        if let email = account.email, !email.isEmpty {
+                            Text(email)
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Button {
+                        confirmUnlinkProvider = account.provider.lowercased()
+                    } label: {
+                        if unlinkingProvider == account.provider.lowercased() {
+                            ProgressView()
+                                .frame(minWidth: 88, minHeight: 44)
+                        } else {
+                            Text("Disconnect")
+                                .frame(minWidth: 88, minHeight: 44)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(BrandTheme.destructive)
+                    .disabled(unlinkingProvider != nil)
+                    .accessibilityLabel("Disconnect \(account.displayName)")
+                    .accessibilityHint("Removes this social sign-in method. Blocked if it is your only way to sign in.")
+                    .accessibilityIdentifier("connectedAccounts.unlink.\(account.provider.lowercased())")
+                }
+                .frame(minHeight: 44)
+            }
+        }
+
+        if let oauthStatusMessage {
+            Text(oauthStatusMessage)
+                .font(.footnote)
+                .foregroundStyle(BrandTheme.success)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let oauthError {
+            Text(oauthError)
+                .font(.footnote)
+                .foregroundStyle(BrandTheme.destructive)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isStaticText)
+        }
+    }
+
     // MARK: - Actions
+
+    @MainActor
+    private func loadOAuthAccounts() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
+        isLoadingOAuth = true
+        oauthLoadError = nil
+        defer { isLoadingOAuth = false }
+        do {
+            oauthAccounts = try await APIClient.shared.fetchOAuthAccounts()
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch {
+            oauthLoadError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func unlinkOAuth(_ provider: String) async {
+        oauthError = nil
+        oauthStatusMessage = nil
+        let key = provider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return }
+
+        unlinkingProvider = key
+        defer { unlinkingProvider = nil }
+
+        do {
+            let response = try await APIClient.shared.unlinkOAuthAccount(provider: key)
+            if response.didUnlink {
+                let priorLabel = oauthAccounts.first(where: { $0.provider.lowercased() == key })?.displayName
+                    ?? key.capitalized
+                oauthAccounts.removeAll { $0.provider.lowercased() == key }
+                oauthStatusMessage = "\(priorLabel) account disconnected."
+                // Refresh to stay in sync with the server.
+                await loadOAuthAccounts()
+            } else {
+                oauthError = "Could not disconnect that account. Try again."
+            }
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch let error as APIClientError where error.isConflict {
+            // Gateway 409: only remaining sign-in method (lockout prevention).
+            let detail = error.localizedDescription
+            oauthError = detail.isEmpty
+                ? "Cannot disconnect your only sign-in method — set a password first, or link another account."
+                : detail
+        } catch {
+            oauthError = error.localizedDescription
+        }
+    }
 
     @MainActor
     private func loadAgeStatus() async {

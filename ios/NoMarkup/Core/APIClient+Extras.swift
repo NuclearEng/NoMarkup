@@ -454,6 +454,34 @@ extension APIClient {
 
     // MARK: Security
 
+    /// GET `/api/v1/users/me/oauth-accounts` — linked social sign-in providers (ASR-5.1.1.v).
+    func fetchOAuthAccounts() async throws -> [OAuthAccount] {
+        let response: OAuthAccountsResponse = try await getJSON(
+            pathComponents: ["api", "v1", "users", "me", "oauth-accounts"],
+            authorized: true
+        )
+        return response.accounts
+    }
+
+    /// DELETE `/api/v1/users/me/oauth-accounts/{provider}` — lockout-safe unlink.
+    /// Server returns 409 when this is the only remaining sign-in method.
+    @discardableResult
+    func unlinkOAuthAccount(provider: String) async throws -> UnlinkOAuthAccountResponse {
+        let trimmed = provider.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "provider is required")
+        }
+        // Only allow known providers client-side (gateway re-validates).
+        let allowed: Set<String> = ["google", "apple", "facebook"]
+        guard allowed.contains(trimmed) else {
+            throw APIClientError.httpStatus(400, detail: "unsupported provider")
+        }
+        return try await deleteJSON(
+            pathComponents: ["api", "v1", "users", "me", "oauth-accounts", trimmed],
+            authorized: .required
+        )
+    }
+
     /// POST `/api/v1/auth/change-password` — body current_password, new_password.
     @discardableResult
     func changePassword(current: String, new: String) async throws -> ChangePasswordResponse {

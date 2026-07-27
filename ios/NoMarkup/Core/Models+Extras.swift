@@ -1243,6 +1243,50 @@ struct ChangePasswordResponse: Codable, Sendable {
     var success: Bool?
 }
 
+// MARK: - Connected OAuth accounts (ASR-5.1.1.v)
+
+/// Linked social sign-in provider from `GET /api/v1/users/me/oauth-accounts`.
+/// `provider_id` is never returned — opaque third-party subject.
+struct OAuthAccount: Codable, Sendable, Hashable, Identifiable {
+    var provider: String
+    var email: String?
+    var linkedAt: String?
+
+    var id: String { provider.lowercased() }
+
+    var displayName: String {
+        switch provider.lowercased() {
+        case "google": return "Google"
+        case "apple": return "Apple"
+        case "facebook": return "Facebook"
+        default:
+            guard let first = provider.first else { return provider }
+            return String(first).uppercased() + provider.dropFirst().lowercased()
+        }
+    }
+
+    var systemImage: String {
+        switch provider.lowercased() {
+        case "google": return "g.circle.fill"
+        case "apple": return "apple.logo"
+        case "facebook": return "f.circle.fill"
+        default: return "link.circle.fill"
+        }
+    }
+}
+
+struct OAuthAccountsResponse: Codable, Sendable {
+    var accounts: [OAuthAccount]
+}
+
+/// `DELETE /api/v1/users/me/oauth-accounts/{provider}` success body.
+struct UnlinkOAuthAccountResponse: Codable, Sendable {
+    var unlinked: Bool?
+    var provider: String?
+
+    var didUnlink: Bool { unlinked == true }
+}
+
 // MARK: - NPS surveys (post-transaction feedback)
 
 /// Pending row from `GET /api/v1/me/nps/pending` → `{ "pending": [...] }`.

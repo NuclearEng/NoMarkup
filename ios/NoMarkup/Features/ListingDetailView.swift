@@ -953,6 +953,11 @@ struct ListingDetailView: View {
 
     @ViewBuilder
     private func sellerOfferRow(_ offer: ListingOffer) -> some View {
+        // Gateway authz: only the party the offer *awaits* may accept/reject/counter.
+        // Even depth → seller's move; odd depth (seller's own counter) → buyer.
+        let awaiting = ListingOfferChain.awaitingParty(for: offer, in: offers)
+        let sellerCanAct = offer.statusEnum == .pending && awaiting == .seller
+
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(offer.displayAmount)
@@ -978,7 +983,13 @@ struct ListingDetailView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
-            if offer.statusEnum.isActionable {
+            if offer.statusEnum == .pending, awaiting == .buyer {
+                Text("Waiting for the buyer to respond to your counter.")
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            if sellerCanAct {
                 HStack(spacing: 8) {
                     Button {
                         Task { await updateOffer(offer, action: .accept) }
@@ -993,6 +1004,7 @@ struct ListingDetailView: View {
                     .tint(BrandTheme.success)
                     .frame(minHeight: 44)
                     .disabled(actingOfferID != nil)
+                    .accessibilityLabel("Accept offer \(offer.displayAmount)")
 
                     Button {
                         Task { await updateOffer(offer, action: .reject) }
@@ -1002,6 +1014,7 @@ struct ListingDetailView: View {
                     .buttonStyle(.bordered)
                     .frame(minHeight: 44)
                     .disabled(actingOfferID != nil)
+                    .accessibilityLabel("Reject offer \(offer.displayAmount)")
 
                     Button {
                         counteringOfferID = counteringOfferID == offer.id ? nil : offer.id
@@ -1012,6 +1025,7 @@ struct ListingDetailView: View {
                     .buttonStyle(.bordered)
                     .frame(minHeight: 44)
                     .disabled(actingOfferID != nil)
+                    .accessibilityLabel("Counter offer \(offer.displayAmount)")
                 }
 
                 if counteringOfferID == offer.id {
@@ -1096,42 +1110,111 @@ struct ListingDetailView: View {
             .accessibilityHint("Sends a Best Offer to the seller")
         }
 
-        // Buyer's own offer history for this listing.
+        // Buyer's own offer history for this listing (newest first from API).
+        // Depth parity: even → withdraw (awaiting seller); odd pending → accept/reject counter.
         if !offers.isEmpty {
             ForEach(offers) { offer in
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(offer.displayAmount)
-                            .font(.subheadline.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(BrandTheme.goldBright)
-                        if let message = offer.displayMessage {
-                            Text(message)
+                let awaiting = ListingOfferChain.awaitingParty(for: offer, in: offers)
+                let isMine = offer.buyerId == currentUserID
+                let isPending = offer.statusEnum == .pending
+                let buyerCanAcceptReject = isMine && isPending && awaiting == .buyer
+                let buyerCanWithdraw = isMine && isPending && awaiting == .seller
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(offer.displayAmount)
+                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(BrandTheme.goldBright)
+                            if let message = offer.displayMessage {
+                                Text(message)
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                                    .lineLimit(2)
+                            }
+                            Text(buyerOfferStatusLabel(offer: offer, awaiting: awaiting))
                                 .font(.caption)
                                 .foregroundStyle(BrandTheme.textSecondary)
-                                .lineLimit(2)
                         }
+                        Spacer()
+                        Text(offer.displayStatus)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(BrandTheme.textSecondary)
                     }
-                    Spacer()
-                    Text(offer.displayStatus)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(BrandTheme.textSecondary)
-                }
-                .frame(minHeight: 44)
+                    .frame(minHeight: 44)
 
-                if offer.statusEnum.isActionable, offer.buyerId == currentUserID {
-                    Button(role: .destructive) {
-                        Task { await updateOffer(offer, action: .withdraw) }
-                    } label: {
-                        if actingOfferID == offer.id {
-                            ProgressView().frame(maxWidth: .infinity, minHeight: 44)
-                        } else {
-                            Text("Withdraw offer")
-                                .frame(maxWidth: .infinity, minHeight: 44)
+                    if buyerCanAcceptReject {
+                        HStack(spacing: 8) {
+                            Button {
+                                Task { await updateOffer(offer, action: .accept) }
+                            } label: {
+                                if actingOfferID == offer.id {
+                                    ProgressView()
+                                        .tint(BrandTheme.navy)
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                } else {
+                                    Text("Accept counter")
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(BrandTheme.success)
+                            .disabled(actingOfferID != nil)
+                            .accessibilityLabel("Accept counter offer \(offer.displayAmount)")
+                            .accessibilityHint("Creates an order and opens payment when a client secret is returned")
+
+                            Button(role: .destructive) {
+                                Task { await updateOffer(offer, action: .reject) }
+                            } label: {
+                                Text("Reject")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(actingOfferID != nil)
+                            .accessibilityLabel("Reject counter offer \(offer.displayAmount)")
                         }
                     }
-                    .disabled(actingOfferID != nil)
+
+                    if buyerCanWithdraw {
+                        Button(role: .destructive) {
+                            Task { await updateOffer(offer, action: .withdraw) }
+                        } label: {
+                            if actingOfferID == offer.id {
+                                ProgressView().frame(maxWidth: .infinity, minHeight: 44)
+                            } else {
+                                Text("Withdraw offer")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                        }
+                        .disabled(actingOfferID != nil)
+                        .accessibilityHint("Cancels your open offer before the seller responds")
+                    }
                 }
             }
+        }
+    }
+
+    private func buyerOfferStatusLabel(
+        offer: ListingOffer,
+        awaiting: ListingOfferAwaitingParty
+    ) -> String {
+        switch offer.statusEnum {
+        case .pending:
+            return awaiting == .seller
+                ? "Waiting for the seller to respond"
+                : "The seller countered — your move"
+        case .countered:
+            return "You countered this offer"
+        case .accepted:
+            return "Accepted — order created"
+        case .rejected:
+            return "Declined"
+        case .withdrawn:
+            return "You withdrew this offer"
+        case .expired:
+            return "This offer expired"
+        case .unknown:
+            return offer.displayStatus
         }
     }
 
@@ -1590,11 +1673,49 @@ struct ListingDetailView: View {
         defer { actingOfferID = nil }
 
         do {
-            _ = try await APIClient.shared.updateOffer(offerId: offer.id, action: action)
+            let response = try await APIClient.shared.updateOffer(offerId: offer.id, action: action)
             offerStatusIsError = false
+            counteringOfferID = nil
+
             switch action {
             case .accept:
-                offerStatusMessage = "Offer accepted — an order was created. The buyer can pay under Account → Orders."
+                // Buyer accepting a counter may receive their own PI secret — pay now.
+                // Seller accepting never receives client_secret (gateway withholding).
+                let envelope = response.envelope
+                if let secret = envelope.clientSecret, envelope.hasConfirmableSecret {
+                    do {
+                        try await RailACheckout.presentPaymentSheet(clientSecret: secret)
+                        offerStatusIsError = false
+                        offerStatusMessage =
+                            "Payment complete — order \(response.orderId ?? "") is held in escrow until pickup."
+                    } catch let error as RailACheckout.CheckoutError where error.isCanceled {
+                        offerStatusIsError = false
+                        offerStatusMessage =
+                            "Offer accepted (order \(response.orderId ?? "")). Payment canceled — finish under Account → Orders."
+                    } catch {
+                        offerStatusIsError = true
+                        offerStatusMessage =
+                            "Offer accepted (order \(response.orderId ?? "")), but payment failed: \(error.localizedDescription). Pay under Account → Orders."
+                    }
+                } else if let orderId = response.orderId, !orderId.isEmpty {
+                    // Seller accept (or buyer accept without PI): order is pending_payment.
+                    let isBuyer = offer.buyerId == currentUserID
+                    if isBuyer {
+                        if let chargeError = response.chargeError, !chargeError.isEmpty {
+                            offerStatusIsError = true
+                            offerStatusMessage =
+                                "Order \(orderId) created, but payment could not start (\(chargeError)). Open Account → Orders to pay."
+                        } else {
+                            offerStatusMessage =
+                                "Counter accepted — order \(orderId) awaits payment. Open Account → Orders to pay with Apple Pay."
+                        }
+                    } else {
+                        offerStatusMessage =
+                            "Offer accepted — order \(orderId) created. The buyer pays under Account → Orders."
+                    }
+                } else {
+                    offerStatusMessage = "Offer accepted."
+                }
             case .reject:
                 offerStatusMessage = "Offer rejected."
             case .withdraw:
@@ -1602,7 +1723,6 @@ struct ListingDetailView: View {
             case .counter:
                 offerStatusMessage = "Counter offer sent."
             }
-            counteringOfferID = nil
             await loadOffers()
             if action == .accept {
                 await load()

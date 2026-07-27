@@ -22,6 +22,12 @@ service ChatService {
   rpc ListMessages(ListMessagesRequest) returns (ListMessagesResponse);
   rpc MarkRead(MarkReadRequest) returns (MarkReadResponse);
 
+  // Local terms negotiation (FR-8.9 / FR-5.4) — provider proposes; customer
+  // must explicitly Accept or Reject. Accept records consent in-chat only;
+  // contract local-terms override application is a separate residual.
+  rpc SendProposedTerms(SendProposedTermsRequest) returns (SendProposedTermsResponse);
+  rpc RespondToTerms(RespondToTermsRequest) returns (RespondToTermsResponse);
+
   // Contact sharing (post-award)
   rpc ShareContactInfo(ShareContactInfoRequest) returns (ShareContactInfoResponse);
   rpc GetSharedContacts(GetSharedContactsRequest) returns (GetSharedContactsResponse);
@@ -54,6 +60,9 @@ enum MessageType {
   MESSAGE_TYPE_FILE = 3;
   MESSAGE_TYPE_SYSTEM = 4;       // "Contract accepted", "Milestone approved", etc.
   MESSAGE_TYPE_CONTACT_SHARE = 5;
+  MESSAGE_TYPE_PROPOSED_TERMS = 6;  // provider local-terms proposal (FR-8.9)
+  MESSAGE_TYPE_TERMS_ACCEPTED = 7;  // customer explicit accept
+  MESSAGE_TYPE_TERMS_REJECTED = 8;  // customer explicit reject
 }
 
 message Channel {
@@ -67,6 +76,10 @@ message Channel {
   int32 unread_count = 8;       // relative to requesting user
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
+  // Per-party last-read watermarks (MarkRead). Clients compare the *peer's*
+  // watermark to a message created_at to render read receipts without a reply.
+  google.protobuf.Timestamp customer_last_read_at = 11;
+  google.protobuf.Timestamp provider_last_read_at = 12;
 }
 
 message Message {
@@ -156,6 +169,35 @@ message MarkReadRequest {
 }
 
 message MarkReadResponse {}
+
+// ============================================================
+// Local terms (FR-8.9 / FR-5.4)
+// ============================================================
+
+// Free-text fields on proposed terms are filtered for prohibited UGC at the
+// gateway before this RPC is invoked.
+message SendProposedTermsRequest {
+  string channel_id = 1;
+  string sender_id = 2;          // must be channel provider
+  string payment_type = 3;
+  string amount = 4;
+  string milestones = 5;
+  string description = 6;
+}
+
+message SendProposedTermsResponse {
+  Message message = 1;
+}
+
+message RespondToTermsRequest {
+  string channel_id = 1;
+  string user_id = 2;            // must be channel customer
+  bool accepted = 3;             // true = Accept, false = Reject
+}
+
+message RespondToTermsResponse {
+  Message message = 1;
+}
 
 // ============================================================
 // Contact Sharing RPCs

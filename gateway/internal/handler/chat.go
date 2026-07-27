@@ -7,16 +7,17 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
-	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
-	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"nhooyr.io/websocket"
 )
@@ -127,7 +128,7 @@ func (h *ChatHandler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -414,6 +415,195 @@ func (h *ChatHandler) MarkRead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// proposedTermsRequest is the REST body for POST …/proposed-terms (provider).
+// Free-text fields are UGC-filtered at the gateway before gRPC.
+type proposedTermsRequest struct {
+	PaymentType string `json:"payment_type"`
+	Amount      string `json:"amount"`
+	Milestones  string `json:"milestones"`
+	Description string `json:"description"`
+}
+
+// SendProposedTerms handles POST /api/v1/channels/{id}/proposed-terms.
+// Auth required; chat service enforces provider-only. Does not bind contract
+// local terms — only posts a proposed_terms message for the customer to Accept/Reject.
+func (h *ChatHandler) SendProposedTerms(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	channelID := chi.URLParam(r, "id")
+	if channelID == "" {
+		writeError(w, http.StatusBadRequest, "channel id required")
+		return
+	}
+	if !isValidUUID(channelID) {
+		writeError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+
+	var req proposedTermsRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	// Cap free-text fields (same rune budget as chat messages).
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{"payment_type", req.PaymentType},
+		{"amount", req.Amount},
+		{"milestones", req.Milestones},
+		{"description", req.Description},
+	} {
+		if utf8.RuneCountInString(field.value) > maxMessageContentLen {
+			writeError(w, http.StatusBadRequest,
+				fmt.Sprintf("%s must be at most %d characters", field.name, maxMessageContentLen))
+			return
+		}
+		// ASR-1.2.a — pre-post UGC filter on free text.
+		if rejectProhibitedUGC(w, r, field.value) {
+			return
+		}
+	}
+
+	if h.refuseIfChannelBlocked(w, r, channelID, claims.UserID) {
+		return
+	}
+
+	resp, err := h.chatClient.SendProposedTerms(r.Context(), &chatv1.SendProposedTermsRequest{
+		ChannelId:   channelID,
+		SenderId:    claims.UserID,
+		PaymentType: strings.TrimSpace(req.PaymentType),
+		Amount:      strings.TrimSpace(req.Amount),
+		Milestones:  strings.TrimSpace(req.Milestones),
+		Description: strings.TrimSpace(req.Description),
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	msg := resp.GetMessage()
+	preview := "Proposed terms"
+	if msg != nil && msg.GetContent() != "" {
+		preview = messagePreview(msg.GetContent())
+	}
+	h.notifyNewMessage(r.Context(), channelID, claims.UserID, preview)
+
+	slog.InfoContext(r.Context(), "proposed terms posted",
+		"channel_id", channelID,
+		"sender_id", claims.UserID,
+		"binding", false,
+	)
+
+	writeJSON(w, http.StatusCreated, protoMessageToJSON(msg))
+}
+
+// respondToTermsRequest is the REST body for POST …/terms/respond (customer).
+// Accepted must be set explicitly — absence is a 400, never default-accept.
+type respondToTermsRequest struct {
+	// Accepted is a pointer so missing JSON null/omit is distinguishable from false.
+	Accepted *bool `json:"accepted"`
+}
+
+// RespondToTerms handles POST /api/v1/channels/{id}/terms/respond.
+// Auth required; chat service enforces customer-only. Explicit accept/reject
+// only — no binding without accepted=true; reject is accepted=false.
+func (h *ChatHandler) RespondToTerms(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	channelID := chi.URLParam(r, "id")
+	if channelID == "" {
+		writeError(w, http.StatusBadRequest, "channel id required")
+		return
+	}
+	if !isValidUUID(channelID) {
+		writeError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+
+	var req respondToTermsRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Accepted == nil {
+		writeError(w, http.StatusBadRequest, "accepted is required (true to accept, false to reject)")
+		return
+	}
+
+	if h.refuseIfChannelBlocked(w, r, channelID, claims.UserID) {
+		return
+	}
+
+	accepted := *req.Accepted
+	resp, err := h.chatClient.RespondToTerms(r.Context(), &chatv1.RespondToTermsRequest{
+		ChannelId: channelID,
+		UserId:    claims.UserID,
+		Accepted:  accepted,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	msg := resp.GetMessage()
+	preview := "Terms rejected"
+	if accepted {
+		preview = "Terms accepted"
+	}
+	h.notifyNewMessage(r.Context(), channelID, claims.UserID, preview)
+
+	slog.InfoContext(r.Context(), "proposed terms response posted",
+		"channel_id", channelID,
+		"customer_id", claims.UserID,
+		"accepted", accepted,
+		// Chat records explicit consent; contract local-terms override is residual.
+		"contract_override_applied", false,
+	)
+
+	writeJSON(w, http.StatusCreated, protoMessageToJSON(msg))
+}
+
+// refuseIfChannelBlocked runs the same block check as SendMessage. Returns true
+// when the handler has already written an error response (caller must return).
+func (h *ChatHandler) refuseIfChannelBlocked(w http.ResponseWriter, r *http.Request, channelID, userID string) bool {
+	if h.db == nil {
+		return false
+	}
+	var blocked bool
+	err := h.db.QueryRow(r.Context(), `
+		SELECT EXISTS(
+			SELECT 1
+			  FROM chat_channels c
+			  JOIN user_blocks ub
+			    ON (ub.blocker_id = c.customer_id OR ub.blocker_id = c.provider_id)
+			   AND ub.blocked_id = $1
+			 WHERE c.id = $2
+		)`, userID, channelID).Scan(&blocked)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return false
+	case err != nil:
+		slog.ErrorContext(r.Context(), "chat terms: block check failed",
+			"channel_id", channelID, "user_id", userID, "error", err)
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return true
+	case blocked:
+		writeError(w, http.StatusForbidden, "blocked")
+		return true
+	default:
+		return false
+	}
+}
+
 // GetUnreadCount handles GET /api/v1/channels/unread.
 func (h *ChatHandler) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
@@ -682,6 +872,19 @@ func protoChannelToJSON(ch *chatv1.Channel, names map[string]string) map[string]
 		"updated_at":   formatTimestamp(ch.GetUpdatedAt()),
 	}
 
+	// Per-party MarkRead watermarks — enable read receipts without a peer reply.
+	// Omitted when unset (never opened / never marked read).
+	if ts := ch.GetCustomerLastReadAt(); ts != nil {
+		if s := formatTimestamp(ts); s != "" {
+			result["customer_last_read_at"] = s
+		}
+	}
+	if ts := ch.GetProviderLastReadAt(); ts != nil {
+		if s := formatTimestamp(ts); s != "" {
+			result["provider_last_read_at"] = s
+		}
+	}
+
 	if names != nil {
 		if name := names[ch.GetCustomerId()]; name != "" {
 			result["customer_name"] = name
@@ -769,6 +972,12 @@ func chatMessageTypeToString(mt chatv1.MessageType) string {
 		return "system"
 	case chatv1.MessageType_MESSAGE_TYPE_CONTACT_SHARE:
 		return "contact_share"
+	case chatv1.MessageType_MESSAGE_TYPE_PROPOSED_TERMS:
+		return "proposed_terms"
+	case chatv1.MessageType_MESSAGE_TYPE_TERMS_ACCEPTED:
+		return "terms_accepted"
+	case chatv1.MessageType_MESSAGE_TYPE_TERMS_REJECTED:
+		return "terms_rejected"
 	default:
 		return "text"
 	}
@@ -786,6 +995,12 @@ func stringToProtoChatMessageType(s string) chatv1.MessageType {
 		return chatv1.MessageType_MESSAGE_TYPE_SYSTEM
 	case "contact_share":
 		return chatv1.MessageType_MESSAGE_TYPE_CONTACT_SHARE
+	case "proposed_terms":
+		return chatv1.MessageType_MESSAGE_TYPE_PROPOSED_TERMS
+	case "terms_accepted":
+		return chatv1.MessageType_MESSAGE_TYPE_TERMS_ACCEPTED
+	case "terms_rejected":
+		return chatv1.MessageType_MESSAGE_TYPE_TERMS_REJECTED
 	default:
 		return chatv1.MessageType_MESSAGE_TYPE_TEXT
 	}

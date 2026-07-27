@@ -1086,18 +1086,27 @@ struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     var createdAt: String?
 
     /// Normalized message_type from gateway (`text` | `image` | `file` | `system` |
-    /// `contact_share` | `proposed_terms`). Unknown values fall through to text rendering.
+    /// `contact_share` | `proposed_terms` | `terms_accepted` | `terms_rejected`).
+    /// Unknown values fall through to text rendering.
     var normalizedType: String {
         (messageType ?? "text").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     var isImageMessage: Bool { normalizedType == "image" }
 
-    var isSystemMessage: Bool { normalizedType == "system" }
+    /// System-style centered pills: platform system + local-terms accept/reject outcomes.
+    var isSystemMessage: Bool {
+        switch normalizedType {
+        case "system", "terms_accepted", "terms_rejected":
+            return true
+        default:
+            return false
+        }
+    }
 
     /// Local-terms proposal (FR-8.9 / FR-5.4). Web encodes as a plain text body that
-    /// starts with `[Proposed Terms]`; chat service also has `message_type=proposed_terms`
-    /// (not on the REST enum yet — content prefix is the portable detector).
+    /// starts with `[Proposed Terms]`; native path uses `message_type=proposed_terms`
+    /// via `POST …/proposed-terms`. Content prefix remains the portable detector.
     var isProposedTermsMessage: Bool {
         if normalizedType == "proposed_terms" { return true }
         let raw = content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1122,9 +1131,12 @@ struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
             return "Photo"
         case "file":
             return "File"
-        case "system":
+        case "system", "terms_accepted", "terms_rejected":
             let raw = content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return raw.isEmpty ? "System message" : raw
+            if !raw.isEmpty { return raw }
+            if normalizedType == "terms_accepted" { return "Terms accepted" }
+            if normalizedType == "terms_rejected" { return "Terms rejected" }
+            return "System message"
         case "contact_share":
             return "Contact shared"
         default:
@@ -1162,7 +1174,7 @@ struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-/// Summary row from `GET /api/v1/channels` (`channels` array).
+/// Summary row from `GET /api/v1/channels` / `GET /api/v1/channels/{id}`.
 struct ChatChannelSummary: Codable, Sendable, Hashable, Identifiable {
     let id: String
     var jobId: String?
@@ -1176,6 +1188,10 @@ struct ChatChannelSummary: Codable, Sendable, Hashable, Identifiable {
     var customerName: String?
     var providerName: String?
     var lastMessage: ChatMessage?
+    /// MarkRead watermark for the customer party (ISO-8601). Used for peer read receipts.
+    var customerLastReadAt: String?
+    /// MarkRead watermark for the provider party (ISO-8601). Used for peer read receipts.
+    var providerLastReadAt: String?
 
     /// Best-effort title for the inbox row (counterparty when known).
     var displayTitle: String {
@@ -1199,6 +1215,22 @@ struct ChatChannelSummary: Codable, Sendable, Hashable, Identifiable {
     var typeLabel: String? {
         guard let channelType, !channelType.isEmpty else { return nil }
         return channelType.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    /// Peer's MarkRead watermark relative to `viewerUserID` (customer vs provider).
+    /// Nil when the viewer isn't a known party or the peer has never marked read.
+    func peerLastReadAt(viewerUserID: String?) -> String? {
+        let me = viewerUserID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !me.isEmpty else { return nil }
+        let customer = customerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let provider = providerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if me == customer {
+            return providerLastReadAt
+        }
+        if me == provider {
+            return customerLastReadAt
+        }
+        return nil
     }
 }
 
@@ -1494,8 +1526,19 @@ enum ListingOfferStatus: String, Codable, Sendable {
         rawValue.capitalized
     }
 
+    /// Live negotiation states that may still transition (gateway + display).
     var isActionable: Bool {
         self == .pending || self == .countered
+    }
+
+    /// Terminal chain states (no further accept/reject/counter/withdraw).
+    var isTerminal: Bool {
+        switch self {
+        case .accepted, .rejected, .withdrawn, .expired, .unknown:
+            return true
+        case .pending, .countered:
+            return false
+        }
     }
 }
 
@@ -1505,6 +1548,14 @@ enum ListingOfferAction: String, Sendable {
     case reject
     case counter
     case withdraw
+}
+
+/// Which participant a live offer currently awaits (depth parity rule).
+/// Even depth (0, 2, …) = buyer's proposal → awaits **seller**.
+/// Odd depth (1, 3, …) = seller's counter → awaits **buyer**.
+enum ListingOfferAwaitingParty: String, Sendable {
+    case buyer
+    case seller
 }
 
 /// Single Best-Offer row from create/list/update offer endpoints.
@@ -1546,6 +1597,81 @@ struct ListingOffersResponse: Codable, Sendable {
 
 struct ListingOfferEnvelope: Codable, Sendable {
     let offer: ListingOffer?
+}
+
+/// `PATCH /api/v1/offers/{id}` body — accept may also mint a `listing_orders` row
+/// and (only when the **buyer** accepts a counter) return the buyer's PI secret.
+struct UpdateListingOfferResponse: Codable, Sendable {
+    var offer: ListingOffer?
+    var orderId: String?
+    var parentOffer: ListingOffer?
+    var clientSecret: String?
+    var paymentIntentId: String?
+    var paymentRequired: Bool?
+    var totalCents: Int64?
+    var escrowStatus: String?
+    var chargeError: String?
+
+    var envelope: PaymentIntentEnvelope {
+        PaymentIntentEnvelope(
+            orderId: orderId,
+            clientSecret: clientSecret,
+            paymentIntentId: paymentIntentId,
+            paymentRequired: paymentRequired,
+            totalCents: totalCents,
+            amountCents: nil,
+            feeCents: nil,
+            taxCents: nil,
+            escrowStatus: escrowStatus,
+            chargeError: chargeError
+        )
+    }
+}
+
+// MARK: - Best-Offer depth helpers (mirror web `useOffers.ts`)
+
+enum ListingOfferChain {
+    /// Reconstruct chain depth from `parent_offer_id` walks (root buyer offer = 0).
+    static func depths(for offers: [ListingOffer]) -> [String: Int] {
+        let byId = Dictionary(uniqueKeysWithValues: offers.map { ($0.id, $0) })
+        var cache: [String: Int] = [:]
+
+        func depthOf(_ offer: ListingOffer, seen: inout Set<String>) -> Int {
+            if let cached = cache[offer.id] { return cached }
+            guard let parentId = offer.parentOfferId, !parentId.isEmpty else {
+                cache[offer.id] = 0
+                return 0
+            }
+            if seen.contains(offer.id) {
+                cache[offer.id] = 0
+                return 0
+            }
+            guard let parent = byId[parentId] else {
+                cache[offer.id] = 0
+                return 0
+            }
+            seen.insert(offer.id)
+            let d = depthOf(parent, seen: &seen) + 1
+            cache[offer.id] = d
+            return d
+        }
+
+        for offer in offers {
+            var seen = Set<String>()
+            _ = depthOf(offer, seen: &seen)
+        }
+        return cache
+    }
+
+    /// Even depth awaits seller; odd depth awaits buyer.
+    static func awaitingParty(depth: Int) -> ListingOfferAwaitingParty {
+        depth % 2 == 1 ? .buyer : .seller
+    }
+
+    static func awaitingParty(for offer: ListingOffer, in offers: [ListingOffer]) -> ListingOfferAwaitingParty {
+        let d = depths(for: offers)[offer.id] ?? 0
+        return awaitingParty(depth: d)
+    }
 }
 
 // MARK: - Saved searches

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -561,4 +562,133 @@ func TestMaybeRewriteForRelay(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestSendProposedTerms(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepo()
+	repo.channels["ch-1"] = &domain.Channel{
+		ID: "ch-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
+	}
+	svc := New(repo, nil)
+
+	t.Run("provider can propose", func(t *testing.T) {
+		t.Parallel()
+		r := newMockRepo()
+		r.channels["ch-1"] = &domain.Channel{
+			ID: "ch-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
+		}
+		s := New(r, nil)
+		msg, err := s.SendProposedTerms(context.Background(), "ch-1", "prov-1", map[string]interface{}{
+			"payment_type": "milestone",
+			"amount":       "$1,200",
+			"description":  "Full remodel",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, msg)
+		assert.Equal(t, domain.MessageTypeProposedTerms, msg.MessageType)
+		assert.True(t, strings.HasPrefix(msg.Content, "[Proposed Terms]"))
+		assert.Contains(t, msg.Content, "Payment Type: milestone")
+		assert.Contains(t, msg.Content, "Amount: $1,200")
+		assert.Contains(t, msg.Content, "Description: Full remodel")
+		assert.NotEmpty(t, msg.MetadataJSON)
+	})
+
+	t.Run("customer cannot propose", func(t *testing.T) {
+		t.Parallel()
+		_, err := svc.SendProposedTerms(context.Background(), "ch-1", "cust-1", map[string]interface{}{
+			"amount": "100",
+		})
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrOnlyProviderCanPropose))
+	})
+
+	t.Run("non-member cannot propose", func(t *testing.T) {
+		t.Parallel()
+		_, err := svc.SendProposedTerms(context.Background(), "ch-1", "outsider", nil)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrNotChannelMember))
+	})
+
+	t.Run("closed channel rejected", func(t *testing.T) {
+		t.Parallel()
+		r := newMockRepo()
+		r.channels["ch-1"] = &domain.Channel{
+			ID: "ch-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "closed",
+		}
+		s := New(r, nil)
+		_, err := s.SendProposedTerms(context.Background(), "ch-1", "prov-1", map[string]interface{}{
+			"amount": "1",
+		})
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrChannelClosed))
+	})
+}
+
+func TestRespondToTerms(t *testing.T) {
+	t.Parallel()
+
+	t.Run("customer accept", func(t *testing.T) {
+		t.Parallel()
+		r := newMockRepo()
+		r.channels["ch-1"] = &domain.Channel{
+			ID: "ch-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
+		}
+		s := New(r, nil)
+		msg, err := s.RespondToTerms(context.Background(), "ch-1", "cust-1", true)
+		require.NoError(t, err)
+		require.NotNil(t, msg)
+		assert.Equal(t, domain.MessageTypeTermsAccepted, msg.MessageType)
+		assert.Contains(t, msg.Content, "accepted")
+	})
+
+	t.Run("customer reject", func(t *testing.T) {
+		t.Parallel()
+		r := newMockRepo()
+		r.channels["ch-1"] = &domain.Channel{
+			ID: "ch-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
+		}
+		s := New(r, nil)
+		msg, err := s.RespondToTerms(context.Background(), "ch-1", "cust-1", false)
+		require.NoError(t, err)
+		assert.Equal(t, domain.MessageTypeTermsRejected, msg.MessageType)
+		assert.Contains(t, msg.Content, "rejected")
+	})
+
+	t.Run("provider cannot respond", func(t *testing.T) {
+		t.Parallel()
+		r := newMockRepo()
+		r.channels["ch-1"] = &domain.Channel{
+			ID: "ch-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
+		}
+		s := New(r, nil)
+		_, err := s.RespondToTerms(context.Background(), "ch-1", "prov-1", true)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrOnlyCustomerCanRespond))
+	})
+
+	t.Run("non-member cannot respond", func(t *testing.T) {
+		t.Parallel()
+		r := newMockRepo()
+		r.channels["ch-1"] = &domain.Channel{
+			ID: "ch-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
+		}
+		s := New(r, nil)
+		_, err := s.RespondToTerms(context.Background(), "ch-1", "outsider", true)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrNotChannelMember))
+	})
+
+	t.Run("closed channel rejected", func(t *testing.T) {
+		t.Parallel()
+		r := newMockRepo()
+		r.channels["ch-1"] = &domain.Channel{
+			ID: "ch-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "read_only",
+		}
+		s := New(r, nil)
+		_, err := s.RespondToTerms(context.Background(), "ch-1", "cust-1", true)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrChannelClosed))
+	})
 }

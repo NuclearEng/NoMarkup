@@ -21,19 +21,18 @@ import UIKit
 /// - Mark read on open / pull-to-refresh / after send (`POST …/channels/{id}/read`)
 /// - Local in-thread search over loaded messages
 /// - **Read receipts (FR-8.2):** simple "Seen" under the caller’s last own message
-///   when the peer has read it. Signal = `message.is_read == true` **or** a later
-///   peer message (web `MessageThread` heuristic). Channel
-///   `customer_last_read_at` / `provider_last_read_at` exist in Postgres but are
-///   **not** projected on gateway channel/message JSON; WS has no live
-///   `read_receipt` frame in the current chat service — residual for true
-///   timestamp-based receipts without a reply.
+///   when the peer has read it. Prefer channel `customer_last_read_at` /
+///   `provider_last_read_at` (peer watermark ≥ message `created_at`) so Seen
+///   works without a peer reply. Fallbacks: `message.is_read == true` or a later
+///   peer message (web `MessageThread` heuristic). WS has no live `read_receipt`
+///   frame yet — channel is re-fetched on thread load/poll for watermark updates.
 /// - **Local terms (FR-5.4 / FR-8.9):** render proposed-terms cards when content
 ///   starts with `[Proposed Terms]` (web send shape) or `message_type` is
-///   `proposed_terms`. **Residual — Accept/Reject:** chat service has
-///   `RespondToTerms` / `SendProposedTerms` domain methods, but neither is on
-///   `chat.proto` nor gateway REST (`PUT /providers/me/terms` is global-only).
-///   No party-safe accept API to call from iOS without inventing a non-binding
-///   text ack. Contract local-terms override remains server residual.
+///   `proposed_terms`. Customer Accept/Reject calls
+///   `POST /api/v1/channels/{id}/terms/respond` (`accepted: true|false`) —
+///   auth + customer-only server-side; records `terms_accepted` /
+///   `terms_rejected` (explicit consent only). Contract local-terms override
+///   application remains server residual.
 /// - **Residual (other):** inbox-level live unread badges without opening a thread
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthViewModel
@@ -223,6 +222,9 @@ struct ChatThreadView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var chatSocket = ChatWebSocketClient()
     @State private var messages: [ChatMessage] = []
+    /// Mutable channel snapshot (seeded from inbox nav, refreshed via GET channel).
+    /// Holds peer last-read watermarks for FR-8.2 Seen without a reply.
+    @State private var channelMeta: ChatChannelSummary
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var needsSignIn = false
@@ -243,11 +245,19 @@ struct ChatThreadView: View {
     @State private var isBlocking = false
     @State private var safetyStatusMessage: String?
     @State private var safetyStatusIsError = false
+    /// In-flight Accept/Reject for a proposed-terms card (message id).
+    @State private var termsRespondingMessageID: String?
+    @State private var termsRespondError: String?
     #if canImport(UIKit)
     @State private var showCamera = false
     @State private var cameraImage: UIImage?
     #endif
     @FocusState private var composerFocused: Bool
+
+    init(channel: ChatChannelSummary) {
+        self.channel = channel
+        _channelMeta = State(initialValue: channel)
+    }
 
     /// Fast REST poll when WebSocket is down (live substitute).
     private static let pollFallbackNanoseconds: UInt64 = 2_500_000_000
@@ -298,11 +308,18 @@ struct ChatThreadView: View {
         return messages.filter { $0.matchesSearch(q) }
     }
 
+    /// True when JWT `sub` is the channel customer (only party that may Accept/Reject terms).
+    private var isChannelCustomer: Bool {
+        let me = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let customer = channelMeta.customerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !me.isEmpty && !customer.isEmpty && me == customer
+    }
+
     /// Other party for block/report — customer vs provider relative to JWT `sub`.
     private var counterpartyUserID: String? {
         let me = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let customer = channel.customerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let provider = channel.providerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let customer = channelMeta.customerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let provider = channelMeta.providerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !me.isEmpty {
             if me == customer, !provider.isEmpty { return provider }
             if me == provider, !customer.isEmpty { return customer }
@@ -330,20 +347,34 @@ struct ChatThreadView: View {
 
     /// Latest own message id when the peer has read it (for the single "Seen" caption).
     ///
-    /// Prefer explicit `is_read` when the wire ever sets it; otherwise treat a later
-    /// message from the other party as proof they opened the thread (web parity).
-    /// Auth/party: only evaluated against JWT `sub` vs `sender_id` — never trusts
-    /// client-supplied "read" state beyond the message list returned for this channel
-    /// (gateway enforces channel membership on list/mark-read).
+    /// Priority:
+    /// 1. Peer `*_last_read_at` watermark ≥ last own message `created_at` (no reply needed)
+    /// 2. Explicit `message.is_read == true` when the wire ever sets it
+    /// 3. Later message from the other party (web `MessageThread` heuristic fallback)
+    /// Auth/party: only evaluated against JWT `sub` vs `sender_id` / channel parties —
+    /// gateway enforces channel membership on list/mark-read.
     private var lastSeenOwnMessageID: String? {
         guard let me = currentUserID, !me.isEmpty else { return nil }
         guard let lastOwnIndex = messages.lastIndex(where: { $0.senderId == me }) else {
             return nil
         }
         let lastOwn = messages[lastOwnIndex]
+
+        // (1) Channel peer watermark — works without a peer reply.
+        if let peerISO = channelMeta.peerLastReadAt(viewerUserID: me),
+           let peerRead = CatalogDateFormat.parseISO(peerISO),
+           let createdISO = lastOwn.createdAt,
+           let created = CatalogDateFormat.parseISO(createdISO),
+           peerRead >= created {
+            return lastOwn.id
+        }
+
+        // (2) Explicit per-message is_read when populated on the wire.
         if lastOwn.isRead == true {
             return lastOwn.id
         }
+
+        // (3) Fallback: peer replied after our last message (implies they opened the thread).
         let after = messages.index(after: lastOwnIndex)
         guard after < messages.endIndex else { return nil }
         let peerRepliedAfter = messages[after...].contains { msg in
@@ -674,7 +705,11 @@ struct ChatThreadView: View {
                             MessageBubbleRow(
                                 message: message,
                                 isMine: isMine(message),
-                                showSeen: message.id == lastSeenOwnMessageID
+                                showSeen: message.id == lastSeenOwnMessageID,
+                                canRespondToTerms: canRespondToProposedTerms(message),
+                                isRespondingToTerms: termsRespondingMessageID == message.id,
+                                onAcceptTerms: { Task { await respondToTerms(message: message, accepted: true) } },
+                                onRejectTerms: { Task { await respondToTerms(message: message, accepted: false) } }
                             )
                             .id(message.id)
                         }
@@ -866,10 +901,14 @@ struct ChatThreadView: View {
         }
 
         do {
-            let response = try await APIClient.shared.fetchChannelMessages(
+            async let messagesTask = APIClient.shared.fetchChannelMessages(
                 channelID: channel.id,
                 pageSize: 50
             )
+            // Refresh peer last-read watermarks alongside messages (best-effort).
+            async let channelTask = APIClient.shared.fetchChatChannel(channelID: channel.id)
+
+            let response = try await messagesTask
             // Chronological oldest → newest for chat reading order.
             let sorted = response.messages.sorted { lhs, rhs in
                 (lhs.createdAt ?? "") < (rhs.createdAt ?? "")
@@ -877,6 +916,9 @@ struct ChatThreadView: View {
             // Avoid clobbering optimistic sends with an older poll snapshot when possible.
             if sorted.map(\.id) != messages.map(\.id) {
                 messages = sorted
+            }
+            if let refreshed = try? await channelTask {
+                channelMeta = refreshed
             }
             if markRead {
                 await markChannelReadBestEffort()
@@ -1003,6 +1045,49 @@ struct ChatThreadView: View {
         }
         messages.append(created)
         messages.sort { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
+    }
+
+    /// Customer may Accept/Reject the latest open proposed-terms card that is not theirs.
+    /// Hides controls once any later terms_accepted/terms_rejected exists (explicit response).
+    private func canRespondToProposedTerms(_ message: ChatMessage) -> Bool {
+        guard canCompose, isChannelCustomer, !isMine(message), message.isProposedTermsMessage else {
+            return false
+        }
+        // Only the most recent proposal without a subsequent accept/reject is actionable.
+        guard let idx = messages.firstIndex(where: { $0.id == message.id }) else { return false }
+        let later = messages.suffix(from: messages.index(after: idx))
+        let alreadyResponded = later.contains { msg in
+            let t = msg.normalizedType
+            return t == "terms_accepted" || t == "terms_rejected"
+        }
+        if alreadyResponded { return false }
+        // Prefer only the newest proposed-terms message.
+        let laterProposal = later.contains(where: \.isProposedTermsMessage)
+        return !laterProposal
+    }
+
+    /// POST `/api/v1/channels/{id}/terms/respond` — explicit Accept/Reject only.
+    @MainActor
+    private func respondToTerms(message: ChatMessage, accepted: Bool) async {
+        guard canRespondToProposedTerms(message) else { return }
+        termsRespondingMessageID = message.id
+        termsRespondError = nil
+        defer { termsRespondingMessageID = nil }
+
+        do {
+            let created = try await APIClient.shared.respondToProposedTerms(
+                channelID: channel.id,
+                accepted: accepted
+            )
+            appendMessageIfNeeded(created)
+            await markChannelReadBestEffort()
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+            termsRespondError = "Session expired. Sign in again to respond to terms."
+        } catch {
+            termsRespondError = error.localizedDescription
+            sendError = error.localizedDescription
+        }
     }
 
     /// POST `/api/v1/channels/{id}/read` — best-effort; never surfaces as a thread error.
@@ -1162,6 +1247,11 @@ private struct MessageBubbleRow: View {
     let isMine: Bool
     /// When true, render a simple "Seen" caption under this (own) bubble.
     var showSeen: Bool = false
+    /// Customer-only Accept/Reject for proposed local terms (FR-8.9).
+    var canRespondToTerms: Bool = false
+    var isRespondingToTerms: Bool = false
+    var onAcceptTerms: (() -> Void)?
+    var onRejectTerms: (() -> Void)?
 
     var body: some View {
         if message.isSystemMessage {
@@ -1199,9 +1289,8 @@ private struct MessageBubbleRow: View {
         .accessibilityLabel(message.displayBody)
     }
 
-    // MARK: Proposed terms card (FR-8.9 render)
-    // Accept/Reject residual — `RespondToTerms` not on gateway REST / chat.proto.
-    // When that API ships: party-only (customer), auth required, bind contract local terms.
+    // MARK: Proposed terms card (FR-8.9)
+    // Accept/Reject → POST …/terms/respond (customer-only, explicit consent).
 
     private var proposedTermsRow: some View {
         VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
@@ -1231,6 +1320,10 @@ private struct MessageBubbleRow: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
+                    if canRespondToTerms {
+                        proposedTermsActions
+                    }
+
                     metaRow(onGold: false)
                 }
                 .padding(.horizontal, 14)
@@ -1257,8 +1350,11 @@ private struct MessageBubbleRow: View {
                     .accessibilityLabel("Seen by the other party")
             }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText + (showSeen && isMine ? ", Seen" : ""))
+        // Keep children accessible when Accept/Reject are present (interactive buttons).
+        .modifier(ProposedTermsA11yModifier(
+            combineChildren: !canRespondToTerms,
+            label: accessibilityText + (showSeen && isMine ? ", Seen" : "")
+        ))
     }
 
     @ViewBuilder
@@ -1296,6 +1392,45 @@ private struct MessageBubbleRow: View {
                 }
             }
         }
+    }
+
+    /// Explicit Accept / Reject — never auto-bound; requires customer action.
+    private var proposedTermsActions: some View {
+        HStack(spacing: 10) {
+            Button {
+                onRejectTerms?()
+            } label: {
+                Text("Reject")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .tint(BrandTheme.destructive)
+            .disabled(isRespondingToTerms)
+            .accessibilityLabel("Reject proposed terms")
+
+            Button {
+                onAcceptTerms?()
+            } label: {
+                Group {
+                    if isRespondingToTerms {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Accept")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(BrandTheme.teal)
+            .disabled(isRespondingToTerms)
+            .accessibilityLabel("Accept proposed terms")
+        }
+        .padding(.top, 4)
     }
 
     private func termsFieldRow(label: String, value: String, emphasize: Bool = false) -> some View {
@@ -1421,6 +1556,24 @@ private struct MessageBubbleRow: View {
             return message.displayBody
         }
         return isMine ? "You: \(message.displayBody)" : message.displayBody
+    }
+}
+
+/// Combines the proposed-terms card for VoiceOver unless Accept/Reject are shown
+/// (interactive children must remain individually focusable).
+private struct ProposedTermsA11yModifier: ViewModifier {
+    let combineChildren: Bool
+    let label: String
+
+    func body(content: Content) -> some View {
+        if combineChildren {
+            content
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(label)
+        } else {
+            content
+                .accessibilityElement(children: .contain)
+        }
     }
 }
 

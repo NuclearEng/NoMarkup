@@ -443,6 +443,15 @@ actor APIClient {
         )
     }
 
+    /// GET `/api/v1/channels/{id}` — single channel (Bearer required).
+    /// Includes `customer_last_read_at` / `provider_last_read_at` for read receipts.
+    func fetchChatChannel(channelID: String) async throws -> ChatChannelSummary {
+        try await getJSON(
+            pathComponents: ["api", "v1", "channels", channelID],
+            authorized: true
+        )
+    }
+
     /// GET `/api/v1/channels/{id}/messages?page_size=` — thread messages (Bearer required).
     func fetchChannelMessages(channelID: String, pageSize: Int = 50) async throws -> ChatMessagesResponse {
         let items = [
@@ -522,6 +531,42 @@ actor APIClient {
         _ = try await postData(
             pathComponents: ["api", "v1", "channels", channelID, "read"],
             body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/channels/{id}/terms/respond` — customer Accept/Reject local terms (FR-8.9 / FR-5.4).
+    /// Body: `{ "accepted": true|false }`. Party check is server-side (customer-only).
+    /// Explicit consent only — never omit `accepted` (gateway 400 if missing).
+    /// Returns the created `terms_accepted` / `terms_rejected` message (201).
+    @discardableResult
+    func respondToProposedTerms(channelID: String, accepted: Bool) async throws -> ChatMessage {
+        let body = RespondToTermsRequestBody(accepted: accepted)
+        return try await postJSON(
+            pathComponents: ["api", "v1", "channels", channelID, "terms", "respond"],
+            body: body,
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/channels/{id}/proposed-terms` — provider proposes local terms.
+    @discardableResult
+    func sendProposedTerms(
+        channelID: String,
+        paymentType: String,
+        amount: String,
+        milestones: String = "",
+        description: String = ""
+    ) async throws -> ChatMessage {
+        let body = SendProposedTermsRequestBody(
+            paymentType: paymentType,
+            amount: amount,
+            milestones: milestones,
+            description: description
+        )
+        return try await postJSON(
+            pathComponents: ["api", "v1", "channels", channelID, "proposed-terms"],
+            body: body,
             authorized: .required
         )
     }
@@ -1598,6 +1643,17 @@ struct AmountCentsBody: Encodable {
     let amountCents: Int64
 }
 
+private struct RespondToTermsRequestBody: Encodable {
+    let accepted: Bool
+}
+
+private struct SendProposedTermsRequestBody: Encodable {
+    let paymentType: String
+    let amount: String
+    let milestones: String
+    let description: String
+}
+
 private struct SendMessageRequestBody: Encodable {
     let content: String
     let messageType: String
@@ -1730,6 +1786,12 @@ enum APIClientError: Error, LocalizedError {
     /// 403 Forbidden — e.g. job bid ladder visible only to the job owner.
     var isForbidden: Bool {
         if case .httpStatus(let code, _) = self, code == 403 { return true }
+        return false
+    }
+
+    /// 409 Conflict — e.g. OAuth unlink would leave no sign-in method, offer already actioned.
+    var isConflict: Bool {
+        if case .httpStatus(let code, _) = self, code == 409 { return true }
         return false
     }
 

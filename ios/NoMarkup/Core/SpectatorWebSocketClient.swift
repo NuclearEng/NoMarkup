@@ -1,39 +1,28 @@
 import Combine
 import Foundation
 
-/// Native auction WebSocket client for gateway `GET /ws/auction/{jobId}`.
+/// Native **public** auction spectator WebSocket for
+/// `GET /ws/auction/{jobId}/spectate`.
 ///
-/// Protocol (mirrors `web/src/lib/auction-websocket.ts` + chat `ws.AuctionHandler`):
-/// - **Connect:** path job id; gateway validates JWT then proxies to chat auction WS.
-/// - **Auth:** JWT on the upgrade as `Authorization: Bearer <access>` (preferred).
-///   Gateway also accepts `?token=` — we deliberately avoid the query form so the JWT
-///   never appears in access logs that record the request line.
-/// - **Server → client:**
-///   - `bid_event` — Redis fan-out; `data` is the bidding-engine payload
-///     `{ type, job_id, amount_cents, timestamp }` (`type` = `bid_placed` /
-///     `bid_updated` / `bid_withdrawn`, …).
-///   - `auction_state` / `snipe_extended` / `auction_ended` — accepted for forward
-///     compatibility with the web client envelope (not all are published today).
-///   - `error` — e.g. not a job participant.
-/// - **Client → server (optional):** `subscribe_auction` / `unsubscribe_auction`
-///   with `job_id` for multi-job; path job is auto-subscribed on connect.
+/// Security contract (gateway `SpectatorWSHandler`):
+/// - **Anonymous** — no JWT, cookie, or query token.
+/// - **Delayed** — server holds events ~3s before fan-out (anti front-running).
+/// - **Anonymized** — PII fields stripped server-side (`provider_id`, names,
+///   email, phone, bidder ids, …). Only public bid signals
+///   (`type` / `amount_cents` / `timestamp` / `job_id`) should appear in `data`.
+/// - **Live auctions only** — bidding engine publishes Redis `auction:{jobId}`
+///   for `auction_type == "live"`; sealed reverse auctions do not stream amounts.
+/// - Feature-gated (`ENABLE_LIVE_AUCTION`); soft-fail when the endpoint 404s.
 ///
-/// Authorization: only job **participants** (owner or bidder) receive the privileged
-/// feed. Non-participants get an error + close; the view keeps HTTP poll fallback.
-/// Anonymous spectators must use `/ws/auction/{jobId}/spectate` (not this client).
+/// Do **not** use this path for participants who need the privileged feed —
+/// they use `AuctionWebSocketClient` → `/ws/auction/{jobId}`.
 ///
-/// Lifecycle: owned by `JobDetailView`. Connect → receive live frames → reconnect
-/// with exponential backoff + jitter. Reset backoff only if the socket stayed open
-/// ≥ 5s (avoids hot-loop when gateway accepts then fails chat dial). Stop reconnect
-/// on `auction_ended` or permanent auth denial.
+/// Lifecycle: owned by `JobDetailView` for unauth / non-participant viewers.
+/// Same reconnect + hybrid HTTP poll pattern as the participant socket.
 ///
-/// Fall-back: the detail view keeps a faster REST poll of
-/// `GET …/auction/state` + `…/events` while disconnected and a slow reconcile poll
-/// while connected (same hybrid as chat).
-///
-/// **Never log the access token or Authorization header.**
+/// **Never attach Authorization or `?token=` to this URL.**
 @MainActor
-final class AuctionWebSocketClient: ObservableObject {
+final class SpectatorWebSocketClient: ObservableObject {
 
     // MARK: - Public status
 
@@ -44,33 +33,20 @@ final class AuctionWebSocketClient: ObservableObject {
     }
 
     enum ServerEvent: Sendable {
-        /// Live bid activity from Redis fan-out.
+        /// Delayed, anonymized bid activity from Redis fan-out.
         case bidEvent(AuctionEvent)
-        /// Full/partial auction state snapshot (optional wire type).
-        case auctionState(
-            lowestBidCents: Int64?,
-            bidCount: Int?,
-            auctionEndsAt: String?,
-            snipeExtensionCount: Int?
-        )
-        /// Anti-snipe extension signal (optional wire type).
-        case snipeExtended(jobID: String)
-        /// Auction finished — stop reconnect.
-        case auctionEnded(jobID: String)
-        /// Protocol / auth error.
+        /// Concurrent public viewer count (optional UI).
+        case spectatorCount(Int)
+        /// Protocol / transport error (non-fatal for the view).
         case error(String)
     }
 
     @Published private(set) var status: ConnectionStatus = .disconnected
 
-    /// True after a permanent close (auth denial, auction ended). View falls
-    /// back to public spectator WS and/or HTTP poll without re-dialing this feed.
-    @Published private(set) var isPermanentlyStopped = false
-
     /// Job this client is currently dialing / subscribed to (path param).
     private(set) var activeJobID: String?
 
-    // MARK: - Config (mirrors chat + web ws-backoff)
+    // MARK: - Config (mirrors AuctionWebSocketClient + web spectator-websocket)
 
     private static let initialReconnectDelayMs: UInt64 = 1_000
     private static let maxReconnectDelayMs: UInt64 = 30_000
@@ -85,7 +61,7 @@ final class AuctionWebSocketClient: ObservableObject {
     private var intentionalClose = false
     private var permanentStop = false
     private var reconnectAttempts = 0
-    private var reconnectDelayMs: UInt64 = AuctionWebSocketClient.initialReconnectDelayMs
+    private var reconnectDelayMs: UInt64 = SpectatorWebSocketClient.initialReconnectDelayMs
     private var openedAt: Date?
     private var reconnectTask: Task<Void, Never>?
     private var receiveTask: Task<Void, Never>?
@@ -96,20 +72,18 @@ final class AuctionWebSocketClient: ObservableObject {
 
     // MARK: - Lifecycle
 
-    /// Open (or re-open) the auction socket for `jobID`.
+    /// Open (or re-open) the public spectator socket for `jobID`.
     func connect(jobID: String) {
         let id = jobID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !id.isEmpty else { return }
 
         intentionalClose = false
         permanentStop = false
-        isPermanentlyStopped = false
 
         if activeJobID == id, status == .connected || status == .connecting {
             return
         }
 
-        // Switching jobs: tear down previous socket cleanly.
         if activeJobID != id {
             tearDownSocket(resetBackoff: true)
             reconnectAttempts = 0
@@ -121,9 +95,6 @@ final class AuctionWebSocketClient: ObservableObject {
     func disconnect() {
         intentionalClose = true
         permanentStop = false
-        // Keep `isPermanentlyStopped` so JobDetailView can hand off to the
-        // public spectator socket without a race (disconnect must not re-arm
-        // the participant path). Cleared only on the next `connect(jobID:)`.
         cancelReconnect()
         tearDownSocket(resetBackoff: true)
         activeJobID = nil
@@ -154,55 +125,32 @@ final class AuctionWebSocketClient: ObservableObject {
 
         status = .connecting
 
-        Task { @MainActor in
-            let token: String
-            do {
-                // APIClient is an actor — hop with await (same as ChatWebSocketClient).
-                // Stay disconnected when there is no session (HTTP poll covers the public feed).
-                guard let access = try await APIClient.shared.accessTokenForWebSocket(),
-                      !access.isEmpty
-                else {
-                    status = .disconnected
-                    return
-                }
-                token = access
-            } catch {
-                status = .disconnected
-                scheduleReconnect()
-                return
-            }
-
-            guard let url = Self.auctionWebSocketURL(jobID: jobID) else {
-                status = .disconnected
-                return
-            }
-
-            // Prefer Authorization header over ?token= so the JWT never lands in
-            // request-line access logs. Gateway accepts header, query, or cookie.
-            var request = URLRequest(url: url)
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            // Do not log `request` or `token`.
-
-            let session = URLSession(configuration: .default)
-            let task = session.webSocketTask(with: request)
-            self.urlSession = session
-            self.webSocketTask = task
-            self.openedAt = nil
-            task.resume()
-
-            // URLSessionWebSocketTask has no onopen callback — first successful
-            // receive or a zero-length ping establishes "connected".
-            self.markConnected()
-            self.startReceiveLoop()
-            self.startPingLoop()
+        guard let url = Self.spectatorWebSocketURL(jobID: jobID) else {
+            status = .disconnected
+            return
         }
+
+        // No Authorization / no ?token= — public anonymous stream only.
+        let request = URLRequest(url: url)
+        // Do not log request headers or attach credentials.
+
+        let session = URLSession(configuration: .default)
+        let task = session.webSocketTask(with: request)
+        urlSession = session
+        webSocketTask = task
+        openedAt = nil
+        task.resume()
+
+        markConnected()
+        startReceiveLoop()
+        startPingLoop()
     }
 
     private func markConnected() {
         status = .connected
         openedAt = Date()
-        // Do NOT reset reconnectAttempts here — gateway may accept then immediately
-        // close if chat dial fails. Reset only after a stable open (on close path).
+        // Do NOT reset reconnectAttempts here — gateway may accept then close
+        // (e.g. Redis unavailable). Reset only after a stable open on close path.
     }
 
     // MARK: - Receive
@@ -237,9 +185,7 @@ final class AuctionWebSocketClient: ObservableObject {
                 }
                 guard let self, !self.intentionalClose, !self.permanentStop else { break }
                 guard let task = self.webSocketTask, task.state == .running else { continue }
-                task.sendPing { _ in
-                    // Errors surface via the receive loop / next send.
-                }
+                task.sendPing { _ in }
             }
         }
     }
@@ -266,56 +212,44 @@ final class AuctionWebSocketClient: ObservableObject {
 
         switch type {
         case "bid_event":
+            // Server already stripped PII; still only map public bid fields.
             if let event = Self.decodeBidEvent(obj["data"], envelopeJobID: jobID) {
                 onEvent?(.bidEvent(event))
             }
-        case "auction_state":
-            let state = Self.decodeAuctionState(obj["data"])
-            onEvent?(
-                .auctionState(
-                    lowestBidCents: state.lowest,
-                    bidCount: state.bidCount,
-                    auctionEndsAt: state.endsAt,
-                    snipeExtensionCount: state.snipe
-                )
-            )
-        case "snipe_extended":
-            onEvent?(.snipeExtended(jobID: jobID))
-        case "auction_ended":
-            permanentStop = true
-            isPermanentlyStopped = true
-            onEvent?(.auctionEnded(jobID: jobID))
-            // Stay "connected" briefly then disconnect cleanly without reconnect.
-            tearDownSocket(resetBackoff: true)
-            status = .disconnected
+        case "spectator_count":
+            if let count = Self.intValue(obj["spectator_count"]) {
+                onEvent?(.spectatorCount(count))
+            }
         case "error":
             let msg = (obj["error"] as? String) ?? "WebSocket error"
-            // Permanent auth denial — do not thrash reconnect (participant check failed).
             let lower = msg.lowercased()
-            if lower.contains("not authorized")
-                || lower.contains("authentication required")
-                || lower.contains("subscription unavailable")
+            // Feature-off / hard deny: stop thrashing reconnect (HTTP poll covers).
+            if lower.contains("not enabled")
+                || lower.contains("not found")
+                || lower.contains("not authorized")
             {
                 permanentStop = true
-                isPermanentlyStopped = true
                 cancelReconnect()
                 tearDownSocket(resetBackoff: true)
                 status = .disconnected
             }
             onEvent?(.error(msg))
         default:
+            // Ignore auction_state / auction_ended / unknown — not on public
+            // spectator envelope today; poll remains source of truth for close.
             break
         }
     }
 
-    /// Maps Redis / bidding-engine bid payload into `AuctionEvent`.
+    /// Maps delayed, anonymized bid payload into `AuctionEvent`.
     ///
-    /// Wire shapes seen in production paths:
-    /// - `{ "type":"bid_placed", "job_id":"…", "amount_cents":N, "timestamp":"…" }`
-    /// - snake_case REST event: `event_type` + `created_at`
+    /// Wire: `{ "type":"bid_placed", "job_id":"…", "amount_cents":N, "timestamp":"…" }`
+    /// after gateway `anonymizeEvent` (PII keys deleted).
     private static func decodeBidEvent(_ raw: Any?, envelopeJobID: String) -> AuctionEvent? {
         guard let dict = asDictionary(raw) else { return nil }
 
+        // Defense in depth: never surface identity fields even if a server
+        // regression re-introduces them — AuctionEvent has no such slots.
         let jobId = stringValue(dict["job_id"])
             ?? stringValue(dict["jobId"])
             ?? (envelopeJobID.isEmpty ? nil : envelopeJobID)
@@ -330,7 +264,6 @@ final class AuctionWebSocketClient: ObservableObject {
             ?? stringValue(dict["created_at"])
             ?? stringValue(dict["createdAt"])
 
-        // Need at least one identifying field so empty garbage does not spam the feed.
         guard jobId != nil || amount != nil || eventType != nil else { return nil }
 
         return AuctionEvent(
@@ -339,23 +272,6 @@ final class AuctionWebSocketClient: ObservableObject {
             eventType: eventType,
             createdAt: createdAt
         )
-    }
-
-    private static func decodeAuctionState(_ raw: Any?) -> (
-        lowest: Int64?,
-        bidCount: Int?,
-        endsAt: String?,
-        snipe: Int?
-    ) {
-        guard let dict = asDictionary(raw) else {
-            return (nil, nil, nil, nil)
-        }
-        let lowest = int64Value(dict["lowest_bid_cents"]) ?? int64Value(dict["lowestBidCents"])
-        let bidCount = intValue(dict["bid_count"]) ?? intValue(dict["bidCount"])
-        let endsAt = stringValue(dict["auction_ends_at"]) ?? stringValue(dict["auctionEndsAt"])
-        let snipe = intValue(dict["snipe_extension_count"])
-            ?? intValue(dict["snipeExtensionCount"])
-        return (lowest, bidCount, endsAt, snipe)
     }
 
     private static func asDictionary(_ raw: Any?) -> [String: Any]? {
@@ -439,8 +355,7 @@ final class AuctionWebSocketClient: ObservableObject {
                 return
             }
             guard let self, !self.intentionalClose, !self.permanentStop else { return }
-            // Refresh access token before re-dial (15-min JWT may have expired while down).
-            _ = try? await APIClient.shared.refreshSession()
+            // No session refresh — public socket has no token.
             self.openSocket()
         }
     }
@@ -466,7 +381,6 @@ final class AuctionWebSocketClient: ObservableObject {
         }
     }
 
-    /// Full jitter in `[delay/2, delay)`.
     private func jitteredDelayMs(_ delayMs: UInt64) -> UInt64 {
         let half = delayMs / 2
         let span = max(delayMs - half, 1)
@@ -476,8 +390,8 @@ final class AuctionWebSocketClient: ObservableObject {
 
     // MARK: - URL
 
-    /// `ws(s)://{api-host}/ws/auction/{jobId}` derived from `AppConfig.apiBaseURL`.
-    static func auctionWebSocketURL(jobID: String) -> URL? {
+    /// `ws(s)://{api-host}/ws/auction/{jobId}/spectate` — **no** query token.
+    static func spectatorWebSocketURL(jobID: String) -> URL? {
         let http = AppConfig.apiBaseURL
         guard var components = URLComponents(url: http, resolvingAgainstBaseURL: false) else {
             return nil
@@ -490,12 +404,10 @@ final class AuctionWebSocketClient: ObservableObject {
         default:
             components.scheme = components.scheme == nil ? "ws" : components.scheme
         }
-        // Path segments only — job id is not a query param.
         let encoded = jobID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobID
-        components.path = "/ws/auction/\(encoded)"
+        components.path = "/ws/auction/\(encoded)/spectate"
         components.query = nil
         components.fragment = nil
-        // Never attach token as query here.
         return components.url
     }
 }

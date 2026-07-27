@@ -37,27 +37,28 @@ extension APIClient {
     }
 
     /// PATCH `/api/v1/offers/{id}` — accept | reject | counter | withdraw.
+    ///
+    /// On **accept**, the gateway mints `listing_orders` in `pending_payment` and
+    /// may return a PaymentIntent. `client_secret` is returned **only when the
+    /// buyer** is the actor (buyer accepting a seller counter) — seller accept
+    /// must not receive the buyer's payment credential.
     @discardableResult
     func updateOffer(
         offerId: String,
         action: ListingOfferAction,
         counterAmountCents: Int64? = nil,
         message: String = ""
-    ) async throws -> ListingOffer {
+    ) async throws -> UpdateListingOfferResponse {
         let body = UpdateListingOfferBody(
             action: action.rawValue,
             counterAmountCents: counterAmountCents ?? 0,
             message: message.trimmingCharacters(in: .whitespacesAndNewlines)
         )
-        let wrapped: ListingOfferEnvelope = try await patchJSON(
+        return try await patchJSON(
             pathComponents: ["api", "v1", "offers", offerId],
             body: body,
             authorized: .required
         )
-        guard let offer = wrapped.offer else {
-            throw APIClientError.decoding("Update offer response missing offer")
-        }
-        return offer
     }
 
     // MARK: Saved searches

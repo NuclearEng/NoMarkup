@@ -920,6 +920,10 @@ func New(
 			r.Get("/{id}/messages", chatHandler.ListMessages)
 			r.Post("/{id}/messages", chatHandler.SendMessage)
 			r.Post("/{id}/read", chatHandler.MarkRead)
+			// Local terms (FR-8.9 / FR-5.4): provider proposes; customer Accept/Reject.
+			// Party checks + explicit-consent semantics live in the chat service.
+			r.Post("/{id}/proposed-terms", chatHandler.SendProposedTerms)
+			r.Post("/{id}/terms/respond", chatHandler.RespondToTerms)
 		})
 
 		// ── Communication polish (Wave 5 / Agent P) ─────────────────────

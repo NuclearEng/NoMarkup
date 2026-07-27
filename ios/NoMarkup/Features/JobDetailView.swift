@@ -75,6 +75,9 @@ struct JobDetailView: View {
     @State private var auctionEvents: [AuctionEvent] = []
     /// Authed auction floor WebSocket (`GET /ws/auction/{jobId}`); HTTP poll is fallback.
     @StateObject private var auctionSocket = AuctionWebSocketClient()
+    /// Public delayed spectator stream (`GET /ws/auction/{jobId}/spectate`) for
+    /// logged-out and non-participant viewers. No JWT; PII stripped server-side.
+    @StateObject private var spectatorSocket = SpectatorWebSocketClient()
     /// Throttle ladder refetch when WS bid frames arrive in a burst.
     @State private var lastLadderInvalidateAt: Date = .distantPast
 
@@ -301,21 +304,17 @@ struct JobDetailView: View {
         .task(id: auctionSocketIdentity) {
             await runAuctionSocketLifecycle()
         }
+        .task(id: spectatorSocketIdentity) {
+            await runSpectatorSocketLifecycle()
+        }
         .task(id: "\(jobID)|ladder|\(scenePhase == .active)") {
             await pollBidLadderLoop()
         }
         .onChange(of: scenePhase) { _, phase in
-            // Pause auction WS when backgrounded; reconnect when active again.
-            if phase == .active {
-                guard shouldAttemptAuctionSocket else { return }
-                auctionSocket.connect(jobID: jobID)
-            } else {
-                auctionSocket.disconnect()
-            }
+            handleScenePhaseChange(phase)
         }
         .onDisappear {
-            auctionSocket.onEvent = nil
-            auctionSocket.disconnect()
+            teardownAuctionSockets()
         }
         .refreshable { await load() }
         .confirmationDialog(
@@ -980,6 +979,11 @@ struct JobDetailView: View {
         "\(jobID)|\(auth.isAuthenticated)|\(auth.isScaffoldSession)|\(isAuctionActiveForPolling)|\(isLiveAuctionType)|\(liveAuctionStateAvailable)|\(scenePhase == .active)"
     }
 
+    /// Spectator path: unauth / non-participant; restarts when participant feed dies permanently.
+    private var spectatorSocketIdentity: String {
+        "\(jobID)|\(auth.isAuthenticated)|\(auth.isScaffoldSession)|\(auctionSocket.isPermanentlyStopped)|\(isAuctionActiveForPolling)|\(isLiveAuctionType)|\(liveAuctionStateAvailable)|\(scenePhase == .active)"
+    }
+
     // MARK: - Bid ladder
 
     @ViewBuilder
@@ -1083,10 +1087,15 @@ struct JobDetailView: View {
 
     /// Footer copy: WS live when connected; otherwise honest poll cadence.
     private var liveFeedFooterCopy: String {
-        if isAuctionSocketLive {
+        if isParticipantSocketLive {
             return isLiveAuctionType
                 ? "Open floor · live over WebSocket while the auction is open."
                 : "Live over WebSocket while the auction is open."
+        }
+        if isSpectatorSocketLive {
+            return isLiveAuctionType
+                ? "Open floor · public live feed (briefly delayed) while the auction is open."
+                : "Public live feed (briefly delayed) while the auction is open."
         }
         if isLiveAuctionType {
             return "Open floor · updates every few seconds while the auction is open."
@@ -1094,17 +1103,43 @@ struct JobDetailView: View {
         return "Refreshes while the auction is open."
     }
 
-    private var isAuctionSocketLive: Bool {
+    private var isParticipantSocketLive: Bool {
         auctionSocket.status == .connected
     }
 
-    /// Authed participant feed only — owner/bidder; others keep HTTP poll.
+    private var isSpectatorSocketLive: Bool {
+        spectatorSocket.status == .connected
+    }
+
+    /// Either privileged participant or public spectator stream is up.
+    private var isAuctionSocketLive: Bool {
+        isParticipantSocketLive || isSpectatorSocketLive
+    }
+
+    /// Authed participant feed — owner/bidder; gateway rejects non-participants.
+    /// Stops after permanent denial so spectator can take the live slot.
     private var shouldAttemptAuctionSocket: Bool {
         guard auth.isAuthenticated, !auth.isScaffoldSession else { return false }
         guard scenePhase == .active else { return false }
+        guard !auctionSocket.isPermanentlyStopped else { return false }
         // Prefer live-typed or known-live jobs; still try for open reverse auctions
         // so owners/bidders get real-time ladder ticks when the feature is on.
         return isAuctionActiveForPolling || isLiveAuctionType || liveAuctionStateAvailable
+    }
+
+    /// Public delayed spectate for logged-out, scaffold, and non-participants.
+    /// Yields while the privileged participant socket is still eligible (connected,
+    /// connecting, or reconnecting). After permanent denial, takes over.
+    private var shouldAttemptSpectatorSocket: Bool {
+        guard scenePhase == .active else { return false }
+        guard isAuctionActiveForPolling || isLiveAuctionType || liveAuctionStateAvailable else {
+            return false
+        }
+        if isParticipantSocketLive { return false }
+        if shouldAttemptAuctionSocket, !auctionSocket.isPermanentlyStopped {
+            return false
+        }
+        return true
     }
 
     @ViewBuilder
@@ -2237,6 +2272,58 @@ struct JobDetailView: View {
         auctionSocket.disconnect()
     }
 
+    /// Pause auction / spectator WS when backgrounded; reconnect when active.
+    /// Extracted from `body` so the type-checker does not choke on the modifier chain.
+    @MainActor
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        if phase == .active {
+            if shouldAttemptAuctionSocket {
+                auctionSocket.connect(jobID: jobID)
+            }
+            if shouldAttemptSpectatorSocket {
+                spectatorSocket.connect(jobID: jobID)
+            }
+        } else {
+            auctionSocket.disconnect()
+            spectatorSocket.disconnect()
+        }
+    }
+
+    @MainActor
+    private func teardownAuctionSockets() {
+        auctionSocket.onEvent = nil
+        auctionSocket.disconnect()
+        spectatorSocket.onEvent = nil
+        spectatorSocket.disconnect()
+    }
+
+    /// Public delayed spectate WS for non-participants + logged-out viewers.
+    /// Mutually exclusive with a live participant socket (see `shouldAttemptSpectatorSocket`).
+    @MainActor
+    private func runSpectatorSocketLifecycle() async {
+        guard shouldAttemptSpectatorSocket else {
+            spectatorSocket.disconnect()
+            return
+        }
+
+        spectatorSocket.onEvent = { [jobID] event in
+            handleSpectatorSocketEvent(event, expectedJobID: jobID)
+        }
+        spectatorSocket.connect(jobID: jobID)
+
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            } catch {
+                break
+            }
+            if !shouldAttemptSpectatorSocket {
+                break
+            }
+        }
+        spectatorSocket.disconnect()
+    }
+
     @MainActor
     private func handleAuctionSocketEvent(
         _ event: AuctionWebSocketClient.ServerEvent,
@@ -2244,21 +2331,13 @@ struct JobDetailView: View {
     ) {
         switch event {
         case .bidEvent(let bidEvent):
-            if let jid = bidEvent.jobId, !jid.isEmpty, jid != expectedJobID {
-                return
-            }
-            mergeAuctionEvent(bidEvent)
-            if let cents = bidEvent.amountCents, cents > 0 {
-                if liveLowestBidCents == nil || cents < (liveLowestBidCents ?? .max) {
-                    liveLowestBidCents = cents
-                }
-            }
-            // Keep owner ladder roughly live without hammering on bid storms.
-            let now = Date()
-            if now.timeIntervalSince(lastLadderInvalidateAt) >= 2.0 {
-                lastLadderInvalidateAt = now
-                Task { await loadBids() }
-            }
+            // Privileged floor: amounts + ladder are participant-visible.
+            applyPublicBidSignal(
+                bidEvent,
+                expectedJobID: expectedJobID,
+                refreshLadder: true,
+                applyAmountToLeader: true
+            )
         case .auctionState(let lowest, let bidCount, let endsAt, _):
             liveAuctionStateAvailable = true
             if let lowest, lowest > 0 {
@@ -2285,8 +2364,61 @@ struct JobDetailView: View {
                 await loadBids()
             }
         case .error:
-            // Non-fatal; HTTP poll covers recovery (including non-participant).
+            // Non-fatal; spectator WS and/or HTTP poll cover non-participants.
             break
+        }
+    }
+
+    @MainActor
+    private func handleSpectatorSocketEvent(
+        _ event: SpectatorWebSocketClient.ServerEvent,
+        expectedJobID: String
+    ) {
+        switch event {
+        case .bidEvent(let bidEvent):
+            // Public signals only — never refresh owner ladder from spectate
+            // (ladder is authz-gated; would 401/403 and thrash for guests).
+            // Amount → leader only when UI already treats amounts as public.
+            applyPublicBidSignal(
+                bidEvent,
+                expectedJobID: expectedJobID,
+                refreshLadder: false,
+                applyAmountToLeader: canShowPublicEventAmounts
+            )
+        case .spectatorCount:
+            // Count is public but not shown in v1 soft feed chrome.
+            break
+        case .error:
+            // Non-fatal; HTTP poll covers recovery.
+            break
+        }
+    }
+
+    /// Merge a bid activity row; optionally touch owner ladder / leading bid.
+    @MainActor
+    private func applyPublicBidSignal(
+        _ bidEvent: AuctionEvent,
+        expectedJobID: String,
+        refreshLadder: Bool,
+        applyAmountToLeader: Bool
+    ) {
+        if let jid = bidEvent.jobId, !jid.isEmpty, jid != expectedJobID {
+            return
+        }
+        mergeAuctionEvent(bidEvent)
+        if applyAmountToLeader,
+           let cents = bidEvent.amountCents,
+           cents > 0
+        {
+            if liveLowestBidCents == nil || cents < (liveLowestBidCents ?? .max) {
+                liveLowestBidCents = cents
+            }
+        }
+        guard refreshLadder else { return }
+        let now = Date()
+        if now.timeIntervalSince(lastLadderInvalidateAt) >= 2.0 {
+            lastLadderInvalidateAt = now
+            Task { await loadBids() }
         }
     }
 
