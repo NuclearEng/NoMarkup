@@ -6,7 +6,7 @@ Everything — icon, copy, escrow, photography, support — must still feel inev
 This is not “luxury theme.” It is the **trust transfer** for real wealth: rare goods, high-ticket services, reputation that cannot be burned.
 
 > **Subordinate to brand SSOT.** Visual tokens, tagline, and **app icon** are owned by
-> `docs/brand/showcase-ssot.md` + `brand/ICON_DECISION.md` (terminal amber N on pure black).
+> `docs/brand/showcase-ssot.md` + `brand/ICON_DECISION.md` (champagne metal M↓).
 > This doc is a **high-ticket craft / trust bar**, not permission to ship diamond-only or
 > gold-field jewelry marks as the product icon.
 
@@ -36,7 +36,7 @@ Not casino gold, not crypto neon, not “luxury” as a filter on Amazon.
 | Escrow language as trust | “Web handoff” apologetic CTAs |
 | Photography that could hang in a gallery | Stock clutter, low-res grids |
 
-**Home screen icon:** must still **register in a sea of apps**. Current master is **terminal amber N on pure black** (master 37) — chroma + silhouette, not cartoon. A gold-field + solitaire plaque is **not** the current product icon (see mission north star: diamond-as-centerpiece is wrong for the fair-market story).
+**Home screen icon:** must still **register in a sea of apps**. Current master is **champagne brushed gold + crystal M↓** — metal chroma + monogram silhouette. Diamond-as-centerpiece is **not** the icon; reverse-auction down-arrow is the product signal.
 
 ---
 
@@ -65,7 +65,7 @@ Not casino gold, not crypto neon, not “luxury” as a filter on Amazon.
 |-------|---------------------|
 | Escrow / Connect | Real (goods orders) — present as vault, not checkout widget |
 | iOS shell | Dark navy + gold materials — keep elevating Home / auction chrome |
-| Brand icon | Terminal amber N on black (master 37) shipped — SpringBoard pop + mission fit; do not reintroduce diamond seal without SSOT decision |
+| Brand icon | Champagne metal M↓ shipped — SpringBoard pop + reverse-auction arrow; see `ICON_DECISION.md` |
 | Native create listing / post job | Still web-handoff — next frontier for parity |
 | Trust UI on mobile | Partial — surface tiers on cards next |
 

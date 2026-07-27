@@ -64,7 +64,7 @@ Visual tokens + full SSOT: **`docs/brand/showcase-ssot.md`** (do not invent a se
 
 ## Icon (decided + brief)
 
-**Shipped master:** candidate **37** — terminal amber **N** + reverse-auction chevron energy on **pure black** (`brand/ICON_DECISION.md`, `brand/app-icon-1024.png`).
+**Shipped master:** champagne metal crystal **M↓** + NoMarkup wordmark on brushed gold (`brand/ICON_DECISION.md`, `brand/app-icon-1024.png`). Terminal black+N archived as master 37.
 
 Must answer in one glance:
 
