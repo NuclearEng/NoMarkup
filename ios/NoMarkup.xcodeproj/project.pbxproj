@@ -8,9 +8,13 @@
 
 /* Begin PBXBuildFile section */
 		A100000000000000000000AF /* DirectionsHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AF /* DirectionsHelper.swift */; };
+		A100000000000000000000B6 /* ChatWebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B6 /* ChatWebSocketClient.swift */; };
+		A100000000000000000000B5 /* ShareCardText.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B5 /* ShareCardText.swift */; };
 		A100000000000000000000B0 /* VerificationCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B0 /* VerificationCenterView.swift */; };
 		A100000000000000000000B1 /* MarketRangeBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B1 /* MarketRangeBar.swift */; };
 		A100000000000000000000B4 /* ProviderInstantOffersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B4 /* ProviderInstantOffersView.swift */; };
+		A100000000000000000000B7 /* GoogleOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B7 /* GoogleOAuthSession.swift */; };
+		A100000000000000000000B8 /* GoogleSignInButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B8 /* GoogleSignInButton.swift */; };
 		A100000000000000000000B2 /* PropertyDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B2 /* PropertyDetailView.swift */; };
 		A100000000000000000000B3 /* OnboardingWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B3 /* OnboardingWizardView.swift */; };
 		A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AE /* BusinessFeaturesHubView.swift */; };
@@ -110,6 +114,9 @@
 
 /* Begin PBXFileReference section */
 		B100000000000000000000B4 /* ProviderInstantOffersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderInstantOffersView.swift; sourceTree = "<group>"; };
+		B100000000000000000000B5 /* ShareCardText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCardText.swift; sourceTree = "<group>"; };
+		B100000000000000000000B7 /* GoogleOAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleOAuthSession.swift; sourceTree = "<group>"; };
+		B100000000000000000000B8 /* GoogleSignInButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignInButton.swift; sourceTree = "<group>"; };
 		B100000000000000000000AE /* BusinessFeaturesHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessFeaturesHubView.swift; sourceTree = "<group>"; };
 		B100000000000000000000AD /* Models+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+RegulatedRails.swift"; sourceTree = "<group>"; };
 		B100000000000000000000AC /* APIClient+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+RegulatedRails.swift"; sourceTree = "<group>"; };
@@ -207,6 +214,7 @@
 		B100000000000000000000A8 /* VerificationDocumentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationDocumentsView.swift; sourceTree = "<group>"; };
 		B100000000000000000000A9 /* TrustScoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustScoreView.swift; sourceTree = "<group>"; };
 		B100000000000000000000AF /* DirectionsHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionsHelper.swift; sourceTree = "<group>"; };
+		B100000000000000000000B6 /* ChatWebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWebSocketClient.swift; sourceTree = "<group>"; };
 		B100000000000000000000B0 /* VerificationCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationCenterView.swift; sourceTree = "<group>"; };
 		B100000000000000000000B3 /* OnboardingWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWizardView.swift; sourceTree = "<group>"; };
 		B100000000000000000000B1 /* MarketRangeBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketRangeBar.swift; sourceTree = "<group>"; };
@@ -331,6 +339,8 @@
 				B100000000000000000000AB /* CameraImagePicker.swift */,
 				B10000000000000000000059 /* NetworkMonitor.swift */,
 				B100000000000000000000AF /* DirectionsHelper.swift */,
+				B100000000000000000000B5 /* ShareCardText.swift */,
+				B100000000000000000000B6 /* ChatWebSocketClient.swift */,
 				B10000000000000000000071 /* APIClient+Extras.swift */,
 				B10000000000000000000078 /* APIClient+Provider.swift */,
 				B10000000000000000000070 /* Models+Extras.swift */,
@@ -346,6 +356,8 @@
 				B1000000000000000000002D /* RegisterView.swift */,
 				B1000000000000000000002E /* ForgotPasswordView.swift */,
 				B10000000000000000000007 /* SignInWithAppleButton.swift */,
+				B100000000000000000000B7 /* GoogleOAuthSession.swift */,
+				B100000000000000000000B8 /* GoogleSignInButton.swift */,
 			);
 			path = Auth;
 			sourceTree = "<group>";
@@ -537,6 +549,8 @@
 				A10000000000000000000005 /* AuthViewModel.swift in Sources */,
 				A10000000000000000000006 /* LoginView.swift in Sources */,
 				A10000000000000000000007 /* SignInWithAppleButton.swift in Sources */,
+				A100000000000000000000B7 /* GoogleOAuthSession.swift in Sources */,
+				A100000000000000000000B8 /* GoogleSignInButton.swift in Sources */,
 				A10000000000000000000008 /* RootTabView.swift in Sources */,
 				A10000000000000000000009 /* HomeView.swift in Sources */,
 				A1000000000000000000000A /* MarketplaceView.swift in Sources */,
@@ -597,6 +611,8 @@
 				A100000000000000000000AA /* RegulatedRailsStatusView.swift in Sources */,
 				A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */,
 				A100000000000000000000AF /* DirectionsHelper.swift in Sources */,
+				A100000000000000000000B5 /* ShareCardText.swift in Sources */,
+				A100000000000000000000B6 /* ChatWebSocketClient.swift in Sources */,
 				A100000000000000000000B0 /* VerificationCenterView.swift in Sources */,
 				A100000000000000000000B3 /* OnboardingWizardView.swift in Sources */,
 				A100000000000000000000B4 /* ProviderInstantOffersView.swift in Sources */,

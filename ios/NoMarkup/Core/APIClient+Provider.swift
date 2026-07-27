@@ -1019,6 +1019,36 @@ struct ProviderVerificationDocument: Codable, Sendable, Hashable, Identifiable {
     var statusStyle: StatusChipStyle {
         StatusChipStyle.forStatus(status)
     }
+
+    // MARK: FR-2.8 — document expiration
+
+    /// Parsed `expires_at` from the documents API; nil if missing / unparseable.
+    var expiresAtDate: Date? {
+        guard let raw = expiresAt?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        return CatalogDateFormat.parseISO(raw)
+    }
+
+    /// True when `expires_at` is present and ≤ now.
+    var isExpired: Bool {
+        guard let date = expiresAtDate else { return false }
+        return date.timeIntervalSinceNow <= 0
+    }
+
+    /// FR-2.8: alert window — present, not yet expired, and within 30 days.
+    var isExpiringWithin30Days: Bool {
+        guard let date = expiresAtDate, !isExpired else { return false }
+        let thirtyDays: TimeInterval = 30 * 24 * 60 * 60
+        return date.timeIntervalSinceNow <= thirtyDays
+    }
+
+    /// Days remaining until expiry (0 if expired today or past; nil if no date).
+    var daysUntilExpiry: Int? {
+        guard let date = expiresAtDate else { return nil }
+        if date.timeIntervalSinceNow <= 0 { return 0 }
+        return Int(ceil(date.timeIntervalSinceNow / (24 * 60 * 60)))
+    }
 }
 
 struct ProviderDocumentsResponse: Codable, Sendable {

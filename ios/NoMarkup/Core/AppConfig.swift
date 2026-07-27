@@ -24,6 +24,11 @@ enum AppConfig {
     /// Native: `CreateListingView` → `POST /api/v1/listings`.
     static let sellItemURL = publicWebBaseURL.appending(path: "sell")
 
+    /// Web subscription **management** (Stripe Customer Portal / settings).
+    /// Used only for paid-tier “Manage on web” — never as a purchase CTA in-app.
+    /// See `docs/compliance/v1-ios-product-cut.md` (free-tier-only digital).
+    static let manageSubscriptionURL = publicWebBaseURL.appending(path: "settings/subscription")
+
     /// Gateway HTTP base (no trailing slash).
     ///
     /// Resolution:
@@ -129,6 +134,61 @@ enum AppConfig {
 
     /// ISO country code for Apple Pay (US marketplace MVP).
     static let applePayMerchantCountryCode = "US"
+
+    // MARK: - Google Sign-In (ASWebAuthenticationSession + PKCE)
+
+    /// Google Cloud **iOS** OAuth client ID (`….apps.googleusercontent.com`).
+    ///
+    /// Resolution:
+    /// 1. `NOMARKUP_GOOGLE_IOS_CLIENT_ID` env
+    /// 2. Info.plist `GoogleIosClientID`
+    /// 3. Empty → Google button shows a configuration error on tap
+    ///
+    /// Must match a gateway `GOOGLE_IOS_CLIENT_ID` (or `GOOGLE_CLIENT_ID`) so
+    /// `POST /api/v1/auth/google/native` accepts the id_token `aud` claim.
+    /// Also register the reverse-client-id URL scheme in `CFBundleURLTypes`
+    /// (see `googleOAuthCallbackScheme`).
+    static var googleIosClientID: String? {
+        if let env = ProcessInfo.processInfo.environment["NOMARKUP_GOOGLE_IOS_CLIENT_ID"] {
+            let trimmed = env.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        if let plist = Bundle.main.object(forInfoDictionaryKey: "GoogleIosClientID") as? String {
+            let trimmed = plist.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, !trimmed.contains("YOUR_") { return trimmed }
+        }
+        return nil
+    }
+
+    /// True when a Google iOS client ID is present (UI may still show the button
+    /// and surface a clearer error if the reverse URL scheme is missing).
+    static var isGoogleSignInConfigured: Bool {
+        googleIosClientID != nil && googleOAuthRedirectURI != nil
+    }
+
+    /// Reverse client ID URL scheme Google issues for iOS clients.
+    /// Example: client `123-abc.apps.googleusercontent.com` →
+    /// scheme `com.googleusercontent.apps.123-abc`.
+    static var googleOAuthCallbackScheme: String? {
+        guard let clientID = googleIosClientID,
+              clientID.hasSuffix(".apps.googleusercontent.com")
+        else { return nil }
+        let prefix = String(clientID.dropLast(".apps.googleusercontent.com".count))
+        guard !prefix.isEmpty else { return nil }
+        return "com.googleusercontent.apps.\(prefix)"
+    }
+
+    /// Redirect URI registered with Google for the iOS public client + PKCE.
+    /// Default: `{reverse-client-id-scheme}:/oauth2redirect/google`
+    /// Override with Info.plist `GoogleOAuthRedirectURI` when using a custom scheme.
+    static var googleOAuthRedirectURI: String? {
+        if let plist = Bundle.main.object(forInfoDictionaryKey: "GoogleOAuthRedirectURI") as? String {
+            let trimmed = plist.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        guard let scheme = googleOAuthCallbackScheme else { return nil }
+        return "\(scheme):/oauth2redirect/google"
+    }
 
     // MARK: - Goods browse center (optional radius search)
 

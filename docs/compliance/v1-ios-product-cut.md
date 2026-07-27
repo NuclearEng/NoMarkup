@@ -1,24 +1,27 @@
 # v1 iOS Product Cut — Free-Tier-Only Digital
 
-**Status:** Stage C product decision (locked for first App Store binary)  
-**Date:** 2026-07-26  
+**Status:** **LOCKED decision for the first App Store binary** (do not re-open without B2 StoreKit)  
+**Date:** 2026-07-26 · **Locked restated:** 2026-07-27  
 **Guideline anchor:** App Store Review **3.1.1** (digital goods/features → IAP inside the app)  
-**Related:** [`ios-payment-rails-design.md`](./ios-payment-rails-design.md) · [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) §7 · [`app-store-review-2026-07-26-launch.md`](./app-store-review-2026-07-26-launch.md) · [`submission-blockers.md`](./submission-blockers.md)
+**Related:** [`ios-payment-rails-design.md`](./ios-payment-rails-design.md) · [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) §7 · [`app-store-review-2026-07-26-launch.md`](./app-store-review-2026-07-26-launch.md) · [`submission-blockers.md`](./submission-blockers.md) · [`prd-ios-parity-backlog.md`](./prd-ios-parity-backlog.md) FR-12
 
 ---
 
-## Decision
+## Decision (ASC free-tier lock — binary policy)
 
 | Item | Choice |
 |------|--------|
 | **First binary digital commerce** | **Free tier only** — no paid digital subscription purchase in the iOS app |
-| **StoreKit / In-App Purchase** | **Deferred (Stage B2)** — no IAP capability, no product IDs, no purchase/restore UI |
+| **StoreKit / In-App Purchase** | **Deferred (Stage B2)** — no IAP capability, no product IDs, no purchase/restore UI, **no StoreKit stubs** |
 | **Paid Pro / Business digital unlocks** | **Web-only** (Stripe Subscriptions) **or** later IAP when B2 ships |
-| **In-app “buy cheaper on web” for digital** | **Forbidden** (no external digital purchase steering by default) |
+| **In-app “buy cheaper on web” for digital** | **Forbidden** (no external digital purchase steering) |
+| **Plan limits UI (`PlanLimitsView`)** | Read-only comparison; **no purchase CTA**; **“Manage on web” only on paid tiers** (existing web billing management — not a buy button) |
 | **Rail A (physical goods + offline services GMV)** | **Stripe** when payment UI is wired — **not** IAP (**3.1.3(e)**) |
 | **Regulated rails** | **Server-flag gated** (no client hard-offs — below) |
 
 **Rationale:** Shipping a digital paywall or paid feature gate on iOS without StoreKit violates **3.1.1**. Completing B2 (ASC products + server JWS/ASN + restore + Option A multiplatform) is not ready. The compliant interim is to **omit digital purchase** entirely and ship browse/auth/legal/free-tier posture only.
+
+**ASC lock meaning:** App Review Notes + metadata must describe free-tier-only digital for this binary. Human still pastes Review Notes in ASC (ops residual); the **product decision itself is closed** — implementers must not add StoreKit stubs or in-app digital purchase CTAs.
 
 This is **not** a claim that the binary is submission-ready overall (funnel, ASC media, signing still open).
 
@@ -28,8 +31,9 @@ This is **not** a claim that the binary is submission-ready overall (funnel, ASC
 
 ### In the binary
 
-- Account UI continues to state: **“Digital subscriptions (StoreKit) — not in this build.”**
-- No paywall, no tier upsell sheet, no Stripe Checkout for analytics/featured/bid-limit unlocks.
+- Account UI continues to state free-tier / web-only digital posture (no StoreKit IAP).
+- **`PlanLimitsView`:** compare free vs paid limits only. **No purchase / upgrade button.** Paid rows (and a paid section when any paid tier exists) may show **Manage on web** → `https://no-markup.com/settings/subscription` for **existing** web subscription management — not “buy on web.”
+- No paywall, no tier upsell sheet, no Stripe Checkout for analytics/featured/bid-limit unlocks, **no StoreKit stubs**.
 - Users operate under the product **free** baseline (web seed free tier limits apply server-side where enforced):
   - Lower bid / category / portfolio caps vs Pro/Business
   - No paid analytics / featured placement / priority support unlocks sold in-app
@@ -121,11 +125,13 @@ Use with seed accounts (`customer@nomarkup.com` primary) and live API. Full past
 
 | Criterion | Met when |
 |-----------|----------|
-| No StoreKit / IAP in binary | No IAP capability; no purchase UI |
-| Account discloses omission | Current AccountView copy retained |
+| No StoreKit / IAP / stubs in binary | No IAP capability; no purchase UI; no StoreKit scaffolding |
+| Account discloses omission | Account + Plan limits copy retained |
+| Plan limits: no purchase CTA | Free tiers: limits only; paid: **Manage on web** only (management, not buy) |
 | No digital Stripe Checkout in binary | No deep-link/paywall for tiers |
 | Regulated rails server-gated | `iOSHardOffKeys` empty; hub gated by `isEnabled` + server flags |
-| ASC notes include free-tier sentence | Human pastes checklist §11 / this one-liner |
+| ASC free-tier lock (decision) | **Locked** in this doc + backlog FR-12 |
+| ASC notes paste (ops) | Human pastes checklist §11 / this one-liner into ASC |
 | B2 not claimed | Metadata does not advertise subscriptions |
 
 **Re-open this cut** only when B2 StoreKit is product-ready **or** product permanently abandons in-app paid digital unlocks.

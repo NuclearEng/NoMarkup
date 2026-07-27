@@ -6,20 +6,23 @@ import UIKit
 
 /// Chat channel inbox — `GET /api/v1/channels` (auth). Thread detail loads + sends messages.
 ///
-/// ## Real-time SLA (REST poll substitute for WebSocket)
-/// Native iOS does **not** open a chat WebSocket. While a thread is open,
-/// `ChatThreadView` quietly re-fetches messages every **~2.5 seconds** (active
-/// app only; cancels on leave / sign-out / background). Inbox list loads on
-/// appear and pull-to-refresh — it does not auto-poll. Documented so product
-/// and compliance can treat REST polling as the supported live substitute
-/// until native `/ws` chat ships.
+/// ## Real-time SLA
+/// Open threads use native WebSocket (`GET /ws/chat`, JWT via `Authorization`)
+/// for live message frames + typing indicators (`ChatWebSocketClient`). When
+/// the socket is down, `ChatThreadView` falls back to a quiet REST poll every
+/// **~2.5s** (active app only). While connected, a slower **~15s** reconcile
+/// poll still runs so any missed frames backfill. Inbox list loads on appear
+/// and pull-to-refresh — it does not auto-poll.
 ///
-/// ## FR-8 (iOS max practical without WS)
+/// ## FR-8 (iOS)
+/// - Live WS: connect / subscribe / receive / typing / reconnect + poll fallback
 /// - Photo attach via PhotosPicker → `ImageUploader` (job_photo context) →
 ///   `POST …/messages` with `message_type: image` + confirmed URL as content
 /// - Mark read on open / pull-to-refresh / after send
 /// - Local in-thread search over loaded messages
-/// - **Residual:** typing indicators, read receipts UI, native WebSocket
+/// - **Residual:** read-receipts UI (server has no iOS-facing receipt frame
+///   beyond mark-read REST); inbox-level live unread badges without opening a
+///   thread; proposed-terms message type UI (FR-8.9)
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -102,8 +105,7 @@ struct MessagesView: View {
                         Text("Inbox").brandSectionHeader()
                     }
                 } footer: {
-                    // Honesty: no native chat WebSocket — open threads poll REST ~2.5s.
-                    Text("Open a conversation for live updates every few seconds. Attach photos from the thread composer. Inbox refreshes when you pull down. Native WebSocket / typing are not on this client yet.")
+                    Text("Open a conversation for live updates (WebSocket when available, otherwise a few-second refresh). Attach photos from the thread composer. Inbox refreshes when you pull down.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
@@ -207,6 +209,7 @@ struct ChatThreadView: View {
 
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var chatSocket = ChatWebSocketClient()
     @State private var messages: [ChatMessage] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -219,15 +222,24 @@ struct ChatThreadView: View {
     @State private var currentUserID: String?
     @State private var searchText = ""
     @State private var photoPickerItem: PhotosPickerItem?
+    /// Remote user ids currently typing in this channel (from WS `typing` frames).
+    @State private var typingUserIDs: Set<String> = []
+    @State private var typingClearTask: Task<Void, Never>?
+    @State private var lastTypingSentAt: Date = .distantPast
     #if canImport(UIKit)
     @State private var showCamera = false
     @State private var cameraImage: UIImage?
     #endif
     @FocusState private var composerFocused: Bool
 
-    /// Poll interval while the thread is open (cancelled when the view disappears).
-    /// Product SLA: ~2.5s REST refresh substitutes for chat WebSocket on iOS (was ~5s).
-    private static let pollIntervalNanoseconds: UInt64 = 2_500_000_000
+    /// Fast REST poll when WebSocket is down (live substitute).
+    private static let pollFallbackNanoseconds: UInt64 = 2_500_000_000
+    /// Slow reconcile poll while WebSocket is connected (catch missed frames).
+    private static let pollReconcileNanoseconds: UInt64 = 15_000_000_000
+    /// Debounce for outbound typing frames (matches web ~300ms).
+    private static let typingSendMinInterval: TimeInterval = 0.35
+    /// Clear typing indicator if no refresh arrives.
+    private static let typingDisplayTTLNanoseconds: UInt64 = 3_000_000_000
 
     private var webMessagesURL: URL {
         AppConfig.publicWebBaseURL.appending(path: "messages")
@@ -248,10 +260,18 @@ struct ChatThreadView: View {
         canCompose && !isSending && !isUploadingPhoto
     }
 
-    /// Show the poll-SLA caption once the thread has content or is idle (not
+    /// Show the live caption once the thread has content or is idle (not
     /// full-screen loading / hard empty-error shells that already fill chrome).
     private var showsLiveUpdateCaption: Bool {
         !needsSignIn && !(isLoading && messages.isEmpty) && errorMessage == nil
+    }
+
+    private var isLiveConnected: Bool {
+        chatSocket.status == .connected
+    }
+
+    private var showsTypingIndicator: Bool {
+        !typingUserIDs.isEmpty && canCompose
     }
 
     /// Local filter over loaded messages (no server search endpoint).
@@ -265,6 +285,9 @@ struct ChatThreadView: View {
         VStack(spacing: 0) {
             if showsLiveUpdateCaption {
                 liveUpdateCaption
+            }
+            if showsTypingIndicator {
+                typingIndicatorBar
             }
             threadBody
             Divider()
@@ -295,12 +318,17 @@ struct ChatThreadView: View {
             await loadMessages(showLoading: true, markRead: true)
         }
         .task(id: channel.id) {
-            // Quiet poll every ~2.5s while the thread stays open; cancels on disappear / id change.
-            // Stops when signed out / session invalid so we don't thrash 401s.
-            // Pauses network work while the app is backgrounded / inactive; resumes when active.
+            await runChatSocketLifecycle()
+        }
+        .task(id: channel.id) {
+            // Hybrid REST poll: fast when WS down, slow reconcile when connected.
+            // Cancels on disappear / id change. Stops on sign-out. Pauses when inactive.
             while !Task.isCancelled {
+                let interval = isLiveConnected
+                    ? Self.pollReconcileNanoseconds
+                    : Self.pollFallbackNanoseconds
                 do {
-                    try await Task.sleep(nanoseconds: Self.pollIntervalNanoseconds)
+                    try await Task.sleep(nanoseconds: interval)
                 } catch {
                     break
                 }
@@ -312,6 +340,34 @@ struct ChatThreadView: View {
                 // Poll only — mark-read is open/refresh/send, not every quiet tick.
                 await loadMessages(showLoading: false, markRead: false)
             }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Pause WS when backgrounded; reconnect when active again.
+            if phase == .active {
+                guard canCompose, auth.isAuthenticated, !auth.isScaffoldSession else { return }
+                chatSocket.connect()
+                chatSocket.subscribe(channelID: channel.id)
+            } else {
+                chatSocket.disconnect()
+            }
+        }
+        .onChange(of: draft) { _, newValue in
+            guard canCompose, isLiveConnected else { return }
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            let now = Date()
+            guard now.timeIntervalSince(lastTypingSentAt) >= Self.typingSendMinInterval else {
+                return
+            }
+            lastTypingSentAt = now
+            chatSocket.sendTyping(channelID: channel.id)
+        }
+        .onDisappear {
+            typingClearTask?.cancel()
+            typingClearTask = nil
+            typingUserIDs = []
+            chatSocket.onEvent = nil
+            chatSocket.disconnect()
         }
         .refreshable {
             await loadMessages(showLoading: false, markRead: true)
@@ -343,24 +399,121 @@ struct ChatThreadView: View {
         }
     }
 
-    /// Subtle honesty caption: open threads refresh on a quiet ~2.5s REST poll.
+    /// Live status strip: Live (WS) vs Updating… (REST poll fallback).
     private var liveUpdateCaption: some View {
         HStack(spacing: 6) {
-            Image(systemName: "arrow.triangle.2.circlepath")
+            Image(systemName: isLiveConnected ? "antenna.radiowaves.left.and.right" : "arrow.triangle.2.circlepath")
                 .font(.caption2)
-                .foregroundStyle(BrandTheme.textSecondary.opacity(0.85))
+                .foregroundStyle(
+                    isLiveConnected
+                        ? BrandTheme.accent.opacity(0.95)
+                        : BrandTheme.textSecondary.opacity(0.85)
+                )
                 .accessibilityHidden(true)
-            Text("Updates every few seconds")
+            Text(isLiveConnected ? "Live" : "Updating every few seconds")
                 .font(.caption2)
-                .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
+                .foregroundStyle(
+                    isLiveConnected
+                        ? BrandTheme.accent.opacity(0.95)
+                        : BrandTheme.textSecondary.opacity(0.9)
+                )
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
         .background(BrandTheme.navyElevated.opacity(0.65))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Conversation updates every few seconds")
-        .accessibilityHint("Messages refresh automatically while this thread is open")
+        .accessibilityLabel(
+            isLiveConnected
+                ? "Live conversation connection"
+                : "Conversation updates every few seconds"
+        )
+        .accessibilityHint(
+            isLiveConnected
+                ? "Messages arrive in real time while this thread is open"
+                : "Messages refresh automatically while this thread is open"
+        )
+    }
+
+    private var typingIndicatorBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "ellipsis.bubble")
+                .font(.caption2)
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
+                .accessibilityHidden(true)
+            Text(typingUserIDs.count > 1 ? "Several people are typing…" : "Typing…")
+                .font(.caption2)
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.95))
+                .italic()
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+        .background(BrandTheme.navyElevated.opacity(0.45))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Someone is typing")
+    }
+
+    /// Connect WS for this channel; tears down when the task is cancelled (leave thread).
+    @MainActor
+    private func runChatSocketLifecycle() async {
+        guard !auth.isScaffoldSession, auth.isAuthenticated else { return }
+
+        chatSocket.onEvent = { [channelID = channel.id] event in
+            handleSocketEvent(event, expectedChannelID: channelID)
+        }
+        chatSocket.connect()
+        chatSocket.subscribe(channelID: channel.id)
+
+        // Stay alive until the view/task is cancelled, then disconnect.
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            } catch {
+                break
+            }
+            if needsSignIn || !auth.isAuthenticated || auth.isScaffoldSession {
+                break
+            }
+        }
+        chatSocket.disconnect()
+        typingUserIDs = []
+    }
+
+    @MainActor
+    private func handleSocketEvent(_ event: ChatWebSocketClient.ServerEvent, expectedChannelID: String) {
+        switch event {
+        case .message(let channelID, let message):
+            guard channelID.isEmpty || channelID == expectedChannelID else { return }
+            if let message {
+                appendMessageIfNeeded(message)
+            }
+            // Prefer REST refetch (web does the same) so wire-shape drift can't drop content.
+            Task { await loadMessages(showLoading: false, markRead: false) }
+        case .typing(let channelID, let userID):
+            guard channelID == expectedChannelID else { return }
+            if let me = currentUserID, me == userID { return }
+            typingUserIDs.insert(userID)
+            scheduleTypingClear()
+        case .unreadUpdate:
+            // Thread is open — mark-read on open handles badges; no UI action required.
+            break
+        case .error:
+            // Protocol errors are non-fatal; poll fallback covers recovery.
+            break
+        }
+    }
+
+    private func scheduleTypingClear() {
+        typingClearTask?.cancel()
+        typingClearTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: Self.typingDisplayTTLNanoseconds)
+            } catch {
+                return
+            }
+            typingUserIDs = []
+        }
     }
 
     @ViewBuilder

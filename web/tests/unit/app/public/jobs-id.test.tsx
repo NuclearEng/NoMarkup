@@ -77,6 +77,12 @@ vi.mock('@/hooks/useCountdown', () => ({
 vi.mock('@/hooks/useJobs', () => ({
   useJob: vi.fn(),
 }));
+vi.mock('@/hooks/useInstantMatch', () => ({
+  useCreateInstantMatch: vi.fn(),
+  useProviderOffers: vi.fn(),
+  useAcceptOffer: vi.fn(),
+  useDeclineOffer: vi.fn(),
+}));
 vi.mock('@/stores/auth-store', () => ({
   useAuthStore: vi.fn(),
 }));
@@ -85,6 +91,7 @@ const { useJob } = await import('@/hooks/useJobs');
 const { useAuctionTerminal } = await import('@/hooks/useAuctionTerminal');
 const { useBidCount, useBidsForJob, usePlaceBid } = await import('@/hooks/useBids');
 const { useCountdown } = await import('@/hooks/useCountdown');
+const { useCreateInstantMatch } = await import('@/hooks/useInstantMatch');
 const { useAuthStore } = await import('@/stores/auth-store');
 // The page is now an async Server Component (server-fetch + JobPosting
 // JSON-LD); the interactive auction UI lives in JobDetailClient, which
@@ -138,6 +145,8 @@ function setHooks(opts: {
   countdown?: { timeLeft: string; isExpired: boolean; totalSeconds: number };
   terminal?: { isConnected?: boolean; error?: unknown };
   placeBidMutate?: ReturnType<typeof vi.fn>;
+  instantMatchMutate?: ReturnType<typeof vi.fn>;
+  instantMatchPending?: boolean;
 } = {}) {
   vi.mocked(useJob).mockReturnValue({
     data: opts.job,
@@ -153,6 +162,10 @@ function setHooks(opts: {
     mutate: opts.placeBidMutate ?? vi.fn(),
     isPending: false,
   } as unknown as ReturnType<typeof usePlaceBid>);
+  vi.mocked(useCreateInstantMatch).mockReturnValue({
+    mutate: opts.instantMatchMutate ?? vi.fn(),
+    isPending: opts.instantMatchPending ?? false,
+  } as unknown as ReturnType<typeof useCreateInstantMatch>);
   vi.mocked(useCountdown).mockReturnValue(
     opts.countdown ?? { timeLeft: '1h', isExpired: false, totalSeconds: 3600 },
   );
@@ -233,6 +246,45 @@ describe('(public)/jobs/[id]/page', () => {
     setHooks({ job: baseJob });
     renderClient();
     expect(screen.getByTestId('bid-list')).toBeDefined();
+  });
+
+  it('lets the job owner request instant match when accept-now price is set', () => {
+    const mutate = vi.fn();
+    setAuth({
+      user: { id: 'cust-1', roles: ['customer'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: { ...baseJob, offer_accepted_cents: 15_000, status: 'active' },
+      instantMatchMutate: mutate,
+    });
+    renderClient();
+    const cta = screen.getByRole('button', { name: /Request Instant match/i });
+    expect(cta).toBeDefined();
+    fireEvent.click(cta);
+    expect(mutate).toHaveBeenCalled();
+  });
+
+  it('hides the instant-match CTA when the owner job has no accept-now price', () => {
+    setAuth({
+      user: { id: 'cust-1', roles: ['customer'] },
+      isAuthenticated: true,
+    });
+    setHooks({ job: { ...baseJob, offer_accepted_cents: null, status: 'active' } });
+    renderClient();
+    expect(screen.queryByRole('button', { name: /Request Instant match/i })).toBeNull();
+  });
+
+  it('hides the instant-match CTA for non-owners even with accept-now price', () => {
+    setAuth({
+      user: { id: 'other-user', roles: ['customer'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: { ...baseJob, offer_accepted_cents: 15_000, status: 'active' },
+    });
+    renderClient();
+    expect(screen.queryByRole('button', { name: /Request Instant match/i })).toBeNull();
   });
 
   it('renders the live auction terminal layout when conditions are met', () => {

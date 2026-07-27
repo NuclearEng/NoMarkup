@@ -37,31 +37,32 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 | `remediation-checklist.md` | Web P0/P1 mostly done; packaging deferred |
 | `design-system.md` | Spec only — no open compliance checklist |
 | Documents + leave-review (iOS/gateway) | Shipped (`52ad882`) |
+| Hard-off honesty | Code `iOSHardOffKeys = []`; smoke/launch-board/B4 describe **server flags** |
+| Web JobDetail instant match | Owner CTA → `POST /jobs/{id}/instant-match` when accept-now price set |
+| FR-18 roll-forward tests | Service tests: generate + date-idempotent re-list + skip when paused |
+| Apple Pay domain note | [`apple-pay-domain.md`](./apple-pay-domain.md) — placeholder explicit; no invented merchant file |
 
-### Not complete (program / product)
+### Not complete — human / ops only (`[~]` ops-gated, not engineering)
 
 | Area | Reality |
 |------|---------|
-| App Store submit | NOT READY — signing, ASC media/labels, review backend, free-tier ASC lock, human device smoke |
+| **ASC ops** | Team signing, app record, 1024 icon, 6.7"+12.9" screenshots, privacy labels, age rating, free-tier Review Notes paste |
+| **PRE-05 review backend** | Always-on review API + seed + `APPLE_NATIVE_CLIENT_ID` + Stripe `pk_` for Apple Pay dogfood |
+| **Device smoke** | Human-execute `device-smoke-checklist.md` + sign `launch-board.md` (auto smoke ≠ signed) |
+| **Apple Pay domain** | Replace placeholder association file + Stripe/Apple verify (see `apple-pay-domain.md`) |
+| **Apple Pay merchant + iOS `pk_`** | Merchant ID + Dashboard + env on review device |
+
+### Not complete — product / security residual (engineering or accepted)
+
+| Area | Reality |
+|------|---------|
+| App Store submit | NOT READY — blocked by ops rows above + free-tier ASC narrative confirmation |
 | Showcase living checklist | Global security gates still unchecked; R6.2–R6.6 blocked-compliance; program exit criteria unmet |
 | Regulated rails | Still blocked for true live; licenses + E2E + security exits open |
-| Security gate | PASS WITH GAPS — money races, RequireFlag gaps |
-| Perf gate | Samples PASS but parent sign-off still marked PENDING in places |
+| Security gate | PASS WITH GAPS — money races residual (ADR) |
+| Perf gate | Samples PASS; parent closed PASS from samples where marked |
 | iOS ↔ web matrix | Near-live core; OAuth social, native WS, StoreKit/admin intentionally incomplete |
-| v1 cut / hard-offs | **Docs stale:** code has `iOSHardOffKeys = []` + Business & finance UI; several docs still say hard-off |
-
-### Critical honesty gap
-
-Code + `ios-web-feature-matrix.md` = **no client hard-offs**, regulated UI behind **server flags**.
-
-Still describe hard-offs (must reconcile before submit):
-
-- `v1-ios-product-cut.md`
-- `device-smoke-checklist.md`
-- `submission-blockers.md`
-- `security-gate-2026-07-26.md` (hard-off PASS language)
-- `showcase-living-checklist.md` §11
-- `launch-board.md` B4
+| **FR-18 per-instance Stripe pay** | Config/instances/pause/resume/cancel + lazy roll-forward **shipped**; **per-instance PaymentIntent/escrow still residual** (large surface) |
 
 ---
 
@@ -81,10 +82,10 @@ Still describe hard-offs (must reconcile before submit):
 
 | Strength | Weak / missing |
 |----------|----------------|
-| Contracts lifecycle, guarantee claim, notifications/prefs | **Recurring FR-18** (gRPC stubs) |
-| Properties CRUD-lite, referrals, FinServ hub (flagged) | Property dashboard FR-19 |
-| Trust scores / verification upload | True market range bars FR-11 |
-| Dual-rail goods + services shell | Instant customer funnel §13 |
+| Contracts lifecycle, guarantee claim, notifications/prefs | **FR-18 per-instance payment** residual |
+| Properties CRUD + dashboard lite, referrals, FinServ hub (flagged) | Full FR-19 spend analytics depth |
+| Trust scores / verification upload | — |
+| Dual-rail goods + services shell | Instant AI/ETA Phase 2 |
 | Leave review + document download | Subscription purchase FR-12; growth share cards §11 |
 
 ### Solid on iOS today
@@ -97,54 +98,58 @@ Still describe hard-offs (must reconcile before submit):
 - Account: properties, messages (REST poll), notifications + APNs register, Stripe Connect, business/finance hub  
 - Growth: referrals, savings, NPS  
 
-### Highest-impact PRD gaps
+### Highest-impact residual gaps
 
 | Area | PRD | Gap |
 |------|-----|-----|
-| Onboarding | FR-1.5–1.9 | **VerificationCenter** email/phone OTP live; guided multi-step wizard still open |
-| Job form / repost | FR-3.1, 3.5, 3.10 | Recurrence / offer-accepted / property on PostJob; **repost still open** |
-| Bidding | FR-4.3–4.7 | **Lower bid + accept-offer + price/trust sort** live |
-| Chat | FR-8 | Poll only; no typing/WS/attachments/search/terms |
-| Payments | FR-9 | Services PaymentSheet capture + fee UX thin vs goods |
-| Maps | FR-10.4–10.6 | **Get Directions** (party exact address) + property on post |
-| Recurring | FR-18 | Backend Unimplemented + no iOS lifecycle |
-| Properties | FR-19 | List/CRUD-lite only; no dashboard/spend/history |
-| Instant | §13 | **iOS Instant shipped** — Home “I need help now” + PostJob Instant + provider offers inbox; residual: push/ETA/AI match (PRD Phase 2) |
+| Chat | FR-8 | Poll + attachments/search shipped; native WS/typing/receipts residual |
+| Recurring | FR-18 | Lifecycle + roll-forward live; **Stripe per-instance pay residual** |
+| Instant | §13 | iOS Instant + web post + **web JobDetail re-request** shipped; push/ETA/AI match Phase 2 |
 | Digital subs | FR-12 | Read-only tiers; StoreKit deferred |
-| Social OAuth | FR-1.1 | Google/Facebook not on iOS |
+| Social OAuth | FR-1.1 | **Google native shipped** (ASWebAuth+PKCE → `/auth/google/native`); needs `GOOGLE_IOS_CLIENT_ID` + reverse URL scheme for dogfood. Facebook still not on iOS |
 | Admin / fraud UI | FR-7/13 | Correctly **web-only** |
 
 ---
 
 ## 4. Unified backlog (execute in order)
 
-Status legend: `[ ]` open · `[x]` done · `[~]` partial / accepted residual
+### Engineering residual status (2026-07-27 wave4)
+
+**Consumer iOS product surface for PRD MVP depth is largely implemented.** Remaining unchecked items are:
+1. **Human/ops-gated** (ASC, device smoke sign-off, always-on review API, Apple Pay domain file, Google iOS client IDs in Console)
+2. **Accepted risk / licenses** (MON-14–18, R6.2–R6.6, Checkr, mTLS, StoreKit B2)
+3. **Thin polish residuals** (read-receipts UI, auction spectator WS, FR-18 per-instance Stripe)
+
+
+
+Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted residual · **`[~] ops`** = human/ops only (not an eng task)
 
 ### P0 — Integrity, submit, core PRD
 
 - [x] **Doc hygiene** — Reconcile empty `FeatureFlags.iOSHardOffKeys` vs hard-off claims in v1 cut, smoke checklist, submission-blockers, security-gate, living-checklist, launch-board B4  
 - [~] **MON-14–18** — Close money races + concurrency tests, **or** keep accepted residual and never enable regulated money in prod  
-- [x] **SEC-GATE-03** — `RequireFlag` on money/regulated API routes (today ~7/13 flags UI-only)  
+- [x] **SEC-GATE-03** — `RequireFlag` on money/regulated API routes  
 - [~] **R6.2–R6.6** — Stay `blocked-compliance` until licenses + live-flagged exit checklists  
-- [ ] **ASC ops** — Team signing, ASC app record, 1024 icon, 6.7" + 12.9" screenshots, privacy labels, age rating, free-tier Review Notes paste  
-- [ ] **PRE-05 review backend** — Always-on review API + seed + `APPLE_NATIVE_CLIENT_ID` + Stripe `pk_` for Apple Pay dogfood  
-- [ ] **Device smoke** — Human-execute `device-smoke-checklist.md` + sign `launch-board.md` (auto smoke ≠ signed)  
-- [~] **FR-18 recurring** — Config/instances/pause/resume/cancel + lazy roll-forward on list; Stripe per-instance pay still residual  
+- [~] **ops** **ASC packaging** — Team signing, ASC app record, 1024 icon, 6.7" + 12.9" screenshots, privacy labels, age rating, free-tier Review Notes paste  
+- [~] **ops** **PRE-05 review backend** — Always-on review API + seed + `APPLE_NATIVE_CLIENT_ID` + Stripe `pk_` for Apple Pay dogfood  
+- [~] **ops** **Device smoke** — Human-execute `device-smoke-checklist.md` + sign `launch-board.md` (auto smoke ≠ signed)  
+- [~] **FR-18 recurring** — Config/instances/pause/resume/cancel + lazy roll-forward on list **+ tests**; **Stripe per-instance pay still residual** (leave open; not a quick close)  
 - [x] **FR-1.5–1.9 onboarding** — VerificationCenter + multi-step OnboardingWizardView (skip-friendly) shipped  
 - [x] **FR-3 job form + repost** — Full job form (recurrence, offer-accepted, schedule, property) + repost UX  
 - [x] **FR-4 bid advanced** — Lower bid, accept-offer, sort/filter bids on iOS  
 - [x] **FR-9 services pay** — Services escrow PaymentSheet capture + fee breakdown (not goods-only)  
 - [x] **FR-10.4 directions** — Post-award Get Directions (Maps) + `property_id` on PostJob  
+- [x] **Web Instant re-request** — JobDetail owner CTA → `POST …/instant-match` when accept-now set  
 
 ### P1 — Product depth
 
-- [ ] **Apple Pay domain** — Replace `apple-developer-merchantid-domain-association` placeholder  
-- [~] **Idempotency residual** — Job-bid durable SQL dedup + sticky iOS Idempotency-Key + bid-bond double-tap uniqueness  
-- [ ] **FR-12 digital** — ASC free-tier-only lock **or** full StoreKit B2 (no stubs)  
+- [~] **ops** **Apple Pay domain** — Replace placeholder association file; see [`apple-pay-domain.md`](./apple-pay-domain.md) (do not invent merchant files)  
+- [x] **Idempotency residual** — Job-bid durable SQL dedup (migration 110 + PlaceBid key stamp/replay); bid-bond create (109) + confirm authorized soft-replay; iOS sticky keys verified (job/listing bid, bond, payments; buy-now/order-pay deterministic keys)
+- [x] **FR-12 digital** — Free-tier-only binary lock (PlanLimitsView + v1 cut); StoreKit deferred  
 - [x] **Perf gate close** — Mark parent `perf-gate-2026-07-26.md` PASS from samples; optional BrandAppIcon true 1x/2x/3x  
 - [x] **FR-5 profile terms** — Portfolio upload UI + global terms editor + local terms in chat  
 - [x] **FR-6 review polish** — Category sub-ratings, respond to review, flag review on iOS  
-- [~] **FR-8 chat parity** — Attachments + search + 2.5s poll shipped; native WS/typing/receipts residual  
+- [x] **FR-8 chat parity** — Attachments + search + native ChatWebSocketClient + typing; receipts UI residual  
 - [x] **FR-11 market bars** — Real p25/p50/p75 range bars on post + bid sheet (`/analytics/market/range`)  
 - [x] **FR-19 property dash** — Summary cards, edit, history drill-in, property picker on jobs  
 - [x] **FR-15/16 evidence** — Revision 200-char + cap UI; dispute/guarantee evidence upload in-app  
@@ -152,15 +157,15 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial / accepted residual
 
 ### P2 — Growth, Instant, platform
 
-- [x] **§13 Instant** — Customer emergency CTA + provider offer accept/decline inbox on iOS  
-- [ ] **FR-1.1 / realtime** — Google OAuth on iOS; native chat/auction WS (poll OK interim); claim APNs only if real  
-- [ ] **§11 share cards** — Savings / review share cards via ShareLink  
-- [ ] **Apple docs Phases 5–7** — Framework/ASC ops reviews + refresh stale `capability-matrix` / privacy inventory headers  
-- [ ] **Deploy / mTLS** — `DEPLOY_PROVISIONED` + gRPC mesh mTLS (S9.8 / SEC-GATE-09)  
+- [x] **§13 Instant** — Customer emergency CTA + provider offer accept/decline (iOS); web post + JobDetail re-request  
+- [x] **FR-1.1 / realtime** — Google native OAuth (PKCE+id_token) + chat WS; APNs registration already; auction WS optional residual  
+- [x] **§11 share cards** — Savings / review share cards via ShareLink  
+- [~] **Apple docs Phases 5–7** (process residual; 0–4 done) — Framework/ASC ops reviews + refresh stale `capability-matrix` / privacy inventory headers  
+- [~] **Deploy / mTLS** (ops/infra residual) — `DEPLOY_PROVISIONED` + gRPC mesh mTLS (S9.8 / SEC-GATE-09)  
 
 ### P3 / explicit non-goals for consumer binary
 
-- [ ] **FR-2.8 / 2.9** — Document expiration alerts + Checkr background checks (open question)  
+- [~] **FR-2.8 / 2.9** — Expiration UX (30d warning) shipped; Checkr still open question / not built  
 - [x] **Keep out of consumer iOS** — Admin FR-13; enterprise API / white-label §14; §16 vertical expansion until planned; StoreKit until B2 decision  
 
 ---
@@ -170,14 +175,14 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial / accepted residual
 | Wave | Focus | Unlocks |
 |------|-------|---------|
 | **W0** | Doc hygiene + hard-off honesty + ASC free-tier narrative | Submit honesty |
-| **W1** | FR-18 recurring backend + iOS | PRD recurring / lock-in |
+| **W1** | FR-18 recurring backend + iOS (pay residual left) | PRD recurring / lock-in |
 | **W2** | FR-1 onboarding/OTP + FR-3 job form + FR-4 bid advanced | Core auction completeness |
 | **W3** | FR-9 services pay + FR-10 directions + property picker | Money + geo UX |
 | **W4** | FR-8 chat + FR-6 reviews + FR-15/16 evidence + notif deep links | Trust / support |
 | **W5** | FR-11 market bars + FR-19 property dashboard | Intelligence differentiators |
-| **W6** | §13 Instant + §11 share cards | Growth / emergency |
+| **W6** | §13 Instant + JobDetail re-request + §11 share cards | Growth / emergency |
 | **W7** | StoreKit **or** permanent free-tier ASC lock | Digital commerce policy |
-| **W8** | Ops: ASC media, signing, review backend, human smoke | App Review submit |
+| **W8** | Ops: ASC media, signing, review backend, human smoke, Apple Pay domain | App Review submit |
 
 ---
 
@@ -193,7 +198,8 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial / accepted residual
 | `regulated-rails-live-flagged.md` | R6.2–R6.6 graduation map |
 | `security-gate-2026-07-26.md` | Money/auth gate evidence |
 | `device-smoke-checklist.md` | Manual Stage C smoke (unsigned) |
-| `v1-ios-product-cut.md` | Free-tier-only digital cut (**stale on hard-offs**) |
+| `v1-ios-product-cut.md` | Free-tier-only digital cut |
+| `apple-pay-domain.md` | Placeholder + ops steps for domain association |
 
 ---
 
@@ -202,7 +208,9 @@ Status legend: `[ ]` open · `[x]` done · `[~]` partial / accepted residual
 | Date | Note |
 |------|------|
 | 2026-07-27 | Initial backlog written from PRD §8–16 audit + compliance gate residual list |
-
 | 2026-07-27 | Wave: doc hygiene, RequireFlag SEC-GATE-03 + tests, FR-4 lower/accept-offer, FR-10 directions+property, FR-1 verify center, FR-3 post fields, FR-6 category ratings, FR-17 deep links, perf-gate PASS close |
 | 2026-07-27 wave2 | FR-9 pay escrow, FR-18 recurring partial, repost, review respond/flag, market bars, evidence photos, FR-5 terms/portfolio |
 | 2026-07-27 wave3 | Chat photos/search, Instant funnel, property dashboard, onboarding wizard, recurring roll-forward |
+| 2026-07-27 residual close | JobDetail Instant re-request; FR-18 roll-forward tests hardened; Apple Pay domain ops note; backlog marks ASC/smoke/PRE-05/domain as **ops-gated** not eng |
+
+| 2026-07-27 wave4 | Closed engineering residuals: chat WS+typing, Google OAuth native, share cards, free-tier FR-12 lock, job-bid durable idempotency (110), doc expiry UX, Instant JobDetail, ops docs honesty |

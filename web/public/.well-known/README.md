@@ -6,6 +6,10 @@
 content from Stripe (or Apple) when registering `no-markup.com` (and any
 `www` / staging hosts) for Apple Pay.
 
+**Do not invent or paste fabricated association bytes.** Until a human
+downloads the real file from Stripe/Apple and deploys it, Apple Pay domain
+verification will fail. Ops checklist: `docs/compliance/apple-pay-domain.md`.
+
 - Stripe path: Dashboard → Settings → Payment methods → Apple Pay → Add new
   domain → download association file.
 - Served at:

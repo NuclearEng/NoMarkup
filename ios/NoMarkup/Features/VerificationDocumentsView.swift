@@ -10,6 +10,9 @@ import UIKit
 /// - `GET  /api/v1/providers/me/documents` → `{ "documents": [] }`
 /// - `POST /api/v1/providers/me/documents` after imaging pipeline
 ///   (`context: document` → owned `documents/{userID}/…` key).
+///
+/// **FR-2.8** — when `expires_at` is present, rows show expiry and warn when
+/// within 30 days (or expired). Renewal is re-upload; no Checkr integration.
 struct VerificationDocumentsView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -22,6 +25,14 @@ struct VerificationDocumentsView: View {
     @State private var showUploadSheet = false
     @State private var statusMessage: String?
     @State private var actionError: String?
+
+    private var expiringSoonDocuments: [ProviderVerificationDocument] {
+        documents.filter(\.isExpiringWithin30Days)
+    }
+
+    private var expiredDocuments: [ProviderVerificationDocument] {
+        documents.filter(\.isExpired)
+    }
 
     var body: some View {
         Group {
@@ -134,6 +145,16 @@ struct VerificationDocumentsView: View {
                 }
             }
 
+            // FR-2.8 — surface expiry warnings above the list when API provides expires_at.
+            if !expiredDocuments.isEmpty || !expiringSoonDocuments.isEmpty {
+                Section {
+                    expirationAlertBanner
+                        .listRowBackground(BrandTheme.navyElevated)
+                } header: {
+                    Text("Expiration").brandSectionHeader()
+                }
+            }
+
             Section {
                 ForEach(documents) { doc in
                     documentRow(doc)
@@ -142,7 +163,7 @@ struct VerificationDocumentsView: View {
             } header: {
                 Text("\(documents.count) document\(documents.count == 1 ? "" : "s")").brandSectionHeader()
             } footer: {
-                Text("JPEG, PNG, or WebP up to 10 MB. MIME type is re-checked server-side; only files you upload under your account can be registered.")
+                Text("JPEG, PNG, or WebP up to 10 MB. MIME type is re-checked server-side; only files you upload under your account can be registered. Insurance and licenses with an expiry date should be renewed before they expire so you can keep bidding on new jobs.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -158,6 +179,42 @@ struct VerificationDocumentsView: View {
             }
         }
         .brandListBackground()
+    }
+
+    @ViewBuilder
+    private var expirationAlertBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !expiredDocuments.isEmpty {
+                Label {
+                    Text(expiredDocuments.count == 1
+                         ? "1 document has expired. Upload a renewed copy to restore verified status for new bids."
+                         : "\(expiredDocuments.count) documents have expired. Upload renewed copies to restore verified status for new bids.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.destructive)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.octagon.fill")
+                        .foregroundStyle(BrandTheme.destructive)
+                }
+                .accessibilityLabel("Expired documents warning")
+            }
+            if !expiringSoonDocuments.isEmpty {
+                Label {
+                    Text(expiringSoonDocuments.count == 1
+                         ? "1 document expires within 30 days. Renew it before it lapses."
+                         : "\(expiringSoonDocuments.count) documents expire within 30 days. Renew them before they lapse.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(BrandTheme.warning)
+                }
+                .accessibilityLabel("Documents expiring soon warning")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
     }
 
     @ViewBuilder
@@ -180,22 +237,52 @@ struct VerificationDocumentsView: View {
                     .foregroundStyle(BrandTheme.destructive)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 if let count = doc.resubmissionCount, count > 0 {
                     Text("Resubmissions: \(count)")
                         .font(.caption2)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
-                Spacer()
-                if let expires = doc.expiresAt, !expires.isEmpty {
-                    Text("Expires \(CatalogDateFormat.friendlyDateTime(expires))")
-                        .font(.caption2)
-                        .foregroundStyle(BrandTheme.textSecondary)
+                Spacer(minLength: 8)
+                if doc.expiresAtDate != nil || (doc.expiresAt.map { !$0.isEmpty } ?? false) {
+                    expirationLabel(for: doc)
                 }
             }
         }
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func expirationLabel(for doc: ProviderVerificationDocument) -> some View {
+        let expiresRaw = doc.expiresAt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let friendly: String = {
+            if !expiresRaw.isEmpty {
+                return CatalogDateFormat.friendlyDateTime(expiresRaw)
+            }
+            return "unknown date"
+        }()
+
+        if doc.isExpired {
+            Label("Expired \(friendly)", systemImage: "calendar.badge.exclamationmark")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(BrandTheme.destructive)
+                .labelStyle(.titleAndIcon)
+                .accessibilityLabel("Expired on \(friendly). Upload a renewed document.")
+        } else if doc.isExpiringWithin30Days {
+            let days = doc.daysUntilExpiry ?? 0
+            let dayPhrase = days <= 1 ? "1 day" : "\(days) days"
+            Label("Expires \(friendly) · \(dayPhrase) left", systemImage: "calendar.badge.clock")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(BrandTheme.warning)
+                .labelStyle(.titleAndIcon)
+                .accessibilityLabel("Expires \(friendly), within 30 days. \(dayPhrase) remaining.")
+        } else if !expiresRaw.isEmpty {
+            Text("Expires \(friendly)")
+                .font(.caption2)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .accessibilityLabel("Expires \(friendly)")
+        }
     }
 
     private func statusColor(_ style: StatusChipStyle) -> Color {

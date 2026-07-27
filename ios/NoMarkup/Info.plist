@@ -66,6 +66,15 @@
 	<key>ApplePayMerchantId</key>
 	<string>merchant.com.nomarkup.app</string>
 	<!--
+	  Google Sign-In (FR-1.1): iOS OAuth client ID from Google Cloud Console.
+	  Also add the reverse-client-id URL scheme under CFBundleURLTypes, e.g.
+	  client 123-abc.apps.googleusercontent.com → scheme com.googleusercontent.apps.123-abc
+	  Mirror the same value as gateway GOOGLE_IOS_CLIENT_ID (id_token aud).
+	  Override: NOMARKUP_GOOGLE_IOS_CLIENT_ID.
+	-->
+	<key>GoogleIosClientID</key>
+	<string></string>
+	<!--
 	  Location: single When-In-Use key covers market picker + job-site check-in.
 	  Check-in-only draft (inventory): "NoMarkup uses your location to confirm you arrived at the job site. Check-in location is stored with the contract for dispute protection."
 	  Market-only draft: "NoMarkup uses your location to suggest the nearest marketplace city. You can always pick a city manually."

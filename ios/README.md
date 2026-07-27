@@ -186,9 +186,28 @@ See `Info.plist` and `Location/LocationPurposeCopy.swift`. Inventory: `docs/comp
 
 First binary should keep regulated digital-adjacent flags off per `ios-payment-rails-design.md`.
 
+## Google Sign-In (FR-1.1)
+
+Native path (no Google SDK):
+
+1. `ASWebAuthenticationSession` + **PKCE** → Google authorize + token endpoint → OIDC `id_token`
+2. `POST /api/v1/auth/google/native` `{ "identity_token": "…" }` → access/refresh JWT pair
+3. Keychain via `APIClient.signInWithGoogle`
+
+**Configure before dogfood:**
+
+| Where | Value |
+|-------|--------|
+| Google Cloud Console | OAuth client type **iOS**, bundle `com.nomarkup.app` |
+| Gateway | `GOOGLE_IOS_CLIENT_ID` (and/or `GOOGLE_CLIENT_ID`) — must match id_token `aud` |
+| Info.plist / env | `GoogleIosClientID` or `NOMARKUP_GOOGLE_IOS_CLIENT_ID` |
+| Info.plist `CFBundleURLTypes` | Reverse client ID scheme: `com.googleusercontent.apps.<prefix>` for client `<prefix>.apps.googleusercontent.com` |
+
 ## TODOs (not B0)
 
-- [ ] Exchange SIWA `identityToken` with gateway OAuth / native token endpoint
+- [x] Exchange SIWA `identityToken` with gateway OAuth / native token endpoint
+- [x] Google Sign-In via ASWebAuthenticationSession + PKCE + `/auth/google/native`
+- [ ] Provision real `GOOGLE_IOS_CLIENT_ID` + reverse URL scheme in Info.plist for device dogfood
 - [ ] Align login/refresh JSON with real `services/user` + gateway routes
 - [ ] Marketplace / jobs / messages list + detail from API + WebSocket
 - [ ] CoreLocation market picker + job check-in with pre-prompts

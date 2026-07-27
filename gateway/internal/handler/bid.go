@@ -99,6 +99,14 @@ type updateBidRequest struct {
 }
 
 // PlaceBid handles POST /api/v1/jobs/{jobID}/bids.
+//
+// Durable idempotency (migration 110, listing_bids 056 parity):
+//  1. Pre-lookup by (job_id, provider_id, Idempotency-Key) — Redis-miss replay
+//     returns the prior row without calling the bidding engine.
+//  2. After a successful insert (or AlreadyExists soft-replay), stamp the key
+//     onto the bid row so step 1 works on subsequent retries.
+//  3. UNIQUE(job_id, provider_id) remains the row-level double-insert guard;
+//     matching-amount AlreadyExists soft-replay covers keys not yet stamped.
 func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -127,6 +135,21 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	idempotencyKey := r.Header.Get("Idempotency-Key")
+
+	// Durable SQL soft-replay: same key + provider + job returns the prior bid
+	// without a second gRPC place (survives Redis TTL/flush). True idempotency
+	// returns the original result regardless of a (should-not-happen) body drift.
+	if prior, found := h.loadBidByIdempotencyKey(r.Context(), jobID, claims.UserID, idempotencyKey); found {
+		slog.InfoContext(r.Context(), "place bid durable idempotency replay",
+			"job_id", jobID,
+			"provider_id", claims.UserID,
+			"bid_id", prior["id"],
+		)
+		writeJSON(w, http.StatusCreated, prior)
+		return
+	}
+
 	resp, err := h.bidClient.PlaceBid(r.Context(), &bidv1.PlaceBidRequest{
 		JobId:       jobID,
 		ProviderId:  claims.UserID,
@@ -140,6 +163,9 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 		// amounts stay 409 — intentional re-bids use PATCH /bids/{id}.
 		if st, ok := status.FromError(err); ok && st.Code() == codes.AlreadyExists {
 			if prior, found := h.loadActiveProviderBid(r.Context(), jobID, claims.UserID, req.AmountCents); found {
+				if bidID, _ := prior["id"].(string); bidID != "" {
+					h.stampBidIdempotencyKey(r.Context(), bidID, claims.UserID, idempotencyKey)
+				}
 				slog.InfoContext(r.Context(), "place bid idempotency soft-replay",
 					"job_id", jobID,
 					"provider_id", claims.UserID,
@@ -160,11 +186,14 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	bidID := resp.GetBid().GetId()
+	h.stampBidIdempotencyKey(r.Context(), bidID, claims.UserID, idempotencyKey)
+
 	slog.InfoContext(r.Context(), "bid placed",
 		"job_id", jobID,
 		"provider_id", claims.UserID,
 		"amount_cents", req.AmountCents,
-		"bid_id", resp.GetBid().GetId(),
+		"bid_id", bidID,
 	)
 
 	// Notify the job's customer that a new bid landed on their job. Fail-soft:
@@ -174,6 +203,61 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 	h.notifyNewBid(r.Context(), jobID, claims.UserID, req.AmountCents)
 
 	writeJSON(w, http.StatusCreated, protoBidToJSON(resp.GetBid()))
+}
+
+// loadBidByIdempotencyKey returns the provider's bid for this job stamped with
+// the given client Idempotency-Key (migration 110). Empty key or nil db → miss.
+func (h *BidHandler) loadBidByIdempotencyKey(ctx context.Context, jobID, providerID, idempotencyKey string) (map[string]interface{}, bool) {
+	if h.db == nil || idempotencyKey == "" {
+		return nil, false
+	}
+	var (
+		id, st string
+		amount int64
+	)
+	err := h.db.QueryRow(ctx, `
+		SELECT id::text, amount_cents, status
+		  FROM bids
+		 WHERE job_id = $1 AND provider_id = $2 AND idempotency_key = $3
+		 LIMIT 1`,
+		jobID, providerID, idempotencyKey,
+	).Scan(&id, &amount, &st)
+	if err != nil {
+		return nil, false
+	}
+	return map[string]interface{}{
+		"id":           id,
+		"job_id":       jobID,
+		"provider_id":  providerID,
+		"amount_cents": amount,
+		"status":       st,
+	}, true
+}
+
+// stampBidIdempotencyKey persists the client key on the bid row after a
+// successful place (or amount soft-replay). Best-effort / fail-soft: a stamp
+// failure still leaves UNIQUE(job_id, provider_id) + amount soft-replay as the
+// double-insert guard; Redis middleware covers the happy path.
+func (h *BidHandler) stampBidIdempotencyKey(ctx context.Context, bidID, providerID, idempotencyKey string) {
+	if h.db == nil || bidID == "" || idempotencyKey == "" {
+		return
+	}
+	// Only stamp when unset, or when replaying the same key (never overwrite a
+	// different key that won a concurrent race).
+	tag, err := h.db.Exec(ctx, `
+		UPDATE bids
+		   SET idempotency_key = $1, updated_at = now()
+		 WHERE id = $2
+		   AND provider_id = $3
+		   AND (idempotency_key IS NULL OR idempotency_key = $1)`,
+		idempotencyKey, bidID, providerID,
+	)
+	if err != nil {
+		slog.WarnContext(ctx, "place bid: failed to stamp idempotency_key",
+			"error", err, "bid_id", bidID)
+		return
+	}
+	_ = tag
 }
 
 // loadActiveProviderBid returns the provider's active bid on the job when the

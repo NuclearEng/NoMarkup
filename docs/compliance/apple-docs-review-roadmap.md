@@ -1,8 +1,9 @@
 # Apple Documentation Review Roadmap — NoMarkup
 
-**Purpose:** Ordered plan to review every Apple document that matters for shipping and maintaining NoMarkup (web + future iOS/iPad App Store binary).  
+**Purpose:** Ordered plan to review every Apple document that matters for shipping and maintaining NoMarkup (web + iOS/iPad App Store binary).  
 **Product:** Two-sided local marketplace — services reverse auction + goods forward auction, Stripe escrow, chat/UGC, maps, subscriptions (digital tiers), insurance/advances (regulated, flag-gated).  
-**Last updated:** 2026-07-26  
+**Last updated:** 2026-07-27  
+**Phase progress:** **Phases 0–4 first-pass review `done`** (see `review-logs/phase-0.md` … `phase-4b.md`). **Phases 5–7 remain process residual** (packaging / ops / regulated go-no-go — not closed by the Stage A doc pass). Phase 8 is ongoing cadence.  
 **Companion artifacts:**
 
 | Artifact | Role |
@@ -13,6 +14,8 @@
 | [ios-payment-rails-design.md](./ios-payment-rails-design.md) | Dual-rail Stripe / StoreKit |
 | [ios-mobile-web-readiness.md](./ios-mobile-web-readiness.md) | Safari / PWA mobile UX |
 | [app-review-notes.md](./app-review-notes.md) | Demo accounts, flags, review narrative |
+| [capability-matrix.md](./capability-matrix.md) · [privacy-purpose-string-inventory.md](./privacy-purpose-string-inventory.md) | Stage A deliverables (refreshed with live iOS tree) |
+| Review logs | `review-logs/phase-0.md` … `phase-4b.md` |
 | Skill registries | `~/.grok/skills/app-store-compliance/references/` |
 
 **How to use this roadmap**
@@ -49,49 +52,40 @@ Use this table to decide which phases apply if scope shrinks.
 
 ## Phase overview
 
-| Phase | Name | Goal | Est. effort | Depends on |
-|-------|------|------|-------------|------------|
-| **0** | Orientation | Know where policy vs API docs live | 0.5 day | — |
-| **1** | Policy lock | Full ASR re-read against product | 1–2 days | Phase 0 |
-| **2** | Design & mobile | HIG + iPhone/iPad behavior | 1–2 days | Phase 1 |
-| **3** | Privacy & identity | Purpose strings, SIWA, consent, labels | 1–2 days | Phase 1 |
-| **4** | Commerce rails | Apple Pay (physical) + StoreKit (digital) | 2–3 days | Phase 1, dual-rail doc |
-| **5** | Platform & packaging | Public APIs, bundle, notifications, location, media | 2–3 days | Phase 3 |
-| **6** | Review operations | ASC, TestFlight, demo, expedite/appeal | 1 day | Phases 1–5 |
-| **7** | Regulated & optional | Insurance/lending, alt distribution, intents | 1–2 days + counsel | Product decision |
-| **8** | Cadence | Re-review on SDK / guideline updates | Ongoing | All |
+| Phase | Name | Goal | Status | Review log | Depends on |
+|-------|------|------|--------|------------|------------|
+| **0** | Orientation | Know where policy vs API docs live | **done** | [`review-logs/phase-0.md`](./review-logs/phase-0.md) | — |
+| **1** | Policy lock | Full ASR re-read against product | **done** | [`review-logs/phase-1.md`](./review-logs/phase-1.md) | Phase 0 |
+| **2** | Design & mobile | HIG + iPhone/iPad behavior | **done** | [`review-logs/phase-2.md`](./review-logs/phase-2.md) | Phase 1 |
+| **3** | Privacy & identity | Purpose strings, SIWA, consent, labels | **done** | [`review-logs/phase-3.md`](./review-logs/phase-3.md) | Phase 1 |
+| **4** | Commerce rails | Apple Pay (physical) + StoreKit (digital) | **done** | [`phase-4a.md`](./review-logs/phase-4a.md) · [`phase-4b.md`](./review-logs/phase-4b.md) | Phase 1, dual-rail doc |
+| **5** | Platform & packaging | Public APIs, bundle, notifications, location, media | **todo** (process residual) | — | Phase 3 + live binary |
+| **6** | Review operations | ASC, TestFlight, demo, expedite/appeal | **todo** (process residual) | — | Phases 1–5 |
+| **7** | Regulated & optional | Insurance/lending, alt distribution, intents | **todo** (process residual + counsel) | — | Product decision |
+| **8** | Cadence | Re-review on SDK / guideline updates | Ongoing | — | All |
 
-**Total first-pass review:** ~10–14 engineer-days (can parallelize 2–3 after Phase 1).
+**First-pass doc review (Phases 0–4):** complete 2026-07-26. **Residual process work (Phases 5–7)** is not closed by that pass — packaging, ASC ops, and regulated go/no-go remain open.
 
 ---
 
-## Phase 0 — Orientation (hub literacy)
+## Phase 0 — Orientation (hub literacy) — **DONE**
 
-**Exit criteria:** Team can name the difference between Guidelines, HIG, Documentation, and ASC Help; bookmark set exists.
+**Exit criteria:** Team can name the difference between Guidelines, HIG, Documentation, and ASC Help; bookmark set exists.  
+**Review log:** [`review-logs/phase-0.md`](./review-logs/phase-0.md) (2026-07-26, Grok).
 
 | # | Document | URL | Status | Reviewer | Date | Notes |
 |---|----------|-----|--------|----------|------|-------|
-| 0.1 | Apple Developer Documentation hub | https://developer.apple.com/documentation/ | **done** | Grok | 2026-07-26 | API reference home; see `review-logs/phase-0.md` |
-| 0.2 | Documentation Updates (platform waves) | https://developer.apple.com/documentation/updates | **done** | Grok | 2026-07-26 | Track iOS 26 / Xcode 26 churn |
-| 0.3 | Sample Code Library (index) | https://developer.apple.com/documentation/samplecode | **done** | Grok | 2026-07-26 | Use samples only when implementing Stage B |
+| 0.1 | Apple Developer Documentation hub | https://developer.apple.com/documentation/ | **done** | Grok | 2026-07-26 | API reference home |
+| 0.2 | Documentation Updates (platform waves) | https://developer.apple.com/documentation/updates | **done** | Grok | 2026-07-26 | Track iOS / Xcode churn |
+| 0.3 | Sample Code Library (index) | https://developer.apple.com/documentation/samplecode | **done** | Grok | 2026-07-26 | Use samples when implementing |
 | 0.4 | Internal: this roadmap + dual-rail + remediated audit | `docs/compliance/*` | **done** | Grok | 2026-07-26 | + launch-board.md |
-
-**Review log (Phase 0):**
-
-```
-Date:
-Reviewer:
-Takeaways:
--
-Product impact:
--
-```
 
 ---
 
-## Phase 1 — Policy lock (App Review Guidelines)
+## Phase 1 — Policy lock (App Review Guidelines) — **DONE**
 
-**Exit criteria:** Every applicable ASR cluster mapped to product behavior; open gaps listed with owner. Prefer re-running `/app-store-compliance` after material product changes.
+**Exit criteria:** Every applicable ASR cluster mapped to product behavior; open gaps listed with owner. Prefer re-running `/app-store-compliance` after material product changes.  
+**Review log:** [`review-logs/phase-1.md`](./review-logs/phase-1.md). Blockers: [`submission-blockers.md`](./submission-blockers.md).
 
 **Primary source (single living document):**  
 https://developer.apple.com/app-store/review/guidelines/
@@ -106,115 +100,111 @@ https://developer.apple.com/app-store/review/guidelines/
 | 1.6 | **5 Legal** | Privacy policy, account deletion, location, ATT, regulated entity, code of conduct | `/privacy`, deletion, OAuth unlink | **done** | Grok | 2026-07-26 |
 | 1.7 | After You Submit | Appeals, bug-fix process | ops | **done** | Grok | 2026-07-26 |
 
-Full write-up: [`review-logs/phase-1.md`](./review-logs/phase-1.md). Blockers: [`submission-blockers.md`](./submission-blockers.md).
-
-**Supporting policy / program links (read once, bookmark):**
+**Supporting policy / program links (bookmark; optional re-read — not blocking Phase 1 first-pass):**
 
 | # | Document | URL | Status |
 |---|----------|-----|--------|
-| 1.8 | Apple Developer Program License Agreement (esp. Schedule 2 subscriptions) | https://developer.apple.com/support/terms/ | todo |
-| 1.9 | App Store Improvements / removals | https://developer.apple.com/support/app-store-improvements/ | todo |
-| 1.10 | Offering account deletion | https://developer.apple.com/support/offering-account-deletion-in-your-app/ | todo |
-| 1.11 | User privacy and data use (tracking) | https://developer.apple.com/app-store/user-privacy-and-data-use/ | todo |
-| 1.12 | Kids apps / parental gates (confirm N/A — we are 18+) | https://developer.apple.com/app-store/kids-apps/ | todo |
-| 1.13 | Reader apps external link (confirm N/A) | https://developer.apple.com/support/reader-apps/ | todo |
-| 1.14 | Skill registries refresh if Apple “Last Updated” drifts | `~/.grok/skills/app-store-compliance/references/SOURCE.md` | todo |
+| 1.8 | Apple Developer Program License Agreement (esp. Schedule 2 subscriptions) | https://developer.apple.com/support/terms/ | residual bookmark |
+| 1.9 | App Store Improvements / removals | https://developer.apple.com/support/app-store-improvements/ | residual bookmark |
+| 1.10 | Offering account deletion | https://developer.apple.com/support/offering-account-deletion-in-your-app/ | residual bookmark (product path exists) |
+| 1.11 | User privacy and data use (tracking) | https://developer.apple.com/app-store/user-privacy-and-data-use/ | residual bookmark (ATT = N) |
+| 1.12 | Kids apps / parental gates (confirm N/A — we are 18+) | https://developer.apple.com/app-store/kids-apps/ | residual / **n/a** product |
+| 1.13 | Reader apps external link (confirm N/A) | https://developer.apple.com/support/reader-apps/ | residual / **n/a** product |
+| 1.14 | Skill registries refresh if Apple “Last Updated” drifts | `~/.grok/skills/app-store-compliance/references/SOURCE.md` | Phase 8 cadence |
 
-**Phase 1 deliverable:** Short memo `docs/compliance/policy-review-notes-YYYY-MM-DD.md` (or update remediated audit) listing any new FAIL/RISK vs product.
+**Phase 1 deliverable:** Covered by remediated audit + `review-logs/phase-1.md` + `submission-blockers.md`.
 
 ---
 
-## Phase 2 — Design & multi-device UX
+## Phase 2 — Design & multi-device UX — **DONE**
 
-**Exit criteria:** HIG checklist for core flows (browse → bid/buy → pay → chat → settings); iPhone + iPad patterns agreed for native and current web.
+**Exit criteria:** HIG checklist for core flows (browse → bid/buy → pay → chat → settings); iPhone + iPad patterns agreed for native and current web.  
+**Review log:** [`review-logs/phase-2.md`](./review-logs/phase-2.md) (2026-07-26).
 
 | # | Document | URL | Status | Reviewer | Date |
 |---|----------|-----|--------|----------|------|
-| 2.1 | Human Interface Guidelines (home) | https://developer.apple.com/design/human-interface-guidelines/ | todo | | |
-| 2.2 | HIG — Foundations (layout, typography, color, accessibility) | same site / Foundations | todo | | |
-| 2.3 | HIG — Patterns (navigation, sheets, search, feedback) | same | todo | | |
-| 2.4 | HIG — Inputs & feedback; touch targets | same | todo | | |
-| 2.5 | HIG — Privacy / accessing private data patterns | https://developer.apple.com/design/human-interface-guidelines/privacy | todo | | |
-| 2.6 | Configuring a multiplatform app target | https://developer.apple.com/documentation/xcode/configuring-a-multiplatform-app-target | todo | | |
-| 2.7 | SwiftUI (or UIKit if hybrid) landing | https://developer.apple.com/documentation/swiftui · https://developer.apple.com/documentation/uikit | todo | | |
-| 2.8 | Internal mobile web readiness | `ios-mobile-web-readiness.md` | todo | | |
+| 2.1 | Human Interface Guidelines (home) | https://developer.apple.com/design/human-interface-guidelines/ | **done** | Grok | 2026-07-26 |
+| 2.2 | HIG — Foundations (layout, typography, color, accessibility) | same site / Foundations | **done** | Grok | 2026-07-26 |
+| 2.3 | HIG — Patterns (navigation, sheets, search, feedback) | same | **done** | Grok | 2026-07-26 |
+| 2.4 | HIG — Inputs & feedback; touch targets | same | **done** | Grok | 2026-07-26 |
+| 2.5 | HIG — Privacy / accessing private data patterns | https://developer.apple.com/design/human-interface-guidelines/privacy | **done** | Grok | 2026-07-26 |
+| 2.6 | Configuring a multiplatform app target | https://developer.apple.com/documentation/xcode/configuring-a-multiplatform-app-target | **done** | Grok | 2026-07-26 |
+| 2.7 | SwiftUI (or UIKit if hybrid) landing | https://developer.apple.com/documentation/swiftui · https://developer.apple.com/documentation/uikit | **done** | Grok | 2026-07-26 |
+| 2.8 | Internal mobile web readiness | `ios-mobile-web-readiness.md` | **done** | Grok | 2026-07-26 |
 
-**Flows to re-walk against HIG (checklist):**
+**Flows re-walked against HIG (see phase-2 log):** marketplace, jobs, map, auth, messages, payments, settings, provider workspace — web strong; native now in tree (`ios/NoMarkup`).
 
-- [ ] Public: marketplace list, listing detail, job detail, map  
-- [ ] Auth: login / register / SIWA  
-- [ ] Customer: post job, bid/award, pay, chat, report  
-- [ ] Seller/provider: list item, workspace check-in, payouts  
-- [ ] Settings: privacy links, deletion, connected accounts, subscription  
-
-**Phase 2 deliverable:** UX gap list (web vs future native); no requirement to implement native yet.
+**Phase 2 deliverable:** UX gap list in `review-logs/phase-2.md` + `ios-mobile-web-readiness.md`.
 
 ---
 
-## Phase 3 — Privacy, security, and identity
+## Phase 3 — Privacy, security, and identity — **DONE**
 
-**Exit criteria:** Purpose-string inventory drafted; SIWA requirements confirmed; App Privacy nutrition label worksheet started; consent model matches implementation.
+**Exit criteria:** Purpose-string inventory drafted; SIWA requirements confirmed; App Privacy nutrition label worksheet started; consent model matches implementation.  
+**Review log:** [`review-logs/phase-3.md`](./review-logs/phase-3.md).  
+**Deliverable:** [`privacy-purpose-string-inventory.md`](./privacy-purpose-string-inventory.md) (refreshed 2026-07-27 — purpose strings live in `ios/NoMarkup/Info.plist`).
 
 | # | Document | URL | Maps to product | Status |
 |---|----------|-----|-----------------|--------|
-| 3.1 | Protecting the User’s Privacy | https://developer.apple.com/documentation/uikit/protecting_the_user_s_privacy | Consent, minimization | todo |
-| 3.2 | Requesting access to protected resources (purpose strings) | Linked from 3.1 / Info.plist keys | Location, camera, photos, mic | todo |
-| 3.3 | App Tracking Transparency | https://developer.apple.com/documentation/apptrackingtransparency | Only if cross-app tracking | todo |
-| 3.4 | User privacy and data use (policy) | https://developer.apple.com/app-store/user-privacy-and-data-use/ | ASC privacy labels | todo |
-| 3.5 | AuthenticationServices / Sign in with Apple | https://developer.apple.com/documentation/authenticationservices | SIWA parity | todo |
-| 3.6 | LocalAuthentication (if Face ID later) | https://developer.apple.com/documentation/localauthentication | ASR 2.5.13 | todo |
-| 3.7 | Keychain / Secure Enclave (as needed) | Security docs under documentation hub | Tokens | todo |
-| 3.8 | Account deletion support article | https://developer.apple.com/support/offering-account-deletion-in-your-app/ | Existing Erasure service | todo |
-| 3.9 | Internal `/privacy` + cookie consent | `web/src/app/(public)/privacy`, CookieConsent | Done product-side; re-read for label accuracy | todo |
-
-**Phase 3 deliverable:** `docs/compliance/privacy-purpose-string-inventory.md` (table: data type → API → purpose string → UI pre-prompt → ASC label category).
+| 3.1 | Protecting the User’s Privacy | https://developer.apple.com/documentation/uikit/protecting_the_user_s_privacy | Consent, minimization | **done** |
+| 3.2 | Requesting access to protected resources (purpose strings) | Linked from 3.1 / Info.plist keys | Location, camera, photos, mic | **done** (Info.plist live) |
+| 3.3 | App Tracking Transparency | https://developer.apple.com/documentation/apptrackingtransparency | Only if cross-app tracking | **done** (ATT = N) |
+| 3.4 | User privacy and data use (policy) | https://developer.apple.com/app-store/user-privacy-and-data-use/ | ASC privacy labels | **done** (worksheet in inventory) |
+| 3.5 | AuthenticationServices / Sign in with Apple | https://developer.apple.com/documentation/authenticationservices | SIWA parity | **done** |
+| 3.6 | LocalAuthentication (if Face ID later) | https://developer.apple.com/documentation/localauthentication | ASR 2.5.13 | **n/a** (not productized) |
+| 3.7 | Keychain / Secure Enclave (as needed) | Security docs under documentation hub | Tokens | **done** (Keychain in tree) |
+| 3.8 | Account deletion support article | https://developer.apple.com/support/offering-account-deletion-in-your-app/ | Existing Erasure service | **done** |
+| 3.9 | Internal `/privacy` + cookie consent | `web/src/app/(public)/privacy`, CookieConsent | Label accuracy | **done** |
 
 ---
 
-## Phase 4 — Commerce (critical path for App Store)
+## Phase 4 — Commerce (critical path for App Store) — **DONE** (doc review)
 
-**Exit criteria:** Dual-rail design validated against StoreKit + Apple Pay docs; no Stripe-for-digital-unlock on iOS path.
+**Exit criteria:** Dual-rail design validated against StoreKit + Apple Pay docs; no Stripe-for-digital-unlock on iOS path.  
+**Review logs:** [`review-logs/phase-4a.md`](./review-logs/phase-4a.md) (Rail A) · [`review-logs/phase-4b.md`](./review-logs/phase-4b.md) (Rail B).  
+**Note:** First-pass was **documentation only** — do not treat as StoreKit implementation complete; still no fake product IDs.
 
 ### 4A — Physical / offline (Stripe + Apple Pay)
 
 | # | Document | URL | Status |
 |---|----------|-----|--------|
-| 4A.1 | Guideline **3.1.3(e)** (in App Review Guidelines) | guidelines §3.1.3(e) | todo |
-| 4A.2 | PassKit / Apple Pay | https://developer.apple.com/documentation/passkit | todo |
-| 4A.3 | Apple Pay Marketing Guidelines | https://developer.apple.com/apple-pay/marketing/ | todo |
-| 4A.4 | Apple Pay HIG | HIG Apple Pay patterns | todo |
-| 4A.5 | Merchant domain association (web) | Stripe + Apple Pay domain docs; `web/public/.well-known/` | todo |
-| 4A.6 | Internal dual-rail Rail A | `ios-payment-rails-design.md` | todo |
+| 4A.1 | Guideline **3.1.3(e)** (in App Review Guidelines) | guidelines §3.1.3(e) | **done** |
+| 4A.2 | PassKit / Apple Pay | https://developer.apple.com/documentation/passkit | **done** |
+| 4A.3 | Apple Pay Marketing Guidelines | https://developer.apple.com/apple-pay/marketing/ | **done** |
+| 4A.4 | Apple Pay HIG | HIG Apple Pay patterns | **done** |
+| 4A.5 | Merchant domain association (web) | Stripe + Apple Pay domain docs; `web/public/.well-known/` | **done** (gap: prod association still open) |
+| 4A.6 | Internal dual-rail Rail A | `ios-payment-rails-design.md` | **done** |
 
 ### 4B — Digital unlocks (StoreKit)
 
 | # | Document | URL | Status |
 |---|----------|-----|--------|
-| 4B.1 | StoreKit framework | https://developer.apple.com/documentation/storekit | todo |
-| 4B.2 | In-App Purchase overview / StoreKit 2 | StoreKit In-App Purchase docs | todo |
-| 4B.3 | Auto-renewable subscriptions | https://developer.apple.com/app-store/subscriptions/ | todo |
-| 4B.4 | Offering a subscription across multiple apps | StoreKit multi-app subscription docs | todo |
-| 4B.5 | App Store Server Notifications / transaction verification | StoreKit server docs | todo |
-| 4B.6 | External purchase / StoreKit External Purchase Link | https://developer.apple.com/documentation/storekit/external_purchase | todo |
-| 4B.7 | Promoting In-App Purchases | https://developer.apple.com/app-store/promoting-in-app-purchases/ | todo |
-| 4B.8 | DeviceCheck (trials / abuse) | https://developer.apple.com/documentation/devicecheck | todo |
-| 4B.9 | Internal dual-rail Rail B | `ios-payment-rails-design.md` | todo |
+| 4B.1 | StoreKit framework | https://developer.apple.com/documentation/storekit | **done** |
+| 4B.2 | In-App Purchase overview / StoreKit 2 | StoreKit In-App Purchase docs | **done** |
+| 4B.3 | Auto-renewable subscriptions | https://developer.apple.com/app-store/subscriptions/ | **done** |
+| 4B.4 | Offering a subscription across multiple apps | StoreKit multi-app subscription docs | **done** |
+| 4B.5 | App Store Server Notifications / transaction verification | StoreKit server docs | **done** |
+| 4B.6 | External purchase / StoreKit External Purchase Link | https://developer.apple.com/documentation/storekit/external_purchase | **done** |
+| 4B.7 | Promoting In-App Purchases | https://developer.apple.com/app-store/promoting-in-app-purchases/ | **done** |
+| 4B.8 | DeviceCheck (trials / abuse) | https://developer.apple.com/documentation/devicecheck | **done** (optional) |
+| 4B.9 | Internal dual-rail Rail B | `ios-payment-rails-design.md` | **done** |
 
 ### 4C — Explicit N/A confirmations (short read)
 
 | # | Topic | Why N/A or limited | Status |
 |---|--------|-------------------|--------|
-| 4C.1 | Reader app entitlement | Not magazines/books media library | todo |
-| 4C.2 | NFT IAP rules | No NFT product | todo |
-| 4C.3 | Loot boxes odds | No randomized paid items | todo |
+| 4C.1 | Reader app entitlement | Not magazines/books media library | **done** / **n/a** |
+| 4C.2 | NFT IAP rules | No NFT product | **done** / **n/a** |
+| 4C.3 | Loot boxes odds | No randomized paid items | **done** / **n/a** |
 
-**Phase 4 deliverable:** Updated dual-rail design with “doc citations” section; ASC product catalog draft (SKUs for tiers).
+**Phase 4 deliverable:** Dual-rail design + phase-4a/4b logs. ASC SKU catalog remains residual until IAP ships.
 
 ---
 
-## Phase 5 — Platform frameworks (feature-by-feature)
+## Phase 5 — Platform frameworks (feature-by-feature) — **PROCESS RESIDUAL**
 
-**Exit criteria:** For each feature we ship natively, “intended use” + public API confirmed.
+**Exit criteria:** For each feature we ship natively, “intended use” + public API confirmed.  
+**Status:** **todo** — not closed by Phases 0–4 doc pass; walk against live `ios/NoMarkup` binary before ASC submit.
 
 | # | Feature | Document | URL | Status |
 |---|---------|----------|-----|--------|
@@ -237,9 +227,10 @@ Full write-up: [`review-logs/phase-1.md`](./review-logs/phase-1.md). Blockers: [
 
 ---
 
-## Phase 6 — App Store Connect & review operations
+## Phase 6 — App Store Connect & review operations — **PROCESS RESIDUAL**
 
-**Exit criteria:** Review runbook matches Apple process docs; demo + flags narrative ready.
+**Exit criteria:** Review runbook matches Apple process docs; demo + flags narrative ready.  
+**Status:** **todo** — ASC packaging, TestFlight, demo env remain operational work (not first-pass doc review).
 
 | # | Document | URL | Status |
 |---|----------|-----|--------|
@@ -257,9 +248,10 @@ Full write-up: [`review-logs/phase-1.md`](./review-logs/phase-1.md). Blockers: [
 
 ---
 
-## Phase 7 — Regulated, distribution edge cases, optional tech
+## Phase 7 — Regulated, distribution edge cases, optional tech — **PROCESS RESIDUAL**
 
-**Exit criteria:** Explicit go/no-go per feature on first iOS binary; counsel sign-off recorded where needed.
+**Exit criteria:** Explicit go/no-go per feature on first iOS binary; counsel sign-off recorded where needed.  
+**Status:** **todo** — flag-off posture documented; live licenses / counsel sign-off not claimed.
 
 | # | Topic | Apple / external docs | Product stance | Status |
 |---|--------|----------------------|----------------|--------|
@@ -329,19 +321,21 @@ Parallelization: after Phase 1, **Design (2)** and **Privacy (3)** can run in pa
 
 ## Definition of done (roadmap complete)
 
-- [ ] All Phase 1–6 rows `done` or `n/a` with reviewer + date  
-- [ ] Privacy purpose-string inventory checked in  
-- [ ] Dual-rail design cites StoreKit + 3.1.3(e) docs  
-- [ ] Capability matrix checked in  
-- [ ] `/app-store-compliance` re-run after any product change from this review  
+- [x] Phases **0–4** first-pass review `done` with logs under `review-logs/`  
+- [x] Privacy purpose-string inventory checked in (refreshed; Info.plist live)  
+- [x] Dual-rail design cites StoreKit + 3.1.3(e) docs (`ios-payment-rails-design.md` + phase-4 logs)  
+- [x] Capability matrix checked in (header refreshed for live iOS tree)  
+- [ ] Phases **5–7** process residual closed (frameworks walk, ASC ops, regulated counsel)  
+- [ ] `/app-store-compliance` re-run after material product change  
 - [ ] Phase 8 calendar on team ritual (quarterly or release-aligned)
 
 ---
 
 ## Out of scope for this roadmap
 
-- Implementing StoreKit or a native shell (execution follows review)  
+- Implementing StoreKit product IDs or claiming IAP shipped (execution follows review; no stubs)  
 - Google Play / Android policy  
+- Checkr / third-party background-check vendor integration (PRD FR-2.9 open — do not invent)  
 - Non-Apple third-party API docs except where they affect Apple review (Stripe, Mapbox, Sentry) — track those in eng onboarding, not this file  
 
 ---

@@ -238,7 +238,7 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 2. **T4.1–T4.5** — ~~Trust breakdown UI~~ **done** (`TrustScoreView` + `fetchUserTrustScore`; Provider/Job entry points)  
 3. **C3.4** — ~~Escrow release/completion path~~ **done** (iOS `releasePayment` + goods `MyOrdersView` next actions); optional web approve-completion toast copy  
 4. **Perf** — ~~Catalog API p95 sample~~ **done** (`perf-gate-2026-07-26.md` overall catalog **PASS**); remaining: Instruments scroll / image budgets on device  
-5. **Sec** — Money-path gate: gateway `RequireIdempotencyKey` on job bid + listing bid + bid-bond; **iOS sticky Idempotency-Key** (web parity) for job/listing bid, bond, payment release — residual: durable SQL dedup + MON races  
+5. **Sec** — Money-path gate: gateway `RequireIdempotencyKey` on job bid + listing bid + bid-bond; **iOS sticky Idempotency-Key** (web parity); job-bid SQL key (110) + bid-bond create (109) / confirm soft-replay — residual: MON-14–18 races
 
 ### P1 — Product depth
 
@@ -313,6 +313,8 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | 2026-07-26 | R2 bid-bond SQL idempotency | **live** — col + soft replay | migration `109_bid_bond_idempotency`; `bid_bonds.go` CreateBidBond |
 | 2026-07-26 | Multi-payment guarantee allocation | **live** — oldest-first slices across contract payments | `allocateGuaranteeRefunds`; `refundGuaranteePayout` |
 | 2026-07-26 | Job PlaceBid soft-replay on AlreadyExists | **live** — matching amount returns existing active bid | `bid.go` PlaceBid + `loadActiveProviderBid` |
+| 2026-07-26 | Job bid durable SQL idempotency (110) | **live** — col + key stamp + pre-lookup replay | migration `110_job_bid_idempotency`; `bid.go` |
+| 2026-07-26 | Bid-bond confirm authorized soft-replay | **live** — double-tap confirm → 200 replay | `bid_bonds.go` ConfirmBidBond |
 | 2026-07-26 | Contract tip Stripe charge (MON-23) | **live** — off-session charge + transfer + CAS tip_amount; RequireIdempotencyKey | `ChargeContractTip`; `ContractTipHandler.Tip`; iOS/web sticky key |
 | 2026-07-26 | Regulated rails graduation docs + iOS status stub | R6.2–R6.6 stay **`blocked-compliance`** (honest); path-to-live-flagged documented | `docs/compliance/regulated-rails-live-flagged.md`; `RegulatedRailsStatusView`; Account under Plan limits |
 | 2026-07-26 | Doc hygiene — empty iOS hard-offs | Align living checklist + cut/smoke/blockers/security/launch B4 with code: `iOSHardOffKeys = []`, server flags + Business hub | this file; `ios-web-feature-matrix.md` policy change |

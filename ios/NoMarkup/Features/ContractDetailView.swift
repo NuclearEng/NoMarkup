@@ -1807,7 +1807,7 @@ struct ContractDetailView: View {
         changeOrders = await orders
         guaranteeClaim = await claim
         contractPayments = await payments
-        if let fees {
+        if let fees = await fees {
             feeBreakdown = fees
         }
         let rec = await recurring

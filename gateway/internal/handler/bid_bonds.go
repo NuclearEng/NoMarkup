@@ -69,6 +69,21 @@ func requiredBondCents(intendedBidCents int64) int64 {
 	return bond
 }
 
+// bidBondConfirmSoftReplayOutcome classifies ConfirmBidBond's durable path for
+// an owned bond row. "replay" = already authorized (return 200); "confirm" =
+// still pending (verify Stripe + CAS); "not_found" = terminal/unknown status.
+// Extracted for unit tests so the soft-replay matrix cannot drift silently.
+func bidBondConfirmSoftReplayOutcome(status string) string {
+	switch status {
+	case "authorized":
+		return "replay"
+	case "pending":
+		return "confirm"
+	default:
+		return "not_found"
+	}
+}
+
 // hasReleasedBond returns true if the user has at least one historical
 // 'released' bid_bonds row — they're considered trusted and skip the
 // pre-auth gate. Errors fall through to "treat as untrusted" (defensive).
@@ -296,6 +311,10 @@ func (h *BidBondHandler) CreateBidBond(w http.ResponseWriter, r *http.Request) {
 // The bond exists to make a no-show cost something; a bond with nothing behind
 // it is worse than no bond, because it reads as verified.
 //
+// Double-tap / Redis-miss soft-replay: if the bond is already 'authorized' for
+// this (user, listing, bond_id), return 200 with the same success shape instead
+// of 404. Concurrent first-confirm is still CAS on status='pending'.
+//
 // Future work (cron): release on win + payment OR lose auction; capture
 // on confirmed no-show after pickup window expires.
 func (h *BidBondHandler) ConfirmBidBond(w http.ResponseWriter, r *http.Request) {
@@ -322,18 +341,18 @@ func (h *BidBondHandler) ConfirmBidBond(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Load the pending bond and the SetupIntent secret we minted for it.
-	// Ownership is enforced in the WHERE clause, not after the fact.
-	var clientSecret string
+	// Load the bond + SetupIntent secret. Ownership is enforced in the WHERE
+	// clause. Soft-replay already-authorized bonds so double-tap confirm is
+	// idempotent (Redis middleware may miss after TTL/flush).
+	var clientSecret, bondStatus string
 	err := h.db.QueryRow(r.Context(), `
-		SELECT stripe_pi_id
+		SELECT stripe_pi_id, status
 		  FROM bid_bonds
 		 WHERE id = $1
 		   AND user_id = $2
-		   AND listing_id = $3
-		   AND status = 'pending'`,
+		   AND listing_id = $3`,
 		req.BondID, claims.UserID, listingID,
-	).Scan(&clientSecret)
+	).Scan(&clientSecret, &bondStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "bond not found or already finalized")
 		return
@@ -341,6 +360,23 @@ func (h *BidBondHandler) ConfirmBidBond(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		slog.ErrorContext(r.Context(), "bid-bond confirm lookup failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to confirm bond")
+		return
+	}
+	switch bidBondConfirmSoftReplayOutcome(bondStatus) {
+	case "replay":
+		slog.InfoContext(r.Context(), "bid-bond confirm idempotency replay",
+			"listing_id", listingID, "user_id", claims.UserID, "bond_id", req.BondID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"authorized":        true,
+			"bond_id":           req.BondID,
+			"idempotent_replay": true,
+		})
+		return
+	case "confirm":
+		// fall through to Stripe verify + CAS pending→authorized
+	default:
+		// captured / released / cancelled — not re-confirmable.
+		writeError(w, http.StatusNotFound, "bond not found or already finalized")
 		return
 	}
 

@@ -515,6 +515,8 @@ func TestTierForPath_authPaths(t *testing.T) {
 		"/api/v1/auth/callback/facebook",
 		"/api/v1/auth/oauth/apple",
 		"/api/v1/auth/callback/apple",
+		"/api/v1/auth/apple/native",
+		"/api/v1/auth/google/native",
 		"/api/v1/auth/mfa/verify",
 	}
 	for _, p := range authPaths {

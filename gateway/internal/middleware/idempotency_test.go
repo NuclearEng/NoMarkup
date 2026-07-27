@@ -189,6 +189,53 @@ func TestIdempotency_cached_response_replayed(t *testing.T) {
 	assert.Equal(t, 1, callCount, "handler should NOT have been called again")
 }
 
+// TestIdempotency_sameKeyReplaysJobBidPath is the money-adjacent place-bid
+// shape: POST /jobs/{id}/bids with a sticky Idempotency-Key must not re-enter
+// the handler on replay (handler + durable SQL still guard if Redis is cold).
+func TestIdempotency_sameKeyReplaysJobBidPath(t *testing.T) {
+	cacheClient := testCacheClient(t)
+
+	idempotencyKey := uniqueKey(t)
+	mw := RequireIdempotencyKey(cacheClient)
+
+	callCount := 0
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"bid_1","amount_cents":5000,"status":"active"}`))
+	})
+	handler := mw(inner)
+
+	path := "/api/v1/jobs/11111111-1111-1111-1111-111111111111/bids"
+	req1 := httptest.NewRequest(http.MethodPost, path, nil)
+	req1.Header.Set(idempotencyKeyHeader, idempotencyKey)
+	req1 = req1.WithContext(context.WithValue(req1.Context(), ClaimsContextKey, &Claims{
+		UserID: "provider-1",
+		Email:  "p@example.com",
+		Roles:  []string{"provider"},
+	}))
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, req1)
+	assert.Equal(t, http.StatusCreated, rec1.Code)
+	assert.Empty(t, rec1.Header().Get("X-Idempotency-Replayed"))
+	require.Equal(t, 1, callCount)
+
+	req2 := httptest.NewRequest(http.MethodPost, path, nil)
+	req2.Header.Set(idempotencyKeyHeader, idempotencyKey)
+	req2 = req2.WithContext(context.WithValue(req2.Context(), ClaimsContextKey, &Claims{
+		UserID: "provider-1",
+		Email:  "p@example.com",
+		Roles:  []string{"provider"},
+	}))
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusCreated, rec2.Code)
+	assert.Equal(t, "true", rec2.Header().Get("X-Idempotency-Replayed"))
+	assert.Contains(t, rec2.Body.String(), `"id":"bid_1"`)
+	assert.Equal(t, 1, callCount, "same Idempotency-Key must not re-enter place-bid handler")
+}
+
 func TestIdempotency_different_keys_produce_different_responses(t *testing.T) {
 	cacheClient := testCacheClient(t)
 

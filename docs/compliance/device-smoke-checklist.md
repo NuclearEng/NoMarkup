@@ -1,10 +1,19 @@
 # Device smoke checklist — NoMarkup iOS
 
-**Program:** Stage C residual (B6 ops)  
-**Related:** [`launch-board.md`](./launch-board.md) · [`app-store-review-2026-07-26-launch.md`](./app-store-review-2026-07-26-launch.md) · [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) · [`ios/README.md`](../../ios/README.md)
+**Program:** Stage C residual (B6 **ops** — human-gated; not an open engineering task)  
+**Related:** [`launch-board.md`](./launch-board.md) · [`app-store-review-2026-07-26-launch.md`](./app-store-review-2026-07-26-launch.md) · [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) · [`apple-pay-domain.md`](./apple-pay-domain.md) · [`ios/README.md`](../../ios/README.md)
 
 Manual **Simulator** (or device) pass against a reachable gateway + seed.  
 Check **Pass** only after a human executes the step. Leave **Fail** notes specific enough to file a fix.
+
+### Engineering already closed (do not re-file as eng residual)
+
+| Item | Status |
+|------|--------|
+| Client hard-offs | `FeatureFlags.iOSHardOffKeys = []` — rails are **server-flag** gated |
+| B4 hub | Account → Business & finance reflects `GET /api/v1/flags` |
+| Rail A code path | PaymentSheet buy-now / order pay (needs ops `pk_` + merchant + domain) |
+| Web Instant re-request | JobDetail owner CTA (not part of this iOS matrix) |
 
 ---
 
@@ -40,7 +49,7 @@ Then run from Xcode (**⌘R**) on iPhone 16.
 |---|----------|----------|:----:|:----:|-------|
 | 1 | **Cold launch** → Login or scaffold | App shows native `LoginView` (email/password + SIWA + “Browse native chrome (scaffold)”). **Not** a WKWebView of the website. | [ ] | [ ] | Guideline **4.2** |
 | 2 | **Health check on Home** | Enter main tabs (sign in **or** scaffold). **Home** → Gateway section → **Refresh status**. Green check when API reachable; red + error copy when not. Live catalog counts or graceful offline message. | [ ] | [ ] | |
-| 3 | **Launch gates / regulated server flags** | `FeatureFlags.iOSHardOffKeys` is **empty** (no client hard-off). Rails follow **server** `GET /api/v1/flags` + gateway `RequireFlag`. **Account → Business & finance**: when flags are **off**, CTAs stay disabled / unavailable with clear copy; when a flag is **on**, the matching surface opens (BNPL, insurance, advances, instant payout, etc.). For a **review/production** dogfood, confirm regulated keys remain **false** unless intentionally enabled. | [ ] | [ ] | Server flag is authoritative; empty hard-off set is expected |
+| 3 | **Launch gates / regulated server flags** | **Engineering closed:** no client hard-offs (`iOSHardOffKeys` empty). **Human verifies:** rails follow **server** `GET /api/v1/flags` + gateway `RequireFlag`. **Account → Business & finance**: when flags are **off**, CTAs stay disabled / unavailable with clear copy; when a flag is **on**, the matching surface opens (BNPL, insurance, advances, instant payout, etc.). For **review/production** dogfood, confirm regulated keys remain **false** unless intentionally enabled. | [ ] | [ ] | Server flag is authoritative; empty hard-off set is expected. Failures here are config/ops unless UI ignores the flag map |
 | 4 | **Marketplace** loads list | **Marketplace** tab: list of active listings **or** empty state **or** clear error (no blank crash). Pull-to-refresh works. | [ ] | [ ] | Public catalog |
 | 5 | **Listing detail → Report sheet → cancel** | Open a listing → detail renders → open **Report** sheet → **Cancel** dismisses without submit. | [ ] | [ ] | Do not file a real report against shared seed unless intentional |
 | 6 | **Jobs browse + mine (auth)** | **Jobs** → **Browse**: public open jobs list/detail. Sign in with seed customer (or real account). **Mine**: loads owner jobs **or** empty/error with clear copy (not infinite spinner). Scaffold session should prompt to sign in for Mine. | [ ] | [ ] | Auth required for Mine |

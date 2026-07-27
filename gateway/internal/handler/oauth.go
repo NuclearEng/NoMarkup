@@ -649,6 +649,76 @@ func (h *OAuthHandler) completeOAuthLoginJSON(w http.ResponseWriter, r *http.Req
 	})
 }
 
+// nativeGoogleSignInRequest is the body for POST /api/v1/auth/google/native
+// (ASWebAuthenticationSession / AppAuth id_token exchange — not Google SDK).
+type nativeGoogleSignInRequest struct {
+	IdentityToken string `json:"identity_token"`
+	// FullName is optional; when empty we use the id_token `name` claim.
+	FullName string `json:"full_name"`
+}
+
+// NativeGoogleSignIn exchanges a Google OIDC id_token from a native iOS client
+// for the standard access/refresh token pair (JSON). The client obtains the
+// id_token via Authorization Code + PKCE (ASWebAuthenticationSession), never
+// via fabricated/self-signed tokens. Signature, aud, iss, and exp are verified
+// against Google's JWKS (same path as the web callback).
+func (h *OAuthHandler) NativeGoogleSignIn(w http.ResponseWriter, r *http.Request) {
+	var req nativeGoogleSignInRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	idToken := strings.TrimSpace(req.IdentityToken)
+	if idToken == "" {
+		writeError(w, http.StatusBadRequest, "identity_token is required")
+		return
+	}
+
+	claims, err := verifyGoogleIDToken(r.Context(), idToken)
+	if err != nil {
+		slog.Warn("native google sign-in: id_token verification failed",
+			"error", err,
+			"code", "oauth_invalid_signature",
+		)
+		writeError(w, http.StatusUnauthorized, "invalid google identity token")
+		return
+	}
+
+	if !claims.EmailVerified {
+		slog.Warn("native google sign-in: email not verified", "email", claims.Email)
+		writeError(w, http.StatusUnauthorized, "google email is not verified")
+		return
+	}
+
+	name := strings.TrimSpace(req.FullName)
+	if name == "" {
+		name = strings.TrimSpace(claims.Name)
+	}
+	if name == "" {
+		name = claims.Email
+		for i := 0; i < len(name); i++ {
+			if name[i] == '@' {
+				name = name[:i]
+				break
+			}
+		}
+	}
+
+	result, err := h.userClient.FindOrCreateByOAuth(r.Context(), &userv1.FindOrCreateByOAuthRequest{
+		Provider:   "google",
+		ProviderId: claims.Subject,
+		Email:      claims.Email,
+		Name:       name,
+		AvatarUrl:  claims.Picture,
+	})
+	if err != nil {
+		slog.Error("native google sign-in: find or create user failed", "error", err)
+		writeGRPCError(w, err)
+		return
+	}
+
+	h.completeOAuthLoginJSON(w, r, result)
+}
+
 // --- Google ID token verification ---
 
 const (
@@ -663,6 +733,8 @@ type googleIDTokenClaims struct {
 	jwt.RegisteredClaims
 	Email         string `json:"email"`
 	EmailVerified bool   `json:"email_verified"`
+	Name          string `json:"name"`
+	Picture       string `json:"picture"`
 }
 
 var (
@@ -685,16 +757,41 @@ func googleJWKS(ctx context.Context) (keyfunc.Keyfunc, error) {
 	return googleJWKSInstance, googleJWKSErr
 }
 
+// googleAudienceClientIDs returns allowed id_token `aud` values.
+// Web OAuth uses GOOGLE_CLIENT_ID. Native iOS ASWebAuthenticationSession /
+// AppAuth uses GOOGLE_IOS_CLIENT_ID (iOS OAuth client in Google Cloud Console).
+// When only one is set, both web and native must share that audience.
+func googleAudienceClientIDs() []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, raw := range []string{
+		os.Getenv("GOOGLE_CLIENT_ID"),
+		os.Getenv("GOOGLE_IOS_CLIENT_ID"),
+	} {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
 // verifyGoogleIDToken validates the signature, issuer, audience, and expiry of
 // a Google ID token. Callers MUST NOT trust any claim from a Google ID token
 // that has not been through this function.
 //
 // Google accepts both "https://accounts.google.com" and "accounts.google.com"
 // as the issuer (the spec says the former; many of Google's own libraries
-// accept the latter for legacy reasons), so we check both.
+// accept the latter for legacy reasons), so we check both. Audience may be the
+// web client ID and/or the iOS client ID.
 func verifyGoogleIDToken(ctx context.Context, rawToken string) (*googleIDTokenClaims, error) {
-	clientID := strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID"))
-	if clientID == "" {
+	audiences := googleAudienceClientIDs()
+	if len(audiences) == 0 {
 		return nil, errors.New("GOOGLE_CLIENT_ID not configured")
 	}
 
@@ -703,30 +800,40 @@ func verifyGoogleIDToken(ctx context.Context, rawToken string) (*googleIDTokenCl
 		return nil, err
 	}
 
-	claims := &googleIDTokenClaims{}
-	token, err := jwt.ParseWithClaims(
-		rawToken,
-		claims,
-		jwks.Keyfunc,
-		jwt.WithAudience(clientID),
-		jwt.WithValidMethods([]string{"RS256"}),
-		// Issuer is checked manually below to support both Google's accepted forms.
-	)
-	if err != nil {
-		return nil, fmt.Errorf("verify google id_token: %w", err)
+	var lastErr error
+	for _, clientID := range audiences {
+		claims := &googleIDTokenClaims{}
+		token, err := jwt.ParseWithClaims(
+			rawToken,
+			claims,
+			jwks.Keyfunc,
+			jwt.WithAudience(clientID),
+			jwt.WithValidMethods([]string{"RS256"}),
+			// Issuer is checked manually below to support both Google's accepted forms.
+		)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if !token.Valid {
+			lastErr = errors.New("google id_token invalid")
+			continue
+		}
+		if claims.Issuer != googleIDTokenIssuer && claims.Issuer != googleIDTokenIssuerAlt {
+			lastErr = fmt.Errorf("google id_token unexpected issuer: %s", claims.Issuer)
+			continue
+		}
+		if claims.Subject == "" {
+			return nil, errors.New("google id_token missing sub claim")
+		}
+		if claims.Email == "" {
+			return nil, errors.New("google id_token missing email claim")
+		}
+		return claims, nil
 	}
-	if !token.Valid {
-		return nil, errors.New("google id_token invalid")
+	if lastErr != nil {
+		return nil, fmt.Errorf("verify google id_token: %w", lastErr)
 	}
-	if claims.Issuer != googleIDTokenIssuer && claims.Issuer != googleIDTokenIssuerAlt {
-		return nil, fmt.Errorf("google id_token unexpected issuer: %s", claims.Issuer)
-	}
-	if claims.Subject == "" {
-		return nil, errors.New("google id_token missing sub claim")
-	}
-	if claims.Email == "" {
-		return nil, errors.New("google id_token missing email claim")
-	}
-	return claims, nil
+	return nil, errors.New("google id_token audience mismatch")
 }
 

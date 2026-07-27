@@ -280,6 +280,74 @@ func TestListRecurringInstancesRollForward(t *testing.T) {
 	if len(repo.instances) == 0 {
 		t.Fatal("repo should hold created instances")
 	}
+	// Snapshot occurrence dates from the first batch.
+	firstDates := map[string]int{}
+	for _, inst := range repo.instances {
+		key := inst.OccurrenceDate.UTC().Format("2006-01-02")
+		firstDates[key]++
+	}
+	for key, n := range firstDates {
+		if n != 1 {
+			t.Fatalf("first batch already duplicated date %s (%d)", key, n)
+		}
+	}
+	// NextOccurrence should have advanced past the seed date.
+	if !repo.cfg.NextOccurrence.After(occ) {
+		t.Fatalf("next_occurrence not advanced: %v", repo.cfg.NextOccurrence)
+	}
+	// Re-list may create later horizon slots, but must not duplicate dates already present.
+	if _, _, err := svc.ListRecurringInstances(context.Background(), recID, customer, 1, 50); err != nil {
+		t.Fatalf("list again: %v", err)
+	}
+	dateCounts := map[string]int{}
+	for _, inst := range repo.instances {
+		key := inst.OccurrenceDate.UTC().Format("2006-01-02")
+		dateCounts[key]++
+	}
+	for key, n := range dateCounts {
+		if n != 1 {
+			t.Fatalf("roll-forward duplicated occurrence_date %s (%d rows)", key, n)
+		}
+	}
+	for key := range firstDates {
+		if dateCounts[key] != 1 {
+			t.Fatalf("lost first-batch date %s on re-list", key)
+		}
+	}
+}
+
+func TestListRecurringInstancesRollForwardSkipsPaused(t *testing.T) {
+	t.Parallel()
+	const (
+		customer = "cust-1"
+		provider = "prov-1"
+		contract = "ctr-1"
+		recID    = "rec-1"
+	)
+	today := time.Now().UTC()
+	y, m, d := today.Date()
+	occ := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	repo := &recurringTestRepo{
+		contract: &domain.Contract{
+			ID: contract, CustomerID: customer, ProviderID: provider, Status: "active",
+		},
+		cfg: &domain.RecurringConfig{
+			ID: recID, ContractID: contract, Frequency: "weekly", RateCents: 5000,
+			Status: "paused", NextOccurrence: occ,
+		},
+		instances: map[string]*domain.RecurringInstance{},
+	}
+	svc := NewContractService(repo, nil)
+	list, _, err := svc.ListRecurringInstances(context.Background(), recID, customer, 1, 50)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("paused config must not roll-forward instances, got %d", len(list))
+	}
+	if len(repo.instances) != 0 {
+		t.Fatalf("repo should stay empty while paused, got %d", len(repo.instances))
+	}
 }
 
 func TestNextOccurrenceFrom(t *testing.T) {

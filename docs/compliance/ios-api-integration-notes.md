@@ -223,8 +223,13 @@ From `router.go` auth routes:
 | **GET** | `/api/v1/auth/oauth/apple` | `InitAppleOAuth` — browser redirect to Apple |
 | **POST** | `/api/v1/auth/callback/apple` | `AppleOAuthCallback` — Apple `form_post` |
 | **POST** | `/api/v1/auth/apple/native` | `NativeAppleSignIn` — AuthenticationServices `identity_token` → JSON tokens |
+| **POST** | `/api/v1/auth/google/native` | `NativeGoogleSignIn` — Google OIDC `id_token` (ASWebAuth + PKCE) → JSON tokens |
 
-Google/Facebook parallels: GET init + GET callback under the same `/api/v1/auth` prefix.
+Google/Facebook web parallels: GET init + GET callback under the same `/api/v1/auth` prefix.
+**Native Google (FR-1.1):** iOS uses `ASWebAuthenticationSession` + PKCE against Google
+(public iOS client, no client secret), then `POST /api/v1/auth/google/native` with the
+verified-by-gateway id_token. Audience accepts `GOOGLE_CLIENT_ID` and/or `GOOGLE_IOS_CLIENT_ID`.
+**Not** a WebView of the cookie redirect flow; **no** fabricated Google SDK tokens.
 
 ### 4.0 Native SIWA (Stage B1 — shipped)
 

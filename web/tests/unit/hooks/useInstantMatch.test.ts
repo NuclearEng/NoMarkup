@@ -138,7 +138,7 @@ describe('useCreateInstantMatch', () => {
 
   it('posts to the per-job instant-match endpoint (no body) and returns status + expires_at', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({
-      status: 'matching',
+      status: 'offer_sent',
       expires_at: '2026-04-25T09:30:00Z',
     });
 
@@ -147,7 +147,10 @@ describe('useCreateInstantMatch', () => {
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/jobs/j-1/instant-match');
-    expect(result.current.data?.status).toBe('matching');
+    expect(result.current.data?.status).toBe('offer_sent');
+    expect(vi.mocked(toast.success)).toHaveBeenCalled();
+    const successMsg = String(vi.mocked(toast.success).mock.calls[0]?.[0] ?? '');
+    expect(successMsg).toMatch(/Instant match sent/i);
   });
 
   it('shows an error toast when the instant-match mutation fails', async () => {

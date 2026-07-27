@@ -2,8 +2,11 @@ import SwiftUI
 
 /// Free vs paid **plan limits** — `GET /api/v1/subscriptions/tiers` (public).
 ///
-/// App Store 3.1.1: digital paid plans are **not sold in this app**.
-/// No StoreKit, no purchase buttons, no links to web digital checkout.
+/// App Store 3.1.1 / v1 product cut (`docs/compliance/v1-ios-product-cut.md`):
+/// - **Free-tier-only digital** in this binary — no StoreKit, no purchase CTA,
+///   no “buy cheaper on web” steering for digital unlocks.
+/// - Paid tiers are **read-only comparison**. Existing web subscribers may open
+///   **Manage on web** (account management) — never a purchase button.
 struct PlanLimitsView: View {
     @State private var tiers: [SubscriptionTier] = []
     @State private var isLoading = false
@@ -18,6 +21,10 @@ struct PlanLimitsView: View {
                 }
                 return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
             }
+    }
+
+    private var hasPaidTier: Bool {
+        sortedTiers.contains { !$0.isFree }
     }
 
     var body: some View {
@@ -63,14 +70,14 @@ struct PlanLimitsView: View {
     private var listContent: some View {
         List {
             Section {
-                Text("Paid digital plans are web-only / not sold in this app.")
+                Text("Digital feature unlocks are free-tier only in this app. Paid Pro / Business plans are not sold here (no In-App Purchase).")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(BrandTheme.warning)
                     .fixedSize(horizontal: false, vertical: true)
                     .listRowBackground(BrandTheme.navyElevated)
-                    .accessibilityLabel("Paid digital plans are web-only and not sold in this app")
+                    .accessibilityLabel("Digital feature unlocks are free-tier only in this app. Paid plans are not sold here.")
 
-                Text("This screen shows feature limits for free and paid provider plans so you know what each tier includes. Physical goods and service jobs still use Apple Pay / Stripe escrow — not App Store subscriptions.")
+                Text("This screen compares free and paid provider limits so you know what each tier includes. Physical goods and service jobs still use Apple Pay / Stripe escrow — not App Store subscriptions.")
                     .font(.caption)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -87,8 +94,29 @@ struct PlanLimitsView: View {
             } header: {
                 Text("Limits by plan").brandSectionHeader()
             } footer: {
-                Text("0 on a numeric limit means unlimited. Boolean features show On / Off. Purchasing or changing paid digital plans is not available in this iOS app.")
+                Text("0 on a numeric limit means unlimited. Boolean features show On / Off. There is no upgrade or purchase button in this app.")
                     .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            if hasPaidTier {
+                Section {
+                    Text("If you already subscribe on the web, manage billing and plan changes there. This app does not start a digital subscription purchase.")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+
+                    Link(destination: AppConfig.manageSubscriptionURL) {
+                        Label("Manage on web", systemImage: "safari")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(minHeight: 44)
+                    }
+                    .tint(BrandTheme.accent)
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityHint("Opens the web subscription settings page in Safari. Not a purchase button.")
+                } header: {
+                    Text("Paid plans (web)").brandSectionHeader()
+                }
             }
         }
         .brandListBackground()
@@ -121,6 +149,17 @@ struct PlanLimitsView: View {
             limitLine(title: "Priority support", value: boolLabel(tier.prioritySupport))
             limitLine(title: "Verified badge boost", value: boolLabel(tier.verifiedBadgeBoost))
             limitLine(title: "Instant jobs", value: boolLabel(tier.instantEnabled))
+
+            // Per-tier: only paid rows surface Manage on web (no free-tier CTA).
+            if !tier.isFree {
+                Link(destination: AppConfig.manageSubscriptionURL) {
+                    Text("Manage on web")
+                        .font(.caption.weight(.semibold))
+                        .frame(minHeight: 44, alignment: .leading)
+                }
+                .tint(BrandTheme.accent)
+                .accessibilityHint("Opens web subscription management. Not a purchase.")
+            }
         }
         .frame(minHeight: 44)
         .padding(.vertical, 4)

@@ -43,6 +43,7 @@ import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useAuctionTerminal } from '@/hooks/useAuctionTerminal';
 import { useBidCount, useBidsForJob } from '@/hooks/useBids';
 import { useCountdown } from '@/hooks/useCountdown';
+import { useCreateInstantMatch } from '@/hooks/useInstantMatch';
 import { useJob } from '@/hooks/useJobs';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -106,7 +107,19 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
   const canBid = job?.status === JOB_STATUS.ACTIVE && isProvider && !isJobOwner;
 
   const canAward =
-    isJobOwner && (job.status === JOB_STATUS.ACTIVE || job.status === JOB_STATUS.CLOSED);
+    isJobOwner &&
+    job !== undefined &&
+    (job.status === JOB_STATUS.ACTIVE || job.status === JOB_STATUS.CLOSED);
+
+  // Customer owner can re-request instant match on an already-posted open job
+  // when an accept-now price is set (POST /jobs/{id}/instant-match requires it).
+  const canRequestInstantMatch =
+    isJobOwner &&
+    job?.status === JOB_STATUS.ACTIVE &&
+    typeof job?.offer_accepted_cents === 'number' &&
+    (job.offer_accepted_cents ?? 0) > 0;
+
+  const createInstantMatch = useCreateInstantMatch(jobId);
 
   // The server already fetched the job (passed via initialData), so there is no
   // first-paint loading state. This error branch only fires if a background
@@ -578,6 +591,34 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                     {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''}
                   </span>
                 </div>
+
+                {/* Owner: request (or re-request) instant match on an open job.
+                    Post-job form can fire this at publish; this covers already-
+                    posted jobs that still need a match fan-out. */}
+                {canRequestInstantMatch ? (
+                  <div className="space-y-2 border-t border-border/60 pt-3">
+                    <Button
+                      type="button"
+                      variant="urgent"
+                      className="min-h-[44px] w-full"
+                      disabled={createInstantMatch.isPending}
+                      aria-busy={createInstantMatch.isPending}
+                      onClick={() => {
+                        createInstantMatch.mutate();
+                      }}
+                    >
+                      <Zap className="h-4 w-4" aria-hidden="true" />
+                      {createInstantMatch.isPending
+                        ? 'Requesting instant match…'
+                        : 'Request Instant match'}
+                    </Button>
+                    <p className="text-muted-foreground text-xs">
+                      Notifies nearby providers at your Instant Accept price
+                      ({formatCents(job.offer_accepted_cents ?? 0)}). Auction stays open until a
+                      provider accepts.
+                    </p>
+                  </div>
+                ) : null}
 
                 {/* Bidding section based on user role. BidForm handles both
                     the first bid (existingBid === null) and lowering an

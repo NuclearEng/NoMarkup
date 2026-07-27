@@ -1,27 +1,29 @@
-# Privacy purpose-string + data inventory (web → future iOS)
+# Privacy purpose-string + data inventory (web + iOS)
 
-**Date:** 2026-07-26  
-**Stage:** A Phase 3 — App Store launch readiness  
-**Scope:** Map **current web product** collection surfaces to future **Info.plist purpose strings**, **pre-prompt UX**, and **App Store Connect App Privacy** labels.  
-**Not in scope:** Stage B native code, StoreKit wiring, real Info.plist commits.
+**Date:** 2026-07-27 (header refresh; inventory table still rooted in Phase 3 web map)  
+**Stage:** A Phase 3 deliverable — App Store launch readiness  
+**Scope:** Map **web + native** collection surfaces to **Info.plist purpose strings**, **pre-prompt UX**, and **App Store Connect App Privacy** labels.  
+**Native status (2026-07-27):** iOS project exists (`ios/NoMarkup.xcodeproj`). Purpose strings **ship in** [`ios/NoMarkup/Info.plist`](../../ios/NoMarkup/Info.plist); shared copy helpers in [`ios/NoMarkup/Location/LocationPurposeCopy.swift`](../../ios/NoMarkup/Location/LocationPurposeCopy.swift). Camera **is** used on iOS (jobs/listings/profile/verification docs). StoreKit IAP still not stubbed. No Checkr / background-check SDK.
 
 **Sources (code + policy):**
 
 | Source | Path / notes |
 |--------|----------------|
+| **iOS Info.plist (live purpose strings)** | `ios/NoMarkup/Info.plist` — `NSLocationWhenInUseUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSCameraUsageDescription` (no mic / no ATT) |
+| **iOS purpose-string helpers** | `ios/NoMarkup/Location/LocationPurposeCopy.swift` |
 | Cookie consent | `web/src/components/compliance/CookieConsent.tsx` |
 | Age gate (DOB) | `web/src/components/compliance/AgeGate.tsx` |
-| Location — market | `web/src/components/location/MarketSelector.tsx` |
-| Location — GPS check-in | `web/src/hooks/useWorkspace.ts`, `web/src/components/providers/CheckInOut.tsx` |
-| Maps / geocoding | Mapbox (`JobPostingForm`, `MarketplaceMap`, CSP allowlist) |
-| Uploads | `web/src/hooks/useImageUpload.ts`, `UPLOAD_CONTEXT` in `web/src/types/index.ts` |
-| Auth / OAuth | register/login forms; `gateway/internal/handler/oauth*.go` |
-| Payments | Stripe Elements + `PaymentRequestButton` (Apple Pay / Google Pay) |
+| Location — market | `web/src/components/location/MarketSelector.tsx` + iOS market picker |
+| Location — GPS check-in | `web/src/hooks/useWorkspace.ts`, `web/src/components/providers/CheckInOut.tsx` + iOS provider workspace |
+| Maps / geocoding | Mapbox (web); MapKit / directions helpers (iOS) |
+| Uploads | `web/src/hooks/useImageUpload.ts`; iOS `ImageUploader` + PhotosUI / camera |
+| Auth / OAuth | register/login forms; SIWA on iOS; `gateway/internal/handler/oauth*.go` |
+| Payments | Stripe Elements / PaymentSheet; Apple Pay path; Rail A only on iOS (no StoreKit stub) |
 | Sentry | `web/src/instrumentation-client.ts` (analytics consent gate) |
-| Web push | `web/src/lib/web-push.ts`, `web/src/components/pwa/PushPermission.tsx` |
+| Web push | `web/src/lib/web-push.ts`; iOS APNs registration helpers (optional) |
 | Permissions-Policy | `web/next.config.ts`, `gateway/internal/middleware/security.go` |
-| Export / deletion | `GET /api/v1/me/export` (router also `/me/export`); account settings UI |
-| Privacy policy | `web/src/app/(public)/privacy/page.tsx` |
+| Export / deletion | `GET /api/v1/me/export`; web settings + iOS `AccountDeletionView` |
+| Privacy policy | `web/src/app/(public)/privacy/page.tsx` + in-app legal web views |
 | PII at rest | `Claude.md` §6 / migrations `031`/`033`/`104`–`107` |
 | Remediation baseline | `docs/compliance/app-store-review-2026-07-26-remediated.md` |
 
@@ -58,7 +60,7 @@
 | 14 | **Photos — job** | Job posting / completion evidence (`JOB_PHOTO`) | Imaging + S3; job service | Photo Library; optional **Camera** | Library string: *“…so you can attach photos to job posts and completion evidence.”* Camera: see row 17 | Yes | Photos or Videos; User Content | N | Completion photos also via workspace handler path. |
 | 15 | **Photos — listing (goods)** | Listing posting form (`LISTING`) | Imaging + S3; marketplace listings | Photo Library; optional Camera | *“…so you can add photos of items you list for sale.”* | Yes | Photos or Videos; User Content | N | Local pickup goods marketplace UGC. |
 | 16 | **Files — insurance / documents** | Insurance claim form, guarantee claim (`DOCUMENT`) | Imaging/S3 DOCUMENT context; MIME validated | Photo Library and/or **Files** (UTType PDF/images) | **NSPhotoLibraryUsageDescription** and/or document picker (no extra plist for UIDocumentPicker): *“…so you can upload insurance and claim documents.”* | Yes — sensitive docs | Purchases / Financial Info (claim meta); Files or Docs; User Content | N | `InsuranceClaimForm` uses real `useImageUpload` DOCUMENT context (ASR-2.1.a.1). Cap **10MB** server-side (`MAX_FILE_SIZE_BYTES`); client may mention larger soft limits for docs — align copy with gateway. |
-| 17 | **Camera** | **Not used** on web today | N/A | `AVCapture` / `UIImagePickerController` camera | **NSCameraUsageDescription:** *“NoMarkup uses the camera so you can take photos for jobs, listings, or your profile instead of choosing an existing photo.”* | **Yes** if/when enabled | Photos or Videos (if captured images uploaded) | N | **Permissions-Policy: `camera=()`** on Next (`web/next.config.ts`) and gateway security middleware — **explicitly disabled**. Stage B may re-enable with purpose string + pre-prompt. |
+| 17 | **Camera** | **Not used** on web today (Permissions-Policy deny). **Used on iOS** (jobs, listings, profile, verification docs via `CameraImagePicker`) | Imaging + S3 when capture submitted | `UIImagePickerController` / PhotosUI capture path | **NSCameraUsageDescription** — **live in** `ios/NoMarkup/Info.plist`: *“NoMarkup uses the camera so you can take photos for jobs, listings, or your profile instead of choosing an existing photo.”* | **Yes** before first camera open on iOS | Photos or Videos (if captured images uploaded) | N | Web remains `camera=()`. iOS declares camera because capture ships in binary. |
 | 18 | **Microphone** | **Not used** | N/A | AVAudioSession | **NSMicrophoneUsageDescription** only if voice notes/calls ship | N/A until product needs it | Audio Data (if collected) | N | **Permissions-Policy: `microphone=()`**. Do not declare unused mic permission. |
 | 19 | **Payment method / card metadata** | `/settings/payment-methods`, checkout, bid bonds, orders | **Stripe** Elements / PaymentIntents; Connect Express for providers | PassKit / Stripe iOS SDK; **no raw PAN in app** | N/A for card entry in Stripe UI; Apple Pay has PassKit flows | Wallet sheet is OS-owned | Financial Info → Payment Info; Purchases → Purchase History | N | No full PAN stored by NoMarkup. Privacy Policy: Stripe only. |
 | 20 | **Apple Pay / Payment Request** | `PaymentRequestButton` (Stripe Payment Request API) | Stripe; domain association `/.well-known/apple-developer-merchantid-domain-association` (placeholder noted) | **PassKit** `PKPaymentAuthorizationController` | N/A (wallet UI) | No separate pre-prompt beyond checkout context | Financial Info; Purchases | N | Web: `requestPayerName` + `requestPayerEmail`. Live Apple Pay needs real domain association before production. |
@@ -83,36 +85,34 @@
 
 ---
 
-## 2. Consolidated draft Info.plist keys (future native)
+## 2. Consolidated Info.plist keys (native — live)
 
-Use only keys for APIs the binary **actually calls**. Prefer one combined location string if a single `WhenInUse` authorization covers market + check-in + maps (customize copy to list purposes):
+**Authoritative file:** [`ios/NoMarkup/Info.plist`](../../ios/NoMarkup/Info.plist) (mirrored helpers in `LocationPurposeCopy.swift`).  
+Use only keys for APIs the binary **actually calls**. Prefer one combined location string if a single `WhenInUse` authorization covers market + check-in + maps.
+
+**As shipped (summarized):**
 
 ```xml
-<!-- Location (required if CoreLocation used) -->
+<!-- Location (required if CoreLocation used) — live -->
 <key>NSLocationWhenInUseUsageDescription</key>
-<string>NoMarkup uses your location to suggest your nearest market, show local jobs and pickup areas, and confirm job-site check-in for dispute protection. You can pick a city manually and revoke location access in Settings.</string>
+<string>NoMarkup uses your location to suggest the nearest marketplace city and, when you check in to a job, to confirm you arrived at the job site for dispute protection. You can pick a city manually.</string>
 
-<!-- Optional: only if Always authorization is ever requested (not planned) -->
-<!-- NSLocationAlwaysAndWhenInUseUsageDescription — do not add without product need -->
-
-<!-- Photos -->
+<!-- Photos — live -->
 <key>NSPhotoLibraryUsageDescription</key>
-<string>NoMarkup needs access to your photo library so you can upload profile, portfolio, job, listing, review, and claim document images.</string>
+<string>NoMarkup needs access to your photos so you can set a profile picture, add portfolio images, and attach photos to jobs, listings, and claims.</string>
 
-<!-- Camera — only if Stage B enables capture (currently off on web) -->
+<!-- Camera — live on iOS (capture enabled); still denied on web via Permissions-Policy -->
 <key>NSCameraUsageDescription</key>
-<string>NoMarkup uses the camera so you can take photos for jobs, listings, profile, or claim documents.</string>
+<string>NoMarkup uses the camera so you can take photos for jobs, listings, or your profile instead of choosing an existing photo.</string>
 
 <!-- Microphone — do not ship until product uses audio -->
 <!-- NSMicrophoneUsageDescription -->
 
 <!-- Tracking — do NOT ship while ATT decision is N -->
 <!-- NSUserTrackingUsageDescription -->
-
-<!-- Local network / Bluetooth / Face ID: not used by current product map -->
 ```
 
-**Photo Library Add-Only / limited library:** If iOS limited-library picker is used exclusively, still provide `NSPhotoLibraryUsageDescription` when required by the API level you call; prefer `PHPicker` (no full-library access) to reduce permission friction.
+**Photo Library Add-Only / limited library:** Prefer `PHPicker` / `PhotosPicker` (no full-library access) to reduce permission friction; keep `NSPhotoLibraryUsageDescription` for APIs that require it.
 
 ---
 
@@ -170,29 +170,30 @@ Confirm each row in App Store Connect against live binary + third-party SDKs at 
 
 ---
 
-## 6. Pre-prompt UX checklist (Stage B1)
+## 6. Pre-prompt UX checklist (native + web)
 
-| Permission | Web pre-prompt exists? | Stage B1 action |
-|------------|------------------------|-----------------|
-| Location (market) | Yes (`MarketSelector`) | Port copy before `requestWhenInUseAuthorization` |
-| Location (check-in) | Yes (`CheckInOut`) | Port copy; disable CTA if denied |
-| Push | Yes (`PushPermission`) | Port soft prompt before UN authorization |
-| Photos | Implicit (upload control) | Short sheet: what photos are used for |
-| Camera | N/A (disabled) | Only if enabling capture |
-| Tracking | N/A | Do not implement |
-| Age / DOB | Yes (`AgeGate`) | Port 18+ gate for account use |
-| Cookie/analytics | Yes (`CookieConsent`) | Map to native analytics toggle in Settings |
+| Permission | Web pre-prompt exists? | iOS action |
+|------------|------------------------|------------|
+| Location (market) | Yes (`MarketSelector`) | `LocationPurposeCopy.marketPickerPrePrompt` before `requestWhenInUseAuthorization` |
+| Location (check-in) | Yes (`CheckInOut`) | `LocationPurposeCopy.jobSiteCheckInPrePrompt`; disable CTA if denied |
+| Push | Yes (`PushPermission`) | Soft prompt before UN authorization when APNs path is on |
+| Photos | Implicit (upload control) | PhotosPicker / library path; purpose string in Info.plist |
+| Camera | N/A (disabled on web) | **Enabled on iOS** — purpose string live; keep pre-prompt before first capture |
+| Tracking | N/A | Do not implement ATT |
+| Age / DOB | Yes (`AgeGate`) | Native age-status path for account use |
+| Cookie/analytics | Yes (`CookieConsent`) | Map to native analytics toggle in Settings when diagnostics ship |
 
 ---
 
 ## 7. Gaps / non-claims
 
-1. **No Info.plist in repo** — drafts above are design inputs only.  
-2. **Camera/mic are policy-denied on web** — do not claim mobile capture until Stage B enables and documents them.  
+1. **Info.plist is in repo** (`ios/NoMarkup/Info.plist`) — keep ASC labels + this inventory in sync when keys change.  
+2. **Camera is enabled on iOS**; **mic remains unused** — do not declare `NSMicrophoneUsageDescription`. Web still denies camera/mic via Permissions-Policy.  
 3. **Apple Pay domain association** is still a production ops follow-up (placeholder noted in remediation).  
 4. **provider_profiles.service_location** exact plaintext is a known PII limitation (matching).  
-5. **ASC labels must be revalidated** against the actual binary binary dependencies at submission.  
-6. **Service worker** may unregister in production kill-switch mode — push is **partial** on web.
+5. **ASC labels must be revalidated** against the actual binary dependencies at submission.  
+6. **Service worker** may unregister in production kill-switch mode — push is **partial** on web.  
+7. **No Checkr / background-check vendor** — do not list background-check data categories until FR-2.9 is productized.
 
 ---
 

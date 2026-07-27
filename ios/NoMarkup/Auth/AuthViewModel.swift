@@ -2,7 +2,7 @@ import AuthenticationServices
 import Foundation
 import SwiftUI
 
-/// Auth state for email/password, MFA challenge, register, password reset, and SIWA.
+/// Auth state for email/password, MFA, register, password reset, SIWA, and Google (ASWebAuth + PKCE).
 @MainActor
 final class AuthViewModel: ObservableObject {
     @Published var isAuthenticated = false
@@ -446,6 +446,34 @@ final class AuthViewModel: ObservableObject {
             if let authError = error as? ASAuthorizationError, authError.code == .canceled {
                 return
             }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// FR-1.1 Google: ASWebAuthenticationSession + PKCE → Google id_token → gateway native exchange.
+    func signInWithGoogle() async {
+        guard !isBusy else { return }
+        errorMessage = nil
+        statusMessage = nil
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let session = GoogleOAuthSession()
+            let identityToken = try await session.signIn()
+            _ = try await api.signInWithGoogle(identityToken: identityToken)
+            clearSensitiveInMemoryFields()
+            isScaffoldSession = false
+            isAuthenticated = true
+            statusMessage = "Signed in with Google."
+            notifyAuthSucceeded()
+        } catch let error as GoogleOAuthSession.SessionError {
+            if case .canceled = error {
+                return
+            }
+            errorMessage = error.localizedDescription
+        } catch {
             errorMessage = error.localizedDescription
         }
     }

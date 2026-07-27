@@ -73,6 +73,24 @@ export function useCreateInstantMatch(jobId: string) {
   return useMutation({
     mutationFn: () =>
       api.post<InstantMatchResponse>(`/api/v1/jobs/${jobId}/instant-match`),
+    onSuccess: (data) => {
+      // Customer can request instant match after post (JobDetail) as well as at
+      // publish time. Surface expiry so they know the offer window is finite.
+      if (data.expires_at) {
+        const when = new Date(data.expires_at);
+        const label = Number.isNaN(when.getTime())
+          ? data.expires_at
+          : when.toLocaleString(undefined, {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            });
+        toast.success(`Instant match sent. Offers expire ${label}.`);
+      } else {
+        toast.success('Instant match requested. Nearby providers have been notified.');
+      }
+    },
     onError: (err) => {
       toast.error(getApiErrorMessage(err, 'Failed to start instant match.'));
     },

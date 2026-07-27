@@ -198,6 +198,33 @@ actor APIClient {
         return pair
     }
 
+    /// POST /api/v1/auth/google/native — Google OIDC id_token from ASWebAuth + PKCE.
+    ///
+    /// The id_token must be a real Google-signed JWT (aud = GOOGLE_IOS_CLIENT_ID /
+    /// GOOGLE_CLIENT_ID). Do not invent or self-sign tokens.
+    func signInWithGoogle(identityToken: String, fullName: String? = nil) async throws -> AuthTokenPair {
+        let url = AppConfig.apiBaseURL.appending(path: "api/v1/auth/google/native")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 20
+        var body: [String: String] = ["identity_token": identityToken]
+        if let fullName, !fullName.isEmpty {
+            body["full_name"] = fullName
+        }
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await session.data(for: request)
+        try Self.throwIfNeeded(response: response, data: data)
+        let pair = try decoder.decode(AuthTokenPair.self, from: data)
+        try tokenStore.save(pair.accessToken, for: .accessToken)
+        if let refresh = pair.refreshToken {
+            try tokenStore.save(refresh, for: .refreshToken)
+        }
+        return pair
+    }
+
     /// DELETE /api/v1/users/me — schedule account deletion (30-day grace).
     func requestAccountDeletion(reason: String) async throws {
         let url = AppConfig.apiBaseURL.appending(path: "api/v1/users/me")
@@ -506,6 +533,14 @@ actor APIClient {
             return nil
         }
         return JWTPayload.userID(from: token)
+    }
+
+    /// Access token for WebSocket upgrade (`Authorization: Bearer`).
+    /// Caller must not log the returned value.
+    func accessTokenForWebSocket() throws -> String? {
+        let token = try tokenStore.read(.accessToken)
+        guard let token, !token.isEmpty else { return nil }
+        return token
     }
 
     // MARK: - Mutations (report + bids)

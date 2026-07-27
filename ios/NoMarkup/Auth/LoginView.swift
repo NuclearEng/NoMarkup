@@ -28,6 +28,10 @@ struct LoginView: View {
                         .disabled(auth.isBusy)
                         .opacity(auth.isBusy ? 0.55 : 1)
                         .allowsHitTesting(!auth.isBusy)
+                        GoogleSignInButton(isBusy: auth.isBusy) {
+                            guard !auth.isBusy else { return }
+                            Task { await auth.signInWithGoogle() }
+                        }
                         scaffoldBypass
                     }
                     footerLegal

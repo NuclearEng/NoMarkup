@@ -1,9 +1,10 @@
 # Capability Matrix — NoMarkup App Store Launch
 
-**Status:** Stage A deliverable (A5)  
-**Date:** 2026-07-26  
-**Binary readiness:** **NOT READY** — no `*.xcodeproj` / native target in-repo  
-**Related:** [`launch-board.md`](./launch-board.md) · [`submission-blockers.md`](./submission-blockers.md) · [`ios-payment-rails-design.md`](./ios-payment-rails-design.md) · [`app-review-notes.md`](./app-review-notes.md) · [`ios-mobile-web-readiness.md`](./ios-mobile-web-readiness.md)
+**Status:** Stage A deliverable (A5) — **header refreshed 2026-07-27**  
+**Date:** 2026-07-27  
+**Binary readiness:** **IN PROGRESS** — native target exists at [`ios/NoMarkup.xcodeproj`](../../ios/NoMarkup.xcodeproj) (SwiftUI multiplatform shell + feature surfaces). ASC packaging / TestFlight / `DEPLOY_PROVISIONED` review backend remain open.  
+**Live iOS feature SSOT:** [`ios-web-feature-matrix.md`](./ios-web-feature-matrix.md) (per-surface `live` / `partial` / `web-handoff`).  
+**Related:** [`launch-board.md`](./launch-board.md) · [`submission-blockers.md`](./submission-blockers.md) · [`ios-payment-rails-design.md`](./ios-payment-rails-design.md) · [`app-review-notes.md`](./app-review-notes.md) · [`ios-mobile-web-readiness.md`](./ios-mobile-web-readiness.md) · [`privacy-purpose-string-inventory.md`](./privacy-purpose-string-inventory.md)
 
 ---
 
@@ -14,12 +15,12 @@ This matrix maps **every major product capability** to:
 | Column | Meaning |
 |--------|---------|
 | **Capability** | User- or platform-facing feature |
-| **Product surface** | Routes / roles (web today) |
-| **Apple framework / API (when native)** | Intended iOS/iPadOS stack — design only until Stage B |
+| **Product surface** | Routes / roles (web + shared gateway) |
+| **Apple framework / API (when native)** | iOS/iPadOS stack used or intended |
 | **Entitlement** | Apple Developer entitlement / capability (or none) |
 | **Feature flag** | Canonical `feature_flags.key` (`useFeatureFlags.ts` + DB) or `—` |
 | **Web status** | What ships on **no-markup.com** today |
-| **iOS status** | Native binary status (**almost all not started**) |
+| **iOS status** | Native binary status — prefer [`ios-web-feature-matrix.md`](./ios-web-feature-matrix.md) for current code; many rows below still say `not started` as the original Stage A snapshot |
 | **First binary plan** | Include / flag-off / defer / N/A for v1 App Store binary |
 | **ASR / guideline** | Primary App Store Review / Before You Submit anchors |
 
@@ -32,21 +33,22 @@ This matrix maps **every major product capability** to:
 | `missing` | Not implemented |
 | `n/a` | Not applicable to this client / role |
 | `flag-off-v1` | Exists on web but **must be off** (or not exposed) on first iOS binary |
-| `not started` | No native client code |
+| `not started` | No native client code (legacy vocabulary — see live matrix for actual status) |
+| `live` / `in tree` | Native surface present in `ios/NoMarkup` (use live feature matrix) |
 
-### How to use with Stage B
+### How to use with Stage B / current tree
 
 1. **Scope v1 binary** from the [Must build for v1 binary](#must-build-for-v1-binary) list — do not expand into `flag-off-v1` rows without licenses + counsel.
-2. **B0** scaffold (SwiftUI multiplatform; **no pure full-site WKWebView** — ASR-4.2).
-3. **B1** SIWA + purpose strings + in-app legal links + account deletion / OAuth unlink (reuse gateway APIs).
-4. **B2** dual-rail payments: **Stripe (Rail A)** for jobs/goods GMV; **StoreKit (Rail B)** for digital tiers only — after `review-logs/phase-4b.md`.
-5. **B3** core browse → bid → escrow pay → chat → report/block.
+2. **B0 scaffold** — **done in tree**: `ios/NoMarkup.xcodeproj` + SwiftUI app (not a pure full-site WKWebView — ASR-4.2).
+3. **B1** SIWA + purpose strings (`Info.plist` / `LocationPurposeCopy`) + in-app legal links + account deletion / OAuth unlink (reuse gateway APIs) — largely in tree; re-check before submit.
+4. **B2** dual-rail payments: **Stripe (Rail A)** for jobs/goods GMV; **StoreKit (Rail B)** for digital tiers only — after `review-logs/phase-4b.md` (do not stub StoreKit).
+5. **B3** core browse → bid → escrow pay → chat → report/block — largely live per `ios-web-feature-matrix.md`.
 6. **B4** server- or client-type gate: regulated flags off for iOS.
-7. **B5** push optional — do not claim if unimplemented.
+7. **B5** push optional — do not claim if unimplemented on device.
 8. **B6** ASC package; demo path from `app-review-notes.md`.
 9. **C** re-run compliance + device smoke; refresh this matrix when status changes.
 
-**Sources of truth:** README / CLAUDE product surfaces · `web/src/hooks/useFeatureFlags.ts` · seed migrations `013` / `060` · payment dual-rail design · App Review notes flag matrix.
+**Sources of truth:** README / CLAUDE product surfaces · `ios/` native app · `web/src/hooks/useFeatureFlags.ts` · seed migrations `013` / `060` · payment dual-rail design · App Review notes flag matrix · [`ios-web-feature-matrix.md`](./ios-web-feature-matrix.md).
 
 ---
 
@@ -216,16 +218,17 @@ Minimum native surface so the app is a complete marketplace (not a thin brochure
 |--------|--------|
 | **Matrix rows** | **68** |
 | **Web `shipped` (approx.)** | Majority of marketplace + UGC + legal |
-| **iOS `not started` / `n/a`** | Essentially all client rows |
+| **iOS (2026-07-27)** | Scaffold + many consumer surfaces **live** in `ios/NoMarkup` — see [`ios-web-feature-matrix.md`](./ios-web-feature-matrix.md). Per-row iOS column in this file is still partly a Stage A snapshot (`not started`); treat the live feature matrix as SSOT for code status. |
 | **flag-off-v1 (regulated / risk)** | BNPL, advances, insurance×2, legal, lead_gen, instant_payout (soft) |
 | **Must-build hard items** | **16** (plus 3 strongly recommended) |
+| **Not invented** | No third-party **Checkr** / background-check integration (PRD FR-2.9 remains open question) |
 
 ---
 
 ## Maintenance
 
 - Update a row when web or native status changes; bump **Date** in the header.
-- After Stage B0 scaffold exists, replace blanket “not started” with per-surface progress.
+- Prefer patching [`ios-web-feature-matrix.md`](./ios-web-feature-matrix.md) for day-to-day iOS progress; fold into this capability matrix on release gates.
 - After Phase 4B StoreKit review log, lock digital-tier rows to concrete product IDs (still no fake stubs).
 - Keep aligned with `submission-blockers.md` and `launch-board.md` Stage B IDs (B0–B6).
 )

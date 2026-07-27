@@ -11,7 +11,7 @@
 
 | Check | Result |
 |-------|--------|
-| 1. Idempotency-Key on listed money mutations | **PASS (middleware + sticky clients)** — job bid, listing bid, buy-now, order pay, bid-bond create/confirm: gateway enforces + web/iOS send headers. **iOS sticky keys** (web parity): `APIClient.idempotencyHeader(for:)` + clear-on-success for job/listing bid, bond create/confirm, payment release. Residual: handler durable SQL dedup for job bid/bond (SEC-GATE-07 class) |
+| 1. Idempotency-Key on listed money mutations | **PASS (middleware + sticky clients + durable SQL)** — job bid, listing bid, buy-now, order pay, bid-bond create/confirm: gateway enforces + web/iOS send headers. **iOS sticky keys** (web parity). **Durable SQL:** listing_bids 056, bid_bonds 109, job bids 110 + PlaceBid stamp/replay; ConfirmBidBond authorized soft-replay. Residual money races: MON-14–18 (separate ADR) |
 | 2. No force-unwraps in iOS money paths | **PASS** |
 | 3. Regulated rails server-flag gated (`iOSHardOffKeys` empty) | **PASS** (matches code + matrix policy) |
 | 4. Amounts are `Int64` cents in API bodies | **PASS** (iOS encode + gateway decode) |
@@ -20,8 +20,8 @@
 | Idempotency Redis cache policy | **PASS** — 2xx-only replay (5xx/4xx retriable with same key) |
 | Goods take rate vs fee config | **PASS** — R6.1 wires mint+charge to `platform_fee_config` |
 | Guarantee approve → CreateRefund | **PASS** — ReviewGuaranteeClaim refunds before resolve; stamp `guarantee_paid_at`; fail-closed without refundable payment |
-| Bid-bond durable SQL idempotency | **PASS** — migration 109 + CreateBidBond soft-replay on (user, listing, key) |
-| Job PlaceBid sticky retry UX | **PASS** — AlreadyExists + same amount soft-replays active bid (no double row) |
+| Bid-bond durable SQL idempotency | **PASS** — migration 109 + CreateBidBond soft-replay on (user, listing, key); ConfirmBidBond authorized soft-replay (double-tap) |
+| Job PlaceBid sticky retry UX | **PASS** — migration 110 `bids.idempotency_key` + pre-lookup replay; AlreadyExists + same amount soft-replay; stamp key after place |
 | Guarantee multi-payment payout | **PASS** — oldest-first allocation; underfunded fail-closed |
 
 **Gate overall:** **PASS WITH GAPS** — middleware Idempotency-Key gaps closed same day; production money races (MON-14–18) and regulated-rail **server-flag / license** enablement remain separate.

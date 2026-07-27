@@ -1674,7 +1674,8 @@ struct TrustTiersResponse: Codable, Sendable {
 // MARK: - Subscription tiers (display / limits only — no IAP)
 
 /// Row from `GET /api/v1/subscriptions/tiers` → `{ "tiers": [...] }`.
-/// Read-only in the iOS client: no purchase, StoreKit, or web digital checkout links.
+/// Read-only in the iOS client: no purchase / StoreKit.
+/// Paid tiers may surface **Manage on web** (billing management) — never a buy CTA.
 struct SubscriptionTier: Codable, Sendable, Hashable, Identifiable {
     /// Wire `id` from the gateway (UUID). Stored separately from `Identifiable.id`.
     var remoteId: String?

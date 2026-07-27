@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Public reviews for a user — `GET /api/v1/users/{id}/reviews`.
 /// FR-6.5 respond (reviewee only, ≤500 chars) + FR-6.8 flag (auth, not own review).
+/// PRD §11: share review text + URL via ShareLink (referral when available).
 struct UserReviewsView: View {
     let userId: String
     var displayName: String?
@@ -15,6 +16,8 @@ struct UserReviewsView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var currentUserID: String?
+    @State private var referralCode: String?
+    @State private var referralShareURL: String?
 
     @State private var respondTarget: ReviewRow?
     @State private var flagTarget: ReviewRow?
@@ -101,21 +104,27 @@ struct UserReviewsView: View {
             }
 
             Section {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Average rating")
-                            .font(.caption)
-                            .foregroundStyle(BrandTheme.textSecondary)
-                        Text(displayAverage)
-                            .font(.title2.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(BrandTheme.goldBright)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Average rating")
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                            Text(displayAverage)
+                                .font(.title2.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(BrandTheme.goldBright)
+                        }
+                        Spacer(minLength: 8)
+                        if let total = totalReviews ?? pagination?.resolvedTotal {
+                            Text("\(total) review\(total == 1 ? "" : "s")")
+                                .font(.subheadline)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                                .monospacedDigit()
+                        }
                     }
-                    Spacer(minLength: 8)
-                    if let total = totalReviews ?? pagination?.resolvedTotal {
-                        Text("\(total) review\(total == 1 ? "" : "s")")
-                            .font(.subheadline)
-                            .foregroundStyle(BrandTheme.textSecondary)
-                            .monospacedDigit()
+
+                    if let avgShare = averageSharePayload {
+                        shareLink(for: avgShare, label: "Share rating")
                     }
                 }
                 .frame(minHeight: 44)
@@ -188,6 +197,8 @@ struct UserReviewsView: View {
             }
 
             actionButtons(for: review)
+
+            shareLink(for: reviewSharePayload(review), label: "Share review")
         }
         .padding(.vertical, 4)
         .frame(minHeight: 44, alignment: .topLeading)
@@ -226,6 +237,43 @@ struct UserReviewsView: View {
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    private var averageSharePayload: ShareCardText.SharePayload? {
+        guard let averageRating, averageRating > 0 else { return nil }
+        let rounded = Int(averageRating.rounded())
+        return ShareCardText.review(
+            rating: max(1, min(5, rounded)),
+            revieweeName: displayName,
+            comment: nil,
+            referralCode: referralCode,
+            shareURLString: referralShareURL
+        )
+    }
+
+    private func reviewSharePayload(_ review: ReviewRow) -> ShareCardText.SharePayload {
+        ShareCardText.review(
+            rating: review.rating,
+            revieweeName: displayName,
+            comment: review.comment,
+            referralCode: referralCode,
+            shareURLString: referralShareURL
+        )
+    }
+
+    private func shareLink(for payload: ShareCardText.SharePayload, label: String) -> some View {
+        ShareLink(
+            item: payload.url,
+            subject: Text(payload.subject),
+            message: Text(payload.message)
+        ) {
+            Label(label, systemImage: "square.and.arrow.up")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 44)
+        }
+        .tint(BrandTheme.accent)
+        .accessibilityHint("Opens the system share sheet with review text and a NoMarkup link")
     }
 
     /// Reviewee only, single public response (server enforces party + once).
@@ -281,6 +329,15 @@ struct UserReviewsView: View {
         isLoading = reviews.isEmpty
         errorMessage = nil
         defer { isLoading = false }
+
+        if auth.isAuthenticated, !auth.isScaffoldSession {
+            if let referral = try? await APIClient.shared.fetchReferralCode() {
+                let code = referral.code?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                referralCode = code.isEmpty ? nil : code
+                let url = referral.shareUrl?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                referralShareURL = url.isEmpty ? nil : url
+            }
+        }
 
         do {
             let response = try await APIClient.shared.fetchUserReviews(userId: trimmed, page: 1, pageSize: 40)
