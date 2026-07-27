@@ -2,11 +2,16 @@ import SwiftUI
 
 /// Listing detail for a single goods **forward auction**.
 /// Buyers bid **up** — highest bid leads; optional buy-now for instant win.
+///
+/// Live feed: public delayed spectator WS (`/ws/marketplace/{id}/spectate`) for
+/// all viewers (there is no participant-privileged goods socket). Bid ladder
+/// refreshes via hybrid HTTP poll; socket frames only carry anonymized amounts.
 struct ListingDetailView: View {
     let listingID: String
     var preview: ListingSummary?
 
     @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var detail: ListingDetail?
     @State private var isLoading = false
@@ -18,6 +23,15 @@ struct ListingDetailView: View {
     @State private var ladderState: ListingLadderState = .idle
     @State private var ladderCurrentBidCents: Int64?
     @State private var ladderBidderCount: Int?
+
+    /// Public delayed marketplace spectator stream (anonymous; no JWT).
+    @StateObject private var marketplaceSpectator = MarketplaceSpectatorWebSocketClient()
+    /// Soft activity rows from WS frames (amounts only — no bidder identity).
+    @State private var liveEvents: [MarketplaceLiveEvent] = []
+    /// Concurrent public spectator count from WS (optional chrome).
+    @State private var liveSpectatorCount: Int = 0
+    /// Debounce ladder HTTP refresh after a WS bid tick.
+    @State private var lastLadderInvalidateAt = Date.distantPast
 
     @State private var bidAmountText = ""
     @State private var isPlacingBid = false
@@ -156,17 +170,17 @@ struct ListingDetailView: View {
             }
         }
         .task { await load() }
-        .task(id: listingID) {
-            // Soft re-poll the public bid ladder so the auction book feels live.
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(nanoseconds: 10_000_000_000)
-                } catch {
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                await loadBids()
-            }
+        .task(id: marketplaceSpectatorIdentity) {
+            await runMarketplaceSpectatorLifecycle()
+        }
+        .task(id: ladderPollIdentity) {
+            await pollBidLadderLoop()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            handleScenePhaseChange(phase)
+        }
+        .onDisappear {
+            teardownMarketplaceSpectator()
         }
         .refreshable { await load() }
         .onChange(of: auth.isAuthenticated) { _, _ in
@@ -220,10 +234,11 @@ struct ListingDetailView: View {
     @ViewBuilder
     private func detailContent(_ listing: ListingDetail) -> some View {
         List {
-            // Auction arena first: hero → place bid (dollars) → live ladder.
+            // Auction arena first: hero → place bid (dollars) → live ladder → soft feed.
             auctionHeroSection(listing)
             placeBidSection(listing)
             bidLadderSection(listing)
+            liveFeedSection
             buyNowSection(listing)
             offersSection(listing)
             detailsSection(listing)
@@ -449,6 +464,9 @@ struct ListingDetailView: View {
                         liveCountdownChip(date: listing.auctionEndsAt)
                     }
                     bidCountChip(listing: listing)
+                    if liveSpectatorCount > 0 {
+                        spectatorCountChip
+                    }
                 }
             }
             .padding(.vertical, 6)
@@ -457,18 +475,15 @@ struct ListingDetailView: View {
     }
 
     private var forwardAuctionBadge: some View {
-        let live: Bool = {
-            guard let ends = detail?.auctionEndsAt else { return detail?.status?.lowercased() == "active" }
-            return ends > Date()
-        }()
+        let live: Bool = isAuctionActiveForLive
         return HStack(spacing: 6) {
             if live {
                 Circle()
-                    .fill(BrandTheme.success)
+                    .fill(isMarketplaceSocketLive ? BrandTheme.accent : BrandTheme.success)
                     .frame(width: 7, height: 7)
                     .accessibilityHidden(true)
             }
-            Text(live ? "LIVE · forward auction" : "Forward auction · goods")
+            Text(forwardAuctionBadgeLabel(live: live))
                 .font(.caption.weight(.bold))
                 .foregroundStyle(BrandTheme.goldBright)
         }
@@ -478,7 +493,35 @@ struct ListingDetailView: View {
             Capsule()
                 .strokeBorder(BrandTheme.gold, lineWidth: 1.5)
         )
-        .accessibilityLabel(live ? "Live forward auction, goods" : "Forward auction, goods")
+        .accessibilityLabel(forwardAuctionBadgeAccessibility(live: live))
+    }
+
+    private func forwardAuctionBadgeLabel(live: Bool) -> String {
+        if !live { return "Forward auction · goods" }
+        if isMarketplaceSocketLive { return "LIVE · stream · forward auction" }
+        return "LIVE · forward auction"
+    }
+
+    private func forwardAuctionBadgeAccessibility(live: Bool) -> String {
+        if !live { return "Forward auction, goods" }
+        if isMarketplaceSocketLive {
+            return "Live forward auction with WebSocket stream connected"
+        }
+        return "Live forward auction, goods"
+    }
+
+    private var spectatorCountChip: some View {
+        Label("\(liveSpectatorCount) live", systemImage: "eye")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(BrandTheme.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(BrandTheme.navyElevated, in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(BrandTheme.gold.opacity(0.2), lineWidth: 1)
+            )
+            .accessibilityLabel("\(liveSpectatorCount) people watching live")
     }
 
     @ViewBuilder
@@ -580,11 +623,35 @@ struct ListingDetailView: View {
                 }
             }
         } header: {
-            Text("Auction · bid ladder").brandSectionHeader()
+            HStack(spacing: 6) {
+                if isAuctionActiveForLive {
+                    Circle()
+                        .fill(isMarketplaceSocketLive ? BrandTheme.accent : BrandTheme.success)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                }
+                Text("Auction · bid ladder").brandSectionHeader()
+                if isMarketplaceSocketLive {
+                    Text("LIVE")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(BrandTheme.accent)
+                        .accessibilityLabel("Live stream connected")
+                }
+            }
         } footer: {
-            Text("Highest dollar bid leads in a forward auction. The winning bid is highlighted.")
+            Text(bidLadderFooterCopy)
                 .foregroundStyle(BrandTheme.textSecondary)
         }
+    }
+
+    private var bidLadderFooterCopy: String {
+        if isMarketplaceSocketLive {
+            return "Highest dollar bid leads. Live stream is connected — ladder reconciles over the public bid book (briefly delayed over WebSocket)."
+        }
+        if isAuctionActiveForLive {
+            return "Highest dollar bid leads. Refreshing the public bid book every few seconds while the auction is open."
+        }
+        return "Highest dollar bid leads in a forward auction. The winning bid is highlighted."
     }
 
     @ViewBuilder
@@ -680,6 +747,139 @@ struct ListingDetailView: View {
         }
         let remaining = 60 - Int(now.timeIntervalSince(created))
         return remaining > 0 ? remaining : nil
+    }
+
+    // MARK: - Soft live feed (marketplace spectator WS + HTTP poll fallback)
+
+    /// Auction still open for live stream / poll (status + ends-at).
+    private var isAuctionActiveForLive: Bool {
+        let status = (detail?.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch status {
+        case "active", "open", "bidding":
+            break
+        default:
+            // No status yet (preview shell) — still allow stream while ends-at is future.
+            if detail?.status == nil, let ends = detail?.auctionEndsAt, ends > Date() {
+                return true
+            }
+            if detail?.status == nil, detail?.auctionEndsAt == nil {
+                // Soft-allow until first full load settles.
+                return true
+            }
+            return false
+        }
+        if let ends = detail?.auctionEndsAt, ends < Date() {
+            return false
+        }
+        return true
+    }
+
+    private var isMarketplaceSocketLive: Bool {
+        marketplaceSpectator.status == .connected
+    }
+
+    /// Public delayed spectate for all viewers (participants share the same feed).
+    private var shouldAttemptMarketplaceSpectator: Bool {
+        guard scenePhase == .active else { return false }
+        return isAuctionActiveForLive
+    }
+
+    private var shouldShowLiveFeed: Bool {
+        isAuctionActiveForLive || !liveEvents.isEmpty
+    }
+
+    private var marketplaceSpectatorIdentity: String {
+        "\(listingID)|spectate|\(isAuctionActiveForLive)|\(scenePhase == .active)"
+    }
+
+    private var ladderPollIdentity: String {
+        "\(listingID)|ladder|\(isAuctionActiveForLive)|\(isMarketplaceSocketLive)|\(scenePhase == .active)"
+    }
+
+    private var liveFeedFooterCopy: String {
+        if isMarketplaceSocketLive {
+            return "Public live feed (briefly delayed · no bidder names on the stream). Ladder identities come from the public bid book."
+        }
+        if isAuctionActiveForLive {
+            return "Stream reconnecting or offline — bid ladder polls the public book every few seconds."
+        }
+        return "Auction closed — last activity retained."
+    }
+
+    @ViewBuilder
+    private var liveFeedSection: some View {
+        if shouldShowLiveFeed {
+            Section {
+                if liveEvents.isEmpty {
+                    Text("No recent bid activity on the live stream yet.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .accessibilityLabel("No recent bid activity on the live stream yet")
+                } else {
+                    ForEach(liveEvents.prefix(12)) { event in
+                        liveFeedRow(event)
+                    }
+                }
+            } header: {
+                HStack(spacing: 6) {
+                    if isAuctionActiveForLive {
+                        Circle()
+                            .fill(isMarketplaceSocketLive ? BrandTheme.accent : BrandTheme.success)
+                            .frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
+                    }
+                    Text("Live feed").brandSectionHeader()
+                    if isMarketplaceSocketLive {
+                        Text("LIVE")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrandTheme.accent)
+                            .accessibilityLabel("WebSocket connected")
+                    }
+                }
+            } footer: {
+                Text(liveFeedFooterCopy)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func liveFeedRow(_ event: MarketplaceLiveEvent) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.displayEventLabel)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                if let created = event.createdAt, !created.isEmpty {
+                    Text(CatalogDateFormat.friendlyDateTime(created))
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+            }
+            Spacer(minLength: 8)
+            // Amounts are public on goods forward auctions (and on this delayed stream).
+            if let cents = event.amountCents, cents > 0 {
+                Text(MoneyFormat.usd(cents: cents))
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+            }
+        }
+        .padding(.vertical, 2)
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(liveFeedAccessibilityLabel(event))
+    }
+
+    private func liveFeedAccessibilityLabel(_ event: MarketplaceLiveEvent) -> String {
+        var parts: [String] = [event.displayEventLabel]
+        if let cents = event.amountCents, cents > 0 {
+            parts.append(MoneyFormat.usd(cents: cents))
+        }
+        if let created = event.createdAt, !created.isEmpty {
+            parts.append(CatalogDateFormat.friendlyDateTime(created))
+        }
+        return parts.joined(separator: ", ")
     }
 
     // MARK: - Buy now
@@ -1772,17 +1972,188 @@ struct ListingDetailView: View {
     }
 
     @MainActor
-    private func loadBids() async {
-        ladderState = .loading
+    private func loadBids(soft: Bool = false) async {
+        // Soft poll: keep the last ladder visible (no loading flash).
+        if !soft || bidRows.isEmpty {
+            if case .loaded = ladderState, soft {
+                // Keep prior rows while refreshing.
+            } else if !soft {
+                ladderState = .loading
+            } else if bidRows.isEmpty {
+                ladderState = .loading
+            }
+        }
         do {
             let response = try await APIClient.shared.fetchListingBids(listingId: listingID)
             bidRows = response.bids
             ladderCurrentBidCents = response.currentBidCents
             ladderBidderCount = response.bidderCount
+            if var listing = detail {
+                if let current = response.currentBidCents, current > 0 {
+                    listing.currentBidCents = current
+                }
+                if let bidders = response.bidderCount {
+                    listing.bidderCount = bidders
+                }
+                listing.bidCount = response.bids.count
+                detail = listing
+            }
             ladderState = .loaded
         } catch {
+            if soft, case .loaded = ladderState {
+                // Keep last good ladder on transient poll failure.
+                return
+            }
             bidRows = []
             ladderState = .failed(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Marketplace spectator lifecycle
+
+    /// Hybrid REST poll for the public bid ladder.
+    ///
+    /// - **WS connected:** slow reconcile (~15s) so missed frames still surface.
+    /// - **WS down:** faster poll while the auction is open (~3s).
+    /// - Auction closed: single pass then stop.
+    private func pollBidLadderLoop() async {
+        guard scenePhase == .active else { return }
+        // Seed once immediately when task (re)starts.
+        await loadBids(soft: ladderState == .loaded || !bidRows.isEmpty)
+        guard isAuctionActiveForLive else { return }
+        while !Task.isCancelled {
+            let interval: UInt64 = isMarketplaceSocketLive
+                ? 15_000_000_000
+                : 3_000_000_000
+            do {
+                try await Task.sleep(nanoseconds: interval)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            guard scenePhase == .active else { return }
+            if !isAuctionActiveForLive {
+                await loadBids(soft: true)
+                return
+            }
+            await loadBids(soft: true)
+        }
+    }
+
+    @MainActor
+    private func runMarketplaceSpectatorLifecycle() async {
+        guard shouldAttemptMarketplaceSpectator else {
+            marketplaceSpectator.disconnect()
+            return
+        }
+
+        marketplaceSpectator.onEvent = { [listingID] event in
+            handleMarketplaceSpectatorEvent(event, expectedListingID: listingID)
+        }
+        marketplaceSpectator.connect(listingID: listingID)
+
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            } catch {
+                break
+            }
+            if !shouldAttemptMarketplaceSpectator {
+                break
+            }
+        }
+        marketplaceSpectator.disconnect()
+    }
+
+    @MainActor
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        if phase == .active {
+            if shouldAttemptMarketplaceSpectator {
+                marketplaceSpectator.connect(listingID: listingID)
+            }
+        } else {
+            marketplaceSpectator.disconnect()
+        }
+    }
+
+    @MainActor
+    private func teardownMarketplaceSpectator() {
+        marketplaceSpectator.onEvent = nil
+        marketplaceSpectator.disconnect()
+    }
+
+    @MainActor
+    private func handleMarketplaceSpectatorEvent(
+        _ event: MarketplaceSpectatorWebSocketClient.ServerEvent,
+        expectedListingID: String
+    ) {
+        switch event {
+        case .bidEvent(let bidEvent):
+            applyMarketplaceBidSignal(bidEvent, expectedListingID: expectedListingID)
+        case .spectatorCount(let count):
+            // Public concurrent-viewer count only — never identity.
+            liveSpectatorCount = max(0, count)
+        case .error:
+            // Non-fatal; HTTP poll covers recovery.
+            break
+        }
+    }
+
+    /// Merge a public bid tick into soft feed + leading price; debounced ladder refresh.
+    @MainActor
+    private func applyMarketplaceBidSignal(
+        _ bidEvent: MarketplaceLiveEvent,
+        expectedListingID: String
+    ) {
+        if let lid = bidEvent.listingId, !lid.isEmpty, lid != expectedListingID {
+            return
+        }
+        mergeLiveEvent(bidEvent)
+
+        // Forward auction: highest amount leads (public signal).
+        if let cents = bidEvent.amountCents, cents > 0 {
+            if ladderCurrentBidCents == nil || cents > (ladderCurrentBidCents ?? 0) {
+                ladderCurrentBidCents = cents
+            }
+            if var listing = detail {
+                if let current = listing.currentBidCents {
+                    if cents > current {
+                        listing.currentBidCents = cents
+                        detail = listing
+                    }
+                } else {
+                    listing.currentBidCents = cents
+                    detail = listing
+                }
+            }
+        }
+
+        // Anti-snipe: extend countdown from server-provided ends-at (ISO).
+        if bidEvent.snipeExtension,
+           let ends = bidEvent.newAuctionEndsAt,
+           let date = CatalogDateFormat.parseISO(ends)
+        {
+            if var listing = detail {
+                listing.auctionEndsAt = date
+                detail = listing
+            }
+        }
+
+        let now = Date()
+        if now.timeIntervalSince(lastLadderInvalidateAt) >= 2.0 {
+            lastLadderInvalidateAt = now
+            Task { await loadBids(soft: true) }
+        }
+    }
+
+    @MainActor
+    private func mergeLiveEvent(_ event: MarketplaceLiveEvent) {
+        if liveEvents.contains(where: { $0.id == event.id }) {
+            return
+        }
+        liveEvents.insert(event, at: 0)
+        if liveEvents.count > 40 {
+            liveEvents = Array(liveEvents.prefix(40))
         }
     }
 

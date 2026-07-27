@@ -32,6 +32,9 @@ struct ContractDetailView: View {
     @State private var recurringConfig: ContractRecurringConfig?
     @State private var recurringInstances: [ContractRecurringInstance] = []
     @State private var actingRecurringInstanceID: String?
+    /// Pending PI from approve response — pay CTA only when client_secret is real.
+    @State private var pendingRecurringPay: RecurringApproveResult?
+    @State private var isPayingRecurringInstance = false
     @State private var showCancelRecurringConfirm = false
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -528,7 +531,7 @@ struct ContractDetailView: View {
             } header: {
                 Text("Recurring schedule").brandSectionHeader()
             } footer: {
-                Text("Pause stops new visits; cancel ends the schedule after the next occurrence notice. Completing/approving visits does not yet auto-create Stripe payments.")
+                Text("Pause stops new visits; cancel ends the schedule after the next occurrence notice. Approving a visit may open PaymentSheet for that visit’s server amount (held escrow). Money is never invented client-side.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
             .listRowBackground(BrandTheme.navyElevated)
@@ -601,7 +604,7 @@ struct ContractDetailView: View {
                 Button {
                     Task { await approveRecurringInstance(instance, contractId: contract.id) }
                 } label: {
-                    if actingRecurringInstanceID == instance.id {
+                    if actingRecurringInstanceID == instance.id && !isPayingRecurringInstance {
                         ProgressView()
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
@@ -611,7 +614,37 @@ struct ContractDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
-                .disabled(actingRecurringInstanceID != nil || actingActionTitle != nil)
+                .disabled(
+                    actingRecurringInstanceID != nil
+                        || actingActionTitle != nil
+                        || isPayingRecurringInstance
+                )
+            }
+            // Pay CTA only when approve (or residual retry) returned a real client_secret.
+            if isCustomer,
+               let pending = pendingRecurringPay,
+               pending.instance.id == instance.id,
+               pending.hasPayCTA {
+                Button {
+                    Task { await payRecurringInstanceEscrow(pending, contract: contract) }
+                } label: {
+                    if isPayingRecurringInstance && actingRecurringInstanceID == instance.id {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label(
+                            "Pay visit · \(instance.displayAmount)",
+                            systemImage: "creditcard"
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.goldBright)
+                .disabled(isPayingRecurringInstance || actingActionTitle != nil)
+                .accessibilityHint(
+                    "Confirms the PaymentIntent for this visit amount, then captures into escrow"
+                )
             }
         }
         .padding(.vertical, 4)
@@ -1898,18 +1931,117 @@ struct ContractDetailView: View {
         statusIsError = false
         defer { actingRecurringInstanceID = nil }
         do {
-            let updated = try await APIClient.shared.approveRecurringInstance(
+            let result = try await APIClient.shared.approveRecurringInstance(
                 contractId: contractId,
                 instanceId: instance.id
             )
-            if let idx = recurringInstances.firstIndex(where: { $0.id == instance.id }) {
-                recurringInstances[idx] = updated
+            if let idx = recurringInstances.firstIndex(where: { $0.id == result.instance.id }) {
+                recurringInstances[idx] = result.instance
             }
             statusIsError = false
-            statusMessage = "Visit approved."
+            if result.hasPayCTA {
+                // Keep pay CTA; auto-start PaymentSheet when secret is confirmable.
+                pendingRecurringPay = result
+                if let payment = result.payment {
+                    upsertContractPayment(payment)
+                }
+                statusMessage =
+                    "Visit approved. Complete payment for \(result.instance.displayAmount) to hold escrow."
+                // Present sheet immediately (CTA remains if user cancels).
+                if let contract {
+                    await payRecurringInstanceEscrow(result, contract: contract)
+                }
+            } else if let residual = result.paymentResidual, !residual.isEmpty {
+                pendingRecurringPay = nil
+                let detail = result.paymentError
+                    ?? "Visit approved; escrow PaymentIntent was not created (\(residual)). Use contract Pay & hold escrow or retry later."
+                statusMessage = detail
+                // Residual is not a hard failure of approve — soft warning.
+                statusIsError = false
+            } else {
+                pendingRecurringPay = nil
+                statusMessage = "Visit approved."
+            }
+            await refreshSideData()
         } catch {
             statusIsError = true
             statusMessage = error.localizedDescription
+        }
+    }
+
+    /// Confirm + capture the PI returned from approve (or residual Pay CTA).
+    /// Never invents amount or secret — only uses gateway-returned client_secret.
+    @MainActor
+    private func payRecurringInstanceEscrow(
+        _ pending: RecurringApproveResult,
+        contract: ContractDetail
+    ) async {
+        guard pending.hasPayCTA else {
+            statusIsError = true
+            statusMessage = "No confirmable payment secret for this visit."
+            return
+        }
+        guard let paymentId = pending.paymentId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !paymentId.isEmpty
+        else {
+            statusIsError = true
+            statusMessage = "Visit approved but payment id missing — cannot capture escrow."
+            return
+        }
+
+        actingRecurringInstanceID = pending.instance.id
+        isPayingRecurringInstance = true
+        statusMessage = nil
+        statusIsError = false
+        defer {
+            isPayingRecurringInstance = false
+            actingRecurringInstanceID = nil
+        }
+
+        do {
+            if let secret = pending.clientSecret?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !secret.isEmpty {
+                let isDev = secret.hasPrefix("pi_dev_") || secret.hasPrefix("dev_")
+                let isConfirmable = secret.hasPrefix("pi_") && secret.contains("_secret_")
+                if isDev {
+                    // Dev stub PI — skip PaymentSheet; process still advances escrow.
+                } else if isConfirmable {
+                    try await RailACheckout.presentPaymentSheet(clientSecret: secret)
+                } else {
+                    statusIsError = true
+                    statusMessage =
+                        "Payment created but no confirmable client_secret was returned."
+                    return
+                }
+            }
+
+            let held = try await APIClient.shared.processContractPayment(paymentId: paymentId)
+            upsertContractPayment(held)
+            pendingRecurringPay = nil
+            statusIsError = false
+            statusMessage =
+                "Visit paid — \(held.displayAmount) held in escrow. Release after work is done."
+            await refreshSideData()
+        } catch let error as RailACheckout.CheckoutError where error.isCanceled {
+            // Keep pendingRecurringPay so Pay CTA remains.
+            statusIsError = false
+            statusMessage =
+                "Payment canceled. Tap Pay visit to retry; approve already used a sticky server idempotency key."
+        } catch let error as APIClientError where error.isUnauthorized {
+            statusIsError = true
+            statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+            await refreshSideData()
+        }
+    }
+
+    private func upsertContractPayment(_ payment: ContractPayment) {
+        if let idx = contractPayments.firstIndex(where: { $0.id == payment.id }) {
+            contractPayments[idx] = payment
+        } else {
+            contractPayments.insert(payment, at: 0)
         }
     }
 

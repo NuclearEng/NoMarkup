@@ -11,6 +11,7 @@
 		A100000000000000000000B6 /* ChatWebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B6 /* ChatWebSocketClient.swift */; };
 		A100000000000000000000B9 /* AuctionWebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B9 /* AuctionWebSocketClient.swift */; };
 		A100000000000000000000BB /* SpectatorWebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BB /* SpectatorWebSocketClient.swift */; };
+		A100000000000000000000BC /* MarketplaceSpectatorWebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BC /* MarketplaceSpectatorWebSocketClient.swift */; };
 		A100000000000000000000B5 /* ShareCardText.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B5 /* ShareCardText.swift */; };
 		A100000000000000000000B0 /* VerificationCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B0 /* VerificationCenterView.swift */; };
 		A100000000000000000000B1 /* MarketRangeBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B1 /* MarketRangeBar.swift */; };
@@ -221,6 +222,7 @@
 		B100000000000000000000B6 /* ChatWebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWebSocketClient.swift; sourceTree = "<group>"; };
 		B100000000000000000000B9 /* AuctionWebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuctionWebSocketClient.swift; sourceTree = "<group>"; };
 		B100000000000000000000BB /* SpectatorWebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectatorWebSocketClient.swift; sourceTree = "<group>"; };
+		B100000000000000000000BC /* MarketplaceSpectatorWebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketplaceSpectatorWebSocketClient.swift; sourceTree = "<group>"; };
 		B100000000000000000000B0 /* VerificationCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationCenterView.swift; sourceTree = "<group>"; };
 		B100000000000000000000B3 /* OnboardingWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWizardView.swift; sourceTree = "<group>"; };
 		B100000000000000000000B1 /* MarketRangeBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketRangeBar.swift; sourceTree = "<group>"; };
@@ -349,6 +351,7 @@
 				B100000000000000000000B6 /* ChatWebSocketClient.swift */,
 				B100000000000000000000B9 /* AuctionWebSocketClient.swift */,
 				B100000000000000000000BB /* SpectatorWebSocketClient.swift */,
+				B100000000000000000000BC /* MarketplaceSpectatorWebSocketClient.swift */,
 				B10000000000000000000071 /* APIClient+Extras.swift */,
 				B10000000000000000000078 /* APIClient+Provider.swift */,
 				B10000000000000000000070 /* Models+Extras.swift */,
@@ -624,6 +627,7 @@
 				A100000000000000000000B6 /* ChatWebSocketClient.swift in Sources */,
 				A100000000000000000000B9 /* AuctionWebSocketClient.swift in Sources */,
 				A100000000000000000000BB /* SpectatorWebSocketClient.swift in Sources */,
+				A100000000000000000000BC /* MarketplaceSpectatorWebSocketClient.swift in Sources */,
 				A100000000000000000000B0 /* VerificationCenterView.swift in Sources */,
 				A100000000000000000000B3 /* OnboardingWizardView.swift in Sources */,
 				A100000000000000000000B4 /* ProviderInstantOffersView.swift in Sources */,

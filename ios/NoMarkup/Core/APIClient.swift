@@ -549,20 +549,34 @@ actor APIClient {
         )
     }
 
-    /// POST `/api/v1/channels/{id}/proposed-terms` — provider proposes local terms.
+    /// POST `/api/v1/channels/{id}/proposed-terms` — provider proposes local terms (FR-5.4 / FR-8.9).
+    ///
+    /// - Parameter amountCents: Integer cents only (never dollars/float). UI converts dollars → cents
+    ///   before calling; gateway body field `amount` is a display string derived from cents.
+    /// - Note: Auth required; chat service enforces **provider-only**. Does not bind contract terms —
+    ///   customer Accept/Reject is a separate `terms/respond` call.
     @discardableResult
     func sendProposedTerms(
         channelID: String,
         paymentType: String,
-        amount: String,
+        amountCents: Int64,
         milestones: String = "",
         description: String = ""
     ) async throws -> ChatMessage {
+        guard amountCents > 0 else {
+            throw APIClientError.httpStatus(400, detail: "amount_cents must be positive.")
+        }
+        let trimmedType = paymentType.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedType.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "payment_type is required.")
+        }
+        // Wire `amount` is human-readable USD built only from validated integer cents
+        // (no client float money math; matches money-as-cents project rule).
         let body = SendProposedTermsRequestBody(
-            paymentType: paymentType,
-            amount: amount,
-            milestones: milestones,
-            description: description
+            paymentType: trimmedType,
+            amount: MoneyFormat.usd(cents: amountCents),
+            milestones: milestones.trimmingCharacters(in: .whitespacesAndNewlines),
+            description: description.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         return try await postJSON(
             pathComponents: ["api", "v1", "channels", channelID, "proposed-terms"],

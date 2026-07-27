@@ -565,8 +565,9 @@ func (h *ChatHandler) RespondToTerms(w http.ResponseWriter, r *http.Request) {
 		"channel_id", channelID,
 		"customer_id", claims.UserID,
 		"accepted", accepted,
-		// Chat records explicit consent; contract local-terms override is residual.
-		"contract_override_applied", false,
+		// FR-5.4: chat service binds payment_timing/terms_json on Accept when a
+		// live contract exists for the channel job; see message metadata
+		// contract_override_applied / contract_override_reason.
 	)
 
 	writeJSON(w, http.StatusCreated, protoMessageToJSON(msg))

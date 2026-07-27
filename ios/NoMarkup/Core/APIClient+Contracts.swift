@@ -487,11 +487,15 @@ extension APIClient {
     }
 
     /// POST `/api/v1/contracts/{id}/recurring/instances/{instanceId}/approve` — customer.
+    ///
+    /// Status approval is always durable. Gateway may also return a real
+    /// PaymentIntent `client_secret` (CreatePayment with `recurring_instance_id`).
+    /// Absence of `client_secret` is residual — never invent money.
     @discardableResult
     func approveRecurringInstance(
         contractId: String,
         instanceId: String
-    ) async throws -> ContractRecurringInstance {
+    ) async throws -> RecurringApproveResult {
         let response: RecurringInstanceEnvelope = try await postJSON(
             pathComponents: [
                 "api", "v1", "contracts", contractId,
@@ -503,7 +507,18 @@ extension APIClient {
         guard let instance = response.instance else {
             throw APIClientError.httpStatus(502, detail: "Instance missing from approve response.")
         }
-        return instance
+        // Prefer top-level client_secret; fall back to nested payment map if present.
+        let secret = response.clientSecret
+            ?? response.payment?.clientSecret
+        let payId = response.paymentId ?? response.payment?.id
+        return RecurringApproveResult(
+            instance: instance,
+            paymentId: payId,
+            clientSecret: secret,
+            paymentResidual: response.paymentResidual,
+            paymentError: response.paymentError,
+            payment: response.payment
+        )
     }
 
     // MARK: Report no-show / abandonment
@@ -620,19 +635,20 @@ extension APIClient {
     }
 
     /// POST `/api/v1/payments` — create services escrow PaymentIntent for a contract.
-    /// Body: `{ contract_id, amount_cents, provider_id? }` (provider re-derived server-side).
-    /// Returns payment map + `client_secret` for PaymentSheet.
+    /// Body: `{ contract_id, amount_cents, provider_id?, recurring_instance_id? }`
+    /// (provider re-derived server-side). Returns payment map + `client_secret`.
     ///
-    /// **Idempotency-Key sticky** as `create-payment:{contractId}:{amountCents}` (web parity).
+    /// **Idempotency-Key sticky** as `create-payment:{contractId}:{amountCents}:{instance?}`.
     /// Clear only after process/capture succeeds so retries replay the same PI.
     ///
-    /// Security: pass **server** `contract.amount_cents` only — never client fee math.
+    /// Security: pass **server** amount only — never client fee math.
     /// Payment service refuses amount > contract total and non-customer actors.
     @discardableResult
     func createContractPayment(
         contractId: String,
         amountCents: Int64,
-        providerId: String? = nil
+        providerId: String? = nil,
+        recurringInstanceId: String? = nil
     ) async throws -> ContractPayment {
         let cid = contractId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cid.isEmpty else {
@@ -641,13 +657,17 @@ extension APIClient {
         guard amountCents > 0 else {
             throw APIClientError.httpStatus(400, detail: "amount_cents must be positive.")
         }
+        let instId = recurringInstanceId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let body = ContractsCreatePaymentBody(
             contractId: cid,
             providerId: providerId?.trimmingCharacters(in: .whitespacesAndNewlines),
-            amountCents: amountCents
+            amountCents: amountCents,
+            recurringInstanceId: (instId?.isEmpty == false) ? instId : nil
         )
-        // Match web `useCreatePayment` op key so double-tap / flaky network replays.
-        let opKey = "create-payment:\(cid):\(amountCents):"
+        // Sticky op key — instance-scoped when paying a recurring visit.
+        let instSuffix = (instId?.isEmpty == false) ? ":\(instId!)" : ":"
+        let opKey = "create-payment:\(cid):\(amountCents)\(instSuffix)"
         let headers = idempotencyHeader(for: opKey)
         return try await postJSON(
             pathComponents: ["api", "v1", "payments"],
@@ -816,12 +836,14 @@ private struct ContractsCreatePaymentBody: Encodable {
     let contractId: String
     let providerId: String?
     let amountCents: Int64
+    let recurringInstanceId: String?
 
     // Explicit snake_case: custom CodingKeys are not rewritten by convertToSnakeCase.
     enum CodingKeys: String, CodingKey {
         case contractId = "contract_id"
         case providerId = "provider_id"
         case amountCents = "amount_cents"
+        case recurringInstanceId = "recurring_instance_id"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -830,6 +852,9 @@ private struct ContractsCreatePaymentBody: Encodable {
         try c.encode(amountCents, forKey: .amountCents)
         if let providerId, !providerId.isEmpty {
             try c.encode(providerId, forKey: .providerId)
+        }
+        if let recurringInstanceId, !recurringInstanceId.isEmpty {
+            try c.encode(recurringInstanceId, forKey: .recurringInstanceId)
         }
     }
 }

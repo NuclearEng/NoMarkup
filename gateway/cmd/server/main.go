@@ -316,6 +316,8 @@ func main() {
 	// + avatar (the bidding engine returns those empty by design).
 	bidHandler.SetUserClient(userClient)
 	contractHandler := handler.NewContractHandler(contractClient, userClient, dbPool)
+	// FR-18 residual: approve visit may CreatePayment (real PI + client_secret).
+	contractHandler.SetPaymentClient(paymentClient)
 
 	// Review service lives on the same gRPC server as the job service.
 	reviewClient := reviewv1.NewReviewServiceClient(jobConn)

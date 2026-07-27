@@ -26,13 +26,13 @@ import UIKit
 ///   works without a peer reply. Fallbacks: `message.is_read == true` or a later
 ///   peer message (web `MessageThread` heuristic). WS has no live `read_receipt`
 ///   frame yet — channel is re-fetched on thread load/poll for watermark updates.
-/// - **Local terms (FR-5.4 / FR-8.9):** render proposed-terms cards when content
-///   starts with `[Proposed Terms]` (web send shape) or `message_type` is
-///   `proposed_terms`. Customer Accept/Reject calls
-///   `POST /api/v1/channels/{id}/terms/respond` (`accepted: true|false`) —
-///   auth + customer-only server-side; records `terms_accepted` /
-///   `terms_rejected` (explicit consent only). Contract local-terms override
-///   application remains server residual.
+/// - **Local terms (FR-5.4 / FR-8.9):** providers propose via toolbar **Propose terms**
+///   sheet → `POST /api/v1/channels/{id}/proposed-terms` (dollars → Int64 cents wire
+///   amount; server enforces provider-only). Cards render when content starts with
+///   `[Proposed Terms]` or `message_type` is `proposed_terms`. Customer Accept/Reject
+///   calls `POST /api/v1/channels/{id}/terms/respond` (`accepted: true|false`) —
+///   auth + customer-only server-side; records `terms_accepted` / `terms_rejected`
+///   (explicit consent only). Contract local-terms override remains server residual.
 /// - **Residual (other):** inbox-level live unread badges without opening a thread
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthViewModel
@@ -248,6 +248,8 @@ struct ChatThreadView: View {
     /// In-flight Accept/Reject for a proposed-terms card (message id).
     @State private var termsRespondingMessageID: String?
     @State private var termsRespondError: String?
+    /// Provider Propose Terms sheet (FR-5.4).
+    @State private var showProposeTermsSheet = false
     #if canImport(UIKit)
     @State private var showCamera = false
     @State private var cameraImage: UIImage?
@@ -313,6 +315,19 @@ struct ChatThreadView: View {
         let me = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let customer = channelMeta.customerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return !me.isEmpty && !customer.isEmpty && me == customer
+    }
+
+    /// True when JWT `sub` is the channel provider (only party that may propose terms).
+    private var isChannelProvider: Bool {
+        let me = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let provider = channelMeta.providerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !me.isEmpty && !provider.isEmpty && me == provider
+    }
+
+    /// Provider may open Propose Terms when signed in and party is provider.
+    /// Server rejects closed/read-only channels and non-providers.
+    private var canProposeTerms: Bool {
+        canCompose && isChannelProvider
     }
 
     /// Other party for block/report — customer vs provider relative to JWT `sub`.
@@ -406,8 +421,26 @@ struct ChatThreadView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $searchText, prompt: "Search this conversation")
         .toolbar {
+            if canProposeTerms {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showProposeTermsSheet = true
+                    } label: {
+                        Label("Propose terms", systemImage: "doc.badge.plus")
+                    }
+                    .accessibilityLabel("Propose terms")
+                    .accessibilityHint("Open a form to propose local payment terms to the customer")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    if canProposeTerms {
+                        Button {
+                            showProposeTermsSheet = true
+                        } label: {
+                            Label("Propose terms", systemImage: "doc.badge.plus")
+                        }
+                    }
                     if canMutateSafety {
                         Button {
                             showReportSheet = true
@@ -431,7 +464,7 @@ struct ChatThreadView: View {
                         .frame(minWidth: 44, minHeight: 44)
                 }
                 .accessibilityLabel("Conversation actions")
-                .accessibilityHint("Report or block the other person, or open this chat on the web")
+                .accessibilityHint("Propose terms, report or block the other person, or open this chat on the web")
             }
         }
         .alert("Block this user?", isPresented: $confirmBlock) {
@@ -451,6 +484,18 @@ struct ChatThreadView: View {
                 )
                 .environmentObject(auth)
             }
+        }
+        .sheet(isPresented: $showProposeTermsSheet) {
+            ProposeTermsSheet(
+                channelID: channel.id,
+                onSent: { message in
+                    appendMessageIfNeeded(message)
+                    showProposeTermsSheet = false
+                    Task { await markChannelReadBestEffort() }
+                },
+                onCancel: { showProposeTermsSheet = false }
+            )
+            .environmentObject(auth)
         }
         .task {
             currentUserID = await APIClient.shared.currentUserID()
@@ -1098,6 +1143,180 @@ struct ChatThreadView: View {
             try await APIClient.shared.markChannelRead(channelID: channel.id)
         } catch {
             // Unread badges may lag until next open; message load/send still succeeded.
+        }
+    }
+}
+
+// MARK: - Propose local terms (provider-only, FR-5.4)
+
+/// Payment schedule options for local-terms proposals (web MessageInput parity).
+private enum ProposeTermsPaymentType: String, CaseIterable, Identifiable {
+    case completion
+    case upfront
+    case milestone
+    case paymentPlan = "payment_plan"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .completion: return "On completion"
+        case .upfront: return "Upfront"
+        case .milestone: return "Milestone"
+        case .paymentPlan: return "Payment plan"
+        }
+    }
+}
+
+/// Provider sheet: payment type, dollar amount → Int64 cents, optional milestones, description.
+/// POST `/api/v1/channels/{id}/proposed-terms` (auth; server enforces provider-only).
+private struct ProposeTermsSheet: View {
+    let channelID: String
+    var onSent: (ChatMessage) -> Void
+    var onCancel: () -> Void
+
+    @EnvironmentObject private var auth: AuthViewModel
+
+    @State private var paymentType: ProposeTermsPaymentType = .completion
+    @State private var amountDollarsText = ""
+    @State private var milestonesText = ""
+    @State private var descriptionText = ""
+    @State private var isSubmitting = false
+    @State private var statusMessage: String?
+    @State private var statusIsError = false
+
+    private var parsedAmountCents: Int64? {
+        MoneyFormat.cents(fromDollarsText: amountDollarsText)
+    }
+
+    private var canSubmit: Bool {
+        !auth.isScaffoldSession
+            && !isSubmitting
+            && parsedAmountCents != nil
+            && !descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Payment type", selection: $paymentType) {
+                        ForEach(ProposeTermsPaymentType.allCases) { item in
+                            Text(item.displayName).tag(item)
+                        }
+                    }
+                    .accessibilityLabel("Payment type")
+
+                    DollarAmountField(
+                        text: $amountDollarsText,
+                        placeholder: "0.00",
+                        accessibilityLabelText: "Proposed amount in dollars"
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                } header: {
+                    Text("Terms").brandSectionHeader()
+                } footer: {
+                    Text("Enter dollars only (example 1,500.00). The app converts to integer cents before sending — never paste raw cents.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+
+                if paymentType == .milestone {
+                    Section {
+                        TextField("One milestone per line", text: $milestonesText, axis: .vertical)
+                            .lineLimit(3 ... 8)
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .accessibilityLabel("Milestones")
+                            .accessibilityHint("One milestone per line, for example Initial deposit - 20%")
+                    } header: {
+                        Text("Milestones").brandSectionHeader()
+                    }
+                }
+
+                Section {
+                    TextField("Describe scope of work", text: $descriptionText, axis: .vertical)
+                        .lineLimit(2 ... 6)
+                        .foregroundStyle(BrandTheme.textPrimary)
+                        .accessibilityLabel("Description")
+                        .accessibilityHint("Required. Summarize what is included in these terms")
+                } header: {
+                    Text("Description").brandSectionHeader()
+                } footer: {
+                    Text("Proposals do not bind the contract until the customer Accepts. Reject leaves terms open for a new proposal.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+
+                if let statusMessage {
+                    Section {
+                        Text(statusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(statusIsError ? BrandTheme.destructive : BrandTheme.success)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Section {
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        if isSubmitting {
+                            HStack {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Sending proposal…")
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                        } else if let cents = parsedAmountCents {
+                            Text("Send proposal · \(MoneyFormat.usd(cents: cents))")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Text("Send proposal")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .disabled(!canSubmit)
+                    .tint(BrandTheme.accent)
+                    .accessibilityLabel("Send proposal")
+                    .accessibilityHint("Posts proposed local terms for the customer to accept or reject")
+                }
+            }
+            .brandListBackground()
+            .navigationTitle("Propose terms")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: onCancel)
+                        .disabled(isSubmitting)
+                }
+            }
+            .interactiveDismissDisabled(isSubmitting)
+        }
+    }
+
+    @MainActor
+    private func submit() async {
+        guard canSubmit, let amountCents = parsedAmountCents else { return }
+        isSubmitting = true
+        statusMessage = nil
+        statusIsError = false
+        defer { isSubmitting = false }
+
+        do {
+            let created = try await APIClient.shared.sendProposedTerms(
+                channelID: channelID,
+                paymentType: paymentType.rawValue,
+                amountCents: amountCents,
+                milestones: paymentType == .milestone ? milestonesText : "",
+                description: descriptionText
+            )
+            onSent(created)
+        } catch let error as APIClientError where error.isUnauthorized {
+            statusIsError = true
+            statusMessage = "Session expired. Sign in again to propose terms."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
         }
     }
 }

@@ -283,8 +283,42 @@ struct RecurringInstancesListResponse: Codable, Sendable {
     var instances: [ContractRecurringInstance]?
 }
 
+/// Approve/complete envelope. Money fields only on approve when gateway
+/// CreatePayment succeeds (snake_case via APIClient convertFromSnakeCase).
 struct RecurringInstanceEnvelope: Codable, Sendable {
     var instance: ContractRecurringInstance?
+    /// Present when gateway CreatePayment succeeded for this visit (FR-18 residual).
+    var paymentId: String?
+    /// Stripe PaymentIntent secret for PaymentSheet — only when real PI was created.
+    var clientSecret: String?
+    /// Honest residual when approve committed but money path did not (no fake payment).
+    var paymentResidual: String?
+    var paymentError: String?
+    /// Nested payment map when gateway embeds CreatePayment result.
+    var payment: ContractPayment?
+}
+
+/// Result of customer approve-visit: status update plus optional escrow PI.
+struct RecurringApproveResult: Sendable {
+    var instance: ContractRecurringInstance
+    var paymentId: String?
+    var clientSecret: String?
+    var paymentResidual: String?
+    var paymentError: String?
+    var payment: ContractPayment?
+
+    /// True when the gateway returned a confirmable (or dev) PaymentIntent secret.
+    var hasPayCTA: Bool {
+        guard let secret = clientSecret?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !secret.isEmpty
+        else {
+            return false
+        }
+        if secret.hasPrefix("pi_dev_") || secret.hasPrefix("dev_") {
+            return true
+        }
+        return secret.hasPrefix("pi_") && secret.contains("_secret_")
+    }
 }
 
 /// Full contract from `GET /api/v1/contracts/{id}` (flat map; change_orders optional).

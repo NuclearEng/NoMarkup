@@ -150,6 +150,10 @@ func main() {
 	// unwired denies access rather than silently disabling the check — which
 	// is what happened before: SetBidChecker had no callers at all.
 	svc.SetBidChecker(service.NewPGBidChecker(pool))
+	// FR-5.4: on customer Accept of proposed local terms, bind payment_timing /
+	// terms_json onto the live contract for the channel job when one exists.
+	// Pre-award channels with no contract residual to consent-only.
+	svc.SetLocalTermsBinder(service.NewPGLocalTermsBinder(pool))
 	srv := chatgrpc.NewServer(svc)
 
 	// Create WebSocket hub and handler.

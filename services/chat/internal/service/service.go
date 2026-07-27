@@ -21,6 +21,10 @@ type Service struct {
 	// real email/phone never leak before the recipient has replied. Set
 	// via SetRelay; nil means "rewrite disabled" (dev-mode default).
 	relay AliasLookup
+	// termsBinder binds accepted local terms onto contracts.payment_timing /
+	// terms_json when a live contract exists for the channel job (FR-5.4).
+	// Nil = consent-only path (tests / degraded).
+	termsBinder LocalTermsBinder
 }
 
 // New creates a new chat service.
@@ -31,6 +35,11 @@ func New(repo domain.ChannelRepository, pubsub *PubSub) *Service {
 // SetBidChecker sets the bid checker for chat access validation.
 func (s *Service) SetBidChecker(bc domain.BidChecker) {
 	s.bidChecker = bc
+}
+
+// SetLocalTermsBinder wires FR-5.4 contract override application on Accept.
+func (s *Service) SetLocalTermsBinder(b LocalTermsBinder) {
+	s.termsBinder = b
 }
 
 // CreateChannel validates inputs, enforces chat access rules (FR-8.1),
@@ -262,7 +271,8 @@ func DetectContactInfo(content string) bool {
 // (FR-8.9 / FR-5.4). Provider-only. Terms JSON is stored in metadata; content
 // uses the web-compatible `[Proposed Terms]` body so clients can parse fields.
 // This does NOT bind contract local terms — binding requires an explicit
-// customer accept via RespondToTerms (and a future contract override path).
+// customer Accept via RespondToTerms (which applies payment_timing / terms_json
+// on the live contract for the channel job when one exists).
 func (s *Service) SendProposedTerms(ctx context.Context, channelID, senderID string, terms map[string]interface{}) (*domain.Message, error) {
 	ch, err := s.repo.GetChannel(ctx, channelID, senderID)
 	if err != nil {
@@ -332,8 +342,13 @@ func (s *Service) SendProposedTerms(ctx context.Context, channelID, senderID str
 // RespondToTerms records the customer's explicit Accept or Reject of proposed
 // local terms (FR-8.9 / FR-5.4). Customer-only; party membership required.
 // Posts terms_accepted / terms_rejected — this is the explicit consent signal.
-// Contract local-terms override application remains a separate residual (no
-// silent binding from chat alone beyond this recorded accept message).
+//
+// On accepted=true, when a LocalTermsBinder is wired and the channel has a
+// job_id, attempts to bind the latest proposed terms onto the live contract
+// (payment_timing + terms_json). Pre-award channels with no contract leave a
+// residual: consent is recorded, override is skipped. Binder failures are
+// logged and stamped on message metadata but do not fail Accept (consent is
+// the primary product signal).
 func (s *Service) RespondToTerms(ctx context.Context, channelID, customerID string, accepted bool) (*domain.Message, error) {
 	ch, err := s.repo.GetChannel(ctx, channelID, customerID)
 	if err != nil {
@@ -358,13 +373,24 @@ func (s *Service) RespondToTerms(ctx context.Context, channelID, customerID stri
 		msgType = domain.MessageTypeTermsAccepted
 	}
 
-	content := fmt.Sprintf("Customer %s the proposed terms.", action)
-	metadata, err := json.Marshal(map[string]interface{}{
+	meta := map[string]interface{}{
 		"action":       action,
 		"responded_by": customerID,
 		// Consent is explicit Accept/Reject only — never inferred from read/silence.
 		"explicit_consent": true,
-	})
+	}
+
+	// FR-5.4: on Accept, bind local terms to the live contract when possible.
+	overrideApplied := false
+	var boundContractID string
+	if accepted {
+		boundContractID, overrideApplied = s.tryApplyLocalTerms(ctx, ch, customerID, meta)
+	} else {
+		meta["contract_override_applied"] = false
+	}
+
+	content := fmt.Sprintf("Customer %s the proposed terms.", action)
+	metadata, err := json.Marshal(meta)
 	if err != nil {
 		return nil, fmt.Errorf("respond to terms: marshal metadata: %w", err)
 	}
@@ -400,11 +426,95 @@ func (s *Service) RespondToTerms(ctx context.Context, channelID, customerID stri
 		"message_id", result.ID,
 		"action", action,
 		"accepted", accepted,
-		// Chat records explicit consent; applying override onto contracts is residual.
-		"contract_override_applied", false,
+		"job_id", ch.JobID,
+		"contract_id", boundContractID,
+		"contract_override_applied", overrideApplied,
 	)
 
 	return result, nil
+}
+
+// tryApplyLocalTerms loads the latest proposal and writes it onto the live
+// contract for the channel job. Always stamps meta["contract_override_applied"].
+// Returns (contractID, applied).
+func (s *Service) tryApplyLocalTerms(
+	ctx context.Context,
+	ch *domain.Channel,
+	customerID string,
+	meta map[string]interface{},
+) (string, bool) {
+	if s.termsBinder == nil {
+		// Residual: binder not wired — consent only.
+		meta["contract_override_applied"] = false
+		meta["contract_override_reason"] = "binder_unavailable"
+		return "", false
+	}
+	if ch.JobID == "" {
+		// Residual: channel has no job link (should not happen for normal job chat).
+		meta["contract_override_applied"] = false
+		meta["contract_override_reason"] = "no_job_id"
+		return "", false
+	}
+
+	metaJSON, proposedMsgID, err := s.termsBinder.LatestProposedTerms(ctx, ch.ID)
+	if err != nil {
+		slog.ErrorContext(ctx, "local terms: failed to load latest proposal",
+			"channel_id", ch.ID, "job_id", ch.JobID, "error", err)
+		meta["contract_override_applied"] = false
+		meta["contract_override_reason"] = "proposal_lookup_failed"
+		return "", false
+	}
+	if proposedMsgID == "" {
+		// Accept with no prior proposal — still record consent; nothing to bind.
+		meta["contract_override_applied"] = false
+		meta["contract_override_reason"] = "no_proposed_terms"
+		return "", false
+	}
+
+	proposed := map[string]interface{}{}
+	if len(metaJSON) > 0 {
+		if err := json.Unmarshal(metaJSON, &proposed); err != nil {
+			slog.ErrorContext(ctx, "local terms: invalid proposal metadata",
+				"channel_id", ch.ID, "proposed_message_id", proposedMsgID, "error", err)
+			meta["contract_override_applied"] = false
+			meta["contract_override_reason"] = "proposal_metadata_invalid"
+			return "", false
+		}
+	}
+
+	paymentTiming := extractPaymentTiming(proposed)
+	patch, err := buildLocalTermsPatch(proposed, customerID, ch.ID, proposedMsgID, paymentTiming)
+	if err != nil {
+		slog.ErrorContext(ctx, "local terms: failed to build terms_json patch",
+			"channel_id", ch.ID, "error", err)
+		meta["contract_override_applied"] = false
+		meta["contract_override_reason"] = "patch_build_failed"
+		return "", false
+	}
+
+	contractID, err := s.termsBinder.ApplyLocalTerms(
+		ctx, ch.JobID, ch.CustomerID, ch.ProviderID, paymentTiming, patch,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "local terms: failed to apply contract override",
+			"channel_id", ch.ID, "job_id", ch.JobID, "error", err)
+		meta["contract_override_applied"] = false
+		meta["contract_override_reason"] = "apply_failed"
+		return "", false
+	}
+	if contractID == "" {
+		// Residual: no live pending_acceptance/active contract for this job+parties.
+		meta["contract_override_applied"] = false
+		meta["contract_override_reason"] = "no_live_contract"
+		return "", false
+	}
+
+	meta["contract_override_applied"] = true
+	meta["contract_id"] = contractID
+	if paymentTiming != nil {
+		meta["payment_timing_applied"] = *paymentTiming
+	}
+	return contractID, true
 }
 
 // formatProposedTermsContent builds the web-compatible body so iOS/web parsers

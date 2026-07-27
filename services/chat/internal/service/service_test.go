@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -641,19 +642,128 @@ func TestRespondToTerms(t *testing.T) {
 		require.NotNil(t, msg)
 		assert.Equal(t, domain.MessageTypeTermsAccepted, msg.MessageType)
 		assert.Contains(t, msg.Content, "accepted")
+		// No binder wired → residual consent-only.
+		assert.Contains(t, string(msg.MetadataJSON), `"contract_override_applied":false`)
+		assert.Contains(t, string(msg.MetadataJSON), "binder_unavailable")
 	})
 
-	t.Run("customer reject", func(t *testing.T) {
+	t.Run("customer accept binds live contract", func(t *testing.T) {
 		t.Parallel()
 		r := newMockRepo()
 		r.channels["ch-1"] = &domain.Channel{
-			ID: "ch-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
+			ID: "ch-1", JobID: "job-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
 		}
 		s := New(r, nil)
+		binder := &mockLocalTermsBinder{
+			proposed: map[string]interface{}{
+				"payment_type": "milestone",
+				"amount":       "50000",
+				"description":  "half at mid, half at end",
+			},
+			proposedMsgID: "prop-msg-1",
+			contractID:    "contract-99",
+		}
+		s.SetLocalTermsBinder(binder)
+
+		msg, err := s.RespondToTerms(context.Background(), "ch-1", "cust-1", true)
+		require.NoError(t, err)
+		require.NotNil(t, msg)
+		assert.Equal(t, domain.MessageTypeTermsAccepted, msg.MessageType)
+		assert.Equal(t, 1, binder.applyCalls)
+		require.NotNil(t, binder.lastPaymentTiming)
+		assert.Equal(t, "milestone", *binder.lastPaymentTiming)
+		assert.NotEmpty(t, binder.lastTermsJSON)
+		assert.Contains(t, string(binder.lastTermsJSON), "local_terms")
+		assert.Contains(t, string(msg.MetadataJSON), `"contract_override_applied":true`)
+		assert.Contains(t, string(msg.MetadataJSON), "contract-99")
+		assert.Contains(t, string(msg.MetadataJSON), `"payment_timing_applied":"milestone"`)
+	})
+
+	t.Run("customer accept with job but no live contract is residual", func(t *testing.T) {
+		t.Parallel()
+		r := newMockRepo()
+		r.channels["ch-1"] = &domain.Channel{
+			ID: "ch-1", JobID: "job-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
+		}
+		s := New(r, nil)
+		binder := &mockLocalTermsBinder{
+			proposed: map[string]interface{}{
+				"payment_type": "upfront",
+			},
+			proposedMsgID: "prop-msg-1",
+			contractID:    "", // no live contract
+		}
+		s.SetLocalTermsBinder(binder)
+
+		msg, err := s.RespondToTerms(context.Background(), "ch-1", "cust-1", true)
+		require.NoError(t, err)
+		assert.Equal(t, 1, binder.applyCalls)
+		assert.Contains(t, string(msg.MetadataJSON), `"contract_override_applied":false`)
+		assert.Contains(t, string(msg.MetadataJSON), "no_live_contract")
+	})
+
+	t.Run("customer accept without prior proposal skips bind", func(t *testing.T) {
+		t.Parallel()
+		r := newMockRepo()
+		r.channels["ch-1"] = &domain.Channel{
+			ID: "ch-1", JobID: "job-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
+		}
+		s := New(r, nil)
+		binder := &mockLocalTermsBinder{proposedMsgID: ""}
+		s.SetLocalTermsBinder(binder)
+
+		msg, err := s.RespondToTerms(context.Background(), "ch-1", "cust-1", true)
+		require.NoError(t, err)
+		assert.Equal(t, 0, binder.applyCalls)
+		assert.Contains(t, string(msg.MetadataJSON), "no_proposed_terms")
+	})
+
+	t.Run("customer reject does not bind contract", func(t *testing.T) {
+		t.Parallel()
+		r := newMockRepo()
+		r.channels["ch-1"] = &domain.Channel{
+			ID: "ch-1", JobID: "job-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
+		}
+		s := New(r, nil)
+		binder := &mockLocalTermsBinder{
+			proposed:      map[string]interface{}{"payment_type": "milestone"},
+			proposedMsgID: "prop-msg-1",
+			contractID:    "contract-99",
+		}
+		s.SetLocalTermsBinder(binder)
+
 		msg, err := s.RespondToTerms(context.Background(), "ch-1", "cust-1", false)
 		require.NoError(t, err)
 		assert.Equal(t, domain.MessageTypeTermsRejected, msg.MessageType)
 		assert.Contains(t, msg.Content, "rejected")
+		assert.Equal(t, 0, binder.applyCalls)
+		assert.Contains(t, string(msg.MetadataJSON), `"contract_override_applied":false`)
+	})
+
+	t.Run("free-text payment_type still merges terms_json without timing override", func(t *testing.T) {
+		t.Parallel()
+		r := newMockRepo()
+		r.channels["ch-1"] = &domain.Channel{
+			ID: "ch-1", JobID: "job-1", CustomerID: "cust-1", ProviderID: "prov-1", Status: "active",
+		}
+		s := New(r, nil)
+		binder := &mockLocalTermsBinder{
+			proposed: map[string]interface{}{
+				"payment_type": "50% now, 50% on completion",
+				"amount":       "1000",
+			},
+			proposedMsgID: "prop-msg-2",
+			contractID:    "contract-1",
+		}
+		s.SetLocalTermsBinder(binder)
+
+		msg, err := s.RespondToTerms(context.Background(), "ch-1", "cust-1", true)
+		require.NoError(t, err)
+		assert.Equal(t, 1, binder.applyCalls)
+		assert.Nil(t, binder.lastPaymentTiming)
+		assert.Contains(t, string(binder.lastTermsJSON), "50% now")
+		assert.Contains(t, string(msg.MetadataJSON), `"contract_override_applied":true`)
+		assert.NotContains(t, string(msg.MetadataJSON), "payment_timing_applied")
 	})
 
 	t.Run("provider cannot respond", func(t *testing.T) {
@@ -691,4 +801,103 @@ func TestRespondToTerms(t *testing.T) {
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, domain.ErrChannelClosed))
 	})
+}
+
+// mockLocalTermsBinder captures ApplyLocalTerms calls for FR-5.4 accept tests.
+type mockLocalTermsBinder struct {
+	proposed           map[string]interface{}
+	proposedMsgID      string
+	contractID         string
+	applyErr           error
+	lookupErr          error
+	applyCalls         int
+	lastPaymentTiming  *string
+	lastTermsJSON      []byte
+	lastJobID          string
+	lastCustomerID     string
+	lastProviderID     string
+}
+
+func (m *mockLocalTermsBinder) LatestProposedTerms(_ context.Context, _ string) ([]byte, string, error) {
+	if m.lookupErr != nil {
+		return nil, "", m.lookupErr
+	}
+	if m.proposedMsgID == "" {
+		return nil, "", nil
+	}
+	if m.proposed == nil {
+		return []byte(`{}`), m.proposedMsgID, nil
+	}
+	b, err := json.Marshal(m.proposed)
+	if err != nil {
+		return nil, "", err
+	}
+	return b, m.proposedMsgID, nil
+}
+
+func (m *mockLocalTermsBinder) ApplyLocalTerms(
+	_ context.Context,
+	jobID, customerID, providerID string,
+	paymentTiming *string,
+	termsJSON []byte,
+) (string, error) {
+	m.applyCalls++
+	m.lastJobID = jobID
+	m.lastCustomerID = customerID
+	m.lastProviderID = providerID
+	m.lastPaymentTiming = paymentTiming
+	m.lastTermsJSON = append([]byte(nil), termsJSON...)
+	if m.applyErr != nil {
+		return "", m.applyErr
+	}
+	return m.contractID, nil
+}
+
+func TestNormalizePaymentTiming(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		in   string
+		want string
+		ok   bool
+	}{
+		{name: "milestone", in: "milestone", want: "milestone", ok: true},
+		{name: "Milestones", in: "Milestones", want: "milestone", ok: true},
+		{name: "up-front", in: "up-front", want: "upfront", ok: true},
+		{name: "payment plan", in: "payment plan", want: "payment_plan", ok: true},
+		{name: "completion", in: "completion", want: "completion", ok: true},
+		{name: "recurring", in: "recurring", want: "recurring", ok: true},
+		{name: "free text", in: "50% now", want: "", ok: false},
+		{name: "empty", in: "", want: "", ok: false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := normalizePaymentTiming(tc.in)
+			assert.Equal(t, tc.ok, ok)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestExtractPaymentTiming(t *testing.T) {
+	t.Parallel()
+	pt := extractPaymentTiming(map[string]interface{}{
+		"payment_type": "upfront",
+	})
+	require.NotNil(t, pt)
+	assert.Equal(t, "upfront", *pt)
+
+	// Explicit payment_timing wins over free-text payment_type.
+	pt = extractPaymentTiming(map[string]interface{}{
+		"payment_timing": "milestone",
+		"payment_type":   "ignore me",
+	})
+	require.NotNil(t, pt)
+	assert.Equal(t, "milestone", *pt)
+
+	assert.Nil(t, extractPaymentTiming(map[string]interface{}{
+		"payment_type": "custom split",
+	}))
 }

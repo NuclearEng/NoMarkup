@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -30,11 +31,21 @@ type ContractHandler struct {
 	// Wave 5 services-polish tip feature without a proto regen). It may be nil
 	// in tests; the tip enrichment degrades to absent rather than erroring.
 	db *pgxpool.Pool
+	// paymentClient creates a real Stripe PaymentIntent for recurring-instance
+	// approve (FR-18 residual). Optional: nil → approve still succeeds with
+	// status/timestamps only — never invent a payment_id or client_secret.
+	paymentClient paymentv1.PaymentServiceClient
 }
 
 // NewContractHandler creates a new ContractHandler.
 func NewContractHandler(contractClient contractv1.ContractServiceClient, userClient userv1.UserServiceClient, db *pgxpool.Pool) *ContractHandler {
 	return &ContractHandler{contractClient: contractClient, userClient: userClient, db: db}
+}
+
+// SetPaymentClient wires CreatePayment for POST …/recurring/instances/{id}/approve.
+// Safe to leave unset in tests that never hit the approve money path.
+func (h *ContractHandler) SetPaymentClient(c paymentv1.PaymentServiceClient) {
+	h.paymentClient = c
 }
 
 // resolvePartyNames resolves a set of user ids → public display_name via the
@@ -1186,10 +1197,23 @@ func (h *ContractHandler) CompleteRecurringInstance(w http.ResponseWriter, r *ht
 }
 
 // ApproveRecurringInstance handles POST .../recurring/instances/{instanceId}/approve.
+//
+// Status approval is always durable via the contract service. When a payment
+// client is wired, the gateway best-effort creates a real services PaymentIntent
+// for the instance amount (payments.recurring_instance_id FK — there is no
+// payment_id column on recurring_instances). CreatePayment refuses amount >
+// contract total and non-customer actors. Failure to create a PI does NOT roll
+// back approval and does NOT invent a stub payment_id (fail-safe residual —
+// no fake money).
 func (h *ContractHandler) ApproveRecurringInstance(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 	instanceID := chi.URLParam(r, "instanceId")
@@ -1205,11 +1229,66 @@ func (h *ContractHandler) ApproveRecurringInstance(w http.ResponseWriter, r *htt
 		writeGRPCError(w, err)
 		return
 	}
+	inst := resp.GetInstance()
 	result := map[string]interface{}{
-		"instance": protoRecurringInstanceToJSON(resp.GetInstance()),
+		"instance": protoRecurringInstanceToJSON(inst),
 	}
+	// Job service leaves payment_id empty today (orchestration residual). Prefer
+	// any id it does return; otherwise create a real PI when amount is known.
 	if pid := resp.GetPaymentId(); pid != "" {
 		result["payment_id"] = pid
+	}
+
+	amountCents := int64(0)
+	if inst != nil {
+		amountCents = inst.GetAmountCents()
+	}
+	if h.paymentClient == nil {
+		// Honest residual: approval stands; no money path without payment mesh.
+		result["payment_residual"] = "payment_service_unwired"
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+	if amountCents <= 0 {
+		result["payment_residual"] = "instance_amount_missing"
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
+	// Sticky server-side key: one PI per instance across approve retries.
+	// CreatePayment stores this as payments.idempotency_key (unique).
+	idemKey := "recurring-instance-pay:" + instanceID
+	payResp, payErr := h.paymentClient.CreatePayment(r.Context(), &paymentv1.CreatePaymentRequest{
+		ContractId:          contractID,
+		RecurringInstanceId: instanceID,
+		CustomerId:          claims.UserID,
+		AmountCents:         amountCents,
+		IdempotencyKey:      idemKey,
+	})
+	if payErr != nil {
+		// Approval already committed — surface residual, never fake a payment.
+		slog.WarnContext(r.Context(), "recurring instance approve: CreatePayment failed (approval kept)",
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"amount_cents", amountCents,
+			"error", payErr,
+		)
+		result["payment_residual"] = "create_payment_failed"
+		result["payment_error"] = "Could not create escrow PaymentIntent for this visit. Visit is approved; pay via POST /payments with recurring_instance_id when ready."
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
+	if p := payResp.GetPayment(); p != nil && p.GetId() != "" {
+		result["payment_id"] = p.GetId()
+		result["payment"] = protoPaymentToJSON(p)
+	}
+	if secret := payResp.GetClientSecret(); secret != "" {
+		// Real Stripe (or dev-stack) secret for PaymentSheet — not invented.
+		result["client_secret"] = secret
+	} else {
+		// PI row may exist without a confirmable secret (misconfig). Honest residual.
+		result["payment_residual"] = "client_secret_missing"
 	}
 	writeJSON(w, http.StatusOK, result)
 }

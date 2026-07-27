@@ -171,7 +171,8 @@ func (s *Server) SendProposedTerms(ctx context.Context, req *chatv1.SendProposed
 	}, nil
 }
 
-// RespondToTerms — customer-only explicit Accept/Reject (no silent binding).
+// RespondToTerms — customer-only explicit Accept/Reject. On Accept, service
+// binds local terms onto the live contract when channel job + contract exist.
 func (s *Server) RespondToTerms(ctx context.Context, req *chatv1.RespondToTermsRequest) (*chatv1.RespondToTermsResponse, error) {
 	msg, err := s.svc.RespondToTerms(ctx, req.GetChannelId(), req.GetUserId(), req.GetAccepted())
 	if err != nil {
