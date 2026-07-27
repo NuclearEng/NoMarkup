@@ -46,6 +46,7 @@ resources:
   - meilisearch/deployment.yaml
   - meilisearch/service.yaml
   - otel-collector/configmap.yaml
+  - otel-collector/backend-configmap.yaml
   - otel-collector/deployment.yaml
   - otel-collector/service.yaml
   # PodDisruptionBudgets (minAvailable: 1 for multi-replica services)

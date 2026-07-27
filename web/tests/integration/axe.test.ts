@@ -9,19 +9,18 @@
  *     - axe-core ships a pure-JS implementation that runs against any DOM
  *     - Playwright requires a running web server; that adds CI flake.
  *
- *   For a browser-driven version (requires `npm run dev` to be live),
- *   see the (TODO) e2e/axe.spec.ts companion — one real-page smoke is
- *   sketched there when Playwright + a backend/stack are available.
+ *   Browser-driven companion (color-contrast ON, real public routes):
+ *   tests/e2e/axe.spec.ts — Playwright injects axe-core against `/` and
+ *   `/marketplace` with backend-tolerant skip when the page cannot load.
  *
  * Scope (FE-01):
  *   We mount real lightweight React components (EmptyState, Logo, StarRating,
  *   Button) plus minimal HTML stubs for route shells and assert ZERO
  *   `serious` or `critical` violations from axe-core's default rule set.
  *
- *   Color-contrast: re-enabled when axe can evaluate it. In jsdom, computed
- *   styles are incomplete so color-contrast often false-positives; we keep
- *   it disabled under jsdom and document that Playwright e2e axe should
- *   re-enable it (see tests/e2e/axe.spec.ts TODO).
+ *   Color-contrast: disabled under jsdom (incomplete computed styles →
+ *   false positives). Playwright e2e axe re-enables it on real paint
+ *   (tests/e2e/axe.spec.ts).
  *
  * Why this file is the CI gate:
  *   The existing test suite already runs via `bun run test`; adding axe
@@ -75,8 +74,7 @@ async function runAxe(node: HTMLElement) {
   const result = await axe.run(node, {
     rules: {
       // jsdom does not compute layout/colors reliably — leave disabled here.
-      // TODO(e2e): enable color-contrast in Playwright axe on a real page
-      // (tests/e2e/axe.spec.ts) once the stack is up.
+      // color-contrast is enabled in Playwright e2e (tests/e2e/axe.spec.ts).
       'color-contrast': { enabled: false },
     },
   });

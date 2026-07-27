@@ -6,6 +6,7 @@
     "dev": "next dev --turbopack --port 3000",
     "build": "next build",
     "analyze": "ANALYZE=true next build",
+    "check:bundle": "node scripts/check-bundle-size.mjs",
     "start": "next start",
     "lint": "eslint .",
     "format": "prettier --write .",

@@ -4,6 +4,7 @@ vendor/
 
 # Build outputs
 .next/
+.next-*/
 out/
 .turbo/
 target/

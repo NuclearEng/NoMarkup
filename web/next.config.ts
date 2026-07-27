@@ -45,6 +45,12 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // Optional alternate output dir (e.g. NEXT_DIST_DIR=.next-prod) so a concurrent
+  // `next dev` writing web/.next cannot corrupt a production build used by
+  // PERF-07 `npm run check:bundle`. CI and normal builds leave this unset.
+  ...(process.env['NEXT_DIST_DIR']
+    ? { distDir: process.env['NEXT_DIST_DIR'] }
+    : {}),
   eslint: { ignoreDuringBuilds: true },
   typedRoutes: true,
   poweredByHeader: false,

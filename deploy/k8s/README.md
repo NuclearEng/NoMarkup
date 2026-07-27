@@ -16,7 +16,7 @@ kubectl kustomize deploy/k8s/overlays/staging
 | gateway, web, user, job, payment, chat, notification (Go/Next.js) | in-cluster | `base/<name>/` |
 | bidding, fraud, trust, imaging, pricing, underwriting (Rust engines) | in-cluster | `base/<name>/` |
 | Meilisearch | in-cluster | `base/meilisearch/` — `MEILISEARCH_URL=http://meilisearch:7700`; master key comes from `nomarkup-secrets/MEILISEARCH_API_KEY` (see `SECRETS.md`); data on the `meili-data` PVC |
-| OpenTelemetry Collector | in-cluster | `base/otel-collector/` — `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`; ships with the `debug` exporter, swap in a real backend exporter in `base/otel-collector/configmap.yaml` |
+| OpenTelemetry Collector | in-cluster | `base/otel-collector/` — apps use `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`; dual-export `debug` + `otlphttp/backend` via `otel-collector-backend` ConfigMap (`OTEL_BACKEND_OTLP_HTTP_ENDPOINT`). Default loopback until a Tempo/Jaeger/vendor URL is set — see `docs/operations/otel-collector.md` |
 | **PostgreSQL 16 + PostGIS** | **external managed service** (by design) | no Deployment/StatefulSet in this repo. Services receive `DATABASE_URL` from the Vault-sourced `nomarkup-secrets` Secret (`SECRETS.md`) |
 | **Redis 7** (Cluster in prod) | **external managed service** (by design) | no manifest. Services receive `REDIS_URL` from `nomarkup-secrets` |
 | MinIO / S3 | external (AWS S3 in prod; MinIO only for local dev) | `S3_*` keys in `nomarkup-secrets` |

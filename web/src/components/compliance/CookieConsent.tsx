@@ -71,7 +71,7 @@ export function CookieConsent() {
         <label className="flex min-h-[44px] items-center justify-between gap-3 py-1">
           <span>
             <span className="font-medium text-zinc-200">Necessary</span>
-            <span className="ml-2 text-zinc-500">Required for sign-in & checkout</span>
+            <span className="ml-2 text-zinc-400">Required for sign-in & checkout</span>
           </span>
           <input
             type="checkbox"
@@ -84,7 +84,7 @@ export function CookieConsent() {
         <label className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 py-1">
           <span>
             <span className="font-medium text-zinc-200">Analytics</span>
-            <span className="ml-2 text-zinc-500">Helps us improve the product</span>
+            <span className="ml-2 text-zinc-400">Helps us improve the product</span>
           </span>
           <input
             type="checkbox"
@@ -100,7 +100,7 @@ export function CookieConsent() {
         <label className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 py-1">
           <span>
             <span className="font-medium text-zinc-200">Marketing</span>
-            <span className="ml-2 text-zinc-500">Personalized recommendations</span>
+            <span className="ml-2 text-zinc-400">Personalized recommendations</span>
           </span>
           <input
             type="checkbox"

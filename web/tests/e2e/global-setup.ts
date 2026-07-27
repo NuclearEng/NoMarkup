@@ -7,7 +7,15 @@ import { chromium } from '@playwright/test';
  */
 async function globalSetup() {
   const baseURL = 'http://localhost:3000';
-  const pages = ['/login', '/register', '/forgot-password', '/reset-password?token=warmup'];
+  // Warm auth shells plus public routes that axe e2e scans (FE-01).
+  const pages = [
+    '/login',
+    '/register',
+    '/forgot-password',
+    '/reset-password?token=warmup',
+    '/',
+    '/marketplace',
+  ];
 
   const browser = await chromium.launch();
   const context = await browser.newContext({ baseURL });

@@ -1,32 +1,146 @@
 /**
- * TODO(e2e axe — FE-01): browser-driven accessibility smoke.
+ * Browser-driven accessibility smoke (FE-01).
  *
  * Vitest + jsdom covers structural axe rules in tests/integration/axe.test.ts
  * but cannot evaluate color-contrast (no real layout/paint). This Playwright
- * suite is the place to re-enable color-contrast against a real page once
- * the local stack (or a preview deploy) is available in CI.
+ * suite re-enables color-contrast against real public routes once the Next.js
+ * app is up (Playwright webServer starts `npm run dev`).
  *
- * Skipped by default so `npm run test:e2e` does not require a live backend
- * for every PR. Flip the skip when E2E_BASE_URL (or the dogfood stack) is up.
+ * Backend tolerance:
+ *   Public `/` and `/marketplace` degrade without the Go gateway (empty /
+ *   error UI still mounts). If the page fails to load at all (web server
+ *   down, hard 5xx, no body), the test skips rather than red-fails CI for an
+ *   environment gap.
  *
- * Suggested expansion:
- *   - /login, /jobs, /marketplace with color-contrast enabled
- *   - axe-playwright or @axe-core/playwright helper
+ * Scope (honest residual):
+ *   - Only two public routes; no auth/dashboard surfaces
+ *   - Blocks serious + critical only (moderate/minor tracked elsewhere)
+ *   - color-contrast is ON here (off under jsdom)
+ *   - Not a full WCAG 2.2 AA certification gate
  */
 
-import { test, expect } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import axe from 'axe-core';
+import type { Result } from 'axe-core';
 
-const baseURL = process.env['E2E_BASE_URL'] ?? process.env['PLAYWRIGHT_BASE_URL'];
-
-test.describe('axe e2e smoke (TODO — needs live stack)', () => {
-  test.skip(!baseURL, 'E2E_BASE_URL / PLAYWRIGHT_BASE_URL not set; skipping real-page axe');
-
-  test('public home has no critical axe violations (placeholder)', async ({ page }) => {
-    // When enabled: navigate, inject axe-core, assert zero critical.
-    // Placeholder keeps the file valid so Playwright discovers it.
-    await page.goto(baseURL ?? 'http://localhost:3000/');
-    await expect(page.locator('body')).toBeVisible();
-    // TODO: const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
-    // TODO: expect(results.violations.filter(v => v.impact === 'critical')).toEqual([]);
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
   });
+}
+
+/** Inject axe-core and return serious/critical violations (incl. contrast). */
+async function runAxeSeriousCritical(page: Page): Promise<Result[]> {
+  await page.addScriptTag({ content: axe.source });
+
+  return page.evaluate(async () => {
+    // axe.source IIFE attaches `axe` to window.
+    const axeWin = (
+      window as unknown as {
+        axe: {
+          run: (
+            context: Document,
+            options?: { resultTypes?: string[] },
+          ) => Promise<{ violations: Result[] }>;
+        };
+      }
+    ).axe;
+
+    const results = await axeWin.run(document, {
+      // Default rule set includes color-contrast; do not disable it here.
+      resultTypes: ['violations'],
+    });
+
+    return results.violations.filter(
+      (v) => v.impact === 'serious' || v.impact === 'critical',
+    );
+  });
+}
+
+function formatViolations(violations: Result[]): string {
+  if (violations.length === 0) return '(none)';
+  return violations
+    .map((v) => {
+      const nodes = v.nodes
+        .slice(0, 5)
+        .map((n) => `    - ${n.target.join(' ')}: ${n.failureSummary ?? n.html}`)
+        .join('\n');
+      return `[${v.impact ?? 'unknown'}] ${v.id}: ${v.help} (${v.nodes.length} node(s))\n${nodes}`;
+    })
+    .join('\n\n');
+}
+
+/**
+ * Navigate to a public route. Returns false when the environment cannot host
+ * a scan (connection failure, hard 5xx, missing body) so the caller can skip.
+ * Retries a few times: Turbopack cold compile / build-manifest races often
+ * yield a one-shot 500 or blank body that recovers on reload.
+ */
+async function loadPublicRoute(page: Page, path: string): Promise<boolean> {
+  const attempts = 3;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const response = await page.goto(path, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000,
+      });
+      if (!response) {
+        await delay(1_000);
+        continue;
+      }
+      // Hard server errors → retry (dev compile race), then skip.
+      if (response.status() >= 500) {
+        await delay(1_500);
+        continue;
+      }
+
+      // Let client islands settle; networkidle may hang on long-polls so soft-timeout.
+      await page
+        .waitForLoadState('networkidle', { timeout: 15_000 })
+        .catch(() => undefined);
+
+      const bodyVisible = await page.locator('body').isVisible().catch(() => false);
+      if (!bodyVisible) {
+        await delay(1_000);
+        continue;
+      }
+
+      // Next.js app error shell without recoverable content — retry once more.
+      const fatal = await page
+        .getByText(/Application error: a (client|server)-side exception/i)
+        .count()
+        .catch(() => 0);
+      if (fatal > 0) {
+        await delay(1_500);
+        continue;
+      }
+
+      return true;
+    } catch {
+      await delay(1_000);
+    }
+  }
+  return false;
+}
+
+const PUBLIC_ROUTES = ['/', '/marketplace'] as const;
+
+test.describe('axe e2e smoke — real public routes', () => {
+  for (const path of PUBLIC_ROUTES) {
+    test(`${path} has no serious/critical axe violations (color-contrast on)`, async ({
+      page,
+    }) => {
+      const loaded = await loadPublicRoute(page, path);
+      test.skip(
+        !loaded,
+        `${path} did not load (web/backend unavailable); skipping real-page axe`,
+      );
+
+      const violations = await runAxeSeriousCritical(page);
+      expect(
+        violations,
+        `axe serious/critical on ${path}:\n${formatViolations(violations)}`,
+      ).toEqual([]);
+    });
+  }
 });

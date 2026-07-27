@@ -37,6 +37,29 @@ spec:
             capabilities:
               drop:
                 - ALL
+          env:
+            # Expanded into config.yaml exporters.otlphttp/backend.endpoint.
+            # Override via the otel-collector-backend ConfigMap (staging/prod).
+            - name: OTEL_BACKEND_OTLP_HTTP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: otel-collector-backend
+                  key: OTEL_BACKEND_OTLP_HTTP_ENDPOINT
+            - name: OTEL_BACKEND_OTLP_TLS_INSECURE
+              valueFrom:
+                configMapKeyRef:
+                  name: otel-collector-backend
+                  key: OTEL_BACKEND_OTLP_TLS_INSECURE
+            # Optional: set on the pod (Secret) for vendor auth, e.g.
+            #   Authorization: Basic <base64>   or   Bearer <token>
+            # Not referenced in the base pipeline config (no empty header).
+            # See docs/operations/otel-collector.md for the headers patch.
+            - name: OTEL_BACKEND_OTLP_AUTH_HEADER
+              valueFrom:
+                secretKeyRef:
+                  name: otel-collector-backend-auth
+                  key: Authorization
+                  optional: true
           ports:
             - name: otlp-grpc
               containerPort: 4317

@@ -137,7 +137,10 @@ async function computeMacB64Url(
   return base64UrlEncode(new Uint8Array(sig));
 }
 
-function utf8Encode(s: string): Uint8Array {
+// Explicit ArrayBuffer generic: TS 5.7+ / DOM lib type Uint8Array as
+// Uint8Array<ArrayBufferLike>, which is not assignable to BufferSource
+// expected by crypto.subtle (ArrayBufferView<ArrayBuffer>).
+function utf8Encode(s: string): Uint8Array<ArrayBuffer> {
   return new TextEncoder().encode(s);
 }
 
