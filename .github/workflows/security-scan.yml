@@ -67,6 +67,15 @@ jobs:
         run: cargo audit
 
   # ── npm Audit ───────────────────────────────────────────────
+  # Policy (QA-15 residual — intentional, not an oversight):
+  #   • Scope: production deps only (`--omit=dev`). Dev/test tooling CVEs
+  #     (Playwright, Vitest, ESLint, types, etc.) do NOT fail this job.
+  #   • Severity gate: high + critical only (`--audit-level=high`).
+  #     moderate / low findings are residual and not CI-blocking.
+  #   • Full `npm audit` (with dev + moderate) may still report issues;
+  #     that is expected. Ratchet only by tightening flags here after
+  #     triage — do not claim "npm audit clean" without stating this policy.
+  # Documented also in docs/conventions.md (Security scan / dependency policy).
   npm-audit:
     name: npm Audit
     runs-on: ubuntu-latest
@@ -80,6 +89,6 @@ jobs:
       - name: Install dependencies
         working-directory: web
         run: npm ci
-      - name: Run npm audit (production dependencies)
+      - name: Run npm audit (production dependencies, high+)
         working-directory: web
         run: npm audit --omit=dev --audit-level=high

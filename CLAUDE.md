@@ -262,7 +262,7 @@ JS <200KB gz · per-route <50KB gz · hero image <200KB (WebP/AVIF).
 **Backend**: API p50 <50ms / p95 <200ms / p99 <500ms · bid p99 <1ms · trust p99 <5ms · fraud p99
 <50ms · search p99 <50ms · image p99 <200ms · WS delivery <100ms · DB query p95 <20ms.
 
-**Infra**: uptime 99.9% · error rate <0.1% · 100K WS conns/node · 10K HTTP req/Go instance.
+**Infra (design budgets — unproven; not measured SLAs):** uptime **target** 99.9% · error rate **target** <0.1% · 100K WS conns/node · 10K HTTP req/Go instance. No prod uptime series or k6/staging load reports prove concurrent capacity or availability yet (OPS-26).
 
 ---
 

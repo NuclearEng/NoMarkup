@@ -83,8 +83,9 @@ is rebuilt from `chat_messages` + the Redis subscription.
 
 **Scale ceiling per pod:** The hub's `connections` map is keyed by user ID and
 appends to a slice on each connection. With ~10k connections per pod
-(per CLAUDE.md infra budget: 100k per node ÷ 10 pods/node), the map is
-trivially sized. Above that, switch to a sharded map.
+(per CLAUDE.md **design** infra budget: 100k per node ÷ 10 pods/node — **unproven**;
+no load-report artifacts), the map is trivially sized in memory accounting.
+Above that, switch to a sharded map.
 
 ### Notification Service
 
@@ -153,8 +154,9 @@ Redis is single-shard in current docker-compose. Production expects
 
 - Single Redis instance handles rate limits, OTPs, idempotency cache,
   Pub/Sub.
-- At ~10k concurrent users, Redis is comfortably under load (sub-ms
-  p99 ops).
+- At ~10k concurrent users (design estimate only — **unproven**; no
+  staging/k6 capacity report), Redis is expected to be under modest load
+  (typical sub-ms ops at that request rate on a single instance).
 - Redis Pub/Sub fans out to every chat pod; keep an eye on
   `redis-cli INFO clients` and `pubsub_channels`.
 

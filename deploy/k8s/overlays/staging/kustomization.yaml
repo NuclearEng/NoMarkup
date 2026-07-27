@@ -1,9 +1,14 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# Staging isolation is namespace-only (`nomarkup-staging` vs production
+# `nomarkup`). Do NOT set namePrefix here: base Deployments hardcode
+# in-cluster Service DNS (`user:50051`, `job:50052`, …) and ConfigMap
+# literals use `http://meilisearch:7700` / `http://otel-collector:4317`.
+# Kustomize rewrites object nameReferences (ingress backends, envFrom
+# configMapRef) under a prefix, but not those string hostnames — pods
+# would fail to resolve peers (OPS-20).
 namespace: nomarkup-staging
-
-namePrefix: staging-
 
 resources:
   - ../../base

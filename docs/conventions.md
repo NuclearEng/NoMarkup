@@ -175,7 +175,8 @@ export default defineConfig({
     include: ['tests/unit/**/*.test.{ts,tsx}', 'tests/integration/**/*.test.{ts,tsx}'],
     coverage: {
       provider: 'v8', reporter: ['text', 'lcov', 'html'],
-      thresholds: { branches: 80, functions: 80, lines: 80, statements: 80 },
+      // Whole-app floors in web/vitest.config.mts (ratchet-only; not aspirational 80 all columns):
+      thresholds: { branches: 76, functions: 80, lines: 80, statements: 80 },
       exclude: ['node_modules/', 'tests/', '**/*.d.ts', '**/*.config.*', '**/types/'],
     },
     testTimeout: 10000, hookTimeout: 10000,
@@ -227,6 +228,20 @@ Do not claim “all Go services have integration coverage in CI.” Closing the 
 tests/  unit/ (fast, no I/O)  integration/ (svc+db, real containers)
         e2e/ (Playwright)  load/ (k6)  fixtures/ (shared factories)
 ```
+
+### Security scan / dependency policy (QA-15)
+
+Workflow: `.github/workflows/security-scan.yml` (PR + weekly cron).
+
+| Scanner | What fails CI | Residual (not gated) |
+|---------|---------------|----------------------|
+| **npm audit** (`web/`) | Production deps only (`npm audit --omit=dev --audit-level=high`) — **high + critical** | **moderate / low** severities; **all `devDependencies`** (test/lint/build tooling). A full `npm audit` without flags may still list findings — that is expected under this policy. |
+| **govulncheck** | Each Go module in the matrix (`gateway`, user/job/payment/chat/notification) | n/a (fail on known vulns in reachable code) |
+| **cargo audit** | `engines/` workspace advisories | May need `ignore` for accepted advisories if ever needed — document in workflow if so |
+
+**Do not claim** “npm audit clean” or “zero dependency CVEs” without stating this residual. Tightening (e.g. include moderate, or scan devDeps) is a deliberate ratchet after triage, not a silent default.
+
+**Also not claimed green by this workflow alone:** security-scan is a separate workflow from `ci.yml` merge checks (QA-10 — branch-protection coupling is Founder-Action).
 
 ## Logging & Observability (detail)
 

@@ -1,0 +1,295 @@
+# OPS-19 — Default-deny egress + practical allowlists
+#
+# Once ANY NetworkPolicy with policyTypes: [Egress] selects a pod, Kubernetes
+# admits only the UNION of egress rules from ALL policies that select that pod.
+# `default-deny-egress` selects every pod with zero allow rules, so every
+# workload MUST also match at least one allow-* policy for each required path
+# (DNS, mesh, data stores, SaaS HTTPS). Missing entries fail CLOSED.
+#
+# Call-graph / dependency map (egress direction):
+#
+#   DNS (all pods)          → kube-system :53
+#   In-namespace mesh       → nomarkup/* (gRPC, Meilisearch, OTel collector)
+#   Managed Postgres/Redis  → external (no in-cluster Deployment; SECRETS.md)
+#   Stripe                  → payment (+ gateway webhook path is inbound)
+#   S3                      → imaging, payment, job (presign/object paths)
+#   OAuth (Google/Apple)    → gateway
+#   SendGrid / Twilio / Push→ notification (user-supplied push URLs re-checked
+#                             in app; network layer still blocks RFC1918/metadata)
+#   Sentry                  → any service with SENTRY_DSN
+#   OTLP backend            → otel-collector only (see docs/operations/otel-collector.md)
+#   Migration Job           → DNS + Postgres only
+#
+# ---------------------------------------------------------------------------
+# LIMITATIONS (honest — do not claim pin-point SaaS allowlists)
+# ---------------------------------------------------------------------------
+# 1. Stripe, AWS S3, Sentry, Google/Apple OAuth, SendGrid, Twilio, Mapbox, and
+#    browser Web Push endpoints do not publish a single stable /32 (or even a
+#    small weekly CIDR set that is safe to hardcode). We allow TCP/443 to the
+#    public Internet and carve out RFC1918, CGNAT, loopback, and link-local
+#    (169.254.0.0/16 — cloud IMDS). That is containment against SSRF / lateral
+#    movement, not a vendor fingerprint.
+# 2. Managed Postgres and Redis are external by design (deploy/k8s/README.md).
+#    NetworkPolicy cannot filter by DNS name. Default allow is TCP 5432 /
+#    6379 / 6380 to 0.0.0.0/0 except loopback + link-local so both VPC-private
+#    and public managed endpoints work. When the VPC CIDR is known, overlay-
+#    patch this policy to a narrower ipBlock (see docs/operations/network-policy-egress.md).
+# 3. Enforcement requires a NetworkPolicy-capable CNI (Calico, Cilium, Azure
+#    NPM, etc.). kind's default kindnet does NOT enforce — cluster smoke on
+#    the target CNI is residual until DEPLOY_PROVISIONED.
+# 4. IPv6 is not covered (no ipBlock ::/0 rules). Disable pod IPv6 or extend
+#    rules if dual-stack is enabled.
+# 5. Cross-namespace OTLP backends (e.g. Jaeger in `observability`) need the
+#    otel-collector egress rule below; change the backend URL without updating
+#    this file and traces will black-hole.
+#
+# Ingress policies remain in network-policy.yaml. Do not re-introduce an
+# allow-all egress path.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/component: network-policy
+    nomarkup.com/ops: "OPS-19"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  # No egress rules — deny all by default. Allow policies below open paths.
+---
+# Cluster DNS (CoreDNS / kube-dns). Required for Service discovery and for
+# resolving external hostnames (Stripe, S3, RDS hostnames, etc.).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-dns
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/component: network-policy
+    nomarkup.com/ops: "OPS-19"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Intra-namespace mesh: gRPC peers, Meilisearch, OTel collector, web↔gateway.
+# Mirrors the ingress least-privilege graph in network-policy.yaml — this is
+# the complementary direction (client → server). Without it, default-deny
+# egress would break every in-cluster dial even when ingress allows the peer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-in-namespace
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/component: network-policy
+    nomarkup.com/ops: "OPS-19"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nomarkup
+---
+# Managed Postgres + Redis (external). See LIMITATIONS §2.
+#
+# Consumers: every Go service + Rust engine that reads DATABASE_URL / REDIS_URL
+# (envFrom nomarkup-secrets), plus the db-migrate Job. Meilisearch and the
+# OTel collector do not dial the data plane.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-data-stores
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/component: network-policy
+    nomarkup.com/ops: "OPS-19"
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - gateway
+          - user
+          - job
+          - payment
+          - chat
+          - notification
+          - bidding
+          - fraud
+          - trust
+          - imaging
+          - pricing
+          - underwriting
+          - db-migrate
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              # Never reach cloud instance metadata or the pod's own loopback
+              # via a forged DATABASE_URL / REDIS_URL.
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+        # TLS-terminated Redis / some managed offerings.
+        - protocol: TCP
+          port: 6380
+---
+# Public HTTPS for SaaS and object storage.
+#
+# Same carve-outs as the former notification-egress rule: RFC1918 + CGNAT +
+# loopback + link-local are excluded so a compromised pod (or a forged Web
+# Push endpoint) cannot use HTTPS to hit in-VPC services or IMDS.
+#
+# Meilisearch is excluded — it has no SaaS dependency and runs with
+# MEILI_NO_ANALYTICS. Migration Job is excluded — DNS + Postgres only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-https-public
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/component: network-policy
+    nomarkup.com/ops: "OPS-19"
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - gateway
+          - web
+          - user
+          - job
+          - payment
+          - chat
+          - notification
+          - bidding
+          - fraud
+          - trust
+          - imaging
+          - pricing
+          - underwriting
+          - otel-collector
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+              - 100.64.0.0/10
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# OTel collector → durable backend (Tempo / Jaeger / vendor OTLP).
+#
+# Apps only dial the in-cluster collector (covered by allow-egress-in-namespace).
+# The collector itself may export to:
+#   - another namespace on OTLP ports (4317 gRPC / 4318 HTTP)
+#   - a public HTTPS OTLP gateway (covered by allow-egress-https-public)
+# Default backend in base is loopback (docs/operations/otel-collector.md); when
+# operators set a real URL, this rule must still match.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-otel-backend
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/component: network-policy
+    nomarkup.com/ops: "OPS-19"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  policyTypes:
+    - Egress
+  egress:
+    # Cross-namespace in-cluster OTLP (e.g. jaeger-collector.observability).
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # Public or VPC-hosted OTLP/HTTP on non-443 ports (optional vendors).
+    # 443 is already allowed via allow-egress-https-public. Private ranges are
+    # permitted here only on OTLP ports so a VPC Tempo endpoint works.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+---
+# Explicit payment-path note (money surface). Same public-HTTPS + data-store
+# rules as above; this policy adds nothing new but documents the Stripe
+# dependency for auditors and keeps a named handle for future IP pinning if
+# Stripe publishes stable egress CIDRs we choose to adopt.
+#
+# Stripe API host: api.stripe.com (and files.stripe.com) — HTTPS/443 only.
+# Webhooks are INBOUND (ingress → gateway → payment) and are not egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-payment-stripe
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/component: network-policy
+    nomarkup.com/ops: "OPS-19"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: payment
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+              - 100.64.0.0/10
+      ports:
+        - protocol: TCP
+          port: 443

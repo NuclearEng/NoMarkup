@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkline } from '@/components/ui/sparkline';
 import { useListing, useListingBids } from '@/hooks/useListings';
 import { useMarketplaceSpectator } from '@/hooks/useMarketplaceSpectator';
@@ -57,11 +58,13 @@ export default function ListingSpectatePage() {
     return (
       <div className="dark bg-background relative min-h-screen overflow-y-auto text-zinc-100">
         <GradientMesh />
-        <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
-          <div className="space-y-4">
-            <div className="h-10 w-2/3 animate-pulse rounded bg-white/5" />
-            <div className="h-72 animate-pulse rounded-xl bg-white/5" />
-          </div>
+        <div
+          className="mx-auto max-w-3xl space-y-4 px-4 py-12 sm:px-6"
+          role="status"
+          aria-label="Loading auction"
+        >
+          <Skeleton className="h-10 w-2/3" />
+          <Skeleton className="h-72 w-full rounded-xl" />
         </div>
       </div>
     );

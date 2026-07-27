@@ -59,7 +59,8 @@ resources:
   - ingress.yaml
   # Storage
   - pvc.yaml
-  # Network Policies
+  # Network Policies (ingress least-privilege + OPS-19 egress default-deny)
   - network-policy.yaml
+  - network-policy-egress.yaml
   # NOTE: externalsecret.sample.yaml is intentionally NOT listed — operators
   # copy it after Vault / ClusterSecretStore is provisioned (see SECRETS.md).

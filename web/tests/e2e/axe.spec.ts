@@ -7,13 +7,15 @@
  * app is up (Playwright webServer starts `npm run dev`).
  *
  * Backend tolerance:
- *   Public `/`, `/marketplace`, and `/jobs` degrade without the Go gateway
- *   (empty / error UI still mounts). If the page fails to load at all (web
- *   server down, hard 5xx, no body), the test skips rather than red-fails CI
- *   for an environment gap.
+ *   Public `/`, `/marketplace`, `/jobs`, `/pricing`, and `/login` degrade
+ *   without the Go gateway (empty / error / static form UI still mounts).
+ *   If the page fails to load at all (web server down, hard 5xx, no body),
+ *   the test skips rather than red-fails CI for an environment gap.
+ *   No authenticated session is required; `/login` is the auth shell only
+ *   (safe without stack — no dashboard/admin surfaces).
  *
  * Scope (honest residual):
- *   - Only three public routes; no auth/dashboard surfaces
+ *   - Five public/auth-shell routes; still no dashboard/admin surfaces
  *   - Blocks serious + critical only (moderate/minor tracked elsewhere)
  *   - color-contrast is ON here (off under jsdom)
  *   - Not a full WCAG 2.2 AA certification gate
@@ -123,7 +125,9 @@ async function loadPublicRoute(page: Page, path: string): Promise<boolean> {
   return false;
 }
 
-const PUBLIC_ROUTES = ['/', '/marketplace', '/jobs'] as const;
+// Public catalog + pricing + login shell (auth-friendly without credentials).
+// Prefer these over dashboard routes so CI skips cleanly when backend is down.
+const PUBLIC_ROUTES = ['/', '/marketplace', '/jobs', '/pricing', '/login'] as const;
 
 test.describe('axe e2e smoke — real public routes', () => {
   for (const path of PUBLIC_ROUTES) {

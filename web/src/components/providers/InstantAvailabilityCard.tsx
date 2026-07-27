@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import {
   type AvailabilityWindowInput,
@@ -169,10 +170,18 @@ export function InstantAvailabilityCard({ className }: { className?: string }) {
 
   if (isLoading && !profile) {
     return (
-      <Card className={cn('glass glass-highlight border border-[var(--brand-gold)]/10', className)}>
-        <CardContent className="flex min-h-[120px] items-center justify-center p-6">
-          <Loader2 className="h-5 w-5 animate-spin text-zinc-400" aria-hidden="true" />
-          <span className="sr-only">Loading Instant availability</span>
+      <Card
+        className={cn('glass glass-highlight border border-[var(--brand-gold)]/10', className)}
+        role="status"
+        aria-label="Loading Instant availability"
+      >
+        <CardHeader className="pb-3">
+          <Skeleton className="h-5 w-44" />
+          <Skeleton className="mt-2 h-4 w-64" />
+        </CardHeader>
+        <CardContent className="space-y-3 p-6 pt-0">
+          <Skeleton className="h-11 w-full rounded-lg" />
+          <Skeleton className="h-24 w-full rounded-lg" />
         </CardContent>
       </Card>
     );

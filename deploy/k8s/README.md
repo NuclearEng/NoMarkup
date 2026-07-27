@@ -138,12 +138,33 @@ Never point liveness at `/readyz`, and never point readiness at `/health(z)`.
 The `web` Deployment probes `/robots.txt` as an interim target because the
 Next.js app has no health route yet (see the TODO in `base/web/deployment.yaml`).
 
-## Known caveat (staging)
+## NetworkPolicy
 
-`overlays/staging` applies `namePrefix: staging-`, which renames Services
-(e.g. `staging-meilisearch`). Kustomize rewrites object references (ingress
-backends) automatically, but **literal URLs inside `configMapGenerator`**
-(`MEILISEARCH_URL`, `OTEL_EXPORTER_OTLP_ENDPOINT`) are not rewritten. Staging
-runs in its own namespace (`nomarkup-staging`), so either drop the prefix for
-infrastructure Services or update the staging ConfigMap literals when staging
-is actually provisioned (deploy gate is off today, see above).
+- **Ingress:** `base/network-policy.yaml` — default-deny ingress + allowlists
+  (ingress-nginx → gateway/web, mesh least-privilege, Prometheus scrape).
+- **Egress (OPS-19):** `base/network-policy-egress.yaml` — default-deny egress +
+  DNS, in-namespace mesh, managed Postgres/Redis ports, public HTTPS (Stripe /
+  S3 / OAuth / Sentry / push) with RFC1918 + IMDS carved out, OTel backend.
+
+Stripe/S3 CIDRs are intentionally broad (public `:443` with private carve-outs);
+Postgres/Redis allow TCP 5432/6379/6380 world-open except loopback/IMDS until the
+VPC CIDR is known — overlay-patch then. Full matrix + smoke checklist:
+[`docs/operations/network-policy-egress.md`](../../docs/operations/network-policy-egress.md).
+
+Enforcement needs a NetworkPolicy-capable CNI. kind’s default kindnet does not
+enforce these rules.
+
+## Staging isolation (no `namePrefix`)
+
+Staging uses **namespace isolation only** (`nomarkup-staging` vs production
+`nomarkup`). There is intentionally **no** `namePrefix` on the staging overlay.
+
+Base Deployments hardcode Service DNS hostnames (`user:50051`, `job:50052`,
+`bidding:50053`, …) and ConfigMap literals use short names
+(`http://meilisearch:7700`, `http://otel-collector:4317`). Kustomize rewrites
+Kubernetes nameReferences (ingress backends, `configMapRef` / `secretKeyRef`)
+under a prefix, but **not** those string hostnames — a `namePrefix: staging-`
+would rename Services to `staging-user` while clients still dial `user:…` and
+break the entire mesh (OPS-20). Keep Service names stable within each
+namespace; never reintroduce a prefix without also rewriting every
+`*_SERVICE_ADDR` / `*_ENGINE_ADDR` / Meili / OTel URL.

@@ -16,6 +16,7 @@ async function globalSetup() {
     '/',
     '/marketplace',
     '/jobs',
+    '/pricing',
   ];
 
   const browser = await chromium.launch();

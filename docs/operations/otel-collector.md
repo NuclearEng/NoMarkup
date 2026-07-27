@@ -169,7 +169,11 @@ kubectl -n nomarkup exec deploy/otel-collector -- printenv \
 
 - App OTLP env: overlays set `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`
 - NetworkPolicy ingress to collector: `allow-mesh-otel-collector` in
-  `deploy/k8s/base/network-policy.yaml` (egress to external backends is not
-  restricted until OPS-19 default-deny egress ships — if you tighten egress,
-  allow the collector → backend host/port).
+  `deploy/k8s/base/network-policy.yaml`.
+- NetworkPolicy egress (OPS-19): `allow-egress-https-public` +
+  `allow-egress-otel-backend` in `deploy/k8s/base/network-policy-egress.yaml`
+  admit collector → public HTTPS OTLP gateways and cross-namespace OTLP
+  4317/4318. If the backend uses another port/CIDR, patch that policy before
+  flipping the backend URL or traces black-hole. See
+  `docs/operations/network-policy-egress.md`.
 - Local Jaeger: `docker-compose.yml` service `jaeger` (ports 16686 UI, 4317 OTLP)

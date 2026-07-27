@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   useCategoryMetrics,
   useGrowthMetrics,
@@ -153,8 +154,12 @@ export default function AdminPlatformPage() {
         </CardHeader>
         <CardContent>
           {growthLoading ? (
-            <div className="flex h-48 items-center justify-center">
-              <div className="h-6 w-32 animate-pulse rounded bg-muted" />
+            <div
+              className="flex h-48 items-center justify-center"
+              role="status"
+              aria-label="Loading growth metrics"
+            >
+              <Skeleton className="h-6 w-32" />
             </div>
           ) : !growth || growth.data_points.length === 0 ? (
             <div className="flex h-48 items-center justify-center text-sm text-zinc-300">
@@ -249,13 +254,13 @@ export default function AdminPlatformPage() {
         </CardHeader>
         <CardContent>
           {categoriesLoading ? (
-            <div className="space-y-3">
+            <div className="space-y-3" role="status" aria-label="Loading category metrics">
               {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="flex gap-4">
-                  <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-16 animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-16 animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-20 animate-pulse rounded bg-muted" />
+                <div key={`cat-skel-${String(i)}`} className="flex gap-4">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-4 w-20" />
                 </div>
               ))}
             </div>

@@ -137,7 +137,7 @@ From code-complete to real users on production. Every item must be checked off o
 
 ### Current Pipeline (truth)
 - [ ] `ci.yml` green on main: web lint + typecheck, Vitest (**floors** ~71–77% in `vitest.config.mts`, not blanket 80% all metrics), Playwright **Chromium** E2E (backend-tolerant; full dogfood needs stack + `SEED_PASSWORD`), Go tests + PostGIS service container integration, Rust fmt/clippy/test
-- [ ] `security-scan.yml` green (govulncheck, cargo-audit, npm audit policy)
+- [ ] `security-scan.yml` green (govulncheck, cargo-audit, npm audit **policy**: prod deps + high+ only — see `docs/conventions.md` QA-15 residual)
 - [ ] **Not in CI today:** criterion p99 gates, k6 load, full axe AA on real routes, Go/Rust 80% coverage gates, Husky pre-commit
 
 ### Deploy Pipeline

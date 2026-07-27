@@ -1456,10 +1456,10 @@ These are the metrics NoMarkup will live and die by. They should be tracked from
 - **NFR-3** API response time: < 200ms for reads, < 500ms for writes (p95).
 - **NFR-4** Real-time chat: message delivery < 500ms end-to-end.
 - **NFR-5** Search results (jobs, providers): < 1 second including map rendering.
-- **NFR-6** Support 10,000 concurrent users at launch (Seattle market). Architecture must scale horizontally to 100,000+ for national expansion.
+- **NFR-6** **Design capacity target (unproven):** support on the order of 10,000 concurrent users at Seattle launch, with horizontal scale design toward 100,000+ for national expansion. **Not a measured launch gate** — no k6/staging load-report artifacts prove this figure; treat as architecture intent until load proof exists (see `tests/load/`, OPS-26 / PERF-10 in the adversarial tracker).
 
 ### Availability & Reliability
-- **NFR-7** Uptime target: 99.9% (excluding scheduled maintenance).
+- **NFR-7** **Uptime design target (unproven):** 99.9% excluding scheduled maintenance. **Not a measured SLA** — production is not provisioned (`DEPLOY_PROVISIONED`); no external uptime series or HA proof backs this number yet.
 - **NFR-8** Payment processing: zero data loss. All payment operations must be idempotent and recoverable.
 - **NFR-9** Graceful degradation: if the analytics engine is down, the marketplace continues to function. If chat is down, users see a clear error and can retry.
 - **NFR-10** Database backups: automated daily backups with point-in-time recovery. 30-day retention.

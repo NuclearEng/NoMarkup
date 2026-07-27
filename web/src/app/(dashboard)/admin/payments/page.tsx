@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PageTransition } from '@/components/ui/page-transition';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -195,12 +196,9 @@ function CurrentFeesSummary({
             Could not load the active fee configuration. Please refresh to try again.
           </p>
         ) : isLoading || !config ? (
-          <div className="space-y-3" aria-hidden="true">
+          <div className="space-y-3" role="status" aria-label="Loading fee configuration">
             {[0, 1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="h-10 animate-pulse rounded-md bg-zinc-700/30"
-              />
+              <Skeleton key={`fee-skel-${String(i)}`} className="h-10 w-full" />
             ))}
           </div>
         ) : (
