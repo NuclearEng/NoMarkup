@@ -615,6 +615,8 @@ actor APIClient {
             },
             auctionDurationHours: auctionDurationHours,
             startingBidCents: startingBidCents,
+            // Prefer live reverse auctions so the owner ladder + countdown feel real-time.
+            auctionType: "live",
             locationAddress: locationAddress.flatMap { t in
                 let s = t.trimmingCharacters(in: .whitespacesAndNewlines)
                 return s.isEmpty ? nil : s
@@ -1192,6 +1194,7 @@ private struct CreateJobRequestBody: Encodable {
     let categoryId: String?
     let auctionDurationHours: Int
     let startingBidCents: Int64
+    let auctionType: String
     let locationAddress: String?
     let locationLat: Double?
     let locationLng: Double?

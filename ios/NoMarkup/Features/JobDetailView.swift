@@ -146,7 +146,7 @@ struct JobDetailView: View {
                     .brandScreenBackground()
             }
         }
-        .navigationTitle(detail?.displayTitle ?? "Job")
+        .navigationTitle(detail?.displayTitle ?? "Reverse auction")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -155,6 +155,9 @@ struct JobDetailView: View {
         .task { await load() }
         .task(id: auctionPollIdentity) {
             await pollLiveAuctionStateLoop()
+        }
+        .task(id: "\(jobID)|ladder|\(scenePhase == .active)") {
+            await pollBidLadderLoop()
         }
         .refreshable { await load() }
         .confirmationDialog(
@@ -193,9 +196,10 @@ struct JobDetailView: View {
     @ViewBuilder
     private func detailContent(_ job: JobDetail) -> some View {
         List {
+            // Auction first — hero, place bid (dollars), then live ladder.
             auctionHeroSection(job)
-            bidLadderSection(job)
             placeBidSection(job)
+            bidLadderSection(job)
             detailsSection(job)
 
             if let description = job.description?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -298,16 +302,25 @@ struct JobDetailView: View {
     }
 
     private var reverseAuctionBadge: some View {
-        Text("Reverse auction")
-            .font(.caption.weight(.bold))
-            .foregroundStyle(BrandTheme.goldBright)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .overlay(
-                Capsule()
-                    .strokeBorder(BrandTheme.gold, lineWidth: 1.5)
-            )
-            .accessibilityLabel("Reverse auction")
+        let isLive = isAuctionActiveForPolling
+        return HStack(spacing: 6) {
+            if isLive {
+                Circle()
+                    .fill(BrandTheme.success)
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+            }
+            Text(isLive ? "LIVE · reverse auction" : "Reverse auction")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(BrandTheme.goldBright)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .overlay(
+            Capsule()
+                .strokeBorder(BrandTheme.gold, lineWidth: 1.5)
+        )
+        .accessibilityLabel(isLive ? "Live reverse auction" : "Reverse auction")
     }
 
     @ViewBuilder
@@ -396,17 +409,11 @@ struct JobDetailView: View {
                 .frame(minHeight: 44)
 
             case .needsAuth:
-                ladderGateMessage(
-                    "Sign in as the job owner to see the full bid ladder.",
-                    systemImage: "lock.fill"
-                )
+                sealedAuctionArena(job, message: "Sign in as the job owner to open the sealed bid ladder. Providers still place reverse bids in dollars below.")
                 publicStatsRow(job)
 
             case .forbidden:
-                ladderGateMessage(
-                    "Only the job owner can see the full bid ladder.",
-                    systemImage: "eye.slash"
-                )
+                sealedAuctionArena(job, message: "This is a sealed reverse auction. Only the job owner sees each provider’s dollar amount. Your bid stays private from other providers.")
                 publicStatsRow(job)
 
             case .failed(let message):
@@ -448,37 +455,65 @@ struct JobDetailView: View {
                 }
             }
         } header: {
-            Text("Bid ladder").brandSectionHeader()
+            Text("Auction · bid ladder").brandSectionHeader()
         } footer: {
             if canAward {
-                Text("You own this job. Award a bid to create the contract. Lowest bid leads in a reverse auction.")
+                Text("You own this job. Award a bid to create the contract. Lowest dollar bid leads in a reverse auction.")
                     .foregroundStyle(BrandTheme.textSecondary)
             } else {
-                Text("Lowest bid leads in a reverse auction. Rank #1 is currently winning on price.")
+                Text("Lowest dollar bid leads. Rank #1 is currently winning on price. Bids are sealed from other providers.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
     }
 
     @ViewBuilder
+    private func sealedAuctionArena(_ job: JobDetail, message: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                if isAuctionActiveForPolling {
+                    Circle()
+                        .fill(BrandTheme.success)
+                        .frame(width: 8, height: 8)
+                    Text("AUCTION LIVE")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrandTheme.success)
+                } else {
+                    Text("AUCTION")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
+                Spacer()
+                Text("Sealed · reverse")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let price = heroPriceLabel(for: job) {
+                Text("\(price.caption): \(price.amount)")
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
     private func publicStatsRow(_ job: JobDetail) -> some View {
         HStack {
-            Text("Public bid count")
+            Text("Bids received")
                 .foregroundStyle(BrandTheme.textSecondary)
             Spacer()
-            Text("\(job.bidCount ?? 0)")
+            Text("\(effectiveBidCount(job: job))")
                 .font(.body.weight(.semibold).monospacedDigit())
                 .foregroundStyle(BrandTheme.goldBright)
         }
         .frame(minHeight: 44)
-    }
-
-    private func ladderGateMessage(_ text: String, systemImage: String) -> some View {
-        Label(text, systemImage: systemImage)
-            .font(.footnote)
-            .foregroundStyle(BrandTheme.textSecondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
     }
 
     @ViewBuilder
@@ -634,10 +669,12 @@ struct JobDetailView: View {
                 Text("Browse-only mode has no API credentials. Sign in against a live gateway to place bids.")
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
-                TextField("Bid amount (USD)", text: $bidAmountText)
-                    .keyboardType(.decimalPad)
-                    .disabled(true)
-                    .frame(minHeight: 44)
+                DollarAmountField(
+                    text: $bidAmountText,
+                    placeholder: "0.00",
+                    accessibilityLabelText: "Bid amount in dollars",
+                    isEnabled: false
+                )
                 Button("Place bid") {}
                     .disabled(true)
                     .frame(maxWidth: .infinity, minHeight: 44)
@@ -647,12 +684,11 @@ struct JobDetailView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                TextField("Your bid (USD) — lower is better", text: $bidAmountText)
-                    .keyboardType(.decimalPad)
-                    .textContentType(.none)
-                    .autocorrectionDisabled()
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Bid amount in dollars — reverse auction, lower is better")
+                DollarAmountField(
+                    text: $bidAmountText,
+                    placeholder: "0.00",
+                    accessibilityLabelText: "Your reverse bid in dollars — lower is better"
+                )
 
                 if let bidStatusMessage {
                     Text(bidStatusMessage)
@@ -668,6 +704,9 @@ struct JobDetailView: View {
                         ProgressView()
                             .tint(BrandTheme.navy)
                             .frame(maxWidth: .infinity, minHeight: 44)
+                    } else if let cents = MoneyFormat.cents(fromDollarsText: bidAmountText) {
+                        Text("Place reverse bid · \(MoneyFormat.usd(cents: cents))")
+                            .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Text("Place reverse bid")
                             .frame(maxWidth: .infinity, minHeight: 44)
@@ -675,28 +714,28 @@ struct JobDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
-                .disabled(isPlacingBid || bidAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityHint("Submit a lower bid to compete in this reverse auction")
+                .disabled(isPlacingBid || MoneyFormat.cents(fromDollarsText: bidAmountText) == nil)
+                .accessibilityHint("Submit a lower dollar bid to compete in this reverse auction")
             }
         } header: {
-            Text("Place a bid").brandSectionHeader()
+            Text("Place a bid (dollars)").brandSectionHeader()
         } footer: {
-            Text("Services are reverse auctions — enter a lower amount than the current leading bid to compete. Provider role required.")
+            Text("Services are reverse auctions — enter dollars (for example 350.00), not cents. Lower than the leading bid wins. Provider role required.")
                 .foregroundStyle(BrandTheme.textSecondary)
         }
     }
 
     private func bidHint(for job: JobDetail) -> String {
         if let leading = leadingBidCents {
-            return "Reverse auction: enter a lower amount than the leading bid (\(MoneyFormat.usd(cents: leading))) to take the lead."
+            return "Reverse auction: enter a lower dollar amount than the leading bid (\(MoneyFormat.usd(cents: leading))). Example: if leading is $450, try 425.00."
         }
         if let start = job.startingBidCents {
-            return "Reverse auction: enter a competitive bid at or below the starting bid (\(MoneyFormat.usd(cents: start))). Lower wins."
+            return "Reverse auction: enter a competitive dollar bid at or below the starting bid (\(MoneyFormat.usd(cents: start))). Example: 400.00 — not 40000."
         }
         if let price = job.displayPrice {
-            return "Reverse auction: enter your bid in dollars. Current price \(price) — lower competes to win."
+            return "Reverse auction: enter your bid in dollars (e.g. 125.00). Current price \(price) — lower competes to win."
         }
-        return "Reverse auction: enter your bid in dollars. Lower bids compete. Provider accounts only."
+        return "Reverse auction: enter your bid in dollars (e.g. 125.00), not cents. Lower bids compete. Provider accounts only."
     }
 
     // MARK: - Details (below auction chrome)
@@ -750,7 +789,8 @@ struct JobDetailView: View {
 
         guard let cents = MoneyFormat.cents(fromDollarsText: bidAmountText) else {
             bidStatusIsError = true
-            bidStatusMessage = "Enter a valid bid amount in dollars (for example 75.00)."
+            bidStatusMessage =
+                "Enter a valid dollar amount (for example 75.00). Do not enter cents — $75 is 75, not 7500."
             return
         }
 
@@ -929,6 +969,22 @@ struct JobDetailView: View {
             guard !Task.isCancelled else { return }
             guard scenePhase == .active, isAuctionActiveForPolling else { return }
             await refreshLiveAuctionState()
+        }
+    }
+
+    /// Re-loads the owner bid ladder every 10s so the auction book feels live.
+    private func pollBidLadderLoop() async {
+        guard scenePhase == .active else { return }
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            guard scenePhase == .active else { return }
+            await loadBids()
         }
     }
 

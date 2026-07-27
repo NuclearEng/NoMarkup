@@ -181,6 +181,21 @@ private struct ListingRowView: View {
             }
 
             HStack(spacing: 8) {
+                let live = (listing.status ?? "").lowercased() == "active"
+                    && (listing.auctionCountdown.map { $0 != "Ended" } ?? true)
+                if live {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(BrandTheme.success)
+                            .frame(width: 6, height: 6)
+                        Text("LIVE")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrandTheme.success)
+                    }
+                }
+                Text("Bid up")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandTheme.goldBright)
                 if let status = listing.status, !status.isEmpty {
                     StatusChipView(
                         label: StatusChipStyle.displayLabel(status),

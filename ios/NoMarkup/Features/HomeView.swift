@@ -484,6 +484,25 @@ struct HomeView: View {
         return "\(n)"
     }
 
+    private static func isLiveAuctionStatus(_ raw: String?) -> Bool {
+        switch (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "active", "open", "bidding", "live", "published":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func endsSooner(lhs: String?, rhs: String?) -> Bool {
+        let left = lhs.flatMap { CatalogDateFormat.parseISO($0) } ?? .distantFuture
+        let right = rhs.flatMap { CatalogDateFormat.parseISO($0) } ?? .distantFuture
+        return left < right
+    }
+
+    private static func endsSooner(lhsDate: Date?, rhsDate: Date?) -> Bool {
+        (lhsDate ?? .distantFuture) < (rhsDate ?? .distantFuture)
+    }
+
     // MARK: - Data
 
     @MainActor
@@ -517,10 +536,22 @@ struct HomeView: View {
             async let listingsResponse = APIClient.shared.fetchListings(page: 1, pageSize: 3)
             let jobsResult = try await jobsResponse
             let listingsResult = try await listingsResponse
-            jobs = Array(jobsResult.jobs.prefix(8))
-            listings = Array(listingsResult.listings.prefix(3))
-            jobTotal = jobsResult.pagination?.resolvedTotal ?? jobsResult.jobs.count
-            listingTotal = listingsResult.pagination?.resolvedTotal ?? listingsResult.listings.count
+            // Surface live auctions only — closed seed rows buried the open reverse auction.
+            let liveJobs = jobsResult.jobs
+                .filter { Self.isLiveAuctionStatus($0.status) }
+                .sorted { Self.endsSooner(lhs: $0.auctionEndsAt, rhs: $1.auctionEndsAt) }
+            let liveListings = listingsResult.listings
+                .filter { Self.isLiveAuctionStatus($0.status) }
+                .sorted { Self.endsSooner(lhsDate: $0.auctionEndsAt, rhsDate: $1.auctionEndsAt) }
+            jobs = Array(liveJobs.prefix(8))
+            listings = Array(liveListings.prefix(3))
+            // Prefer live counts for the strip; fall back to page totals when API omits status filter.
+            jobTotal = liveJobs.isEmpty
+                ? (jobsResult.pagination?.resolvedTotal ?? jobsResult.jobs.count)
+                : liveJobs.count
+            listingTotal = liveListings.isEmpty
+                ? (listingsResult.pagination?.resolvedTotal ?? listingsResult.listings.count)
+                : liveListings.count
             catalogError = nil
         } catch {
             if jobs.isEmpty {
@@ -601,6 +632,21 @@ private struct HomeJobCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(BrandTheme.success)
+                                .frame(width: 6, height: 6)
+                            Text("LIVE AUCTION")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .tracking(0.8)
+                                .foregroundStyle(BrandTheme.success)
+                            if let countdown = job.auctionCountdown {
+                                Text("· \(countdown)")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(BrandTheme.goldBright)
+                            }
+                        }
+
                         Text(job.displayTitle)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(BrandTheme.textPrimary)
@@ -608,6 +654,9 @@ private struct HomeJobCard: View {
                             .multilineTextAlignment(.leading)
 
                         HStack(spacing: 8) {
+                            Text("Reverse · bid down")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(BrandTheme.goldBright)
                             if let category = job.categoryName, !category.isEmpty {
                                 Text(category)
                                     .font(.system(size: 12, weight: .medium))
@@ -697,6 +746,7 @@ private struct HomeListingCard: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
+            // Thumbnail placeholder kept by existing layout below
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(BrandTheme.surfaceRaised)
                 .frame(width: 48, height: 48)

@@ -358,8 +358,33 @@ struct JobsView: View {
 private struct JobRowView: View {
     let job: JobSummary
 
+    private var isLive: Bool {
+        switch (job.status ?? "").lowercased() {
+        case "active", "open", "bidding", "live":
+            return true
+        default:
+            return false
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if isLive {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(BrandTheme.success)
+                        .frame(width: 6, height: 6)
+                    Text("LIVE REVERSE AUCTION")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(BrandTheme.success)
+                    if let countdown = job.auctionCountdown {
+                        Text("· \(countdown)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(BrandTheme.goldBright)
+                    }
+                }
+            }
+
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(job.displayTitle)
                     .font(.body.weight(.semibold))
@@ -381,6 +406,9 @@ private struct JobRowView: View {
             }
 
             HStack(spacing: 8) {
+                Text("Bid down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandTheme.goldBright)
                 if let status = job.status, !status.isEmpty {
                     StatusChipView(
                         label: StatusChipStyle.displayLabel(status),
@@ -403,7 +431,7 @@ private struct JobRowView: View {
                         .lineLimit(1)
                 }
                 if let bids = job.bidCount {
-                    Label("\(bids) bids", systemImage: "tag")
+                    Label("\(bids) bids", systemImage: "hammer")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }

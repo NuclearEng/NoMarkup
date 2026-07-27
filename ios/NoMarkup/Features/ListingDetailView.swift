@@ -148,6 +148,18 @@ struct ListingDetailView: View {
             }
         }
         .task { await load() }
+        .task(id: listingID) {
+            // Soft re-poll the public bid ladder so the auction book feels live.
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 10_000_000_000)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                await loadBids()
+            }
+        }
         .refreshable { await load() }
         .onChange(of: auth.isAuthenticated) { _, _ in
             Task { await refreshWatchState() }
@@ -188,10 +200,11 @@ struct ListingDetailView: View {
     @ViewBuilder
     private func detailContent(_ listing: ListingDetail) -> some View {
         List {
+            // Auction arena first: hero → place bid (dollars) → live ladder.
             auctionHeroSection(listing)
+            placeBidSection(listing)
             bidLadderSection(listing)
             buyNowSection(listing)
-            placeBidSection(listing)
             offersSection(listing)
             detailsSection(listing)
 
@@ -304,16 +317,28 @@ struct ListingDetailView: View {
     }
 
     private var forwardAuctionBadge: some View {
-        Text("Forward auction · goods")
-            .font(.caption.weight(.bold))
-            .foregroundStyle(BrandTheme.goldBright)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .overlay(
-                Capsule()
-                    .strokeBorder(BrandTheme.gold, lineWidth: 1.5)
-            )
-            .accessibilityLabel("Forward auction, goods")
+        let live: Bool = {
+            guard let ends = detail?.auctionEndsAt else { return detail?.status?.lowercased() == "active" }
+            return ends > Date()
+        }()
+        return HStack(spacing: 6) {
+            if live {
+                Circle()
+                    .fill(BrandTheme.success)
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+            }
+            Text(live ? "LIVE · forward auction" : "Forward auction · goods")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(BrandTheme.goldBright)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .overlay(
+            Capsule()
+                .strokeBorder(BrandTheme.gold, lineWidth: 1.5)
+        )
+        .accessibilityLabel(live ? "Live forward auction, goods" : "Forward auction, goods")
     }
 
     @ViewBuilder
@@ -415,9 +440,9 @@ struct ListingDetailView: View {
                 }
             }
         } header: {
-            Text("Bid ladder").brandSectionHeader()
+            Text("Auction · bid ladder").brandSectionHeader()
         } footer: {
-            Text("Highest bid leads in a forward auction. The winning bid is highlighted.")
+            Text("Highest dollar bid leads in a forward auction. The winning bid is highlighted.")
                 .foregroundStyle(BrandTheme.textSecondary)
         }
     }
@@ -591,11 +616,12 @@ struct ListingDetailView: View {
                 Text("Browse-only mode has no API credentials. Sign in against a live gateway to place bids.")
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
-                TextField("Bid amount (USD)", text: $bidAmountText)
-                    .keyboardType(.decimalPad)
-                    .textContentType(.none)
-                    .disabled(true)
-                    .frame(minHeight: 44)
+                DollarAmountField(
+                    text: $bidAmountText,
+                    placeholder: "0.00",
+                    accessibilityLabelText: "Bid amount in dollars",
+                    isEnabled: false
+                )
                 Button("Place bid") {}
                     .disabled(true)
                     .frame(maxWidth: .infinity, minHeight: 44)
@@ -605,12 +631,11 @@ struct ListingDetailView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                TextField("Your bid (USD) — higher wins", text: $bidAmountText)
-                    .keyboardType(.decimalPad)
-                    .textContentType(.none)
-                    .autocorrectionDisabled()
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Bid amount in dollars — forward auction, higher wins")
+                DollarAmountField(
+                    text: $bidAmountText,
+                    placeholder: "0.00",
+                    accessibilityLabelText: "Your bid in dollars — forward auction, higher wins"
+                )
 
                 if let bidStatusMessage {
                     Text(bidStatusMessage)
@@ -669,6 +694,9 @@ struct ListingDetailView: View {
                         ProgressView()
                             .tint(BrandTheme.navy)
                             .frame(maxWidth: .infinity, minHeight: 44)
+                    } else if let cents = MoneyFormat.cents(fromDollarsText: bidAmountText) {
+                        Text("Place bid · \(MoneyFormat.usd(cents: cents))")
+                            .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Text("Place bid")
                             .frame(maxWidth: .infinity, minHeight: 44)
@@ -680,14 +708,14 @@ struct ListingDetailView: View {
                     isPlacingBid
                         || isPostingBond
                         || isBuyingNow
-                        || bidAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || MoneyFormat.cents(fromDollarsText: bidAmountText) == nil
                 )
-                .accessibilityHint("Submit a higher bid to lead this forward auction")
+                .accessibilityHint("Submit a higher dollar bid to lead this forward auction")
             }
         } header: {
-            Text("Place a bid").brandSectionHeader()
+            Text("Place a bid (dollars)").brandSectionHeader()
         } footer: {
-            Text("Goods are forward auctions — bid above the current high bid to take the lead. First-time bidders may need a refundable bid bond.")
+            Text("Goods are forward auctions — enter dollars (for example 95.00), not cents. Bid above the current high to take the lead. First-time bidders may need a refundable bid bond.")
                 .foregroundStyle(BrandTheme.textSecondary)
         }
     }
@@ -700,9 +728,9 @@ struct ListingDetailView: View {
             } else {
                 minHint = ""
             }
-            return "Forward auction: enter more than the current high bid (\(MoneyFormat.usd(cents: leading))).\(minHint)"
+            return "Forward auction: enter a higher dollar amount than \(MoneyFormat.usd(cents: leading)). Example: if high is $85, try 90.00 — not 9000.\(minHint)"
         }
-        return "Forward auction: enter your bid in dollars. Current price is \(listing.displayPrice)."
+        return "Forward auction: enter your bid in dollars (e.g. 25.00), not cents. Current price is \(listing.displayPrice)."
     }
 
     // MARK: - Best-Offer
@@ -1087,7 +1115,8 @@ struct ListingDetailView: View {
 
         guard let cents = MoneyFormat.cents(fromDollarsText: bidAmountText) else {
             bidStatusIsError = true
-            bidStatusMessage = "Enter a valid bid amount in dollars (for example 25.00)."
+            bidStatusMessage =
+                "Enter a valid dollar amount (for example 25.00). Do not enter cents — $25 is 25, not 2500."
             return
         }
 

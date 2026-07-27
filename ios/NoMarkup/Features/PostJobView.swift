@@ -114,14 +114,11 @@ struct PostJobView: View {
             }
 
             Section {
-                TextField("Starting bid (USD)", text: $startingBidText, prompt: Text("100.00"))
-                    .keyboardType(.decimalPad)
-                    .textContentType(.none)
-                    .autocorrectionDisabled()
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Starting bid in dollars")
-                    .accessibilityHint("Reverse auction starting budget. Providers bid lower.")
+                DollarAmountField(
+                    text: $startingBidText,
+                    placeholder: "100.00",
+                    accessibilityLabelText: "Starting bid in dollars — reverse auction, providers bid lower"
+                )
 
                 Picker("Auction length", selection: $durationHours) {
                     ForEach(durationOptions, id: \.self) { hours in

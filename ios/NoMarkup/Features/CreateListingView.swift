@@ -101,19 +101,17 @@ struct CreateListingView: View {
             )
 
             Section {
-                TextField("Starting price (USD)", text: $startingPriceText, prompt: Text("50.00"))
-                    .keyboardType(.decimalPad)
-                    .autocorrectionDisabled()
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Starting price in dollars")
+                DollarAmountField(
+                    text: $startingPriceText,
+                    placeholder: "50.00",
+                    accessibilityLabelText: "Starting price in dollars"
+                )
 
-                TextField("Buy now (optional)", text: $buyNowText, prompt: Text("Leave blank for auction only"))
-                    .keyboardType(.decimalPad)
-                    .autocorrectionDisabled()
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Optional buy now price in dollars")
+                DollarAmountField(
+                    text: $buyNowText,
+                    placeholder: "Optional buy now",
+                    accessibilityLabelText: "Optional buy now price in dollars"
+                )
 
                 TextField("Pickup ZIP", text: $pickupZip, prompt: Text("98101"))
                     .keyboardType(.numberPad)

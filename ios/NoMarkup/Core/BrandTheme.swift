@@ -417,3 +417,67 @@ struct BrandEmptyState: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+// MARK: - Dollar amount field (user enters dollars; API uses integer cents)
+
+/// Bid / price entry that always means **dollars**, never cents.
+/// Shows a leading `$`, decimal pad, and a live “Will bid $X.XX” confirmation
+/// so the wire conversion to integer cents is never visible to the user.
+struct DollarAmountField: View {
+    @Binding var text: String
+    var placeholder: String = "0.00"
+    var accessibilityLabelText: String = "Amount in dollars"
+    var showParsedPreview: Bool = true
+    var isEnabled: Bool = true
+
+    /// Parsed wire amount in cents, or `nil` if the field is empty/invalid.
+    var parsedCents: Int64? {
+        MoneyFormat.cents(fromDollarsText: text)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("$")
+                    .font(.title3.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+                    .accessibilityHidden(true)
+
+                TextField(placeholder, text: $text)
+                    .keyboardType(.decimalPad)
+                    .textContentType(.none)
+                    .autocorrectionDisabled()
+                    .font(.title3.monospacedDigit())
+                    .foregroundStyle(BrandTheme.textPrimary)
+                    .disabled(!isEnabled)
+                    .frame(minHeight: 44)
+                    .accessibilityLabel(accessibilityLabelText)
+                    .accessibilityHint("Enter dollars and cents, for example 125.00. Do not enter cents alone.")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(BrandTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(BrandTheme.gold.opacity(0.35), lineWidth: 1)
+            )
+
+            if showParsedPreview {
+                if let cents = parsedCents {
+                    Text("Will submit \(MoneyFormat.usd(cents: cents))")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(BrandTheme.success)
+                        .accessibilityLabel("Will submit \(MoneyFormat.usd(cents: cents))")
+                } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Enter a dollar amount (example 125.00) — not cents")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.destructive)
+                } else {
+                    Text("Dollars only — for example 125.00")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+            }
+        }
+    }
+}
