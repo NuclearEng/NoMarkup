@@ -253,3 +253,4 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | 2026-07-27 wave17 | Chat live `read_receipt` WS on MarkRead; web last_read watermark Seen + Sent/Seen labels; iOS peer watermark patch from WS frame |
 | 2026-07-27 wave18 | Recurring instance `approved_at` wire + list `payment_id`/`payment_status`/`payment_funded` enrichment; residual Pay for any approved visit; hide Pay when funded |
 | 2026-07-27 wave19 | Chat unread exact COUNT (exclude own + watermark on send); web job detail spectator feed + LIVE honesty; gateway spectate PII tests; iOS job spectator count chip |
+| 2026-07-27 wave20 | Marketplace watcher_count = max(page pings, WS spectators) across listing JSON, ping-viewer, spectate broadcast, watchlist |

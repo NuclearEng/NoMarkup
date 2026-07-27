@@ -97,7 +97,10 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
   const watchMutation = useWatchListing(listingId);
 
   // ─── Live spectator stream ───────────────────────────────────────
-  const { isConnected: liveConnected, watcherCount, lastBid } = useMarketplaceSpectator(listingId);
+  // Gateway watcher_count is max(page pings, WS spectators). Prefer the live
+  // WS broadcast when connected; otherwise fall back to listing JSON seed.
+  const { isConnected: liveConnected, watcherCount: liveWatcherCount, lastBid } =
+    useMarketplaceSpectator(listingId);
   const queryClient = useQueryClient();
 
   // When a live bid arrives, invalidate cached queries so the listing detail
@@ -161,6 +164,8 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
 
   const isOwnListing = user?.id === listing.seller_id;
   const auctionExpired = isExpired || listing.status !== LISTING_STATUS.ACTIVE;
+  // Unified social proof: API seed + live WS (gateway uses the same max semantics).
+  const watcherCount = Math.max(liveWatcherCount, listing.watcher_count ?? 0);
 
   // ─── Best-Offer surfacing ────────────────────────────────────────
   // Offers are only meaningful on an ACTIVE listing. The seller sees

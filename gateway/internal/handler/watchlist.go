@@ -512,22 +512,12 @@ func isAllowedFrequency(f string) bool {
 	return false
 }
 
-// spectatorCount mirrors the helper in listings.go — returns the live
-// watcher count from Redis (ZCARD over the listing_viewers set), or 0 when
-// the cache is unreachable.
+// spectatorCount returns unified live social proof (page pings + WS spectators).
+// Same semantics as listings.spectatorCount / liveListingWatcherCount.
 func (h *WatchlistHandler) spectatorCount(ctx context.Context, listingID string) int {
 	if h.cache == nil {
 		return 0
 	}
-	rdb := h.cache.Redis()
-	if rdb == nil {
-		return 0
-	}
-	key := cache.Key("listing_viewers", listingID)
-	count, err := rdb.ZCard(ctx, key).Result()
-	if err != nil {
-		return 0
-	}
-	return int(count)
+	return liveListingWatcherCount(ctx, h.cache.Redis(), listingID)
 }
 

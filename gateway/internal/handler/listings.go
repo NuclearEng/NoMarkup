@@ -760,18 +760,18 @@ func (h *ListingsHandler) PingViewer(w http.ResponseWriter, r *http.Request) {
 	now := float64(time.Now().UnixMilli())
 
 	// ZADD with current timestamp, then ZREMRANGEBYSCORE to evict viewers
-	// older than 30 seconds. The remaining set size is the watcher count.
+	// older than 30 seconds. Combined watcher_count also considers live WS
+	// spectators so browse/detail/ping and spectate agree on social proof.
 	rdb.ZAdd(ctx, key, redis.Z{Score: now, Member: viewerID})
 	rdb.ZRemRangeByScore(ctx, key,
 		"-inf",
 		fmt.Sprintf("%f", now-30_000),
 	)
 	rdb.Expire(ctx, key, 5*time.Minute) // janitor
-	count, _ := rdb.ZCard(ctx, key).Result()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"listing_id":    id,
-		"watcher_count": count,
+		"watcher_count": liveListingWatcherCount(ctx, rdb, id),
 	})
 }
 
@@ -787,22 +787,46 @@ func (h *ListingsHandler) redisClient() *redis.Client {
 }
 
 // spectatorCount returns the live watcher count for a listing, or 0.
+// Combines page-view pings (listing_viewers) and WS spectators (listing_spectators).
 // Best-effort: Redis errors return 0 rather than failing the parent request.
 func (h *ListingsHandler) spectatorCount(ctx context.Context, listingID string) int {
-	rdb := h.redisClient()
-	if rdb == nil {
+	return liveListingWatcherCount(ctx, h.redisClient(), listingID)
+}
+
+// listingViewerActiveWindow is how long a ping-viewer heartbeat stays "active".
+const listingViewerActiveWindowMs = 30_000
+
+// liveListingWatcherCount is the single social-proof number for a goods listing:
+// max(page-view heartbeats in the last 30s, concurrent marketplace spectate WS).
+//
+// Two Redis structures exist for historical reasons (HTTP ping vs WS register).
+// Returning max avoids under-counting when only one path is active, and avoids
+// double-counting when a detail tab both pings and holds a socket (same user
+// is not uniquely keyed across systems).
+func liveListingWatcherCount(ctx context.Context, rdb *redis.Client, listingID string) int {
+	if rdb == nil || listingID == "" {
 		return 0
 	}
-	key := cache.Key("listing_viewers", listingID)
 	now := float64(time.Now().UnixMilli())
-	n, err := rdb.ZCount(ctx, key,
-		fmt.Sprintf("%f", now-30_000),
+	viewers, err := rdb.ZCount(ctx, cache.Key("listing_viewers", listingID),
+		fmt.Sprintf("%f", now-listingViewerActiveWindowMs),
 		"+inf",
 	).Result()
 	if err != nil {
-		return 0
+		viewers = 0
 	}
-	return int(n)
+	spectators, err := rdb.SCard(ctx, cache.Key("listing_spectators", listingID)).Result()
+	if err != nil {
+		spectators = 0
+	}
+	return maxInt64ToInt(viewers, spectators)
+}
+
+func maxInt64ToInt(a, b int64) int {
+	if b > a {
+		return int(b)
+	}
+	return int(a)
 }
 
 func (h *ListingsHandler) fetchPhotosForListings(ctx context.Context, ids []string) (map[string][]listingPhotoJSON, error) {

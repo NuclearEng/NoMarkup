@@ -464,7 +464,7 @@ struct ListingDetailView: View {
                         liveCountdownChip(date: listing.auctionEndsAt)
                     }
                     bidCountChip(listing: listing)
-                    if liveSpectatorCount > 0 {
+                    if max(liveSpectatorCount, listing.watcherCount ?? 0) > 0 {
                         spectatorCountChip
                     }
                 }
@@ -511,7 +511,8 @@ struct ListingDetailView: View {
     }
 
     private var spectatorCountChip: some View {
-        Label("\(liveSpectatorCount) live", systemImage: "eye")
+        let displayCount = max(liveSpectatorCount, detail?.watcherCount ?? 0)
+        return Label("\(displayCount) live", systemImage: "eye")
             .font(.caption.weight(.semibold))
             .foregroundStyle(BrandTheme.textPrimary)
             .padding(.horizontal, 10)
@@ -521,7 +522,7 @@ struct ListingDetailView: View {
                 Capsule()
                     .strokeBorder(BrandTheme.gold.opacity(0.2), lineWidth: 1)
             )
-            .accessibilityLabel("\(liveSpectatorCount) people watching live")
+            .accessibilityLabel("\(displayCount) people watching live")
     }
 
     @ViewBuilder
@@ -2091,8 +2092,10 @@ struct ListingDetailView: View {
         case .bidEvent(let bidEvent):
             applyMarketplaceBidSignal(bidEvent, expectedListingID: expectedListingID)
         case .spectatorCount(let count):
-            // Public concurrent-viewer count only — never identity.
-            liveSpectatorCount = max(0, count)
+            // Public concurrent-viewer count (gateway: max of page pings + WS).
+            // Never decrease below listing seed while still connected.
+            let seeded = detail?.watcherCount ?? 0
+            liveSpectatorCount = max(0, max(count, seeded))
         case .error:
             // Non-fatal; HTTP poll covers recovery.
             break

@@ -316,17 +316,14 @@ func (h *MarketplaceSpectatorWSHandler) unregisterSpectator(listingID, spectator
 func (h *MarketplaceSpectatorWSHandler) getSpectatorCount(ctx context.Context, listingID string) int {
 	rdb := h.redisClient()
 	if rdb == nil {
+		// In-memory fallback: only WS sockets are tracked when Redis is nil.
 		h.mu.RLock()
 		count := h.spectatorCount[listingID]
 		h.mu.RUnlock()
 		return count
 	}
-	key := cache.Key("listing_spectators", listingID)
-	count, err := rdb.SCard(ctx, key).Result()
-	if err != nil {
-		return 0
-	}
-	return int(count)
+	// Same social-proof number as listing JSON / ping-viewer (page + WS).
+	return liveListingWatcherCount(ctx, rdb, listingID)
 }
 
 func (h *MarketplaceSpectatorWSHandler) sendSpectatorCount(ctx context.Context, conn *websocket.Conn, listingID string, count int) {
