@@ -78,9 +78,34 @@ final class KeychainTokenStore: @unchecked Sendable {
         }
     }
 
+    /// Whether a non-empty access token is currently stored.
+    func hasAccessToken() -> Bool {
+        (try? read(.accessToken)).map { !$0.isEmpty } ?? false
+    }
+
+    /// Whether a non-empty refresh token is currently stored.
+    func hasRefreshToken() -> Bool {
+        (try? read(.refreshToken)).map { !$0.isEmpty } ?? false
+    }
+
+    /// Removes both access and refresh tokens.
+    /// Best-effort: always attempts both deletes so a failure on one key
+    /// cannot leave the other behind.
     func clearSession() throws {
-        try delete(.accessToken)
-        try delete(.refreshToken)
+        var firstError: Error?
+        do {
+            try delete(.accessToken)
+        } catch {
+            firstError = error
+        }
+        do {
+            try delete(.refreshToken)
+        } catch {
+            firstError = firstError ?? error
+        }
+        if let firstError {
+            throw firstError
+        }
     }
 }
 

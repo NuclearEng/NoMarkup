@@ -1,6 +1,6 @@
 # iOS ↔ Web feature matrix
 
-**Date:** 2026-07-26 (E2E consumer pass complete)  
+**Date:** 2026-07-26 (hardening pass: network + session + seller mine)  
 **Scope:** Native iOS app (`ios/NoMarkup`) vs product web (`web/`, zone `no-markup.com`).  
 **Honesty rule:** status is measured against shipped native code + gateway routes.
 
@@ -19,19 +19,20 @@ Legend:
 
 | Web surface | Gateway | iOS status | Notes |
 |-------------|---------|------------|--------|
-| Home / product shell | — | **live** | Hero, live cards, native post/sell |
-| Auth email/password | login, refresh | **live** | Keychain + 401 refresh retry |
+| Home / product shell | — | **live** | Hero, live cards, native post/sell + offline banner |
+| Auth email/password | login, refresh | **live** | Keychain + single-flight refresh + 401 retry + session-expired → login |
 | Auth Sign in with Apple | apple/native | **live** | AuthenticationServices |
 | **Auth register** | register | **live** | `RegisterView` |
 | **Auth forgot / reset password** | request/reset password | **live** | `ForgotPasswordView` |
 | **Auth MFA verify** | mfa/verify | **live** | Challenge on login → TOTP |
-| Account chrome / profile | users/me | **live** | Profile settings, export, delete, links |
+| Account chrome / profile | users/me | **live** | Profile settings, export, delete, **enable provider role** |
 | Post job | POST /jobs | **live** | `PostJobView` + photos |
 | Browse / mine jobs | jobs | **live** | |
-| Job detail + reverse bid + award | bids, award | **live** | Owner award |
+| Job detail + reverse bid + award | bids, award | **live** | Owner award + **withdraw own bid** |
 | **Jobs map** | GET /jobs/map | **live** | MapKit `JobsMapView` |
 | Sell listing | POST /listings | **live** | `CreateListingView` + photos |
-| Marketplace browse / detail | listings, bids, buy-now | **live** | + watch + best offer + **bid bond** + **retract** |
+| Marketplace browse / detail | listings, bids, buy-now | **live** | + watch + best offer + **bid bond SetupIntent** + **60s retract** |
+| **My listings (seller)** | listings/mine | **live** | `MyListingsView` + status filter |
 | My bids (goods + services) | bids/mine, DELETE bids | **live** | + **withdraw service bid** |
 | Watchlist | watch, me/watchlist | **live** | |
 | Browse pagination | jobs/listings page | **live** | **Load more** on Jobs + Marketplace |
@@ -50,6 +51,7 @@ Legend:
 | **Reviews write** | contracts/{id}/reviews | **live** | On completed contract |
 | **Disputes open** | contracts/{id}/disputes | **live** | Contract detail |
 | **Photo upload** | images/upload-url, confirm | **live** | `ImageUploader` on create job/listing |
+| **Offline / network resilience** | — | **live** | `NetworkMonitor` banner + transport retries (GET/DELETE + no-response mutations) + friendly errors |
 | Admin | /admin/* | **out of scope** | Consumer app |
 | StoreKit digital IAP | — | **out of scope** | Rail A GMV only |
 | Regulated rails (BNPL, insurance, advances, legal, instant payout) | flags | **out of scope** | Hard-off on iOS |
@@ -64,9 +66,11 @@ Legend:
 
 ```
 iOS SwiftUI → URLSession → Go gateway → Postgres / services
-Local: Keychain (JWT), no Firebase DB
+Local: Keychain (JWT, AfterFirstUnlockThisDeviceOnly), no Firebase DB
 Push: APNs → POST /notifications/devices
 Maps: MapKit + GET /jobs/map
+Network: NWPathMonitor banner + transport backoff (0.4s / 1.0s, max 2 retries)
+Session: single-flight refresh; definitive 401 → .noMarkupSessionExpired → LoginView
 ```
 
 ---
@@ -80,6 +84,9 @@ Maps: MapKit + GET /jobs/map
 - [x] Contracts lifecycle + reviews  
 - [x] Map explore, photos on create, push register, profile  
 - [x] Notifications mark-read + badge  
+- [x] My listings + enable provider role + listing bid bond confirm  
+- [x] Offline banner + transport retries + session expiry handoff  
+- [x] Dual-profile API dogfood **37/37** on LAN gateway (`192.168.1.101:8081`)  
 - [x] **BUILD SUCCEEDED** (iOS Simulator)  
 - [x] Admin / StoreKit / regulated rails explicitly out of scope  
 

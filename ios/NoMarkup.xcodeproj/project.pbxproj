@@ -48,6 +48,7 @@
 		A10000000000000000000040 /* APIClient+Commerce.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000040 /* APIClient+Commerce.swift */; };
 		A10000000000000000000041 /* SavedSearchesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000041 /* SavedSearchesView.swift */; };
 		A10000000000000000000042 /* SellerAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000042 /* SellerAnalyticsView.swift */; };
+		A10000000000000000000043 /* MyListingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000043 /* MyListingsView.swift */; };
 		A10000000000000000000030 /* Models+Contracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000030 /* Models+Contracts.swift */; };
 		A10000000000000000000031 /* APIClient+Contracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000031 /* APIClient+Contracts.swift */; };
 		A10000000000000000000032 /* ContractsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000032 /* ContractsView.swift */; };
@@ -61,6 +62,8 @@
 		A10000000000000000000055 /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000055 /* MapKit.framework */; };
 		A10000000000000000000056 /* CoreLocation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000056 /* CoreLocation.framework */; };
 		A10000000000000000000057 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000057 /* UserNotifications.framework */; };
+		A10000000000000000000059 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000059 /* NetworkMonitor.swift */; };
+		A1000000000000000000005A /* Network.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B1000000000000000000005A /* Network.framework */; };
 		U10000000000000000000001 /* NoMarkupUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U10000000000000000000002 /* NoMarkupUITests.swift */; };
 /* End PBXBuildFile section */
 
@@ -107,6 +110,7 @@
 		B10000000000000000000040 /* APIClient+Commerce.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Commerce.swift"; sourceTree = "<group>"; };
 		B10000000000000000000041 /* SavedSearchesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedSearchesView.swift; sourceTree = "<group>"; };
 		B10000000000000000000042 /* SellerAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SellerAnalyticsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000043 /* MyListingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyListingsView.swift; sourceTree = "<group>"; };
 		B10000000000000000000030 /* Models+Contracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+Contracts.swift"; sourceTree = "<group>"; };
 		B10000000000000000000031 /* APIClient+Contracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Contracts.swift"; sourceTree = "<group>"; };
 		B10000000000000000000032 /* ContractsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContractsView.swift; sourceTree = "<group>"; };
@@ -121,6 +125,8 @@
 		B10000000000000000000055 /* MapKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MapKit.framework; path = System/Library/Frameworks/MapKit.framework; sourceTree = SDKROOT; };
 		B10000000000000000000056 /* CoreLocation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreLocation.framework; path = System/Library/Frameworks/CoreLocation.framework; sourceTree = SDKROOT; };
 		B10000000000000000000057 /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
+		B10000000000000000000059 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		B1000000000000000000005A /* Network.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
 		U10000000000000000000002 /* NoMarkupUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupUITests.swift; sourceTree = "<group>"; };
 		U10000000000000000000003 /* NoMarkupUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -147,6 +153,7 @@
 				A10000000000000000000055 /* MapKit.framework in Frameworks */,
 				A10000000000000000000056 /* CoreLocation.framework in Frameworks */,
 				A10000000000000000000057 /* UserNotifications.framework in Frameworks */,
+				A1000000000000000000005A /* Network.framework in Frameworks */,
 				A10000000000000000000024 /* StripePaymentSheet in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -196,6 +203,7 @@
 				B10000000000000000000055 /* MapKit.framework */,
 				B10000000000000000000056 /* CoreLocation.framework */,
 				B10000000000000000000057 /* UserNotifications.framework */,
+				B1000000000000000000005A /* Network.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -236,6 +244,7 @@
 				B10000000000000000000028 /* NoMarkupIcon.swift */,
 				B10000000000000000000052 /* PushRegistration.swift */,
 				B10000000000000000000053 /* ImageUploader.swift */,
+				B10000000000000000000059 /* NetworkMonitor.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -269,6 +278,7 @@
 				B10000000000000000000032 /* ContractsView.swift */,
 				B10000000000000000000033 /* ContractDetailView.swift */,
 				B10000000000000000000026 /* MyBidsView.swift */,
+				B10000000000000000000043 /* MyListingsView.swift */,
 				B10000000000000000000027 /* NotificationsView.swift */,
 				B1000000000000000000002B /* WatchlistView.swift */,
 				B10000000000000000000041 /* SavedSearchesView.swift */,
@@ -420,6 +430,7 @@
 				A10000000000000000000021 /* RailACheckout.swift in Sources */,
 				A10000000000000000000022 /* MyOrdersView.swift in Sources */,
 				A10000000000000000000026 /* MyBidsView.swift in Sources */,
+				A10000000000000000000043 /* MyListingsView.swift in Sources */,
 				A10000000000000000000027 /* NotificationsView.swift in Sources */,
 				A10000000000000000000028 /* NoMarkupIcon.swift in Sources */,
 				A10000000000000000000029 /* PostJobView.swift in Sources */,
@@ -441,6 +452,7 @@
 				A10000000000000000000052 /* PushRegistration.swift in Sources */,
 				A10000000000000000000053 /* ImageUploader.swift in Sources */,
 				A10000000000000000000054 /* ProfileSettingsView.swift in Sources */,
+				A10000000000000000000059 /* NetworkMonitor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

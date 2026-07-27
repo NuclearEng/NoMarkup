@@ -25,6 +25,9 @@ struct LoginView: View {
                         SignInWithAppleButtonView { result in
                             auth.handleSignInWithApple(result: result)
                         }
+                        .disabled(auth.isBusy)
+                        .opacity(auth.isBusy ? 0.55 : 1)
+                        .allowsHitTesting(!auth.isBusy)
                         scaffoldBypass
                     }
                     footerLegal
@@ -109,6 +112,7 @@ struct LoginView: View {
                 .focused($focusedField, equals: .email)
                 .submitLabel(.next)
                 .onSubmit { focusedField = .password }
+                .disabled(auth.isBusy)
 
             SecureField("Password", text: $auth.password)
                 .textContentType(.password)
@@ -123,9 +127,10 @@ struct LoginView: View {
                 .focused($focusedField, equals: .password)
                 .submitLabel(.go)
                 .onSubmit {
-                    guard !auth.isLoading else { return }
+                    guard !auth.isBusy else { return }
                     Task { await auth.login() }
                 }
+                .disabled(auth.isBusy)
         }
     }
 
@@ -146,28 +151,30 @@ struct LoginView: View {
                 .focused($focusedField, equals: .mfaCode)
                 .submitLabel(.go)
                 .onSubmit {
-                    guard !auth.isLoading else { return }
+                    guard !auth.isBusy else { return }
                     Task { await auth.verifyMFA() }
                 }
+                .disabled(auth.isBusy)
                 .toolbar {
                     ToolbarItemGroup(placement: .keyboard) {
                         Spacer()
                         Button("Done") {
                             focusedField = nil
-                            guard !auth.isLoading else { return }
+                            guard !auth.isBusy else { return }
                             Task { await auth.verifyMFA() }
                         }
                         .fontWeight(.semibold)
+                        .disabled(auth.isBusy)
                     }
                 }
                 .accessibilityLabel("Authenticator code")
 
             Button {
-                guard !auth.isLoading else { return }
+                guard !auth.isBusy else { return }
                 Task { await auth.verifyMFA() }
             } label: {
                 Group {
-                    if auth.isLoading {
+                    if auth.isBusy {
                         ProgressView()
                             .tint(BrandTheme.navy)
                     } else {
@@ -180,7 +187,7 @@ struct LoginView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
-            .disabled(auth.isLoading)
+            .disabled(auth.isBusy)
             .accessibilityLabel("Verify authenticator code and sign in")
 
             Button("Back to sign in") {
@@ -190,7 +197,7 @@ struct LoginView: View {
             .foregroundStyle(BrandTheme.goldBright)
             .frame(maxWidth: .infinity)
             .frame(minHeight: 44)
-            .disabled(auth.isLoading)
+            .disabled(auth.isBusy)
 
             if let error = auth.errorMessage {
                 Text(error)
@@ -212,11 +219,11 @@ struct LoginView: View {
     private var primaryActions: some View {
         VStack(spacing: 12) {
             Button {
-                guard !auth.isLoading else { return }
+                guard !auth.isBusy else { return }
                 Task { await auth.login() }
             } label: {
                 Group {
-                    if auth.isLoading {
+                    if auth.isBusy {
                         // Dark spinner for contrast on brand-gold filled button.
                         ProgressView()
                             .tint(BrandTheme.navy)
@@ -230,7 +237,7 @@ struct LoginView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
-            .disabled(auth.isLoading)
+            .disabled(auth.isBusy)
             .accessibilityIdentifier("login.submit")
             .accessibilityLabel("Sign in with email and password")
 
@@ -249,7 +256,8 @@ struct LoginView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("API: \(AppConfig.apiBaseURLString)")
+            // Host only — never full base URL (avoids leaking path/query/credentials in UI).
+            Text("API: \(AppConfig.apiBaseHostDisplay)")
                 .font(.caption2)
                 .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
                 .textSelection(.enabled)
@@ -265,6 +273,7 @@ struct LoginView: View {
                     .frame(minHeight: 44)
             }
             .accessibilityLabel("Create account")
+            .disabled(auth.isBusy)
 
             Spacer(minLength: 8)
 
@@ -275,6 +284,7 @@ struct LoginView: View {
                     .frame(minHeight: 44)
             }
             .accessibilityLabel("Forgot password")
+            .disabled(auth.isBusy)
         }
     }
 
@@ -290,12 +300,15 @@ struct LoginView: View {
 
     private var scaffoldBypass: some View {
         Button("Browse without signing in") {
+            guard !auth.isBusy else { return }
             auth.enterScaffoldSession()
         }
         .frame(maxWidth: .infinity)
         .frame(minHeight: 44)
         .font(.subheadline)
         .foregroundStyle(BrandTheme.goldBright)
+        .disabled(auth.isBusy)
+        .opacity(auth.isBusy ? 0.55 : 1)
         .accessibilityHint("Opens the tab shell without calling the API. For design and layout review only.")
     }
 

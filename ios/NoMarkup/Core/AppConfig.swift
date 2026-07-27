@@ -56,6 +56,20 @@ enum AppConfig {
         apiBaseURL.absoluteString
     }
 
+    /// Host (and port) only for safe UI / debug display.
+    /// Never surface full URL with path, query, userinfo, or secrets.
+    static var apiBaseHostDisplay: String {
+        let url = apiBaseURL
+        guard let host = url.host, !host.isEmpty else {
+            // Fallback without credentials if host parse fails.
+            return url.host ?? "(unknown host)"
+        }
+        if let port = url.port {
+            return "\(host):\(port)"
+        }
+        return host
+    }
+
     /// Bundle display name for chrome / about.
     static var appDisplayName: String {
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)

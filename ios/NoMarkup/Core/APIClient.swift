@@ -826,6 +826,11 @@ actor APIClient {
         )
     }
 
+    /// Transport-level backoff schedule (seconds) before retry attempts 1 and 2.
+    private static let transportRetryDelays: [TimeInterval] = [0.4, 1.0]
+    /// Maximum number of *retries* after the initial attempt (total attempts = 1 + this).
+    private static let maxTransportRetries = 2
+
     func perform<Body: Encodable>(
         method: String,
         pathComponents: [String],
@@ -833,7 +838,8 @@ actor APIClient {
         body: Body?,
         auth: AuthMode,
         headers: [String: String] = [:],
-        didRefresh: Bool = false
+        didRefresh: Bool = false,
+        transportAttempt: Int = 0
     ) async throws -> Data {
         var url = AppConfig.apiBaseURL
         for component in pathComponents {
@@ -882,6 +888,24 @@ actor APIClient {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
+            // Transient transport failures only — never retry HTTP 4xx (except 401 refresh below).
+            // GET/DELETE: full auto-retry. POST/PATCH/PUT: only when there was no response at all
+            // (this catch path), so we never re-POST after a server already answered.
+            if Self.shouldRetryTransport(error: error, method: method, attempt: transportAttempt) {
+                let delayIndex = min(transportAttempt, Self.transportRetryDelays.count - 1)
+                let delay = Self.transportRetryDelays[delayIndex]
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                return try await perform(
+                    method: method,
+                    pathComponents: pathComponents,
+                    query: query,
+                    body: body,
+                    auth: auth,
+                    headers: headers,
+                    didRefresh: didRefresh,
+                    transportAttempt: transportAttempt + 1
+                )
+            }
             throw APIClientError.unreachable
         }
 
@@ -905,7 +929,8 @@ actor APIClient {
                             body: body,
                             auth: auth,
                             headers: headers,
-                            didRefresh: true
+                            didRefresh: true,
+                            transportAttempt: 0
                         )
                     } catch {
                         // Refresh failed completely — notify AuthViewModel; surface original 401.
@@ -923,6 +948,46 @@ actor APIClient {
 
         try Self.throwIfNeeded(response: response, data: data)
         return data
+    }
+
+    /// Whether a failed `URLSession` call should be retried with backoff.
+    ///
+    /// - GET/DELETE: retriable on transient URLErrors up to `maxTransportRetries`.
+    /// - POST/PATCH/PUT: same, but only reachable here when no HTTP response was received.
+    /// - Never retries based on HTTP status (4xx/5xx handled separately; 401 has its own path).
+    private static func shouldRetryTransport(error: Error, method: String, attempt: Int) -> Bool {
+        guard attempt < maxTransportRetries else { return false }
+
+        let verb = method.uppercased()
+        switch verb {
+        case "GET", "DELETE", "POST", "PATCH", "PUT", "HEAD":
+            break
+        default:
+            return false
+        }
+
+        if let urlError = error as? URLError {
+            return isRetriableURLError(urlError.code)
+        }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain {
+            return isRetriableURLError(URLError.Code(rawValue: ns.code))
+        }
+        return false
+    }
+
+    private static func isRetriableURLError(_ code: URLError.Code) -> Bool {
+        switch code {
+        case .timedOut,
+             .cannotConnectToHost,
+             .networkConnectionLost,
+             .dnsLookupFailed,
+             .cannotFindHost,
+             .notConnectedToInternet:
+            return true
+        default:
+            return false
+        }
     }
 
     /// Notify the main-actor auth layer that the session is dead. Does not clear tokens.
@@ -944,12 +1009,16 @@ actor APIClient {
             {
                 throw APIClientError.bidBondRequired(bondAmountCents: bondCents)
             }
-            // Prefer gateway `{ "error": "..." }` message when present.
-            if let apiMessage = Self.extractAPIErrorMessage(from: data), !apiMessage.isEmpty {
-                throw APIClientError.httpStatus(http.statusCode, detail: apiMessage)
+            // Prefer gateway `{ "error": "..." }` message when present and human-readable.
+            if let apiMessage = Self.extractAPIErrorMessage(from: data),
+               let clean = Self.sanitizeErrorDetail(apiMessage),
+               !clean.isEmpty
+            {
+                throw APIClientError.httpStatus(http.statusCode, detail: clean)
             }
-            let snippet = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
-            throw APIClientError.httpStatus(http.statusCode, detail: String(snippet))
+            let snippet = String(data: data, encoding: .utf8) ?? ""
+            let cleanSnippet = Self.sanitizeErrorDetail(snippet) ?? ""
+            throw APIClientError.httpStatus(http.statusCode, detail: cleanSnippet)
         }
     }
 
@@ -964,6 +1033,40 @@ actor APIClient {
         if let error = body.error, !error.isEmpty { return error }
         if let message = body.message, !message.isEmpty { return message }
         return nil
+    }
+
+    /// Drops empty / HTML / pure-JSON garbage so UI can fall back to friendly status copy.
+    private static func sanitizeErrorDetail(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Empty JSON shells / bare null.
+        let lower = trimmed.lowercased()
+        if lower == "{}" || lower == "null" || lower == "[]" || lower == "\"\"" {
+            return nil
+        }
+
+        // HTML / XML error pages (gateway 502 HTML, nginx, etc.).
+        if trimmed.hasPrefix("<") || lower.hasPrefix("<!doctype") || lower.contains("<html") {
+            return nil
+        }
+
+        // Pure numeric status echoes are not useful to users.
+        if trimmed.allSatisfy(\.isNumber), trimmed.count <= 3 {
+            return nil
+        }
+
+        // Cap runaway dumps; keep a short human-looking prefix when possible.
+        if trimmed.count > 280 {
+            let prefix = String(trimmed.prefix(200)).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Prefer ending on a word boundary-ish cut.
+            if prefix.contains(" ") {
+                return prefix + "…"
+            }
+            return nil
+        }
+
+        return trimmed
     }
 
     /// Parses Wave-4 bid-bond 402 body: `{ "requires_bid_bond": true, "bond_amount_cents": N }`.
@@ -1170,6 +1273,11 @@ extension Notification.Name {
     /// (or there is no refresh token). `AuthViewModel` observes this and signs out.
     /// Raw name: `NoMarkupSessionExpired`.
     static let noMarkupSessionExpired = Notification.Name("NoMarkupSessionExpired")
+
+    /// Posted by `AuthViewModel` after a successful login / register / MFA / SIWA.
+    /// App root observes this to re-fetch feature flags for the new session.
+    /// Raw name: `NoMarkupAuthDidSucceed`.
+    static let noMarkupAuthDidSucceed = Notification.Name("NoMarkupAuthDidSucceed")
 }
 
 enum APIClientError: Error, LocalizedError {
@@ -1206,20 +1314,54 @@ enum APIClientError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unreachable:
-            return "Could not reach the NoMarkup API at \(AppConfig.apiBaseURLString)."
+            return "Could not reach the NoMarkup API. Check your connection and try again."
         case .unauthorized:
             return "Sign in required. Your session is missing or expired — please sign in again."
         case .httpStatus(let code, let detail):
-            if code == 403 {
-                return detail.isEmpty
-                    ? "You don’t have permission for this action."
-                    : detail
+            let cleaned = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Prefer gateway detail when present and not empty garbage.
+            if !cleaned.isEmpty, Self.isUsableDetail(cleaned) {
+                return cleaned
             }
-            return detail.isEmpty ? "API error (\(code))." : detail
+            return Self.friendlyMessage(for: code)
         case .decoding(let message):
             return message
         case .bidBondRequired(let cents):
             return "A bid bond of \(MoneyFormat.usd(cents: cents)) is required before your first bid on this listing."
         }
+    }
+
+    /// User-facing copy for common HTTP statuses when the gateway sent no usable detail.
+    /// 402 here is non-bond payment required (bond 402s use `.bidBondRequired`).
+    private static func friendlyMessage(for statusCode: Int) -> String {
+        switch statusCode {
+        case 400:
+            return "That request wasn’t valid. Check your input and try again."
+        case 402:
+            return "Payment required"
+        case 403:
+            return "You don’t have permission for this action."
+        case 404:
+            return "We couldn’t find that resource."
+        case 409:
+            return "Conflict — refresh and try again"
+        case 422:
+            return "Request couldn’t be completed"
+        case 429:
+            return "Too many requests — wait a moment"
+        case 500:
+            return "Something went wrong on our side. Try again shortly."
+        case 503:
+            return "Service temporarily unavailable"
+        default:
+            return "API error (\(statusCode))."
+        }
+    }
+
+    private static func isUsableDetail(_ detail: String) -> Bool {
+        let lower = detail.lowercased()
+        if lower == "{}" || lower == "null" || lower == "[]" { return false }
+        if detail.hasPrefix("<") || lower.contains("<html") { return false }
+        return true
     }
 }

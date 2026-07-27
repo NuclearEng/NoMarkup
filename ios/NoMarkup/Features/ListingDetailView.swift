@@ -1115,8 +1115,7 @@ struct ListingDetailView: View {
             bidStatusIsError = false
             bidStatusMessage = "Bid placed: \(MoneyFormat.usd(cents: amountCents))."
             bidAmountText = ""
-            pendingBidCents = nil
-            bidBondAmountCents = nil
+            clearBidBondUIState()
             await load()
         } catch let error as APIClientError where error.isBidBondRequired {
             let bondCents = error.bidBondAmountCents ?? 0
@@ -1129,6 +1128,7 @@ struct ListingDetailView: View {
             } else {
                 bidStatusMessage = error.localizedDescription
             }
+            // Surface bond gate after a fresh place-bid (not mid bond-retry).
             if clearBondGate {
                 showBidBondAlert = true
             }
@@ -1141,7 +1141,7 @@ struct ListingDetailView: View {
         }
     }
 
-    /// Mint bond → SetupIntent (or dev short-circuit) → confirm → retry place bid.
+    /// Mint bond → SetupIntent (or dev short-circuit) → `confirmListingBidBond` → retry place bid.
     @MainActor
     private func postBidBondAndRetry() async {
         bidStatusMessage = nil
@@ -1174,9 +1174,11 @@ struct ListingDetailView: View {
                 intendedBidCents: intendedCents
             )
             bidBondAmountCents = bond.bondAmountCents
+            pendingBidCents = intendedCents
 
+            // After SetupIntent succeeds (or dev sentinel), always confirm on the gateway
+            // so the pending bond row flips to authorized before place-bid retry.
             if bond.isDevSetupSecret {
-                // Gateway issued a sentinel — no Stripe; confirm directly (dev only).
                 _ = try await APIClient.shared.confirmListingBidBond(
                     listingId: listingID,
                     bondId: bond.bondId
@@ -1196,9 +1198,16 @@ struct ListingDetailView: View {
                 return
             }
 
+            // Bond is authorized — drop the Post-bond gate so it doesn’t reappear
+            // when isPostingBond becomes false, then place the bid. clearBondGate
+            // on success/failure of place-bid still resets remaining state.
+            bidBondAmountCents = nil
+            showBidBondAlert = false
+            pendingBidCents = intendedCents
             bidStatusIsError = false
             bidStatusMessage = "Bond authorized. Placing your bid…"
-            pendingBidCents = intendedCents
+            // clearBondGate: false — avoid re-alerting mid-retry if gateway races;
+            // success path still clears via clearBidBondUIState().
             await submitListingBid(amountCents: intendedCents, clearBondGate: false)
         } catch let error as RailACheckout.CheckoutError where error.isCanceled {
             bidStatusIsError = false
@@ -1216,7 +1225,7 @@ struct ListingDetailView: View {
             bidStatusIsError = true
             bidStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
         } catch let error as APIClientError where error.isBidBondRequired {
-            // Confirm returned 402 — SetupIntent not succeeded yet.
+            // Confirm returned 402 — SetupIntent not succeeded yet; keep bond UI for retry.
             bidStatusIsError = true
             bidStatusMessage =
                 "Your payment method isn’t confirmed yet. Try Post bond again, or open the listing on the web."
@@ -1224,6 +1233,14 @@ struct ListingDetailView: View {
             bidStatusIsError = true
             bidStatusMessage = error.localizedDescription
         }
+    }
+
+    /// Clears 402 bond gate state (pending amount + bond cents + alert).
+    @MainActor
+    private func clearBidBondUIState() {
+        pendingBidCents = nil
+        bidBondAmountCents = nil
+        showBidBondAlert = false
     }
 
     @MainActor

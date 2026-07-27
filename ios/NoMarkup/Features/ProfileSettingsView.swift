@@ -10,6 +10,7 @@ struct ProfileSettingsView: View {
     @State private var displayName = ""
     @State private var isLoading = false
     @State private var isSaving = false
+    @State private var isEnablingProvider = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
     @State private var needsSignIn = false
@@ -98,6 +99,8 @@ struct ProfileSettingsView: View {
                     }
                     if let roles = profile.roles, !roles.isEmpty {
                         LabeledContent("Roles", value: roles.joined(separator: ", ").capitalized)
+                    } else {
+                        LabeledContent("Roles", value: "Customer")
                     }
                     if let created = profile.createdAt, !created.isEmpty {
                         LabeledContent("Member since", value: CatalogDateFormat.friendlyDateTime(created))
@@ -110,6 +113,40 @@ struct ProfileSettingsView: View {
                     }
                 } header: {
                     Text("Account").brandSectionHeader()
+                }
+
+                if !profile.hasProviderRole {
+                    Section {
+                        Text(
+                            "Customers can bid and buy. Enabling the provider role lets you bid on service jobs and complete reverse-auction contracts."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                        Button {
+                            Task { await enableProviderRole() }
+                        } label: {
+                            HStack {
+                                if isEnablingProvider {
+                                    ProgressView()
+                                        .tint(BrandTheme.ctaLabelOnGold)
+                                }
+                                Text(isEnablingProvider ? "Enabling…" : "Enable provider role")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .frame(minHeight: 48)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(BrandTheme.accent)
+                        .disabled(isEnablingProvider || isSaving)
+                        .accessibilityHint("Adds the provider role so you can bid on service jobs")
+                    } header: {
+                        Text("Provider").brandSectionHeader()
+                    } footer: {
+                        Text("Self-service only grants customer or provider. Admin cannot be self-assigned.")
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
                 }
             }
 
@@ -221,6 +258,38 @@ struct ProfileSettingsView: View {
             profile = updated
             displayName = updated.displayName ?? trimmed
             statusMessage = "Profile saved."
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// POST `/api/v1/users/me/roles` with `{ "role": "provider" }`.
+    @MainActor
+    private func enableProviderRole() async {
+        errorMessage = nil
+        statusMessage = nil
+
+        guard !auth.isScaffoldSession else {
+            errorMessage = "Browse-only mode cannot change roles."
+            return
+        }
+        guard !(profile?.hasProviderRole ?? false) else {
+            statusMessage = "Provider role is already enabled."
+            return
+        }
+
+        isEnablingProvider = true
+        defer { isEnablingProvider = false }
+
+        do {
+            let updated = try await APIClient.shared.enableRole("provider")
+            profile = updated
+            if let name = updated.displayName, !name.isEmpty {
+                displayName = name
+            }
+            statusMessage = "Provider role enabled. You can bid on service jobs."
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
         } catch {

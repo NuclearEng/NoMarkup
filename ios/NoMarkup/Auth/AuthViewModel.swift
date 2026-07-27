@@ -22,6 +22,10 @@ final class AuthViewModel: ObservableObject {
     /// Scaffold-only: when true, "Continue offline (scaffold)" enables tab chrome without tokens.
     @Published private(set) var isScaffoldSession = false
 
+    /// True while any auth network operation is in flight.
+    /// LoginView uses this to disable email submit, SIWA, and scaffold while loading.
+    var isBusy: Bool { isLoading }
+
     private let tokenStore = KeychainTokenStore()
     private let api = APIClient.shared
     /// NotificationCenter token for mid-session expiry (posted by APIClient).
@@ -95,29 +99,21 @@ final class AuthViewModel: ObservableObject {
     ///   expired access token never lands the user in a 401 storm on first authed call.
     /// - APIClient still single-flight-refreshes once on mid-session 401s.
     private func restoreSessionIfPossible() {
-        do {
-            let access = try tokenStore.read(.accessToken)
-            let refresh = try tokenStore.read(.refreshToken)
-            let hasAccess = access.map { !$0.isEmpty } ?? false
-            let hasRefresh = refresh.map { !$0.isEmpty } ?? false
+        let hasAccess = tokenStore.hasAccessToken()
+        let hasRefresh = tokenStore.hasRefreshToken()
 
-            guard hasAccess || hasRefresh else {
-                isAuthenticated = false
-                isScaffoldSession = false
-                return
-            }
-
-            // Optimistic signed-in while (optional) refresh runs so RootView doesn't flash login.
-            isAuthenticated = true
-            isScaffoldSession = false
-
-            if hasRefresh {
-                Task { await restoreViaRefresh() }
-            }
-        } catch {
-            // Non-fatal: start signed out.
+        guard hasAccess || hasRefresh else {
             isAuthenticated = false
             isScaffoldSession = false
+            return
+        }
+
+        // Optimistic signed-in while (optional) refresh runs so RootView doesn't flash login.
+        isAuthenticated = true
+        isScaffoldSession = false
+
+        if hasRefresh {
+            Task { await restoreViaRefresh() }
         }
     }
 
@@ -166,12 +162,12 @@ final class AuthViewModel: ObservableObject {
 
     /// Clear tokens + UI auth state. Only path that flips `isAuthenticated` false on
     /// server-confirmed auth death (not network blips).
+    /// RootView observes `isAuthenticated` → false and already calls `push.resetSessionState()`.
     private func handleDefinitiveAuthFailure(reason: AuthFailureReason) {
         try? tokenStore.clearSession()
         isAuthenticated = false
         isScaffoldSession = false
-        password = ""
-        clearMFAState()
+        clearSensitiveInMemoryFields()
         errorMessage = nil
         switch reason {
         case .refreshRejected, .sessionExpired:
@@ -179,10 +175,21 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    /// Wipe password + MFA challenge material from memory (never log these).
+    private func clearSensitiveInMemoryFields() {
+        password = ""
+        clearMFAState()
+    }
+
+    /// Notify app root to re-fetch feature flags after a successful interactive sign-in.
+    private func notifyAuthSucceeded() {
+        NotificationCenter.default.post(name: .noMarkupAuthDidSucceed, object: nil)
+    }
+
     // MARK: - Login (+ MFA)
 
     func login() async {
-        guard !isLoading else { return }
+        guard !isBusy else { return }
         errorMessage = nil
         statusMessage = nil
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -199,16 +206,19 @@ final class AuthViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
+            // Password is only sent over the wire; never logged.
             let result = try await api.loginWithMFAHandling(email: trimmed, password: password)
             switch result {
             case .signedIn:
-                clearMFAState()
+                clearSensitiveInMemoryFields()
                 isScaffoldSession = false
                 isAuthenticated = true
-                password = ""
                 statusMessage = "Signed in."
+                notifyAuthSucceeded()
             case .mfaRequired(let challengeToken, _):
                 // Hold challenge; do not mark authenticated until TOTP succeeds.
+                // Clear password once the challenge is open — only TOTP is needed next.
+                password = ""
                 mfaChallengeToken = challengeToken
                 needsMFA = true
                 isAuthenticated = false
@@ -221,7 +231,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func verifyMFA() async {
-        guard !isLoading else { return }
+        guard !isBusy else { return }
         errorMessage = nil
         statusMessage = nil
         let code = mfaCode.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -240,18 +250,18 @@ final class AuthViewModel: ObservableObject {
 
         do {
             _ = try await api.verifyMFA(challengeToken: challenge, totpCode: code)
-            clearMFAState()
+            clearSensitiveInMemoryFields()
             isScaffoldSession = false
             isAuthenticated = true
-            password = ""
             statusMessage = "Signed in."
+            notifyAuthSucceeded()
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     func cancelMFA() {
-        clearMFAState()
+        clearSensitiveInMemoryFields()
         statusMessage = nil
         errorMessage = nil
     }
@@ -270,7 +280,7 @@ final class AuthViewModel: ObservableObject {
         displayName: String,
         roles: [String] = ["customer"]
     ) async {
-        guard !isLoading else { return }
+        guard !isBusy else { return }
         errorMessage = nil
         statusMessage = nil
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -292,6 +302,7 @@ final class AuthViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
+            // Password is only sent over the wire; never logged.
             _ = try await api.register(
                 email: trimmedEmail,
                 password: password,
@@ -299,11 +310,11 @@ final class AuthViewModel: ObservableObject {
                 roles: roles
             )
             self.email = trimmedEmail
-            clearMFAState()
+            clearSensitiveInMemoryFields()
             isScaffoldSession = false
             isAuthenticated = true
-            self.password = ""
             statusMessage = "Account created. You’re signed in."
+            notifyAuthSucceeded()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -312,7 +323,7 @@ final class AuthViewModel: ObservableObject {
     // MARK: - Password reset
 
     func requestPasswordReset(email: String) async {
-        guard !isLoading else { return }
+        guard !isBusy else { return }
         errorMessage = nil
         statusMessage = nil
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -334,7 +345,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func resetPassword(token: String, newPassword: String) async {
-        guard !isLoading else { return }
+        guard !isBusy else { return }
         errorMessage = nil
         statusMessage = nil
         let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -351,6 +362,7 @@ final class AuthViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
+            // New password is only sent over the wire; never logged.
             try await api.resetPassword(token: trimmedToken, newPassword: newPassword)
             statusMessage = "Password updated. You can sign in with your new password."
         } catch {
@@ -362,8 +374,9 @@ final class AuthViewModel: ObservableObject {
 
     /// Local-only session so designers can browse native chrome without a running gateway.
     func enterScaffoldSession() {
+        guard !isBusy else { return }
         errorMessage = nil
-        clearMFAState()
+        clearSensitiveInMemoryFields()
         isScaffoldSession = true
         isAuthenticated = true
         statusMessage = "Browse-only mode — API calls still need a real login."
@@ -373,18 +386,18 @@ final class AuthViewModel: ObservableObject {
         do {
             try tokenStore.clearSession()
         } catch {
-            // Still clear UI state.
+            // Still clear UI state even if Keychain delete partially failed.
         }
         isAuthenticated = false
         isScaffoldSession = false
-        password = ""
-        clearMFAState()
+        clearSensitiveInMemoryFields()
         errorMessage = nil
         statusMessage = nil
     }
 
     /// Called when AuthenticationServices completes SIWA.
     func handleSignInWithApple(result: Result<ASAuthorization, Error>) {
+        guard !isBusy else { return }
         errorMessage = nil
         statusMessage = nil
         switch result {
@@ -428,12 +441,12 @@ final class AuthViewModel: ObservableObject {
     }
 
     private func exchangeAppleIdentityToken(_ identityToken: String, fullName: String?) async {
-        guard !isLoading else { return }
+        guard !isBusy else { return }
         isLoading = true
         defer { isLoading = false }
         do {
             _ = try await api.signInWithApple(identityToken: identityToken, fullName: fullName)
-            clearMFAState()
+            clearSensitiveInMemoryFields()
             isScaffoldSession = false
             isAuthenticated = true
             if let emailHint = fullName, email.isEmpty {
@@ -441,6 +454,7 @@ final class AuthViewModel: ObservableObject {
                 _ = emailHint
             }
             statusMessage = "Signed in with Apple."
+            notifyAuthSucceeded()
         } catch {
             errorMessage = error.localizedDescription
         }

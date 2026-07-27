@@ -206,6 +206,22 @@ extension APIClient {
             authorized: .required
         )
     }
+
+    /// POST `/api/v1/users/me/roles` — self-service role enablement.
+    /// Gateway body: `{ "role": "customer" | "provider" }` (admin cannot be self-assigned).
+    @discardableResult
+    func enableRole(_ role: String) async throws -> UserProfile {
+        let trimmed = role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard trimmed == "customer" || trimmed == "provider" else {
+            throw APIClientError.httpStatus(400, detail: "invalid role")
+        }
+        let body = EnableRoleRequestBody(role: trimmed)
+        return try await postJSON(
+            pathComponents: ["api", "v1", "users", "me", "roles"],
+            body: body,
+            authorized: .required
+        )
+    }
 }
 
 // MARK: - Request / response DTOs (platform)
@@ -312,6 +328,20 @@ struct UserProfile: Codable, Sendable, Hashable, Identifiable {
         let mail = email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return mail.isEmpty ? "Account" : mail
     }
+
+    /// True when `roles` includes provider (case-insensitive).
+    var hasProviderRole: Bool {
+        (roles ?? []).contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "provider" }
+    }
+
+    /// True when `roles` includes customer (case-insensitive).
+    var hasCustomerRole: Bool {
+        (roles ?? []).contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "customer" }
+    }
+}
+
+private struct EnableRoleRequestBody: Encodable {
+    let role: String
 }
 
 private struct UpdateMeRequestBody: Encodable {

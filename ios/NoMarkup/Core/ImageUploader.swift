@@ -154,30 +154,37 @@ struct PhotoPickSection: View {
                 .listRowBackground(BrandTheme.navyElevated)
             }
 
+            // Snapshot MainActor state for the PhotosPicker label — its content
+            // builder is nonisolated under Swift 6 concurrency and cannot read
+            // @Binding properties directly without isolation warnings.
+            let photoCount = photoURLs.count
+            let photosEmpty = photoCount == 0
+            let uploading = isUploading
+            let atCapacity = photoCount >= maxCount
             PhotosPicker(
                 selection: $pickerItems,
-                maxSelectionCount: max(0, maxCount - photoURLs.count),
+                maxSelectionCount: max(0, maxCount - photoCount),
                 matching: .images,
                 photoLibrary: .shared()
             ) {
                 HStack {
                     Label(
-                        photoURLs.isEmpty ? "Add photos" : "Add more photos",
+                        photosEmpty ? "Add photos" : "Add more photos",
                         systemImage: "photo.on.rectangle.angled"
                     )
                     Spacer()
-                    if isUploading {
+                    if uploading {
                         ProgressView()
                             .tint(BrandTheme.accent)
                     } else {
-                        Text("\(photoURLs.count)/\(maxCount)")
+                        Text("\(photoCount)/\(maxCount)")
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
                 .frame(minHeight: 44)
             }
-            .disabled(isUploading || photoURLs.count >= maxCount)
+            .disabled(uploading || atCapacity)
             .listRowBackground(BrandTheme.navyElevated)
             .onChange(of: pickerItems) { _, newItems in
                 guard !newItems.isEmpty else { return }

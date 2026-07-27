@@ -124,6 +124,14 @@ struct AccountView: View {
                     .accessibilityHint("View goods and service bids you have placed")
 
                     NavigationLink {
+                        MyListingsView()
+                    } label: {
+                        Label("My listings", systemImage: "tag")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("View goods listings you have posted as a seller")
+
+                    NavigationLink {
                         WatchlistView()
                     } label: {
                         Label("Watchlist", systemImage: "heart")
@@ -251,7 +259,7 @@ struct AccountView: View {
 
                 Section {
                     LabeledContent("Version", value: "\(AppConfig.shortVersion) (\(AppConfig.buildNumber))")
-                    LabeledContent("API", value: AppConfig.apiBaseURLString)
+                    LabeledContent("API", value: AppConfig.apiBaseHostDisplay)
                     LabeledContent(
                         "Stripe key",
                         value: AppConfig.stripePublishableKey.isEmpty ? "not set" : "configured"

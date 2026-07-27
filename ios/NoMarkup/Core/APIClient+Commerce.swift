@@ -104,6 +104,32 @@ extension APIClient {
         )
     }
 
+    // MARK: Seller listings
+
+    /// GET `/api/v1/listings/mine` — seller's own goods listings (Bearer required).
+    /// Optional `status` filter matches gateway (`active`, `ended`, `draft`, …).
+    func fetchMyListings(
+        page: Int = 1,
+        pageSize: Int = 40,
+        status: String? = nil
+    ) async throws -> ListingsResponse {
+        var items = [
+            URLQueryItem(name: "page", value: String(max(1, page))),
+            URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+        ]
+        if let status {
+            let trimmed = status.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                items.append(URLQueryItem(name: "status", value: trimmed))
+            }
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "listings", "mine"],
+            query: items,
+            authorized: true
+        )
+    }
+
     // MARK: Seller analytics
 
     /// GET `/api/v1/me/seller-analytics?range=7d|30d|90d`
