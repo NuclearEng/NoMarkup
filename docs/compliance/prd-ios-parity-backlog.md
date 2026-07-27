@@ -259,3 +259,4 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | 2026-07-27 wave21 | Instant in-app fan-out + accept customer notify + honest providers_notified; MON-21 payment cap; SEC-16 RS256; RequireFlag guarantee; MessageThread remake-read; JobDetail spectate tests; FE-06/route-map honesty |
 | 2026-07-27 wave22 | Instant notify geo/category/trust prefilter; bid-bond `stripe_payment_method_id` on authorize; MON-24 integer advance/instant fee math |
 | 2026-07-27 wave23 | Instant List/Accept use same geo/category/trust prefilter as notify (close inbox/accept skew) |
+| 2026-07-27 wave24 | Bid-bond forfeit on buyer no-show (ReportNoShow → off-session capture → captured status) |

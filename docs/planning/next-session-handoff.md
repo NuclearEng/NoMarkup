@@ -156,7 +156,9 @@ browser and server-rendered hops are missing.
   the key is restored.
 - Bid-bond capturable PM **persisted** (migration 114 + ConfirmBidBond CAS sets
   `stripe_payment_method_id`; refuse 402 without PM; dev `pm_dev_<bond_id>`).
-  Capture-on-no-show cron / forfeit path remains unimplemented — only the
+  Capture-on-buyer-no-show is implemented on order ReportNoShow (forfeit
+  authorized bond). Release-on-win/lose and cron backfill of stranded
+  authorized bonds remain open — only the
   artifact is stored.
 - `provider_profiles.service_location` stays exact at rest. It is the indexed
   `ST_DWithin` target and backs the distance `ORDER BY`; ciphertext cannot be

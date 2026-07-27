@@ -485,15 +485,15 @@ func (h *ListingOrdersHandler) ReportNoShow(w http.ResponseWriter, r *http.Reque
 	defer func() { _ = tx.Rollback(r.Context()) }()
 
 	var (
-		buyerID, sellerID, escrowStatus string
-		pickupWindowEnd                 sql.NullTime
+		buyerID, sellerID, listingID, escrowStatus string
+		pickupWindowEnd                            sql.NullTime
 	)
 	if err := tx.QueryRow(r.Context(), `
-		SELECT buyer_id::text, seller_id::text, escrow_status, pickup_window_end
+		SELECT buyer_id::text, seller_id::text, listing_id::text, escrow_status, pickup_window_end
 		  FROM listing_orders
 		 WHERE id = $1
 		 FOR UPDATE`, orderID).
-		Scan(&buyerID, &sellerID, &escrowStatus, &pickupWindowEnd); err != nil {
+		Scan(&buyerID, &sellerID, &listingID, &escrowStatus, &pickupWindowEnd); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "order not found")
 			return
@@ -558,21 +558,168 @@ func (h *ListingOrdersHandler) ReportNoShow(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Buyer no-show: forfeit authorized bid bond for this listing (fail-soft).
+	// Seller no-show does not capture the buyer's bond — they showed up.
+	bondCaptured := false
+	bondResidual := ""
+	if bidBondShouldCaptureOnNoShow(absentID, buyerID) && listingID != "" {
+		captured, residual := h.captureBuyerBidBondOnNoShow(r.Context(), buyerID, listingID, orderID)
+		bondCaptured = captured
+		bondResidual = residual
+	}
+
 	slog.Info("listing no-show reported",
 		"order_id", orderID,
 		"reporter_id", claims.UserID,
 		"absent_id", absentID,
 		"new_count", newCount,
 		"shadow_ban_triggered", shadowBan,
+		"bid_bond_captured", bondCaptured,
+		"bid_bond_residual", bondResidual,
 	)
 
-	writeJSON(w, http.StatusOK, reportNoShowResponse{
-		OrderID:            orderID,
-		ReportedUserID:     absentID,
-		NewNoShowCount:     newCount,
-		CooldownUntil:      cooldownUntil,
-		ShadowBanTriggered: shadowBan,
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"order_id":             orderID,
+		"reported_user_id":     absentID,
+		"new_no_show_count":    newCount,
+		"cooldown_until":       cooldownUntil,
+		"shadow_ban_triggered": shadowBan,
+		// Bond forfeit (buyer absent only). residual nil when N/A or success.
+		"bid_bond_captured": bondCaptured,
+		"bid_bond_residual": nullIfEmpty(bondResidual),
 	})
+}
+
+func nullIfEmpty(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// captureBuyerBidBondOnNoShow charges an authorized bid bond when the buyer
+// is the no-show party. Fail-soft: no-show counters already committed; bond
+// capture failure only logs residual (ops can retry). Uses ChargePromotion's
+// off-session SI→PI path with the SetupIntent secret stored on the bond.
+//
+// Returns (captured, residualReason). residualReason is empty on success or
+// when no bond applies (not an error).
+func (h *ListingOrdersHandler) captureBuyerBidBondOnNoShow(
+	ctx context.Context,
+	buyerID, listingID, orderID string,
+) (bool, string) {
+	if h.db == nil {
+		return false, "db_unavailable"
+	}
+	if buyerID == "" || listingID == "" {
+		return false, "missing_ids"
+	}
+
+	var bondID, clientSecret, status string
+	var amountCents int64
+	var pmID *string
+	err := h.db.QueryRow(ctx, `
+		SELECT id::text, amount_cents, stripe_pi_id, status, stripe_payment_method_id
+		  FROM bid_bonds
+		 WHERE user_id = $1
+		   AND listing_id = $2
+		   AND status IN ('authorized', 'captured')
+		 ORDER BY CASE status WHEN 'captured' THEN 0 ELSE 1 END, created_at DESC
+		 LIMIT 1`,
+		buyerID, listingID,
+	).Scan(&bondID, &amountCents, &clientSecret, &status, &pmID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, "" // no bond — normal for trusted buyers
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "bid-bond capture: lookup failed",
+			"listing_id", listingID, "buyer_id", buyerID, "order_id", orderID, "error", err)
+		return false, "lookup_failed"
+	}
+	if status == "captured" {
+		// Idempotent: already forfeited.
+		return true, ""
+	}
+	if amountCents <= 0 {
+		return false, "invalid_amount"
+	}
+	if clientSecret == "" {
+		return false, "setup_intent_missing"
+	}
+	// Prefer real Stripe PM; refuse capturable path only when both missing
+	// (legacy authorized without migration 114 PM still has SI secret).
+	if pmID != nil && strings.HasPrefix(*pmID, "pm_dev_") {
+		// Dev sentinel — CAS to captured without Stripe (matches authorize short-circuit).
+		return h.markBidBondCaptured(ctx, bondID, "dev_short_circuit"), ""
+	}
+
+	if h.paymentClient == nil {
+		if isDevelopmentEnv() {
+			return h.markBidBondCaptured(ctx, bondID, "dev_nil_payment_client"), ""
+		}
+		slog.WarnContext(ctx, "bid-bond capture: payment service unwired",
+			"bond_id", bondID, "listing_id", listingID)
+		return false, "payment_service_unwired"
+	}
+
+	// Off-session charge against the card saved at bond authorize. Idempotency
+	// key is the bond id so retries of ReportNoShow cannot double-charge.
+	resp, cerr := h.paymentClient.ChargePromotion(ctx, &paymentv1.ChargePromotionRequest{
+		CustomerId:     buyerID,
+		ClientSecret:   clientSecret,
+		AmountCents:    amountCents,
+		IdempotencyKey: "bid-bond-capture:" + bondID,
+		ListingId:      listingID,
+	})
+	if cerr != nil {
+		slog.WarnContext(ctx, "bid-bond capture: ChargePromotion failed (no-show kept)",
+			"bond_id", bondID,
+			"listing_id", listingID,
+			"order_id", orderID,
+			"error", cerr,
+		)
+		return false, "charge_failed"
+	}
+	if !resp.GetSucceeded() {
+		slog.WarnContext(ctx, "bid-bond capture: charge not succeeded (no-show kept)",
+			"bond_id", bondID,
+			"status", resp.GetStatus(),
+			"listing_id", listingID,
+		)
+		return false, "charge_not_succeeded"
+	}
+
+	if !h.markBidBondCaptured(ctx, bondID, resp.GetPaymentIntentId()) {
+		// Money taken but status CAS failed — residual for ops.
+		return true, "status_update_failed"
+	}
+	slog.InfoContext(ctx, "bid-bond captured on buyer no-show",
+		"bond_id", bondID,
+		"listing_id", listingID,
+		"order_id", orderID,
+		"amount_cents", amountCents,
+		"payment_intent_id", resp.GetPaymentIntentId(),
+	)
+	return true, ""
+}
+
+// markBidBondCaptured CAS-updates authorized → captured. Returns true when the
+// row is captured (including concurrent capture).
+func (h *ListingOrdersHandler) markBidBondCaptured(ctx context.Context, bondID, note string) bool {
+	tag, err := h.db.Exec(ctx, `
+		UPDATE bid_bonds
+		   SET status = 'captured',
+		       updated_at = now()
+		 WHERE id = $1
+		   AND status IN ('authorized', 'captured')`,
+		bondID,
+	)
+	if err != nil {
+		slog.WarnContext(ctx, "bid-bond capture: status update failed",
+			"bond_id", bondID, "note", note, "error", err)
+		return false
+	}
+	return tag.RowsAffected() > 0
 }
 
 // fileListingDisputeRequest is the body for POST /api/v1/orders/{id}/file-dispute.

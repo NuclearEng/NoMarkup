@@ -95,11 +95,11 @@ card fails must be told, or the 72h window is a countdown they cannot see.
 
 ## What this does not fix
 
-Bid bonds now persist a capturable PaymentMethod on authorize (migration
-`114_bid_bond_payment_method`, `bid_bonds.stripe_payment_method_id`;
-`ConfirmBidBond` requires a non-empty PM from `GetSetupIntentStatus` or sets
-`pm_dev_<bond_id>` in the development nil-client short-circuit; soft-replay of
-legacy authorized rows with NULL PM is unchanged). Capture-on-no-show is still
-future work (cron / state-machine) and is documented as such rather than
-implied — the column is the artifact that cron will charge, not the charge
-itself.
+Bid bonds persist a capturable PaymentMethod on authorize (migration
+`114_bid_bond_payment_method`). **Buyer no-show forfeit is wired on
+`POST /orders/{id}/report-no-show`**: when the absent party is the buyer, the
+gateway charges the authorized bond off-session (`ChargePromotion` against the
+SetupIntent secret + amount, idempotency `bid-bond-capture:{bond_id}`) and CAS
+`authorized → captured`. Fail-soft if no bond / charge fails (no-show counters
+still stand). Seller no-show does not forfeit the buyer bond. Release-on-win/lose
+remains a separate residual.
