@@ -748,6 +748,20 @@ jobs:
     # order: lint → unit → integration → build. verify-proto,
     # money-race-tests and the Tier-1 auth-bypass / double-spend / IDOR suites
     # are hard gates before any image is built.
+    #
+    # QA-10 — security-scan is intentionally NOT listed here:
+    #   • Scanners live in `.github/workflows/security-scan.yml` (separate
+    #     workflow: PR + weekly cron for CVEs without code changes).
+    #   • GitHub Actions `needs` cannot reference jobs in another workflow.
+    #   • Folding scanners into this DAG would block "Build All" on
+    #     cargo-audit install + govulncheck×6 on every PR path of an already
+    #     long CI graph (fullstack-security-test timeout 90m is the long pole).
+    # Merge gate for scanners = branch protection required check
+    # **"Security Gate"** (security-scan.yml). That setting is Founder-Action
+    # (GitHub UI / API only — not enforceable from this YAML). See also
+    # docs/conventions.md “Security scan / dependency policy” and the tracker
+    # row QA-10. Do not claim dependency audits block merge until that check
+    # is required on `main`.
     needs:
       - web-test
       - e2e-test

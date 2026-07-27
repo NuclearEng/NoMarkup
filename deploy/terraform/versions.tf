@@ -12,12 +12,15 @@ terraform {
     }
   }
 
-  # Optional remote state — uncomment and fill when a real backend exists.
+  # Optional remote state — create bucket + lock table out-of-band first, then
+  # uncomment and set names for *your* account. Placeholders below are examples
+  # only (not provisioned; no account ID).
   # backend "s3" {
-  #   bucket         = "nomarkup-terraform-state"
+  #   bucket         = "YOUR-ORG-nomarkup-terraform-state"
   #   key            = "prod/terraform.tfstate"
   #   region         = "us-west-2"
-  #   dynamodb_table = "nomarkup-terraform-locks"
+  #   dynamodb_table = "YOUR-ORG-nomarkup-terraform-locks"
   #   encrypt        = true
   # }
 }
+

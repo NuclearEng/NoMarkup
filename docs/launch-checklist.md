@@ -35,7 +35,7 @@ From code-complete to real users on production. Every item must be checked off o
 - [ ] Apply network policies — **fix selectors first** (known gap: label mismatch vs pods; OPS-05/06)
 - [ ] Verify HPA objects that exist (gateway + bidding today); expand as needed
 - [ ] Configure PVCs for stateful services as required by manifests
-- [ ] **Note:** `deploy/terraform/` is a **skeleton** — fill IaC or document external provisioner
+- [ ] **Note:** `deploy/terraform/` is a **Partial skeleton** (OPS-02) — README inventory + draft modules; founder applies against a real AWS account (or documents external provisioner) before `DEPLOY_PROVISIONED`
 
 ### DNS & TLS (owned zone only)
 - [ ] Verify registrar/DNS for **`no-markup.com`** (Cloudflare account holds zone)
@@ -138,6 +138,7 @@ From code-complete to real users on production. Every item must be checked off o
 ### Current Pipeline (truth)
 - [ ] `ci.yml` green on main: web lint + typecheck, Vitest (**floors** ~71–77% in `vitest.config.mts`, not blanket 80% all metrics), Playwright **Chromium** E2E (backend-tolerant; full dogfood needs stack + `SEED_PASSWORD`), Go tests + PostGIS service container integration, Rust fmt/clippy/test
 - [ ] `security-scan.yml` green (govulncheck, cargo-audit, npm audit **policy**: prod deps + high+ only — see `docs/conventions.md` QA-15 residual)
+- [ ] **QA-10 Founder-Action:** branch protection on `main` requires status check **`Security Gate`** (aggregate job in `security-scan.yml`). Scanners are a separate workflow — not in `ci.yml` `build.needs`. Without this setting, merge is not gated on dependency audits.
 - [ ] **Not in CI today (or Partial only):** criterion p99 gates, k6 full load (smoke optional via `K6_BASE_URL` — PERF-10 Partial), full axe AA on real routes, Go/Rust 80% coverage gates, Husky pre-commit
 
 ### Deploy Pipeline

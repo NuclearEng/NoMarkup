@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useChannels } from '@/hooks/useChannels';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -111,14 +112,14 @@ function ChannelListItem({
 
 function ChannelListSkeleton() {
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" aria-busy="true" aria-label="Loading conversations">
       {[1, 2, 3, 4].map((i) => (
         <div key={i} className="flex items-start gap-3 rounded-md p-3">
-          <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-muted" />
+          <Skeleton variant="circular" className="h-10 w-10 shrink-0" />
           <div className="flex-1 space-y-2">
-            <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-full animate-pulse rounded bg-muted" />
-            <div className="h-4 w-12 animate-pulse rounded bg-muted" />
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-4 w-12" />
           </div>
         </div>
       ))}

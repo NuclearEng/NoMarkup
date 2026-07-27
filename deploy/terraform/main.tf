@@ -1,15 +1,19 @@
-# NoMarkup AWS foundation — VPC, EKS, RDS (Postgres/PostGIS), Redis, S3.
+# NoMarkup AWS foundation skeleton — VPC, EKS, RDS (Postgres; PostGIS post-boot),
+# Redis, S3.
 #
-# This is a meaningful skeleton: modules have real resources and outputs so
-# `terraform init && terraform validate` works. Apply only after filling
-# secrets (DB password, etc.) and reviewing cost. Do NOT invent credentials
-# in this repo.
+# HONESTY (OPS-02 Partial / Founder-Action):
+#   - Draft modules only. Nothing here is applied to a real cloud account.
+#   - No AWS account IDs, no live credentials, no remote state in this repo.
+#   - `terraform plan` is meaningful only after a founder supplies a real account
+#     and (recommended) a remote backend — see README.md.
+#   - PostGIS is NOT created by Terraform; enable on the Postgres instance after
+#     boot. Meilisearch is in-cluster k8s, not this stack.
 #
-# Usage:
+# Usage (after installing Terraform CLI ≥ 1.5):
 #   cd deploy/terraform
-#   terraform init
+#   terraform init -backend=false
 #   terraform validate
-#   terraform plan -var='environment=staging'   # review before apply
+#   terraform plan -var='environment=staging'   # needs real AWS creds; review cost
 
 locals {
   name_prefix = "${var.project}-${var.environment}"
@@ -33,25 +37,25 @@ module "vpc" {
 module "eks" {
   source = "./modules/eks"
 
-  name_prefix          = local.name_prefix
-  cluster_version      = var.eks_cluster_version
-  vpc_id               = module.vpc.vpc_id
-  private_subnet_ids   = module.vpc.private_subnet_ids
-  node_instance_types  = var.eks_node_instance_types
-  desired_capacity     = var.eks_desired_capacity
-  tags                 = local.common_tags
+  name_prefix         = local.name_prefix
+  cluster_version     = var.eks_cluster_version
+  vpc_id              = module.vpc.vpc_id
+  private_subnet_ids  = module.vpc.private_subnet_ids
+  node_instance_types = var.eks_node_instance_types
+  desired_capacity    = var.eks_desired_capacity
+  tags                = local.common_tags
 }
 
 module "rds" {
   source = "./modules/rds"
 
-  name_prefix           = local.name_prefix
-  vpc_id                = module.vpc.vpc_id
-  private_subnet_ids    = module.vpc.private_subnet_ids
-  allowed_cidr_blocks   = [var.vpc_cidr]
-  instance_class        = var.db_instance_class
-  allocated_storage_gb  = var.db_allocated_storage_gb
-  tags                  = local.common_tags
+  name_prefix          = local.name_prefix
+  vpc_id               = module.vpc.vpc_id
+  private_subnet_ids   = module.vpc.private_subnet_ids
+  allowed_cidr_blocks  = [var.vpc_cidr]
+  instance_class       = var.db_instance_class
+  allocated_storage_gb = var.db_allocated_storage_gb
+  tags                 = local.common_tags
 }
 
 module "redis" {

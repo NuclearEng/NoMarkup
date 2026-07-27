@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useSearchProviders } from '@/hooks/useProviders';
 import type { SearchProvidersParams } from '@/hooks/useProviders';
 
@@ -62,35 +63,39 @@ function ErrorIllustration() {
 
 function ProviderCardSkeleton() {
   return (
-    <div className="glass glass-highlight animate-pulse rounded-xl border border-[var(--brand-gold)]/10 p-5">
+    <div
+      className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-5"
+      aria-busy="true"
+      aria-label="Loading provider"
+    >
       {/* Avatar + name row */}
       <div className="mb-3 flex items-start gap-3">
-        <div className="h-12 w-12 shrink-0 rounded-full bg-white/[0.06]" />
+        <Skeleton variant="circular" className="h-12 w-12 shrink-0" />
         <div className="min-w-0 flex-1 space-y-2">
-          <div className="h-4 w-3/4 rounded bg-white/[0.06]" />
-          <div className="h-3 w-1/2 rounded bg-white/[0.04]" />
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
         </div>
-        <div className="h-5 w-16 rounded-full bg-white/[0.06]" />
+        <Skeleton className="h-5 w-16 rounded-full" />
       </div>
       {/* Bio lines */}
       <div className="mb-3 space-y-2">
-        <div className="h-3 w-full rounded bg-white/[0.04]" />
-        <div className="h-3 w-4/5 rounded bg-white/[0.04]" />
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-4/5" />
       </div>
       {/* Rating + trust badge */}
       <div className="mb-3 flex items-center gap-4">
-        <div className="h-4 w-20 rounded bg-white/[0.06]" />
-        <div className="h-5 w-14 rounded-full bg-white/[0.06]" />
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-5 w-14 rounded-full" />
       </div>
       {/* Category badges */}
       <div className="flex gap-1">
-        <div className="h-5 w-16 rounded-full bg-white/[0.06]" />
-        <div className="h-5 w-20 rounded-full bg-white/[0.06]" />
-        <div className="h-5 w-14 rounded-full bg-white/[0.06]" />
+        <Skeleton className="h-5 w-16 rounded-full" />
+        <Skeleton className="h-5 w-20 rounded-full" />
+        <Skeleton className="h-5 w-14 rounded-full" />
       </div>
       {/* Jobs completed */}
       <div className="mt-3">
-        <div className="h-3 w-28 rounded bg-white/[0.04]" />
+        <Skeleton className="h-3 w-28" />
       </div>
     </div>
   );

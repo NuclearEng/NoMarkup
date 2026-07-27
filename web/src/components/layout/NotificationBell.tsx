@@ -5,6 +5,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useMarkAllAsRead, useMarkAsRead, useNotifications, useUnreadCount } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import { useNotificationStore } from '@/stores/notification-store';
@@ -138,14 +139,14 @@ export function NotificationBell() {
           {/* Notification list */}
           <div className="max-h-[400px] overflow-y-auto">
             {isLoading ? (
-              <div className="space-y-1 p-2">
+              <div className="space-y-1 p-2" aria-busy="true" aria-label="Loading notifications">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="flex items-start gap-3 px-3 py-2.5">
-                    <div className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-muted" />
-                    <div className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted" />
+                    <Skeleton variant="circular" className="h-2 w-2 shrink-0" />
+                    <Skeleton variant="circular" className="h-8 w-8 shrink-0" />
                     <div className="flex-1 space-y-2">
-                      <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-                      <div className="h-2.5 w-1/2 animate-pulse rounded bg-muted" />
+                      <Skeleton className="h-3 w-3/4" />
+                      <Skeleton className="h-2.5 w-1/2" />
                     </div>
                   </div>
                 ))}

@@ -3,19 +3,25 @@
  *
  * Vitest + jsdom covers structural axe rules in tests/integration/axe.test.ts
  * but cannot evaluate color-contrast (no real layout/paint). This Playwright
- * suite re-enables color-contrast against real public routes once the Next.js
+ * suite re-enables color-contrast against real routes once the Next.js
  * app is up (Playwright webServer starts `npm run dev`).
  *
  * Backend tolerance:
- *   Public `/`, `/marketplace`, `/jobs`, `/pricing`, and `/login` degrade
- *   without the Go gateway (empty / error / static form UI still mounts).
+ *   Public `/`, `/marketplace`, `/jobs`, `/pricing`, `/login`, and `/register`
+ *   degrade without the Go gateway (empty / error / static form UI still mounts).
  *   If the page fails to load at all (web server down, hard 5xx, no body),
  *   the test skips rather than red-fails CI for an environment gap.
- *   No authenticated session is required; `/login` is the auth shell only
- *   (safe without stack — no dashboard/admin surfaces).
+ *
+ * Protected shells (`/dashboard`, `/settings/security`):
+ *   Middleware redirects unauthenticated visitors to `/login?next=…`.
+ *   CI is web-only (no session), so we axe the login shell that actually
+ *   rendered — never claim dashboard/settings chrome was scanned when it
+ *   was not. If a session is present and the target stays put, we axe that
+ *   surface instead.
  *
  * Scope (honest residual):
- *   - Five public/auth-shell routes; still no dashboard/admin surfaces
+ *   - Public catalog + auth shells + unauth protected-route redirect → login
+ *   - Authenticated dashboard/admin chrome only when a session exists
  *   - Blocks serious + critical only (moderate/minor tracked elsewhere)
  *   - color-contrast is ON here (off under jsdom)
  *   - Not a full WCAG 2.2 AA certification gate
@@ -73,12 +79,12 @@ function formatViolations(violations: Result[]): string {
 }
 
 /**
- * Navigate to a public route. Returns false when the environment cannot host
+ * Navigate to a route. Returns false when the environment cannot host
  * a scan (connection failure, hard 5xx, missing body) so the caller can skip.
  * Retries a few times: Turbopack cold compile / build-manifest races often
  * yield a one-shot 500 or blank body that recovers on reload.
  */
-async function loadPublicRoute(page: Page, path: string): Promise<boolean> {
+async function loadRoute(page: Page, path: string): Promise<boolean> {
   const attempts = 3;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -91,6 +97,8 @@ async function loadPublicRoute(page: Page, path: string): Promise<boolean> {
         continue;
       }
       // Hard server errors → retry (dev compile race), then skip.
+      // 3xx redirects (e.g. middleware → /login) are followed by Playwright;
+      // the final response is the landing page (typically 200).
       if (response.status() >= 500) {
         await delay(1_500);
         continue;
@@ -125,16 +133,39 @@ async function loadPublicRoute(page: Page, path: string): Promise<boolean> {
   return false;
 }
 
-// Public catalog + pricing + login shell (auth-friendly without credentials).
-// Prefer these over dashboard routes so CI skips cleanly when backend is down.
-const PUBLIC_ROUTES = ['/', '/marketplace', '/jobs', '/pricing', '/login'] as const;
+function isLoginUrl(url: string): boolean {
+  try {
+    const pathname = new URL(url).pathname;
+    return pathname === '/login' || pathname.startsWith('/login/');
+  } catch {
+    return /\/login(?:\?|$)/.test(url);
+  }
+}
+
+// Public catalog + auth shells (no credentials / stack required).
+const PUBLIC_ROUTES = [
+  '/',
+  '/marketplace',
+  '/jobs',
+  '/pricing',
+  '/login',
+  '/register',
+] as const;
+
+/**
+ * Auth-gated shells. Unauthenticated CI lands on `/login?next=…` (middleware);
+ * we axe that shell honestly rather than greenwashing a skip or claiming
+ * dashboard chrome was painted. Prefer `/settings/security` over bare
+ * `/settings` (no page.tsx at the settings root — only nested shells).
+ */
+const PROTECTED_SHELL_ROUTES = ['/dashboard', '/settings/security'] as const;
 
 test.describe('axe e2e smoke — real public routes', () => {
   for (const path of PUBLIC_ROUTES) {
     test(`${path} has no serious/critical axe violations (color-contrast on)`, async ({
       page,
     }) => {
-      const loaded = await loadPublicRoute(page, path);
+      const loaded = await loadRoute(page, path);
       test.skip(
         !loaded,
         `${path} did not load (web/backend unavailable); skipping real-page axe`,
@@ -145,6 +176,41 @@ test.describe('axe e2e smoke — real public routes', () => {
         violations,
         `axe serious/critical on ${path}:\n${formatViolations(violations)}`,
       ).toEqual([]);
+    });
+  }
+});
+
+test.describe('axe e2e smoke — protected shells (honest unauth → login)', () => {
+  for (const path of PROTECTED_SHELL_ROUTES) {
+    test(`${path}: axe target surface or login redirect (color-contrast on)`, async ({
+      page,
+    }) => {
+      const loaded = await loadRoute(page, path);
+      test.skip(
+        !loaded,
+        `${path} did not load (web unavailable); skipping protected-shell axe`,
+      );
+
+      const landedOnLogin = isLoginUrl(page.url());
+      // Honest labeling: CI without session always hits login; with session we
+      // scan the real shell. Never assert "dashboard clean" when we saw login.
+      const scannedAs = landedOnLogin
+        ? `/login (unauthenticated redirect from ${path})`
+        : path;
+
+      const violations = await runAxeSeriousCritical(page);
+      expect(
+        violations,
+        `axe serious/critical on ${scannedAs}:\n${formatViolations(violations)}`,
+      ).toEqual([]);
+
+      // Soft documentation assertion: unauth must not pretend we stayed put.
+      if (landedOnLogin) {
+        await expect(page).toHaveURL(/\/login/);
+        await expect(page.getByLabel(/email/i)).toBeVisible();
+      } else {
+        await expect(page).toHaveURL(new RegExp(path.replace(/\//g, '\\/')));
+      }
     });
   }
 });

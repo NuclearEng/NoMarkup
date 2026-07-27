@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useFraudAlerts } from '@/hooks/useFraud';
 import { FRAUD_ALERT_STATUS_CLASSES, FRAUD_RISK_CLASSES } from '@/lib/status-badge-classes';
 import { cn } from '@/lib/utils';
@@ -101,17 +102,17 @@ export function FraudAlertList() {
           onStatusChange={handleStatusChange}
           onRiskChange={handleRiskChange}
         />
-        <div className="space-y-3">
+        <div className="space-y-3" aria-busy="true" aria-label="Loading fraud alerts">
           {[1, 2, 3, 4, 5].map((i) => (
             <Card key={i}>
               <CardContent className="py-4">
                 <div className="flex items-center gap-4">
-                  <div className="h-4 w-24 animate-pulse rounded bg-muted" />
-                  <div className="h-5 w-16 animate-pulse rounded bg-muted" />
-                  <div className="h-5 w-20 animate-pulse rounded bg-muted" />
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-5 w-16" />
+                  <Skeleton className="h-5 w-20" />
                   <div className="flex-1" />
-                  <div className="h-4 w-12 animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+                  <Skeleton className="h-4 w-12" />
+                  <Skeleton className="h-4 w-24" />
                 </div>
               </CardContent>
             </Card>

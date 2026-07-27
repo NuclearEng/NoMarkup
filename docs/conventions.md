@@ -241,7 +241,17 @@ Workflow: `.github/workflows/security-scan.yml` (PR + weekly cron).
 
 **Do not claim** “npm audit clean” or “zero dependency CVEs” without stating this residual. Tightening (e.g. include moderate, or scan devDeps) is a deliberate ratchet after triage, not a silent default.
 
-**Also not claimed green by this workflow alone:** security-scan is a separate workflow from `ci.yml` merge checks (QA-10 — branch-protection coupling is Founder-Action).
+### QA-10 — security-scan vs `ci.yml` merge gate
+
+| Fact | Detail |
+|------|--------|
+| Workflow | `.github/workflows/security-scan.yml` — **not** a job inside `ci.yml` |
+| Why separate | Weekly cron re-scans for new CVEs without a code change; scanners should not sit on the `build` needs DAG of the long CI graph (`fullstack-security-test` is already the long pole). GitHub `needs` also **cannot** cross workflows. |
+| PR signal | On every PR to `main`: govulncheck (Go matrix), `cargo audit`, `npm audit` (policy above). Aggregate job name: **`Security Gate`**. |
+| What eng shipped | `security-gate` job in `security-scan.yml` (`needs: go-vuln, rust-audit, npm-audit`); comments on `ci.yml` `build` explaining the intentional omission; this section. |
+| **Founder-Action (still open)** | GitHub branch protection on `main` must **require status check `Security Gate`**. Settings → Branches → protection rule for `main` → Require status checks to pass → add **Security Gate**. Prove with a PR that a failing scanner blocks merge. Until then, green `CI / Build All` alone does **not** mean dependency scanners gated the merge. |
+
+Do not merge the two workflows solely to make `build.needs` list scanners — that would re-couple weekly CVE scanning to the full CI graph without buying anything branch protection already provides.
 
 ## Logging & Observability (detail)
 

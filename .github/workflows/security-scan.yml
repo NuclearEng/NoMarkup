@@ -1,5 +1,23 @@
 name: Security Scan
 
+# ── QA-10 (Founder-Action residual) ─────────────────────────────
+# This workflow is intentionally SEPARATE from `.github/workflows/ci.yml`.
+# Reasons we do NOT fold scanners into `ci.yml` `build.needs`:
+#   1. GitHub Actions `needs` cannot cross workflows — coupling requires a
+#      merge of the two YAML files, which would also run scanners on every
+#      push/schedule path of the long CI graph (fullstack-security-test is
+#      already the long pole; cargo-audit install + govulncheck×6 still add
+#      runner minutes and noise to the "Build All" gate).
+#   2. Weekly cron (Monday 06:00 UTC) re-scans for new CVEs without a code
+#      change — that schedule does not belong on the PR unit/integration DAG.
+# Merge protection therefore depends on GitHub branch protection requiring
+# the single check below (not on ci.yml edges):
+#   Required status check name: **Security Gate**
+# Settings → Branches → Branch protection rule for `main` → Require status
+# checks → add "Security Gate". Verify on a PR that a red scan blocks merge.
+# Until that is configured, a green `CI / Build All` alone is NOT enough to
+# claim dependency scanners gated merges.
+
 on:
   pull_request:
     branches: [main]
@@ -92,3 +110,17 @@ jobs:
       - name: Run npm audit (production dependencies, high+)
         working-directory: web
         run: npm audit --omit=dev --audit-level=high
+
+  # ── Single required-check name for branch protection (QA-10) ──
+  # Matrix `go-vuln` expands to six check names; rust-audit + npm-audit add
+  # two more. Requiring all eight in branch protection is error-prone.
+  # This job succeeds only when every scanner above is green — Founder
+  # configures **exactly one** required check: "Security Gate".
+
+  security-gate:
+    name: Security Gate
+    needs: [go-vuln, rust-audit, npm-audit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All security scanners passed
+        run: echo "go-vuln (matrix) + rust-audit + npm-audit green"

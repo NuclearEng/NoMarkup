@@ -11,6 +11,12 @@ Infra manifests (migration Job, metrics ports, NetworkPolicies, PDBs, HPAs,
 Terraform skeleton) are in-repo. What remains is **provisioning real cloud
 resources + secrets** — not more placeholder YAML.
 
+**OPS-02 (IaC):** `deploy/terraform/` is a **Partial** skeleton (README inventory +
+draft modules for VPC/EKS/RDS/Redis/S3). It is **not** applied and contains **no**
+AWS account IDs. Founder must create the account, remote state, plan/apply (or
+document an external provisioner), enable PostGIS, and load secrets before
+`DEPLOY_PROVISIONED=true`.
+
 ---
 
 ## Must-do before the first deploy (fail-closed)

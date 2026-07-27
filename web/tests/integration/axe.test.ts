@@ -9,9 +9,12 @@
  *     - axe-core ships a pure-JS implementation that runs against any DOM
  *     - Playwright requires a running web server; that adds CI flake.
  *
- *   Browser-driven companion (color-contrast ON, real public routes):
- *   tests/e2e/axe.spec.ts — Playwright injects axe-core against `/` and
- *   `/marketplace` with backend-tolerant skip when the page cannot load.
+ *   Browser-driven companion (color-contrast ON, real routes):
+ *   tests/e2e/axe.spec.ts — Playwright injects axe-core against public
+ *   catalog + auth shells (`/`, `/marketplace`, `/jobs`, `/pricing`,
+ *   `/login`, `/register`) and protected shells (`/dashboard`,
+ *   `/settings/security`) with honest unauth → login axe; skip only when
+ *   the page cannot load at all.
  *
  * Scope (FE-01):
  *   We mount real lightweight React components (EmptyState, Logo, StarRating,

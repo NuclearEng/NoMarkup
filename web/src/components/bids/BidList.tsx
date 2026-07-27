@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useBidsForJob } from '@/hooks/useBids';
 import type { BidWithProvider } from '@/types';
 
@@ -96,15 +97,15 @@ export function BidList({ jobId, canAward, startingPriceCents, marketMedianCents
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <div className="h-6 w-32 animate-pulse rounded bg-muted" />
+      <div className="space-y-4" aria-busy="true" aria-label="Loading bids">
+        <Skeleton className="h-6 w-32" />
         {[1, 2, 3].map((i) => (
           <Card key={i}>
             <CardContent className="pt-6">
               <div className="space-y-3">
-                <div className="h-10 animate-pulse rounded bg-muted" />
-                <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-                <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-4 w-1/3" />
               </div>
             </CardContent>
           </Card>
