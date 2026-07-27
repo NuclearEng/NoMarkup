@@ -352,8 +352,9 @@ func (s *ContractService) CompleteRecurringInstance(ctx context.Context, instanc
 }
 
 // ApproveRecurringInstance marks a completed occurrence approved by the customer.
-// Payment creation is residual (returns empty payment id from gRPC layer) —
-// status/approval timestamps are the durable record for FR-18.2.
+// Money is not moved here: the gateway CreatePayment path (real Stripe PI keyed
+// by payments.recurring_instance_id) runs after this status write. Schema has no
+// payment_id on recurring_instances — only payments → instance FK.
 func (s *ContractService) ApproveRecurringInstance(ctx context.Context, instanceID, customerID string) (*domain.RecurringInstance, error) {
 	inst, err := s.contractRepo.GetRecurringInstance(ctx, instanceID)
 	if err != nil {

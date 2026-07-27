@@ -23,8 +23,9 @@ service ChatService {
   rpc MarkRead(MarkReadRequest) returns (MarkReadResponse);
 
   // Local terms negotiation (FR-8.9 / FR-5.4) — provider proposes; customer
-  // must explicitly Accept or Reject. Accept records consent in-chat only;
-  // contract local-terms override application is a separate residual.
+  // must explicitly Accept or Reject. Accept records consent in-chat and, when
+  // the channel has a job with a live contract, binds payment_timing /
+  // terms_json on that contract (existing columns only).
   rpc SendProposedTerms(SendProposedTermsRequest) returns (SendProposedTermsResponse);
   rpc RespondToTerms(RespondToTermsRequest) returns (RespondToTermsResponse);
 

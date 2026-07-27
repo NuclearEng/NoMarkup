@@ -576,7 +576,9 @@ func (s *ContractServer) ApproveRecurringInstance(ctx context.Context, req *cont
 	if err != nil {
 		return nil, mapContractDomainError(err)
 	}
-	// Payment wire for recurring approve is residual — empty payment_id.
+	// Payment is orchestrated at the gateway (CreatePayment with
+	// recurring_instance_id → real Stripe PI). Job service does not hold a
+	// payment client and never invents a payment_id.
 	return &contractv1.ApproveRecurringInstanceResponse{
 		Instance:  domainRecurringInstanceToProto(inst),
 		PaymentId: "",
