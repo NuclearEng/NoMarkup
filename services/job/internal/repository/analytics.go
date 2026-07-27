@@ -638,6 +638,36 @@ func (r *PostgresRepository) GetPlatformMetrics(ctx context.Context, startDate, 
 		m.DisputeRate = float64(m.DisputesOpened) / float64(m.TotalJobsCompleted)
 	}
 
+	// Guarantee fund metrics (T4.6) — honest SUM/COUNT from payments + disputes.
+	// Fund = accrued guarantee fees on completed/released payments (same basis as
+	// payment-service revenue report). Claims/payouts from guarantee disputes only.
+	// Soft-fail each query so a missing column/table never zeros the whole response.
+	if err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(guarantee_fee_cents), 0)::bigint
+		FROM payments
+		WHERE status IN ('completed', 'released')
+		  AND created_at >= $1 AND created_at <= $2`,
+		startDate, endDate).Scan(&m.TotalGuaranteeFundCents); err != nil {
+		m.TotalGuaranteeFundCents = 0
+	}
+	if err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*)::int
+		FROM disputes
+		WHERE COALESCE(is_guarantee_claim, false) = true
+		  AND created_at >= $1 AND created_at <= $2`,
+		startDate, endDate).Scan(&m.GuaranteeClaims); err != nil {
+		m.GuaranteeClaims = 0
+	}
+	if err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(refund_amount_cents), 0)::bigint
+		FROM disputes
+		WHERE COALESCE(is_guarantee_claim, false) = true
+		  AND status = 'resolved'
+		  AND updated_at >= $1 AND updated_at <= $2`,
+		startDate, endDate).Scan(&m.GuaranteePayoutsCents); err != nil {
+		m.GuaranteePayoutsCents = 0
+	}
+
 	return m, nil
 }
 

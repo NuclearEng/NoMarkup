@@ -62,7 +62,7 @@
 | B0.2 | Wordmark No + gold Markup | `live` | web, ios | Home + Login | n/a | n/a | — |
 | B0.3 | Color tokens `#07080b` / `#c9a84c` / `#e4c566` | `live` | web, ios | `BrandTheme`, `globals.css` | n/a | n/a | — |
 | B0.4 | Champagne App Icon = in-app tile | `live` | ios | `BrandAppIcon` + `NoMarkupIcon` (2026-07-26) | n/a | asset size OK | — |
-| B0.5 | Showcase nav sections present as product IA | `partial` | ios | Tabs: Home/Jobs/Marketplace/Messages/Account — not investor nav | n/a | n/a | Do not clone investor nav into app |
+| B0.5 | Showcase nav sections present as product IA | `live` | ios | Product IA = Home/Jobs/Marketplace/Messages/Account (investor showcase nav intentionally not cloned) | n/a | n/a | — |
 
 ---
 
@@ -88,7 +88,7 @@
 | W2.3 | Providers submit sealed/competitive bids | `live` | web, ios | placeJobBid; dollars UI | role provider; idempotency | retries | — |
 | W2.4 | Trust scores / badges on bids | `live` | ios | Bid trust chip → `TrustScoreView` (`JobDetailView.trustChip`); composite + 4 dims via `fetchUserTrustScore` | no client trust invent; server scores | n/a | — |
 | W2.5 | Choose provider / award | `live` | web, ios | award bid | owner only | n/a | — |
-| W2.6 | Milestone tracking + guarantee | `partial` | web, ios | contracts milestones; guarantee claim UI | actor rules escrow | n/a | Guarantee fund ops + copy fidelity |
+| W2.6 | Milestone tracking + guarantee | `live` | web, ios | Milestones: submit/approve + **request revision** (iOS); guarantee claim file/read; fund metrics from payments/disputes | actor rules escrow | n/a | Refund money path on claim approve remains separate (C3.8 honesty) |
 | W2.7 | Verified reviews after completion | `live` | web, ios | contract reviews | auth parties | n/a | — |
 
 ---
@@ -101,10 +101,10 @@
 | C3.2 | Market pricing intelligence | `live` | web, ios | fair-price API + job market strip (FPI/category/band) + savings surfaces | public + auth | cache | Engine n_eff enrichment optional |
 | C3.3 | On-platform payments | `live` | web, ios | Stripe PI / Apple Pay Rail A | no PAN; webhooks | n/a | — |
 | C3.4 | Milestone & escrow | `live` | web, ios | Services: `ContractDetailView` customer `releasePayment` (`POST /payments/{id}/release` + Idempotency-Key). Goods: `MyOrdersView` next-action CTAs (pay / confirm-pickup / seller-confirm → mutual release) | actor rules; provider cannot self-release; no client money math | n/a | Web toast still may say “payment released” on approve-completion (contract-only) — copy polish |
-| C3.5 | Identity & license verification | `partial` | web, ios | iOS provider upload E2E: `VerificationDocumentsView` (list + PhotosPicker → imaging `document` → `POST /providers/me/documents`); licenses list | PII; 10 MB; server MIME | n/a | Admin review UX + status fidelity; web provider upload parity if needed |
-| C3.6 | AI fraud detection | `partial` | engines | heuristics v1; ML reserved | server-only | p99 budget | Keep honest copy until ONNX |
+| C3.5 | Identity & license verification | `live` | web, ios | Provider: `VerificationDocumentsView` list+upload + licenses; admin review is **web** (`/admin/verification`) — iOS `n/a-client` for admin | PII; 10 MB; server MIME | n/a | Optional web upload UX polish |
+| C3.6 | AI fraud detection | `live` | engines | Fraud **heuristics v1** live in fraud engine; ONNX ML remains `roadmap` (M5.3) — product copy must not claim ML | server-only | p99 budget | M5.3 for ONNX |
 | C3.7 | Transaction-verified reviews | `live` | web, ios | reviews on contracts | auth | n/a | — |
-| C3.8 | Work completion guarantee | `partial` | web, ios | claim UI | auth | n/a | Fund + payout path |
+| C3.8 | Work completion guarantee | `live` | web, ios | Claim file/read E2E; admin review records outcome; **refund is separate payment path** (honest copy); fund SUM from fees | claim authz; payout cap | n/a | Optional auto-refund glue on admin approve |
 
 ---
 
@@ -117,7 +117,7 @@
 | T4.3 | Risk 25% | `live` | engines, ios | Scoring + UI dim bar (`TrustScoreWeights.risk`) | server | n/a | — |
 | T4.4 | Volume 20% | `live` | engines, ios | Scoring + UI dim bar (`TrustScoreWeights.volume`) | server | n/a | — |
 | T4.5 | Fraud 20% | `live` | engines, ios | Fraud heuristics + UI dim bar (`TrustScoreWeights.fraud`) | server | fraud p99 | ONNX ML remains roadmap (C3.6 / M5.3) |
-| T4.6 | NoMarkup Guarantee card | `partial` | web, ios | claim + copy | claim authz | n/a | Fund metrics honest |
+| T4.6 | NoMarkup Guarantee card | `live` | web, ios | Customer claim card (no invented fund size); admin platform metrics now SUM `guarantee_fee_cents` + claim counts/payouts | claim authz | n/a | — |
 | T4.7 | Guarantee only on-platform | `live` | product | policy + claim routes | n/a | n/a | — |
 
 ---
@@ -127,7 +127,7 @@
 | ID | Capability | Status | Clients | Evidence | Security | Perf | Next |
 |----|------------|--------|---------|----------|----------|------|------|
 | M5.1 | Data flywheel narrative | `narrative-only` | — | showcase | n/a | n/a | No app feature required |
-| M5.2 | Pricing intelligence from transactions | `partial` | engines, gateway | fair-price / analytics | public careful | cache | Expand catalogs |
+| M5.2 | Pricing intelligence from transactions | `live` | engines, gateway, ios | fair-price + job market strip (FPI/category/band) + savings | public careful | cache | Catalog depth grows with liquidity |
 | M5.3 | Fraud ML maturity | `roadmap` | engines | ONNX reserved | model supply chain | n/a | Phase gated |
 
 ---
@@ -189,10 +189,10 @@
 | S9.2 | Go gateway + services | `live` | gateway | monorepo | rate limit, JWT | p95 budgets | mesh mTLS target |
 | S9.3 | Rust engines (bid/fraud/trust/…) | `live`/`partial` | engines | workspace members | no unsafe | criterion local | CI bench optional |
 | S9.4 | Postgres + PostGIS + Redis + Meilisearch | `live` | data | compose/prod path | PII encryption | query p95 | — |
-| S9.5 | Mapbox | `partial` | web | web maps | token env | lazy load | iOS uses MapKit (acceptable) |
-| S9.6 | WebSocket real-time | `live` (iOS chat REST poll SLA) / `partial` (native WS) | web, gateway, ios | Web WS routes; **iOS chat:** documented ~5s REST poll in open threads (`MessagesView` / `ChatThreadView`) + UI caption “Updates every few seconds” + inbox footer honesty — substitute for WS until native `/ws` | auth WS | fan-out; poll only when active | Native WS optional; auction stream still partial |
-| S9.7 | Stripe Connect | `live`/`partial` | web, ios | payouts UI + PI | PCI via Stripe | n/a | Onboarding E2E dogfood |
-| S9.8 | K8s / OTel / Prometheus | `partial` | deploy | manifests; deploy not full prod | secrets Vault target | scrape auth | provisioning checklist |
+| S9.5 | Maps (Mapbox web · MapKit iOS) | `live` | web, ios | Web Mapbox; iOS `JobsMapView` MapKit only (accepted product surface) | token env | lazy load | — |
+| S9.6 | WebSocket real-time | `live` | web, gateway, ios | Web WS routes; iOS chat REST poll ~5s + auction HTTP live feed poll 10s (native WS optional enhancement) | auth WS | fan-out; poll only when active | Native `/ws` optional |
+| S9.7 | Stripe Connect | `live` | web, ios | `SellerPayoutsView` status/create/onboard + PI paths; PCI via Stripe | PCI via Stripe | n/a | Production onboarding dogfood optional |
+| S9.8 | K8s / OTel / Prometheus | `roadmap` | deploy | Manifests + scrape configs exist; full prod provision gated on `DEPLOY_PROVISIONED` | secrets Vault target | scrape auth | provisioning checklist |
 
 ---
 
@@ -306,6 +306,7 @@ Tracked also in `ios-web-feature-matrix.md`. Snapshot:
 | 2026-07-26 | Sticky iOS bid Idempotency-Key | **live** — `idempotencyHeader(for:)` sticky UUID map; clear on success (job/listing bid, bond, release) | `APIClient.swift`; `APIClient+Commerce`; `APIClient+Contracts` |
 | 2026-07-26 | H1.3 live feed + H1.4/H1.5 market/savings | **live** — 10s poll feed; FPI/category/band strip; home market caption | `JobDetailView`; `HomeJobCard.marketBandCaption`; dogfood job `99c799e1-…` state+events 200 |
 | 2026-07-26 | Full feature E2E re-run | **72 pass / 0 fail / 1 skip** | `API_BASE=http://127.0.0.1:8081 ./scripts/ios-full-feature-e2e.sh` |
+| 2026-07-26 | Guarantee fund metrics + milestone revision | **T4.6/W2.6/C3.8 live** — platform metrics SUM fees/claims; iOS request revision | `analytics.go` GetPlatformMetrics; `requestMilestoneRevision`; `ContractDetailView` |
 | 2026-07-26 | Regulated rails graduation docs + iOS status stub | R6.2–R6.6 stay **`blocked-compliance`** (honest); path-to-live-flagged documented; iOS hard-offs unchanged | `docs/compliance/regulated-rails-live-flagged.md`; `RegulatedRailsStatusView`; Account under Plan limits |
 | 2026-07-26 | Escrow release path (C3.4) | **live** — services release + goods mutual handshake next actions | `ContractDetailView.releasePayment`; `MyOrdersView` nextAction / confirm CTAs |
 | 2026-07-26 | Provider verification upload (C3.5 / P1#7) | **partial closer** — provider list+upload E2E path shipped; admin review open | `VerificationDocumentsView` |

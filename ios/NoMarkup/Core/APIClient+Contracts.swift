@@ -184,6 +184,21 @@ extension APIClient {
         )
     }
 
+    /// POST `/api/v1/milestones/{id}/revision` — customer requests revision.
+    /// Body: `{ "revision_notes": "..." }` (required non-empty notes).
+    @discardableResult
+    func requestMilestoneRevision(id: String, notes: String) async throws -> ContractMilestone {
+        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Revision notes are required.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "milestones", id, "revision"],
+            body: ContractsMilestoneRevisionBody(revisionNotes: trimmed),
+            authorized: .required
+        )
+    }
+
     // MARK: Change orders
 
     /// GET `/api/v1/contracts/{id}/change-orders` → `{ "change_orders": [...] }`.
@@ -424,6 +439,10 @@ private struct ContractsOpenDisputeBody: Encodable {
 private struct ContractsCreateReviewBody: Encodable {
     let overallRating: Int32
     let comment: String
+}
+
+private struct ContractsMilestoneRevisionBody: Encodable {
+    let revisionNotes: String
 }
 
 private struct ContractsCreateChangeOrderBody: Encodable {

@@ -41,6 +41,8 @@ struct ContractDetailView: View {
     @State private var showNoShowConfirm = false
     @State private var showAbandonmentConfirm = false
     @State private var pendingMilestoneApproveID: String?
+    @State private var pendingMilestoneRevisionID: String?
+    @State private var revisionNotesText = ""
     @State private var pendingReleasePayment: ContractPayment?
     @State private var showDisputeSheet = false
     @State private var showReviewSheet = false
@@ -86,6 +88,31 @@ struct ContractDetailView: View {
                     Task { await load() }
                 }
             ))
+            .alert(
+                "Request milestone revision",
+                isPresented: Binding(
+                    get: { pendingMilestoneRevisionID != nil },
+                    set: { if !$0 { pendingMilestoneRevisionID = nil } }
+                )
+            ) {
+                TextField("What needs to change?", text: $revisionNotesText, axis: .vertical)
+                Button("Send request") {
+                    guard let mid = pendingMilestoneRevisionID else { return }
+                    let notes = revisionNotesText
+                    pendingMilestoneRevisionID = nil
+                    Task {
+                        await runMilestone(mid) {
+                            try await APIClient.shared.requestMilestoneRevision(id: mid, notes: notes)
+                        }
+                    }
+                }
+                .disabled(revisionNotesText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Cancel", role: .cancel) {
+                    pendingMilestoneRevisionID = nil
+                }
+            } message: {
+                Text("Describe what the provider should fix. This sets the milestone back to revision requested.")
+            }
             .modifier(ContractConfirmationsModifier(
                 showCancelConfirm: $showCancelConfirm,
                 showMarkCompleteConfirm: $showMarkCompleteConfirm,
@@ -707,6 +734,20 @@ struct ContractDetailView: View {
                 .disabled(actingActionTitle != nil || actingMilestoneID != nil)
                 .accessibilityHint("Confirm before approving this milestone payment step")
             }
+
+            if isCustomer && milestone.canRequestRevisionAsCustomer && contract.normalizedStatus == "active" {
+                Button {
+                    revisionNotesText = ""
+                    pendingMilestoneRevisionID = milestone.id
+                } label: {
+                    Label("Request revision", systemImage: "arrow.uturn.backward")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .tint(BrandTheme.warning)
+                .disabled(actingActionTitle != nil || actingMilestoneID != nil)
+                .accessibilityHint("Ask the provider to revise this milestone before you approve it")
+            }
         }
         .padding(.vertical, 4)
     }
@@ -1038,7 +1079,7 @@ struct ContractDetailView: View {
             } header: {
                 Text("NoMarkup Guarantee").brandSectionHeader()
             } footer: {
-                Text("Claims are reviewed by support. Evidence uploads are available on the web dashboard.")
+                Text("Claims are reviewed by support. Approved claim outcomes are recorded server-side; any refund uses the separate payment refund path (no client money math). Evidence uploads are available on the web dashboard.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
             .listRowBackground(BrandTheme.navyElevated)

@@ -445,6 +445,11 @@ struct ContractMilestone: Codable, Sendable, Hashable, Identifiable {
     var canApproveAsCustomer: Bool {
         normalizedStatus == "submitted"
     }
+
+    /// Customer may request revision while work is submitted for review.
+    var canRequestRevisionAsCustomer: Bool {
+        normalizedStatus == "submitted"
+    }
 }
 
 // MARK: Change order
