@@ -8,7 +8,9 @@ package service
 // chat; consent is recorded (terms_accepted) with
 // contract_override_applied=false / no_live_contract. On CreateContractFromAward
 // we close that residual by looking up the job's chat channel for the parties
-// and applying the same merge chat would have done.
+// and applying the same merge chat would have done, then stamping the
+// terms_accepted message metadata with contract_override_applied=true so
+// audit and overrideAlreadyApplied stay consistent with the live-Accept path.
 //
 // Job owns the apply (SQL against shared Postgres) so chat and job stay free of
 // circular service deps. Failures are soft: award must never fail because
@@ -19,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -67,7 +70,7 @@ func (a *PGPendingLocalTermsApplier) ApplyPendingLocalTerms(
 		return "", nil
 	}
 
-	msgType, metaJSON, err := a.latestTermsDecision(ctx, channelID)
+	acceptMsgID, msgType, metaJSON, err := a.latestTermsDecision(ctx, channelID)
 	if err != nil {
 		return "", err
 	}
@@ -100,7 +103,30 @@ func (a *PGPendingLocalTermsApplier) ApplyPendingLocalTerms(
 		return "", fmt.Errorf("pending local terms: build patch: %w", err)
 	}
 
-	return a.applyLocalTerms(ctx, jobID, customerID, providerID, paymentTiming, patch)
+	contractID, err := a.applyLocalTerms(ctx, jobID, customerID, providerID, paymentTiming, patch)
+	if err != nil {
+		return "", err
+	}
+	if contractID == "" {
+		return "", nil
+	}
+
+	// Mirror chat's live-Accept path: stamp the pre-award terms_accepted
+	// message so audit/idempotency show contract_override_applied=true after
+	// residual bind. Stamp is fail-soft — the contract row is already correct;
+	// a missing stamp only weakens idempotency on a rare retry (merge is
+	// still JSONB-idempotent).
+	if stampErr := a.stampTermsAcceptedOverride(
+		ctx, acceptMsgID, contractID, paymentTiming,
+	); stampErr != nil {
+		slog.WarnContext(ctx, "pending local terms: stamp accept metadata failed (fail-soft)",
+			"accept_message_id", acceptMsgID,
+			"contract_id", contractID,
+			"job_id", jobID,
+			"error", stampErr,
+		)
+	}
+	return contractID, nil
 }
 
 func (a *PGPendingLocalTermsApplier) lookupChannel(
@@ -129,9 +155,9 @@ func (a *PGPendingLocalTermsApplier) lookupChannel(
 func (a *PGPendingLocalTermsApplier) latestTermsDecision(
 	ctx context.Context,
 	channelID string,
-) (messageType string, metadataJSON []byte, err error) {
+) (messageID, messageType string, metadataJSON []byte, err error) {
 	err = a.pool.QueryRow(ctx, `
-		SELECT message_type, COALESCE(metadata_json, '{}'::jsonb)
+		SELECT id, message_type, COALESCE(metadata_json, '{}'::jsonb)
 		  FROM chat_messages
 		 WHERE channel_id = $1
 		   AND message_type IN ('terms_accepted', 'terms_rejected')
@@ -139,14 +165,58 @@ func (a *PGPendingLocalTermsApplier) latestTermsDecision(
 		 ORDER BY created_at DESC
 		 LIMIT 1`,
 		channelID,
-	).Scan(&messageType, &metadataJSON)
+	).Scan(&messageID, &messageType, &metadataJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil, nil
+		return "", "", nil, nil
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("pending local terms: decision lookup: %w", err)
+		return "", "", nil, fmt.Errorf("pending local terms: decision lookup: %w", err)
 	}
-	return messageType, metadataJSON, nil
+	return messageID, messageType, metadataJSON, nil
+}
+
+// stampTermsAcceptedOverride merges contract_override_applied=true onto the
+// terms_accepted chat message that recorded pre-award consent. Matches the
+// metadata shape chat writes on live-contract Accept (contract_id + optional
+// payment_timing_applied) so audit trails and overrideAlreadyApplied stay
+// consistent across both bind paths.
+func (a *PGPendingLocalTermsApplier) stampTermsAcceptedOverride(
+	ctx context.Context,
+	acceptMessageID, contractID string,
+	paymentTiming *string,
+) error {
+	if acceptMessageID == "" || contractID == "" {
+		return nil
+	}
+	meta := map[string]interface{}{
+		"contract_override_applied": true,
+		"contract_id":               contractID,
+		// Distinguish residual award-time stamp from live chat Accept bind.
+		"contract_override_bound_at": "award",
+	}
+	if paymentTiming != nil && *paymentTiming != "" {
+		meta["payment_timing_applied"] = *paymentTiming
+	}
+	patch, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("marshal stamp: %w", err)
+	}
+	tag, err := a.pool.Exec(ctx, `
+		UPDATE chat_messages
+		   SET metadata_json = COALESCE(metadata_json, '{}'::jsonb) || $2::jsonb
+		 WHERE id = $1
+		   AND message_type = 'terms_accepted'
+		   AND is_deleted = false`,
+		acceptMessageID, patch,
+	)
+	if err != nil {
+		return fmt.Errorf("update accept metadata: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Message gone/soft-deleted — non-fatal for bind correctness.
+		return nil
+	}
+	return nil
 }
 
 func (a *PGPendingLocalTermsApplier) latestProposedTerms(

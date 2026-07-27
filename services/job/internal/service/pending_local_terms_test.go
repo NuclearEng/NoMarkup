@@ -261,3 +261,37 @@ func TestExtractPaymentTimingJob(t *testing.T) {
 		"payment_type": "custom split",
 	}))
 }
+
+// TestStampTermsAcceptedOverrideMetaShape documents the metadata merge written
+// onto terms_accepted after award bind. Must stay compatible with chat's live
+// Accept stamps so audit tools can read either path the same way.
+func TestStampTermsAcceptedOverrideMetaShape(t *testing.T) {
+	t.Parallel()
+	pt := "milestone"
+	meta := map[string]interface{}{
+		"contract_override_applied":  true,
+		"contract_id":                "contract-1",
+		"contract_override_bound_at": "award",
+		"payment_timing_applied":     pt,
+	}
+	raw, err := json.Marshal(meta)
+	require.NoError(t, err)
+	var round map[string]interface{}
+	require.NoError(t, json.Unmarshal(raw, &round))
+	assert.Equal(t, true, round["contract_override_applied"])
+	assert.Equal(t, "contract-1", round["contract_id"])
+	assert.Equal(t, "award", round["contract_override_bound_at"])
+	assert.Equal(t, "milestone", round["payment_timing_applied"])
+	// overrideAlreadyApplied must treat the stamp as applied.
+	assert.True(t, overrideAlreadyApplied(raw))
+}
+
+func TestStampTermsAcceptedOverride_SkipsEmptyIDs(t *testing.T) {
+	t.Parallel()
+	// Nil applier path: empty IDs are a no-op (no panic, no pool needed).
+	a := &PGPendingLocalTermsApplier{}
+	err := a.stampTermsAcceptedOverride(context.Background(), "", "contract-1", nil)
+	assert.NoError(t, err)
+	err = a.stampTermsAcceptedOverride(context.Background(), "msg-1", "", nil)
+	assert.NoError(t, err)
+}

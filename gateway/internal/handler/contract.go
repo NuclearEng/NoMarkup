@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"html"
 	"log/slog"
 	"net/http"
@@ -123,6 +124,61 @@ func (h *ContractHandler) tipAmountsByContract(ctx context.Context, ids []string
 	return out
 }
 
+// localTermsByContract reads contracts.terms_json→local_terms for display.
+// Chat Accept / award residual bind write a nested local_terms object (FR-5.4)
+// that is not on the contract proto. Only the local_terms sub-object is
+// projected (not the full terms_json blob). Fail-soft: nil/empty when missing.
+// Authorization is already enforced by GetContract party checks — this is
+// enrichment only for callers who already may see the contract.
+func (h *ContractHandler) localTermsByContract(ctx context.Context, contractID string) map[string]interface{} {
+	if h.db == nil || contractID == "" {
+		return nil
+	}
+	var raw []byte
+	err := h.db.QueryRow(ctx,
+		`SELECT COALESCE(terms_json, '{}'::jsonb) FROM contracts WHERE id = $1 AND deleted_at IS NULL`,
+		contractID,
+	).Scan(&raw)
+	if err != nil {
+		// NotFound / scan error → no enrichment (GetContract already authorized).
+		return nil
+	}
+	return projectLocalTermsJSON(raw)
+}
+
+// projectLocalTermsJSON extracts the local_terms object from a terms_json
+// document and keeps only scalar values for safe client projection.
+func projectLocalTermsJSON(raw []byte) map[string]interface{} {
+	if len(raw) == 0 {
+		return nil
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil
+	}
+	local, ok := root["local_terms"].(map[string]interface{})
+	if !ok || len(local) == 0 {
+		return nil
+	}
+	// Project only string/number/bool primitives for display safety — drop
+	// nested objects so the UI never renders unexpected structure.
+	out := make(map[string]interface{}, len(local))
+	for k, v := range local {
+		switch v.(type) {
+		case string, float64, bool, nil:
+			out[k] = v
+		case json.Number:
+			out[k] = v
+		default:
+			// Skip arrays/objects (e.g. unexpected nested blobs).
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // GetContract handles GET /api/v1/contracts/{id}.
 func (h *ContractHandler) GetContract(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
@@ -149,6 +205,10 @@ func (h *ContractHandler) GetContract(w http.ResponseWriter, r *http.Request) {
 	result := protoContractToJSON(resp.GetContract())
 	if id := resp.GetContract().GetId(); id != "" {
 		result["tip_amount_cents"] = h.tipAmountsByContract(r.Context(), []string{id})[id]
+		// FR-5.4: surface chat/award-bound local terms for the contract detail UI.
+		if local := h.localTermsByContract(r.Context(), id); local != nil {
+			result["local_terms"] = local
+		}
 	}
 	// Enrich the "Parties" display with human-readable names so the UI shows the
 	// counterparty's display_name instead of a raw UUID.
@@ -1308,6 +1368,10 @@ func (h *ContractHandler) resolveContractCustomerID(ctx context.Context, contrac
 // Never invents payment_id or client_secret. customerID must be the contract
 // customer (payment service enforces ownership). Sticky idempotency key
 // recurring-instance-pay:{instanceID} dedupes approve + auto-approve complete.
+//
+// On CreatePayment failure, FR-18.8 partial: best-effort PauseRecurring
+// (contract stays intact; config pauses only). Webhook charge-failure pause and
+// off-session auto-charge with FR-16.7 retries remain residual.
 func (h *ContractHandler) attachRecurringInstancePayment(
 	ctx context.Context,
 	result map[string]interface{},
@@ -1331,26 +1395,65 @@ func (h *ContractHandler) attachRecurringInstancePayment(
 
 	// Sticky server-side key: one PI per instance across approve retries and
 	// auto-approve complete. CreatePayment stores this as payments.idempotency_key.
+	// Migration 111 also UNIQUE(recurring_instance_id) so customer POST /payments
+	// with a different key still soft-replays the same PI (no dual authorization).
 	idemKey := "recurring-instance-pay:" + instanceID
-	payResp, payErr := h.paymentClient.CreatePayment(ctx, &paymentv1.CreatePaymentRequest{
+	createReq := &paymentv1.CreatePaymentRequest{
 		ContractId:          contractID,
 		RecurringInstanceId: instanceID,
 		CustomerId:          customerID,
 		AmountCents:         amountCents,
 		IdempotencyKey:      idemKey,
-	})
+	}
+	payResp, payErr := h.paymentClient.CreatePayment(ctx, createReq)
 	if payErr != nil {
-		// Status already committed — surface residual, never fake a payment.
-		slog.WarnContext(ctx, "recurring instance: CreatePayment failed (status kept)",
-			"source", source,
-			"instance_id", instanceID,
-			"contract_id", contractID,
-			"amount_cents", amountCents,
-			"error", payErr,
-		)
-		result["payment_residual"] = "create_payment_failed"
-		result["payment_error"] = "Could not create escrow PaymentIntent for this visit. Visit is approved; pay via POST /payments with recurring_instance_id when ready."
-		return
+		// Dual-PI defense: CreatePayment soft-replays unique conflicts. If this
+		// RPC still failed (mesh blip after insert, or soft-replay refused), try
+		// load-by-instance via a second CreatePayment (same sticky key + instance
+		// → soft-replay returns existing payment + real client_secret). Never
+		// invent payment_id or client_secret.
+		if replay, replayErr := h.paymentClient.CreatePayment(ctx, createReq); replayErr == nil {
+			payResp, payErr = replay, nil
+			slog.InfoContext(ctx, "recurring instance: CreatePayment soft-replay on retry",
+				"source", source,
+				"instance_id", instanceID,
+				"contract_id", contractID,
+			)
+		} else if existing := h.findPaymentByRecurringInstance(ctx, customerID, instanceID); existing != nil {
+			// Real payment_id only — secret unavailable without Stripe re-read at
+			// gateway. Fail closed on secret; do not pause if money already exists.
+			if existing.GetId() != "" {
+				result["payment_id"] = existing.GetId()
+				result["payment"] = protoPaymentToJSON(existing)
+			}
+			slog.WarnContext(ctx, "recurring instance: existing payment found but client_secret unavailable (fail closed)",
+				"source", source,
+				"instance_id", instanceID,
+				"payment_id", existing.GetId(),
+				"create_error", payErr,
+				"replay_error", replayErr,
+			)
+			result["payment_residual"] = "client_secret_missing"
+			result["payment_error"] = "A payment already exists for this visit but client_secret could not be issued. Retry pay via POST /payments with recurring_instance_id."
+			return
+		} else {
+			// Status already committed — surface residual, never fake a payment.
+			// FR-18.8 partial: pause recurrence fail-soft (never cancel the contract).
+			slog.WarnContext(ctx, "recurring instance: CreatePayment failed (status kept; pausing recurrence FR-18.8)",
+				"source", source,
+				"instance_id", instanceID,
+				"contract_id", contractID,
+				"amount_cents", amountCents,
+				"error", payErr,
+			)
+			result["payment_residual"] = "create_payment_failed"
+			result["payment_error"] = "Could not create escrow PaymentIntent for this visit. Visit is approved; pay via POST /payments with recurring_instance_id when ready."
+			// Honest residual: this path mints an on-session PI only; automatic
+			// off-session charge is not wired (FR-18.8 / FR-16.7 full path residual).
+			result["off_session_charge_residual"] = "not_wired"
+			h.pauseRecurringAfterPaymentFailure(ctx, result, contractID, instanceID, customerID, source)
+			return
+		}
 	}
 
 	if p := payResp.GetPayment(); p != nil && p.GetId() != "" {
@@ -1361,9 +1464,148 @@ func (h *ContractHandler) attachRecurringInstancePayment(
 		// Real Stripe (or dev-stack) secret for PaymentSheet — not invented.
 		result["client_secret"] = secret
 	} else {
-		// PI row may exist without a confirmable secret (misconfig). Honest residual.
+		// PI row may exist without a confirmable secret (misconfig / already held).
+		// Honest residual — never invent a secret.
 		result["payment_residual"] = "client_secret_missing"
 	}
+}
+
+// findPaymentByRecurringInstance best-effort loads an existing payment for a
+// visit via ListPayments. Used only when CreatePayment soft-replay failed so we
+// can still surface a real payment_id — never invents client_secret.
+func (h *ContractHandler) findPaymentByRecurringInstance(ctx context.Context, customerID, instanceID string) *paymentv1.Payment {
+	if h.paymentClient == nil || customerID == "" || instanceID == "" {
+		return nil
+	}
+	resp, err := h.paymentClient.ListPayments(ctx, &paymentv1.ListPaymentsRequest{
+		UserId: customerID,
+		Pagination: &commonv1.PaginationRequest{
+			Page:     1,
+			PageSize: 50,
+		},
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "recurring instance: ListPayments for soft-load failed",
+			"instance_id", instanceID,
+			"error", err,
+		)
+		return nil
+	}
+	for _, p := range resp.GetPayments() {
+		if p != nil && p.GetRecurringInstanceId() == instanceID {
+			return p
+		}
+	}
+	return nil
+}
+
+// pauseRecurringAfterPaymentFailure implements FR-18.8 partial: when instance
+// payment setup fails, pause the recurring config so new visits stop generating.
+// Never cancels the contract or the recurring config. Fail-soft: pause errors
+// only add residual fields — approval/completion already stands.
+func (h *ContractHandler) pauseRecurringAfterPaymentFailure(
+	ctx context.Context,
+	result map[string]interface{},
+	contractID, instanceID, customerID, source string,
+) {
+	if h.contractClient == nil {
+		result["recurring_pause_residual"] = "contract_service_unwired"
+		return
+	}
+	if customerID == "" {
+		result["recurring_pause_residual"] = "customer_unresolved"
+		slog.WarnContext(ctx, "FR-18.8: cannot pause recurring after payment failure (no customer id; contract not cancelled)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+		)
+		return
+	}
+
+	cfgResp, err := h.contractClient.GetRecurringConfig(ctx, &contractv1.GetRecurringConfigRequest{
+		ContractId: contractID,
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "FR-18.8: GetRecurringConfig failed after payment failure (contract not cancelled)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"error", err,
+		)
+		result["recurring_pause_residual"] = "config_lookup_failed"
+		return
+	}
+	cfg := cfgResp.GetConfig()
+	if cfg == nil || cfg.GetId() == "" {
+		slog.WarnContext(ctx, "FR-18.8: no recurring config to pause after payment failure (contract not cancelled)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+		)
+		result["recurring_pause_residual"] = "config_missing"
+		return
+	}
+
+	status := cfg.GetStatus()
+	result["recurring_id"] = cfg.GetId()
+	if status == "paused" {
+		// Already paused — still surface success of FR-18.8 intent.
+		result["recurring_paused"] = true
+		result["recurring_status"] = "paused"
+		slog.InfoContext(ctx, "FR-18.8: recurring already paused after payment failure (contract not cancelled)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+		)
+		return
+	}
+	if status != "active" {
+		// cancelled / other — do not cancel further; leave alone.
+		result["recurring_status"] = status
+		result["recurring_pause_residual"] = "not_active"
+		slog.InfoContext(ctx, "FR-18.8: skip pause after payment failure — config not active (contract not cancelled)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+			"status", status,
+		)
+		return
+	}
+
+	pauseResp, pauseErr := h.contractClient.PauseRecurring(ctx, &contractv1.PauseRecurringRequest{
+		RecurringId: cfg.GetId(),
+		UserId:      customerID,
+	})
+	if pauseErr != nil {
+		slog.WarnContext(ctx, "FR-18.8: PauseRecurring failed after payment failure (contract not cancelled; visit status kept)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+			"error", pauseErr,
+		)
+		result["recurring_pause_residual"] = "pause_failed"
+		return
+	}
+
+	pausedCfg := pauseResp.GetConfig()
+	result["recurring_paused"] = true
+	result["recurring_status"] = "paused"
+	if pausedCfg != nil {
+		result["recurring_config"] = protoRecurringConfigToJSON(pausedCfg)
+		if st := pausedCfg.GetStatus(); st != "" {
+			result["recurring_status"] = st
+		}
+	}
+	slog.InfoContext(ctx, "FR-18.8: recurring paused after CreatePayment failure (contract not cancelled)",
+		"source", source,
+		"instance_id", instanceID,
+		"contract_id", contractID,
+		"recurring_id", cfg.GetId(),
+		"customer_id", customerID,
+	)
 }
 
 func (h *ContractHandler) resolveRecurringConfig(r *http.Request, contractID string) (*contractv1.RecurringConfig, error) {

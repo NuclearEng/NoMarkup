@@ -708,6 +708,12 @@ func mapDomainError(err error) error {
 		return status.Error(codes.NotFound, "payment not found")
 	case errors.Is(err, domain.ErrIdempotencyConflict):
 		return status.Error(codes.AlreadyExists, "duplicate idempotency key")
+	case errors.Is(err, domain.ErrRecurringInstancePaymentExists):
+		// Soft-replay normally absorbs this inside CreatePayment; if it still
+		// surfaces, the existing payment is not soft-replayable (no PI, bad status).
+		return status.Error(codes.AlreadyExists, "payment already exists for this recurring instance")
+	case errors.Is(err, domain.ErrPaymentIntentMissing):
+		return status.Error(codes.FailedPrecondition, "payment intent missing; cannot issue client_secret")
 	case errors.Is(err, domain.ErrInvalidAmount):
 		return status.Error(codes.InvalidArgument, "invalid amount")
 	case errors.Is(err, domain.ErrInvalidStatus):

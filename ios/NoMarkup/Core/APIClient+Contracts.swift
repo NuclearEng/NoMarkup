@@ -657,6 +657,12 @@ extension APIClient {
     /// **Idempotency-Key sticky** as `create-payment:{contractId}:{amountCents}:{instance?}`.
     /// Clear only after process/capture succeeds so retries replay the same PI.
     ///
+    /// **Dual-PI guard (recurring visits):** when `recurringInstanceId` is set,
+    /// the payment service also enforces UNIQUE(recurring_instance_id). A prior
+    /// gateway approve/auto-complete PI for the same visit soft-replays here
+    /// (same payment_id + real client_secret) — never invents a second intent
+    /// or a fake secret. If the existing row has no PI, the API fails closed.
+    ///
     /// Security: pass **server** amount only — never client fee math.
     /// Payment service refuses amount > contract total and non-customer actors.
     @discardableResult

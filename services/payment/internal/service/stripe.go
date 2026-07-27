@@ -735,8 +735,14 @@ func (s *StripeService) DeletePaymentMethod(ctx context.Context, paymentMethodID
 // Uses capture_method="manual" for escrow functionality.
 func (s *StripeService) CreatePaymentIntent(ctx context.Context, amountCents int64, currency string, providerAccountID string, platformFeeCents int64, idempotencyKey string) (string, string, error) {
 	if s.devMode {
-		slog.Info("dev mode: stub CreatePaymentIntent", "amountCents", amountCents)
-		return "pi_dev_" + idempotencyKey, "pi_dev_secret_" + idempotencyKey, nil
+		// Deterministic stub id/secret. Record in DevStore so soft-replay
+		// (GetPaymentIntentClientSecret) can re-read the same secret — same
+		// contract as marketplace CreateMarketplacePaymentIntent.
+		piID := "pi_dev_" + idempotencyKey
+		secret := "pi_dev_secret_" + idempotencyKey
+		s.DevStore().RecordPaymentIntent(piID, "", amountCents, secret)
+		slog.Info("dev mode: stub CreatePaymentIntent", "amountCents", amountCents, "pi_id", piID)
+		return piID, secret, nil
 	}
 
 	params := &stripe.PaymentIntentParams{

@@ -11,6 +11,13 @@ var (
 	ErrPaymentNotFound       = errors.New("payment not found")
 	ErrWebhookSignature      = errors.New("webhook signature verification failed")
 	ErrIdempotencyConflict   = errors.New("idempotency key conflict")
+	// ErrRecurringInstancePaymentExists is returned when INSERT violates
+	// uq_payments_recurring_instance (migration 111). CreatePayment soft-replays
+	// the existing row + real client_secret rather than minting a second PI.
+	ErrRecurringInstancePaymentExists = errors.New("payment already exists for recurring instance")
+	// ErrPaymentIntentMissing is returned when soft-replay finds a payment row
+	// without a Stripe PaymentIntent. Fail closed — never invent client_secret.
+	ErrPaymentIntentMissing = errors.New("payment has no stripe payment intent")
 	ErrInvalidAmount         = errors.New("invalid amount")
 	ErrInvalidStatus         = errors.New("invalid status transition")
 	ErrPaymentAlreadyProcessed = errors.New("payment already processed")
@@ -410,6 +417,13 @@ type MilestoneDetail struct {
 type PaymentRepository interface {
 	CreatePayment(ctx context.Context, payment *Payment) error
 	GetPayment(ctx context.Context, id string) (*Payment, error)
+	// GetPaymentByRecurringInstanceID loads the single payment linked to a
+	// recurring visit (uq_payments_recurring_instance). Soft-replay + gateway
+	// dual-PI defense use this — never invent a second PI for the same visit.
+	GetPaymentByRecurringInstanceID(ctx context.Context, recurringInstanceID string) (*Payment, error)
+	// GetPaymentByIdempotencyKey loads by payments.idempotency_key UNIQUE.
+	// Soft-replay on ErrIdempotencyConflict re-reads client_secret.
+	GetPaymentByIdempotencyKey(ctx context.Context, idempotencyKey string) (*Payment, error)
 	UpdatePaymentStatus(ctx context.Context, id string, status string) error
 	// ClaimPaymentStatus atomically transitions status from fromStatus to toStatus.
 	// Returns ErrInvalidStatus when the row is not currently in fromStatus (lost CAS race).

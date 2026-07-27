@@ -16,6 +16,7 @@ import {
   useMyListingBids,
   useMyListings,
   usePlaceListingBid,
+  useRetractListingBid,
   useUpdateListing,
 } from '@/hooks/useListings';
 import type { Listing, ListingDetail, ListingOrder } from '@/types';
@@ -42,6 +43,10 @@ vi.mock('@/lib/api', () => ({
     patch: vi.fn(),
     delete: vi.fn(),
   },
+  // place-bid / money mutations attach these; return a stable header object
+  // so the mutationFn does not throw when the real helpers are mocked out.
+  idempotencyHeader: (key: string) => ({ 'Idempotency-Key': key }),
+  clearIdempotencyKey: vi.fn(),
   ApiError: class ApiError extends Error {
     userMessage(fallback: string) {
       return this.message || fallback;
@@ -285,6 +290,32 @@ describe('useMyListingBids', () => {
   });
 });
 
+describe('useRetractListingBid', () => {
+  let queryClient: QueryClient;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  it('posts to the retract endpoint and invalidates mine + listing caches', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ listing: null, bid_id: 'bid-1' });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useRetractListingBid(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate({ listingId: 'listing-1', bidId: 'bid-1' });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/v1/listings/listing-1/bids/bid-1/retract',
+    );
+    expect(toastSuccess).toHaveBeenCalledWith('Bid retracted');
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['listingBids', 'mine'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['listings', 'listing-1'] });
+  });
+});
+
 describe('useCreateListing', () => {
   let queryClient: QueryClient;
   beforeEach(() => {
@@ -436,7 +467,11 @@ describe('usePlaceListingBid', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(api.post).toHaveBeenCalledWith('/api/v1/listings/l-1/bids', { amount_cents: 6000 });
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/v1/listings/l-1/bids',
+      { amount_cents: 6000 },
+      { 'Idempotency-Key': 'listing-bid:l-1:6000' },
+    );
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['listings', 'l-1'] });
     expect(toastSuccess).toHaveBeenCalledWith('Bid placed — you are the highest bidder');
   });

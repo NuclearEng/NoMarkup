@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nomarkup/nomarkup/services/payment/internal/crypto"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
@@ -85,8 +86,31 @@ func (r *PostgresRepository) CreatePayment(ctx context.Context, payment *domain.
 		payment.RetryCount,
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			// Prefer constraint name when present (pgx always fills it for
+			// unique_violation). Fall back to substring match for drivers that
+			// only put the index name in the message.
+			switch {
+			case pgErr.ConstraintName == "uq_payments_recurring_instance",
+				strings.Contains(pgErr.ConstraintName, "recurring_instance"),
+				strings.Contains(err.Error(), "uq_payments_recurring_instance"),
+				strings.Contains(err.Error(), "recurring_instance_id"):
+				return fmt.Errorf("create payment: %w", domain.ErrRecurringInstancePaymentExists)
+			case pgErr.ConstraintName == "payments_idempotency_key_key",
+				strings.Contains(pgErr.ConstraintName, "idempotency_key"),
+				strings.Contains(err.Error(), "idempotency_key"):
+				return fmt.Errorf("create payment: %w", domain.ErrIdempotencyConflict)
+			}
+			// Unknown unique constraint — still surface as idempotency-shaped
+			// conflict so CreatePayment can attempt soft-replay rather than 500.
+			return fmt.Errorf("create payment: %w", domain.ErrIdempotencyConflict)
+		}
 		if strings.Contains(err.Error(), "duplicate key") && strings.Contains(err.Error(), "idempotency_key") {
 			return fmt.Errorf("create payment: %w", domain.ErrIdempotencyConflict)
+		}
+		if strings.Contains(err.Error(), "duplicate key") && strings.Contains(err.Error(), "recurring_instance") {
+			return fmt.Errorf("create payment: %w", domain.ErrRecurringInstancePaymentExists)
 		}
 		return fmt.Errorf("create payment: %w", err)
 	}
@@ -94,8 +118,7 @@ func (r *PostgresRepository) CreatePayment(ctx context.Context, payment *domain.
 }
 
 func (r *PostgresRepository) GetPayment(ctx context.Context, id string) (*domain.Payment, error) {
-	p := &domain.Payment{}
-	err := r.pool.QueryRow(ctx, `
+	return r.scanPayment(ctx, `
 		SELECT id, contract_id, milestone_id, recurring_instance_id,
 		       customer_id, provider_id, amount_cents,
 		       platform_fee_cents, guarantee_fee_cents, provider_payout_cents,
@@ -107,7 +130,53 @@ func (r *PostgresRepository) GetPayment(ctx context.Context, id string) (*domain
 		       escrow_at, released_at, completed_at,
 		       created_at, updated_at
 		FROM payments
-		WHERE id = $1`, id).Scan(
+		WHERE id = $1`, id)
+}
+
+// GetPaymentByRecurringInstanceID loads the payment for a recurring visit.
+// Enforced unique by uq_payments_recurring_instance (migration 111).
+func (r *PostgresRepository) GetPaymentByRecurringInstanceID(ctx context.Context, recurringInstanceID string) (*domain.Payment, error) {
+	if recurringInstanceID == "" {
+		return nil, fmt.Errorf("get payment by recurring instance: %w", domain.ErrPaymentNotFound)
+	}
+	return r.scanPayment(ctx, `
+		SELECT id, contract_id, milestone_id, recurring_instance_id,
+		       customer_id, provider_id, amount_cents,
+		       platform_fee_cents, guarantee_fee_cents, provider_payout_cents,
+		       COALESCE(stripe_payment_intent_id, ''), COALESCE(stripe_charge_id, ''), COALESCE(stripe_transfer_id, ''), COALESCE(stripe_refund_id, ''),
+		       COALESCE(idempotency_key, ''), status, COALESCE(failure_reason, ''),
+		       refund_amount_cents, COALESCE(refund_reason, ''), refunded_at,
+		       installment_number, total_installments,
+		       retry_count, next_retry_at,
+		       escrow_at, released_at, completed_at,
+		       created_at, updated_at
+		FROM payments
+		WHERE recurring_instance_id = $1`, recurringInstanceID)
+}
+
+// GetPaymentByIdempotencyKey loads by the UNIQUE payments.idempotency_key.
+func (r *PostgresRepository) GetPaymentByIdempotencyKey(ctx context.Context, idempotencyKey string) (*domain.Payment, error) {
+	if idempotencyKey == "" {
+		return nil, fmt.Errorf("get payment by idempotency key: %w", domain.ErrPaymentNotFound)
+	}
+	return r.scanPayment(ctx, `
+		SELECT id, contract_id, milestone_id, recurring_instance_id,
+		       customer_id, provider_id, amount_cents,
+		       platform_fee_cents, guarantee_fee_cents, provider_payout_cents,
+		       COALESCE(stripe_payment_intent_id, ''), COALESCE(stripe_charge_id, ''), COALESCE(stripe_transfer_id, ''), COALESCE(stripe_refund_id, ''),
+		       COALESCE(idempotency_key, ''), status, COALESCE(failure_reason, ''),
+		       refund_amount_cents, COALESCE(refund_reason, ''), refunded_at,
+		       installment_number, total_installments,
+		       retry_count, next_retry_at,
+		       escrow_at, released_at, completed_at,
+		       created_at, updated_at
+		FROM payments
+		WHERE idempotency_key = $1`, idempotencyKey)
+}
+
+func (r *PostgresRepository) scanPayment(ctx context.Context, query string, arg any) (*domain.Payment, error) {
+	p := &domain.Payment{}
+	err := r.pool.QueryRow(ctx, query, arg).Scan(
 		&p.ID, &p.ContractID, &p.MilestoneID, &p.RecurringInstanceID,
 		&p.CustomerID, &p.ProviderID, &p.AmountCents,
 		&p.PlatformFeeCents, &p.GuaranteeFeeCents, &p.ProviderPayoutCents,

@@ -17,6 +17,8 @@ import (
 type mockPaymentRepo struct {
 	createPaymentFn               func(ctx context.Context, payment *domain.Payment) error
 	getPaymentFn                  func(ctx context.Context, id string) (*domain.Payment, error)
+	getPaymentByRecurringInstanceIDFn func(ctx context.Context, recurringInstanceID string) (*domain.Payment, error)
+	getPaymentByIdempotencyKeyFn  func(ctx context.Context, idempotencyKey string) (*domain.Payment, error)
 	updatePaymentStatusFn         func(ctx context.Context, id string, status string) error
 	claimPaymentStatusFn          func(ctx context.Context, id, fromStatus, toStatus string) error
 	updateRefundCASFn             func(ctx context.Context, id string, expectedPrior, newTotal int64, refundReason string, refundedAt time.Time, stripeRefundID, status string) error
@@ -88,6 +90,18 @@ func (m *mockPaymentRepo) CreatePayment(ctx context.Context, payment *domain.Pay
 }
 func (m *mockPaymentRepo) GetPayment(ctx context.Context, id string) (*domain.Payment, error) {
 	return m.getPaymentFn(ctx, id)
+}
+func (m *mockPaymentRepo) GetPaymentByRecurringInstanceID(ctx context.Context, recurringInstanceID string) (*domain.Payment, error) {
+	if m.getPaymentByRecurringInstanceIDFn != nil {
+		return m.getPaymentByRecurringInstanceIDFn(ctx, recurringInstanceID)
+	}
+	return nil, domain.ErrPaymentNotFound
+}
+func (m *mockPaymentRepo) GetPaymentByIdempotencyKey(ctx context.Context, idempotencyKey string) (*domain.Payment, error) {
+	if m.getPaymentByIdempotencyKeyFn != nil {
+		return m.getPaymentByIdempotencyKeyFn(ctx, idempotencyKey)
+	}
+	return nil, domain.ErrPaymentNotFound
 }
 func (m *mockPaymentRepo) UpdatePaymentStatus(ctx context.Context, id string, status string) error {
 	if m.updatePaymentStatusFn != nil {

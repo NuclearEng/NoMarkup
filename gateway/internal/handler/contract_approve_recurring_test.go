@@ -19,24 +19,32 @@ import (
 )
 
 const (
-	testContractID = "11111111-1111-4111-8111-111111111111"
-	testInstanceID = "22222222-2222-4222-8222-222222222222"
-	testCustomerID = "33333333-3333-4333-8333-333333333333"
+	testContractID  = "11111111-1111-4111-8111-111111111111"
+	testInstanceID  = "22222222-2222-4222-8222-222222222222"
+	testCustomerID  = "33333333-3333-4333-8333-333333333333"
+	testRecurringID = "55555555-5555-4555-8555-555555555555"
 )
 
 const testProviderID = "44444444-4444-4444-8444-444444444444"
 
 // mockApproveContractClient is a narrow ContractServiceClient for
-// ApproveRecurringInstance / CompleteRecurringInstance / GetContract.
+// ApproveRecurringInstance / CompleteRecurringInstance / GetContract /
+// GetRecurringConfig / PauseRecurring (FR-18.8 fail-soft pause).
 type mockApproveContractClient struct {
 	contractv1.ContractServiceClient
-	approveFn  func(ctx context.Context, req *contractv1.ApproveRecurringInstanceRequest) (*contractv1.ApproveRecurringInstanceResponse, error)
-	completeFn func(ctx context.Context, req *contractv1.CompleteRecurringInstanceRequest) (*contractv1.CompleteRecurringInstanceResponse, error)
-	getFn      func(ctx context.Context, req *contractv1.GetContractRequest) (*contractv1.GetContractResponse, error)
-	calls      int
-	lastReq    *contractv1.ApproveRecurringInstanceRequest
-	completeN  int
-	getN       int
+	approveFn         func(ctx context.Context, req *contractv1.ApproveRecurringInstanceRequest) (*contractv1.ApproveRecurringInstanceResponse, error)
+	completeFn        func(ctx context.Context, req *contractv1.CompleteRecurringInstanceRequest) (*contractv1.CompleteRecurringInstanceResponse, error)
+	getFn             func(ctx context.Context, req *contractv1.GetContractRequest) (*contractv1.GetContractResponse, error)
+	getRecurringFn    func(ctx context.Context, req *contractv1.GetRecurringConfigRequest) (*contractv1.GetRecurringConfigResponse, error)
+	pauseRecurringFn  func(ctx context.Context, req *contractv1.PauseRecurringRequest) (*contractv1.PauseRecurringResponse, error)
+	calls             int
+	lastReq           *contractv1.ApproveRecurringInstanceRequest
+	completeN         int
+	getN              int
+	getRecurringN     int
+	pauseN            int
+	lastPauseReq      *contractv1.PauseRecurringRequest
+	lastGetRecurring  *contractv1.GetRecurringConfigRequest
 }
 
 func (m *mockApproveContractClient) ApproveRecurringInstance(ctx context.Context, req *contractv1.ApproveRecurringInstanceRequest, _ ...grpc.CallOption) (*contractv1.ApproveRecurringInstanceResponse, error) {
@@ -83,11 +91,46 @@ func (m *mockApproveContractClient) GetContract(ctx context.Context, req *contra
 	}, nil
 }
 
-// mockApprovePaymentClient is a narrow PaymentServiceClient for CreatePayment.
+func (m *mockApproveContractClient) GetRecurringConfig(ctx context.Context, req *contractv1.GetRecurringConfigRequest, _ ...grpc.CallOption) (*contractv1.GetRecurringConfigResponse, error) {
+	m.getRecurringN++
+	m.lastGetRecurring = req
+	if m.getRecurringFn != nil {
+		return m.getRecurringFn(ctx, req)
+	}
+	return &contractv1.GetRecurringConfigResponse{
+		Config: &contractv1.RecurringConfig{
+			Id:         testRecurringID,
+			ContractId: req.GetContractId(),
+			Status:     "active",
+			RateCents:  7500,
+		},
+	}, nil
+}
+
+func (m *mockApproveContractClient) PauseRecurring(ctx context.Context, req *contractv1.PauseRecurringRequest, _ ...grpc.CallOption) (*contractv1.PauseRecurringResponse, error) {
+	m.pauseN++
+	m.lastPauseReq = req
+	if m.pauseRecurringFn != nil {
+		return m.pauseRecurringFn(ctx, req)
+	}
+	return &contractv1.PauseRecurringResponse{
+		Config: &contractv1.RecurringConfig{
+			Id:         req.GetRecurringId(),
+			ContractId: testContractID,
+			Status:     "paused",
+			RateCents:  7500,
+		},
+	}, nil
+}
+
+// mockApprovePaymentClient is a narrow PaymentServiceClient for CreatePayment
+// and ListPayments (dual-PI soft-load on create failure).
 type mockApprovePaymentClient struct {
 	paymentv1.PaymentServiceClient
 	createFn func(ctx context.Context, req *paymentv1.CreatePaymentRequest) (*paymentv1.CreatePaymentResponse, error)
+	listFn   func(ctx context.Context, req *paymentv1.ListPaymentsRequest) (*paymentv1.ListPaymentsResponse, error)
 	calls    int
+	listN    int
 	lastReq  *paymentv1.CreatePaymentRequest
 }
 
@@ -107,6 +150,14 @@ func (m *mockApprovePaymentClient) CreatePayment(ctx context.Context, req *payme
 		},
 		ClientSecret: "pi_secret_real",
 	}, nil
+}
+
+func (m *mockApprovePaymentClient) ListPayments(ctx context.Context, req *paymentv1.ListPaymentsRequest, _ ...grpc.CallOption) (*paymentv1.ListPaymentsResponse, error) {
+	m.listN++
+	if m.listFn != nil {
+		return m.listFn(ctx, req)
+	}
+	return &paymentv1.ListPaymentsResponse{}, nil
 }
 
 func approveRecurringRouter(h *ContractHandler) http.Handler {
@@ -182,6 +233,7 @@ func TestApproveRecurringInstance_instanceAmountMissingResidual(t *testing.T) {
 
 // TestApproveRecurringInstance_createPaymentFailedResidual: CreatePayment
 // failure must not roll back approval and must not invent payment_id.
+// FR-18.8: also pause recurring config fail-soft (never cancel contract).
 func TestApproveRecurringInstance_createPaymentFailedResidual(t *testing.T) {
 	t.Parallel()
 	cc := &mockApproveContractClient{}
@@ -201,16 +253,30 @@ func TestApproveRecurringInstance_createPaymentFailedResidual(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, "create_payment_failed", body["payment_residual"])
 	assert.NotEmpty(t, body["payment_error"])
+	assert.Equal(t, "not_wired", body["off_session_charge_residual"])
 	_, hasPayID := body["payment_id"]
 	assert.False(t, hasPayID, "must not invent payment_id after CreatePayment failure")
 	_, hasSecret := body["client_secret"]
 	assert.False(t, hasSecret)
-	require.Equal(t, 1, pc.calls)
+	// Create + soft-replay retry (both fail) before residual + pause.
+	require.Equal(t, 2, pc.calls)
 	assert.Equal(t, "recurring-instance-pay:"+testInstanceID, pc.lastReq.GetIdempotencyKey())
 	assert.Equal(t, testContractID, pc.lastReq.GetContractId())
 	assert.Equal(t, testInstanceID, pc.lastReq.GetRecurringInstanceId())
 	assert.Equal(t, testCustomerID, pc.lastReq.GetCustomerId())
 	assert.Equal(t, int64(7500), pc.lastReq.GetAmountCents())
+
+	// FR-18.8: PauseRecurring as customer; contract not cancelled.
+	require.Equal(t, 1, cc.getRecurringN)
+	require.Equal(t, 1, cc.pauseN)
+	require.NotNil(t, cc.lastPauseReq)
+	assert.Equal(t, testRecurringID, cc.lastPauseReq.GetRecurringId())
+	assert.Equal(t, testCustomerID, cc.lastPauseReq.GetUserId())
+	assert.Equal(t, true, body["recurring_paused"])
+	assert.Equal(t, "paused", body["recurring_status"])
+	assert.Equal(t, testRecurringID, body["recurring_id"])
+	_, hasPauseResidual := body["recurring_pause_residual"]
+	assert.False(t, hasPauseResidual)
 }
 
 // TestApproveRecurringInstance_clientSecretMissingResidual: PI exists without
@@ -427,6 +493,7 @@ func TestCompleteRecurringInstance_autoApproveCreatesPaymentAsCustomer(t *testin
 
 // TestCompleteRecurringInstance_autoApprovePaymentFailKeepsComplete: CreatePayment
 // failure must not invent payment_id and must keep 200 + completed instance.
+// FR-18.8: pause recurrence as the contract customer (not the provider actor).
 func TestCompleteRecurringInstance_autoApprovePaymentFailKeepsComplete(t *testing.T) {
 	t.Parallel()
 	cc := &mockApproveContractClient{
@@ -457,6 +524,7 @@ func TestCompleteRecurringInstance_autoApprovePaymentFailKeepsComplete(t *testin
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, "create_payment_failed", body["payment_residual"])
 	assert.NotEmpty(t, body["payment_error"])
+	assert.Equal(t, "not_wired", body["off_session_charge_residual"])
 	_, hasPayID := body["payment_id"]
 	assert.False(t, hasPayID, "must not invent payment_id after CreatePayment failure")
 	_, hasSecret := body["client_secret"]
@@ -464,6 +532,15 @@ func TestCompleteRecurringInstance_autoApprovePaymentFailKeepsComplete(t *testin
 	inst, ok := body["instance"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, true, inst["auto_approved"])
+
+	// Pause as contract customer (resolved via GetContract), not provider actor.
+	require.Equal(t, 1, cc.pauseN)
+	require.NotNil(t, cc.lastPauseReq)
+	assert.Equal(t, testRecurringID, cc.lastPauseReq.GetRecurringId())
+	assert.Equal(t, testCustomerID, cc.lastPauseReq.GetUserId())
+	assert.NotEqual(t, testProviderID, cc.lastPauseReq.GetUserId())
+	assert.Equal(t, true, body["recurring_paused"])
+	assert.Equal(t, "paused", body["recurring_status"])
 }
 
 // TestCompleteRecurringInstance_autoApproveCustomerUnresolved: GetContract
@@ -499,4 +576,158 @@ func TestCompleteRecurringInstance_autoApproveCustomerUnresolved(t *testing.T) {
 	assert.Equal(t, 0, pc.calls)
 	_, hasPayID := body["payment_id"]
 	assert.False(t, hasPayID)
+}
+
+// TestApproveRecurringInstance_createPaymentFailedPauseSoftFails: PauseRecurring
+// error must not roll back approval; surface recurring_pause_residual only.
+func TestApproveRecurringInstance_createPaymentFailedPauseSoftFails(t *testing.T) {
+	t.Parallel()
+	cc := &mockApproveContractClient{
+		pauseRecurringFn: func(_ context.Context, _ *contractv1.PauseRecurringRequest) (*contractv1.PauseRecurringResponse, error) {
+			return nil, status.Error(codes.Internal, "pause db down")
+		},
+	}
+	pc := &mockApprovePaymentClient{
+		createFn: func(_ context.Context, _ *paymentv1.CreatePaymentRequest) (*paymentv1.CreatePaymentResponse, error) {
+			return nil, status.Error(codes.Unavailable, "stripe down")
+		},
+	}
+	h := NewContractHandler(cc, nil, nil)
+	h.SetPaymentClient(pc)
+
+	rec := httptest.NewRecorder()
+	approveRecurringRouter(h).ServeHTTP(rec, approveRecurringRequest(t, testCustomerID))
+
+	require.Equal(t, http.StatusOK, rec.Code, "approval kept; body=%s", rec.Body.String())
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "create_payment_failed", body["payment_residual"])
+	assert.Equal(t, "pause_failed", body["recurring_pause_residual"])
+	assert.Equal(t, testRecurringID, body["recurring_id"])
+	_, hasPaused := body["recurring_paused"]
+	assert.False(t, hasPaused)
+	require.Equal(t, 1, cc.pauseN)
+}
+
+// TestApproveRecurringInstance_createPaymentFailedAlreadyPaused: when config is
+// already paused, do not call PauseRecurring again; still report recurring_paused.
+func TestApproveRecurringInstance_createPaymentFailedAlreadyPaused(t *testing.T) {
+	t.Parallel()
+	cc := &mockApproveContractClient{
+		getRecurringFn: func(_ context.Context, req *contractv1.GetRecurringConfigRequest) (*contractv1.GetRecurringConfigResponse, error) {
+			return &contractv1.GetRecurringConfigResponse{
+				Config: &contractv1.RecurringConfig{
+					Id:         testRecurringID,
+					ContractId: req.GetContractId(),
+					Status:     "paused",
+					RateCents:  7500,
+				},
+			}, nil
+		},
+	}
+	pc := &mockApprovePaymentClient{
+		createFn: func(_ context.Context, _ *paymentv1.CreatePaymentRequest) (*paymentv1.CreatePaymentResponse, error) {
+			return nil, status.Error(codes.FailedPrecondition, "provider not onboarded")
+		},
+	}
+	h := NewContractHandler(cc, nil, nil)
+	h.SetPaymentClient(pc)
+
+	rec := httptest.NewRecorder()
+	approveRecurringRouter(h).ServeHTTP(rec, approveRecurringRequest(t, testCustomerID))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "create_payment_failed", body["payment_residual"])
+	assert.Equal(t, true, body["recurring_paused"])
+	assert.Equal(t, "paused", body["recurring_status"])
+	assert.Equal(t, 0, cc.pauseN, "must not re-call PauseRecurring when already paused")
+}
+
+// TestApproveRecurringInstance_softReplayOnSecondCreate: first CreatePayment
+// fails (e.g. race / mesh blip), second soft-replays existing PI + real secret.
+// Must not invent secrets; must not pause recurrence when money path recovers.
+func TestApproveRecurringInstance_softReplayOnSecondCreate(t *testing.T) {
+	t.Parallel()
+	cc := &mockApproveContractClient{}
+	var n int
+	pc := &mockApprovePaymentClient{
+		createFn: func(_ context.Context, req *paymentv1.CreatePaymentRequest) (*paymentv1.CreatePaymentResponse, error) {
+			n++
+			if n == 1 {
+				return nil, status.Error(codes.Unavailable, "transient")
+			}
+			// Soft-replay path: same sticky key, real payment + secret only.
+			return &paymentv1.CreatePaymentResponse{
+				Payment: &paymentv1.Payment{
+					Id:                  "pay-soft-replay-1",
+					ContractId:          req.GetContractId(),
+					RecurringInstanceId: req.GetRecurringInstanceId(),
+					CustomerId:          req.GetCustomerId(),
+					AmountCents:         req.GetAmountCents(),
+					Status:              paymentv1.PaymentStatus_PAYMENT_STATUS_PENDING,
+				},
+				ClientSecret: "pi_secret_soft_replay",
+			}, nil
+		},
+	}
+	h := NewContractHandler(cc, nil, nil)
+	h.SetPaymentClient(pc)
+
+	rec := httptest.NewRecorder()
+	approveRecurringRouter(h).ServeHTTP(rec, approveRecurringRequest(t, testCustomerID))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "pay-soft-replay-1", body["payment_id"])
+	assert.Equal(t, "pi_secret_soft_replay", body["client_secret"])
+	_, hasResidual := body["payment_residual"]
+	assert.False(t, hasResidual, "soft-replay success must not surface residual")
+	assert.Equal(t, 2, pc.calls)
+	assert.Equal(t, 0, cc.pauseN, "must not pause when soft-replay recovers client_secret")
+}
+
+// TestApproveRecurringInstance_loadExistingPaymentNoSecretFailClosed: both
+// CreatePayment attempts fail but ListPayments finds an existing row → surface
+// real payment_id only; never invent client_secret; do not pause (money exists).
+func TestApproveRecurringInstance_loadExistingPaymentNoSecretFailClosed(t *testing.T) {
+	t.Parallel()
+	cc := &mockApproveContractClient{}
+	pc := &mockApprovePaymentClient{
+		createFn: func(_ context.Context, _ *paymentv1.CreatePaymentRequest) (*paymentv1.CreatePaymentResponse, error) {
+			return nil, status.Error(codes.FailedPrecondition, "payment intent missing; cannot issue client_secret")
+		},
+		listFn: func(_ context.Context, req *paymentv1.ListPaymentsRequest) (*paymentv1.ListPaymentsResponse, error) {
+			assert.Equal(t, testCustomerID, req.GetUserId())
+			return &paymentv1.ListPaymentsResponse{
+				Payments: []*paymentv1.Payment{
+					{
+						Id:                  "pay-existing-no-secret",
+						ContractId:          testContractID,
+						RecurringInstanceId: testInstanceID,
+						CustomerId:          testCustomerID,
+						AmountCents:         7500,
+					},
+				},
+			}, nil
+		},
+	}
+	h := NewContractHandler(cc, nil, nil)
+	h.SetPaymentClient(pc)
+
+	rec := httptest.NewRecorder()
+	approveRecurringRouter(h).ServeHTTP(rec, approveRecurringRequest(t, testCustomerID))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	var body map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "pay-existing-no-secret", body["payment_id"])
+	assert.Equal(t, "client_secret_missing", body["payment_residual"])
+	_, hasSecret := body["client_secret"]
+	assert.False(t, hasSecret, "must not invent client_secret when soft-replay cannot re-read it")
+	assert.Equal(t, 2, pc.calls)
+	assert.Equal(t, 1, pc.listN)
+	assert.Equal(t, 0, cc.pauseN, "existing payment ⇒ do not FR-18.8 pause")
 }

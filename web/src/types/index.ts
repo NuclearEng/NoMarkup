@@ -538,6 +538,26 @@ export interface Milestone {
   approved_at?: string;
 }
 
+/**
+ * FR-5.4 local terms snapshot bound from chat Accept (live or award residual).
+ * Gateway projects only scalar fields from contracts.terms_json.local_terms.
+ */
+export interface ContractLocalTerms {
+  payment_type?: string;
+  payment_timing?: string;
+  amount?: string;
+  milestones?: string;
+  description?: string;
+  accepted_by?: string;
+  accepted_at?: string;
+  source?: string;
+  channel_id?: string;
+  proposed_message_id?: string;
+  bound_at?: string;
+  /** Allow additional scalar keys without breaking display. */
+  [key: string]: string | number | boolean | undefined;
+}
+
 export interface Contract {
   id: string;
   contract_number: string;
@@ -565,6 +585,8 @@ export interface Contract {
   // Wave 5 services-polish (Section H). Post-completion gratuity. 0
   // means "no tip yet"; once non-zero the tip widget hides.
   tip_amount_cents?: number;
+  /** Chat/award-bound local terms (FR-5.4). Absent when never accepted. */
+  local_terms?: ContractLocalTerms | null;
 }
 
 export interface ChangeOrder {

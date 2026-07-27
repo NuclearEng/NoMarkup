@@ -306,6 +306,28 @@ export function useDeleteListingDraft() {
   });
 }
 
+/**
+ * eBay-style 60s retraction for the caller's current high bid.
+ * Server enforces ownership, active status, and the 60s window.
+ */
+export function useRetractListingBid() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ listingId, bidId }: { listingId: string; bidId: string }) =>
+      api.post<{ listing: Listing | null; bid_id: string }>(
+        `/api/v1/listings/${listingId}/bids/${bidId}/retract`,
+      ),
+    onSuccess: (_data, variables) => {
+      toast.success('Bid retracted');
+      void qc.invalidateQueries({ queryKey: ['listingBids', 'mine'] });
+      void qc.invalidateQueries({ queryKey: ['listings', variables.listingId] });
+      void qc.invalidateQueries({ queryKey: ['listings', variables.listingId, 'bids'] });
+      void qc.invalidateQueries({ queryKey: ['listings', 'search'] });
+    },
+    onError: explainListingFailure('Failed to retract bid'),
+  });
+}
+
 export function usePlaceListingBid() {
   const qc = useQueryClient();
   return useMutation({

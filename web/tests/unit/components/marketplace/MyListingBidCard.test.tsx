@@ -1,6 +1,14 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mutate = vi.fn();
+vi.mock('@/hooks/useListings', () => ({
+  useRetractListingBid: () => ({
+    mutate,
+    isPending: false,
+  }),
+}));
 
 vi.mock('next/link', () => ({
   default: ({ children, href, ...rest }: { children: React.ReactNode; href: string }) =>
@@ -14,7 +22,7 @@ vi.mock('next/image', () => ({
 
 import { MyListingBidCard } from '@/components/marketplace/MyListingBidCard';
 import { LISTING_STATUS } from '@/types';
-import type { Listing, MyListingBid } from '@/types';
+import type { Listing, ListingBid, MyListingBid } from '@/types';
 
 function makeListing(overrides: Partial<Listing> = {}): Listing {
   return {
@@ -50,22 +58,38 @@ function makeListing(overrides: Partial<Listing> = {}): Listing {
   };
 }
 
-function makeEntry(listingOverrides: Partial<Listing> = {}): MyListingBid {
+function makeBid(overrides: Partial<ListingBid> = {}): ListingBid {
   return {
-    bid: {
-      id: 'bid-1',
-      listing_id: 'listing-1',
-      bidder_id: 'me',
-      bidder_display_name: 'Me',
-      amount_cents: 5500,
-      is_winning: false,
-      created_at: new Date().toISOString(),
-    },
+    id: 'bid-1',
+    listing_id: 'listing-1',
+    bidder_id: 'me',
+    bidder_display_name: 'Me',
+    amount_cents: 5500,
+    is_winning: false,
+    created_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function makeEntry(
+  listingOverrides: Partial<Listing> = {},
+  bidOverrides: Partial<ListingBid> = {},
+): MyListingBid {
+  return {
+    bid: makeBid(bidOverrides),
     listing: makeListing(listingOverrides),
   };
 }
 
 describe('MyListingBidCard', () => {
+  beforeEach(() => {
+    mutate.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renders winning badge when user is winning', () => {
     render(<MyListingBidCard entry={makeEntry({ is_user_winning: true })} />);
     expect(screen.getByText('Winning')).toBeDefined();
@@ -105,5 +129,49 @@ describe('MyListingBidCard', () => {
     render(<MyListingBidCard entry={makeEntry()} />);
     const link = screen.getByText(/View listing/);
     expect(link.closest('a')?.getAttribute('href')).toBe('/marketplace/listing-1');
+  });
+
+  it('shows retract control for a winning bid within the 60s window', async () => {
+    render(
+      <MyListingBidCard
+        entry={makeEntry(
+          { is_user_winning: true, status: LISTING_STATUS.ACTIVE },
+          { is_winning: true, created_at: new Date().toISOString() },
+        )}
+      />,
+    );
+    // useEffect sets nowMs after mount — wait for retract button.
+    const btn = await screen.findByRole('button', { name: /Retract bid/i });
+    expect(btn).toBeDefined();
+    fireEvent.click(btn);
+    expect(mutate).toHaveBeenCalledWith({ listingId: 'listing-1', bidId: 'bid-1' });
+  });
+
+  it('hides retract when the 60s window has expired', () => {
+    const old = new Date(Date.now() - 120_000).toISOString();
+    render(
+      <MyListingBidCard
+        entry={makeEntry(
+          { is_user_winning: true, status: LISTING_STATUS.ACTIVE },
+          { is_winning: true, created_at: old },
+        )}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Retract bid/i })).toBeNull();
+  });
+
+  it('hides retract when the user is outbid', async () => {
+    render(
+      <MyListingBidCard
+        entry={makeEntry(
+          { is_user_winning: false, status: LISTING_STATUS.ACTIVE },
+          { is_winning: false, created_at: new Date().toISOString() },
+        )}
+      />,
+    );
+    // Allow effect to run.
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Retract bid/i })).toBeNull();
+    });
   });
 });

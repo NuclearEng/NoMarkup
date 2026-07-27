@@ -293,6 +293,15 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 
 	// Create payment record in DB.
 	if err := s.repo.CreatePayment(ctx, payment); err != nil {
+		// Dual-PI / retry defense: UNIQUE on idempotency_key or
+		// recurring_instance_id means a prior insert already owns this visit
+		// (or sticky key). Soft-replay the existing row + real client_secret
+		// instead of minting a second PaymentIntent. Fail closed if the
+		// existing row has no PI or the secret cannot be re-read.
+		if errors.Is(err, domain.ErrIdempotencyConflict) ||
+			errors.Is(err, domain.ErrRecurringInstancePaymentExists) {
+			return s.softReplayCreatePayment(ctx, input)
+		}
 		return nil, "", err
 	}
 
@@ -333,6 +342,95 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 	}
 
 	return payment, clientSecret, nil
+}
+
+// softReplayCreatePayment returns an existing payment + real client_secret when
+// INSERT hit a unique constraint (idempotency_key or recurring_instance_id).
+//
+// Security: never invent secrets. If the row has no Stripe PaymentIntent, or
+// Stripe/dev-store cannot re-read a client_secret for a still-confirmable
+// status, fail closed. Already-captured statuses return the payment with an
+// empty secret (caller does not need PaymentSheet).
+func (s *PaymentService) softReplayCreatePayment(ctx context.Context, input domain.CreatePaymentInput) (*domain.Payment, string, error) {
+	existing, err := s.loadPaymentForSoftReplay(ctx, input)
+	if err != nil {
+		return nil, "", fmt.Errorf("create payment soft-replay: %w", err)
+	}
+
+	// Ownership: only the original customer may soft-replay (same gate as create).
+	if existing.CustomerID != input.CustomerID {
+		return nil, "", fmt.Errorf("create payment soft-replay: %w", domain.ErrContractNotOwned)
+	}
+	// Contract must still match — refuse cross-contract replay if a row were
+	// somehow mis-linked (defense in depth; unique is per instance, not contract).
+	if existing.ContractID != input.ContractID {
+		return nil, "", fmt.Errorf("create payment soft-replay: contract mismatch: %w", domain.ErrInvalidStatus)
+	}
+
+	switch existing.Status {
+	case "pending", "processing":
+		// Confirmable path: need a real PI + re-readable client_secret.
+		if existing.StripePaymentIntentID == "" {
+			slog.WarnContext(ctx, "create payment soft-replay: existing payment has no PI (fail closed)",
+				"payment_id", existing.ID,
+				"status", existing.Status,
+			)
+			return nil, "", fmt.Errorf("create payment soft-replay: %w", domain.ErrPaymentIntentMissing)
+		}
+		secret, secErr := s.stripe.GetPaymentIntentClientSecret(ctx, existing.StripePaymentIntentID)
+		if secErr != nil || secret == "" {
+			slog.WarnContext(ctx, "create payment soft-replay: could not re-read client_secret (fail closed)",
+				"payment_id", existing.ID,
+				"pi_id", existing.StripePaymentIntentID,
+				"error", secErr,
+			)
+			// Fail closed — never invent a secret or hand back an empty one as success.
+			return nil, "", fmt.Errorf("create payment soft-replay: client_secret unavailable: %w", domain.ErrPaymentIntentMissing)
+		}
+		slog.InfoContext(ctx, "create payment soft-replay: reusing existing payment intent",
+			"payment_id", existing.ID,
+			"status", existing.Status,
+			"pi_id", existing.StripePaymentIntentID,
+		)
+		return existing, secret, nil
+
+	case "escrow", "released", "completed":
+		// Already held/paid — return the payment without a confirmable secret.
+		// Callers (PaymentSheet) must not treat empty secret as a new PI.
+		slog.InfoContext(ctx, "create payment soft-replay: payment already past confirm",
+			"payment_id", existing.ID,
+			"status", existing.Status,
+		)
+		return existing, "", nil
+
+	default:
+		// failed / refunded / disputed / etc. — not soft-replayable into a new charge.
+		return nil, "", fmt.Errorf("create payment soft-replay: status %q not reusable: %w", existing.Status, domain.ErrInvalidStatus)
+	}
+}
+
+// loadPaymentForSoftReplay prefers recurring_instance_id (dual-key race between
+// gateway approve and customer POST /payments) then falls back to idempotency_key.
+func (s *PaymentService) loadPaymentForSoftReplay(ctx context.Context, input domain.CreatePaymentInput) (*domain.Payment, error) {
+	if input.RecurringInstanceID != nil && *input.RecurringInstanceID != "" {
+		p, err := s.repo.GetPaymentByRecurringInstanceID(ctx, *input.RecurringInstanceID)
+		if err == nil {
+			return p, nil
+		}
+		if !errors.Is(err, domain.ErrPaymentNotFound) {
+			return nil, err
+		}
+	}
+	if input.IdempotencyKey != "" {
+		p, err := s.repo.GetPaymentByIdempotencyKey(ctx, input.IdempotencyKey)
+		if err == nil {
+			return p, nil
+		}
+		if !errors.Is(err, domain.ErrPaymentNotFound) {
+			return nil, err
+		}
+	}
+	return nil, domain.ErrPaymentNotFound
 }
 
 // ProcessPayment confirms/captures a PaymentIntent and updates status.

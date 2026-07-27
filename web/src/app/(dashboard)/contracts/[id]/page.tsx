@@ -371,6 +371,86 @@ export default function ContractDetailPage() {
         </Card>
       </div>
 
+      {/* FR-5.4: agreed local terms from chat Accept (or award residual bind). */}
+      {contract.local_terms && Object.keys(contract.local_terms).length > 0 ? (
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+          <CardHeader>
+            <h3 className="gold-text text-sm font-medium">Agreed local terms</h3>
+            <p className="text-xs text-zinc-400">
+              Payment terms accepted in chat
+              {contract.local_terms.bound_at === 'award'
+                ? ' and applied when the contract was created'
+                : ''}
+              .
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {contract.local_terms.payment_timing || contract.local_terms.payment_type ? (
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-zinc-300 text-sm">Payment type</span>
+                <span className="text-sm font-medium text-right">
+                  {getPaymentTimingLabel(
+                    contract.local_terms.payment_timing ??
+                      contract.local_terms.payment_type ??
+                      '',
+                  )}
+                </span>
+              </div>
+            ) : null}
+            {contract.local_terms.amount ? (
+              <>
+                <div className="glass-divider" role="separator" />
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-zinc-300 text-sm">Amount notes</span>
+                  <span className="text-sm font-medium text-right tabular-nums">
+                    {contract.local_terms.amount}
+                  </span>
+                </div>
+              </>
+            ) : null}
+            {contract.local_terms.milestones ? (
+              <>
+                <div className="glass-divider" role="separator" />
+                <div className="flex items-start justify-between gap-4">
+                  <span className="text-zinc-300 text-sm shrink-0">Milestones</span>
+                  <span className="text-sm font-medium text-right whitespace-pre-wrap">
+                    {contract.local_terms.milestones}
+                  </span>
+                </div>
+              </>
+            ) : null}
+            {contract.local_terms.description ? (
+              <>
+                <div className="glass-divider" role="separator" />
+                <div className="flex items-start justify-between gap-4">
+                  <span className="text-zinc-300 text-sm shrink-0">Notes</span>
+                  <span className="text-sm font-medium text-right whitespace-pre-wrap">
+                    {contract.local_terms.description}
+                  </span>
+                </div>
+              </>
+            ) : null}
+            {contract.local_terms.accepted_at ? (
+              <>
+                <div className="glass-divider" role="separator" />
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-zinc-300 text-sm">Accepted at</span>
+                  <span className="text-sm font-medium">
+                    {new Date(contract.local_terms.accepted_at).toLocaleString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+              </>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/* Contract Acceptance (for pending_acceptance status) */}
       {contract.status === CONTRACT_STATUS.PENDING_ACCEPTANCE ? (
         <ContractAcceptance contract={contract} />

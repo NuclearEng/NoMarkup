@@ -221,3 +221,197 @@ func TestPaymentService_CreatePayment_DerivesProviderFromContract(t *testing.T) 
 	require.NotNil(t, stored)
 	assert.Equal(t, "prov-real", stored.ProviderID, "payee must come from the contract, never the client body")
 }
+
+// --- CreatePayment dual-PI soft-replay (recurring_instance_id UNIQUE) ---
+
+func TestPaymentService_CreatePayment_SoftReplayRecurringInstance(t *testing.T) {
+	t.Parallel()
+	instanceID := "inst-visit-1"
+	existing := &domain.Payment{
+		ID:                    "pay-existing-1",
+		ContractID:            "contract-1",
+		RecurringInstanceID:   &instanceID,
+		CustomerID:            "cust-1",
+		ProviderID:            "prov-real",
+		AmountCents:           5000,
+		Status:                "pending",
+		StripePaymentIntentID: "pi_dev_recurring-instance-pay:inst-visit-1",
+		IdempotencyKey:        "recurring-instance-pay:inst-visit-1",
+	}
+	repo := reconcileRepo(70000)
+	// First create path hits unique on recurring_instance_id (gateway vs iOS keys).
+	repo.createPaymentFn = func(_ context.Context, _ *domain.Payment) error {
+		return domain.ErrRecurringInstancePaymentExists
+	}
+	repo.getPaymentByRecurringInstanceIDFn = func(_ context.Context, id string) (*domain.Payment, error) {
+		assert.Equal(t, instanceID, id)
+		return existing, nil
+	}
+	svc := newTestPaymentService(repo, nil)
+	// Seed DevStore with the PI secret CreatePaymentIntent would have recorded.
+	svc.stripe.DevStore().RecordPaymentIntent(existing.StripePaymentIntentID, "", 5000, "pi_dev_secret_recurring-instance-pay:inst-visit-1")
+
+	payment, secret, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:          "contract-1",
+		CustomerID:          "cust-1",
+		AmountCents:         5000,
+		RecurringInstanceID: &instanceID,
+		// Different sticky key than the original insert — dual-key race.
+		IdempotencyKey: "create-payment:contract-1:5000:inst-visit-1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, payment)
+	assert.Equal(t, "pay-existing-1", payment.ID, "must reuse existing payment, not mint a second")
+	assert.Equal(t, "pi_dev_secret_recurring-instance-pay:inst-visit-1", secret)
+	assert.NotEmpty(t, secret, "soft-replay must return a real client_secret")
+}
+
+func TestPaymentService_CreatePayment_SoftReplayIdempotencyKey(t *testing.T) {
+	t.Parallel()
+	existing := &domain.Payment{
+		ID:                    "pay-idem-1",
+		ContractID:            "contract-1",
+		CustomerID:            "cust-1",
+		ProviderID:            "prov-real",
+		AmountCents:           5000,
+		Status:                "pending",
+		StripePaymentIntentID: "pi_dev_idem-sticky-1",
+		IdempotencyKey:        "idem-sticky-1",
+	}
+	repo := reconcileRepo(70000)
+	repo.createPaymentFn = func(_ context.Context, _ *domain.Payment) error {
+		return domain.ErrIdempotencyConflict
+	}
+	repo.getPaymentByIdempotencyKeyFn = func(_ context.Context, key string) (*domain.Payment, error) {
+		assert.Equal(t, "idem-sticky-1", key)
+		return existing, nil
+	}
+	svc := newTestPaymentService(repo, nil)
+	svc.stripe.DevStore().RecordPaymentIntent(existing.StripePaymentIntentID, "", 5000, "pi_dev_secret_idem-sticky-1")
+
+	payment, secret, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:     "contract-1",
+		CustomerID:     "cust-1",
+		AmountCents:    5000,
+		IdempotencyKey: "idem-sticky-1",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, payment)
+	assert.Equal(t, "pay-idem-1", payment.ID)
+	assert.Equal(t, "pi_dev_secret_idem-sticky-1", secret)
+}
+
+func TestPaymentService_CreatePayment_SoftReplayMissingPIFailClosed(t *testing.T) {
+	t.Parallel()
+	instanceID := "inst-no-pi"
+	existing := &domain.Payment{
+		ID:                    "pay-no-pi",
+		ContractID:            "contract-1",
+		RecurringInstanceID:   &instanceID,
+		CustomerID:            "cust-1",
+		ProviderID:            "prov-real",
+		AmountCents:           5000,
+		Status:                "pending",
+		StripePaymentIntentID: "", // PI never minted — fail closed
+		IdempotencyKey:        "recurring-instance-pay:inst-no-pi",
+	}
+	repo := reconcileRepo(70000)
+	repo.createPaymentFn = func(_ context.Context, _ *domain.Payment) error {
+		return domain.ErrRecurringInstancePaymentExists
+	}
+	repo.getPaymentByRecurringInstanceIDFn = func(_ context.Context, _ string) (*domain.Payment, error) {
+		return existing, nil
+	}
+	svc := newTestPaymentService(repo, nil)
+
+	payment, secret, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:          "contract-1",
+		CustomerID:          "cust-1",
+		AmountCents:         5000,
+		RecurringInstanceID: &instanceID,
+		IdempotencyKey:      "create-payment:other-key",
+	})
+	require.Error(t, err)
+	assert.Nil(t, payment)
+	assert.Empty(t, secret, "must never invent client_secret when PI is missing")
+	assert.True(t, errors.Is(err, domain.ErrPaymentIntentMissing), "got %v", err)
+}
+
+func TestPaymentService_CreatePayment_SoftReplayWrongCustomerFailClosed(t *testing.T) {
+	t.Parallel()
+	instanceID := "inst-owned"
+	existing := &domain.Payment{
+		ID:                    "pay-owned",
+		ContractID:            "contract-1",
+		RecurringInstanceID:   &instanceID,
+		CustomerID:            "cust-1",
+		ProviderID:            "prov-real",
+		AmountCents:           5000,
+		Status:                "pending",
+		StripePaymentIntentID: "pi_dev_x",
+		IdempotencyKey:        "k",
+	}
+	repo := reconcileRepo(70000)
+	// Bypass contract ownership on create (attacker passes) — soft-replay must still deny.
+	repo.getContractForPaymentFn = func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+		return &domain.ContractForPayment{
+			ID: contractID, CustomerID: "cust-attacker", ProviderID: "prov-real",
+			AmountCents: 70000, Status: "active",
+		}, nil
+	}
+	repo.createPaymentFn = func(_ context.Context, _ *domain.Payment) error {
+		return domain.ErrRecurringInstancePaymentExists
+	}
+	repo.getPaymentByRecurringInstanceIDFn = func(_ context.Context, _ string) (*domain.Payment, error) {
+		return existing, nil
+	}
+	svc := newTestPaymentService(repo, nil)
+
+	payment, secret, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:          "contract-1",
+		CustomerID:          "cust-attacker",
+		AmountCents:         5000,
+		RecurringInstanceID: &instanceID,
+		IdempotencyKey:      "attacker-key",
+	})
+	require.Error(t, err)
+	assert.Nil(t, payment)
+	assert.Empty(t, secret)
+	assert.True(t, errors.Is(err, domain.ErrContractNotOwned), "got %v", err)
+}
+
+func TestPaymentService_CreatePayment_SoftReplayAlreadyEscrowEmptySecret(t *testing.T) {
+	t.Parallel()
+	instanceID := "inst-held"
+	existing := &domain.Payment{
+		ID:                    "pay-held",
+		ContractID:            "contract-1",
+		RecurringInstanceID:   &instanceID,
+		CustomerID:            "cust-1",
+		ProviderID:            "prov-real",
+		AmountCents:           5000,
+		Status:                "escrow",
+		StripePaymentIntentID: "pi_dev_held",
+		IdempotencyKey:        "k-held",
+	}
+	repo := reconcileRepo(70000)
+	repo.createPaymentFn = func(_ context.Context, _ *domain.Payment) error {
+		return domain.ErrRecurringInstancePaymentExists
+	}
+	repo.getPaymentByRecurringInstanceIDFn = func(_ context.Context, _ string) (*domain.Payment, error) {
+		return existing, nil
+	}
+	svc := newTestPaymentService(repo, nil)
+
+	payment, secret, err := svc.CreatePayment(context.Background(), domain.CreatePaymentInput{
+		ContractID:          "contract-1",
+		CustomerID:          "cust-1",
+		AmountCents:         5000,
+		RecurringInstanceID: &instanceID,
+		IdempotencyKey:      "retry-key",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, payment)
+	assert.Equal(t, "pay-held", payment.ID)
+	assert.Empty(t, secret, "already-held payment has no confirmable secret — never invent one")
+}

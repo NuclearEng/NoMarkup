@@ -1144,6 +1144,10 @@ func (h *ListingsHandler) MyListingBids(w http.ResponseWriter, r *http.Request) 
 			"status":            lstatus,
 			"current_bid_cents": lcurrent,
 			"bid_count":         lbidcount,
+			// bid.IsWinning is (status='active') for this user's bid row —
+			// surface it as is_user_winning so MyBids cards / retract UI
+			// don't need a second round-trip.
+			"is_user_winning": b.IsWinning,
 		}
 		if lendsAt.Valid {
 			listingMap["auction_ends_at"] = lendsAt.Time.UTC().Format(time.RFC3339)
