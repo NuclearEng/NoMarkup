@@ -15,6 +15,7 @@ What CI does cover, so you know what this prompt is *adding* on top:
 | CI job | What it really runs | Limits |
 |---|---|---|
 | `e2e-test` | `npx playwright test --project=chromium` in `web/` | **Chromium only**, and there is **no backend stack in that job** — the specs are written backend-tolerant. It is a render/smoke gate, not a funnel test. |
+| `e2e-cross-browser` | `npx playwright test --project={firefox,webkit}` (matrix) | **Nightly + `workflow_dispatch` only** (QA-08). Same backendless smoke; **not** a PR/`build` gate. |
 | `fullstack-security-test` | Boots the docker-compose stack (minus `web`, `chat`, `imaging`, `minio`) and runs `tests/integration/` — 4 × `TestAuthBypass_*`, `TestDoubleSpend_ParallelAwardsCreateOneContract`, `TestOwnership_CrossAccountReadIsRejected` — plus the live-stack `TestIdempotency_PaymentDoubleSubmit` | Real auth, real DB writes, real gRPC fanout. Does **not** drive the browser, WebSocket frames, MinIO uploads, trust/fraud recomputation, or any admin flow. |
 | `go-integration-test` | Tagged suites in `gateway`, `services/{user,job,payment}` against a PostGIS service container, with `-short` | `-short` skips the live-gateway bid-race and payment-idempotency tests (those run in `fullstack-security-test`). |
 | `money-race-tests` | In-process payment concurrency/idempotency subset with `-race` | No DB, no stack. |

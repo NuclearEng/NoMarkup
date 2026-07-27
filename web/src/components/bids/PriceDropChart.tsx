@@ -186,9 +186,9 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
         <defs>
           {/* Gradient fill under the line */}
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#22c55e" stopOpacity="0.3" />
-            <stop offset="70%" stopColor="#22c55e" stopOpacity="0.05" />
-            <stop offset="100%" stopColor="#22c55e" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--brand-green)" stopOpacity="0.3" />
+            <stop offset="70%" stopColor="var(--brand-green)" stopOpacity="0.05" />
+            <stop offset="100%" stopColor="var(--brand-green)" stopOpacity="0" />
           </linearGradient>
 
           {/* Glow filter for dots */}
@@ -245,7 +245,7 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
         <path
           d={pathD}
           fill="none"
-          stroke="#22c55e"
+          stroke="var(--brand-green)"
           strokeWidth={2.5}
           strokeLinecap="round"
           strokeDasharray={totalPathLength}
@@ -259,7 +259,7 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
         <path
           d={pathD}
           fill="none"
-          stroke="#22c55e"
+          stroke="var(--brand-green)"
           strokeWidth={6}
           strokeLinecap="round"
           opacity={0.15}
@@ -288,7 +288,7 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
                 cx={cx}
                 cy={cy}
                 r={isLast ? 5 : 3.5}
-                fill="#22c55e"
+                fill="var(--brand-green)"
                 filter={`url(#${glowFilterId})`}
                 opacity={0.6}
               />
@@ -297,7 +297,7 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
                 cx={cx}
                 cy={cy}
                 r={isLast ? 5 : 3.5}
-                fill="#22c55e"
+                fill="var(--brand-green)"
                 className="stroke-card"
                 strokeWidth={2}
               >
@@ -311,7 +311,7 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
                     cy={cy}
                     r={6}
                     fill="none"
-                    stroke="#22c55e"
+                    stroke="var(--brand-green)"
                     strokeWidth={1.5}
                     opacity={0.6}
                     style={{
@@ -324,7 +324,7 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
                     cy={cy}
                     r={6}
                     fill="none"
-                    stroke="#22c55e"
+                    stroke="var(--brand-green)"
                     strokeWidth={1}
                     opacity={0.3}
                     style={{
@@ -390,14 +390,14 @@ export function PriceDropChart({ events }: PriceDropChartProps) {
             width={56}
             height={20}
             rx={4}
-            fill="#22c55e"
+            fill="var(--brand-green)"
             opacity={0.15}
           />
           <text
             x={width - padding.right + 6}
             y={scaleY(lastStep.price) + 4}
             className="text-xs font-bold"
-            fill="#22c55e"
+            fill="var(--brand-green)"
           >
             {formatPrice(lastStep.price)}
           </text>

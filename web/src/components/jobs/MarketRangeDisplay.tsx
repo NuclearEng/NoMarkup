@@ -210,7 +210,8 @@ export function MarketRangeDisplay({
           <div
             className="absolute inset-0 rounded-full"
             style={{
-              background: 'linear-gradient(to right, #22c55e, #fbbf24, #f87171)',
+              background:
+                'linear-gradient(to right, var(--brand-green), hsl(var(--trust-medium)), hsl(var(--trust-low)))',
             }}
             aria-hidden="true"
           />

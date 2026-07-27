@@ -1,0 +1,17 @@
+# FE-03 — paths under web/src/{components,app} allowed to contain raw #hex.
+# One relative path per line (from web/). Comments (# …) and blank lines ignored.
+# Keep this list tiny; prefer CSS vars / Tailwind tokens elsewhere.
+# See docs/design-system.md § "Raw hex policy".
+
+# Next.js ImageResponse favicon / Apple touch — no document CSS vars at render time
+src/app/icon.tsx
+src/app/apple-icon.tsx
+
+# Viewport theme-color meta requires a concrete color string at module scope
+src/app/layout.tsx
+
+# Third-party brand palette (Google "G") — trademark colors, not product tokens
+src/components/auth/oauth-icons.tsx
+
+# Mapbox GL paint API needs resolved color strings (runtime CSS vars still OK later)
+src/components/marketplace/MarketplaceMap.tsx

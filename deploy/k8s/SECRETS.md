@@ -69,8 +69,9 @@ The gateway reads it from env (`METRICS_BEARER_TOKEN`, falling back to
 missing key stops the pod from starting instead of booting with metrics
 unscrapeable.
 
-Prometheus runs in the `monitoring` namespace, so it needs the **same value**
-mirrored there as a file. Provision and mount it:
+Prometheus runs in the `monitoring` namespace (`deploy/monitoring/` kustomize
+root — OPS-10), so it needs the **same value** mirrored there as a file.
+Provision **before** `kubectl apply -k deploy/monitoring`:
 
 ```bash
 # same value as nomarkup-secrets/METRICS_BEARER_TOKEN
@@ -79,22 +80,9 @@ kubectl create secret generic nomarkup-metrics-token \
   --namespace=monitoring
 ```
 
-```yaml
-# Prometheus Deployment (monitoring namespace)
-volumes:
-  - name: metrics-token
-    secret:
-      secretName: nomarkup-metrics-token
-      items:
-        - key: METRICS_BEARER_TOKEN
-          path: metrics-bearer-token
-      defaultMode: 0400
-volumeMounts:
-  - name: metrics-token
-    mountPath: /etc/prometheus/secrets
-    readOnly: true
-```
-
+The mount is already declared on
+`deploy/monitoring/k8s/prometheus-deployment.yaml` (Secret
+`nomarkup-metrics-token` → `/etc/prometheus/secrets/metrics-bearer-token`).
 `deploy/monitoring/prometheus/prometheus.yml` consumes it on the
 `kubernetes-pods` job as
 `authorization: {type: Bearer, credentials_file: /etc/prometheus/secrets/metrics-bearer-token}`.
@@ -105,6 +93,8 @@ about it (watch the `up{job="kubernetes-pods"}` series and Prometheus' own
 
 **Never** set `METRICS_PUBLIC=true` as a workaround — that serves `/metrics`
 unauthenticated to anything that can reach the pod.
+
+Apply + verify: [`docs/operations/monitoring-stack.md`](../../docs/operations/monitoring-stack.md).
 
 ## Provisioning (recommended via External Secrets Operator + Vault)
 

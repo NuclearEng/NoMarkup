@@ -290,11 +290,19 @@ export function LandingPageClient({ initialTickerItems }: LandingPageClientProps
               >
                 <div className="flex items-center gap-3">
                   <div className="avatar-stack flex">
-                    {['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'].map((color, i) => (
+                    {(
+                      [
+                        'bg-blue-500',
+                        'bg-violet-500',
+                        'bg-pink-500',
+                        'bg-amber-500',
+                        'bg-emerald-500',
+                      ] as const
+                    ).map((bg, i) => (
                       <div
-                        key={color}
-                        className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background text-[10px] font-bold text-white"
-                        style={{ background: color, zIndex: 5 - i }}
+                        key={bg}
+                        className={`flex h-7 w-7 items-center justify-center rounded-full border-2 border-background text-[10px] font-bold text-white ${bg}`}
+                        style={{ zIndex: 5 - i }}
                         aria-hidden="true"
                       >
                         {['S', 'M', 'J', 'A', 'R'][i]}
@@ -312,7 +320,7 @@ export function LandingPageClient({ initialTickerItems }: LandingPageClientProps
                         width="14"
                         height="14"
                         viewBox="0 0 16 16"
-                        fill="#eab308"
+                        className="fill-brand-gold"
                         opacity={star === 5 ? 0.7 : 1}
                         aria-hidden="true"
                       >

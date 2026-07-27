@@ -1,0 +1,37 @@
+# Optional monitoring stack (OPS-10). Not part of deploy/k8s base/overlays —
+# apply separately after the app mesh so Prometheus can scrape gateway /metrics.
+#
+#   kubectl apply -k deploy/monitoring
+#
+# Requires Secret nomarkup-metrics-token in namespace monitoring first
+# (see docs/operations/monitoring-stack.md). Reuses prometheus.yml + alerts.yml
+# from this directory tree via configMapGenerator.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: nomarkup
+    includeSelectors: false
+
+resources:
+  - k8s/namespace.yaml
+  - k8s/rbac.yaml
+  - k8s/prometheus-deployment.yaml
+  - k8s/prometheus-service.yaml
+  - k8s/alertmanager-deployment.yaml
+  - k8s/alertmanager-service.yaml
+
+# Configs live next to this kustomization so default load restrictions allow
+# them (no --load-restrictor needed). Same files docker-compose mounts.
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus.yml=prometheus/prometheus.yml
+      - alerts.yml=prometheus/alerts.yml
+  - name: alertmanager-config
+    files:
+      - alertmanager.yml=alertmanager/alertmanager.yml

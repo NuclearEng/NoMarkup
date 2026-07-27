@@ -257,7 +257,7 @@ describe('BidDepthChart', () => {
         vi.advanceTimersByTime(150);
       });
       // After mount, the line path and circles should have opacity 1 / 0.8 styles applied.
-      const paths = container.querySelectorAll('path[stroke="#22c55e"]');
+      const paths = container.querySelectorAll('path[stroke="var(--brand-green)"]');
       expect(paths.length).toBeGreaterThanOrEqual(1);
     } finally {
       vi.useRealTimers();
@@ -294,9 +294,9 @@ describe('BidDepthChart', () => {
       />,
     );
     // The amber marker text contains a "$" — but with currentLowest=0 the marker
-    // group with `<line stroke="#f59e0b">` should not render.
+    // group with trust-medium stroke should not render.
     const amberLine = Array.from(container.querySelectorAll('line')).find((l) =>
-      l.getAttribute('stroke') === '#f59e0b',
+      l.getAttribute('stroke') === 'hsl(var(--trust-medium))',
     );
     expect(amberLine).toBeUndefined();
   });

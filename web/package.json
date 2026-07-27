@@ -7,6 +7,7 @@
     "build": "next build",
     "analyze": "ANALYZE=true next build",
     "check:bundle": "node scripts/check-bundle-size.mjs",
+    "check:hex": "node scripts/check-no-raw-hex.mjs",
     "lighthouse:ci": "node scripts/run-lighthouse-ci.mjs",
     "start": "next start",
     "lint": "eslint .",

@@ -23,8 +23,8 @@ export interface Column<T> {
  * Opaque backgrounds for pinned cells. They MUST be fully opaque — a
  * semi-transparent sticky cell lets the horizontally-scrolled content bleed
  * through. Map to showcase semantic tokens (docs/brand/showcase-ssot.md):
- *   - body: bg-secondary → surface #0e1017
- *   - header: bg-accent → card-hover #1a1d28
+ *   - body: bg-secondary → surface (token --secondary)
+ *   - header: bg-accent → card-hover (token --accent)
  */
 const STICKY_BODY_BG = 'bg-secondary';
 const STICKY_HEADER_BG = 'bg-accent';

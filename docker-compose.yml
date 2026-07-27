@@ -91,6 +91,9 @@ services:
     volumes:
       - ./deploy/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      # Satisfies authorization.credentials_file in prometheus.yml (k8s uses
+      # nomarkup-metrics-token). Dev-only value; never use in a real cluster.
+      - ./deploy/monitoring/prometheus/dev-metrics-bearer-token:/etc/prometheus/secrets/metrics-bearer-token:ro
       - prometheusdata:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -112,6 +115,7 @@ services:
     ports:
       - "9093:9093"
     volumes:
+      - ./deploy/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanagerdata:/alertmanager
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"

@@ -1196,17 +1196,26 @@ body {
     transform: translate(calc(-50% - 20px), calc(-50% + 30px)) scale(0.94);
   }
 }
+/* Atmospheric mesh fills live here (token SSOT) — not inline in components (FE-03). */
 .gradient-blob-1 {
   animation: gradient-blob-drift-1 45s ease-in-out infinite;
+  background: radial-gradient(circle, #0d1f4a 0%, #091333 40%, transparent 70%);
+  filter: blur(100px);
 }
 .gradient-blob-2 {
   animation: gradient-blob-drift-2 50s ease-in-out infinite;
+  background: radial-gradient(circle, #3d1f8e 0%, #241260 40%, transparent 70%);
+  filter: blur(110px);
 }
 .gradient-blob-3 {
   animation: gradient-blob-drift-3 55s ease-in-out infinite;
+  background: radial-gradient(circle, #0f4d3a 0%, #0a3328 40%, transparent 70%);
+  filter: blur(120px);
 }
 .gradient-blob-4 {
   animation: gradient-blob-drift-4 40s ease-in-out infinite;
+  background: radial-gradient(circle, #2a1f0e 0%, #0f0c05 40%, transparent 70%);
+  filter: blur(90px);
 }
 
 /* ================================================================

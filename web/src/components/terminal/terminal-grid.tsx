@@ -204,8 +204,8 @@ export function TerminalGrid({
                     ? {
                         border: '1px solid transparent',
                         backgroundImage: isLive
-                          ? 'linear-gradient(#0e1017, #0e1017), linear-gradient(135deg, rgba(34,197,94,0.45), rgba(201,168,76,0.12), rgba(201,168,76,0.3))'
-                          : 'linear-gradient(#0e1017, #0e1017), linear-gradient(135deg, rgba(201,168,76,0.4), rgba(201,168,76,0.1), rgba(201,168,76,0.3))',
+                          ? 'linear-gradient(var(--secondary), var(--secondary)), linear-gradient(135deg, color-mix(in srgb, var(--brand-green) 45%, transparent), color-mix(in srgb, var(--brand-gold) 12%, transparent), color-mix(in srgb, var(--brand-gold) 30%, transparent))'
+                          : 'linear-gradient(var(--secondary), var(--secondary)), linear-gradient(135deg, color-mix(in srgb, var(--brand-gold) 40%, transparent), color-mix(in srgb, var(--brand-gold) 10%, transparent), color-mix(in srgb, var(--brand-gold) 30%, transparent))',
                         backgroundOrigin: 'border-box',
                         backgroundClip: 'padding-box, border-box',
                         boxShadow:

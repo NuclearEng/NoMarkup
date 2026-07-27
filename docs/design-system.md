@@ -103,6 +103,25 @@ xl: ['1.25rem', { lineHeight: '1.75rem' }],
 - Wordmark + mark: `web/src/components/layout/Logo.tsx` (No + gold Markup, Syne)
 - Favicon / Apple touch: `web/src/app/icon.tsx` (32px), `web/src/app/apple-icon.tsx` (180px) — code-generated ImageResponse on shell `#07080b` (inline hex OK; not App Store master)
 
+### Raw hex policy (FE-03)
+**Rule:** no raw `#rgb` / `#rrggbb` / `#rrggbbaa` in `web/src/components/**` or `web/src/app/**`. Prefer:
+- Tailwind semantic utilities (`text-brand-gold`, `bg-destructive`, `fill-brand-green`, …)
+- CSS custom properties (`var(--brand-green)`, `hsl(var(--trust-medium))`, `color-mix(in srgb, var(--brand-gold) 40%, transparent)`)
+- Token definitions only in `web/src/styles/globals.css` (+ `tailwind.config.ts` mirrors)
+
+**CI gate:** `npm run check:hex` → `web/scripts/check-no-raw-hex.mjs` (also `web/scripts/check-no-raw-hex.sh`). Wired in GitHub Actions `web-lint-typecheck`. Allowlist: `web/scripts/raw-hex-allowlist.txt`.
+
+**Documented exceptions (allowlist — keep tiny):**
+
+| Path | Why hex is required |
+|------|---------------------|
+| `src/app/icon.tsx`, `src/app/apple-icon.tsx` | Next.js `ImageResponse` has no document CSS vars at render time |
+| `src/app/layout.tsx` | `viewport.themeColor` meta needs a concrete color string at module scope |
+| `src/components/auth/oauth-icons.tsx` | Google “G” trademark brand palette (not product tokens) |
+| `src/components/marketplace/MarketplaceMap.tsx` | Mapbox GL `paint` API color strings (cluster markers) |
+
+**Charts / canvas / SVG:** use CSS vars in `stroke` / `fill` / `stopColor` (browser resolves them). Canvas confetti resolves `getComputedStyle(…).getPropertyValue('--brand-*')` at paint time — do not hardcode hex arrays. Landing atmospheric mesh fills live on `.gradient-blob-*` in `globals.css`, not inline in `GradientMesh.tsx`.
+
 ```typescript
 // tailwind.config.ts — canonical shape (values resolve via CSS vars)
 const config = {

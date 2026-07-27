@@ -1,7 +1,11 @@
 # NoMarkup Prometheus Configuration
 #
-# Deployed in K8s alongside Alertmanager and Grafana.
-# Local dev: runs via docker-compose with static targets.
+# In-cluster: kubectl apply -k deploy/monitoring  (OPS-10; see
+# docs/operations/monitoring-stack.md). ConfigMap-mounted next to alerts.yml;
+# bearer file from Secret nomarkup-metrics-token.
+# Local dev: docker-compose mounts this file + alerts.yml +
+# dev-metrics-bearer-token → /etc/prometheus/secrets/metrics-bearer-token.
+# kubernetes_sd jobs are inert without a cluster API; self-scrape still works.
 
 global:
   scrape_interval: 15s

@@ -6,10 +6,10 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # Optional engines bench job (engines-bench-nightly) + lighthouse-budget —
-    # 06:00 UTC daily.
+    # Optional nightly: engines-bench-nightly, lighthouse-budget,
+    # e2e-cross-browser (firefox/webkit) — 06:00 UTC daily.
     - cron: "0 6 * * *"
-  # Manual re-run of optional PERF jobs (lighthouse-budget, etc.).
+  # Manual re-run of optional PERF / cross-browser E2E jobs.
   workflow_dispatch:
 
 concurrency:
@@ -35,6 +35,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: cd web && npm ci
       - run: cd web && npm run lint
+      # FE-03 — ban arbitrary raw hex in components/app (allowlist for Mapbox/OAuth/OG icons)
+      - run: cd web && npm run check:hex
       - run: cd web && npm run typecheck
 
   web-test:
@@ -73,15 +75,57 @@ jobs:
       - name: Install Playwright browsers
         working-directory: web
         run: npx playwright install --with-deps chromium
-      # Run ONLY the project whose browser + system deps the step above
-      # installs. The bare `playwright test` also ran webkit/firefox with no
-      # deps installed — webkit failed on every API-dependent spec (and there
-      # is no backend stack in this job; the specs are written backend-tolerant
-      # and chromium passes 68/68). Cross-browser E2E stays available locally
-      # via `npx playwright test`.
+      # PR/push gate: Chromium only (QA-08). Installs match --project so we do
+      # not run firefox/webkit without browser deps. Specs are backend-tolerant
+      # (no stack in this job). Cross-browser coverage is the optional
+      # e2e-cross-browser job (schedule + workflow_dispatch only).
       - name: Run E2E tests
         working-directory: web
         run: npx playwright test --project=chromium
+
+  # ── Optional cross-browser E2E (QA-08) ─────────────────────────
+  # Firefox + WebKit smoke against the same backendless specs as e2e-test.
+  # Not a PR gate and not in build.needs — nightly + manual dispatch only so
+  # merge is never blocked by engine-specific flakes or longer install time.
+  # fail-fast: false so one browser's failure still surfaces the other.
+
+  e2e-cross-browser:
+    name: Playwright E2E Cross-Browser (${{ matrix.project }})
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+      - name: Install Playwright browsers
+        working-directory: web
+        run: npx playwright install --with-deps ${{ matrix.project }}
+      - name: Run E2E tests (${{ matrix.project }})
+        working-directory: web
+        run: npx playwright test --project=${{ matrix.project }}
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report-${{ matrix.project }}-${{ github.run_id }}
+          path: |
+            web/playwright-report/
+            web/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
 
   # ── Proto Drift Guard ─────────────────────────────────────────
   # Ensures generated proto code matches the .proto sources. A broken or

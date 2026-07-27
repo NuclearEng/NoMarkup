@@ -76,7 +76,7 @@ function TickerItemDisplay({ item }: { item: TickerItem }) {
             height="10"
             viewBox="0 0 16 16"
             fill="none"
-            stroke="#34d399"
+            stroke="var(--brand-green)"
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
