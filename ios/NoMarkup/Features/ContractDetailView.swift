@@ -1,13 +1,19 @@
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 /// Contract detail — status, amount, parties, role-gated lifecycle actions,
-/// milestones, open dispute sheet, leave review sheet.
+/// milestones, change orders, tip, reports, guarantee claim, open dispute / review.
 struct ContractDetailView: View {
     let contractID: String
 
     @EnvironmentObject private var auth: AuthViewModel
 
     @State private var contract: ContractDetail?
+    @State private var changeOrders: [ContractChangeOrder] = []
+    @State private var guaranteeClaim: GuaranteeClaim?
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
@@ -17,13 +23,28 @@ struct ContractDetailView: View {
     /// Title of the button that opened a confirmation dialog (used when confirm runs the action).
     @State private var pendingConfirmActionTitle: String?
     @State private var actingMilestoneID: String?
+    @State private var actingChangeOrderID: String?
     @State private var currentUserID: String?
     @State private var showCancelConfirm = false
     @State private var showMarkCompleteConfirm = false
     @State private var showApproveCompletionConfirm = false
+    @State private var showNoShowConfirm = false
+    @State private var showAbandonmentConfirm = false
     @State private var pendingMilestoneApproveID: String?
     @State private var showDisputeSheet = false
     @State private var showReviewSheet = false
+    @State private var showGuaranteeClaimSheet = false
+
+    // Change order form
+    @State private var showChangeOrderForm = false
+    @State private var changeOrderDescription = ""
+    @State private var changeOrderAmountText = ""
+    @State private var changeOrderIsReduction = false
+    @State private var isSubmittingChangeOrder = false
+
+    // Tip form
+    @State private var tipAmountText = ""
+    @State private var isSubmittingTip = false
 
     var body: some View {
         contractBody
@@ -38,6 +59,7 @@ struct ContractDetailView: View {
             .modifier(ContractSheetsModifier(
                 showDisputeSheet: $showDisputeSheet,
                 showReviewSheet: $showReviewSheet,
+                showGuaranteeClaimSheet: $showGuaranteeClaimSheet,
                 contractID: contract?.id,
                 onMessage: { message in
                     statusIsError = false
@@ -49,6 +71,8 @@ struct ContractDetailView: View {
                 showCancelConfirm: $showCancelConfirm,
                 showMarkCompleteConfirm: $showMarkCompleteConfirm,
                 showApproveCompletionConfirm: $showApproveCompletionConfirm,
+                showNoShowConfirm: $showNoShowConfirm,
+                showAbandonmentConfirm: $showAbandonmentConfirm,
                 pendingMilestoneApproveID: $pendingMilestoneApproveID,
                 onCancel: {
                     Task {
@@ -68,6 +92,20 @@ struct ContractDetailView: View {
                     Task {
                         await runAction(title: pendingConfirmActionTitle ?? "Approve completion") {
                             try await APIClient.shared.approveContractCompletion(id: contractID)
+                        }
+                    }
+                },
+                onReportNoShow: {
+                    Task {
+                        await runAction(title: pendingConfirmActionTitle ?? "Report no-show") {
+                            try await APIClient.shared.reportContractNoShow(id: contractID)
+                        }
+                    }
+                },
+                onReportAbandonment: {
+                    Task {
+                        await runAction(title: pendingConfirmActionTitle ?? "Report abandonment") {
+                            try await APIClient.shared.reportContractAbandonment(id: contractID)
                         }
                     }
                 },
@@ -223,6 +261,16 @@ struct ContractDetailView: View {
             actionsSection(contract)
 
             milestonesSection(contract)
+
+            changeOrdersSection(contract)
+
+            tipSection(contract)
+
+            reportsSection(contract)
+
+            guaranteeSection(contract)
+
+            documentsSection(contract)
         }
         .brandListBackground()
     }
@@ -415,7 +463,7 @@ struct ContractDetailView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(tint)
-        .disabled(actingActionTitle != nil || actingMilestoneID != nil)
+        .disabled(actingActionTitle != nil || actingMilestoneID != nil || actingChangeOrderID != nil)
         .accessibilityHint(title)
     }
 
@@ -510,6 +558,362 @@ struct ContractDetailView: View {
         .padding(.vertical, 4)
     }
 
+    // MARK: Change orders
+
+    @ViewBuilder
+    private func changeOrdersSection(_ contract: ContractDetail) -> some View {
+        let isParty = contract.isCustomer(userId: currentUserID) || contract.isProvider(userId: currentUserID)
+        let canPropose = isParty && contract.normalizedStatus == "active"
+        let orders = resolvedChangeOrders(for: contract)
+
+        if canPropose || !orders.isEmpty {
+            Section {
+                if canPropose {
+                    Button {
+                        showChangeOrderForm.toggle()
+                    } label: {
+                        Label(
+                            showChangeOrderForm ? "Hide change order form" : "Propose change order",
+                            systemImage: showChangeOrderForm ? "chevron.up" : "plus.circle"
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                    .tint(BrandTheme.accent)
+                    .listRowBackground(BrandTheme.navyElevated)
+
+                    if showChangeOrderForm {
+                        changeOrderForm(contract)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
+                }
+
+                if orders.isEmpty {
+                    Text("No change orders yet.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
+                } else {
+                    ForEach(orders) { order in
+                        changeOrderRow(order, contract: contract)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
+                }
+            } header: {
+                Text("Change orders").brandSectionHeader()
+            } footer: {
+                Text("Scope or price adjustments require the other party’s approval before the contract amount changes.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func changeOrderForm(_ contract: ContractDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Description")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary)
+            TextField("Describe the scope or price change", text: $changeOrderDescription, axis: .vertical)
+                .lineLimit(3 ... 8)
+                .foregroundStyle(BrandTheme.textPrimary)
+
+            Picker("Adjustment", selection: $changeOrderIsReduction) {
+                Text("Add").tag(false)
+                Text("Reduce").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Amount adjustment direction")
+
+            DollarAmountField(
+                text: $changeOrderAmountText,
+                placeholder: "0.00",
+                accessibilityLabelText: changeOrderIsReduction
+                    ? "Amount to reduce in dollars"
+                    : "Amount to add in dollars"
+            )
+
+            Button {
+                Task { await submitChangeOrder(contract) }
+            } label: {
+                if isSubmittingChangeOrder {
+                    ProgressView()
+                        .tint(BrandTheme.navy)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                } else {
+                    Label("Submit change order", systemImage: "doc.badge.plus")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(BrandTheme.gold)
+            .disabled(
+                isSubmittingChangeOrder
+                    || changeOrderDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || MoneyFormat.cents(fromDollarsText: changeOrderAmountText) == nil
+                    || actingActionTitle != nil
+            )
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func changeOrderRow(_ order: ContractChangeOrder, contract: ContractDetail) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(order.displayDescription)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Text(order.displayStatus)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            Text(order.displayAmountDelta)
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(
+                    (order.amountDeltaCents ?? 0) >= 0 ? BrandTheme.goldBright : BrandTheme.warning
+                )
+
+            if let proposedBy = order.proposedBy, !proposedBy.isEmpty {
+                Text("Proposed by \(String(proposedBy.prefix(8)))…")
+                    .font(.caption2)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            if let created = order.createdAt, !created.isEmpty {
+                Text(CatalogDateFormat.friendlyDateTime(created))
+                    .font(.caption2)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            if order.canRespond(as: currentUserID, contract: contract) {
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await respondToChangeOrder(order, contract: contract, accepted: true) }
+                    } label: {
+                        if actingChangeOrderID == order.id {
+                            ProgressView()
+                                .tint(BrandTheme.navy)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Label("Accept", systemImage: "checkmark")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.success)
+                    .disabled(actingChangeOrderID != nil || actingActionTitle != nil)
+
+                    Button {
+                        Task { await respondToChangeOrder(order, contract: contract, accepted: false) }
+                    } label: {
+                        Label("Reject", systemImage: "xmark")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.destructive)
+                    .disabled(actingChangeOrderID != nil || actingActionTitle != nil)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    // MARK: Tip
+
+    @ViewBuilder
+    private func tipSection(_ contract: ContractDetail) -> some View {
+        let isCustomer = contract.isCustomer(userId: currentUserID)
+        if isCustomer && contract.normalizedStatus == "completed" {
+            Section {
+                if let tip = contract.tipAmountCents, tip > 0 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "heart.fill")
+                            .foregroundStyle(BrandTheme.success)
+                        Text("You tipped \(MoneyFormat.usd(cents: tip)) — thank you.")
+                            .font(.subheadline)
+                            .foregroundStyle(BrandTheme.success)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .listRowBackground(BrandTheme.navyElevated)
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Show appreciation for great work. Tips are optional and separate from the contract amount.")
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        DollarAmountField(
+                            text: $tipAmountText,
+                            placeholder: "10.00",
+                            accessibilityLabelText: "Tip amount in dollars"
+                        )
+
+                        Button {
+                            Task { await submitTip(contract) }
+                        } label: {
+                            if isSubmittingTip {
+                                ProgressView()
+                                    .tint(BrandTheme.navy)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            } else if let cents = MoneyFormat.cents(fromDollarsText: tipAmountText) {
+                                Label("Send tip · \(MoneyFormat.usd(cents: cents))", systemImage: "heart")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            } else {
+                                Label("Send tip", systemImage: "heart")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(BrandTheme.accent)
+                        .disabled(
+                            isSubmittingTip
+                                || MoneyFormat.cents(fromDollarsText: tipAmountText) == nil
+                                || actingActionTitle != nil
+                        )
+                    }
+                    .padding(.vertical, 4)
+                    .listRowBackground(BrandTheme.navyElevated)
+                }
+            } header: {
+                Text("Tip your provider").brandSectionHeader()
+            } footer: {
+                Text("Minimum $1.00. Tips require payment capture on the server; if tipping is not yet available you will see a clear message.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+    }
+
+    // MARK: Reports
+
+    @ViewBuilder
+    private func reportsSection(_ contract: ContractDetail) -> some View {
+        let isCustomer = contract.isCustomer(userId: currentUserID)
+        let status = contract.normalizedStatus
+        // Customer may report issues while the job is expected to be underway.
+        let canReport = isCustomer && (status == "active" || status == "pending_acceptance")
+
+        if canReport {
+            Section {
+                actionButton(
+                    title: "Report no-show",
+                    systemImage: "person.crop.circle.badge.xmark",
+                    tint: BrandTheme.warning,
+                    prominent: false
+                ) {
+                    pendingConfirmActionTitle = "Report no-show"
+                    showNoShowConfirm = true
+                }
+                actionButton(
+                    title: "Report abandonment",
+                    systemImage: "flag",
+                    tint: BrandTheme.destructive,
+                    prominent: false
+                ) {
+                    pendingConfirmActionTitle = "Report abandonment"
+                    showAbandonmentConfirm = true
+                }
+            } header: {
+                Text("Reports").brandSectionHeader()
+            } footer: {
+                Text("Use these only when the provider did not appear or walked away mid-job. This may suspend or cancel the contract per platform rules.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            .listRowBackground(BrandTheme.navyElevated)
+        }
+    }
+
+    // MARK: Guarantee claim
+
+    @ViewBuilder
+    private func guaranteeSection(_ contract: ContractDetail) -> some View {
+        let isCustomer = contract.isCustomer(userId: currentUserID)
+        let status = contract.normalizedStatus
+        let showForCustomer = isCustomer && (status == "completed" || status == "disputed" || guaranteeClaim != nil)
+        let showForAnyParty = guaranteeClaim != nil
+            && (contract.isCustomer(userId: currentUserID) || contract.isProvider(userId: currentUserID))
+
+        if showForCustomer || showForAnyParty {
+            Section {
+                if let claim = guaranteeClaim {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(claim.displayType)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                            Spacer()
+                            Text(claim.displayStatus)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(BrandTheme.warning)
+                        }
+                        Text(claim.displayDescription)
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let notes = claim.resolutionNotes, !notes.isEmpty {
+                            Text(notes)
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.success)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let created = claim.createdAt, !created.isEmpty {
+                            Text("Filed \(CatalogDateFormat.friendlyDateTime(created))")
+                                .font(.caption2)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .listRowBackground(BrandTheme.navyElevated)
+                } else if isCustomer && status == "completed" {
+                    Text("The NoMarkup Guarantee covers eligible completed jobs when work is not as agreed.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+
+                    actionButton(
+                        title: "File guarantee claim",
+                        systemImage: "shield.checkered",
+                        tint: BrandTheme.gold,
+                        prominent: true
+                    ) {
+                        showGuaranteeClaimSheet = true
+                    }
+                }
+            } header: {
+                Text("NoMarkup Guarantee").brandSectionHeader()
+            } footer: {
+                Text("Claims are reviewed by support. Evidence uploads are available on the web dashboard.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            .listRowBackground(BrandTheme.navyElevated)
+        }
+    }
+
+    // MARK: Documents
+
+    @ViewBuilder
+    private func documentsSection(_ contract: ContractDetail) -> some View {
+        Section {
+            actionButton(
+                title: "Open contract PDF",
+                systemImage: "doc.richtext",
+                tint: BrandTheme.teal,
+                prominent: false
+            ) {
+                await openContractPDF(contract)
+            }
+        } header: {
+            Text("Documents").brandSectionHeader()
+        } footer: {
+            Text("Opens the export URL in Safari when available.")
+                .foregroundStyle(BrandTheme.textSecondary)
+        }
+        .listRowBackground(BrandTheme.navyElevated)
+    }
+
     private func statusColor(_ style: StatusChipStyle) -> Color {
         switch style {
         case .success: return BrandTheme.success
@@ -518,6 +922,11 @@ struct ContractDetailView: View {
         case .danger: return BrandTheme.destructive
         case .neutral: return BrandTheme.textSecondary
         }
+    }
+
+    private func resolvedChangeOrders(for contract: ContractDetail) -> [ContractChangeOrder] {
+        if !changeOrders.isEmpty { return changeOrders }
+        return contract.changeOrders ?? []
     }
 
     // MARK: Load / actions
@@ -534,7 +943,18 @@ struct ContractDetailView: View {
         }
 
         do {
-            contract = try await APIClient.shared.fetchContract(id: contractID)
+            let detail = try await APIClient.shared.fetchContract(id: contractID)
+            contract = detail
+
+            // Prefer dedicated list endpoint; fall back to embedded change_orders.
+            // Fetch change orders + claim in parallel after the detail is known.
+            async let ordersResult = Self.loadChangeOrders(
+                contractId: contractID,
+                fallback: detail.changeOrders ?? []
+            )
+            async let claimResult = Self.loadGuaranteeClaim(contractId: contractID)
+            changeOrders = await ordersResult
+            guaranteeClaim = await claimResult
         } catch {
             if contract == nil {
                 errorMessage = error.localizedDescription
@@ -543,6 +963,21 @@ struct ContractDetailView: View {
                 statusMessage = error.localizedDescription
             }
         }
+    }
+
+    private static func loadChangeOrders(
+        contractId: String,
+        fallback: [ContractChangeOrder]
+    ) async -> [ContractChangeOrder] {
+        do {
+            return try await APIClient.shared.fetchChangeOrders(contractId: contractId)
+        } catch {
+            return fallback
+        }
+    }
+
+    private static func loadGuaranteeClaim(contractId: String) async -> GuaranteeClaim? {
+        try? await APIClient.shared.fetchGuaranteeClaim(contractId: contractId)
     }
 
     @MainActor
@@ -556,6 +991,8 @@ struct ContractDetailView: View {
             contract = try await work()
             statusIsError = false
             statusMessage = "Updated."
+            // Refresh side data (change orders / claim) after lifecycle mutations.
+            await refreshSideData()
         } catch {
             statusIsError = true
             statusMessage = error.localizedDescription
@@ -578,6 +1015,125 @@ struct ContractDetailView: View {
             statusMessage = error.localizedDescription
         }
     }
+
+    @MainActor
+    private func refreshSideData() async {
+        async let orders = Self.loadChangeOrders(
+            contractId: contractID,
+            fallback: contract?.changeOrders ?? []
+        )
+        async let claim = Self.loadGuaranteeClaim(contractId: contractID)
+        changeOrders = await orders
+        guaranteeClaim = await claim
+    }
+
+    @MainActor
+    private func submitChangeOrder(_ contract: ContractDetail) async {
+        guard let absCents = MoneyFormat.cents(fromDollarsText: changeOrderAmountText) else {
+            statusIsError = true
+            statusMessage = "Enter a valid dollar amount for the change order."
+            return
+        }
+        let delta = changeOrderIsReduction ? -absCents : absCents
+        isSubmittingChangeOrder = true
+        statusMessage = nil
+        statusIsError = false
+        defer { isSubmittingChangeOrder = false }
+        do {
+            let created = try await APIClient.shared.createChangeOrder(
+                contractId: contract.id,
+                description: changeOrderDescription,
+                amountDeltaCents: delta
+            )
+            changeOrders.insert(created, at: 0)
+            changeOrderDescription = ""
+            changeOrderAmountText = ""
+            changeOrderIsReduction = false
+            showChangeOrderForm = false
+            statusIsError = false
+            statusMessage = "Change order proposed."
+            await load()
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func respondToChangeOrder(
+        _ order: ContractChangeOrder,
+        contract: ContractDetail,
+        accepted: Bool
+    ) async {
+        actingChangeOrderID = order.id
+        statusMessage = nil
+        statusIsError = false
+        defer { actingChangeOrderID = nil }
+        do {
+            let updated = try await APIClient.shared.respondToChangeOrder(
+                contractId: contract.id,
+                orderId: order.id,
+                accepted: accepted
+            )
+            if let idx = changeOrders.firstIndex(where: { $0.id == order.id }) {
+                changeOrders[idx] = updated
+            }
+            statusIsError = false
+            statusMessage = accepted ? "Change order accepted." : "Change order rejected."
+            await load()
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func submitTip(_ contract: ContractDetail) async {
+        guard let cents = MoneyFormat.cents(fromDollarsText: tipAmountText) else {
+            statusIsError = true
+            statusMessage = "Enter a valid tip amount in dollars."
+            return
+        }
+        isSubmittingTip = true
+        statusMessage = nil
+        statusIsError = false
+        defer { isSubmittingTip = false }
+        do {
+            _ = try await APIClient.shared.tipContract(id: contract.id, amountCents: cents)
+            tipAmountText = ""
+            statusIsError = false
+            statusMessage = "Tip submitted."
+            await load()
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func openContractPDF(_ contract: ContractDetail) async {
+        actingActionTitle = "Open contract PDF"
+        statusMessage = nil
+        statusIsError = false
+        defer { actingActionTitle = nil }
+        do {
+            guard let url = try await APIClient.shared.fetchContractPDFURL(id: contract.id) else {
+                statusIsError = true
+                statusMessage = "No PDF URL is available for this contract yet."
+                return
+            }
+            #if canImport(UIKit)
+            await MainActor.run {
+                UIApplication.shared.open(url)
+            }
+            #endif
+            statusIsError = false
+            statusMessage = "Opened contract PDF."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
 }
 
 // MARK: - Sheets / confirms (split for type-checker)
@@ -585,6 +1141,7 @@ struct ContractDetailView: View {
 private struct ContractSheetsModifier: ViewModifier {
     @Binding var showDisputeSheet: Bool
     @Binding var showReviewSheet: Bool
+    @Binding var showGuaranteeClaimSheet: Bool
     let contractID: String?
     let onMessage: (String) -> Void
 
@@ -600,6 +1157,11 @@ private struct ContractSheetsModifier: ViewModifier {
                     LeaveReviewSheet(contractID: contractID, onSuccess: onMessage)
                 }
             }
+            .sheet(isPresented: $showGuaranteeClaimSheet) {
+                if let contractID {
+                    GuaranteeClaimSheet(contractID: contractID, onSuccess: onMessage)
+                }
+            }
     }
 }
 
@@ -607,10 +1169,14 @@ private struct ContractConfirmationsModifier: ViewModifier {
     @Binding var showCancelConfirm: Bool
     @Binding var showMarkCompleteConfirm: Bool
     @Binding var showApproveCompletionConfirm: Bool
+    @Binding var showNoShowConfirm: Bool
+    @Binding var showAbandonmentConfirm: Bool
     @Binding var pendingMilestoneApproveID: String?
     let onCancel: () -> Void
     let onMarkComplete: () -> Void
     let onApproveCompletion: () -> Void
+    let onReportNoShow: () -> Void
+    let onReportAbandonment: () -> Void
     let onApproveMilestone: (String) -> Void
 
     func body(content: Content) -> some View {
@@ -644,6 +1210,26 @@ private struct ContractConfirmationsModifier: ViewModifier {
                 Button("Not yet", role: .cancel) {}
             } message: {
                 Text("Confirm the work is done as agreed. This advances escrow / payout per platform rules.")
+            }
+            .confirmationDialog(
+                "Report provider no-show?",
+                isPresented: $showNoShowConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Report no-show", role: .destructive, action: onReportNoShow)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Only use this if the provider failed to appear for scheduled work. This may cancel or suspend the contract.")
+            }
+            .confirmationDialog(
+                "Report abandonment?",
+                isPresented: $showAbandonmentConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Report abandonment", role: .destructive, action: onReportAbandonment)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Only use this if the provider started work and then left without finishing. Support may review.")
             }
             .confirmationDialog(
                 "Approve this milestone?",
@@ -865,6 +1451,113 @@ private struct LeaveReviewSheet: View {
                 comment: comment
             )
             onSuccess("Review submitted.")
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Guarantee claim sheet
+
+private struct GuaranteeClaimSheet: View {
+    let contractID: String
+    var onSuccess: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var reason: GuaranteeClaimReason = .quality
+    @State private var descriptionText = ""
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+
+    private var descriptionValid: Bool {
+        descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 50
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Reason", selection: $reason) {
+                        ForEach(GuaranteeClaimReason.allCases) { item in
+                            Text(item.displayName).tag(item)
+                        }
+                    }
+                    .listRowBackground(BrandTheme.navyElevated)
+
+                    TextField(
+                        "Describe what went wrong (min 50 characters)",
+                        text: $descriptionText,
+                        axis: .vertical
+                    )
+                    .lineLimit(5 ... 12)
+                    .listRowBackground(BrandTheme.navyElevated)
+
+                    Text("\(descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).count) / 50 min")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(descriptionValid ? BrandTheme.success : BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
+                } header: {
+                    Text("Guarantee claim").brandSectionHeader()
+                } footer: {
+                    Text("Files a NoMarkup Guarantee claim on this completed contract. Photo evidence can be added on the web dashboard.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.destructive)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
+                }
+            }
+            .brandListBackground()
+            .navigationTitle("Guarantee claim")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                        .disabled(isSubmitting)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Submit") {
+                        Task { await submit() }
+                    }
+                    .disabled(isSubmitting || !descriptionValid)
+                    .fontWeight(.semibold)
+                }
+            }
+            .overlay {
+                if isSubmitting {
+                    ProgressView()
+                        .tint(BrandTheme.accent)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(BrandTheme.navy.opacity(0.4))
+                }
+            }
+        }
+        .tint(BrandTheme.accent)
+        .preferredColorScheme(.dark)
+    }
+
+    @MainActor
+    private func submit() async {
+        errorMessage = nil
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            _ = try await APIClient.shared.submitGuaranteeClaim(
+                contractId: contractID,
+                reason: reason.rawValue,
+                description: descriptionText
+            )
+            onSuccess("Guarantee claim submitted.")
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

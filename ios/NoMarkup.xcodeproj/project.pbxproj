@@ -77,6 +77,14 @@
 		A10000000000000000000075 /* WishlistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000075 /* WishlistView.swift */; };
 		A10000000000000000000076 /* BlockedUsersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000076 /* BlockedUsersView.swift */; };
 		A10000000000000000000077 /* ReferralsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000077 /* ReferralsView.swift */; };
+		A10000000000000000000078 /* APIClient+Provider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000078 /* APIClient+Provider.swift */; };
+		A10000000000000000000079 /* ProviderWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000079 /* ProviderWorkspaceView.swift */; };
+		A1000000000000000000007B /* NPSSurveysView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000007B /* NPSSurveysView.swift */; };
+		A1000000000000000000007C /* MarketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000007C /* MarketsView.swift */; };
+		A1000000000000000000007D /* SavingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000007D /* SavingsView.swift */; };
+		A10000000000000000000080 /* FollowingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000080 /* FollowingView.swift */; };
+		A10000000000000000000081 /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000081 /* FeedView.swift */; };
+		A10000000000000000000082 /* UserReviewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000082 /* UserReviewsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -153,6 +161,14 @@
 		B10000000000000000000075 /* WishlistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WishlistView.swift; sourceTree = "<group>"; };
 		B10000000000000000000076 /* BlockedUsersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockedUsersView.swift; sourceTree = "<group>"; };
 		B10000000000000000000077 /* ReferralsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferralsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000078 /* APIClient+Provider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Provider.swift"; sourceTree = "<group>"; };
+		B10000000000000000000079 /* ProviderWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderWorkspaceView.swift; sourceTree = "<group>"; };
+		B1000000000000000000007B /* NPSSurveysView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NPSSurveysView.swift; sourceTree = "<group>"; };
+		B1000000000000000000007C /* MarketsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketsView.swift; sourceTree = "<group>"; };
+		B1000000000000000000007D /* SavingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavingsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000080 /* FollowingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowingView.swift; sourceTree = "<group>"; };
+		B10000000000000000000081 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
+		B10000000000000000000082 /* UserReviewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserReviewsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXContainerItemProxy section */
@@ -270,6 +286,7 @@
 				B10000000000000000000053 /* ImageUploader.swift */,
 				B10000000000000000000059 /* NetworkMonitor.swift */,
 				B10000000000000000000071 /* APIClient+Extras.swift */,
+				B10000000000000000000078 /* APIClient+Provider.swift */,
 				B10000000000000000000070 /* Models+Extras.swift */,
 			);
 			path = Core;
@@ -300,6 +317,7 @@
 				B1000000000000000000000C /* MessagesView.swift */,
 				B1000000000000000000000D /* AccountView.swift */,
 				B10000000000000000000054 /* ProfileSettingsView.swift */,
+				B10000000000000000000079 /* ProviderWorkspaceView.swift */,
 				B10000000000000000000061 /* SecuritySettingsView.swift */,
 				B10000000000000000000062 /* NotificationPreferencesView.swift */,
 				B10000000000000000000063 /* PaymentMethodsView.swift */,
@@ -310,11 +328,17 @@
 				B10000000000000000000026 /* MyBidsView.swift */,
 				B10000000000000000000043 /* MyListingsView.swift */,
 				B10000000000000000000077 /* ReferralsView.swift */,
+				B1000000000000000000007B /* NPSSurveysView.swift */,
+				B1000000000000000000007C /* MarketsView.swift */,
+				B1000000000000000000007D /* SavingsView.swift */,
 				B10000000000000000000076 /* BlockedUsersView.swift */,
 				B10000000000000000000075 /* WishlistView.swift */,
 				B10000000000000000000074 /* PropertiesView.swift */,
 				B10000000000000000000073 /* ProviderDetailView.swift */,
 				B10000000000000000000072 /* ProvidersView.swift */,
+				B10000000000000000000080 /* FollowingView.swift */,
+				B10000000000000000000081 /* FeedView.swift */,
+				B10000000000000000000082 /* UserReviewsView.swift */,
 				B10000000000000000000027 /* NotificationsView.swift */,
 				B1000000000000000000002B /* WatchlistView.swift */,
 				B10000000000000000000041 /* SavedSearchesView.swift */,
@@ -490,12 +514,20 @@
 				A10000000000000000000054 /* ProfileSettingsView.swift in Sources */,
 				A10000000000000000000059 /* NetworkMonitor.swift in Sources */,
 				A10000000000000000000077 /* ReferralsView.swift in Sources */,
+				A1000000000000000000007B /* NPSSurveysView.swift in Sources */,
+				A1000000000000000000007C /* MarketsView.swift in Sources */,
+				A1000000000000000000007D /* SavingsView.swift in Sources */,
 				A10000000000000000000076 /* BlockedUsersView.swift in Sources */,
 				A10000000000000000000075 /* WishlistView.swift in Sources */,
 				A10000000000000000000074 /* PropertiesView.swift in Sources */,
 				A10000000000000000000073 /* ProviderDetailView.swift in Sources */,
 				A10000000000000000000072 /* ProvidersView.swift in Sources */,
+				A10000000000000000000080 /* FollowingView.swift in Sources */,
+				A10000000000000000000081 /* FeedView.swift in Sources */,
+				A10000000000000000000082 /* UserReviewsView.swift in Sources */,
 				A10000000000000000000071 /* APIClient+Extras.swift in Sources */,
+				A10000000000000000000078 /* APIClient+Provider.swift in Sources */,
+				A10000000000000000000079 /* ProviderWorkspaceView.swift in Sources */,
 				A10000000000000000000070 /* Models+Extras.swift in Sources */,
 				A10000000000000000000061 /* SecuritySettingsView.swift in Sources */,
 				A10000000000000000000062 /* NotificationPreferencesView.swift in Sources */,

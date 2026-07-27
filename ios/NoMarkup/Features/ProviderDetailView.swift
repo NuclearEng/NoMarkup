@@ -14,6 +14,8 @@ struct ProviderDetailView: View {
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var isBlocking = false
+    @State private var isFollowing = false
+    @State private var isTogglingFollow = false
     @State private var showReportSheet = false
     @State private var showBlockConfirm = false
 
@@ -146,6 +148,51 @@ struct ProviderDetailView: View {
             }
 
             Section {
+                if canMutateSafety {
+                    Button {
+                        Task { await toggleFollow() }
+                    } label: {
+                        HStack {
+                            if isTogglingFollow {
+                                ProgressView()
+                                    .tint(BrandTheme.accent)
+                            }
+                            Label(
+                                isFollowing ? "Following" : "Follow",
+                                systemImage: isFollowing ? "person.badge.minus" : "person.badge.plus"
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .disabled(isTogglingFollow)
+                    .tint(isFollowing ? BrandTheme.textSecondary : BrandTheme.accent)
+                    .accessibilityHint(
+                        isFollowing
+                            ? "Stops following this seller"
+                            : "Follows this seller so their auctions appear in your feed"
+                    )
+                } else {
+                    Text("Sign in to follow this seller.")
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .frame(minHeight: 44)
+                }
+
+                if let count = profile.followerCount {
+                    LabeledContent("Followers") {
+                        Text("\(count)")
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .monospacedDigit()
+                    }
+                    .frame(minHeight: 44)
+                }
+            } header: {
+                Text("Social").brandSectionHeader()
+            }
+            .listRowBackground(BrandTheme.navyElevated)
+
+            Section {
                 LabeledContent("Jobs completed") {
                     Text("\(profile.jobsCompleted ?? 0)")
                         .foregroundStyle(BrandTheme.textPrimary)
@@ -154,18 +201,37 @@ struct ProviderDetailView: View {
                 .frame(minHeight: 44)
 
                 if let summary = profile.reviewSummaryLabel {
-                    LabeledContent("Reviews") {
-                        Text(summary)
-                            .foregroundStyle(BrandTheme.goldBright)
+                    NavigationLink {
+                        UserReviewsView(userId: blockTargetID, displayName: profile.displayLabel)
+                    } label: {
+                        LabeledContent("Reviews") {
+                            Text(summary)
+                                .foregroundStyle(BrandTheme.goldBright)
+                        }
+                        .frame(minHeight: 44)
                     }
-                    .frame(minHeight: 44)
+                    .accessibilityHint("Opens full reviews for this provider")
                 } else if let rating = profile.averageRating, rating > 0 {
-                    LabeledContent("Rating") {
-                        Text(String(format: "%.1f", rating))
-                            .foregroundStyle(BrandTheme.goldBright)
-                            .monospacedDigit()
+                    NavigationLink {
+                        UserReviewsView(userId: blockTargetID, displayName: profile.displayLabel)
+                    } label: {
+                        LabeledContent("Rating") {
+                            Text(String(format: "%.1f", rating))
+                                .foregroundStyle(BrandTheme.goldBright)
+                                .monospacedDigit()
+                        }
+                        .frame(minHeight: 44)
                     }
-                    .frame(minHeight: 44)
+                    .accessibilityHint("Opens full reviews for this provider")
+                } else {
+                    NavigationLink {
+                        UserReviewsView(userId: blockTargetID, displayName: profile.displayLabel)
+                    } label: {
+                        Text("View reviews")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(minHeight: 44)
+                    }
+                    .accessibilityHint("Opens reviews for this provider")
                 }
 
                 LabeledContent("Portfolio") {
@@ -253,11 +319,55 @@ struct ProviderDetailView: View {
         defer { isLoading = false }
 
         do {
-            profile = try await APIClient.shared.fetchProvider(id: providerID)
+            let loaded = try await APIClient.shared.fetchProvider(id: providerID)
+            profile = loaded
+            isFollowing = loaded.isFollowing ?? false
         } catch {
             if profile == nil {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    @MainActor
+    private func toggleFollow() async {
+        statusMessage = nil
+        statusIsError = false
+        guard canMutateSafety else {
+            statusIsError = true
+            statusMessage = "Sign in required to follow sellers."
+            return
+        }
+
+        let previous = isFollowing
+        isTogglingFollow = true
+        defer { isTogglingFollow = false }
+
+        // Optimistic flip for responsive feedback.
+        isFollowing = !previous
+        do {
+            let response: FollowToggleResponse
+            if previous {
+                response = try await APIClient.shared.unfollowUser(id: blockTargetID)
+            } else {
+                response = try await APIClient.shared.followUser(id: blockTargetID)
+            }
+            isFollowing = response.following ?? !previous
+            if let count = response.followerCount {
+                profile?.followerCount = count
+            } else if let current = profile?.followerCount {
+                profile?.followerCount = max(0, current + (isFollowing ? 1 : -1))
+            }
+            statusIsError = false
+            statusMessage = isFollowing ? "Following this seller." : "Unfollowed."
+        } catch let error as APIClientError where error.isUnauthorized {
+            isFollowing = previous
+            statusIsError = true
+            statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            isFollowing = previous
+            statusIsError = true
+            statusMessage = error.localizedDescription
         }
     }
 

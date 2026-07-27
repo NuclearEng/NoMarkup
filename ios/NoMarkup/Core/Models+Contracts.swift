@@ -447,7 +447,28 @@ struct ContractMilestone: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-// MARK: Change order (detail only)
+// MARK: Change order
+
+/// Alias matching product vocabulary; stored type is `ContractChangeOrder`.
+typealias ChangeOrder = ContractChangeOrder
+
+/// List envelope from `GET /api/v1/contracts/{id}/change-orders`.
+struct ChangeOrdersListResponse: Codable, Sendable, Hashable {
+    var changeOrders: [ContractChangeOrder]
+
+    enum CodingKeys: String, CodingKey {
+        case changeOrders
+    }
+
+    init(changeOrders: [ContractChangeOrder] = []) {
+        self.changeOrders = changeOrders
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        changeOrders = try c.decodeIfPresent([ContractChangeOrder].self, forKey: .changeOrders) ?? []
+    }
+}
 
 struct ContractChangeOrder: Codable, Sendable, Hashable, Identifiable {
     let id: String
@@ -464,7 +485,11 @@ struct ContractChangeOrder: Codable, Sendable, Hashable, Identifiable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        if let raw = try c.decodeIfPresent(String.self, forKey: .id), !raw.isEmpty {
+            id = raw
+        } else {
+            id = UUID().uuidString
+        }
         contractId = try c.decodeIfPresent(String.self, forKey: .contractId)
         proposedBy = try c.decodeIfPresent(String.self, forKey: .proposedBy)
         description = try c.decodeIfPresent(String.self, forKey: .description)
@@ -472,11 +497,209 @@ struct ContractChangeOrder: Codable, Sendable, Hashable, Identifiable {
             amountDeltaCents = v
         } else if let v = try? c.decodeIfPresent(Int.self, forKey: .amountDeltaCents) {
             amountDeltaCents = Int64(v)
+        } else if let v = try? c.decodeIfPresent(Double.self, forKey: .amountDeltaCents) {
+            amountDeltaCents = Int64(v)
+        } else if let s = try? c.decodeIfPresent(String.self, forKey: .amountDeltaCents),
+                  let v = Int64(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        {
+            amountDeltaCents = v
         } else {
             amountDeltaCents = nil
         }
         status = try c.decodeIfPresent(String.self, forKey: .status)
         createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+    }
+
+    var displayDescription: String {
+        if let description, !description.isEmpty { return description }
+        return "Change order \(String(id.prefix(8)))"
+    }
+
+    var displayAmountDelta: String {
+        let cents = amountDeltaCents ?? 0
+        let absFormatted = MoneyFormat.usd(cents: abs(cents))
+        if cents > 0 { return "+\(absFormatted)" }
+        if cents < 0 { return "−\(absFormatted)" }
+        return absFormatted
+    }
+
+    var displayStatus: String {
+        StatusChipStyle.displayLabel(status ?? "unknown")
+    }
+
+    var normalizedStatus: String {
+        (status ?? "").lowercased()
+    }
+
+    var isPending: Bool {
+        switch normalizedStatus {
+        case "proposed", "pending", "open", "":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// True when `userId` is a contract party other than the proposer (can accept/reject).
+    func canRespond(as userId: String?, contract: ContractDetail) -> Bool {
+        guard isPending else { return false }
+        guard let userId, !userId.isEmpty else { return false }
+        guard contract.isCustomer(userId: userId) || contract.isProvider(userId: userId) else {
+            return false
+        }
+        if let proposedBy, !proposedBy.isEmpty, proposedBy == userId {
+            return false
+        }
+        return true
+    }
+}
+
+// MARK: Guarantee claim
+
+/// Flexible decode for `GET/POST /api/v1/contracts/{id}/guarantee-claim` (dispute-shaped).
+struct GuaranteeClaim: Codable, Sendable, Hashable {
+    var id: String?
+    var contractId: String?
+    var openedBy: String?
+    var initiatedBy: String?
+    var disputeType: String?
+    var reason: String?
+    var description: String?
+    var evidenceUrls: [String]?
+    var status: String?
+    var isGuaranteeClaim: Bool?
+    var guaranteeOutcome: String?
+    var resolutionType: String?
+    var resolutionNotes: String?
+    var refundAmountCents: Int64?
+    var guaranteePayoutCents: Int64?
+    var createdAt: String?
+    var resolvedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case contractId
+        case openedBy
+        case initiatedBy
+        case disputeType
+        case reason
+        case description
+        case evidenceUrls
+        case status
+        case isGuaranteeClaim
+        case guaranteeOutcome
+        case resolutionType
+        case resolutionNotes
+        case refundAmountCents
+        case guaranteePayoutCents
+        case createdAt
+        case resolvedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
+        contractId = try c.decodeIfPresent(String.self, forKey: .contractId)
+        openedBy = try c.decodeIfPresent(String.self, forKey: .openedBy)
+        initiatedBy = try c.decodeIfPresent(String.self, forKey: .initiatedBy)
+        disputeType = try c.decodeIfPresent(String.self, forKey: .disputeType)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        evidenceUrls = try c.decodeIfPresent([String].self, forKey: .evidenceUrls)
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        isGuaranteeClaim = try c.decodeIfPresent(Bool.self, forKey: .isGuaranteeClaim)
+        guaranteeOutcome = try c.decodeIfPresent(String.self, forKey: .guaranteeOutcome)
+        resolutionType = try c.decodeIfPresent(String.self, forKey: .resolutionType)
+        resolutionNotes = try c.decodeIfPresent(String.self, forKey: .resolutionNotes)
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: .refundAmountCents) {
+            refundAmountCents = v
+        } else if let v = try? c.decodeIfPresent(Int.self, forKey: .refundAmountCents) {
+            refundAmountCents = Int64(v)
+        } else {
+            refundAmountCents = nil
+        }
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: .guaranteePayoutCents) {
+            guaranteePayoutCents = v
+        } else if let v = try? c.decodeIfPresent(Int.self, forKey: .guaranteePayoutCents) {
+            guaranteePayoutCents = Int64(v)
+        } else {
+            guaranteePayoutCents = nil
+        }
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        resolvedAt = try c.decodeIfPresent(String.self, forKey: .resolvedAt)
+    }
+
+    var displayType: String {
+        let raw = disputeType ?? reason ?? "guarantee"
+        return StatusChipStyle.displayLabel(raw)
+    }
+
+    var displayStatus: String {
+        StatusChipStyle.displayLabel(status ?? "open")
+    }
+
+    var displayDescription: String {
+        if let description, !description.isEmpty { return description }
+        return "NoMarkup Guarantee claim"
+    }
+}
+
+/// Envelope from `GET /api/v1/contracts/{id}/guarantee-claim`.
+struct GuaranteeClaimResponse: Codable, Sendable, Hashable {
+    var guaranteeClaim: GuaranteeClaim?
+
+    enum CodingKeys: String, CodingKey {
+        case guaranteeClaim
+    }
+
+    init(guaranteeClaim: GuaranteeClaim? = nil) {
+        self.guaranteeClaim = guaranteeClaim
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Null JSON → nil; missing key → nil.
+        guaranteeClaim = try c.decodeIfPresent(GuaranteeClaim.self, forKey: .guaranteeClaim)
+    }
+}
+
+/// Optional PDF export: `GET /api/v1/contracts/{id}/pdf` → `{ "pdf_url": "..." }`.
+struct ContractPDFResponse: Codable, Sendable, Hashable {
+    var pdfUrl: String?
+
+    enum CodingKeys: String, CodingKey {
+        case pdfUrl
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pdfUrl = try c.decodeIfPresent(String.self, forKey: .pdfUrl)
+    }
+}
+
+/// Flexible tip POST response (may be 501 until Stripe tip capture ships).
+struct ContractTipResponse: Codable, Sendable, Hashable {
+    var id: String?
+    var tipAmountCents: Int64?
+    var status: String?
+    var message: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        message = try c.decodeIfPresent(String.self, forKey: .message)
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: .tipAmountCents) {
+            tipAmountCents = v
+        } else if let v = try? c.decodeIfPresent(Int.self, forKey: .tipAmountCents) {
+            tipAmountCents = Int64(v)
+        } else {
+            tipAmountCents = nil
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, tipAmountCents, status, message
     }
 }
 
@@ -496,6 +719,28 @@ struct ContractReviewResponse: Codable, Sendable, Hashable {
     var overallRating: Int?
     var comment: String?
     var status: String?
+}
+
+// MARK: Guarantee claim reason options
+
+enum GuaranteeClaimReason: String, CaseIterable, Identifiable, Sendable {
+    case quality
+    case incompleteWork = "incomplete_work"
+    case damage
+    case noShow = "no_show"
+    case other
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .quality: return "Quality issue"
+        case .incompleteWork: return "Incomplete work"
+        case .damage: return "Property damage"
+        case .noShow: return "No-show"
+        case .other: return "Other"
+        }
+    }
 }
 
 // MARK: Dispute type options (OpenDispute `dispute_type`)

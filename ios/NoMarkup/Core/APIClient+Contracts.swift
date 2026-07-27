@@ -2,15 +2,21 @@ import Foundation
 
 // MARK: - Contracts API (extension — do not expand APIClient.swift core)
 //
-// Auth: Bearer required. Reuses internal getJSON / postJSON / AuthMode.
+// Auth: Bearer required. Reuses internal getJSON / postJSON / putJSON / postEmpty / AuthMode.
 //
-// Endpoints (gateway/internal/handler/contract.go + review.go):
+// Endpoints (gateway/internal/handler/contract.go + review.go + quote_templates tip):
 //   GET  /api/v1/contracts
 //   GET  /api/v1/contracts/{id}
 //   POST /api/v1/contracts/{id}/accept|start|complete|approve-completion|cancel
 //   POST /api/v1/contracts/{id}/disputes   body: dispute_type, description
 //   POST /api/v1/contracts/{id}/reviews   body: overall_rating, comment
 //   POST /api/v1/milestones/{id}/submit|approve
+//   GET|POST /api/v1/contracts/{id}/change-orders
+//   PUT  /api/v1/contracts/{id}/change-orders/{orderId}
+//   POST /api/v1/contracts/{id}/tip
+//   GET|POST /api/v1/contracts/{id}/guarantee-claim
+//   POST /api/v1/contracts/{id}/report-noshow|report-abandonment
+//   GET  /api/v1/contracts/{id}/pdf
 
 extension APIClient {
 
@@ -170,6 +176,156 @@ extension APIClient {
             authorized: .required
         )
     }
+
+    // MARK: Change orders
+
+    /// GET `/api/v1/contracts/{id}/change-orders` → `{ "change_orders": [...] }`.
+    func fetchChangeOrders(contractId: String) async throws -> [ContractChangeOrder] {
+        let response: ChangeOrdersListResponse = try await getJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "change-orders"],
+            authorized: true
+        )
+        return response.changeOrders
+    }
+
+    /// POST `/api/v1/contracts/{id}/change-orders`
+    /// Body: `{ "description": "...", "amount_delta_cents": N }` (signed cents).
+    @discardableResult
+    func createChangeOrder(
+        contractId: String,
+        description: String,
+        amountDeltaCents: Int64
+    ) async throws -> ContractChangeOrder {
+        let desc = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !desc.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Description is required.")
+        }
+        guard amountDeltaCents != 0 else {
+            throw APIClientError.httpStatus(400, detail: "Amount change cannot be zero.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "change-orders"],
+            body: ContractsCreateChangeOrderBody(
+                description: desc,
+                amountDeltaCents: amountDeltaCents
+            ),
+            authorized: .required
+        )
+    }
+
+    /// PUT `/api/v1/contracts/{id}/change-orders/{orderId}` body: `{ "accepted": bool }`.
+    @discardableResult
+    func respondToChangeOrder(
+        contractId: String,
+        orderId: String,
+        accepted: Bool
+    ) async throws -> ContractChangeOrder {
+        try await putJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "change-orders", orderId],
+            body: ContractsRespondChangeOrderBody(accepted: accepted),
+            authorized: .required
+        )
+    }
+
+    // MARK: Tip
+
+    /// POST `/api/v1/contracts/{id}/tip` body: `{ "amount_cents": N }` ($1…$10,000).
+    /// Note: gateway may return 501 until Stripe tip capture is wired (MON-23).
+    @discardableResult
+    func tipContract(id: String, amountCents: Int64) async throws -> ContractTipResponse {
+        guard amountCents >= 100 else {
+            throw APIClientError.httpStatus(400, detail: "Tip must be at least $1.00.")
+        }
+        guard amountCents <= 1_000_000 else {
+            throw APIClientError.httpStatus(400, detail: "Tip cannot exceed $10,000.00.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "contracts", id, "tip"],
+            body: ContractsTipBody(amountCents: amountCents),
+            authorized: .required
+        )
+    }
+
+    // MARK: Guarantee claim
+
+    /// GET `/api/v1/contracts/{id}/guarantee-claim` → `{ "guarantee_claim": null | object }`.
+    func fetchGuaranteeClaim(contractId: String) async throws -> GuaranteeClaim? {
+        let response: GuaranteeClaimResponse = try await getJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "guarantee-claim"],
+            authorized: true
+        )
+        return response.guaranteeClaim
+    }
+
+    /// POST `/api/v1/contracts/{id}/guarantee-claim`
+    /// Body: reason, description (≥50 chars), optional evidence_urls.
+    @discardableResult
+    func submitGuaranteeClaim(
+        contractId: String,
+        reason: String,
+        description: String,
+        evidenceURLs: [String] = []
+    ) async throws -> GuaranteeClaim {
+        let reasonTrimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let descTrimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reasonTrimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Reason is required.")
+        }
+        guard descTrimmed.count >= 50 else {
+            throw APIClientError.httpStatus(
+                400,
+                detail: "Description must be at least 50 characters."
+            )
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "guarantee-claim"],
+            body: ContractsGuaranteeClaimBody(
+                reason: reasonTrimmed,
+                description: descTrimmed,
+                evidenceUrls: evidenceURLs
+            ),
+            authorized: .required
+        )
+    }
+
+    // MARK: Report no-show / abandonment
+
+    /// POST `/api/v1/contracts/{id}/report-noshow` — empty body; customer-only server-side.
+    @discardableResult
+    func reportContractNoShow(id: String) async throws -> ContractDetail {
+        try await postJSON(
+            pathComponents: ["api", "v1", "contracts", id, "report-noshow"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/contracts/{id}/report-abandonment` — empty body; customer-only server-side.
+    @discardableResult
+    func reportContractAbandonment(id: String) async throws -> ContractDetail {
+        try await postJSON(
+            pathComponents: ["api", "v1", "contracts", id, "report-abandonment"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    // MARK: PDF export
+
+    /// GET `/api/v1/contracts/{id}/pdf` → `{ "pdf_url": "..." }` for Safari open.
+    func fetchContractPDFURL(id: String) async throws -> URL? {
+        let response: ContractPDFResponse = try await getJSON(
+            pathComponents: ["api", "v1", "contracts", id, "pdf"],
+            authorized: true
+        )
+        guard let raw = response.pdfUrl?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              let url = URL(string: raw)
+        else {
+            return nil
+        }
+        return url
+    }
 }
 
 // MARK: - Request bodies (snake_case via encoder keyEncodingStrategy)
@@ -186,4 +342,23 @@ private struct ContractsOpenDisputeBody: Encodable {
 private struct ContractsCreateReviewBody: Encodable {
     let overallRating: Int32
     let comment: String
+}
+
+private struct ContractsCreateChangeOrderBody: Encodable {
+    let description: String
+    let amountDeltaCents: Int64
+}
+
+private struct ContractsRespondChangeOrderBody: Encodable {
+    let accepted: Bool
+}
+
+private struct ContractsTipBody: Encodable {
+    let amountCents: Int64
+}
+
+private struct ContractsGuaranteeClaimBody: Encodable {
+    let reason: String
+    let description: String
+    let evidenceUrls: [String]
 }

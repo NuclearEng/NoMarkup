@@ -926,8 +926,566 @@ struct SimilarListingsResponse: Decodable, Sendable {
     }
 }
 
+// MARK: - Follows (seller social)
+
+/// Row from `GET /api/v1/me/follows` → `{ "follows": [...] }`.
+struct FollowedSeller: Codable, Sendable, Hashable, Identifiable {
+    let sellerId: String
+    var displayName: String?
+    var avatarUrl: String?
+    var followedAt: String?
+
+    var id: String { sellerId }
+
+    enum CodingKeys: String, CodingKey {
+        case sellerId
+        case displayName
+        case avatarUrl
+        case followedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try c.decodeIfPresent(String.self, forKey: .sellerId) ?? ""
+        guard !raw.isEmpty else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .sellerId,
+                in: c,
+                debugDescription: "seller_id required"
+            )
+        }
+        sellerId = raw
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
+        avatarUrl = try c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        if let s = try? c.decodeIfPresent(String.self, forKey: .followedAt) {
+            followedAt = s
+        } else if let d = try? c.decodeIfPresent(Date.self, forKey: .followedAt) {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            followedAt = formatter.string(from: d)
+        } else {
+            followedAt = nil
+        }
+    }
+
+    var displayLabel: String {
+        let n = displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return n.isEmpty ? "Seller" : n
+    }
+
+    var followedAtLabel: String? {
+        guard let followedAt else { return nil }
+        return CatalogDateFormat.friendlyDateTime(followedAt)
+    }
+}
+
+struct FollowsResponse: Decodable, Sendable {
+    var follows: [FollowedSeller]
+    var pagination: PaginationMeta?
+
+    enum CodingKeys: String, CodingKey {
+        case follows
+        case pagination
+    }
+
+    init(follows: [FollowedSeller], pagination: PaginationMeta? = nil) {
+        self.follows = follows
+        self.pagination = pagination
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        follows = try c.decodeIfPresent([FollowedSeller].self, forKey: .follows) ?? []
+        pagination = try c.decodeIfPresent(PaginationMeta.self, forKey: .pagination)
+    }
+}
+
+/// `POST|DELETE /api/v1/users/{id}/follow` envelope.
+struct FollowToggleResponse: Decodable, Sendable {
+    var following: Bool?
+    var followerCount: Int?
+}
+
+// MARK: - User reviews (public seller/provider)
+
+/// Row from `GET /api/v1/users/{id}/reviews` → `{ "reviews": [...] }`.
+struct ReviewRow: Decodable, Sendable, Hashable, Identifiable {
+    let id: String
+    var rating: Int?
+    var comment: String?
+    var createdAt: String?
+    var reviewerDisplayName: String?
+    var reviewerId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case rating
+        case overallRating
+        case comment
+        case createdAt
+        case reviewerDisplayName
+        case reviewerName
+        case displayName
+        case reviewerId
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let rawId = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        id = rawId.isEmpty ? UUID().uuidString : rawId
+
+        if let v = try? c.decodeIfPresent(Int.self, forKey: .rating) {
+            rating = v
+        } else if let v = try? c.decodeIfPresent(Int.self, forKey: .overallRating) {
+            rating = v
+        } else if let v = try? c.decodeIfPresent(Int64.self, forKey: .overallRating) {
+            rating = Int(v)
+        } else if let v = try? c.decodeIfPresent(Double.self, forKey: .overallRating) {
+            rating = Int(v)
+        } else if let v = try? c.decodeIfPresent(Double.self, forKey: .rating) {
+            rating = Int(v)
+        } else {
+            rating = nil
+        }
+
+        comment = try c.decodeIfPresent(String.self, forKey: .comment)
+
+        if let s = try? c.decodeIfPresent(String.self, forKey: .createdAt) {
+            createdAt = s
+        } else if let d = try? c.decodeIfPresent(Date.self, forKey: .createdAt) {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            createdAt = formatter.string(from: d)
+        } else {
+            createdAt = nil
+        }
+
+        let nameCandidates: [String?] = [
+            try c.decodeIfPresent(String.self, forKey: .reviewerDisplayName),
+            try c.decodeIfPresent(String.self, forKey: .reviewerName),
+            try c.decodeIfPresent(String.self, forKey: .displayName),
+        ]
+        reviewerDisplayName = nameCandidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+
+        reviewerId = try c.decodeIfPresent(String.self, forKey: .reviewerId)
+    }
+
+    var displayReviewer: String {
+        let n = reviewerDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return n.isEmpty ? "Reviewer" : n
+    }
+
+    var displayComment: String {
+        let t = comment?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "No written comment." : t
+    }
+
+    var displayRating: String {
+        guard let rating, rating > 0 else { return "—" }
+        return "\(rating)/5"
+    }
+
+    var createdAtLabel: String? {
+        guard let createdAt else { return nil }
+        return CatalogDateFormat.friendlyDateTime(createdAt)
+    }
+}
+
+struct UserReviewsResponse: Decodable, Sendable {
+    var averageRating: Double?
+    var totalReviews: Int?
+    var reviews: [ReviewRow]
+    var pagination: PaginationMeta?
+
+    enum CodingKeys: String, CodingKey {
+        case averageRating
+        case totalReviews
+        case reviews
+        case pagination
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let d = try? c.decodeIfPresent(Double.self, forKey: .averageRating) {
+            averageRating = d
+        } else if let i = try? c.decodeIfPresent(Int.self, forKey: .averageRating) {
+            averageRating = Double(i)
+        } else {
+            averageRating = nil
+        }
+        if let i = try? c.decodeIfPresent(Int.self, forKey: .totalReviews) {
+            totalReviews = i
+        } else if let i64 = try? c.decodeIfPresent(Int64.self, forKey: .totalReviews) {
+            totalReviews = Int(i64)
+        } else {
+            totalReviews = nil
+        }
+        reviews = try c.decodeIfPresent([ReviewRow].self, forKey: .reviews) ?? []
+        pagination = try c.decodeIfPresent(PaginationMeta.self, forKey: .pagination)
+    }
+
+    var displayAverage: String {
+        guard let averageRating else { return "—" }
+        return averageRating.formatted(.number.precision(.fractionLength(1)))
+    }
+}
+
 // MARK: - Auth / password change
 
 struct ChangePasswordResponse: Codable, Sendable {
     var success: Bool?
+}
+
+// MARK: - NPS surveys (post-transaction feedback)
+
+/// Pending row from `GET /api/v1/me/nps/pending` → `{ "pending": [...] }`.
+struct NPSPendingSurvey: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var contextType: String?
+    var contextId: String?
+    var promptedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case contextType
+        case contextId
+        case promptedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        guard !raw.isEmpty else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: c,
+                debugDescription: "nps survey id required"
+            )
+        }
+        id = raw
+        contextType = try c.decodeIfPresent(String.self, forKey: .contextType)
+        contextId = try c.decodeIfPresent(String.self, forKey: .contextId)
+        if let s = try? c.decodeIfPresent(String.self, forKey: .promptedAt) {
+            promptedAt = s
+        } else if let d = try? c.decodeIfPresent(Date.self, forKey: .promptedAt) {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            var stamp = formatter.string(from: d)
+            if stamp.isEmpty {
+                formatter.formatOptions = [.withInternetDateTime]
+                stamp = formatter.string(from: d)
+            }
+            promptedAt = stamp
+        } else {
+            promptedAt = nil
+        }
+    }
+
+    var displayContext: String {
+        let type = (contextType ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
+        if type.isEmpty { return "Feedback survey" }
+        return type
+    }
+
+    var promptedAtLabel: String? {
+        guard let promptedAt, !promptedAt.isEmpty else { return nil }
+        return CatalogDateFormat.friendlyDateTime(promptedAt)
+    }
+}
+
+struct NPSPendingResponse: Decodable, Sendable {
+    var pending: [NPSPendingSurvey]
+
+    enum CodingKeys: String, CodingKey {
+        case pending
+    }
+
+    init(pending: [NPSPendingSurvey]) {
+        self.pending = pending
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pending = try c.decodeIfPresent([NPSPendingSurvey].self, forKey: .pending) ?? []
+    }
+}
+
+struct SubmitNPSResponse: Codable, Sendable {
+    var submitted: Bool?
+}
+
+// MARK: - Referral history (list)
+
+/// Entry from `GET /api/v1/me/referrals` → `referrals[]`.
+struct ReferralHistoryEntry: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var status: String?
+    var referredId: String?
+    var creditCents: Int64?
+    var creditedAt: String?
+    var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case status
+        case referredId
+        case creditCents
+        case creditedAt
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        guard !raw.isEmpty else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: c,
+                debugDescription: "referral history id required"
+            )
+        }
+        id = raw
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        referredId = try c.decodeIfPresent(String.self, forKey: .referredId)
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: .creditCents) {
+            creditCents = v
+        } else if let v = try? c.decodeIfPresent(Int.self, forKey: .creditCents) {
+            creditCents = Int64(v)
+        } else {
+            creditCents = nil
+        }
+        creditedAt = Self.decodeFlexibleTimestamp(c, forKey: .creditedAt)
+        createdAt = Self.decodeFlexibleTimestamp(c, forKey: .createdAt)
+    }
+
+    private static func decodeFlexibleTimestamp(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> String? {
+        if let s = try? c.decodeIfPresent(String.self, forKey: key) {
+            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let d = try? c.decodeIfPresent(Date.self, forKey: key) {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let withFrac = formatter.string(from: d)
+            if !withFrac.isEmpty { return withFrac }
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter.string(from: d)
+        }
+        return nil
+    }
+
+    var displayStatus: String {
+        let s = status?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if s.isEmpty { return "Unknown" }
+        return s.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var displayCredit: String {
+        MoneyFormat.usd(cents: creditCents ?? 0)
+    }
+
+    var createdAtLabel: String? {
+        guard let createdAt, !createdAt.isEmpty else { return nil }
+        return CatalogDateFormat.friendlyDateTime(createdAt)
+    }
+}
+
+/// `GET /api/v1/me/referrals` — code + history + credit balance.
+struct ReferralsListResponse: Codable, Sendable {
+    var code: String?
+    var referrals: [ReferralHistoryEntry]
+    var creditBalanceCents: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case referrals
+        case creditBalanceCents
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        code = try c.decodeIfPresent(String.self, forKey: .code)
+        referrals = try c.decodeIfPresent([ReferralHistoryEntry].self, forKey: .referrals) ?? []
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: .creditBalanceCents) {
+            creditBalanceCents = v
+        } else if let v = try? c.decodeIfPresent(Int.self, forKey: .creditBalanceCents) {
+            creditBalanceCents = Int64(v)
+        } else {
+            creditBalanceCents = nil
+        }
+    }
+
+    var displayCode: String {
+        let c = code?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return c.isEmpty ? "—" : c
+    }
+
+    var displayBalance: String {
+        MoneyFormat.usd(cents: creditBalanceCents ?? 0)
+    }
+}
+
+// MARK: - User savings (lifetime reverse-auction savings)
+
+/// Row from bare-array `GET /api/v1/users/me/savings`.
+struct SavingsEntry: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var userId: String?
+    var jobId: String?
+    var awardedCents: Int64?
+    var marketMedianCents: Int64?
+    var savingsCents: Int64?
+    var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId
+        case jobId
+        case awardedCents
+        case marketMedianCents
+        case savingsCents
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        guard !raw.isEmpty else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: c,
+                debugDescription: "savings entry id required"
+            )
+        }
+        id = raw
+        userId = try c.decodeIfPresent(String.self, forKey: .userId)
+        jobId = try c.decodeIfPresent(String.self, forKey: .jobId)
+        awardedCents = Self.decodeFlexibleInt64(c, forKey: .awardedCents)
+        marketMedianCents = Self.decodeFlexibleInt64(c, forKey: .marketMedianCents)
+        savingsCents = Self.decodeFlexibleInt64(c, forKey: .savingsCents)
+        if let s = try? c.decodeIfPresent(String.self, forKey: .createdAt) {
+            createdAt = s
+        } else if let d = try? c.decodeIfPresent(Date.self, forKey: .createdAt) {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            var stamp = formatter.string(from: d)
+            if stamp.isEmpty {
+                formatter.formatOptions = [.withInternetDateTime]
+                stamp = formatter.string(from: d)
+            }
+            createdAt = stamp
+        } else {
+            createdAt = nil
+        }
+    }
+
+    private static func decodeFlexibleInt64(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> Int64? {
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: key) { return v }
+        if let v = try? c.decodeIfPresent(Int.self, forKey: key) { return Int64(v) }
+        if let v = try? c.decodeIfPresent(Double.self, forKey: key) { return Int64(v) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key),
+           let v = Int64(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        {
+            return v
+        }
+        return nil
+    }
+
+    var displaySavings: String {
+        MoneyFormat.usd(cents: savingsCents ?? 0)
+    }
+
+    var displayAwarded: String {
+        MoneyFormat.usd(cents: awardedCents ?? 0)
+    }
+
+    var displayMarketMedian: String {
+        MoneyFormat.usd(cents: marketMedianCents ?? 0)
+    }
+
+    var createdAtLabel: String? {
+        guard let createdAt, !createdAt.isEmpty else { return nil }
+        return CatalogDateFormat.friendlyDateTime(createdAt)
+    }
+
+    var shortJobID: String {
+        let j = jobId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if j.isEmpty { return "Job" }
+        if j.count <= 12 { return j }
+        return String(j.prefix(8)) + "…"
+    }
+}
+
+/// Bare-array or wrapped decode for savings endpoint.
+struct SavingsResponse: Decodable, Sendable {
+    var entries: [SavingsEntry]
+
+    enum CodingKeys: String, CodingKey {
+        case savings
+        case entries
+        case data
+        case items
+    }
+
+    init(entries: [SavingsEntry]) {
+        self.entries = entries
+    }
+
+    init(from decoder: Decoder) throws {
+        if let arr = try? decoder.singleValueContainer().decode([SavingsEntry].self) {
+            entries = arr
+            return
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let arr = try c.decodeIfPresent([SavingsEntry].self, forKey: .savings) {
+            entries = arr
+        } else if let arr = try c.decodeIfPresent([SavingsEntry].self, forKey: .entries) {
+            entries = arr
+        } else if let arr = try c.decodeIfPresent([SavingsEntry].self, forKey: .data) {
+            entries = arr
+        } else if let arr = try c.decodeIfPresent([SavingsEntry].self, forKey: .items) {
+            entries = arr
+        } else {
+            entries = []
+        }
+    }
+
+    var lifetimeSavingsCents: Int64 {
+        entries.reduce(0) { $0 + ($1.savingsCents ?? 0) }
+    }
+}
+
+// MARK: - MFA enable setup
+
+/// `POST /api/v1/auth/mfa/enable` → secret + QR URL + backup codes (setup not confirmed yet).
+struct EnableMFAResponse: Codable, Sendable, Hashable {
+    var secret: String?
+    var qrCodeUrl: String?
+    var backupCodes: [String]?
+
+    var displaySecret: String {
+        let s = secret?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return s.isEmpty ? "—" : s
+    }
+
+    var resolvedQRCodeURL: URL? {
+        guard let qrCodeUrl, !qrCodeUrl.isEmpty else { return nil }
+        return URL(string: qrCodeUrl)
+    }
+
+    var hasSetupMaterial: Bool {
+        let s = secret?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !s.isEmpty || !(backupCodes ?? []).isEmpty || resolvedQRCodeURL != nil
+    }
 }

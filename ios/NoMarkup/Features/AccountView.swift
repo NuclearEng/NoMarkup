@@ -66,6 +66,15 @@ struct AccountView: View {
                     .accessibilityHint("Edit display name and view account profile")
 
                     NavigationLink {
+                        ProviderWorkspaceView()
+                    } label: {
+                        Label("Provider workspace", systemImage: "wrench.and.screwdriver")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Edit provider bio, availability, streaks, and licenses")
+
+                    NavigationLink {
                         SecuritySettingsView()
                     } label: {
                         Label("Security", systemImage: "lock.shield")
@@ -228,6 +237,24 @@ struct AccountView: View {
                     .accessibilityHint("Browse and follow service providers")
 
                     NavigationLink {
+                        FollowingView()
+                    } label: {
+                        Label("Following", systemImage: "person.2")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Sellers you follow")
+
+                    NavigationLink {
+                        FeedView()
+                    } label: {
+                        Label("Following feed", systemImage: "rectangle.stack")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Active auctions from sellers you follow")
+
+                    NavigationLink {
                         PropertiesView()
                     } label: {
                         Label("Properties", systemImage: "house")
@@ -262,6 +289,32 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Invite friends and track referral rewards")
+
+                    NavigationLink {
+                        NPSSurveysView()
+                    } label: {
+                        Label("Feedback surveys", systemImage: "bubble.left.and.bubble.right")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Answer pending Net Promoter Score surveys")
+
+                    NavigationLink {
+                        SavingsView()
+                    } label: {
+                        Label("Savings", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("View lifetime reverse-auction savings versus market median")
+
+                    NavigationLink {
+                        MarketsView()
+                    } label: {
+                        Label("Markets", systemImage: "building.2")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Browse launched city markets for services and goods")
                 } header: {
                     Text("Network & safety").brandSectionHeader()
                 }

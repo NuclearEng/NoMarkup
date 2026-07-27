@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Referral program — `GET /api/v1/me/referrals/code` + `POST /api/v1/me/referrals/redeem`.
+/// Referral program — code + redeem + history (`GET /me/referrals/code`, `/me/referrals`, redeem).
 struct ReferralsView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
     @State private var referral: ReferralCodeInfo?
+    @State private var history: [ReferralHistoryEntry] = []
+    @State private var creditBalanceCents: Int64?
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
@@ -85,12 +87,21 @@ struct ReferralsView: View {
                     }
                     .frame(minHeight: 44)
 
-                    LabeledContent("Credit") {
+                    LabeledContent("Per-invite credit") {
                         Text(MoneyFormat.usd(cents: (referral.creditCents ?? 0)))
                             .font(.body.weight(.semibold).monospacedDigit())
                             .foregroundStyle(BrandTheme.success)
                     }
                     .frame(minHeight: 44)
+
+                    if let creditBalanceCents {
+                        LabeledContent("Credit balance") {
+                            Text(MoneyFormat.usd(cents: creditBalanceCents))
+                                .font(.body.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(BrandTheme.savings)
+                        }
+                        .frame(minHeight: 44)
+                    }
 
                     Text((referral.shareMessage ?? ""))
                         .font(.subheadline)
@@ -139,8 +150,75 @@ struct ReferralsView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
             }
             .listRowBackground(BrandTheme.navyElevated)
+
+            Section {
+                if history.isEmpty {
+                    Text("No successful referrals yet. Share your code to start earning credit.")
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
+                } else {
+                    ForEach(history) { entry in
+                        historyRow(entry)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
+                }
+            } header: {
+                Text("Your referrals").brandSectionHeader()
+            } footer: {
+                Text("Status and credit for people who signed up with your code.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
         }
         .brandListBackground()
+    }
+
+    @ViewBuilder
+    private func historyRow(_ entry: ReferralHistoryEntry) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(entry.displayStatus)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(statusColor(entry.status))
+                Spacer(minLength: 8)
+                Text(entry.displayCredit)
+                    .font(.body.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+            }
+            if let referred = entry.referredId?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !referred.isEmpty
+            {
+                Text(shortID(referred))
+                    .font(.caption.monospaced())
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            if let at = entry.createdAtLabel {
+                Text(at)
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func statusColor(_ status: String?) -> Color {
+        let s = (status ?? "").lowercased()
+        if s.contains("credit") || s == "completed" || s == "activated" {
+            return BrandTheme.success
+        }
+        if s.contains("pending") || s.contains("wait") {
+            return BrandTheme.warning
+        }
+        if s.contains("cancel") || s.contains("expire") || s.contains("void") {
+            return BrandTheme.destructive
+        }
+        return BrandTheme.textPrimary
+    }
+
+    private func shortID(_ id: String) -> String {
+        if id.count <= 12 { return id }
+        return String(id.prefix(8)) + "…"
     }
 
     @ViewBuilder
@@ -175,11 +253,35 @@ struct ReferralsView: View {
         errorMessage = nil
         defer { isLoading = false }
 
+        // Code endpoint (share URL / message) + list (history / balance) in parallel-ish sequence.
+        var codeInfo: ReferralCodeInfo?
+        var codeError: Error?
         do {
-            referral = try await APIClient.shared.fetchReferralCode()
+            codeInfo = try await APIClient.shared.fetchReferralCode()
         } catch {
-            if referral == nil {
-                errorMessage = error.localizedDescription
+            codeError = error
+        }
+
+        do {
+            let list = try await APIClient.shared.listReferrals()
+            history = list.referrals
+            creditBalanceCents = list.creditBalanceCents
+            if let codeInfo {
+                referral = codeInfo
+            } else {
+                referral = ReferralCodeInfo(
+                    code: list.code,
+                    creditCents: nil,
+                    shareUrl: nil,
+                    shareMessage: nil
+                )
+            }
+        } catch {
+            history = []
+            if let codeInfo {
+                referral = codeInfo
+            } else if referral == nil {
+                errorMessage = (codeError ?? error).localizedDescription
             }
         }
     }
@@ -199,6 +301,7 @@ struct ReferralsView: View {
             statusIsError = false
             statusMessage = "Code redeemed. Credit will appear on your account when the referral activates."
             redeemCode = ""
+            await load()
         } catch let error as APIClientError where error.isUnauthorized {
             statusIsError = true
             statusMessage = "Sign in required. Your session is missing or expired — please sign in again."

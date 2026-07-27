@@ -57,6 +57,9 @@ struct ListingDetailView: View {
     @State private var cancelListingIsError = false
     @State private var confirmCancelListing = false
 
+    @State private var similarListings: [ListingSummary] = []
+    @State private var similarState: SimilarListingsLoadState = .idle
+
     init(listingID: String, preview: ListingSummary? = nil) {
         self.listingID = listingID
         self.preview = preview
@@ -253,6 +256,8 @@ struct ListingDetailView: View {
                 }
             }
 
+            similarListingsSection()
+
             if isViewerSeller(of: listing), canCancelListing(listing) {
                 Section {
                     if let cancelListingMessage {
@@ -301,6 +306,82 @@ struct ListingDetailView: View {
             }
         }
         .brandListBackground()
+        .navigationDestination(for: ListingSummary.self) { similar in
+            ListingDetailView(listingID: similar.id, preview: similar)
+        }
+    }
+
+    @ViewBuilder
+    private func similarListingsSection() -> some View {
+        if !similarListings.isEmpty {
+            Section {
+                ForEach(similarListings) { item in
+                    NavigationLink(value: item) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(item.displayTitle)
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(BrandTheme.textPrimary)
+                                    .lineLimit(2)
+                                Spacer(minLength: 8)
+                                Text(item.displayPrice)
+                                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(BrandTheme.goldBright)
+                            }
+                            if let location = item.locationLabel {
+                                Text(location)
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Opens similar listing")
+                }
+            } header: {
+                Text("Similar listings").brandSectionHeader()
+            } footer: {
+                Text("Suggestions based on this item’s category and market.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        } else {
+            switch similarState {
+            case .idle, .loading:
+                Section {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .tint(BrandTheme.accent)
+                        Text("Loading similar listings…")
+                            .font(.subheadline)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 44)
+                } header: {
+                    Text("Similar listings").brandSectionHeader()
+                }
+            case .failed(let message):
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Try again") {
+                            Task { await loadSimilar() }
+                        }
+                        .frame(minHeight: 44)
+                        .tint(BrandTheme.accent)
+                    }
+                } header: {
+                    Text("Similar listings").brandSectionHeader()
+                }
+            case .loaded:
+                EmptyView()
+            }
+        }
     }
 
     private func canCancelListing(_ listing: ListingDetail) -> Bool {
@@ -1417,6 +1498,24 @@ struct ListingDetailView: View {
         await loadBids()
         await loadOffers()
         await refreshWatchState()
+        await loadSimilar()
+    }
+
+    @MainActor
+    private func loadSimilar() async {
+        similarState = .loading
+        do {
+            let rows = try await APIClient.shared.fetchSimilarListings(id: listingID)
+            // Drop self if the gateway echoes the current listing.
+            similarListings = rows.filter { $0.id != listingID }
+            similarState = .loaded
+        } catch {
+            if similarListings.isEmpty {
+                similarState = .failed(error.localizedDescription)
+            } else {
+                similarState = .loaded
+            }
+        }
     }
 
     @MainActor
@@ -1618,6 +1717,13 @@ private enum ListingLadderState: Equatable {
 }
 
 private enum ListingOffersLoadState: Equatable {
+    case idle
+    case loading
+    case loaded
+    case failed(String)
+}
+
+private enum SimilarListingsLoadState: Equatable {
     case idle
     case loading
     case loaded

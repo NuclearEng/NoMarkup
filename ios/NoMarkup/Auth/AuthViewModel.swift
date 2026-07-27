@@ -383,6 +383,15 @@ final class AuthViewModel: ObservableObject {
     }
 
     func signOut() {
+        // Best-effort server logout (revokes refresh when present). Clear local
+        // tokens after the call so the body can still send the refresh token.
+        let refreshForLogout = try? tokenStore.read(.refreshToken)
+        let shouldCallServer = !isScaffoldSession
+        if shouldCallServer {
+            Task {
+                try? await api.logout(refreshToken: refreshForLogout)
+            }
+        }
         do {
             try tokenStore.clearSession()
         } catch {

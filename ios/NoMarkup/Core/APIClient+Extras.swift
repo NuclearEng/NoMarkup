@@ -2,10 +2,10 @@ import Foundation
 
 // MARK: - Consumer API extras
 //
-// Providers, properties, wishlist, blocks, referrals, notification prefs,
-// payment methods, Stripe Connect, age status, markets, listing cancel,
-// user report, similar listings. Reuses getJSON / postJSON / putJSON /
-// deleteEmpty / postEmpty + AuthMode from APIClient.
+// Providers, properties, wishlist, blocks, follows/feed, reviews, referrals,
+// notification prefs, payment methods, Stripe Connect, age status, markets,
+// listing cancel, user report, similar listings. Reuses getJSON / postJSON /
+// putJSON / deleteEmpty / postEmpty + AuthMode from APIClient.
 
 extension APIClient {
     // MARK: Providers
@@ -34,6 +34,7 @@ extension APIClient {
     }
 
     /// GET `/api/v1/providers/{id}` — public provider profile.
+    /// Uses optional auth so `is_following` is accurate for signed-in callers.
     func fetchProvider(id: String) async throws -> ProviderProfileDetail {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -41,7 +42,7 @@ extension APIClient {
         }
         return try await getJSON(
             pathComponents: ["api", "v1", "providers", trimmed],
-            authorized: false
+            authorized: .optional
         )
     }
 
@@ -203,6 +204,14 @@ extension APIClient {
         )
     }
 
+    /// GET `/api/v1/me/referrals` — code, history rows, credit balance.
+    func listReferrals() async throws -> ReferralsListResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "me", "referrals"],
+            authorized: true
+        )
+    }
+
     /// POST `/api/v1/me/referrals/redeem` with `{"code":"..."}`.
     @discardableResult
     func redeemReferralCode(code: String) async throws -> RedeemReferralResponse {
@@ -215,6 +224,76 @@ extension APIClient {
             body: RedeemReferralBody(code: trimmed),
             authorized: .required
         )
+    }
+
+    // MARK: NPS surveys
+
+    /// GET `/api/v1/me/nps/pending` → `{ "pending": [...] }`.
+    func fetchPendingNPS() async throws -> NPSPendingResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "me", "nps", "pending"],
+            authorized: true
+        )
+    }
+
+    /// POST `/api/v1/me/nps/{id}` with `{ "score": 0-10, "comment": "..." }`.
+    @discardableResult
+    func submitNPS(id: String, score: Int, comment: String = "") async throws -> SubmitNPSResponse {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "NPS survey id is required.")
+        }
+        guard (0 ... 10).contains(score) else {
+            throw APIClientError.httpStatus(400, detail: "score must be between 0 and 10")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "me", "nps", trimmed],
+            body: SubmitNPSBody(score: score, comment: comment.trimmingCharacters(in: .whitespacesAndNewlines)),
+            authorized: .required
+        )
+    }
+
+    // MARK: Savings
+
+    /// GET `/api/v1/users/me/savings` — bare array of reverse-auction savings rows.
+    func fetchMySavings() async throws -> SavingsResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "users", "me", "savings"],
+            authorized: true
+        )
+    }
+
+    // MARK: MFA enable
+
+    /// POST `/api/v1/auth/mfa/enable` — returns TOTP secret, QR URL, backup codes (setup not confirmed).
+    @discardableResult
+    func enableMFA() async throws -> EnableMFAResponse {
+        try await postJSON(
+            pathComponents: ["api", "v1", "auth", "mfa", "enable"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    // MARK: Logout (server-side revoke)
+
+    /// POST `/api/v1/auth/logout` — best-effort; public route, may send refresh_token body. 204.
+    /// Uses `.none` so a 401 never kicks the mid-session refresh / session-expired path during sign-out.
+    func logout(refreshToken: String? = nil) async throws {
+        let trimmed = refreshToken?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmed, !trimmed.isEmpty {
+            try await postEmpty(
+                pathComponents: ["api", "v1", "auth", "logout"],
+                body: LogoutRequestBody(refreshToken: trimmed),
+                authorized: .none
+            )
+        } else {
+            try await postEmpty(
+                pathComponents: ["api", "v1", "auth", "logout"],
+                body: EmptyJSONObject(),
+                authorized: .none
+            )
+        }
     }
 
     // MARK: Notification preferences
@@ -414,6 +493,81 @@ extension APIClient {
         )
         return response.listings
     }
+
+    // MARK: Follows + feed
+
+    /// GET `/api/v1/me/follows` — sellers the caller follows.
+    func fetchFollows(page: Int = 1, pageSize: Int = 40) async throws -> FollowsResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "me", "follows"],
+            query: [
+                URLQueryItem(name: "page", value: String(max(1, page))),
+                URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+            ],
+            authorized: true
+        )
+    }
+
+    /// POST `/api/v1/users/{id}/follow` — idempotent follow.
+    @discardableResult
+    func followUser(id: String) async throws -> FollowToggleResponse {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "User id is required.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "users", trimmed, "follow"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    /// DELETE `/api/v1/users/{id}/follow` — idempotent unfollow.
+    @discardableResult
+    func unfollowUser(id: String) async throws -> FollowToggleResponse {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "User id is required.")
+        }
+        return try await deleteJSON(
+            pathComponents: ["api", "v1", "users", trimmed, "follow"],
+            authorized: .required
+        )
+    }
+
+    /// GET `/api/v1/me/feed` — active listings from followed sellers.
+    func fetchFeed(page: Int = 1, pageSize: Int = 40) async throws -> ListingsResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "me", "feed"],
+            query: [
+                URLQueryItem(name: "page", value: String(max(1, page))),
+                URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+            ],
+            authorized: true
+        )
+    }
+
+    // MARK: User reviews
+
+    /// GET `/api/v1/users/{id}/reviews` — public reviews for a user (seller/provider).
+    func fetchUserReviews(
+        userId: String,
+        page: Int = 1,
+        pageSize: Int = 20
+    ) async throws -> UserReviewsResponse {
+        let trimmed = userId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "User id is required.")
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "users", trimmed, "reviews"],
+            query: [
+                URLQueryItem(name: "page", value: String(max(1, page))),
+                URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+            ],
+            authorized: false
+        )
+    }
 }
 
 // MARK: - Request bodies (camelCase → snake_case via encoder)
@@ -444,6 +598,19 @@ private struct BlockUserBody: Encodable {
 
 private struct RedeemReferralBody: Encodable {
     let code: String
+}
+
+private struct SubmitNPSBody: Encodable {
+    let score: Int
+    let comment: String
+}
+
+private struct LogoutRequestBody: Encodable {
+    let refreshToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case refreshToken = "refresh_token"
+    }
 }
 
 private struct UpdateNotificationPreferencesBody: Encodable {

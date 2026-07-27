@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Security settings — change password + age verification status.
+/// Security settings — change password, MFA enable setup, age verification status.
 struct SecuritySettingsView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -14,6 +14,11 @@ struct SecuritySettingsView: View {
     @State private var errorMessage: String?
     @State private var statusMessage: String?
     @State private var needsSignIn = false
+
+    @State private var mfaSetup: EnableMFAResponse?
+    @State private var isEnablingMFA = false
+    @State private var mfaError: String?
+    @State private var mfaStatus: String?
 
     var body: some View {
         Group {
@@ -54,6 +59,53 @@ struct SecuritySettingsView: View {
                 Text("Age verification").brandSectionHeader()
             } footer: {
                 Text("Age is verified once on the server. NoMarkup never shows your date of birth here.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            Section {
+                if let mfaSetup, mfaSetup.hasSetupMaterial {
+                    mfaSetupMaterial(mfaSetup)
+                } else {
+                    Text("Add a time-based authenticator (TOTP) for sign-in. You’ll confirm the code on the next step after enabling.")
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let mfaStatus {
+                    Text(mfaStatus)
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.success)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let mfaError {
+                    Text(mfaError)
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.destructive)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button {
+                    Task { await enableMFA() }
+                } label: {
+                    HStack {
+                        if isEnablingMFA {
+                            ProgressView()
+                                .tint(BrandTheme.ctaLabelOnGold)
+                        }
+                        Text(isEnablingMFA ? "Starting MFA…" : (mfaSetup == nil ? "Enable MFA" : "Regenerate MFA secret"))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .frame(minHeight: 48)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .disabled(isEnablingMFA)
+                .accessibilityHint("Requests a new authenticator secret and backup codes from the server")
+            } header: {
+                Text("Two-factor authentication").brandSectionHeader()
+            } footer: {
+                Text("After enabling, add the secret to your authenticator app. Complete setup by verifying a code on the web if this app does not prompt for it yet.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -126,6 +178,50 @@ struct SecuritySettingsView: View {
     }
 
     @ViewBuilder
+    private func mfaSetupMaterial(_ setup: EnableMFAResponse) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            LabeledContent("Secret") {
+                Text(setup.displaySecret)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(BrandTheme.goldBright)
+                    .textSelection(.enabled)
+                    .multilineTextAlignment(.trailing)
+            }
+            .frame(minHeight: 44)
+
+            if let url = setup.resolvedQRCodeURL {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Authenticator URL")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                    Text(url.absoluteString)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(BrandTheme.textPrimary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if let codes = setup.backupCodes, !codes.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Backup codes")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                    ForEach(codes, id: \.self) { code in
+                        Text(code)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .textSelection(.enabled)
+                    }
+                    Text("Store these offline. Each code works once.")
+                        .font(.caption2)
+                        .foregroundStyle(BrandTheme.warning)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private var ageStatusRow: some View {
         HStack(spacing: 12) {
             if isLoadingAge && ageStatus == nil {
@@ -179,6 +275,28 @@ struct SecuritySettingsView: View {
         } catch {
             // Non-blocking — password change still works if age endpoint fails.
             ageStatus = AgeStatus(verified: false, verifiedAt: nil)
+        }
+    }
+
+    @MainActor
+    private func enableMFA() async {
+        mfaError = nil
+        mfaStatus = nil
+        isEnablingMFA = true
+        defer { isEnablingMFA = false }
+
+        do {
+            let response = try await APIClient.shared.enableMFA()
+            mfaSetup = response
+            if response.hasSetupMaterial {
+                mfaStatus = "MFA secret ready. Add it to your authenticator app, then verify setup when prompted."
+            } else {
+                mfaStatus = "MFA enable succeeded, but no secret was returned. Try again or complete setup on the web."
+            }
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch {
+            mfaError = error.localizedDescription
         }
     }
 

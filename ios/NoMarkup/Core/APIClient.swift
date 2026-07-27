@@ -705,12 +705,25 @@ actor APIClient {
         query: [URLQueryItem] = [],
         authorized: Bool = false
     ) async throws -> T {
+        try await getJSON(
+            pathComponents: pathComponents,
+            query: query,
+            authorized: authorized ? .required : .none
+        )
+    }
+
+    /// JSON GET with explicit `AuthMode` (e.g. `.optional` for public routes that enrich for signed-in callers).
+    func getJSON<T: Decodable>(
+        pathComponents: [String],
+        query: [URLQueryItem] = [],
+        authorized: AuthMode
+    ) async throws -> T {
         let data = try await perform(
             method: "GET",
             pathComponents: pathComponents,
             query: query,
             body: nil as EmptyBody?,
-            auth: authorized ? .required : .none
+            auth: authorized
         )
         return try decodeFlexible(data)
     }
