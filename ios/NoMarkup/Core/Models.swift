@@ -357,6 +357,40 @@ struct ListingDetailResponse: Codable, Sendable {
     let listing: ListingDetail
 }
 
+/// Response from `POST|DELETE /api/v1/listings/{id}/watch`.
+struct WatchToggleResponse: Codable, Sendable {
+    let watching: Bool
+    var watcherCount: Int?
+}
+
+/// `GET /api/v1/me/watchlist` reuses the public listings list envelope.
+typealias WatchlistResponse = ListingsResponse
+
+// MARK: - Service categories (taxonomy)
+
+/// Row from `GET /api/v1/categories` — job create needs a real `id` (UUID FK).
+struct ServiceCategorySummary: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var parentId: String?
+    var name: String?
+    var slug: String?
+    var level: Int?
+    var description: String?
+    var icon: String?
+    var active: Bool?
+
+    var displayName: String {
+        let n = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !n.isEmpty { return n }
+        let s = slug?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return s.isEmpty ? id : s
+    }
+}
+
+struct ServiceCategoriesResponse: Codable, Sendable {
+    let categories: [ServiceCategorySummary]
+}
+
 // MARK: - Jobs (services reverse-auction)
 
 struct JobApproximateAddress: Codable, Sendable, Hashable {
@@ -690,6 +724,9 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
     var paymentIntentId: String?
     var pickupCity: String?
     var pickupState: String?
+    /// Present once the seller has stamped their half of the mutual handshake.
+    var sellerConfirmedAt: String?
+    var pickupConfirmedAt: String?
 
     var displayTitle: String {
         let t = listingTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -700,17 +737,59 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
         MoneyFormat.usd(cents: amountCents ?? 0)
     }
 
+    /// Normalized escrow state machine value (`pending_payment`, `held`, …).
+    var normalizedEscrow: String {
+        (escrowStatus ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
     var needsPayment: Bool {
-        let escrow = (escrowStatus ?? "").lowercased()
         let mapped = (status ?? "").lowercased()
-        return escrow == "pending_payment" || mapped == "pending"
+        return normalizedEscrow == "pending_payment" || mapped == "pending"
+    }
+
+    /// Buyer may confirm pickup only while funds are held (pre-pickup_confirmed).
+    func canConfirmPickupAsBuyer(userId: String?) -> Bool {
+        guard let userId, !userId.isEmpty, buyerId == userId else { return false }
+        return normalizedEscrow == "held"
+    }
+
+    /// Seller may confirm while held or pickup_confirmed, until they have already stamped.
+    func canSellerConfirm(userId: String?) -> Bool {
+        guard let userId, !userId.isEmpty, sellerId == userId else { return false }
+        guard normalizedEscrow == "held" || normalizedEscrow == "pickup_confirmed" else {
+            return false
+        }
+        if let stamped = sellerConfirmedAt?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !stamped.isEmpty {
+            return false
+        }
+        return true
     }
 
     var displayStatus: String {
         if needsPayment { return "Awaiting payment" }
-        let raw = escrowStatus ?? status ?? "unknown"
-        return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        switch normalizedEscrow {
+        case "held":
+            return "Held — awaiting pickup"
+        case "pickup_confirmed":
+            return "Pickup confirmed — awaiting seller"
+        case "released":
+            return "Released"
+        default:
+            let raw = escrowStatus ?? status ?? "unknown"
+            return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        }
     }
+}
+
+/// Response from confirm-pickup / seller-confirm (flexible shape).
+struct OrderEscrowActionResponse: Codable, Sendable {
+    var orderId: String?
+    var escrowStatus: String?
+    var sellerPayoutCents: Int64?
+    var pickupConfirmedAt: String?
+    var sellerConfirmedAt: String?
+    var bothConfirmed: Bool?
 }
 
 struct MyOrdersResponse: Codable, Sendable {
@@ -858,7 +937,7 @@ struct MyJobBidsResponse: Codable, Sendable {
     let pagination: PaginationMeta?
 }
 
-// MARK: - Notifications (read-only)
+// MARK: - Notifications
 
 /// Row from `GET /api/v1/notifications`.
 struct AppNotification: Codable, Sendable, Hashable, Identifiable {
@@ -889,9 +968,32 @@ struct AppNotification: Codable, Sendable, Hashable, Identifiable {
     var unread: Bool {
         isRead != true
     }
+
+    /// Returns a copy marked read for optimistic UI updates.
+    func markedRead() -> AppNotification {
+        var copy = self
+        copy.isRead = true
+        return copy
+    }
 }
 
 struct NotificationsResponse: Codable, Sendable {
     let notifications: [AppNotification]
     let pagination: PaginationMeta?
+}
+
+/// `GET /api/v1/notifications/unread-count` — gateway emits `{ "count": N }`.
+/// Also accepts `unread_count` if the shape evolves.
+struct UnreadNotificationCountResponse: Codable, Sendable {
+    var count: Int?
+    var unreadCount: Int?
+
+    var value: Int {
+        max(0, unreadCount ?? count ?? 0)
+    }
+}
+
+/// `POST /api/v1/notifications/read-all` — `{ "marked_count": N }`.
+struct MarkAllNotificationsReadResponse: Codable, Sendable {
+    var markedCount: Int?
 }

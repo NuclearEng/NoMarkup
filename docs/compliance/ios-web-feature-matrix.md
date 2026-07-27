@@ -1,8 +1,8 @@
 # iOS ↔ Web feature matrix
 
-**Date:** 2026-07-26  
+**Date:** 2026-07-26 (updated after native create / escrow / watchlist pass)  
 **Scope:** Native iOS app (`ios/NoMarkup`) vs product web (`web/`, zone `no-markup.com`).  
-**Honesty rule:** this is **not** 100% parity. Status is measured against shipped native code + gateway routes, not roadmaps.
+**Honesty rule:** status is measured against shipped native code + gateway routes, not roadmaps.
 
 Legend:
 
@@ -12,6 +12,7 @@ Legend:
 | **partial** | Native surface exists but subset of web (read-only, missing mutations, etc.) |
 | **web-handoff** | Explicit SFSafariViewController / `LegalWebView` to production web URL |
 | **not started** | No native entry; user must use web outside this shell |
+| **out of scope** | Intentionally not in consumer iOS v1 |
 
 ---
 
@@ -19,39 +20,41 @@ Legend:
 
 | Web surface | Primary web path(s) | Gateway (if relevant) | iOS status | Notes |
 |-------------|---------------------|------------------------|------------|--------|
-| Home / marketing shell | `/` | — | **partial** | Product home: reverse-auction hero, live job cards, goods strip, post/sell handoffs — not full marketing site |
-| Auth — email/password | `/login` | `POST /api/v1/auth/login`, refresh | **live** | Keychain tokens; scaffold session for offline chrome |
+| Home / marketing shell | `/` | — | **partial** | Product home (hero, live cards, native post/sell sheets) — not full marketing site |
+| Auth — email/password | `/login` | `POST /api/v1/auth/login`, refresh | **live** | Keychain; **401 → refresh → retry**; cold restore via refresh token |
 | Auth — Sign in with Apple | web OAuth + native | `POST /api/v1/auth/apple/native` | **live** | AuthenticationServices |
-| Account session chrome | `/settings/*` | `GET` claims via JWT | **partial** | Account tab; no full settings hub |
-| Post job (create) | `/jobs/new` | `POST /api/v1/jobs` (not wired) | **web-handoff** | Home + Account → Safari `jobs/new` |
+| Auth — register / MFA / reset | `/register`, MFA, forgot | auth routes | **not started** | Use web |
+| Account session chrome | `/settings/*` | JWT claims | **partial** | Account tab + export/delete/watchlist/orders/bids/notifs; no full settings hub |
+| **Post job (create)** | `/jobs/new` | `POST /api/v1/jobs` | **live** | `PostJobView` native form (Home + Account) |
 | Browse jobs | `/jobs` | `GET /api/v1/jobs` | **live** | `JobsView` browse + search |
-| My jobs | `/jobs` (mine) | `GET /api/v1/jobs/mine` | **live** | Jobs segment “Mine” |
-| Job detail + reverse auction | `/jobs/{id}` | `GET …/jobs/{id}`, `POST …/bids`, `GET …/bids` | **partial** | Hero, countdown, place reverse bid (+ Idempotency-Key), ladder for owner; award/contract on web |
-| Listing bid ladder | marketplace detail | `GET …/listings/{id}/bids` | **live** | Public ladder + place bid with Idempotency-Key |
-| Sell item (create listing) | `/sell` | `POST /api/v1/listings` (not wired) | **web-handoff** | Home + Account → Safari `/sell` |
+| My jobs | mine | `GET /api/v1/jobs/mine` | **live** | Jobs segment “Mine” |
+| Job detail + reverse auction | `/jobs/{id}` | bids place/list | **live** | Bid + ladder + **Award** for owner (`POST …/bids/{bidID}/award`) |
+| **Sell item (create listing)** | `/sell` | `POST /api/v1/listings` | **live** | `CreateListingView` native form |
 | Marketplace browse | `/marketplace` | `GET /api/v1/listings` | **live** | `MarketplaceView` |
-| Listing detail + bid / buy-now | `/marketplace/{id}` | bids, buy-now, report | **partial** | Bid + buy-now + Apple Pay path; no offers/watch native |
-| My listing bids | account / listing UI | `GET /api/v1/listings/bids/mine` | **live** | `MyBidsView` → Goods |
-| My service bids | provider dashboard | `GET /api/v1/bids/mine` | **live** | `MyBidsView` → Services |
-| Orders (goods) | `/orders` | `GET /api/v1/me/orders`, pay | **partial** | `MyOrdersView` + Rail A pay; no full escrow handshake UI |
-| Messages inbox | `/messages` | `GET /api/v1/channels` | **live** | `MessagesView` |
-| Chat thread send | `/messages/{id}` | messages GET/POST | **live** | Plain-text bubbles; web open affordance |
-| Notifications | `/notifications` (or bell) | `GET /api/v1/notifications` | **partial** | Read-only list; no mark-read / prefs / APNs register |
-| Legal — privacy / terms / guidelines | `/privacy`, `/terms`, … | — | **web-handoff** | `LegalWebView` (Safari) |
-| Support | `/support` | — | **web-handoff** | Account legal section |
-| Account data export | settings | `GET /api/v1/users/me/export` | **partial** | Bytes confirmed; share sheet follow-up |
-| Account deletion | settings | `DELETE /api/v1/users/me` | **live** | `AccountDeletionView` + grace copy |
-| Feature flags | admin / client | `GET /api/v1/flags` | **partial** | Client fetch exists; few native gates |
-| Contracts / milestones | `/contracts` | contract service | **not started** | Use web |
-| Disputes | disputes UI | `/api/v1/disputes` | **not started** | Use web |
-| Reviews write | provider profiles | reviews APIs | **not started** | Public review read not in iOS list UIs |
-| Seller analytics | sell dashboard | `GET /api/v1/me/seller-analytics` | **not started** | |
-| Watchlist / saved searches | marketplace | `/me/watchlist`, saved searches | **not started** | |
-| Best offer / counter | listing offers | offers APIs | **not started** | |
-| Admin surfaces | `/admin/*` | admin routes | **not started** | Out of scope for consumer app |
-| StoreKit digital IAP | — | — | **not started** | Intentionally omitted (Rail A physical GMV) |
-| Maps / geo browse | Mapbox web | PostGIS jobs map | **not started** | No Mapbox native shell yet |
-| Push (APNs) | — | `POST /notifications/devices` | **not started** | Device register API exists server-side |
+| Listing detail + bid / buy-now | `/marketplace/{id}` | bids, buy-now, report | **live** | Bid + buy-now + Apple Pay + report + **watch toggle** |
+| My listing bids | — | `GET /api/v1/listings/bids/mine` | **live** | `MyBidsView` → Goods |
+| My service bids | — | `GET /api/v1/bids/mine` | **live** | `MyBidsView` → Services |
+| **Watchlist** | `/me/watchlist` | watch POST/DELETE, list | **live** | Heart on listing detail + `WatchlistView` |
+| Orders (goods) | `/orders` | pay, confirm-pickup, seller-confirm | **live** | Pay + **buyer confirm pickup** + **seller confirm** |
+| Messages inbox | `/messages` | channels | **live** | REST; no WebSocket |
+| Chat thread send | `/messages/{id}` | messages GET/POST | **live** | Plain-text; no media |
+| Notifications | bell | list, read, read-all, unread-count | **live** | Mark read / mark all / Account badge |
+| Legal — privacy / terms / guidelines | `/privacy`, … | — | **web-handoff** | Safari (content pages; intentional) |
+| Support | `/support` | — | **web-handoff** | Safari |
+| Account data export | settings | `GET …/export` | **live** | Download + **share sheet** |
+| Account deletion | settings | `DELETE /users/me` | **live** | `AccountDeletionView` |
+| Feature flags | — | `GET /api/v1/flags` | **partial** | Fetch + hard-offs for regulated rails |
+| Contracts / milestones UI | `/contracts` | contract service | **partial** | Award creates contract server-side; no full native contract workspace |
+| Disputes | disputes UI | disputes APIs | **not started** | Use web |
+| Reviews write | provider profiles | reviews APIs | **not started** | Use web |
+| Seller analytics | sell dashboard | seller-analytics | **not started** | Use web |
+| Best offer / counter | offers | offers APIs | **not started** | Use web |
+| Saved searches | marketplace | saved-searches | **not started** | Watchlist only |
+| Admin surfaces | `/admin/*` | admin | **out of scope** | Consumer app |
+| StoreKit digital IAP | — | — | **out of scope** | Rail A physical GMV only |
+| Maps / geo browse | Mapbox web | PostGIS map | **not started** | No Mapbox SDK yet |
+| Push (APNs) | — | `POST /notifications/devices` | **not started** | Device register API exists; no APNs client |
+| Photo upload / imaging | S3 presign | images API | **not started** | Create forms send empty `photo_urls` |
 
 ---
 
@@ -60,31 +63,32 @@ Legend:
 | Token area | Web | iOS |
 |------------|-----|-----|
 | Navy / gold terminal | `globals.css` brand + dark shell | `BrandTheme` navy / gold / elevated |
-| Bid active / leading | `--bid-active` / trust-elite blue | `bidActive` / `bidLeading` |
-| Bid winning / savings | `--bid-winning` / trust-high green | `bidWinning` / `savings` |
-| Warning | `--trust-medium` amber | `warning` |
-| Raised surface | elevated card tokens | `surfaceRaised` |
-| Gold CTA label | dark text on gold | `ctaLabelOnGold` = navy (contrast) |
-| Hero mesh | gold gradients on marketing | `gradientHero` + `brandCard(heroGradient:)` |
+| App icon | champagne metal M↓ | AppIcon + `NoMarkupIcon` |
+| Bid / trust chips | HSL tokens | `bidActive` / `bidWinning` / `warning` |
 
 ---
 
-## Next slices (recommended order)
+## Next slices (remaining)
 
-1. **Native post-job / sell wizards** (or authenticated WKWebView with shared session) to reduce Safari handoff friction.
-2. **Notifications mark-read + unread badge** on Account/tab (`POST …/read`, unread-count).
-3. **APNs device registration** behind a feature flag.
-4. **Watchlist + outbid surfaces** using existing listing bid history.
-5. **Contracts / escrow confirmation** for goods pickup handshake.
-6. **Maps** for local 25 mi marketplace when location permission UX is product-ready.
-7. Share sheet for data export; deep links (`nomarkup://` / universal links) into job/listing detail.
+1. **APNs** device registration + push handling  
+2. **Maps** (MapKit first; Mapbox later if needed)  
+3. **Contracts list / milestones** after award  
+4. **Disputes + reviews write**  
+5. **Best offer / saved searches**  
+6. **Register / MFA / password reset** native  
+7. **Photo upload** for jobs/listings  
+8. Chat **WebSocket** realtime  
 
 ---
 
-## Acceptance for this PR
+## Acceptance (this pass)
 
-- Semantic auction colors live in `ios/NoMarkup/Core/BrandTheme.swift` without breaking existing consumers.
-- Create entry points are **labeled web handoffs**, not silent WKWebView shells of the whole site.
-- My bids + notifications lists call verified gateway paths only.
-- Chat bubbles: outgoing gold + navy text; incoming `surfaceRaised` + blue border.
-- Matrix stays honest: **partial / web-handoff / not started** remain majority outside catalog + auth core.
+- [x] Native post job + create listing (no Safari for primary create)  
+- [x] Notifications mark-read / mark-all / unread badge  
+- [x] Orders confirm pickup + seller confirm  
+- [x] Export share sheet  
+- [x] Watchlist + listing heart  
+- [x] Job owner award bid  
+- [x] Token refresh on 401 + cold restore  
+- [x] `xcodebuild` **BUILD SUCCEEDED** (iOS Simulator generic)  
+- [x] Matrix updated honestly (admin/IAP/maps/APNs remain open or out of scope)  

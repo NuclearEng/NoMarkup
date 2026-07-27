@@ -39,6 +39,9 @@
 		A10000000000000000000026 /* MyBidsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000026 /* MyBidsView.swift */; };
 		A10000000000000000000027 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000027 /* NotificationsView.swift */; };
 		A10000000000000000000028 /* NoMarkupIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000028 /* NoMarkupIcon.swift */; };
+		A10000000000000000000029 /* PostJobView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000029 /* PostJobView.swift */; };
+		A1000000000000000000002A /* CreateListingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002A /* CreateListingView.swift */; };
+		A1000000000000000000002B /* WatchlistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002B /* WatchlistView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -75,6 +78,9 @@
 		B10000000000000000000026 /* MyBidsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBidsView.swift; sourceTree = "<group>"; };
 		B10000000000000000000027 /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
 		B10000000000000000000028 /* NoMarkupIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupIcon.swift; sourceTree = "<group>"; };
+		B10000000000000000000029 /* PostJobView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostJobView.swift; sourceTree = "<group>"; };
+		B1000000000000000000002A /* CreateListingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateListingView.swift; sourceTree = "<group>"; };
+		B1000000000000000000002B /* WatchlistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistView.swift; sourceTree = "<group>"; };
 		C10000000000000000000001 /* NoMarkup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NoMarkup.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -176,8 +182,11 @@
 				B10000000000000000000022 /* MyOrdersView.swift */,
 				B10000000000000000000026 /* MyBidsView.swift */,
 				B10000000000000000000027 /* NotificationsView.swift */,
+				B1000000000000000000002B /* WatchlistView.swift */,
 				B1000000000000000000000E /* LegalWebView.swift */,
 				B1000000000000000000000F /* AccountDeletionView.swift */,
+				B10000000000000000000029 /* PostJobView.swift */,
+				B1000000000000000000002A /* CreateListingView.swift */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -291,6 +300,9 @@
 				A10000000000000000000026 /* MyBidsView.swift in Sources */,
 				A10000000000000000000027 /* NotificationsView.swift in Sources */,
 				A10000000000000000000028 /* NoMarkupIcon.swift in Sources */,
+				A10000000000000000000029 /* PostJobView.swift in Sources */,
+				A1000000000000000000002A /* CreateListingView.swift in Sources */,
+				A1000000000000000000002B /* WatchlistView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

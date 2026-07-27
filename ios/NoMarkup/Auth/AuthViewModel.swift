@@ -22,15 +22,41 @@ final class AuthViewModel: ObservableObject {
         restoreSessionIfPossible()
     }
 
+    /// Restore from Keychain. If access is missing but a refresh token remains, attempt
+    /// a silent refresh (APIClient also retries once on 401 mid-session).
     private func restoreSessionIfPossible() {
         do {
             if let access = try tokenStore.read(.accessToken), !access.isEmpty {
                 isAuthenticated = true
                 isScaffoldSession = false
+                return
             }
+            if let refresh = try tokenStore.read(.refreshToken), !refresh.isEmpty {
+                // Optimistic signed-in while refresh runs so tabs don't flash login.
+                isAuthenticated = true
+                isScaffoldSession = false
+                Task { await restoreViaRefresh() }
+                return
+            }
+            isAuthenticated = false
+            isScaffoldSession = false
         } catch {
             // Non-fatal: start signed out.
             isAuthenticated = false
+            isScaffoldSession = false
+        }
+    }
+
+    /// Silent token refresh when only the refresh token survived (access expired/cleared).
+    private func restoreViaRefresh() async {
+        do {
+            _ = try await api.refreshSession()
+            isScaffoldSession = false
+            isAuthenticated = true
+        } catch {
+            try? tokenStore.clearSession()
+            isAuthenticated = false
+            isScaffoldSession = false
         }
     }
 

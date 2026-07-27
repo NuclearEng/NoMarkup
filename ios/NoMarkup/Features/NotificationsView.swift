@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Read-only notification inbox — `GET /api/v1/notifications`.
-/// Mark-as-read / push registration are deferred (web parity partial).
+/// Notification inbox — list, mark-one-read, mark-all-read, unread count.
 struct NotificationsView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -9,6 +8,18 @@ struct NotificationsView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var needsSignIn = false
+    @State private var unreadCount = 0
+    @State private var isMarkingAll = false
+    @State private var actionMessage: String?
+    @State private var markingID: String?
+
+    private var localUnreadCount: Int {
+        items.filter(\.unread).count
+    }
+
+    private var displayedUnread: Int {
+        max(unreadCount, localUnreadCount)
+    }
 
     var body: some View {
         Group {
@@ -50,29 +61,82 @@ struct NotificationsView: View {
                 )
             } else {
                 List {
-                    Section {
-                        ForEach(items) { note in
-                            notificationRow(note)
+                    if let actionMessage {
+                        Section {
+                            Text(actionMessage)
+                                .font(.footnote)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
                                 .listRowBackground(BrandTheme.navyElevated)
                         }
+                    }
+
+                    Section {
+                        ForEach(items) { note in
+                            Button {
+                                Task { await markReadIfNeeded(note) }
+                            } label: {
+                                notificationRow(note)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(markingID == note.id)
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityHint(
+                                note.unread
+                                    ? "Marks this notification as read"
+                                    : "Already read"
+                            )
+                        }
                     } header: {
-                        Text("\(items.count) recent").brandSectionHeader()
+                        Text(sectionHeaderText).brandSectionHeader()
                     } footer: {
-                        Text("Read-only in this build. Open the web app to manage preferences or mark all as read.")
+                        Text("Tap a row to mark it read. Use Mark all read in the toolbar for the full inbox.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
                 .brandListBackground()
             }
         }
-        .navigationTitle("Notifications")
+        .navigationTitle(navigationTitleText)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if auth.isAuthenticated, !auth.isScaffoldSession, localUnreadCount > 0 || unreadCount > 0 {
+                    Button {
+                        Task { await markAllRead() }
+                    } label: {
+                        if isMarkingAll {
+                            ProgressView()
+                                .tint(BrandTheme.accent)
+                        } else {
+                            Text("Mark all read")
+                        }
+                    }
+                    .disabled(isMarkingAll || markingID != nil)
+                    .accessibilityHint("Marks every notification as read")
+                }
+            }
+        }
         .task { await load() }
         .refreshable { await load() }
+    }
+
+    private var navigationTitleText: String {
+        if displayedUnread > 0 {
+            return "Notifications (\(displayedUnread))"
+        }
+        return "Notifications"
+    }
+
+    private var sectionHeaderText: String {
+        if displayedUnread > 0 {
+            return "\(items.count) recent · \(displayedUnread) unread"
+        }
+        return "\(items.count) recent"
     }
 
     @ViewBuilder
@@ -89,6 +153,7 @@ struct NotificationsView: View {
                     .font(.body.weight(note.unread ? .semibold : .regular))
                     .foregroundStyle(BrandTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
 
                 if !note.displayBody.isEmpty {
                     Text(note.displayBody)
@@ -96,6 +161,7 @@ struct NotificationsView: View {
                         .foregroundStyle(BrandTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .lineLimit(4)
+                        .multilineTextAlignment(.leading)
                 }
 
                 HStack(spacing: 8) {
@@ -109,10 +175,18 @@ struct NotificationsView: View {
                             .font(.caption2)
                             .foregroundStyle(BrandTheme.textSecondary.opacity(0.85))
                     }
+                    if markingID == note.id {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .tint(BrandTheme.accent)
+                    }
                 }
             }
+            Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .opacity(note.unread ? 1 : 0.72)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             note.unread
@@ -125,6 +199,7 @@ struct NotificationsView: View {
     private func load() async {
         if auth.isScaffoldSession || !auth.isAuthenticated {
             items = []
+            unreadCount = 0
             needsSignIn = !auth.isAuthenticated && !auth.isScaffoldSession
             return
         }
@@ -132,18 +207,83 @@ struct NotificationsView: View {
         isLoading = true
         errorMessage = nil
         needsSignIn = false
+        actionMessage = nil
         defer { isLoading = false }
 
         do {
             let response = try await APIClient.shared.fetchNotifications(page: 1, pageSize: 40)
             items = response.notifications
+            // Count is best-effort — list success should not fail the screen.
+            if let count = try? await APIClient.shared.fetchUnreadNotificationCount() {
+                unreadCount = count
+            } else {
+                unreadCount = items.filter(\.unread).count
+            }
         } catch let error as APIClientError where error.isUnauthorized {
             items = []
+            unreadCount = 0
             needsSignIn = true
         } catch {
             if items.isEmpty {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    @MainActor
+    private func markReadIfNeeded(_ note: AppNotification) async {
+        guard note.unread else { return }
+        guard markingID == nil, !isMarkingAll else { return }
+
+        markingID = note.id
+        actionMessage = nil
+        defer { markingID = nil }
+
+        // Optimistic UI.
+        if let idx = items.firstIndex(where: { $0.id == note.id }) {
+            items[idx] = items[idx].markedRead()
+        }
+        unreadCount = max(0, unreadCount - 1)
+
+        do {
+            try await APIClient.shared.markNotificationRead(id: note.id)
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+            // Revert optimistic update on auth failure.
+            if let idx = items.firstIndex(where: { $0.id == note.id }) {
+                var reverted = items[idx]
+                reverted.isRead = false
+                items[idx] = reverted
+            }
+            unreadCount += 1
+        } catch {
+            // Revert optimistic update.
+            if let idx = items.firstIndex(where: { $0.id == note.id }) {
+                var reverted = items[idx]
+                reverted.isRead = false
+                items[idx] = reverted
+            }
+            unreadCount += 1
+            actionMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func markAllRead() async {
+        guard !isMarkingAll else { return }
+        isMarkingAll = true
+        actionMessage = nil
+        defer { isMarkingAll = false }
+
+        do {
+            _ = try await APIClient.shared.markAllNotificationsRead()
+            items = items.map { $0.unread ? $0.markedRead() : $0 }
+            unreadCount = 0
+            actionMessage = "All notifications marked as read."
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch {
+            actionMessage = error.localizedDescription
         }
     }
 }

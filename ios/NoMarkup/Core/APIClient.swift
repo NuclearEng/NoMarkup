@@ -362,6 +362,52 @@ actor APIClient {
         try await getJSON(pathComponents: ["api", "v1", "listings", listingId, "bids"])
     }
 
+    /// POST `/api/v1/jobs/{id}/bids/{bidID}/award` — customer awards a bid (creates contract).
+    @discardableResult
+    func awardJobBid(jobId: String, bidId: String) async throws -> Data {
+        try await postData(
+            pathComponents: ["api", "v1", "jobs", jobId, "bids", bidId, "award"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    // MARK: - Watchlist
+
+    /// POST `/api/v1/listings/{id}/watch` — add listing to the signed-in user's watchlist.
+    /// Returns `{ watching: true, watcher_count?: N }`. Idempotent.
+    @discardableResult
+    func watchListing(id: String) async throws -> WatchToggleResponse {
+        try await postJSON(
+            pathComponents: ["api", "v1", "listings", id, "watch"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    /// DELETE `/api/v1/listings/{id}/watch` — remove listing from watchlist.
+    /// Returns `{ watching: false }`.
+    @discardableResult
+    func unwatchListing(id: String) async throws -> WatchToggleResponse {
+        try await deleteJSON(
+            pathComponents: ["api", "v1", "listings", id, "watch"],
+            authorized: .required
+        )
+    }
+
+    /// GET `/api/v1/me/watchlist?page=&page_size=` — watched listings (same shape as listings list).
+    func fetchWatchlist(page: Int = 1, pageSize: Int = 20) async throws -> ListingsResponse {
+        let items = [
+            URLQueryItem(name: "page", value: String(max(1, page))),
+            URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+        ]
+        return try await getJSON(
+            pathComponents: ["api", "v1", "me", "watchlist"],
+            query: items,
+            authorized: true
+        )
+    }
+
     // MARK: - Rail A payments (Stripe / Apple Pay)
 
     /// POST `/api/v1/listings/{id}/buy-now` — auth required.
@@ -421,7 +467,7 @@ actor APIClient {
         )
     }
 
-    /// GET `/api/v1/notifications` — in-app notification inbox (read-only list on iOS).
+    /// GET `/api/v1/notifications` — in-app notification inbox (Bearer required).
     func fetchNotifications(page: Int = 1, pageSize: Int = 40) async throws -> NotificationsResponse {
         let items = [
             URLQueryItem(name: "page", value: String(max(1, page))),
@@ -431,6 +477,167 @@ actor APIClient {
             pathComponents: ["api", "v1", "notifications"],
             query: items,
             authorized: true
+        )
+    }
+
+    /// POST `/api/v1/notifications/{id}/read` — mark one notification read (empty body).
+    func markNotificationRead(id: String) async throws {
+        _ = try await postData(
+            pathComponents: ["api", "v1", "notifications", id, "read"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/notifications/read-all` — mark all notifications read for the caller.
+    @discardableResult
+    func markAllNotificationsRead() async throws -> MarkAllNotificationsReadResponse {
+        try await postJSON(
+            pathComponents: ["api", "v1", "notifications", "read-all"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    /// GET `/api/v1/notifications/unread-count` — `{ "count": N }` (snake_case via decoder).
+    func fetchUnreadNotificationCount() async throws -> Int {
+        let response: UnreadNotificationCountResponse = try await getJSON(
+            pathComponents: ["api", "v1", "notifications", "unread-count"],
+            authorized: true
+        )
+        return response.value
+    }
+
+    /// POST `/api/v1/orders/{id}/confirm-pickup` — buyer half of the mutual escrow handshake.
+    /// Body optional on the gateway; we send `{}`.
+    @discardableResult
+    func confirmOrderPickup(orderId: String) async throws -> OrderEscrowActionResponse {
+        try await postJSON(
+            pathComponents: ["api", "v1", "orders", orderId, "confirm-pickup"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/orders/{id}/seller-confirm` — seller half of the mutual escrow handshake.
+    @discardableResult
+    func sellerConfirmOrder(orderId: String) async throws -> OrderEscrowActionResponse {
+        try await postJSON(
+            pathComponents: ["api", "v1", "orders", orderId, "seller-confirm"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    // MARK: - Taxonomy (public)
+
+    /// GET `/api/v1/categories?level=` — public service-category list (id + slug + name).
+    func fetchServiceCategories(level: Int? = 1) async throws -> [ServiceCategorySummary] {
+        var query: [URLQueryItem] = []
+        if let level {
+            query.append(URLQueryItem(name: "level", value: String(level)))
+        }
+        let wrapped: ServiceCategoriesResponse = try await getJSON(
+            pathComponents: ["api", "v1", "categories"],
+            query: query
+        )
+        return wrapped.categories
+    }
+
+    // MARK: - Create (jobs + listings)
+
+    /// POST `/api/v1/jobs` — create a service reverse-auction job (Bearer required).
+    /// Response is the job JSON map (not wrapped). Idempotency-Key for safe retries.
+    @discardableResult
+    func createJob(
+        title: String,
+        description: String,
+        categoryId: String? = nil,
+        auctionDurationHours: Int = 24,
+        startingBidCents: Int64,
+        locationAddress: String? = nil,
+        locationLat: Double? = nil,
+        locationLng: Double? = nil,
+        publish: Bool = true,
+        scheduleType: String = "flexible"
+    ) async throws -> JobDetail {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Title is required.")
+        }
+        let body = CreateJobRequestBody(
+            title: trimmedTitle,
+            description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+            categoryId: categoryId.flatMap { t in
+                let s = t.trimmingCharacters(in: .whitespacesAndNewlines)
+                return s.isEmpty ? nil : s
+            },
+            auctionDurationHours: auctionDurationHours,
+            startingBidCents: startingBidCents,
+            locationAddress: locationAddress.flatMap { t in
+                let s = t.trimmingCharacters(in: .whitespacesAndNewlines)
+                return s.isEmpty ? nil : s
+            },
+            locationLat: locationLat,
+            locationLng: locationLng,
+            publish: publish,
+            scheduleType: scheduleType
+        )
+        let idem = "create-job:\(UUID().uuidString)"
+        return try await postJSON(
+            pathComponents: ["api", "v1", "jobs"],
+            body: body,
+            authorized: .required,
+            headers: ["Idempotency-Key": idem]
+        )
+    }
+
+    /// POST `/api/v1/listings` — create a goods marketplace listing (Bearer required).
+    /// Duration must be 24, 48, or 168. Condition: new|like_new|very_good|good|acceptable|for_parts.
+    /// Response is the listing JSON (not wrapped). Idempotency-Key for safe retries.
+    @discardableResult
+    func createListing(
+        categoryId: String,
+        title: String,
+        description: String,
+        photoUrls: [String] = [],
+        pickupZip: String,
+        startingPriceCents: Int64,
+        buyNowPriceCents: Int64? = nil,
+        condition: String = "good",
+        auctionDurationHours: Int = 48,
+        publish: Bool = true
+    ) async throws -> ListingDetail {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Title is required.")
+        }
+        let trimmedCategory = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedCategory.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Category is required.")
+        }
+        let trimmedZip = pickupZip.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedZip.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Pickup ZIP is required.")
+        }
+        let body = CreateListingRequestBody(
+            categoryId: trimmedCategory,
+            title: trimmedTitle,
+            description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+            photoUrls: photoUrls,
+            pickupZip: trimmedZip,
+            startingPriceCents: startingPriceCents,
+            buyNowPriceCents: buyNowPriceCents,
+            condition: condition.trimmingCharacters(in: .whitespacesAndNewlines),
+            auctionDurationHours: auctionDurationHours,
+            publish: publish
+        )
+        let idem = "create-listing:\(UUID().uuidString)"
+        return try await postJSON(
+            pathComponents: ["api", "v1", "listings"],
+            body: body,
+            authorized: .required,
+            headers: ["Idempotency-Key": idem]
         )
     }
 
@@ -502,13 +709,34 @@ actor APIClient {
         )
     }
 
+    private func deleteJSON<T: Decodable>(
+        pathComponents: [String],
+        authorized: AuthMode,
+        headers: [String: String] = [:]
+    ) async throws -> T {
+        let data = try await perform(
+            method: "DELETE",
+            pathComponents: pathComponents,
+            query: [],
+            body: nil as EmptyBody?,
+            auth: authorized,
+            headers: headers
+        )
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw APIClientError.decoding("Could not decode response: \(error.localizedDescription)")
+        }
+    }
+
     private func perform<Body: Encodable>(
         method: String,
         pathComponents: [String],
         query: [URLQueryItem],
         body: Body?,
         auth: AuthMode,
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        didRefresh: Bool = false
     ) async throws -> Data {
         var url = AppConfig.apiBaseURL
         for component in pathComponents {
@@ -559,6 +787,31 @@ actor APIClient {
         } catch {
             throw APIClientError.unreachable
         }
+
+        // Single retry on 401 for authenticated calls: refresh access token, then re-issue.
+        if !didRefresh,
+           auth != .none,
+           let http = response as? HTTPURLResponse,
+           http.statusCode == 401,
+           let refresh = try? tokenStore.read(.refreshToken),
+           !refresh.isEmpty
+        {
+            do {
+                _ = try await refreshSession()
+                return try await perform(
+                    method: method,
+                    pathComponents: pathComponents,
+                    query: query,
+                    body: body,
+                    auth: auth,
+                    headers: headers,
+                    didRefresh: true
+                )
+            } catch {
+                // Fall through to original 401 surface if refresh fails.
+            }
+        }
+
         try Self.throwIfNeeded(response: response, data: data)
         return data
     }
@@ -677,6 +930,34 @@ private struct AmountCentsBody: Encodable {
 private struct SendMessageRequestBody: Encodable {
     let content: String
     let messageType: String
+}
+
+/// Body for `POST /api/v1/jobs` (snake_case via encoder).
+private struct CreateJobRequestBody: Encodable {
+    let title: String
+    let description: String
+    let categoryId: String?
+    let auctionDurationHours: Int
+    let startingBidCents: Int64
+    let locationAddress: String?
+    let locationLat: Double?
+    let locationLng: Double?
+    let publish: Bool
+    let scheduleType: String
+}
+
+/// Body for `POST /api/v1/listings` (snake_case via encoder).
+private struct CreateListingRequestBody: Encodable {
+    let categoryId: String
+    let title: String
+    let description: String
+    let photoUrls: [String]
+    let pickupZip: String
+    let startingPriceCents: Int64
+    let buyNowPriceCents: Int64?
+    let condition: String
+    let auctionDurationHours: Int
+    let publish: Bool
 }
 
 /// Unverified JWT payload decode for client UI hints only (subject / email).

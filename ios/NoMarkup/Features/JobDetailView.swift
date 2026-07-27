@@ -21,6 +21,12 @@ struct JobDetailView: View {
     @State private var bidStatusMessage: String?
     @State private var bidStatusIsError = false
 
+    @State private var currentUserID: String?
+    @State private var pendingAwardEntry: JobBidEntry?
+    @State private var isAwarding = false
+    @State private var awardStatusMessage: String?
+    @State private var awardStatusIsError = false
+
     init(jobID: String, preview: JobSummary? = nil) {
         self.jobID = jobID
         self.preview = preview
@@ -47,6 +53,30 @@ struct JobDetailView: View {
 
     private var leadingBidCents: Int64? {
         sortedLadder.first?.bid?.amountCents
+    }
+
+    /// Customer who posted the job (JWT `sub` matches `job.customer_id`).
+    private var isJobOwner: Bool {
+        guard let customerId = detail?.customerId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !customerId.isEmpty,
+              let uid = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !uid.isEmpty
+        else {
+            return false
+        }
+        return customerId.caseInsensitiveCompare(uid) == .orderedSame
+    }
+
+    /// Award is allowed for the owner while the auction is still awardable.
+    private var canAward: Bool {
+        guard isJobOwner, auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        let status = (detail?.status ?? "").lowercased()
+        switch status {
+        case "active", "open", "closed", "bidding":
+            return true
+        default:
+            return false
+        }
     }
 
     var body: some View {
@@ -83,6 +113,26 @@ struct JobDetailView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
+        .confirmationDialog(
+            "Award this bid?",
+            isPresented: Binding(
+                get: { pendingAwardEntry != nil },
+                set: { if !$0 { pendingAwardEntry = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingAwardEntry
+        ) { entry in
+            Button("Award \(entry.displayAmount) to \(entry.displayName)", role: .destructive) {
+                Task { await awardBid(entry) }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingAwardEntry = nil
+            }
+        } message: { entry in
+            Text(
+                "This awards the job to \(entry.displayName) at \(entry.displayAmount) and starts the contract. Other bidders are notified they were not selected."
+            )
+        }
         .sheet(isPresented: $showWebSafari) {
             NavigationStack {
                 LegalWebView(title: "Job on web", url: webJobURL)
@@ -327,6 +377,12 @@ struct JobDetailView: View {
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         .accessibilityLabel("No bids yet — be first to compete")
                 } else {
+                    if let awardStatusMessage {
+                        Text(awardStatusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(awardStatusIsError ? BrandTheme.destructive : BrandTheme.success)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     ForEach(Array(sortedLadder.enumerated()), id: \.offset) { index, entry in
                         bidLadderRow(entry: entry, rank: index + 1, isLeading: index == 0)
                     }
@@ -335,8 +391,13 @@ struct JobDetailView: View {
         } header: {
             Text("Bid ladder").brandSectionHeader()
         } footer: {
-            Text("Lowest bid leads in a reverse auction. Rank #1 is currently winning on price.")
-                .foregroundStyle(BrandTheme.textSecondary)
+            if canAward {
+                Text("You own this job. Award a bid to create the contract. Lowest bid leads in a reverse auction.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            } else {
+                Text("Lowest bid leads in a reverse auction. Rank #1 is currently winning on price.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
         }
     }
 
@@ -363,39 +424,80 @@ struct JobDetailView: View {
 
     @ViewBuilder
     private func bidLadderRow(entry: JobBidEntry, rank: Int, isLeading: Bool) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text("#\(rank)")
-                .font(.caption.weight(.bold).monospacedDigit())
-                .foregroundStyle(isLeading ? BrandTheme.success : BrandTheme.textSecondary)
-                .frame(width: 28, alignment: .leading)
+        let bidStatus = (entry.bid?.status ?? "").lowercased()
+        let alreadyAwarded = bidStatus == "awarded"
+        let showAward = canAward
+            && !alreadyAwarded
+            && entry.bid?.id != nil
+            && (detail?.status ?? "").lowercased() != "awarded"
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.displayName)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .lineLimit(1)
-                if let trust = entry.trustScore {
-                    Text("Trust \(String(format: "%.0f", trust))")
-                        .font(.caption2)
-                        .foregroundStyle(BrandTheme.textSecondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+                Text("#\(rank)")
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .foregroundStyle(isLeading ? BrandTheme.success : BrandTheme.textSecondary)
+                    .frame(width: 28, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.displayName)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(BrandTheme.textPrimary)
+                        .lineLimit(1)
+                    if let trust = entry.trustScore {
+                        Text("Trust \(String(format: "%.0f", trust))")
+                            .font(.caption2)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(entry.displayAmount)
+                        .font(.body.weight(.bold).monospacedDigit())
+                        .foregroundStyle(BrandTheme.goldBright)
+                    if alreadyAwarded {
+                        Text("Awarded")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrandTheme.success)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(BrandTheme.success.opacity(0.15), in: Capsule())
+                            .accessibilityLabel("Awarded bid")
+                    } else if isLeading {
+                        Text("Leading")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(BrandTheme.success)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(BrandTheme.success.opacity(0.15), in: Capsule())
+                            .accessibilityLabel("Leading bid")
+                    }
                 }
             }
 
-            Spacer(minLength: 8)
-
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(entry.displayAmount)
-                    .font(.body.weight(.bold).monospacedDigit())
-                    .foregroundStyle(BrandTheme.goldBright)
-                if isLeading {
-                    Text("Leading")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(BrandTheme.success)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(BrandTheme.success.opacity(0.15), in: Capsule())
-                        .accessibilityLabel("Leading bid")
+            if showAward {
+                Button {
+                    pendingAwardEntry = entry
+                } label: {
+                    if isAwarding, pendingAwardEntry?.id == entry.id {
+                        ProgressView()
+                            .tint(BrandTheme.navy)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label(
+                            isLeading ? "Award leading bid" : "Award this bid",
+                            systemImage: "checkmark.seal"
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                    }
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .disabled(isAwarding)
+                .accessibilityLabel(
+                    "Award job to \(entry.displayName) for \(entry.displayAmount)"
+                )
             }
         }
         .padding(.vertical, 4)
@@ -567,10 +669,55 @@ struct JobDetailView: View {
     }
 
     @MainActor
+    private func awardBid(_ entry: JobBidEntry) async {
+        awardStatusMessage = nil
+        awardStatusIsError = false
+        guard let bidId = entry.bid?.id, !bidId.isEmpty else {
+            awardStatusIsError = true
+            awardStatusMessage = "This bid has no id and cannot be awarded."
+            pendingAwardEntry = nil
+            return
+        }
+        guard !auth.isScaffoldSession else {
+            awardStatusIsError = true
+            awardStatusMessage =
+                "Browse-only mode has no API credentials. Sign in against a live gateway to award bids."
+            pendingAwardEntry = nil
+            return
+        }
+
+        isAwarding = true
+        defer {
+            isAwarding = false
+            pendingAwardEntry = nil
+        }
+
+        do {
+            _ = try await APIClient.shared.awardJobBid(jobId: jobID, bidId: bidId)
+            awardStatusIsError = false
+            awardStatusMessage =
+                "Awarded \(entry.displayAmount) to \(entry.displayName). Contract creation continues on the server."
+            await load()
+        } catch let error as APIClientError where error.isUnauthorized {
+            awardStatusIsError = true
+            awardStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            awardStatusIsError = true
+            awardStatusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
     private func load() async {
         isLoading = detail == nil
         errorMessage = nil
         defer { isLoading = false }
+
+        if auth.isAuthenticated, !auth.isScaffoldSession {
+            currentUserID = await APIClient.shared.currentUserID()
+        } else {
+            currentUserID = nil
+        }
 
         do {
             detail = try await APIClient.shared.fetchJob(id: jobID)

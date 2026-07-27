@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct AccountView: View {
     @EnvironmentObject private var auth: AuthViewModel
@@ -7,6 +10,9 @@ struct AccountView: View {
     @State private var isExporting = false
     @State private var sessionEmail: String?
     @State private var sessionUserID: String?
+    @State private var unreadNotificationCount = 0
+    @State private var exportShareURL: URL?
+    @State private var showExportShare = false
 
     var body: some View {
         NavigationStack {
@@ -48,26 +54,26 @@ struct AccountView: View {
 
                 Section {
                     NavigationLink {
-                        LegalWebView(title: "Post a job (web)", url: AppConfig.postJobURL)
+                        PostJobView()
                     } label: {
                         Label("Post a job", systemImage: "plus.circle")
                     }
                     .frame(minHeight: 44)
-                    .accessibilityHint("Opens the web job form in Safari until the native form ships")
+                    .accessibilityHint("Native form to post a reverse-auction service job")
 
                     NavigationLink {
-                        LegalWebView(title: "Sell an item (web)", url: AppConfig.sellItemURL)
+                        CreateListingView()
                     } label: {
                         Label("Sell an item", systemImage: "tag")
                     }
                     .frame(minHeight: 44)
-                    .accessibilityHint("Opens the web sell form in Safari until the native form ships")
+                    .accessibilityHint("Native form to list a local goods item for auction")
 
-                    Text("Native create flows are not in this build — these open no-markup.com in Safari (SFSafariViewController).")
+                    Text("Jobs and goods create flows call the gateway. Each form also links to the full web editor when you need photos or advanced options.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } header: {
-                    Text("Create (web)").brandSectionHeader()
+                    Text("Create").brandSectionHeader()
                 }
 
                 Section {
@@ -77,7 +83,7 @@ struct AccountView: View {
                         Label("Orders", systemImage: "bag")
                     }
                     .frame(minHeight: 44)
-                    .accessibilityHint("View marketplace orders and pay pending ones with Apple Pay")
+                    .accessibilityHint("View marketplace orders, pay pending ones, and confirm escrow pickup")
 
                     NavigationLink {
                         MyBidsView()
@@ -88,12 +94,32 @@ struct AccountView: View {
                     .accessibilityHint("View goods and service bids you have placed")
 
                     NavigationLink {
-                        NotificationsView()
+                        WatchlistView()
                     } label: {
-                        Label("Notifications", systemImage: "bell")
+                        Label("Watchlist", systemImage: "heart")
                     }
                     .frame(minHeight: 44)
-                    .accessibilityHint("Read-only list of account notifications")
+                    .accessibilityHint("Listings you are watching for auction updates")
+
+                    NavigationLink {
+                        NotificationsView()
+                    } label: {
+                        HStack {
+                            Label("Notifications", systemImage: "bell")
+                            Spacer()
+                            if unreadNotificationCount > 0 {
+                                Text("\(unreadNotificationCount)")
+                                    .font(.caption.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(BrandTheme.accent, in: Capsule())
+                                    .accessibilityLabel("\(unreadNotificationCount) unread")
+                            }
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("View account notifications and mark them read")
 
                     Text("Jobs and local goods use Apple Pay / Stripe escrow (not App Store IAP). The market sets the price — not a platform markup.")
                         .font(.caption)
@@ -145,8 +171,8 @@ struct AccountView: View {
                         }
                         .frame(minHeight: 44)
                     }
-                    .disabled(auth.isScaffoldSession || isExporting)
-                    .accessibilityHint("Downloads your account data export from the API.")
+                    .disabled(auth.isScaffoldSession || isExporting || !auth.isAuthenticated)
+                    .accessibilityHint("Downloads your account data export and opens the system share sheet.")
 
                     if let exportMessage {
                         Text(exportMessage)
@@ -195,13 +221,31 @@ struct AccountView: View {
             .navigationTitle("Account")
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
-            .task { await refreshSessionHints() }
+            .task {
+                await refreshSessionHints()
+                await refreshUnreadCount()
+            }
             .onChange(of: auth.isAuthenticated) { _, _ in
-                Task { await refreshSessionHints() }
+                Task {
+                    await refreshSessionHints()
+                    await refreshUnreadCount()
+                }
             }
             .onChange(of: auth.isScaffoldSession) { _, _ in
-                Task { await refreshSessionHints() }
+                Task {
+                    await refreshSessionHints()
+                    await refreshUnreadCount()
+                }
             }
+            #if canImport(UIKit)
+            .sheet(isPresented: $showExportShare, onDismiss: {
+                cleanupExportShareFile()
+            }) {
+                if let exportShareURL {
+                    ActivityShareSheet(items: [exportShareURL])
+                }
+            }
+            #endif
         }
     }
 
@@ -233,22 +277,70 @@ struct AccountView: View {
         }
     }
 
+    @MainActor
+    private func refreshUnreadCount() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            unreadNotificationCount = 0
+            return
+        }
+        do {
+            unreadNotificationCount = try await APIClient.shared.fetchUnreadNotificationCount()
+        } catch {
+            // Non-blocking badge — leave previous value on transient failure.
+        }
+    }
+
+    @MainActor
     private func exportData() async {
         exportMessage = nil
         exportIsError = false
         isExporting = true
         defer { isExporting = false }
+
         do {
             let data = try await APIClient.shared.exportMyData()
-            // Share sheet would be ideal; for scaffold, confirm bytes received.
+            let url = try writeExportTempFile(data: data)
+            exportShareURL = url
             exportIsError = false
-            exportMessage = "Export ready (\(data.count) bytes). Share-sheet wiring is a follow-up."
+            exportMessage = "Export ready (\(data.count) bytes). Choose where to save or share."
+            showExportShare = true
         } catch {
             exportIsError = true
             exportMessage = error.localizedDescription
         }
     }
+
+    private func writeExportTempFile(data: Data) throws -> URL {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let stamp = formatter.string(from: Date())
+        let filename = "nomarkup-export-\(stamp).json"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
+    private func cleanupExportShareFile() {
+        if let exportShareURL {
+            try? FileManager.default.removeItem(at: exportShareURL)
+        }
+        exportShareURL = nil
+    }
 }
+
+#if canImport(UIKit)
+/// System share sheet for export JSON (and other activity items).
+private struct ActivityShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+#endif
 
 #Preview {
     AccountView()

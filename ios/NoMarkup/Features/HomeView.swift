@@ -13,8 +13,8 @@ struct HomeView: View {
     @State private var listingTotal: Int?
     @State private var catalogError: String?
     @State private var isLoadingCatalog = false
-    @State private var showPostJobSafari = false
-    @State private var showSellSafari = false
+    @State private var showPostJob = false
+    @State private var showSellItem = false
 
     private var signedInLabel: String? {
         guard auth.isAuthenticated else { return nil }
@@ -60,27 +60,31 @@ struct HomeView: View {
             }
             .task { await refreshHome() }
             .refreshable { await refreshHome() }
-            .sheet(isPresented: $showPostJobSafari) {
+            .sheet(isPresented: $showPostJob) {
                 NavigationStack {
-                    LegalWebView(title: "Post a job", url: AppConfig.postJobURL)
+                    PostJobView()
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
-                                Button("Done") { showPostJobSafari = false }
+                                Button("Close") { showPostJob = false }
                                     .frame(minHeight: 44)
                             }
                         }
                 }
+                .environmentObject(auth)
+                .tint(BrandTheme.accent)
             }
-            .sheet(isPresented: $showSellSafari) {
+            .sheet(isPresented: $showSellItem) {
                 NavigationStack {
-                    LegalWebView(title: "Sell an item", url: AppConfig.sellItemURL)
+                    CreateListingView()
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
-                                Button("Done") { showSellSafari = false }
+                                Button("Close") { showSellItem = false }
                                     .frame(minHeight: 44)
                             }
                         }
                 }
+                .environmentObject(auth)
+                .tint(BrandTheme.accent)
             }
         }
     }
@@ -163,19 +167,19 @@ struct HomeView: View {
                     .accessibilityHint("Opens the Marketplace tab")
 
                     Button {
-                        showPostJobSafari = true
+                        showPostJob = true
                     } label: {
                         Text("Post a job")
                     }
                     .brandGhostButton()
-                    .accessibilityHint("Opens the post-a-job flow")
+                    .accessibilityHint("Opens the native post-a-job form")
                 }
             }
 
             // Tertiary text links — never a third filled CTA color
             HStack(spacing: 20) {
                 Button {
-                    showSellSafari = true
+                    showSellItem = true
                 } label: {
                     Text("Sell an item")
                         .font(.system(size: 14, weight: .medium))
@@ -313,7 +317,7 @@ struct HomeView: View {
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
                     Button {
-                        showPostJobSafari = true
+                        showPostJob = true
                     } label: {
                         Text("Post a job")
                     }
@@ -416,7 +420,7 @@ struct HomeView: View {
             }
 
             Button {
-                showSellSafari = true
+                showSellItem = true
             } label: {
                 Text("Sell an item")
                     .font(.system(size: 14, weight: .medium))
@@ -424,6 +428,7 @@ struct HomeView: View {
             }
             .buttonStyle(.plain)
             .frame(minHeight: 40)
+            .accessibilityHint("Opens the native sell form")
         }
     }
 

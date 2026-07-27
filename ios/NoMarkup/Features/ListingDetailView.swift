@@ -28,6 +28,9 @@ struct ListingDetailView: View {
     @State private var buyNowStatusMessage: String?
     @State private var buyNowStatusIsError = false
 
+    @State private var isWatching = false
+    @State private var isTogglingWatch = false
+
     init(listingID: String, preview: ListingSummary? = nil) {
         self.listingID = listingID
         self.preview = preview
@@ -98,8 +101,36 @@ struct ListingDetailView: View {
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if auth.isAuthenticated && !auth.isScaffoldSession {
+                    Button {
+                        Task { await toggleWatch() }
+                    } label: {
+                        if isTogglingWatch {
+                            ProgressView()
+                                .tint(BrandTheme.accent)
+                        } else {
+                            Image(systemName: isWatching ? "heart.fill" : "heart")
+                                .foregroundStyle(isWatching ? BrandTheme.accent : BrandTheme.goldBright)
+                        }
+                    }
+                    .disabled(isTogglingWatch)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel(isWatching ? "Remove from watchlist" : "Add to watchlist")
+                    .accessibilityHint(
+                        isWatching
+                            ? "Stops watching this listing"
+                            : "Saves this listing to your watchlist"
+                    )
+                }
+            }
+        }
         .task { await load() }
         .refreshable { await load() }
+        .onChange(of: auth.isAuthenticated) { _, _ in
+            Task { await refreshWatchState() }
+        }
         .sheet(isPresented: $showReportSheet) {
             ListingReportSheet(listingID: listingID) {
                 showReportSheet = false
@@ -698,6 +729,7 @@ struct ListingDetailView: View {
         }
 
         await loadBids()
+        await refreshWatchState()
     }
 
     @MainActor
@@ -712,6 +744,46 @@ struct ListingDetailView: View {
         } catch {
             bidRows = []
             ladderState = .failed(error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    private func refreshWatchState() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            isWatching = false
+            return
+        }
+        do {
+            // Hydrate heart from first page of watchlist (up to 100). Good enough for MVP.
+            let response = try await APIClient.shared.fetchWatchlist(page: 1, pageSize: 100)
+            isWatching = response.listings.contains { $0.id == listingID }
+        } catch {
+            // Leave prior local state; toggle still works offline of this probe.
+        }
+    }
+
+    @MainActor
+    private func toggleWatch() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
+        isTogglingWatch = true
+        defer { isTogglingWatch = false }
+
+        let previous = isWatching
+        // Optimistic flip for responsive toolbar feedback.
+        isWatching = !previous
+        do {
+            let response: WatchToggleResponse
+            if !previous {
+                response = try await APIClient.shared.watchListing(id: listingID)
+            } else {
+                response = try await APIClient.shared.unwatchListing(id: listingID)
+            }
+            isWatching = response.watching
+            if let count = response.watcherCount {
+                detail?.watcherCount = count
+            }
+        } catch {
+            isWatching = previous
         }
     }
 }
