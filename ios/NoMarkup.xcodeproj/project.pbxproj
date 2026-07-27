@@ -60,6 +60,7 @@
 		A10000000000000000000055 /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000055 /* MapKit.framework */; };
 		A10000000000000000000056 /* CoreLocation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000056 /* CoreLocation.framework */; };
 		A10000000000000000000057 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000057 /* UserNotifications.framework */; };
+		U10000000000000000000001 /* NoMarkupUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U10000000000000000000002 /* NoMarkupUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -118,7 +119,19 @@
 		B10000000000000000000055 /* MapKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MapKit.framework; path = System/Library/Frameworks/MapKit.framework; sourceTree = SDKROOT; };
 		B10000000000000000000056 /* CoreLocation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreLocation.framework; path = System/Library/Frameworks/CoreLocation.framework; sourceTree = SDKROOT; };
 		B10000000000000000000057 /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
+		U10000000000000000000002 /* NoMarkupUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupUITests.swift; sourceTree = "<group>"; };
+		U10000000000000000000003 /* NoMarkupUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXContainerItemProxy section */
+		U10000000000000000000009 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F10000000000000000000005 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F10000000000000000000001;
+			remoteInfo = NoMarkup;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		D10000000000000000000001 /* Frameworks */ = {
@@ -136,6 +149,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		U10000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -143,6 +163,7 @@
 			isa = PBXGroup;
 			children = (
 				E10000000000000000000002 /* NoMarkup */,
+				U10000000000000000000007 /* NoMarkupUITests */,
 				E10000000000000000000003 /* Frameworks */,
 				E10000000000000000000004 /* Products */,
 			);
@@ -181,8 +202,17 @@
 			isa = PBXGroup;
 			children = (
 				C10000000000000000000001 /* NoMarkup.app */,
+				U10000000000000000000003 /* NoMarkupUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		U10000000000000000000007 /* NoMarkupUITests */ = {
+			isa = PBXGroup;
+			children = (
+				U10000000000000000000002 /* NoMarkupUITests.swift */,
+			);
+			path = NoMarkupUITests;
 			sourceTree = "<group>";
 		};
 		E10000000000000000000005 /* Core */ = {
@@ -279,6 +309,26 @@
 			productReference = C10000000000000000000001 /* NoMarkup.app */;
 			productType = "com.apple.product-type.application";
 		};
+		U10000000000000000000008 /* NoMarkupUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = U1000000000000000000000D /* Build configuration list for PBXNativeTarget "NoMarkupUITests" */;
+			buildPhases = (
+				U10000000000000000000004 /* Sources */,
+				U10000000000000000000005 /* Frameworks */,
+				U10000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				U1000000000000000000000A /* PBXTargetDependency */,
+			);
+			name = NoMarkupUITests;
+			packageProductDependencies = (
+			);
+			productName = NoMarkupUITests;
+			productReference = U10000000000000000000003 /* NoMarkupUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -291,6 +341,10 @@
 				TargetAttributes = {
 					F10000000000000000000001 = {
 						CreatedOnToolsVersion = 16.4;
+					};
+					U10000000000000000000008 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = F10000000000000000000001;
 					};
 				};
 			};
@@ -311,6 +365,7 @@
 			projectRoot = "";
 			targets = (
 				F10000000000000000000001 /* NoMarkup */,
+				U10000000000000000000008 /* NoMarkupUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -321,6 +376,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000011 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		U10000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -378,7 +440,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		U10000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				U10000000000000000000001 /* NoMarkupUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		U1000000000000000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F10000000000000000000001 /* NoMarkup */;
+			targetProxy = U10000000000000000000009 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		F10000000000000000000007 /* Debug */ = {
@@ -570,6 +648,50 @@
 			};
 			name = Release;
 		};
+		U1000000000000000000000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 6L6565278C;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nomarkup.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = NoMarkup;
+			};
+			name = Debug;
+		};
+		U1000000000000000000000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 6L6565278C;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nomarkup.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = NoMarkup;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -587,6 +709,15 @@
 			buildConfigurations = (
 				F10000000000000000000007 /* Debug */,
 				F10000000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		U1000000000000000000000D /* Build configuration list for PBXNativeTarget "NoMarkupUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				U1000000000000000000000B /* Debug */,
+				U1000000000000000000000C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

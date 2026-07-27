@@ -68,5 +68,9 @@ struct RootView: View {
                 isScaffold: auth.isScaffoldSession
             )
         }
+        .task {
+            // DEBUG/UITest: env-driven auto-login after restore settles.
+            _ = await auth.applyLaunchTestCredentialsIfNeeded()
+        }
     }
 }

@@ -98,6 +98,7 @@ struct LoginView: View {
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .accessibilityIdentifier("login.email")
                 .foregroundStyle(BrandTheme.textPrimary)
                 .padding(14)
                 .background(BrandTheme.navyElevated, in: RoundedRectangle(cornerRadius: 12))
@@ -111,6 +112,7 @@ struct LoginView: View {
 
             SecureField("Password", text: $auth.password)
                 .textContentType(.password)
+                .accessibilityIdentifier("login.password")
                 .foregroundStyle(BrandTheme.textPrimary)
                 .padding(14)
                 .background(BrandTheme.navyElevated, in: RoundedRectangle(cornerRadius: 12))
@@ -229,6 +231,7 @@ struct LoginView: View {
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
             .disabled(auth.isLoading)
+            .accessibilityIdentifier("login.submit")
             .accessibilityLabel("Sign in with email and password")
 
             if let error = auth.errorMessage {

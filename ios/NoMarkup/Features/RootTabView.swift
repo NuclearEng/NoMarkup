@@ -18,24 +18,30 @@ struct RootTabView: View {
             HomeView()
                 .tabItem { Label("Home", systemImage: "house.fill") }
                 .tag(Tab.home)
+                .accessibilityIdentifier("tab.home")
 
             MarketplaceView()
                 .tabItem { Label("Marketplace", systemImage: "bag.fill") }
                 .tag(Tab.marketplace)
+                .accessibilityIdentifier("tab.marketplace")
 
             JobsView()
                 .tabItem { Label("Jobs", systemImage: "wrench.and.screwdriver.fill") }
                 .tag(Tab.jobs)
+                .accessibilityIdentifier("tab.jobs")
 
             MessagesView()
                 .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right.fill") }
                 .tag(Tab.messages)
+                .accessibilityIdentifier("tab.messages")
 
             AccountView()
                 .tabItem { Label("Account", systemImage: "person.crop.circle.fill") }
                 .tag(Tab.account)
+                .accessibilityIdentifier("tab.account")
         }
         .environment(\.selectedRootTab, $selectedTab)
+        .accessibilityIdentifier("root.tabview")
     }
 }
 

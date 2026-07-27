@@ -83,3 +83,4 @@ ios/build/
 ios/**/xcuserdata/
 **/DerivedData/
 *.xcuserstate
+ios/NoMarkupUITests/Credentials.local

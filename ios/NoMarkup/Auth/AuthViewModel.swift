@@ -33,6 +33,55 @@ final class AuthViewModel: ObservableObject {
         observeSessionExpired()
     }
 
+    /// DEBUG / UITest: auto-login from launch environment or process arguments.
+    ///
+    /// Env (preferred for `devicectl` — use `DEVICECTL_CHILD_` prefix or
+    /// `--environment-variables`):
+    /// - `NOMARKUP_UI_TEST_EMAIL`
+    /// - `NOMARKUP_UI_TEST_PASSWORD`
+    /// Args: `-ui-test-email` value / `-ui-test-password` value
+    /// Also supports `-ui-test-scaffold` for browse-only chrome.
+    @discardableResult
+    func applyLaunchTestCredentialsIfNeeded() async -> Bool {
+        #if DEBUG
+        let env = ProcessInfo.processInfo.environment
+        let args = ProcessInfo.processInfo.arguments
+
+        if args.contains("-ui-test-scaffold") || env["NOMARKUP_UI_TEST_SCAFFOLD"] == "1" {
+            enterScaffoldSession()
+            return true
+        }
+
+        var testEmail = env["NOMARKUP_UI_TEST_EMAIL"]
+        var testPassword = env["NOMARKUP_UI_TEST_PASSWORD"]
+        if let i = args.firstIndex(of: "-ui-test-email"), args.index(after: i) < args.endIndex {
+            testEmail = args[args.index(after: i)]
+        }
+        if let i = args.firstIndex(of: "-ui-test-password"), args.index(after: i) < args.endIndex {
+            testPassword = args[args.index(after: i)]
+        }
+
+        guard let email = testEmail?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !email.isEmpty,
+              let password = testPassword, !password.isEmpty
+        else {
+            return false
+        }
+
+        // Skip if already signed in with real tokens.
+        if isAuthenticated, !isScaffoldSession {
+            return true
+        }
+
+        self.email = email
+        self.password = password
+        await login()
+        return isAuthenticated && !isScaffoldSession
+        #else
+        return false
+        #endif
+    }
+
     deinit {
         if let sessionExpiredObserver {
             NotificationCenter.default.removeObserver(sessionExpiredObserver)
