@@ -193,6 +193,9 @@ struct ChatThreadView: View {
     @State private var currentUserID: String?
     @FocusState private var composerFocused: Bool
 
+    /// Poll interval while the thread is open (cancelled when the view disappears).
+    private static let pollIntervalNanoseconds: UInt64 = 5_000_000_000
+
     private var webMessagesURL: URL {
         AppConfig.publicWebBaseURL.appending(path: "messages")
     }
@@ -233,9 +236,21 @@ struct ChatThreadView: View {
         }
         .task {
             currentUserID = await APIClient.shared.currentUserID()
-            await loadMessages()
+            await loadMessages(showLoading: true)
         }
-        .refreshable { await loadMessages() }
+        .task(id: channel.id) {
+            // Quiet poll every 5s while the thread stays open; cancels on disappear / id change.
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: Self.pollIntervalNanoseconds)
+                } catch {
+                    break
+                }
+                guard !Task.isCancelled else { break }
+                await loadMessages(showLoading: false)
+            }
+        }
+        .refreshable { await loadMessages(showLoading: false) }
         .sheet(isPresented: $showWebSafari) {
             NavigationStack {
                 LegalWebView(title: "Messages on web", url: webMessagesURL)
@@ -382,11 +397,19 @@ struct ChatThreadView: View {
     }
 
     @MainActor
-    private func loadMessages() async {
-        isLoading = true
-        errorMessage = nil
+    private func loadMessages(showLoading: Bool = true) async {
+        if showLoading {
+            isLoading = true
+        }
+        if showLoading {
+            errorMessage = nil
+        }
         needsSignIn = false
-        defer { isLoading = false }
+        defer {
+            if showLoading {
+                isLoading = false
+            }
+        }
 
         if currentUserID == nil {
             currentUserID = await APIClient.shared.currentUserID()
@@ -398,11 +421,17 @@ struct ChatThreadView: View {
                 pageSize: 50
             )
             // Chronological oldest → newest for chat reading order.
-            messages = response.messages.sorted { lhs, rhs in
+            let sorted = response.messages.sorted { lhs, rhs in
                 (lhs.createdAt ?? "") < (rhs.createdAt ?? "")
             }
+            // Avoid clobbering optimistic sends with an older poll snapshot when possible.
+            if sorted.map(\.id) != messages.map(\.id) {
+                messages = sorted
+            }
         } catch let error as APIClientError where error.isUnauthorized {
-            messages = []
+            if showLoading {
+                messages = []
+            }
             needsSignIn = true
         } catch {
             if messages.isEmpty {

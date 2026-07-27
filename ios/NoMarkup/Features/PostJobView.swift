@@ -17,6 +17,8 @@ struct PostJobView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var createdJob: JobDetail?
+    @State private var photoURLs: [String] = []
+    @State private var isUploadingPhotos = false
 
     /// Job service allows 0…168 hours; common presets for the picker.
     private let durationOptions = [24, 48, 72, 168]
@@ -152,9 +154,17 @@ struct PostJobView: View {
             } header: {
                 Text("Location").brandSectionHeader()
             } footer: {
-                Text("Address is optional. Exact coordinates can be refined on web; map pin is not in this build.")
+                Text("Address is optional. Exact coordinates can be refined on web.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
+
+            PhotoPickSection(
+                context: .job,
+                maxCount: ImageUploader.maxPhotosPerForm,
+                photoURLs: $photoURLs,
+                isUploading: $isUploadingPhotos,
+                errorMessage: $errorMessage
+            )
 
             if let errorMessage {
                 Section {
@@ -252,6 +262,7 @@ struct PostJobView: View {
             && !c.isEmpty
             && MoneyFormat.cents(fromDollarsText: startingBidText) != nil
             && !isSubmitting
+            && !isUploadingPhotos
     }
 
     private func durationLabel(_ hours: Int) -> String {
@@ -316,7 +327,8 @@ struct PostJobView: View {
                 locationLat: nil,
                 locationLng: nil,
                 publish: publish,
-                scheduleType: "flexible"
+                scheduleType: "flexible",
+                photoUrls: photoURLs
             )
             createdJob = job
         } catch let error as APIClientError {

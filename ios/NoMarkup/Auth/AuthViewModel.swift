@@ -2,7 +2,7 @@ import AuthenticationServices
 import Foundation
 import SwiftUI
 
-/// Auth state for the scaffold. Production will bind to gateway JWT + refresh cookies.
+/// Auth state for email/password, MFA challenge, register, password reset, and SIWA.
 @MainActor
 final class AuthViewModel: ObservableObject {
     @Published var isAuthenticated = false
@@ -11,6 +11,13 @@ final class AuthViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var statusMessage: String?
+
+    /// When login returns `mfa_required`, UI shows the TOTP field.
+    @Published var needsMFA = false
+    /// TOTP / authenticator code entered by the user.
+    @Published var mfaCode = ""
+    /// Challenge token from login; required for `verifyMFA`.
+    @Published private(set) var mfaChallengeToken: String?
 
     /// Scaffold-only: when true, "Continue offline (scaffold)" enables tab chrome without tokens.
     @Published private(set) var isScaffoldSession = false
@@ -60,6 +67,8 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Login (+ MFA)
+
     func login() async {
         errorMessage = nil
         statusMessage = nil
@@ -73,7 +82,47 @@ final class AuthViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            _ = try await api.login(email: trimmed, password: password)
+            let result = try await api.loginWithMFAHandling(email: trimmed, password: password)
+            switch result {
+            case .signedIn:
+                clearMFAState()
+                isScaffoldSession = false
+                isAuthenticated = true
+                password = ""
+                statusMessage = "Signed in."
+            case .mfaRequired(let challengeToken, _):
+                // Hold challenge; do not mark authenticated until TOTP succeeds.
+                mfaChallengeToken = challengeToken
+                needsMFA = true
+                isAuthenticated = false
+                isScaffoldSession = false
+                statusMessage = "Enter the code from your authenticator app."
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func verifyMFA() async {
+        errorMessage = nil
+        statusMessage = nil
+        let code = mfaCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let challenge = mfaChallengeToken, !challenge.isEmpty else {
+            errorMessage = "MFA session expired. Sign in again."
+            needsMFA = false
+            return
+        }
+        guard !code.isEmpty else {
+            errorMessage = "Enter your authenticator code."
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            _ = try await api.verifyMFA(challengeToken: challenge, totpCode: code)
+            clearMFAState()
             isScaffoldSession = false
             isAuthenticated = true
             password = ""
@@ -83,9 +132,117 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    func cancelMFA() {
+        clearMFAState()
+        statusMessage = nil
+        errorMessage = nil
+    }
+
+    private func clearMFAState() {
+        needsMFA = false
+        mfaCode = ""
+        mfaChallengeToken = nil
+    }
+
+    // MARK: - Register
+
+    func register(
+        email: String,
+        password: String,
+        displayName: String,
+        roles: [String] = ["customer"]
+    ) async {
+        errorMessage = nil
+        statusMessage = nil
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedEmail.isEmpty else {
+            errorMessage = "Enter your email."
+            return
+        }
+        guard !trimmedName.isEmpty else {
+            errorMessage = "Enter a display name."
+            return
+        }
+        guard password.count >= 8 else {
+            errorMessage = "Password must be at least 8 characters."
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            _ = try await api.register(
+                email: trimmedEmail,
+                password: password,
+                displayName: trimmedName,
+                roles: roles
+            )
+            self.email = trimmedEmail
+            clearMFAState()
+            isScaffoldSession = false
+            isAuthenticated = true
+            self.password = ""
+            statusMessage = "Account created. You’re signed in."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Password reset
+
+    func requestPasswordReset(email: String) async {
+        errorMessage = nil
+        statusMessage = nil
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorMessage = "Enter your email."
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            try await api.requestPasswordReset(email: trimmed)
+            // Always success copy — gateway avoids email enumeration.
+            statusMessage = "If an account exists for that email, a reset link is on the way. Check your inbox."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func resetPassword(token: String, newPassword: String) async {
+        errorMessage = nil
+        statusMessage = nil
+        let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedToken.isEmpty else {
+            errorMessage = "Paste the reset token from your email."
+            return
+        }
+        guard newPassword.count >= 8 else {
+            errorMessage = "Password must be at least 8 characters."
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            try await api.resetPassword(token: trimmedToken, newPassword: newPassword)
+            statusMessage = "Password updated. You can sign in with your new password."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Scaffold / sign-out / SIWA
+
     /// Local-only session so designers can browse native chrome without a running gateway.
     func enterScaffoldSession() {
         errorMessage = nil
+        clearMFAState()
         isScaffoldSession = true
         isAuthenticated = true
         statusMessage = "Browse-only mode — API calls still need a real login."
@@ -100,6 +257,7 @@ final class AuthViewModel: ObservableObject {
         isAuthenticated = false
         isScaffoldSession = false
         password = ""
+        clearMFAState()
         errorMessage = nil
         statusMessage = nil
     }
@@ -146,6 +304,7 @@ final class AuthViewModel: ObservableObject {
         defer { isLoading = false }
         do {
             _ = try await api.signInWithApple(identityToken: identityToken, fullName: fullName)
+            clearMFAState()
             isScaffoldSession = false
             isAuthenticated = true
             if let emailHint = fullName, email.isEmpty {

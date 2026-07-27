@@ -766,6 +766,19 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
         return true
     }
 
+    /// Buyer may file a dispute while funds are held, or shortly after mutual pickup confirm.
+    func canFileDisputeAsBuyer(userId: String?) -> Bool {
+        guard let userId, !userId.isEmpty, buyerId == userId else { return false }
+        return normalizedEscrow == "held" || normalizedEscrow == "pickup_confirmed"
+    }
+
+    /// Either party may report a no-show while escrow is held (pre-pickup).
+    func canReportNoShow(userId: String?) -> Bool {
+        guard let userId, !userId.isEmpty else { return false }
+        guard buyerId == userId || sellerId == userId else { return false }
+        return normalizedEscrow == "held"
+    }
+
     var displayStatus: String {
         if needsPayment { return "Awaiting payment" }
         switch normalizedEscrow {
@@ -794,6 +807,218 @@ struct OrderEscrowActionResponse: Codable, Sendable {
 
 struct MyOrdersResponse: Codable, Sendable {
     let orders: [ListingOrderSummary]
+}
+
+// MARK: - Best-Offer chain
+
+/// Offer status values from `listing_offers` (+ lazy `expired` display).
+enum ListingOfferStatus: String, Codable, Sendable {
+    case pending
+    case accepted
+    case rejected
+    case countered
+    case withdrawn
+    case expired
+    case unknown
+
+    init(raw: String?) {
+        guard let raw, let value = ListingOfferStatus(rawValue: raw.lowercased()) else {
+            self = .unknown
+            return
+        }
+        self = value
+    }
+
+    var displayLabel: String {
+        rawValue.capitalized
+    }
+
+    var isActionable: Bool {
+        self == .pending || self == .countered
+    }
+}
+
+/// PATCH action for `PATCH /api/v1/offers/{id}`.
+enum ListingOfferAction: String, Sendable {
+    case accept
+    case reject
+    case counter
+    case withdraw
+}
+
+/// Single Best-Offer row from create/list/update offer endpoints.
+struct ListingOffer: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var listingId: String?
+    var buyerId: String?
+    var amountCents: Int64?
+    var status: String?
+    var parentOfferId: String?
+    var expiresAt: String?
+    var message: String?
+    var createdAt: String?
+    var updatedAt: String?
+
+    var amountCentsValue: Int64 { amountCents ?? 0 }
+
+    var displayAmount: String {
+        MoneyFormat.usd(cents: amountCentsValue)
+    }
+
+    var statusEnum: ListingOfferStatus {
+        ListingOfferStatus(raw: status)
+    }
+
+    var displayStatus: String {
+        statusEnum.displayLabel
+    }
+
+    var displayMessage: String? {
+        let m = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return m.isEmpty ? nil : m
+    }
+}
+
+struct ListingOffersResponse: Codable, Sendable {
+    let offers: [ListingOffer]
+}
+
+struct ListingOfferEnvelope: Codable, Sendable {
+    let offer: ListingOffer?
+}
+
+// MARK: - Saved searches
+
+struct SavedSearchQuery: Codable, Sendable, Hashable {
+    var q: String?
+
+    var displayQuery: String {
+        let t = q?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "All listings" : t
+    }
+}
+
+struct SavedSearch: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var userId: String?
+    var name: String?
+    var query: SavedSearchQuery?
+    var alertFrequency: String?
+    var lastRunAt: String?
+    var createdAt: String?
+    var updatedAt: String?
+
+    var displayName: String {
+        let n = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return n.isEmpty ? "Saved search" : n
+    }
+
+    var displayFrequency: String {
+        let f = alertFrequency?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "daily"
+        return f.capitalized
+    }
+}
+
+struct SavedSearchesResponse: Codable, Sendable {
+    let savedSearches: [SavedSearch]
+}
+
+struct SavedSearchEnvelope: Codable, Sendable {
+    let savedSearch: SavedSearch?
+}
+
+// MARK: - Seller analytics
+
+struct SellerAnalyticsDailyPoint: Codable, Sendable, Hashable, Identifiable {
+    var date: String?
+    var grossCents: Int64?
+    var orderCount: Int?
+
+    var id: String { date ?? UUID().uuidString }
+
+    var displayDate: String {
+        date ?? "—"
+    }
+
+    var displayGross: String {
+        MoneyFormat.usd(cents: grossCents ?? 0)
+    }
+}
+
+struct SellerAnalyticsTopCategory: Codable, Sendable, Hashable, Identifiable {
+    var categoryId: String?
+    var categoryName: String?
+    var count: Int?
+
+    var id: String { categoryId ?? categoryName ?? UUID().uuidString }
+
+    var displayName: String {
+        let n = categoryName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !n.isEmpty { return n }
+        return categoryId ?? "Category"
+    }
+}
+
+struct SellerAnalytics: Codable, Sendable {
+    var rangeDays: Int?
+    var dailyRevenue: [SellerAnalyticsDailyPoint]?
+    var sellThroughRate: Double?
+    var avgSalePriceCents: Int64?
+    var totalGrossCents: Int64?
+    var totalSold: Int?
+    var totalListed: Int?
+    var topCategories: [SellerAnalyticsTopCategory]?
+
+    var displaySellThrough: String {
+        guard let rate = sellThroughRate else { return "—" }
+        return rate.formatted(.percent.precision(.fractionLength(0...1)))
+    }
+
+    var displayAvgSale: String {
+        MoneyFormat.usd(cents: avgSalePriceCents ?? 0)
+    }
+
+    var displayTotalGross: String {
+        MoneyFormat.usd(cents: totalGrossCents ?? 0)
+    }
+}
+
+// MARK: - Listing order dispute / no-show
+
+/// Allowed `reason` values for `POST /api/v1/orders/{id}/file-dispute`.
+enum ListingDisputeReason: String, CaseIterable, Identifiable, Sendable {
+    case itemNotAsDescribed = "item_not_as_described"
+    case itemDamaged = "item_damaged"
+    case noShow = "no_show"
+    case itemNotReceived = "item_not_received"
+    case other
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .itemNotAsDescribed: return "Item not as described"
+        case .itemDamaged: return "Item damaged"
+        case .noShow: return "No-show"
+        case .itemNotReceived: return "Item not received"
+        case .other: return "Other"
+        }
+    }
+}
+
+struct FileListingDisputeResponse: Codable, Sendable {
+    var disputeId: String?
+    var orderId: String?
+    var escrowStatus: String?
+    var status: String?
+}
+
+struct ReportNoShowResponse: Codable, Sendable {
+    var orderId: String?
+    var reportedUserId: String?
+    var newNoShowCount: Int?
+    var cooldownUntil: String?
+    var shadowBanTriggered: Bool?
 }
 
 // MARK: - Auction bid ladders

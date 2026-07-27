@@ -12,5 +12,8 @@
 	<array>
 		<string>merchant.com.nomarkup.app</string>
 	</array>
+	<!-- APNs — development for Debug/local; switch to production for App Store builds. -->
+	<key>aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>

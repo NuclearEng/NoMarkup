@@ -47,6 +47,11 @@
 	</array>
 	<key>UIRequiresFullScreen</key>
 	<false/>
+	<!-- APNs remote notifications (device register → POST /api/v1/notifications/devices). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<!--
 	  API base for physical device + Release packaging.
 	  Simulator DEBUG ignores this and uses http://localhost:8080 (see AppConfig).

@@ -7,6 +7,7 @@ struct LoginView: View {
     private enum Field {
         case email
         case password
+        case mfaCode
     }
 
     var body: some View {
@@ -14,13 +15,18 @@ struct LoginView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header
-                    credentialForm
-                    primaryActions
-                    divider
-                    SignInWithAppleButtonView { result in
-                        auth.handleSignInWithApple(result: result)
+                    if auth.needsMFA {
+                        mfaForm
+                    } else {
+                        credentialForm
+                        primaryActions
+                        authLinks
+                        divider
+                        SignInWithAppleButtonView { result in
+                            auth.handleSignInWithApple(result: result)
+                        }
+                        scaffoldBypass
                     }
-                    scaffoldBypass
                     footerLegal
                 }
                 .padding(24)
@@ -28,12 +34,20 @@ struct LoginView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(BrandTheme.navy.ignoresSafeArea())
-            .navigationTitle("Sign in")
+            .navigationTitle(auth.needsMFA ? "Two-factor" : "Sign in")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
+            .navigationDestination(for: AuthRoute.self) { route in
+                switch route {
+                case .register:
+                    RegisterView()
+                case .forgotPassword:
+                    ForgotPasswordView()
+                }
+            }
         }
     }
 
@@ -54,15 +68,25 @@ struct LoginView: View {
                 }
             }
 
-            Text("The Market Sets The Price. Not The Markup.")
-                .font(.system(.title3, design: .serif).weight(.semibold))
-                .foregroundStyle(BrandTheme.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
+            if auth.needsMFA {
+                Text("Two-factor authentication")
+                    .font(.system(.title3, design: .serif).weight(.semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                Text("Enter the 6-digit code from your authenticator app to finish signing in.")
+                    .font(.subheadline)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("The Market Sets The Price. Not The Markup.")
+                    .font(.system(.title3, design: .serif).weight(.semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            Text("Reverse-auction services. Local goods with escrow. Fair market rates — everyone wins except the middleman.")
-                .font(.subheadline)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+                Text("Reverse-auction services. Local goods with escrow. Fair market rates — everyone wins except the middleman.")
+                    .font(.subheadline)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -99,6 +123,73 @@ struct LoginView: View {
                 .onSubmit {
                     Task { await auth.login() }
                 }
+        }
+    }
+
+    private var mfaForm: some View {
+        VStack(spacing: 12) {
+            TextField("Authenticator code", text: $auth.mfaCode)
+                .textContentType(.oneTimeCode)
+                .keyboardType(.numberPad)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .foregroundStyle(BrandTheme.textPrimary)
+                .padding(14)
+                .background(BrandTheme.navyElevated, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(BrandTheme.gold.opacity(0.15), lineWidth: 1)
+                )
+                .focused($focusedField, equals: .mfaCode)
+                .submitLabel(.go)
+                .onSubmit {
+                    Task { await auth.verifyMFA() }
+                }
+                .accessibilityLabel("Authenticator code")
+
+            Button {
+                Task { await auth.verifyMFA() }
+            } label: {
+                Group {
+                    if auth.isLoading {
+                        ProgressView()
+                            .tint(BrandTheme.navy)
+                    } else {
+                        Text("Verify and sign in")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 48)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(BrandTheme.accent)
+            .disabled(auth.isLoading)
+            .accessibilityLabel("Verify authenticator code and sign in")
+
+            Button("Back to sign in") {
+                auth.cancelMFA()
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(BrandTheme.goldBright)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 44)
+            .disabled(auth.isLoading)
+
+            if let error = auth.errorMessage {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.destructive)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Error: \(error)")
+            }
+
+            if let status = auth.statusMessage {
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -147,6 +238,28 @@ struct LoginView: View {
         }
     }
 
+    private var authLinks: some View {
+        HStack(spacing: 16) {
+            NavigationLink(value: AuthRoute.register) {
+                Text("Create account")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BrandTheme.goldBright)
+                    .frame(minHeight: 44)
+            }
+            .accessibilityLabel("Create account")
+
+            Spacer(minLength: 8)
+
+            NavigationLink(value: AuthRoute.forgotPassword) {
+                Text("Forgot password?")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BrandTheme.goldBright)
+                    .frame(minHeight: 44)
+            }
+            .accessibilityLabel("Forgot password")
+        }
+    }
+
     private var divider: some View {
         HStack {
             Rectangle().frame(height: 1).foregroundStyle(BrandTheme.gold.opacity(0.2))
@@ -182,6 +295,12 @@ struct LoginView: View {
         }
         .padding(.top, 8)
     }
+}
+
+/// Navigation routes from the login shell.
+private enum AuthRoute: Hashable {
+    case register
+    case forgotPassword
 }
 
 #Preview {

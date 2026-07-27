@@ -31,6 +31,18 @@ struct ListingDetailView: View {
     @State private var isWatching = false
     @State private var isTogglingWatch = false
 
+    @State private var currentUserID: String?
+    @State private var offers: [ListingOffer] = []
+    @State private var offersState: ListingOffersLoadState = .idle
+    @State private var offerAmountText = ""
+    @State private var offerMessageText = ""
+    @State private var isSubmittingOffer = false
+    @State private var offerStatusMessage: String?
+    @State private var offerStatusIsError = false
+    @State private var actingOfferID: String?
+    @State private var counterAmountText = ""
+    @State private var counteringOfferID: String?
+
     init(listingID: String, preview: ListingSummary? = nil) {
         self.listingID = listingID
         self.preview = preview
@@ -156,6 +168,7 @@ struct ListingDetailView: View {
             bidLadderSection(listing)
             buyNowSection(listing)
             placeBidSection(listing)
+            offersSection(listing)
             detailsSection(listing)
 
             if let description = listing.description?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -571,6 +584,274 @@ struct ListingDetailView: View {
         return "Forward auction: enter your bid in dollars. Current price is \(listing.displayPrice)."
     }
 
+    // MARK: - Best-Offer
+
+    @ViewBuilder
+    private func offersSection(_ listing: ListingDetail) -> some View {
+        let seller = isViewerSeller(of: listing)
+        let isActive = (listing.status ?? "").lowercased() == "active"
+
+        Section {
+            if !auth.isAuthenticated {
+                Text("Sign in to make a Best Offer or manage offers on this listing.")
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            } else if auth.isScaffoldSession {
+                Text("Browse-only mode has no API credentials. Sign in against a live gateway for Best Offers.")
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            } else if seller {
+                sellerOffersContent
+            } else {
+                buyerOfferContent(isActive: isActive)
+            }
+        } header: {
+            Text(seller ? "Offers received" : "Make an offer").brandSectionHeader()
+        } footer: {
+            Text(
+                seller
+                    ? "Accept, reject, or counter pending offers. Accepting mints an order awaiting payment."
+                    : "Best Offer is separate from the public bid ladder. The seller has 24 hours to respond."
+            )
+            .foregroundStyle(BrandTheme.textSecondary)
+        }
+    }
+
+    @ViewBuilder
+    private var sellerOffersContent: some View {
+        switch offersState {
+        case .idle, .loading:
+            HStack(spacing: 10) {
+                ProgressView()
+                    .tint(BrandTheme.accent)
+                Text("Loading offers…")
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            .frame(minHeight: 44)
+
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 8) {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.destructive)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Retry") {
+                    Task { await loadOffers() }
+                }
+                .frame(minHeight: 44)
+            }
+
+        case .loaded:
+            if offers.isEmpty {
+                Text("No offers yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            } else {
+                if let offerStatusMessage {
+                    Text(offerStatusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(offerStatusIsError ? BrandTheme.destructive : BrandTheme.success)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(offers) { offer in
+                    sellerOfferRow(offer)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sellerOfferRow(_ offer: ListingOffer) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(offer.displayAmount)
+                    .font(.headline.monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+                Spacer()
+                StatusChipView(
+                    label: offer.displayStatus,
+                    style: StatusChipStyle.forStatus(offer.status)
+                )
+            }
+
+            if let message = offer.displayMessage {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let expires = offer.expiresAt, !expires.isEmpty {
+                Text("Expires \(CatalogDateFormat.friendlyDateTime(expires))")
+                    .font(.caption2)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            if offer.statusEnum.isActionable {
+                HStack(spacing: 8) {
+                    Button {
+                        Task { await updateOffer(offer, action: .accept) }
+                    } label: {
+                        if actingOfferID == offer.id {
+                            ProgressView().tint(BrandTheme.navy)
+                        } else {
+                            Text("Accept")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.success)
+                    .frame(minHeight: 44)
+                    .disabled(actingOfferID != nil)
+
+                    Button {
+                        Task { await updateOffer(offer, action: .reject) }
+                    } label: {
+                        Text("Reject")
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(minHeight: 44)
+                    .disabled(actingOfferID != nil)
+
+                    Button {
+                        counteringOfferID = counteringOfferID == offer.id ? nil : offer.id
+                        counterAmountText = ""
+                    } label: {
+                        Text("Counter")
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(minHeight: 44)
+                    .disabled(actingOfferID != nil)
+                }
+
+                if counteringOfferID == offer.id {
+                    TextField("Counter amount (USD)", text: $counterAmountText)
+                        .keyboardType(.decimalPad)
+                        .frame(minHeight: 44)
+                        .accessibilityLabel("Counter offer amount in dollars")
+                    Button {
+                        Task { await counterOffer(offer) }
+                    } label: {
+                        if actingOfferID == offer.id {
+                            ProgressView()
+                                .tint(BrandTheme.navy)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Text("Send counter")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.accent)
+                    .disabled(
+                        actingOfferID != nil
+                            || counterAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func buyerOfferContent(isActive: Bool) -> some View {
+        if !isActive {
+            Text("Offers are only accepted while the listing is active.")
+                .font(.footnote)
+                .foregroundStyle(BrandTheme.textSecondary)
+        } else {
+            Text("Propose a price below asking. The seller can accept, reject, or counter within 24 hours.")
+                .font(.footnote)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            TextField("Offer amount (USD)", text: $offerAmountText)
+                .keyboardType(.decimalPad)
+                .textContentType(.none)
+                .autocorrectionDisabled()
+                .frame(minHeight: 44)
+                .accessibilityLabel("Offer amount in dollars")
+
+            TextField("Message (optional)", text: $offerMessageText)
+                .textContentType(.none)
+                .frame(minHeight: 44)
+                .accessibilityLabel("Optional message to the seller")
+
+            if let offerStatusMessage {
+                Text(offerStatusMessage)
+                    .font(.footnote)
+                    .foregroundStyle(offerStatusIsError ? BrandTheme.destructive : BrandTheme.success)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button {
+                Task { await submitOffer() }
+            } label: {
+                if isSubmittingOffer {
+                    ProgressView()
+                        .tint(BrandTheme.navy)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                } else {
+                    Text("Send offer")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(BrandTheme.accent)
+            .disabled(
+                isSubmittingOffer
+                    || offerAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            )
+            .accessibilityHint("Sends a Best Offer to the seller")
+        }
+
+        // Buyer's own offer history for this listing.
+        if !offers.isEmpty {
+            ForEach(offers) { offer in
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(offer.displayAmount)
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.goldBright)
+                        if let message = offer.displayMessage {
+                            Text(message)
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    Spacer()
+                    Text(offer.displayStatus)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .frame(minHeight: 44)
+
+                if offer.statusEnum.isActionable, offer.buyerId == currentUserID {
+                    Button(role: .destructive) {
+                        Task { await updateOffer(offer, action: .withdraw) }
+                    } label: {
+                        if actingOfferID == offer.id {
+                            ProgressView().frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Text("Withdraw offer")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .disabled(actingOfferID != nil)
+                }
+            }
+        }
+    }
+
+    private func isViewerSeller(of listing: ListingDetail) -> Bool {
+        guard let me = currentUserID, !me.isEmpty else { return false }
+        guard let seller = listing.sellerId, !seller.isEmpty else { return false }
+        return me == seller
+    }
+
     // MARK: - Details
 
     @ViewBuilder
@@ -720,6 +1001,10 @@ struct ListingDetailView: View {
         errorMessage = nil
         defer { isLoading = false }
 
+        if currentUserID == nil, auth.isAuthenticated, !auth.isScaffoldSession {
+            currentUserID = await APIClient.shared.currentUserID()
+        }
+
         do {
             detail = try await APIClient.shared.fetchListing(id: listingID)
         } catch {
@@ -729,7 +1014,141 @@ struct ListingDetailView: View {
         }
 
         await loadBids()
+        await loadOffers()
         await refreshWatchState()
+    }
+
+    @MainActor
+    private func loadOffers() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            offers = []
+            offersState = .idle
+            return
+        }
+        offersState = .loading
+        do {
+            offers = try await APIClient.shared.fetchListingOffers(listingId: listingID)
+            offersState = .loaded
+        } catch let error as APIClientError where error.isUnauthorized {
+            offers = []
+            offersState = .failed("Sign in required to load offers.")
+        } catch let error as APIClientError where error.isForbidden {
+            offers = []
+            offersState = .loaded
+        } catch {
+            offers = []
+            offersState = .failed(error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    private func submitOffer() async {
+        offerStatusMessage = nil
+        offerStatusIsError = false
+
+        guard !auth.isScaffoldSession else {
+            offerStatusIsError = true
+            offerStatusMessage =
+                "Browse-only mode has no API credentials. Sign in against a live gateway to make offers."
+            return
+        }
+
+        guard let cents = MoneyFormat.cents(fromDollarsText: offerAmountText) else {
+            offerStatusIsError = true
+            offerStatusMessage = "Enter a valid offer amount in dollars (for example 20.00)."
+            return
+        }
+
+        isSubmittingOffer = true
+        defer { isSubmittingOffer = false }
+
+        do {
+            _ = try await APIClient.shared.createListingOffer(
+                listingId: listingID,
+                amountCents: cents,
+                message: offerMessageText
+            )
+            offerStatusIsError = false
+            offerStatusMessage = "Offer sent: \(MoneyFormat.usd(cents: cents)). The seller has 24 hours to respond."
+            offerAmountText = ""
+            offerMessageText = ""
+            await loadOffers()
+        } catch let error as APIClientError where error.isUnauthorized {
+            offerStatusIsError = true
+            offerStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            offerStatusIsError = true
+            offerStatusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func updateOffer(_ offer: ListingOffer, action: ListingOfferAction) async {
+        offerStatusMessage = nil
+        offerStatusIsError = false
+        actingOfferID = offer.id
+        defer { actingOfferID = nil }
+
+        do {
+            _ = try await APIClient.shared.updateOffer(offerId: offer.id, action: action)
+            offerStatusIsError = false
+            switch action {
+            case .accept:
+                offerStatusMessage = "Offer accepted — an order was created. The buyer can pay under Account → Orders."
+            case .reject:
+                offerStatusMessage = "Offer rejected."
+            case .withdraw:
+                offerStatusMessage = "Offer withdrawn."
+            case .counter:
+                offerStatusMessage = "Counter offer sent."
+            }
+            counteringOfferID = nil
+            await loadOffers()
+            if action == .accept {
+                await load()
+            }
+        } catch let error as APIClientError where error.isUnauthorized {
+            offerStatusIsError = true
+            offerStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            offerStatusIsError = true
+            offerStatusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func counterOffer(_ offer: ListingOffer) async {
+        offerStatusMessage = nil
+        offerStatusIsError = false
+
+        guard let cents = MoneyFormat.cents(fromDollarsText: counterAmountText) else {
+            offerStatusIsError = true
+            offerStatusMessage = "Enter a valid counter amount in dollars."
+            return
+        }
+
+        actingOfferID = offer.id
+        defer { actingOfferID = nil }
+
+        do {
+            _ = try await APIClient.shared.updateOffer(
+                offerId: offer.id,
+                action: .counter,
+                counterAmountCents: cents,
+                message: ""
+            )
+            offerStatusIsError = false
+            offerStatusMessage = "Counter sent: \(MoneyFormat.usd(cents: cents))."
+            counterAmountText = ""
+            counteringOfferID = nil
+            await loadOffers()
+        } catch let error as APIClientError where error.isUnauthorized {
+            offerStatusIsError = true
+            offerStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            offerStatusIsError = true
+            offerStatusMessage = error.localizedDescription
+        }
     }
 
     @MainActor
@@ -791,6 +1210,13 @@ struct ListingDetailView: View {
 // MARK: - Ladder load state
 
 private enum ListingLadderState: Equatable {
+    case idle
+    case loading
+    case loaded
+    case failed(String)
+}
+
+private enum ListingOffersLoadState: Equatable {
     case idle
     case loading
     case loaded

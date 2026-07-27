@@ -44,7 +44,17 @@ struct AccountView: View {
                         LabeledContent("Email", value: email)
                     }
 
+                    NavigationLink {
+                        ProfileSettingsView()
+                    } label: {
+                        Label("Profile settings", systemImage: "person.text.rectangle")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Edit display name and view account profile")
+
                     Button("Sign out", role: .destructive) {
+                        PushRegistration.shared.resetSessionState()
                         auth.signOut()
                     }
                     .frame(minHeight: 44)
@@ -86,6 +96,14 @@ struct AccountView: View {
                     .accessibilityHint("View marketplace orders, pay pending ones, and confirm escrow pickup")
 
                     NavigationLink {
+                        ContractsView()
+                    } label: {
+                        Label("Contracts", systemImage: "doc.text")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("View service contracts from awarded job bids, milestones, and completion")
+
+                    NavigationLink {
                         MyBidsView()
                     } label: {
                         Label("My bids", systemImage: "hammer")
@@ -100,6 +118,22 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("Listings you are watching for auction updates")
+
+                    NavigationLink {
+                        SavedSearchesView()
+                    } label: {
+                        Label("Saved searches", systemImage: "bell.badge")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Manage marketplace search alerts")
+
+                    NavigationLink {
+                        SellerAnalyticsView()
+                    } label: {
+                        Label("Seller analytics", systemImage: "chart.bar")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("View sales revenue, sell-through, and top categories")
 
                     NavigationLink {
                         NotificationsView()

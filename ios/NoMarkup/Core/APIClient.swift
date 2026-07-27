@@ -559,7 +559,8 @@ actor APIClient {
         locationLat: Double? = nil,
         locationLng: Double? = nil,
         publish: Bool = true,
-        scheduleType: String = "flexible"
+        scheduleType: String = "flexible",
+        photoUrls: [String] = []
     ) async throws -> JobDetail {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else {
@@ -581,7 +582,8 @@ actor APIClient {
             locationLat: locationLat,
             locationLng: locationLng,
             publish: publish,
-            scheduleType: scheduleType
+            scheduleType: scheduleType,
+            photoUrls: photoUrls
         )
         let idem = "create-job:\(UUID().uuidString)"
         return try await postJSON(
@@ -642,8 +644,11 @@ actor APIClient {
     }
 
     // MARK: - Helpers
+    //
+    // Internal (not private) so same-module extensions such as
+    // `APIClient+Commerce` can share HTTP plumbing without duplicating it.
 
-    private enum AuthMode {
+    enum AuthMode {
         /// Never attach Bearer; public endpoint.
         case none
         /// Attach Bearer when a token exists; do not fail if missing.
@@ -653,7 +658,7 @@ actor APIClient {
     }
 
     /// JSON GET with path components + query. When `authorized` is true, attaches Bearer.
-    private func getJSON<T: Decodable>(
+    func getJSON<T: Decodable>(
         pathComponents: [String],
         query: [URLQueryItem] = [],
         authorized: Bool = false
@@ -672,7 +677,7 @@ actor APIClient {
         }
     }
 
-    private func postJSON<Body: Encodable, T: Decodable>(
+    func postJSON<Body: Encodable, T: Decodable>(
         pathComponents: [String],
         body: Body,
         authorized: AuthMode,
@@ -693,7 +698,7 @@ actor APIClient {
         }
     }
 
-    private func postData<Body: Encodable>(
+    func postData<Body: Encodable>(
         pathComponents: [String],
         body: Body,
         authorized: AuthMode,
@@ -709,7 +714,7 @@ actor APIClient {
         )
     }
 
-    private func deleteJSON<T: Decodable>(
+    func deleteJSON<T: Decodable>(
         pathComponents: [String],
         authorized: AuthMode,
         headers: [String: String] = [:]
@@ -729,7 +734,44 @@ actor APIClient {
         }
     }
 
-    private func perform<Body: Encodable>(
+    /// DELETE that tolerates empty / 204 bodies (no JSON decode).
+    func deleteEmpty(
+        pathComponents: [String],
+        authorized: AuthMode = .required,
+        headers: [String: String] = [:]
+    ) async throws {
+        _ = try await perform(
+            method: "DELETE",
+            pathComponents: pathComponents,
+            query: [],
+            body: nil as EmptyBody?,
+            auth: authorized,
+            headers: headers
+        )
+    }
+
+    func patchJSON<Body: Encodable, T: Decodable>(
+        pathComponents: [String],
+        body: Body,
+        authorized: AuthMode,
+        headers: [String: String] = [:]
+    ) async throws -> T {
+        let data = try await perform(
+            method: "PATCH",
+            pathComponents: pathComponents,
+            query: [],
+            body: body,
+            auth: authorized,
+            headers: headers
+        )
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw APIClientError.decoding("Could not decode response: \(error.localizedDescription)")
+        }
+    }
+
+    func perform<Body: Encodable>(
         method: String,
         pathComponents: [String],
         query: [URLQueryItem],
@@ -848,10 +890,10 @@ actor APIClient {
 }
 
 /// Empty body placeholder for GET-style `perform` calls.
-private struct EmptyBody: Encodable {}
+struct EmptyBody: Encodable {}
 
 /// Encodes as `{}` for POSTs that require a JSON content-type but no fields.
-private struct EmptyJSONObject: Encodable {}
+struct EmptyJSONObject: Encodable {}
 
 // MARK: - Models
 
@@ -944,6 +986,7 @@ private struct CreateJobRequestBody: Encodable {
     let locationLng: Double?
     let publish: Bool
     let scheduleType: String
+    let photoUrls: [String]
 }
 
 /// Body for `POST /api/v1/listings` (snake_case via encoder).

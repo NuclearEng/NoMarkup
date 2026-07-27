@@ -43,6 +43,15 @@ struct JobsView: View {
                         .frame(minWidth: 180)
                         .accessibilityLabel("Jobs section")
                     }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        NavigationLink {
+                            JobsMapView()
+                        } label: {
+                            Label("Map", systemImage: "map")
+                        }
+                        .frame(minHeight: 44)
+                        .accessibilityHint("Shows open jobs on a map")
+                    }
                 }
                 .toolbarBackground(BrandTheme.navy, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)

@@ -18,6 +18,8 @@ struct CreateListingView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var createdListing: ListingDetail?
+    @State private var photoURLs: [String] = []
+    @State private var isUploadingPhotos = false
 
     /// Gateway CHECK: 24h, 48h, or 7d only.
     private let durationOptions = [24, 48, 168]
@@ -86,9 +88,17 @@ struct CreateListingView: View {
             } header: {
                 Text("Item").brandSectionHeader()
             } footer: {
-                Text("Title max 120 characters · description max 5000. Photos can be added on web.")
+                Text("Title max 120 characters · description max 5000.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
+
+            PhotoPickSection(
+                context: .listing,
+                maxCount: ImageUploader.maxPhotosPerForm,
+                photoURLs: $photoURLs,
+                isUploading: $isUploadingPhotos,
+                errorMessage: $errorMessage
+            )
 
             Section {
                 TextField("Starting price (USD)", text: $startingPriceText, prompt: Text("50.00"))
@@ -247,6 +257,7 @@ struct CreateListingView: View {
             && !cat.isEmpty
             && MoneyFormat.cents(fromDollarsText: startingPriceText) != nil
             && !isSubmitting
+            && !isUploadingPhotos
     }
 
     private func durationLabel(_ hours: Int) -> String {
@@ -326,7 +337,7 @@ struct CreateListingView: View {
                 categoryId: cat,
                 title: trimmedTitle,
                 description: description,
-                photoUrls: [],
+                photoUrls: photoURLs,
                 pickupZip: zip,
                 startingPriceCents: startCents,
                 buyNowPriceCents: buyNowCents,
