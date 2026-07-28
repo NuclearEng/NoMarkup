@@ -114,8 +114,15 @@ enum BrandTheme {
 
     // MARK: Global chrome (UIKit appearance)
 
+    /// Readable content column for form-like / long-read screens on wide (iPad) layouts.
+    /// DES.12 / DES.20: ~720pt max keeps lines scannable without full-bleed stretch.
+    static let readableContentWidth: CGFloat = 720
+
     /// Call once at launch so TabView / NavigationStack / lists pick up navy + gold.
     /// Keeps system accessibility (Dynamic Type sizes, reduce motion) intact.
+    ///
+    /// DES.4 / DES.9 — on iOS 26+ leave `scrollEdgeAppearance` at system default so
+    /// Liquid Glass can use a transparent/blurred edge; keep `standardAppearance` branded.
     @MainActor
     static func applyGlobalChrome() {
         #if canImport(UIKit)
@@ -141,11 +148,16 @@ enum BrandTheme {
         tabAppearance.compactInlineLayoutAppearance = tabItem
 
         UITabBar.appearance().standardAppearance = tabAppearance
-        UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+        // iOS 26+ Liquid Glass: do not force opaque scroll-edge chrome.
+        if #available(iOS 26.0, *) {
+            // Leave scrollEdgeAppearance nil / system default for glass edge.
+        } else {
+            UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+        }
         UITabBar.appearance().tintColor = goldUI
         UITabBar.appearance().unselectedItemTintColor = secondaryUI
 
-        // Navigation bar — opaque navy, light titles, gold bar buttons via tint.
+        // Navigation bar — opaque navy when scrolled, light titles, gold bar buttons via tint.
         let navAppearance = UINavigationBarAppearance()
         navAppearance.configureWithOpaqueBackground()
         navAppearance.backgroundColor = navyUI
@@ -154,8 +166,14 @@ enum BrandTheme {
         navAppearance.largeTitleTextAttributes = [.foregroundColor: primaryUI]
 
         UINavigationBar.appearance().standardAppearance = navAppearance
-        UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
         UINavigationBar.appearance().compactAppearance = navAppearance
+        // DES.4 / DES.9: iOS 26+ keeps system scroll-edge (transparent / glass);
+        // pre-26 keeps opaque brand edge so large titles don't flash system gray.
+        if #available(iOS 26.0, *) {
+            // Intentionally omit scrollEdgeAppearance assignment.
+        } else {
+            UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
+        }
         UINavigationBar.appearance().tintColor = goldUI
         UINavigationBar.appearance().prefersLargeTitles = true
 
@@ -188,6 +206,14 @@ enum BrandTheme {
         UIView.appearance(whenContainedInInstancesOf: [UITableView.self]).tintColor = goldUI
         #endif
     }
+
+    // MARK: - Accessibility helpers (A11Y.3)
+
+    /// Returns `animation` unless Reduce Motion is enabled — then `nil` (no animation).
+    /// Prefer `View.brandAnimation(_:value:)` from views so the environment is read correctly.
+    static func animation(_ animation: Animation?, reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : animation
+    }
 }
 
 // MARK: - View modifiers
@@ -196,17 +222,44 @@ private struct BrandListBackgroundModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .scrollContentBackground(.hidden)
+            // Brand navy is already opaque (A11Y.3 reduce-transparency friendly).
             .background(BrandTheme.navy.ignoresSafeArea())
             // Row fill comes from UITableViewCell appearance + per-row `.listRowBackground` where needed.
             .listStyle(.insetGrouped)
+            // Navy chrome needs light status-bar content even when system appearance is light (DES.3).
+            .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
 private struct BrandScreenBackgroundModifier: ViewModifier {
     func body(content: Content) -> some View {
+        // DES.3: do NOT force `.environment(\.colorScheme, .dark)` — follow system appearance.
+        // Explicit navy/gold brand surfaces still paint the dark terminal shell.
         content
             .background(BrandTheme.navy.ignoresSafeArea())
-            .environment(\.colorScheme, .dark)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+/// Applies animation only when Reduce Motion is off (A11Y.3).
+private struct BrandAnimationModifier<V: Equatable>: ViewModifier {
+    let animation: Animation?
+    let value: V
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.animation(BrandTheme.animation(animation, reduceMotion: reduceMotion), value: value)
+    }
+}
+
+/// Centers content with a readable max width on regular-width (iPad) layouts (DES.12 / DES.20).
+private struct BrandReadableWidthModifier: ViewModifier {
+    var maxWidth: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: maxWidth)
+            .frame(maxWidth: .infinity)
     }
 }
 
@@ -274,6 +327,7 @@ struct BrandGhostButtonStyle: ButtonStyle {
                     .strokeBorder(BrandTheme.gold.opacity(configuration.isPressed ? 0.45 : 0.28), lineWidth: 1)
             )
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            // ButtonStyle has no Reduce Motion env; short press feedback is OK at system default.
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
@@ -318,6 +372,7 @@ extension View {
     }
 
     /// Full-screen navy fill for non-list empty / loading states.
+    /// Respects system color scheme (no forced dark environment).
     func brandScreenBackground() -> some View {
         modifier(BrandScreenBackgroundModifier())
     }
@@ -355,6 +410,16 @@ extension View {
     func brandGoldProminentButton() -> some View {
         brandPrimaryButton()
     }
+
+    /// Animation that becomes a no-op when Reduce Motion is on (A11Y.3).
+    func brandAnimation<V: Equatable>(_ animation: Animation?, value: V) -> some View {
+        modifier(BrandAnimationModifier(animation: animation, value: value))
+    }
+
+    /// Constrain content to a readable column (~720pt) and center on wide layouts (DES.12).
+    func brandReadableWidth(_ maxWidth: CGFloat = BrandTheme.readableContentWidth) -> some View {
+        modifier(BrandReadableWidthModifier(maxWidth: maxWidth))
+    }
 }
 
 // MARK: - Premium empty / loading helpers
@@ -369,17 +434,21 @@ struct BrandEmptyState: View {
     var secondaryActionTitle: String?
     var secondaryAction: (() -> Void)?
 
+    /// A11Y.2 — scale empty-state seal with Dynamic Type.
+    @ScaledMetric(relativeTo: .largeTitle) private var sealInner: CGFloat = 88
+    @ScaledMetric(relativeTo: .largeTitle) private var sealOuter: CGFloat = 104
+
     var body: some View {
         VStack(spacing: 20) {
             ZStack {
                 Circle()
                     .strokeBorder(BrandTheme.gold.opacity(0.35), lineWidth: 2)
-                    .frame(width: 88, height: 88)
+                    .frame(width: sealInner, height: sealInner)
                 Circle()
                     .strokeBorder(BrandTheme.gold.opacity(0.18), lineWidth: 1)
-                    .frame(width: 104, height: 104)
+                    .frame(width: sealOuter, height: sealOuter)
                 Image(systemName: systemImage)
-                    .font(.system(size: 32, weight: .medium))
+                    .font(.largeTitle.weight(.medium))
                     .foregroundStyle(BrandTheme.goldBright)
                     .symbolRenderingMode(.hierarchical)
             }

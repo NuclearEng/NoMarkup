@@ -473,7 +473,7 @@ struct JobDetailView: View {
                                 .fill(BrandTheme.success.opacity(on ? 1 : 0.3))
                                 .frame(width: 10, height: 10)
                             Text("LIVE · REVERSE AUCTION")
-                                .font(.system(size: 12, weight: .black, design: .rounded))
+                                .font(.caption.weight(.black))
                                 .tracking(0.8)
                                 .foregroundStyle(BrandTheme.success)
                         }
@@ -498,10 +498,11 @@ struct JobDetailView: View {
                         .foregroundStyle(BrandTheme.textSecondary)
                         .textCase(.uppercase)
                     Text(arenaLeadingAmount)
-                        .font(.system(size: 40, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(.largeTitle.weight(.bold).monospacedDigit())
                         .foregroundStyle(BrandTheme.goldBright)
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text("Providers bid down · lowest trusted bid leads")
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
@@ -718,8 +719,11 @@ struct JobDetailView: View {
                 // Large price: accepted offer → leading ladder bid → starting bid
                 if let priceLabel = heroPriceLabel(for: job) {
                     Text(priceLabel.amount)
-                        .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(.largeTitle.weight(.bold).monospacedDigit())
                         .foregroundStyle(BrandTheme.goldBright)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel("\(priceLabel.caption): \(priceLabel.amount)")
                     Text(priceLabel.caption)
                         .font(.caption.weight(.semibold))
@@ -1776,6 +1780,19 @@ struct JobDetailView: View {
             bidStatusIsError = false
             bidStatusMessage = "Bid placed: \(MoneyFormat.usd(cents: cents))."
             bidAmountText = ""
+            // Value moment: invite push permission after first successful bid (NT.2).
+            PushRegistration.shared.noteValueMoment()
+            // Live Activity + widget snapshot (best-effort; never fails the bid path).
+            let title = detail?.title ?? preview?.title ?? "Service auction"
+            let endsISO = detail?.auctionEndsAt ?? preview?.auctionEndsAt
+            let endsAt = endsISO.flatMap { CatalogDateFormat.parseISO($0) }
+            AuctionLiveActivityController.startOrUpdate(
+                auctionID: jobID,
+                title: title,
+                kind: "job",
+                leadingBidCents: cents,
+                endsAt: endsAt
+            )
             await load()
         } catch let error as APIClientError where error.isUnauthorized {
             bidStatusIsError = true

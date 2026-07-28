@@ -436,7 +436,8 @@ struct ProviderWorkspaceView: View {
             } header: {
                 Text("Default contract terms").brandSectionHeader()
             } footer: {
-                Text("Applied to new awards unless overridden per contract. PRD FR-5.2.")
+                // PRD FR-5.2 — default terms apply on award unless overridden per contract.
+                Text("These terms apply to new awards unless you change them on a specific contract.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -462,7 +463,8 @@ struct ProviderWorkspaceView: View {
             } header: {
                 Text("Portfolio").brandSectionHeader()
             } footer: {
-                Text("Up to 20 past-work photos. Saves replace the full portfolio set on the server (PRD FR-5.5).")
+                // PRD FR-5.5 — portfolio replace-all on save.
+                Text("Up to 20 past-work photos. Saving replaces your full portfolio set.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 

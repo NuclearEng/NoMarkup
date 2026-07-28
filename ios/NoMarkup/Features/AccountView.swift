@@ -73,10 +73,35 @@ struct AccountView: View {
                                     .textSelection(.enabled)
                             }
                         }
+                        // Push status + Settings CTA when denied (NT.2 / DES.8).
                         if push.isRegisteredWithServer {
                             Label("Push notifications on", systemImage: "bell.badge.fill")
                                 .font(.caption)
                                 .foregroundStyle(BrandTheme.textSecondary)
+                        } else if push.isDenied {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(NotificationPermissionCopy.deniedStatus)
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.warning)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Button(NotificationPermissionCopy.openSettings) {
+                                    #if canImport(UIKit)
+                                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                                        UIApplication.shared.open(url)
+                                    }
+                                    #endif
+                                }
+                                .font(.caption.weight(.semibold))
+                                .frame(minHeight: 44)
+                                .accessibilityHint("Opens iOS Settings for NoMarkup")
+                            }
+                        } else if !push.isAuthorized {
+                            Button(NotificationPermissionCopy.enableFromSettings) {
+                                push.requestFromSettings()
+                            }
+                            .font(.caption.weight(.semibold))
+                            .frame(minHeight: 44)
+                            .accessibilityHint("Explains bid alerts, then requests notification permission")
                         } else if let pushError = push.lastError {
                             Text(pushError)
                                 .font(.caption)
@@ -138,8 +163,11 @@ struct AccountView: View {
                     .accessibilityHint("Resend email verification and complete phone OTP")
 
                     Button("Sign out", role: .destructive) {
-                        PushRegistration.shared.resetSessionState()
-                        auth.signOut()
+                        // Unregister device while access token is still available.
+                        Task {
+                            await PushRegistration.shared.unregisterAndReset()
+                            auth.signOut()
+                        }
                     }
                     .frame(minHeight: 44)
                 } header: {
@@ -538,7 +566,7 @@ struct AccountView: View {
                         "Stripe key",
                         value: AppConfig.stripePublishableKey.isEmpty ? "not set" : "configured"
                     )
-                    Text("Rail A: Apple Pay via Stripe. StoreKit / IAP intentionally omitted (digital free-tier only).")
+                    Text("Pay with Apple Pay. In-app subscriptions aren’t sold here — free digital features only; paid plans are on the web.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } header: {
@@ -575,7 +603,6 @@ struct AccountView: View {
                     OnboardingWizardView()
                 }
                 .environmentObject(auth)
-                .preferredColorScheme(.dark)
                 .tint(BrandTheme.accent)
             }
             #if canImport(UIKit)

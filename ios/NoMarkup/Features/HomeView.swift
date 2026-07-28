@@ -48,6 +48,8 @@ struct HomeView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 4)
                 .padding(.bottom, 40)
+                // DES.12 / DES.20 — cap column width on iPad so hero + cards stay readable.
+                .brandReadableWidth()
             }
             .brandScreenBackground()
             .navigationTitle("NoMarkup")
@@ -106,7 +108,7 @@ struct HomeView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("REVERSE-AUCTION SERVICE MARKETPLACE")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.caption2.weight(.bold).monospaced())
                         .tracking(1.2)
                         .foregroundStyle(BrandTheme.gold)
                         .lineLimit(2)
@@ -118,7 +120,7 @@ struct HomeView: View {
                         + Text("Markup")
                             .foregroundColor(BrandTheme.goldBright)
                     )
-                    .font(.system(size: 22, weight: .heavy, design: .rounded))
+                    .font(.title2.weight(.heavy))
                     .accessibilityLabel("NoMarkup")
                 }
 
@@ -134,7 +136,7 @@ struct HomeView: View {
                     .foregroundColor(BrandTheme.goldBright)
                     .italic()
             )
-            .font(.system(size: 32, weight: .bold, design: .serif))
+            .font(.largeTitle.weight(.bold))
             .lineSpacing(2)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
@@ -144,7 +146,7 @@ struct HomeView: View {
             Text(
                 "Customers post home-service jobs. Qualified providers compete in real-time reverse auctions. Prices drop to fair market rates. Everyone wins except the middleman."
             )
-            .font(.system(size: 16, weight: .regular))
+            .font(.body)
             .foregroundStyle(BrandTheme.textSecondary)
             .lineSpacing(3)
             .fixedSize(horizontal: false, vertical: true)
@@ -156,7 +158,7 @@ struct HomeView: View {
                         .fill(auth.isScaffoldSession ? BrandTheme.warning : BrandTheme.success)
                         .frame(width: 7, height: 7)
                     Text(signedInLabel)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(1)
                 }
@@ -210,7 +212,7 @@ struct HomeView: View {
                     showSellItem = true
                 } label: {
                     Text("Sell an item")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.subheadline.weight(.medium))
                         .foregroundStyle(BrandTheme.textSecondary)
                         .underline(false)
                 }
@@ -259,11 +261,11 @@ struct HomeView: View {
     private func statCell(value: String, label: String, valueColor: Color = BrandTheme.textPrimary) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(valueColor)
                 .monospacedDigit()
             Text(label)
-                .font(.system(size: 11, weight: .medium))
+                .font(.caption.weight(.medium))
                 .foregroundStyle(BrandTheme.textSecondary)
         }
         .frame(maxWidth: .infinity)
@@ -323,7 +325,7 @@ struct HomeView: View {
                                 .fill(BrandTheme.success)
                                 .frame(width: 8, height: 8)
                             Text("LIVE")
-                                .font(.system(size: 11, weight: .black, design: .rounded))
+                                .font(.caption.weight(.black))
                                 .foregroundStyle(BrandTheme.success)
                         }
                     }
@@ -331,7 +333,7 @@ struct HomeView: View {
                 }
 
                 Text("Providers bid down in public. Lowest trusted bid leads.")
-                    .font(.system(size: 14))
+                    .font(.subheadline)
                     .foregroundStyle(BrandTheme.textSecondary)
 
                 ForEach(liveFloorJobs.prefix(3)) { job in
@@ -353,7 +355,7 @@ struct HomeView: View {
                 Spacer(minLength: 8)
                 if let jobTotal, jobTotal > 0 {
                     Text("\(jobTotal) open")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(BrandTheme.goldBright)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -410,9 +412,9 @@ struct HomeView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text("View all jobs")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.body.weight(.semibold))
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                     }
                     .foregroundStyle(BrandTheme.goldBright)
                     .frame(maxWidth: .infinity)
@@ -430,7 +432,7 @@ struct HomeView: View {
             sectionEyebrow("Local goods · forward auction")
 
             Text("Buyers bid up · pickup within 25 mi")
-                .font(.system(size: 14))
+                .font(.subheadline)
                 .foregroundStyle(BrandTheme.textSecondary)
                 .padding(.top, -8)
 
@@ -441,15 +443,15 @@ struct HomeView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Browse marketplace")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.body.weight(.semibold))
                                 .foregroundStyle(BrandTheme.textPrimary)
                             Text("Physical goods with escrow")
-                                .font(.system(size: 13))
+                                .font(.subheadline)
                                 .foregroundStyle(BrandTheme.textSecondary)
                         }
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(BrandTheme.textSecondary.opacity(0.6))
                     }
                     .padding(18)
@@ -479,9 +481,9 @@ struct HomeView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text("Browse marketplace")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.body.weight(.semibold))
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                     }
                     .foregroundStyle(BrandTheme.goldBright)
                     .frame(maxWidth: .infinity)
@@ -494,7 +496,7 @@ struct HomeView: View {
                 showSellItem = true
             } label: {
                 Text("Sell an item")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(BrandTheme.textSecondary)
             }
             .buttonStyle(.plain)
@@ -518,15 +520,15 @@ struct HomeView: View {
             }
 
             Text(healthOK == true ? "Connected" : (healthOK == false ? "Offline" : "Checking…"))
-                .font(.system(size: 12, weight: .medium))
+                .font(.caption.weight(.medium))
                 .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
 
             Text("·")
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundStyle(BrandTheme.textSecondary.opacity(0.4))
 
             Text(AppConfig.apiBaseHostDisplay)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.caption2.weight(.medium).monospaced())
                 .foregroundStyle(BrandTheme.textSecondary.opacity(0.55))
                 .lineLimit(1)
 
@@ -536,7 +538,7 @@ struct HomeView: View {
                 Task { await refreshHome() }
             } label: {
                 Text("Refresh")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
                     .frame(minHeight: 40)
             }
@@ -555,7 +557,7 @@ struct HomeView: View {
 
     private func sectionEyebrow(_ title: String) -> some View {
         Text(title.uppercased())
-            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .font(.caption.weight(.bold))
             .tracking(1.2)
             .foregroundStyle(BrandTheme.gold.opacity(0.75))
             .accessibilityAddTraits(.isHeader)
@@ -657,6 +659,7 @@ private struct HowItWorksRow: View {
     let title: String
     let detail: String
     let isLast: Bool
+    @ScaledMetric(relativeTo: .body) private var stepSize: CGFloat = 28
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -664,9 +667,9 @@ private struct HowItWorksRow: View {
                 ZStack {
                     Circle()
                         .fill(BrandTheme.gold.opacity(0.15))
-                        .frame(width: 28, height: 28)
+                        .frame(width: stepSize, height: stepSize)
                     Text("\(index)")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(BrandTheme.goldBright)
                 }
                 if !isLast {
@@ -676,14 +679,14 @@ private struct HowItWorksRow: View {
                         .frame(maxHeight: .infinity)
                 }
             }
-            .frame(width: 28)
+            .frame(width: stepSize)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(BrandTheme.textPrimary)
                 Text(detail)
-                    .font(.system(size: 13))
+                    .font(.subheadline)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -721,7 +724,7 @@ private struct LiveFloorFeatureCard: View {
                             .fill(BrandTheme.success.opacity(pulse ? 1 : 0.35))
                             .frame(width: 9, height: 9)
                         Text("LIVE · OPEN FLOOR")
-                            .font(.system(size: 11, weight: .black, design: .rounded))
+                            .font(.caption.weight(.black))
                             .tracking(0.6)
                             .foregroundStyle(BrandTheme.success)
                     }
@@ -731,7 +734,7 @@ private struct LiveFloorFeatureCard: View {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         let label = CatalogDateFormat.countdownLabel(iso: ends, now: context.date) ?? "—"
                         Text(label)
-                            .font(.system(size: 12, weight: .bold, design: .rounded).monospacedDigit())
+                            .font(.caption.weight(.bold).monospacedDigit())
                             .foregroundStyle(BrandTheme.navy)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
@@ -741,13 +744,15 @@ private struct LiveFloorFeatureCard: View {
             }
 
             Text(job.displayTitle)
-                .font(.system(size: 20, weight: .bold))
+                .font(.title3.weight(.bold))
                 .foregroundStyle(BrandTheme.textPrimary)
                 .lineLimit(2)
 
             HStack(alignment: .lastTextBaseline, spacing: 8) {
                 Text(heroPrice)
-                    .font(.system(size: 32, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.largeTitle.weight(.bold).monospacedDigit())
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(2)
                     .foregroundStyle(BrandTheme.goldBright)
                 Text("budget · bid down")
                     .font(.caption.weight(.semibold))
@@ -757,20 +762,20 @@ private struct LiveFloorFeatureCard: View {
 
             HStack(spacing: 12) {
                 Label("\(job.bidCount ?? 0) bids", systemImage: "arrow.down.circle.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(BrandTheme.textPrimary)
                 if let location = job.locationLabel {
                     Label(location, systemImage: "mappin")
-                        .font(.system(size: 13))
+                        .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 Text("Enter floor")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.subheadline.weight(.bold))
                     .foregroundStyle(BrandTheme.goldBright)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(BrandTheme.goldBright)
             }
         }
@@ -887,18 +892,18 @@ private struct HomeJobCard: View {
                         reverseAuctionBadge
 
                         Text(job.displayTitle)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.body.weight(.semibold))
                             .foregroundStyle(BrandTheme.textPrimary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
 
                         HStack(spacing: 8) {
                             Text("Reverse · bid down")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(BrandTheme.goldBright)
                             if let category = job.categoryName, !category.isEmpty {
                                 Text(category)
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(.caption.weight(.medium))
                                     .foregroundStyle(BrandTheme.textSecondary)
                                     .lineLimit(1)
                             }
@@ -910,11 +915,12 @@ private struct HomeJobCard: View {
                     if let price = budgetAmount {
                         VStack(alignment: .trailing, spacing: 2) {
                             Text(price)
-                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                                .font(.headline.weight(.bold).monospacedDigit())
+                                .minimumScaleFactor(0.7)
+                                .lineLimit(2)
                                 .foregroundStyle(BrandTheme.goldBright)
-                                .monospacedDigit()
                             Text(budgetCaption.uppercased())
-                                .font(.system(size: 9, weight: .bold))
+                                .font(.caption2.weight(.bold))
                                 .tracking(0.6)
                                 .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
                         }
@@ -926,7 +932,7 @@ private struct HomeJobCard: View {
                 // Market band (H1.4 home parity) — budget ceiling → typical reverse-auction room.
                 if let marketBandCaption {
                     Text(marketBandCaption)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(1)
                         .accessibilityLabel(marketBandCaption)
@@ -936,7 +942,7 @@ private struct HomeJobCard: View {
                 HStack(spacing: 10) {
                     if let location = job.locationLabel {
                         Label(location, systemImage: "mappin")
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(BrandTheme.textSecondary)
                             .lineLimit(1)
                             .labelStyle(.titleAndIcon)
@@ -978,7 +984,7 @@ private struct HomeJobCard: View {
                     .accessibilityHidden(true)
             }
             Text(auctionBadgeLabel)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(.caption2.weight(.bold))
                 .tracking(0.4)
                 .foregroundStyle(BrandTheme.goldBright)
                 .lineLimit(1)
@@ -996,7 +1002,7 @@ private struct HomeJobCard: View {
     @ViewBuilder
     private func bidCountChip(count: Int) -> some View {
         Label("\(count) bid\(count == 1 ? "" : "s")", systemImage: "arrow.down.circle")
-            .font(.system(size: 12, weight: .semibold))
+            .font(.caption.weight(.semibold))
             .foregroundStyle(BrandTheme.textPrimary)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -1014,7 +1020,7 @@ private struct HomeJobCard: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let label = CatalogDateFormat.countdownLabel(iso: iso, now: context.date) ?? "—"
                 Text(label)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(
                         label == "Ended" ? BrandTheme.textSecondary : BrandTheme.navy
                     )
@@ -1054,6 +1060,8 @@ private struct HomeJobCard: View {
 
 private struct HomeListingCard: View {
     let listing: ListingSummary
+    /// A11Y.2 — scale thumbnail frame with Dynamic Type.
+    @ScaledMetric(relativeTo: .body) private var thumbSize: CGFloat = 48
 
     private var isAuctionLive: Bool {
         let status = (listing.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -1077,10 +1085,10 @@ private struct HomeListingCard: View {
         HStack(alignment: .center, spacing: 14) {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(BrandTheme.surfaceRaised)
-                .frame(width: 48, height: 48)
+                .frame(width: thumbSize, height: thumbSize)
                 .overlay {
                     Image(systemName: "bag.fill")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.body.weight(.medium))
                         .foregroundStyle(BrandTheme.gold.opacity(0.7))
                 }
 
@@ -1088,20 +1096,20 @@ private struct HomeListingCard: View {
                 forwardAuctionBadge
 
                 Text(listing.displayTitle)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(BrandTheme.textPrimary)
                     .lineLimit(2)
 
                 HStack(spacing: 8) {
                     if let location = listing.locationLabel {
                         Text(location)
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundStyle(BrandTheme.textSecondary)
                             .lineLimit(1)
                     }
                     if bidCountValue > 0 {
                         Text("\(bidCountValue) bid\(bidCountValue == 1 ? "" : "s")")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(BrandTheme.goldBright)
                     }
                     if listing.auctionEndsAt != nil {
@@ -1114,17 +1122,18 @@ private struct HomeListingCard: View {
 
             VStack(alignment: .trailing, spacing: 2) {
                 Text(listing.displayPrice)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(.headline.weight(.bold).monospacedDigit())
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(2)
                     .foregroundStyle(BrandTheme.goldBright)
-                    .monospacedDigit()
                 Text(listing.priceCaption.uppercased())
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.caption2.weight(.bold))
                     .tracking(0.6)
                     .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
             }
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(BrandTheme.textSecondary.opacity(0.45))
         }
         .padding(14)
@@ -1149,7 +1158,7 @@ private struct HomeListingCard: View {
                     .accessibilityHidden(true)
             }
             Text(isAuctionLive ? "LIVE · forward auction" : "Forward auction · goods")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(.caption2.weight(.bold))
                 .tracking(0.4)
                 .foregroundStyle(BrandTheme.goldBright)
                 .lineLimit(1)
@@ -1170,7 +1179,7 @@ private struct HomeListingCard: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let label = CatalogDateFormat.countdownLabel(until: ends, now: context.date)
                 Text(label)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(
                         label == "Ended" ? BrandTheme.textSecondary : BrandTheme.navy
                     )

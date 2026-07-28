@@ -433,8 +433,11 @@ struct ListingDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(heroPriceAmount(listing))
-                    .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.largeTitle.weight(.bold).monospacedDigit())
                     .foregroundStyle(BrandTheme.goldBright)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("\(heroPriceCaption(listing)): \(heroPriceAmount(listing))")
 
                 Text(heroPriceCaption(listing))
@@ -1595,6 +1598,17 @@ struct ListingDetailView: View {
             bidStatusMessage = "Bid placed: \(MoneyFormat.usd(cents: amountCents))."
             bidAmountText = ""
             clearBidBondUIState()
+            // Value moment: invite push permission after first successful bid (NT.2).
+            PushRegistration.shared.noteValueMoment()
+            // Live Activity + widget snapshot (best-effort; never fails the bid path).
+            let title = detail?.title ?? preview?.title ?? "Marketplace auction"
+            AuctionLiveActivityController.startOrUpdate(
+                auctionID: listingID,
+                title: title,
+                kind: "listing",
+                leadingBidCents: amountCents,
+                endsAt: detail?.auctionEndsAt ?? preview?.auctionEndsAt
+            )
             await load()
         } catch let error as APIClientError where error.isBidBondRequired {
             let bondCents = error.bidBondAmountCents ?? 0
@@ -2194,6 +2208,10 @@ struct ListingDetailView: View {
             isWatching = response.watching
             if let count = response.watcherCount {
                 detail?.watcherCount = count
+            }
+            // Value moment: first watchlist add invites push for price-drop / closing (NT.2).
+            if response.watching, !previous {
+                PushRegistration.shared.noteValueMoment()
             }
         } catch {
             isWatching = previous

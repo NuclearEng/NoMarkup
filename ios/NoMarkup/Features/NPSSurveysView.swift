@@ -69,7 +69,6 @@ struct NPSSurveysView: View {
             NavigationStack {
                 submitSheet(for: survey)
             }
-            .preferredColorScheme(.dark)
             .tint(BrandTheme.accent)
         }
     }

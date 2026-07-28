@@ -550,11 +550,19 @@ struct ExpensesView: View {
                                 .foregroundStyle(BrandTheme.goldBright)
                         }
                         .listRowBackground(BrandTheme.navyElevated)
+                        // DES.7 — swipe delete plus long-press context menu alternative.
                         .swipeActions {
                             Button(role: .destructive) {
                                 Task { await delete(exp) }
                             } label: {
                                 Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                Task { await delete(exp) }
+                            } label: {
+                                Label("Delete expense", systemImage: "trash")
                             }
                         }
                     }

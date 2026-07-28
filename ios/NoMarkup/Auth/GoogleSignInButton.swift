@@ -11,7 +11,7 @@ struct GoogleSignInButton: View {
             HStack(spacing: 10) {
                 // Simple “G” mark — avoids bundling Google brand assets.
                 Text("G")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.headline.weight(.bold))
                     .foregroundStyle(Color(red: 0.26, green: 0.52, blue: 0.96))
                     .frame(width: 22, height: 22)
                     .accessibilityHidden(true)

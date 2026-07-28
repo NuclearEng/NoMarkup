@@ -126,11 +126,20 @@ struct QuoteTemplatesView: View {
                 ForEach(templates) { template in
                     templateRow(template)
                         .listRowBackground(BrandTheme.navyElevated)
+                        // DES.7 — swipe delete plus long-press context menu (VoiceOver / pointer / full-keyboard).
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
                                 Task { await deleteTemplate(template) }
                             } label: {
                                 Label("Delete", systemImage: "trash")
+                            }
+                            .disabled(deletingID == template.id)
+                        }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                Task { await deleteTemplate(template) }
+                            } label: {
+                                Label("Delete template", systemImage: "trash")
                             }
                             .disabled(deletingID == template.id)
                         }
@@ -257,7 +266,6 @@ struct QuoteTemplatesView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
         .tint(BrandTheme.accent)
     }
 

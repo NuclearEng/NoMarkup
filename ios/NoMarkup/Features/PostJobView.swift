@@ -358,7 +358,7 @@ struct PostJobView: View {
     private func successContent(_ job: JobDetail) -> some View {
         VStack(spacing: 20) {
             Image(systemName: useInstantMatch ? "bolt.badge.checkmark.fill" : "checkmark.seal.fill")
-                .font(.system(size: 40, weight: .medium))
+                .font(.largeTitle.weight(.medium))
                 .foregroundStyle(BrandTheme.success)
                 .accessibilityHidden(true)
 

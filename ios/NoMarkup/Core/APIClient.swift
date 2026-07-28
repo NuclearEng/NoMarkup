@@ -176,7 +176,13 @@ actor APIClient {
     }
 
     /// POST /api/v1/auth/apple/native — AuthenticationServices identityToken exchange.
-    func signInWithApple(identityToken: String, fullName: String?) async throws -> AuthTokenPair {
+    /// - Parameter nonce: SHA256-hex value set on `ASAuthorizationAppleIDRequest.nonce`
+    ///   (matches id_token `nonce` claim). Gateway compares claim == body without re-hashing.
+    func signInWithApple(
+        identityToken: String,
+        fullName: String?,
+        nonce: String? = nil
+    ) async throws -> AuthTokenPair {
         let url = AppConfig.apiBaseURL.appending(path: "api/v1/auth/apple/native")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -185,6 +191,9 @@ actor APIClient {
         var body: [String: String] = ["identity_token": identityToken]
         if let fullName, !fullName.isEmpty {
             body["full_name"] = fullName
+        }
+        if let nonce, !nonce.isEmpty {
+            body["nonce"] = nonce
         }
         request.httpBody = try JSONEncoder().encode(body)
 

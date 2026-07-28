@@ -7,54 +7,146 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/nomarkup/nomarkup/services/notification/internal/domain"
 )
 
-// PushDispatcher sends push notifications via Firebase Cloud Messaging (FCM).
+// PushDispatcher sends mobile push notifications.
+//
+// Routing:
+//   - platform "ios" → APNs HTTP/2 token auth (when configured), else log-only
+//   - platform "android" / "web" / unknown → FCM legacy HTTP (when configured), else log-only
+//
+// iOS registers raw APNs device token hex (no Firebase SDK). Android may still
+// use FCM registration tokens when the Android client ships with FCM.
 type PushDispatcher struct {
-	projectID string
-	serverKey string
-	devMode   bool
-	client    *http.Client
+	projectID   string
+	serverKey   string
+	fcmDevMode  bool
+	apnsDevMode bool
+	apns        *apnsProvider
+	client      *http.Client
 }
 
-// NewPushDispatcher creates a new push notification dispatcher. If serverKey
-// is empty, the dispatcher operates in dev mode and logs instead of sending.
-func NewPushDispatcher(serverKey, projectID string) *PushDispatcher {
-	devMode := serverKey == ""
-	return &PushDispatcher{
-		projectID: projectID,
-		serverKey: serverKey,
-		devMode:   devMode,
+// NewPushDispatcher creates a dual-path push dispatcher.
+// fcmServerKey empty → FCM deliveries are logged only.
+// apnsCfg nil or invalid → APNs deliveries are logged only.
+func NewPushDispatcher(fcmServerKey, projectID string, apnsCfg *APNsConfig) *PushDispatcher {
+	p := &PushDispatcher{
+		projectID:   projectID,
+		serverKey:   fcmServerKey,
+		fcmDevMode:  fcmServerKey == "",
+		apnsDevMode: true,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 	}
+	if apnsCfg != nil {
+		provider, err := newAPNsProvider(apnsCfg)
+		if err != nil {
+			slog.Warn("push dispatcher: APNs provider init failed; iOS pushes will log only",
+				"error", err,
+			)
+		} else {
+			p.apns = provider
+			p.apnsDevMode = false
+		}
+	}
+	return p
 }
 
-// Send dispatches a push notification to a single device token via FCM.
-// In dev mode it logs instead of sending.
-func (p *PushDispatcher) Send(ctx context.Context, deviceToken, title, body, actionURL string) error {
-	if p.devMode {
-		slog.Info("push dispatcher (dev mode): would send push notification",
-			"device_token", deviceToken,
-			"title", title,
+// Send dispatches a push to a single device, routing by platform.
+func (p *PushDispatcher) Send(ctx context.Context, msg pushMessage) error {
+	platform := strings.ToLower(strings.TrimSpace(msg.Platform))
+	if platform == "" {
+		platform = "unknown"
+	}
+	msg.Platform = platform
+
+	switch platform {
+	case "ios":
+		return p.sendAPNs(ctx, msg)
+	default:
+		// android, web, or anything else → FCM (best-effort).
+		return p.sendFCM(ctx, msg)
+	}
+}
+
+// SendMultiple dispatches to every registered device token, routing each by platform.
+// Partial failure does not stop delivery to remaining tokens.
+func (p *PushDispatcher) SendMultiple(
+	ctx context.Context,
+	tokens []domain.DeviceToken,
+	title, body, actionURL, notifType string,
+	badge *int,
+) (sent int, errs []error) {
+	for _, dt := range tokens {
+		msg := pushMessage{
+			DeviceToken: dt.Token,
+			Platform:    dt.Platform,
+			Title:       title,
+			Body:        body,
+			ActionURL:   actionURL,
+			NotifType:   notifType,
+			Badge:       badge,
+		}
+		if err := p.Send(ctx, msg); err != nil {
+			slog.Warn("push dispatcher: failed to send to device",
+				"device_token", truncateToken(dt.Token),
+				"platform", dt.Platform,
+				"error", err,
+			)
+			errs = append(errs, err)
+		} else {
+			sent++
+		}
+	}
+	return sent, errs
+}
+
+func (p *PushDispatcher) sendAPNs(ctx context.Context, msg pushMessage) error {
+	if p.apnsDevMode || p.apns == nil {
+		slog.Info("push dispatcher (apns dev mode): would send iOS push",
+			"device_token", truncateToken(msg.DeviceToken),
+			"title", msg.Title,
+			"type", msg.NotifType,
+			"action_url", msg.ActionURL,
+		)
+		return nil
+	}
+	return p.apns.send(ctx, msg)
+}
+
+func (p *PushDispatcher) sendFCM(ctx context.Context, msg pushMessage) error {
+	if p.fcmDevMode {
+		slog.Info("push dispatcher (fcm dev mode): would send push notification",
+			"device_token", truncateToken(msg.DeviceToken),
+			"platform", msg.Platform,
+			"title", msg.Title,
+			"type", msg.NotifType,
 		)
 		return nil
 	}
 
+	data := map[string]string{
+		"action_url": msg.ActionURL,
+		"title":      msg.Title,
+		"body":       msg.Body,
+	}
+	if msg.NotifType != "" {
+		data["type"] = msg.NotifType
+	}
+
 	payload := fcmPayload{
-		To: deviceToken,
+		To: msg.DeviceToken,
 		Notification: fcmNotification{
-			Title:       title,
-			Body:        body,
-			ClickAction: actionURL,
+			Title:       msg.Title,
+			Body:        msg.Body,
+			ClickAction: msg.ActionURL,
 		},
-		Data: map[string]string{
-			"action_url": actionURL,
-			"title":      title,
-			"body":       body,
-		},
+		Data: data,
 	}
 
 	jsonBody, err := json.Marshal(payload)
@@ -91,31 +183,17 @@ func (p *PushDispatcher) Send(ctx context.Context, deviceToken, title, body, act
 		slog.Warn("push dispatcher: fcm reported failures",
 			"success", fcmResp.Success,
 			"failure", fcmResp.Failure,
-			"device_token", deviceToken,
+			"device_token", truncateToken(msg.DeviceToken),
 		)
 		return fmt.Errorf("push dispatcher: fcm reported %d failure(s)", fcmResp.Failure)
 	}
 
-	slog.Info("push notification sent successfully", "device_token", deviceToken, "title", title)
+	slog.Info("push notification sent successfully",
+		"device_token", truncateToken(msg.DeviceToken),
+		"platform", msg.Platform,
+		"title", msg.Title,
+	)
 	return nil
-}
-
-// SendMultiple dispatches push notifications to multiple device tokens.
-// It sends to each token individually and returns the count of successes and
-// any errors encountered. A partial failure does not stop delivery to remaining tokens.
-func (p *PushDispatcher) SendMultiple(ctx context.Context, deviceTokens []string, title, body, actionURL string) (sent int, errs []error) {
-	for _, token := range deviceTokens {
-		if err := p.Send(ctx, token, title, body, actionURL); err != nil {
-			slog.Warn("push dispatcher: failed to send to device",
-				"device_token", token,
-				"error", err,
-			)
-			errs = append(errs, err)
-		} else {
-			sent++
-		}
-	}
-	return sent, errs
 }
 
 // --- FCM request/response types ---

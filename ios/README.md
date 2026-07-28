@@ -1,11 +1,6 @@
-# NoMarkup iOS (SwiftUI scaffold)
+# NoMarkup iOS (SwiftUI)
 
-Native **iPhone + iPad** client shell for [NoMarkup](https://no-markup.com). This is **not** a WKWebView of the website (App Store Guideline **4.2**). Primary chrome is SwiftUI (`TabView`, native lists/forms). `SFSafariViewController` is used **only** for legal/support HTML.
-
-| Status | Stage |
-|--------|--------|
-| Scaffold | **B0** — structure, auth UI, API client stub, account deletion entry |
-| Out of scope | StoreKit / IAP (Stage **B2**), full marketplace API wiring, APNs push |
+Native **iPhone + iPad** client for [NoMarkup](https://no-markup.com). This is **not** a WKWebView of the website (App Store Guideline **4.2**). Primary chrome is SwiftUI (`TabView`, native lists/forms). `SFSafariViewController` is used **only** for legal/support HTML.
 
 Payment dual-rail (Stripe for real-world GMV; StoreKit later for digital unlocks) is documented in [`docs/compliance/ios-payment-rails-design.md`](../docs/compliance/ios-payment-rails-design.md). **Do not stub StoreKit** in this tree.
 
@@ -13,16 +8,23 @@ Decision record: [`docs/compliance/native-approach-decision.md`](../docs/complia
 
 ## Requirements
 
-- **Xcode 16+** (verified with Xcode 26.x / Swift 6.x)
-- iOS **17.0** deployment target
-- Apple Developer team (for device + real Sign in with Apple); Simulator builds work without a team for compile checks
+| Item | Minimum |
+|------|---------|
+| **Xcode for ASC / TestFlight upload** | **Xcode 26.0+** (iOS 26 SDK floor) |
+| **Pinned dogfood toolchain** | Xcode **26.5.x** |
+| Deployment target | **iOS 17.0** |
+| Devices | iPhone + iPad (universal) |
+| Apple Developer team | Required for device + real SIWA / push / Apple Pay |
 
 If `xcodebuild` complains that only Command Line Tools are selected:
 
 ```bash
 export DEVELOPER_DIR=/Applications/Xcode-26.5.0.app/Contents/Developer
 # or: sudo xcode-select -s /Applications/Xcode-26.5.0.app/Contents/Developer
+xcodebuild -version   # must report 26.x for archive/upload
 ```
+
+**Do not** submit archives built with Xcode 16 / iOS 18 SDK — App Store Connect rejects below the current SDK floor. See [`docs/compliance/testflight-process.md`](../docs/compliance/testflight-process.md).
 
 ## Open in Xcode
 
@@ -60,6 +62,22 @@ xcodebuild \
 
 Then run from Xcode (**⌘R**) on any iPhone or iPad simulator.
 
+## Unit tests (`NoMarkupTests`)
+
+Hosted unit-test bundle (no physical device). Covers money formatting, API base HTTPS resolution, notification deep links, image MIME/downsample helpers, date/status helpers.
+
+```bash
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-26.5.0.app/Contents/Developer}"
+cd ios
+xcodebuild test \
+  -scheme NoMarkup \
+  -project NoMarkup.xcodeproj \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -only-testing:NoMarkupTests
+```
+
+UI tests live in `NoMarkupUITests/` (optional; seed credentials for full login path).
+
 ## App Icon & brand
 
 Single-size universal asset (Xcode 14+ single-size catalog):
@@ -71,61 +89,57 @@ Single-size universal asset (Xcode 14+ single-size catalog):
 | `NoMarkup/Assets.xcassets/AccentColor.colorset` | Brand gold accent (CTAs / tint) |
 | `brand/app-icon-1024.png` | Canonical master art (monorepo root) |
 
-**App icon (current):** terminal amber-gold **N** (+ reverse-auction chevron lineage) on **pure black `#000000`** — master **37** (`brand/ICON_DECISION.md`). Not the historical dual-ring / diamond “SOTA seal,” and not the flat Pillow “NM” script from early scaffolding. Opaque RGB only (App Store rejects transparency). Keep `AppIcon-1024.png` and `brand/app-icon-1024.png` in sync when the master revises.
+**App icon (current):** terminal amber-gold **N** (+ reverse-auction chevron lineage) on **pure black `#000000`** — master **37** (`brand/ICON_DECISION.md`). Opaque RGB only (App Store rejects transparency).
 
-**In-product chrome** uses showcase shell `#07080b` (`BrandTheme.navy`) — slightly lifted from the icon’s pure black field. See `docs/brand/showcase-ssot.md`.
+**In-product chrome** uses showcase shell `#07080b` (`BrandTheme.navy`). See `docs/brand/showcase-ssot.md`.
 
-**Brand SSOT:** `qa/showcase/index.html` + `docs/brand/showcase-ssot.md`. Tagline: **The Market Sets The Price. Not The Markup.** iOS maps tokens in `NoMarkup/Core/BrandTheme.swift`.
-
-**Accent / design-system tokens (showcase SSOT):**
+**Brand SSOT:** `qa/showcase/index.html` + `docs/brand/showcase-ssot.md`. Tagline: **The Market Sets The Price. Not The Markup.**
 
 | Token | Hex | iOS use |
 |-------|-----|---------|
-| Brand gold (`--gold`) | `#c9a84c` | `AccentColor` / `BrandTheme.gold` / `BrandTheme.accent` → CTAs / tab tint |
-| Gold bright (`--gold-bright`) | `#e4c566` | `BrandTheme.goldBright` → prices, emphasis labels |
-| Navy shell (`--bg-primary`) | `#07080b` | App chrome (`BrandTheme.navy`) — **not** the icon canvas |
-| Card surface (`--bg-card`) | `#14161e` | List rows / elevated (`BrandTheme.navyElevated`) |
+| Brand gold (`--gold`) | `#c9a84c` | `AccentColor` / `BrandTheme.gold` / `BrandTheme.accent` |
+| Gold bright (`--gold-bright`) | `#e4c566` | `BrandTheme.goldBright` |
+| Navy shell (`--bg-primary`) | `#07080b` | `BrandTheme.navy` |
+| Card surface (`--bg-card`) | `#14161e` | `BrandTheme.navyElevated` |
 | Text primary / secondary | `#e8ecf1` / `#8b949e` | `BrandTheme.textPrimary` / `.textSecondary` |
-| Icon field | `#000000` | AppIcon outer field only |
 
-**Do not use legacy** `#070b14`, `#d4af57`, or ad-hoc `Color(red:…)` outside `BrandTheme`. Prefer `BrandTheme.*` (or `BrandTheme.accent` for interactive tint).
+**Do not use legacy** `#070b14`, `#d4af57`, or ad-hoc `Color(red:…)` outside `BrandTheme`.
 
-## Device smoke
+## Device smoke (human-gated)
 
-Executable Simulator checklist (cold launch → auth → catalog → legal → sign-out):
+Executable matrix (SE 3rd gen, Pro Max class, **13" iPad**, **AX5** text, **iOS 17** floor):
 
 → **[`docs/compliance/device-smoke-checklist.md`](../docs/compliance/device-smoke-checklist.md)**
 
-Program board (Stage C residual, binary readiness):
+Program board:
 
 → **[`docs/compliance/launch-board.md`](../docs/compliance/launch-board.md)**
 
-Quick path: gateway + seed → open `ios/NoMarkup.xcodeproj` → run **NoMarkup** on **iPhone 16** → walk the 12 smoke rows and mark Pass/Fail.
+**Pending human device pass** — do not claim “device verified” from sim-only Pro Max runs.
 
 ## Capabilities
 
 | Capability | Status |
 |------------|--------|
-| **Sign in with Apple** | Entitlement `com.apple.developer.applesignin` in `NoMarkup/NoMarkup.entitlements`. In Xcode: target → **Signing & Capabilities** → **+ Capability** → Sign in with Apple. Requires App ID with SIWA enabled in the Developer portal. |
-| **Apple Pay** | Entitlement `com.apple.developer.in-app-payments` → `merchant.com.nomarkup.app`. Enable Apple Pay capability + merchant ID in Developer portal; mirror in Stripe Dashboard. |
-| Push (APNs) | **Not** added (Stage B later) |
-| In-App Purchase | **Not** added (Stage B2; dual-rail design only) |
-| Associated Domains | Optional later for universal links / `nomarkup://` deep links |
+| **Sign in with Apple** | Entitlement `com.apple.developer.applesignin` |
+| **Apple Pay** | Entitlement `com.apple.developer.in-app-payments` → `merchant.com.nomarkup.app` |
+| **Push (APNs)** | Client registration present (`PushRegistration`); declare **Device ID** in privacy labels (linked, not tracking). Production `aps-environment` comes from archive export. |
+| In-App Purchase | **Not** added (Stage B2; free-tier digital for v1) |
+| Associated Domains | Optional later for universal links / passkeys |
+| Privacy manifest | `NoMarkup/PrivacyInfo.xcprivacy` |
 
-URL scheme `nomarkup` is registered in `Info.plist` for future deep links.
+URL scheme `nomarkup` is registered in `Info.plist` for deep links.
 
 ## API base URL
 
-Resolved in `Core/AppConfig.swift`:
+Resolved in `Core/AppConfig.swift` (pure helper `resolveAPIBaseURL` unit-tested):
 
-1. Env `NOMARKUP_API_BASE_URL`
-2. Info.plist `APIBaseURL` (defaults to `https://api.no-markup.com` in the committed plist)
-3. **DEBUG** fallback: `http://localhost:8081` (matches local gateway / `.env.local`)
-4. **Release** fallback: `https://api.no-markup.com`
+1. Env `NOMARKUP_API_BASE_URL` (Debug may allow cleartext; **Release rejects non-https**)
+2. **DEBUG + Simulator:** `http://127.0.0.1:8081`
+3. Info.plist `APIBaseURL` when non-empty (Release: https only)
+4. Production: `https://api.no-markup.com`
 
-ATS: `NSAllowsLocalNetworking` is enabled for local HTTP gateway debugging only.
-
-Point the scheme at a running monorepo stack (`make` / docker-compose gateway on **8081** as used by this repo’s `.env.local`).
+Committed plist `APIBaseURL` should stay **empty** for Release archives so production HTTPS applies. Prefer HTTPS staging/tunnels for physical-device dogfood.
 
 ## App structure
 
@@ -136,29 +150,21 @@ ios/
   NoMarkup/
     NoMarkupApp.swift
     Info.plist
+    PrivacyInfo.xcprivacy
     NoMarkup.entitlements
     Assets.xcassets/
-    Core/          AppConfig, KeychainTokenStore, APIClient
-    Auth/          AuthViewModel, LoginView, SignInWithAppleButton
-    Features/      Tabs, legal Safari, account deletion
-    Location/      Purpose-string / pre-prompt copy from inventory
+    Core/          AppConfig, APIClient, ImageUploader, PushRegistration, …
+    Auth/          Login, SIWA, Google, Passkeys
+    Features/      Tabs + product surfaces
+    Intents/       App Intents / Shortcuts
+    Location/      Purpose-string copy
+  NoMarkupTests/   Unit tests (host app)
+  NoMarkupUITests/ XCUITest smoke
 ```
 
 ### Tabs (native)
 
 Home · Marketplace · Jobs · Messages · Account
-
-### Auth
-
-- Email/password form → `APIClient.login` (gateway path stub)
-- **Sign in with Apple** button shell (`AuthenticationServices`) — identity token **not** exchanged with gateway yet
-- **Browse without signing in** — local-only session for layout review without API (`enterScaffoldSession`; product voice matches showcase)
-
-### Account / Guideline 5.1.1(v)
-
-- Links: Privacy, Terms, Community Guidelines, Support (`https://no-markup.com/...`)
-- **Delete Account** entry with confirm UX (`AccountDeletionView`)
-- Export Data row present (disabled until export endpoint is wired)
 
 ### Privacy purpose strings
 
@@ -170,53 +176,31 @@ See `Info.plist` and `Location/LocationPurposeCopy.swift`. Inventory: `docs/comp
 
 | Rail | Product | This client |
 |------|---------|----------------|
-| **A — Stripe + Apple Pay** | Jobs GMV, goods marketplace, escrow, Connect | **Wired:** buy-now + order pay → Stripe PaymentSheet (Apple Pay preferred, card fallback). SPM: `StripePaymentSheet`. |
+| **A — Stripe + Apple Pay** | Jobs GMV, goods marketplace, escrow, Connect | **Wired:** buy-now + order pay → Stripe PaymentSheet |
 | **B — StoreKit** | Digital subscriptions / feature unlocks | **Explicitly omitted** — free-tier digital only in v1 |
 
 ### Rail A setup (device)
 
-1. Register Apple Pay merchant ID `merchant.com.nomarkup.app` (or override
-   `ApplePayMerchantId` / `NOMARKUP_APPLE_PAY_MERCHANT_ID`) and enable the
-   **Apple Pay** capability on the App ID.
-2. Add the same merchant ID in **Stripe Dashboard → Settings → Payment methods → Apple Pay**.
-3. Set publishable key via scheme env `NOMARKUP_STRIPE_PUBLISHABLE_KEY` or
-   Info.plist `StripePublishableKey` (`pk_test_…` / `pk_live_…`).
-4. Flow: listing detail **Buy now** → `POST …/buy-now` → PaymentSheet; or
-   **Account → Orders → Pay with Apple Pay** for `pending_payment` rows.
-
-First binary should keep regulated digital-adjacent flags off per `ios-payment-rails-design.md`.
+1. Register Apple Pay merchant ID `merchant.com.nomarkup.app` and enable **Apple Pay** on the App ID.
+2. Add the same merchant ID in **Stripe Dashboard → Apple Pay**.
+3. Set `NOMARKUP_STRIPE_PUBLISHABLE_KEY` or Info.plist `StripePublishableKey`.
+4. Flow: listing **Buy now** or **Account → Orders → Pay with Apple Pay**.
 
 ## Google Sign-In (FR-1.1)
 
-Native path (no Google SDK):
+Native path (no Google SDK): `ASWebAuthenticationSession` + PKCE → `POST /api/v1/auth/google/native`.
 
-1. `ASWebAuthenticationSession` + **PKCE** → Google authorize + token endpoint → OIDC `id_token`
-2. `POST /api/v1/auth/google/native` `{ "identity_token": "…" }` → access/refresh JWT pair
-3. Keychain via `APIClient.signInWithGoogle`
+Configure: Google Cloud iOS client for `com.nomarkup.app`, gateway `GOOGLE_IOS_CLIENT_ID`, Info.plist / env `GoogleIosClientID`, reverse-client-id URL scheme.
 
-**Configure before dogfood:**
+## Distribution docs
 
-| Where | Value |
-|-------|--------|
-| Google Cloud Console | OAuth client type **iOS**, bundle `com.nomarkup.app` |
-| Gateway | `GOOGLE_IOS_CLIENT_ID` (and/or `GOOGLE_CLIENT_ID`) — must match id_token `aud` |
-| Info.plist / env | `GoogleIosClientID` or `NOMARKUP_GOOGLE_IOS_CLIENT_ID` |
-| Info.plist `CFBundleURLTypes` | Reverse client ID scheme: `com.googleusercontent.apps.<prefix>` for client `<prefix>.apps.googleusercontent.com` |
-
-## TODOs (not B0)
-
-- [x] Exchange SIWA `identityToken` with gateway OAuth / native token endpoint
-- [x] Google Sign-In via ASWebAuthenticationSession + PKCE + `/auth/google/native`
-- [ ] Provision real `GOOGLE_IOS_CLIENT_ID` + reverse URL scheme in Info.plist for device dogfood
-- [ ] Align login/refresh JSON with real `services/user` + gateway routes
-- [ ] Marketplace / jobs / messages list + detail from API + WebSocket
-- [ ] CoreLocation market picker + job check-in with pre-prompts
-- [ ] Photo picker / camera capture paths
-- [ ] Account export (`GET /api/v1/me/export`) + real deletion schedule path
-- [x] App icon 1024×1024 terminal master 37 (amber N on pure black; AccentColor brand gold)
-- [ ] Organization team signing + App Store Connect record
-- [ ] Human-execute device smoke checklist and sign launch-board
-- [ ] Stage B2 StoreKit only when digital unlocks ship
+| Doc | Role |
+|-----|------|
+| [`docs/compliance/asc-packaging-checklist.md`](../docs/compliance/asc-packaging-checklist.md) | ASC packaging |
+| [`docs/compliance/testflight-process.md`](../docs/compliance/testflight-process.md) | TestFlight process |
+| [`docs/compliance/app-store-screenshot-matrix.md`](../docs/compliance/app-store-screenshot-matrix.md) | 6.9" / 13" shots |
+| [`docs/compliance/accessibility-nutrition-claims.md`](../docs/compliance/accessibility-nutrition-claims.md) | ASC a11y claims |
+| [`docs/compliance/ios-developer-audit-remediation-2026-07-27.md`](../docs/compliance/ios-developer-audit-remediation-2026-07-27.md) | Audit remediation map |
 
 ## License / monorepo
 

@@ -1,7 +1,13 @@
 import SwiftUI
 
 /// Goods forward-auction surface. Loads active listings from the gateway.
+///
+/// DES.12 / MP.1: on regular horizontal size class (iPad landscape / large),
+/// use `NavigationSplitView` (sidebar list + detail). Compact (iPhone) keeps
+/// a single `NavigationStack`. Detail forms use `brandReadableWidth` elsewhere.
 struct MarketplaceView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     @State private var listings: [ListingSummary] = []
     @State private var pagination: PaginationMeta?
     @State private var isLoading = false
@@ -14,36 +20,68 @@ struct MarketplaceView: View {
     @State private var isLoadingSuggestions = false
     @State private var autocompleteTask: Task<Void, Never>?
     @State private var selectedListingRoute: ListingIDRoute?
+    /// Split-view selection (regular width only).
+    @State private var selectedListing: ListingSummary?
+
+    private var usesSplitView: Bool { horizontalSizeClass == .regular }
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("Marketplace")
-                .searchable(text: $searchText, prompt: "Search listings")
-                .onSubmit(of: .search) {
-                    // Free-text search clears a prior category-slug filter so q= wins.
-                    categorySlugFilter = nil
-                    suggestions = []
-                    Task { await load(reset: true) }
-                }
-                .onChange(of: searchText) { _, newValue in
-                    scheduleAutocomplete(for: newValue)
-                    // Clearing the search field also clears the category filter.
-                    if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        categorySlugFilter = nil
+        Group {
+            if usesSplitView {
+                NavigationSplitView {
+                    listRoot
+                } detail: {
+                    NavigationStack {
+                        if let selectedListing {
+                            ListingDetailView(listingID: selectedListing.id, preview: selectedListing)
+                        } else if let route = selectedListingRoute {
+                            ListingDetailView(listingID: route.id, preview: nil)
+                        } else {
+                            ContentUnavailableView(
+                                "Select a listing",
+                                systemImage: "bag",
+                                description: Text("Choose an item from the marketplace list.")
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .brandScreenBackground()
+                        }
                     }
                 }
-                .refreshable { await load(reset: true) }
-                .task { await load(reset: true) }
-                .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-                .navigationDestination(for: ListingSummary.self) { listing in
-                    ListingDetailView(listingID: listing.id, preview: listing)
+            } else {
+                NavigationStack {
+                    listRoot
+                        .navigationDestination(for: ListingSummary.self) { listing in
+                            ListingDetailView(listingID: listing.id, preview: listing)
+                        }
+                        .navigationDestination(item: $selectedListingRoute) { route in
+                            ListingDetailView(listingID: route.id, preview: nil)
+                        }
                 }
-                .navigationDestination(item: $selectedListingRoute) { route in
-                    ListingDetailView(listingID: route.id, preview: nil)
-                }
+            }
         }
+    }
+
+    private var listRoot: some View {
+        content
+            .navigationTitle("Marketplace")
+            .searchable(text: $searchText, prompt: "Search listings")
+            .onSubmit(of: .search) {
+                // Free-text search clears a prior category-slug filter so q= wins.
+                categorySlugFilter = nil
+                suggestions = []
+                Task { await load(reset: true) }
+            }
+            .onChange(of: searchText) { _, newValue in
+                scheduleAutocomplete(for: newValue)
+                // Clearing the search field also clears the category filter.
+                if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    categorySlugFilter = nil
+                }
+            }
+            .refreshable { await load(reset: true) }
+            .task { await load(reset: true) }
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
     }
 
     @ViewBuilder
@@ -110,12 +148,31 @@ struct MarketplaceView: View {
 
                 Section {
                     ForEach(listings) { listing in
-                        NavigationLink(value: listing) {
-                            ListingRowView(listing: listing)
+                        if usesSplitView {
+                            Button {
+                                selectedListing = listing
+                                selectedListingRoute = nil
+                            } label: {
+                                ListingRowView(listing: listing)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .frame(minHeight: 44)
+                            .listRowBackground(
+                                selectedListing?.id == listing.id
+                                    ? BrandTheme.surfaceRaised
+                                    : BrandTheme.navyElevated
+                            )
+                            .accessibilityHint("Shows listing detail in the side panel")
+                        } else {
+                            NavigationLink(value: listing) {
+                                ListingRowView(listing: listing)
+                            }
+                            .frame(minHeight: 44)
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityHint("Opens listing detail")
                         }
-                        .frame(minHeight: 44)
-                        .listRowBackground(BrandTheme.navyElevated)
-                        .accessibilityHint("Opens listing detail")
                     }
                 } header: {
                     if let total = pagination?.resolvedTotal, total > 0 {

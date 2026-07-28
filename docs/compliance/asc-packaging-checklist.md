@@ -7,7 +7,13 @@
 **Binary tree:** `ios/NoMarkup` (SwiftUI scaffold; Stages **B0–B4** code paths)  
 **Related:** [`app-review-notes.md`](./app-review-notes.md) · [`privacy-purpose-string-inventory.md`](./privacy-purpose-string-inventory.md) · [`ios-payment-rails-design.md`](./ios-payment-rails-design.md) · [`review-logs/phase-4b.md`](./review-logs/phase-4b.md) · [`launch-board.md`](./launch-board.md) · [`submission-blockers.md`](./submission-blockers.md)
 
-**Claim discipline:** This checklist packages the **first binary**. Completing the *docs* portion of B6 does **not** mean App Review submission-ready. Remaining blockers: team signing, App Icon asset, live review backend, and either **B2 StoreKit** **or** an explicit free-tier-only product cut (already the scaffold posture — no digital paywall).
+**Claim discipline:** This checklist packages the **first binary**. Completing the *docs* portion of B6 does **not** mean App Review submission-ready. Remaining blockers: team signing, live review backend, ASC media entry, human device smoke, and either **B2 StoreKit** **or** free-tier-only (locked — no digital paywall).
+
+**Reconciled 2026-07-27** against binary truth (IOS-DIST.7 / push): the app **does** register for APNs and may send `identifierForVendor` with the device token. Nutrition labels **must declare Device ID** (linked, not tracking). Do **not** document “push deferred / omit Device ID”.
+
+**SDK floor:** App Store / TestFlight upload requires **Xcode 26+ / iOS 26 SDK**. See [`testflight-process.md`](./testflight-process.md).
+
+**First public marketing version:** **`1.0.0`** (scaffold may still use `0.1.x` for internal TestFlight only).
 
 Status legend: `[ ]` open · `[x]` done in monorepo/docs · `[~]` partial / ops outside repo
 
@@ -32,7 +38,7 @@ Status legend: `[ ]` open · `[x]` done in monorepo/docs · `[~]` partial / ops 
 | Capability | First binary | Source of truth |
 |------------|--------------|-----------------|
 | **Sign in with Apple** | **Required** | `NoMarkup.entitlements` → `com.apple.developer.applesignin`; Xcode Signing & Capabilities |
-| Push Notifications (APNs) | **Do not enable for claims** | Stage **B5 deferred** — do not claim push in metadata |
+| **Push Notifications (APNs)** | **Enabled in binary** | Entitlement `aps-environment` (dev in tree; production via archive export); `PushRegistration` + `registerForRemoteNotifications`; declare in privacy (Device ID). Server APNs provider quality is a separate reliability item. |
 | In-App Purchase | **Only if shipping B2** | Current scaffold: **no** IAP capability / no StoreKit UI |
 | Associated Domains | Optional later | Universal links / `nomarkup://` already registered as URL scheme |
 | App Groups / iCloud | Not required | — |
@@ -68,12 +74,13 @@ In-app legal surfaces (SwiftUI → `SFSafariViewController` / `LegalWebView`): P
 
 | Item | Guidance |
 |------|----------|
-| Marketing version | Start `1.0.0` for first public App Store (scaffold currently `0.1.x` locally is fine for TestFlight) |
-| Build number | Monotonic integer per upload |
+| Marketing version | **`1.0.0` for first public App Store** (scaffold `0.1.x` OK for internal TestFlight only) |
+| Build number | Monotonic integer per upload — see [`testflight-process.md`](./testflight-process.md) |
 | Deployment target | **iOS 17.0** (`ios/README.md`) |
+| Upload SDK | **Xcode 26+ / iOS 26 SDK** (ASC floor) |
 | Devices | iPhone + iPad (universal; orientations in `Info.plist`) |
-| API base (Release) | `https://api.no-markup.com` via `APIBaseURL` / `AppConfig` — **must be reachable** for review |
-| Debug local | `http://localhost:8080` (DEBUG) — never ship DEBUG to review |
+| API base (Release) | Empty Info.plist `APIBaseURL` → `AppConfig` production **`https://api.no-markup.com`** — **must be reachable** for review |
+| Debug local | Simulator DEBUG uses `http://127.0.0.1:8081`; Release **rejects** cleartext env/plist |
 
 ---
 
@@ -92,6 +99,8 @@ In-app legal surfaces (SwiftUI → `SFSafariViewController` / `LegalWebView`): P
 
 ### 4.2 Data types to declare (typical “Collected / Linked to user / Not used for tracking”)
 
+**Truth (2026-07-27):** Binary registers for remote notifications and associates **Device ID** (`identifierForVendor` and/or push device token) with the account for delivery. Declare **Device ID — collected, linked to user, not used for tracking**. Privacy manifest: `ios/NoMarkup/PrivacyInfo.xcprivacy` (`NSPrivacyTracking=false`).
+
 | ASC data type | Collected? | Linked to user? | Tracking? | Purposes (typical) | Product evidence |
 |---------------|------------|-----------------|-----------|--------------------|------------------|
 | **Email Address** | Yes | Yes | No | App Functionality, Account Management | Register / login / OAuth / SIWA |
@@ -107,15 +116,15 @@ In-app legal surfaces (SwiftUI → `SFSafariViewController` / `LegalWebView`): P
 | **Payment Info** | Yes (tokenized) | Yes | No | App Functionality | Stripe only — no full PAN on NoMarkup servers |
 | **Precise Location** | Yes (when used) | Yes | No | App Functionality | Job-site check-in GPS |
 | **Coarse Location** | Yes | Yes | No | App Functionality | Market suggestion; coarsened public map |
-| **Crash Data** | Yes (if Sentry linked) | Yes | No | Analytics / App Functionality | Opt-in / product diagnostics posture |
-| **Performance Data** | Yes (if telemetry) | Yes | No | Analytics | Consent-gated where applicable |
-| **Product Interaction** | Yes | Yes | No | Analytics / App Functionality | Consent-gated analytics |
-| **Device ID** | Yes (if push later) | Yes | No | App Functionality | Push token — **B5 deferred**, omit if no APNs |
+| **Crash Data** | **No** (first binary) | — | — | — | No Sentry/crash SDK in `Package.resolved` (Stripe only) |
+| **Performance Data** | **No** unless telemetry ships | — | — | — | Do not invent |
+| **Product Interaction** | Only if analytics ships | Yes | No | App Functionality | Prefer omit until consent-gated analytics exists |
+| **Device ID** | **Yes** | **Yes** | **No** | App Functionality | APNs token + `identifierForVendor` via `PushRegistration` — **linked, not tracking** |
 | **User ID** | Yes | Yes | No | App Functionality | Account UUID, OAuth `sub` |
 | **Advertising Data** | **No** | — | — | — | No ad network today |
-| **Other Diagnostic Data** | Yes | Yes | No | Analytics / App Functionality | Logs as disclosed |
+| **Other Diagnostic Data** | Only as disclosed | Yes | No | App Functionality | Avoid over-declare |
 
-**Third parties to list when present in binary:** Stripe (payments), Mapbox (if maps SDK), Sentry (if crash SDK), Sign in with Apple (system), Google/Facebook **only if** those OAuth SDKs ship in the binary.
+**Third parties in binary (revalidate at submit):** **Stripe** (payments / PaymentSheet) only from SPM. Sign in with Apple is system. Google is SDK-less `ASWebAuthenticationSession` (not a Google Mobile SDK). **Do not** list Mapbox/Sentry unless linked.
 
 ### 4.3 Purpose strings already in binary (`Info.plist`)
 
@@ -129,27 +138,33 @@ In-app legal surfaces (SwiftUI → `SFSafariViewController` / `LegalWebView`): P
 
 ---
 
-## 5. Age rating questionnaire (honest UGC answers)
+## 5. Age rating questionnaire (honest UGC answers) — draft ready-to-enter
 
-NoMarkup is **18+** product-side (`minAgeYears` / DOB gate) and hosts **user-generated** jobs, listings, chat, and reviews. Complete the ASC age rating questionnaire **truthfully**:
+NoMarkup is **18+** product-side (`AgeGateView` / DOB) and hosts **user-generated** jobs, listings, chat, and reviews. Complete ASC **truthfully**. Final badge is computed by Apple from answers — do **not** sandbag.
 
-| Topic | Guidance for NoMarkup |
-|-------|------------------------|
-| **Unrestricted web access** | No (app is not a general browser) |
-| **User-generated content** | **Yes** — jobs, marketplace listings, messages, reviews, photos |
-| **Messaging / chat** | **Yes** — in-app messaging (when live in binary); report/block exist on platform |
-| **Mature / suggestive themes** | Unlikely as core product; do not over-claim “none” if UGC can include adult-adjacent categories — use **Infrequent/Mild** only if taxonomy allows such listings; otherwise None |
-| **Profanity / crude humor** | Possible via UGC chat — answer per real moderation posture |
-| **Gambling** | **No** (marketplace auctions for goods/services are not casino gambling; do not mislabel) |
-| **Contests** | No (unless product adds prize contests) |
-| **Alcohol / tobacco / drugs** | Only if verticals allow listing/services in those categories — answer from live taxonomy |
-| **Violence / horror** | No as designed content |
-| **Medical / treatment info** | No as core feature |
-| **Age gate** | Platform enforces **18+**; reflect in rating + review notes |
+### 5.1 Draft answer table (enter in ASC; adjust only if product taxonomy changes)
 
-**Expected outcome:** Not a 4+ “utility-only” rating. UGC + social features typically land in a higher band; App Store Connect computes the final badge from answers. Do **not** sandbag UGC questions to force a lower badge.
+| ASC topic | Draft answer | Rationale |
+|-----------|--------------|-----------|
+| Unrestricted web access | **No** | In-app Safari only for legal/support URLs |
+| User-generated content | **Yes** | Jobs, listings, reviews, photos, profiles |
+| Messaging and chat | **Yes** | In-app channels/messages + report/block |
+| Advertising | **None** | No ad SDK / no ads surface |
+| Profanity or crude humor | **Infrequent/Mild** (or per live mod policy) | UGC chat can include mild language |
+| Mature/suggestive themes | **None** or **Infrequent/Mild** if taxonomy allows adult-adjacent services | Prefer honesty if category list allows |
+| Horror / fear themes | **None** | Not product content |
+| Cartoon or fantasy violence | **None** | — |
+| Realistic violence | **None** | — |
+| Guns / weapons | **None** as designed content | Unless taxonomy lists weapons goods — then answer from live catalog |
+| Medical / treatment info | **None** as core feature | — |
+| Alcohol / tobacco / drugs | **None** unless verticals list them | Answer from live taxonomy |
+| Simulated gambling | **None** | Auctions are commerce, not casino gambling — **do not** mislabel as gambling |
+| Contests | **None** | No prize contests |
+| Parental controls / age gate | Platform **18+** gate; **not** Kids Category | Reflect in review notes |
 
-Also set **Age Assurance / Kids** flags: this is **not** a Kids Category app; no COPPA-directed child targeting.
+**Kids Category / Age Assurance:** **Not** a Kids app; no COPPA child-directed targeting.
+
+**Status:** Draft table **ready to type into ASC** once the app record exists. §10.2 still `[ ]` until entered.
 
 ---
 
@@ -159,12 +174,16 @@ Capture on **real device or simulator** at required sizes. Prefer light mode + K
 
 ### 6.1 Required size families (minimum)
 
+Canonical matrix: [`app-store-screenshot-matrix.md`](./app-store-screenshot-matrix.md).
+
 | Device class | Display | Portrait sizes to prepare |
 |--------------|---------|---------------------------|
-| **6.7" iPhone** | e.g. iPhone 15 Pro Max / 16 Plus class | Required for modern iPhone set |
-| **12.9" iPad** | 12.9" iPad Pro | Required if iPad is supported (this binary is universal) |
+| **6.9" iPhone** | iPhone 16/17 Pro Max class | **Required** modern iPhone set |
+| **13" iPad** | 13" iPad Pro | **Required** — binary is universal |
+| 6.7" / 6.5" iPhone (if ASC prompts) | 15/16 Plus / Pro Max class | Optional legacy slots |
+| 12.9" iPad (if ASC prompts) | Older Pro | Optional legacy |
 
-Also produce any additional sizes ASC still requires for your account’s media matrix (e.g. 6.5" / 5.5" if prompted). Prefer **native SwiftUI chrome**, not Safari screenshots of the website (Guideline **4.2**).
+Prefer **native SwiftUI chrome**, not Safari screenshots of the website (Guideline **4.2**).
 
 ### 6.2 Scene list (shoot these)
 
@@ -189,8 +208,35 @@ Optional for v1. If filmed: same dual-rail honesty; no regulated features.
 
 | Item | Status |
 |------|--------|
-| 1024×1024 App Store icon | **Open** — `Assets.xcassets/AppIcon` must be filled before upload |
-| No transparency / no rounded-rect baking | Follow HIG |
+| 1024×1024 App Store icon | **Done in tree** — `AppIcon.appiconset/AppIcon-1024.png` (terminal master 37) |
+| No transparency / no rounded-rect baking | Opaque RGB — follow HIG |
+| Dark / tinted appearances | **Open** (IOS-DES.6) — optional for submit; improve when Icon Composer lands |
+
+### 6.5 In-App Events (IOS-DIST.13)
+
+| Decision | **Defer** |
+|----------|-----------|
+| Date recorded | **2026-07-27** |
+| Rationale | First binary has no scheduled launch “event” product surface worth ASC In-App Events; marketplace is continuous local inventory. Revisit post-launch if we run city launches or seasonal campaigns. |
+| Action now | Do **not** create In-App Events for v1.0.0 |
+
+### 6.6 Custom Product Pages / Product Page Optimization (IOS-DIST.14)
+
+| Decision | **Defer post-launch** |
+|----------|------------------------|
+| Date recorded | **2026-07-27** |
+| Rationale | Single listing page is enough for first public; no multi-arm creative test budget yet. |
+| Action now | Use default product page only; revisit CPP/PPO after metrics exist. |
+
+### 6.7 Accessibility nutrition (IOS-DIST.8 / A11Y.6)
+
+See [`accessibility-nutrition-claims.md`](./accessibility-nutrition-claims.md).
+
+| Claim in ASC | v1 posture |
+|--------------|------------|
+| **VoiceOver** | Claim **only after** human VoiceOver pass on primary flows |
+| Larger Text / Dynamic Type | **Do not claim** until A11Y.2 + AX5 signed |
+| Reduced Motion | **Do not claim** until A11Y.3 closed |
 
 ---
 
@@ -346,10 +392,11 @@ Apple asks whether the app uses encryption.
 
 ### 10.3 Media
 
-- [ ] App Icon 1024×1024
-- [ ] 6.7" screenshots for scenes in §6.2
-- [ ] 12.9" iPad screenshots for same scenes
+- [x] App Icon 1024×1024 in asset catalog (upload still ops)
+- [ ] **6.9"** iPhone screenshots for scenes in §6.2
+- [ ] **13"** iPad screenshots for same scenes
 - [ ] Optional preview video
+- [ ] Accessibility nutrition entered per `accessibility-nutrition-claims.md` (VoiceOver only until DT lands)
 
 ### 10.4 Binary content
 
@@ -358,12 +405,16 @@ Apple asks whether the app uses encryption.
 - [x] Purpose strings in Info.plist — B1
 - [x] In-app legal links + account deletion entry — B1
 - [x] Public marketplace + jobs browse — B3
-- [x] Regulated feature hard-off — B4
+- [x] Regulated rails server-flag gated — B4
 - [x] No StoreKit digital paywall in Account — free-tier-only posture
+- [x] Privacy manifest `PrivacyInfo.xcprivacy` in target
+- [x] `ITSAppUsesNonExemptEncryption` = false in Info.plist
+- [x] Release API base resolves HTTPS when plist empty (`AppConfig`)
 - [ ] No DEBUG-only “scaffold session” as the only path if claiming production auth
 - [ ] Release API host reachable; seed data present
-- [ ] Push **not** claimed (B5 deferred)
+- [x] Push **truthfully declared** (Device ID linked, not tracking) — binary registers APNs
 - [ ] Either no IAP (§7.1) **or** full B2 StoreKit stack (§7.2)
+- [ ] TestFlight internal group + first upload ([`testflight-process.md`](./testflight-process.md))
 
 ### 10.5 Policy alignment
 
@@ -431,4 +482,13 @@ Do **not** claim App Store submission-ready until §10 gates and `submission-blo
 
 ---
 
-*Owner: App Store launch readiness Stage B6. Update when Bundle ID, categories, IAP products, or binary scope change.*
+### 10.6 Deferred growth surfaces (explicit)
+
+| Surface | Decision | Date |
+|---------|----------|------|
+| In-App Events | Defer | 2026-07-27 |
+| Custom Product Pages / PPO | Defer post-launch | 2026-07-27 |
+
+---
+
+*Owner: App Store launch readiness Stage B6. Update when Bundle ID, categories, IAP products, or binary scope change. Push/privacy reconciled 2026-07-27.*

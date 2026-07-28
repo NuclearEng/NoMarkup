@@ -333,6 +333,7 @@ private struct UploadVerificationDocumentSheet: View {
     @State private var selectedType: ProviderDocumentType = .driversLicense
     @State private var pickerItem: PhotosPickerItem?
     @State private var showCamera = false
+    @State private var showCameraDeniedAlert = false
     #if canImport(UIKit)
     @State private var cameraImage: UIImage?
     #endif
@@ -396,7 +397,7 @@ private struct UploadVerificationDocumentSheet: View {
 
                     #if canImport(UIKit)
                     Button {
-                        showCamera = true
+                        Task { await requestCamera() }
                     } label: {
                         Label("Take photo with camera", systemImage: "camera.fill")
                             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -407,6 +408,7 @@ private struct UploadVerificationDocumentSheet: View {
                         CameraImagePicker(image: $cameraImage)
                             .ignoresSafeArea()
                     }
+                    .cameraDeniedAlert(isPresented: $showCameraDeniedAlert)
                     .onChange(of: cameraImage) { _, image in
                         if image != nil {
                             hasCapture = true
@@ -460,9 +462,22 @@ private struct UploadVerificationDocumentSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
         .tint(BrandTheme.accent)
     }
+
+    #if canImport(UIKit)
+    @MainActor
+    private func requestCamera() async {
+        switch await CameraAuthorization.prepareToPresent() {
+        case .ready:
+            showCamera = true
+        case .denied:
+            showCameraDeniedAlert = true
+        case .unavailable:
+            errorMessage = "Camera is not available on this device. Choose a photo from your library instead."
+        }
+    }
+    #endif
 
     @MainActor
     private func submit() async {

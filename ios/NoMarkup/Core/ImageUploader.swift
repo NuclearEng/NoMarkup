@@ -1,26 +1,80 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
 #endif
 
 /// PhotosPicker → gateway image pipeline helper.
 ///
-/// 1. Load image data from `PhotosPickerItem`
-/// 2. `POST /api/v1/images/upload-url`
-/// 3. PUT bytes to presigned URL
-/// 4. `POST /api/v1/images/confirm` → public CDN URL for `photo_urls`
-@MainActor
-enum ImageUploader {
+/// 1. Load image data from `PhotosPickerItem` (or camera `UIImage`)
+/// 2. **Off MainActor:** ImageIO downsample (≤2048px) + orientation-aware JPEG encode
+/// 3. `POST /api/v1/images/upload-url`
+/// 4. PUT bytes to presigned URL
+/// 5. `POST /api/v1/images/confirm` → public CDN URL for `photo_urls`
+///
+/// Heavy decode/encode work is **not** MainActor-isolated (IOS-PERF.6 / PERF.3).
+/// SwiftUI call sites stay on MainActor; only UIImage → source `Data` normalization
+/// briefly uses UIKit drawing when needed for camera orientation.
+enum ImageUploader: Sendable {
     /// Max bytes accepted by the platform (10 MB — `MAX_FILE_SIZE_BYTES`).
     static let maxFileBytes = 10 * 1024 * 1024
 
     /// Max photos per job/listing form (product limit).
     static let maxPhotosPerForm = 10
 
-    /// JPEG compression quality for picked photos (balance size vs fidelity).
-    private static let jpegQuality: CGFloat = 0.85
+    /// Longest edge for ImageIO thumbnail downsample (px). Public for tests / diagnostics.
+    static let maxPixelDimension = 2048
+
+    /// Preferred JPEG quality, then fallbacks if over `maxFileBytes`.
+    private static let jpegQualities: [CGFloat] = [0.85, 0.6, 0.4]
+
+    /// Whether a pixel size exceeds the downsample budget (longest edge).
+    nonisolated static func needsDownsample(
+        width: Int,
+        height: Int,
+        maxEdge: Int = maxPixelDimension
+    ) -> Bool {
+        max(width, height) > maxEdge
+    }
+
+    /// Best-effort magic-byte MIME sniff (used by tests; encode path always re-encodes JPEG).
+    nonisolated static func sniffMime(_ data: Data) -> String? {
+        guard data.count >= 12 else { return nil }
+        let bytes = [UInt8](data.prefix(12))
+        // JPEG
+        if bytes[0] == 0xFF, bytes[1] == 0xD8, bytes[2] == 0xFF { return "image/jpeg" }
+        // PNG
+        if bytes[0] == 0x89, bytes[1] == 0x50, bytes[2] == 0x4E, bytes[3] == 0x47 {
+            return "image/png"
+        }
+        // WEBP: RIFF....WEBP
+        if bytes[0] == 0x52, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x46,
+           bytes[8] == 0x57, bytes[9] == 0x45, bytes[10] == 0x42, bytes[11] == 0x50
+        {
+            return "image/webp"
+        }
+        return nil
+    }
+
+    // MARK: - Cache (IOS-PERF.3)
+
+    /// Configure a bounded `URLCache.shared` once (AsyncImage / default URL loading).
+    /// Safe to call from app launch; idempotent enough for re-entry (replaces shared).
+    nonisolated static func configureCache() {
+        let memoryCapacity = 64 * 1024 * 1024 // 64 MB
+        let diskCapacity = 256 * 1024 * 1024 // 256 MB
+        URLCache.shared = URLCache(
+            memoryCapacity: memoryCapacity,
+            diskCapacity: diskCapacity,
+            directory: nil
+        )
+    }
+
+    // MARK: - Public upload API
 
     /// Upload one PhotosPicker item; returns the public `confirmed_url`.
     static func upload(
@@ -40,7 +94,7 @@ enum ImageUploader {
     static func uploadAll(
         items: [PhotosPickerItem],
         context: ImageUploadContext,
-        onProgress: ((Int, Int) -> Void)? = nil
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> [String] {
         let capped = Array(items.prefix(maxPhotosPerForm))
         var urls: [String] = []
@@ -53,7 +107,7 @@ enum ImageUploader {
         return urls
     }
 
-    /// Provider verification document: prepare JPEG/PNG/WebP (≤10 MB) → imaging
+    /// Provider verification document: prepare JPEG (≤10 MB) → imaging
     /// `document` context → `POST /api/v1/providers/me/documents`.
     static func uploadVerificationDocument(
         item: PhotosPickerItem,
@@ -70,11 +124,14 @@ enum ImageUploader {
 
     #if canImport(UIKit)
     /// Upload a camera-captured UIImage through the same JPEG + imaging pipeline.
+    /// Call from MainActor (SwiftUI). Orientation is normalized before off-main encode.
+    @MainActor
     static func upload(
         uiImage: UIImage,
         context: ImageUploadContext
     ) async throws -> String {
-        let prepared = try jpegFromUIImage(uiImage)
+        let sourceData = try normalizedSourceData(from: uiImage)
+        let prepared = try await prepareJPEG(from: sourceData)
         return try await APIClient.shared.uploadImage(
             data: prepared.data,
             filename: prepared.filename,
@@ -84,11 +141,13 @@ enum ImageUploader {
     }
 
     /// Provider verification document from camera capture.
+    @MainActor
     static func uploadVerificationDocument(
         uiImage: UIImage,
         documentType: ProviderDocumentType
     ) async throws -> ProviderDocumentUploadResult {
-        let prepared = try jpegFromUIImage(uiImage)
+        let sourceData = try normalizedSourceData(from: uiImage)
+        let prepared = try await prepareJPEG(from: sourceData)
         return try await APIClient.shared.uploadAndSubmitProviderDocument(
             data: prepared.data,
             filename: prepared.filename,
@@ -98,7 +157,7 @@ enum ImageUploader {
     }
     #endif
 
-    // MARK: - Prepare
+    // MARK: - Prepare (background)
 
     private struct PreparedImage: Sendable {
         let data: Data
@@ -107,75 +166,133 @@ enum ImageUploader {
     }
 
     private static func prepareJPEG(from item: PhotosPickerItem) async throws -> PreparedImage {
-        #if canImport(UIKit)
-        if let data = try await item.loadTransferable(type: Data.self) {
-            if let image = UIImage(data: data) {
-                return try jpegFromUIImage(image)
-            }
-            // Already encoded image bytes — validate size/type loosely.
-            if data.count > maxFileBytes {
-                throw APIClientError.httpStatus(400, detail: "Image must be 10 MB or smaller.")
-            }
-            let mime = sniffMime(data) ?? "image/jpeg"
-            let ext = mime == "image/png" ? "png" : (mime == "image/webp" ? "webp" : "jpg")
-            return PreparedImage(
-                data: data,
-                filename: "photo-\(UUID().uuidString.prefix(8)).\(ext)",
-                mimeType: mime
-            )
+        guard let data = try await item.loadTransferable(type: Data.self) else {
+            throw APIClientError.httpStatus(400, detail: "Could not read the selected photo.")
         }
-        throw APIClientError.httpStatus(400, detail: "Could not read the selected photo.")
-        #else
-        throw APIClientError.httpStatus(400, detail: "Photo upload requires UIKit.")
-        #endif
+        return try await prepareJPEG(from: data)
+    }
+
+    /// Downsample + JPEG encode off the main actor (ImageIO).
+    private static func prepareJPEG(from data: Data) async throws -> PreparedImage {
+        // Capture constants for the detached task (Sendable).
+        let maxBytes = maxFileBytes
+        let maxEdge = maxPixelDimension
+        let qualities = jpegQualities
+        return try await Task.detached(priority: .userInitiated) {
+            try encodeJPEGDownsampled(
+                from: data,
+                maxPixelSize: maxEdge,
+                qualities: qualities,
+                maxFileBytes: maxBytes
+            )
+        }.value
     }
 
     #if canImport(UIKit)
-    private static func jpegFromUIImage(_ image: UIImage) throws -> PreparedImage {
-        guard let data = image.jpegData(compressionQuality: jpegQuality) else {
-            throw APIClientError.httpStatus(400, detail: "Could not encode photo as JPEG.")
+    /// Draw orientation into the pixel buffer so portrait camera shots are upright
+    /// even when gateway AutoOrient is off (IOS-MED.5).
+    @MainActor
+    private static func normalizedSourceData(from image: UIImage) throws -> Data {
+        let upright = image.nm_normalizedOrientation()
+        if let png = upright.pngData() {
+            return png
         }
-        guard data.count <= maxFileBytes else {
-            // Retry once at lower quality.
-            if let smaller = image.jpegData(compressionQuality: 0.6), smaller.count <= maxFileBytes {
+        if let jpg = upright.jpegData(compressionQuality: 1.0) {
+            return jpg
+        }
+        throw APIClientError.httpStatus(400, detail: "Could not read the captured photo.")
+    }
+    #endif
+
+    /// ImageIO thumbnail (max edge) with EXIF orientation applied, then JPEG encode.
+    nonisolated private static func encodeJPEGDownsampled(
+        from data: Data,
+        maxPixelSize: Int,
+        qualities: [CGFloat],
+        maxFileBytes: Int
+    ) throws -> PreparedImage {
+        guard !data.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Could not read the selected photo.")
+        }
+
+        guard let source = CGImageSourceCreateWithData(data as CFData, [
+            kCGImageSourceShouldCache: false,
+        ] as CFDictionary) else {
+            throw APIClientError.httpStatus(400, detail: "Could not decode the selected photo.")
+        }
+
+        let thumbOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(
+            source,
+            0,
+            thumbOptions as CFDictionary
+        ) else {
+            throw APIClientError.httpStatus(400, detail: "Could not process the selected photo.")
+        }
+
+        for quality in qualities {
+            if let jpeg = jpegData(from: cgImage, quality: quality),
+               jpeg.count <= maxFileBytes
+            {
                 return PreparedImage(
-                    data: smaller,
+                    data: jpeg,
                     filename: "photo-\(UUID().uuidString.prefix(8)).jpg",
                     mimeType: "image/jpeg"
                 )
             }
-            throw APIClientError.httpStatus(400, detail: "Image must be 10 MB or smaller.")
         }
-        return PreparedImage(
-            data: data,
-            filename: "photo-\(UUID().uuidString.prefix(8)).jpg",
-            mimeType: "image/jpeg"
-        )
+
+        throw APIClientError.httpStatus(400, detail: "Image must be 10 MB or smaller.")
     }
 
-    private static func sniffMime(_ data: Data) -> String? {
-        guard data.count >= 12 else { return nil }
-        let bytes = [UInt8](data.prefix(12))
-        // JPEG
-        if bytes[0] == 0xFF, bytes[1] == 0xD8, bytes[2] == 0xFF { return "image/jpeg" }
-        // PNG
-        if bytes[0] == 0x89, bytes[1] == 0x50, bytes[2] == 0x4E, bytes[3] == 0x47 {
-            return "image/png"
+    nonisolated private static func jpegData(from cgImage: CGImage, quality: CGFloat) -> Data? {
+        let mutable = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            mutable,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else {
+            return nil
         }
-        // WEBP: RIFF....WEBP
-        if bytes[0] == 0x52, bytes[1] == 0x49, bytes[2] == 0x46, bytes[3] == 0x46,
-           bytes[8] == 0x57, bytes[9] == 0x45, bytes[10] == 0x42, bytes[11] == 0x50
-        {
-            return "image/webp"
+        let props: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: quality,
+        ]
+        CGImageDestinationAddImage(destination, cgImage, props as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            return nil
         }
-        return nil
+        return mutable as Data
     }
-    #endif
 }
+
+#if canImport(UIKit)
+extension UIImage {
+    /// Redraw so `imageOrientation` is baked into pixels (`.up`).
+    /// Camera captures often ship as sideways bitmaps + orientation flag.
+    fileprivate func nm_normalizedOrientation() -> UIImage {
+        guard imageOrientation != .up else { return self }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = scale
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { _ in
+            draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+}
+#endif
 
 // MARK: - Photo pick section (shared UI for Post Job / Create Listing)
 
 /// Optional multi-photo picker that uploads on demand and exposes public URLs.
+/// UI stays `@MainActor` (SwiftUI View); upload encode hops off via `ImageUploader`.
 struct PhotoPickSection: View {
     let context: ImageUploadContext
     let maxCount: Int
@@ -185,6 +302,7 @@ struct PhotoPickSection: View {
 
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showCamera = false
+    @State private var showCameraDeniedAlert = false
     #if canImport(UIKit)
     @State private var cameraImage: UIImage?
     #endif
@@ -242,7 +360,7 @@ struct PhotoPickSection: View {
 
             #if canImport(UIKit)
             Button {
-                showCamera = true
+                Task { await requestCamera() }
             } label: {
                 Label("Take photo", systemImage: "camera.fill")
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -254,6 +372,7 @@ struct PhotoPickSection: View {
                 CameraImagePicker(image: $cameraImage)
                     .ignoresSafeArea()
             }
+            .cameraDeniedAlert(isPresented: $showCameraDeniedAlert)
             .onChange(of: cameraImage) { _, image in
                 guard let image else { return }
                 Task { await uploadCamera(image) }
@@ -299,7 +418,7 @@ struct PhotoPickSection: View {
                 Image(systemName: "xmark.circle.fill")
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(BrandTheme.textPrimary, BrandTheme.navy.opacity(0.75))
-                    .font(.system(size: 20))
+                    .font(.title3)
                     // Expand hit target to HIG 44×44 without enlarging the glyph.
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
@@ -314,6 +433,20 @@ struct PhotoPickSection: View {
         guard photoURLs.indices.contains(index) else { return }
         photoURLs.remove(at: index)
     }
+
+    #if canImport(UIKit)
+    @MainActor
+    private func requestCamera() async {
+        switch await CameraAuthorization.prepareToPresent() {
+        case .ready:
+            showCamera = true
+        case .denied:
+            showCameraDeniedAlert = true
+        case .unavailable:
+            errorMessage = "Camera is not available on this device. Choose a photo from your library instead."
+        }
+    }
+    #endif
 
     @MainActor
     private func uploadPicked(_ items: [PhotosPickerItem]) async {

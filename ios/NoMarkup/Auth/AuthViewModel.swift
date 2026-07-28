@@ -191,6 +191,16 @@ final class AuthViewModel: ObservableObject {
         NotificationCenter.default.post(name: .noMarkupAuthDidSucceed, object: nil)
     }
 
+    /// Adopt a session already written to Keychain (e.g. passkey verify).
+    func adoptExistingSession(status: String = "Signed in.") {
+        clearSensitiveInMemoryFields()
+        isScaffoldSession = false
+        isAuthenticated = true
+        statusMessage = status
+        errorMessage = nil
+        notifyAuthSucceeded()
+    }
+
     // MARK: - Login (+ MFA)
 
     func login() async {
@@ -413,7 +423,10 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// Called when AuthenticationServices completes SIWA.
-    func handleSignInWithApple(result: Result<ASAuthorization, Error>) {
+    /// - Parameters:
+    ///   - result: Authorization outcome from the system button.
+    ///   - nonce: SHA256-hex nonce that was set on the request (must match id_token claim; sent to gateway).
+    func handleSignInWithApple(result: Result<ASAuthorization, Error>, nonce: String?) {
         guard !isBusy else { return }
         errorMessage = nil
         statusMessage = nil
@@ -440,7 +453,7 @@ final class AuthViewModel: ObservableObject {
             }
 
             Task {
-                await exchangeAppleIdentityToken(identityToken, fullName: fullName)
+                await exchangeAppleIdentityToken(identityToken, fullName: fullName, nonce: nonce)
             }
         case .failure(let error):
             if let authError = error as? ASAuthorizationError, authError.code == .canceled {
@@ -485,12 +498,20 @@ final class AuthViewModel: ObservableObject {
         return hasLetter && hasDigitOrSymbol
     }
 
-    private func exchangeAppleIdentityToken(_ identityToken: String, fullName: String?) async {
+    private func exchangeAppleIdentityToken(
+        _ identityToken: String,
+        fullName: String?,
+        nonce: String?
+    ) async {
         guard !isBusy else { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            _ = try await api.signInWithApple(identityToken: identityToken, fullName: fullName)
+            _ = try await api.signInWithApple(
+                identityToken: identityToken,
+                fullName: fullName,
+                nonce: nonce
+            )
             clearSensitiveInMemoryFields()
             isScaffoldSession = false
             isAuthenticated = true

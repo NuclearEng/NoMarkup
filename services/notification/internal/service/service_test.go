@@ -102,7 +102,7 @@ func (m *mockDeviceRepo) GetDeviceTokens(_ context.Context, _ string) ([]domain.
 func newTestService(repo *mockNotifRepo, deviceRepo *mockDeviceRepo) *Service {
 	// nil WebPushDispatcher → web-push fan-out is skipped (mirrors a deploy
 	// without VAPID_PRIVATE_KEY). Tests still exercise the FCM path.
-	return New(repo, deviceRepo, NewEmailDispatcher("", "", ""), NewPushDispatcher("", ""), nil, NewSMSDispatcher("", "", ""))
+	return New(repo, deviceRepo, NewEmailDispatcher("", "", ""), NewPushDispatcher("", "", nil), nil, NewSMSDispatcher("", "", ""))
 }
 
 func TestSendNotification(t *testing.T) {

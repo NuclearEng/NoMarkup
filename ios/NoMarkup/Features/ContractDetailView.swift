@@ -2687,7 +2687,6 @@ private struct OpenDisputeSheet: View {
             }
         }
         .tint(BrandTheme.accent)
-        .preferredColorScheme(.dark)
     }
 
     @MainActor
@@ -2859,7 +2858,6 @@ private struct LeaveReviewSheet: View {
             .task { await loadEligibility() }
         }
         .tint(BrandTheme.accent)
-        .preferredColorScheme(.dark)
     }
 
     @MainActor
@@ -2998,7 +2996,6 @@ private struct GuaranteeClaimSheet: View {
             }
         }
         .tint(BrandTheme.accent)
-        .preferredColorScheme(.dark)
     }
 
     @MainActor

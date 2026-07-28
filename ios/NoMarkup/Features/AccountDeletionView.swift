@@ -38,7 +38,17 @@ struct AccountDeletionView: View {
 
             Section {
                 Button(role: .destructive) {
-                    Task { await submitDeletionRequest() }
+                    Task {
+                        let ok = await BiometricGate.authenticateIfRequired(
+                            reason: "Confirm account deletion with \(BiometricGate.biometryDisplayName)."
+                        )
+                        guard ok else {
+                            resultIsError = true
+                            resultMessage = "Authentication canceled — deletion was not requested."
+                            return
+                        }
+                        await submitDeletionRequest()
+                    }
                 } label: {
                     HStack {
                         if isSubmitting {

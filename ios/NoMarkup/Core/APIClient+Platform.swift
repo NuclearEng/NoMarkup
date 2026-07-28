@@ -55,6 +55,20 @@ extension APIClient {
         )
     }
 
+    /// DELETE `/api/v1/notifications/devices/{token}` — unregister APNs token (Bearer required).
+    /// Path param is device id or token (gateway treats it as device identifier).
+    @discardableResult
+    func unregisterPushDevice(deviceTokenOrID: String) async throws -> RegisterDeviceResponse {
+        let key = deviceTokenOrID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "device id required")
+        }
+        return try await deleteJSON(
+            pathComponents: ["api", "v1", "notifications", "devices", key],
+            authorized: .required
+        )
+    }
+
     // MARK: Image upload pipeline
 
     /// POST `/api/v1/images/upload-url` — mint a presigned PUT URL (Bearer required).

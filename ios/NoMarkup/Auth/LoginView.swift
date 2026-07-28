@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LoginView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @StateObject private var passkeyAuth = PasskeyAuth()
     @FocusState private var focusedField: Field?
 
     private enum Field {
@@ -22,15 +23,18 @@ struct LoginView: View {
                         primaryActions
                         authLinks
                         divider
-                        SignInWithAppleButtonView { result in
-                            auth.handleSignInWithApple(result: result)
+                        passkeyButton
+                        SignInWithAppleButtonView { result, nonce in
+                            auth.handleSignInWithApple(result: result, nonce: nonce)
                         }
-                        .disabled(auth.isBusy)
-                        .opacity(auth.isBusy ? 0.55 : 1)
-                        .allowsHitTesting(!auth.isBusy)
-                        GoogleSignInButton(isBusy: auth.isBusy) {
-                            guard !auth.isBusy else { return }
-                            Task { await auth.signInWithGoogle() }
+                        .disabled(auth.isBusy || passkeyAuth.isBusy)
+                        .opacity(auth.isBusy || passkeyAuth.isBusy ? 0.55 : 1)
+                        .allowsHitTesting(!auth.isBusy && !passkeyAuth.isBusy)
+                        if AppConfig.isGoogleSignInConfigured {
+                            GoogleSignInButton(isBusy: auth.isBusy || passkeyAuth.isBusy) {
+                                guard !auth.isBusy, !passkeyAuth.isBusy else { return }
+                                Task { await auth.signInWithGoogle() }
+                            }
                         }
                         scaffoldBypass
                     }
@@ -302,17 +306,70 @@ struct LoginView: View {
         }
     }
 
+    /// Passkey entry (IOS-SEC.2). Shows real ASAuthorization when server-ready; otherwise honest "Coming soon".
+    private var passkeyButton: some View {
+        VStack(spacing: 8) {
+            Button {
+                guard !auth.isBusy, !passkeyAuth.isBusy else { return }
+                Task {
+                    await passkeyAuth.signInWithPasskey()
+                    if passkeyAuth.didCompleteSignIn {
+                        passkeyAuth.consumeSignInFlag()
+                        auth.adoptExistingSession(status: "Signed in with passkey.")
+                    }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    if passkeyAuth.isBusy {
+                        ProgressView()
+                            .tint(BrandTheme.goldBright)
+                    } else {
+                        Image(systemName: "person.badge.key.fill")
+                            .font(.body.weight(.semibold))
+                    }
+                    Text(PasskeyAuth.isServerReady ? "Sign in with Passkey" : "Sign in with Passkey")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 48)
+            }
+            .buttonStyle(.bordered)
+            .tint(BrandTheme.goldBright)
+            .disabled(auth.isBusy || passkeyAuth.isBusy)
+            .accessibilityIdentifier("login.passkey")
+            .accessibilityLabel("Sign in with Passkey")
+            .accessibilityHint(
+                PasskeyAuth.isServerReady
+                    ? "Uses a passkey stored on this device or iCloud Keychain"
+                    : "Passkeys are not available yet; shows coming soon message"
+            )
+
+            if let status = passkeyAuth.statusMessage {
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let error = passkeyAuth.errorMessage {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.destructive)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     private var scaffoldBypass: some View {
         Button("Browse without signing in") {
-            guard !auth.isBusy else { return }
+            guard !auth.isBusy, !passkeyAuth.isBusy else { return }
             auth.enterScaffoldSession()
         }
         .frame(maxWidth: .infinity)
         .frame(minHeight: 44)
         .font(.subheadline)
         .foregroundStyle(BrandTheme.goldBright)
-        .disabled(auth.isBusy)
-        .opacity(auth.isBusy ? 0.55 : 1)
+        .disabled(auth.isBusy || passkeyAuth.isBusy)
+        .opacity(auth.isBusy || passkeyAuth.isBusy ? 0.55 : 1)
         .accessibilityHint("Opens the tab shell without calling the API. For design and layout review only.")
     }
 

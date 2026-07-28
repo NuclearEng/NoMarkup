@@ -2,6 +2,9 @@ import SwiftUI
 
 /// Services reverse-auction surface.
 /// Browse = public open jobs; Mine = authenticated owner list (`/jobs/mine`).
+///
+/// DES.12 / MP.1: regular width → `NavigationSplitView` (list + detail);
+/// compact → `NavigationStack`. Selection drives the detail pane on iPad.
 struct JobsView: View {
     private enum Segment: String, CaseIterable, Identifiable {
         case browse = "Browse"
@@ -10,6 +13,7 @@ struct JobsView: View {
     }
 
     @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var segment: Segment = .browse
     @State private var jobs: [JobSummary] = []
@@ -22,45 +26,77 @@ struct JobsView: View {
     @State private var needsSignIn = false
     @State private var searchText = ""
     @State private var loadMoreError: String?
+    @State private var selectedJob: JobSummary?
+
+    private var usesSplitView: Bool { horizontalSizeClass == .regular }
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("Jobs")
-                .searchable(text: $searchText, prompt: segment == .browse ? "Search jobs" : "Search is browse-only")
-                .onSubmit(of: .search) {
-                    guard segment == .browse else { return }
-                    Task { await load(reset: true) }
-                }
-                .refreshable { await load(reset: true) }
-                .task(id: segment) { await load(reset: true) }
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Picker("Jobs section", selection: $segment) {
-                            ForEach(Segment.allCases) { s in
-                                Text(s.rawValue).tag(s)
-                            }
+        Group {
+            if usesSplitView {
+                NavigationSplitView {
+                    listRoot
+                } detail: {
+                    NavigationStack {
+                        if let selectedJob {
+                            JobDetailView(jobID: selectedJob.id, preview: selectedJob)
+                        } else {
+                            ContentUnavailableView(
+                                "Select a job",
+                                systemImage: "wrench.and.screwdriver",
+                                description: Text("Choose a reverse auction from the list.")
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .brandScreenBackground()
                         }
-                        .pickerStyle(.segmented)
-                        .frame(minWidth: 180)
-                        .accessibilityLabel("Jobs section")
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        NavigationLink {
-                            JobsMapView()
-                        } label: {
-                            Label("Map", systemImage: "map")
-                        }
-                        .frame(minHeight: 44)
-                        .accessibilityHint("Shows open jobs on a map")
                     }
                 }
-                .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-                .navigationDestination(for: JobSummary.self) { job in
-                    JobDetailView(jobID: job.id, preview: job)
+            } else {
+                NavigationStack {
+                    listRoot
+                        .navigationDestination(for: JobSummary.self) { job in
+                            JobDetailView(jobID: job.id, preview: job)
+                        }
                 }
+            }
         }
+    }
+
+    private var listRoot: some View {
+        content
+            .navigationTitle("Jobs")
+            .searchable(text: $searchText, prompt: segment == .browse ? "Search jobs" : "Search is browse-only")
+            .onSubmit(of: .search) {
+                guard segment == .browse else { return }
+                Task { await load(reset: true) }
+            }
+            .refreshable { await load(reset: true) }
+            .task(id: segment) { await load(reset: true) }
+            .onChange(of: segment) { _, _ in
+                selectedJob = nil
+            }
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("Jobs section", selection: $segment) {
+                        ForEach(Segment.allCases) { s in
+                            Text(s.rawValue).tag(s)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(minWidth: 180)
+                    .accessibilityLabel("Jobs section")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        JobsMapView()
+                    } label: {
+                        Label("Map", systemImage: "map")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Shows open jobs on a map")
+                }
+            }
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
     }
 
     @ViewBuilder
@@ -109,12 +145,7 @@ struct JobsView: View {
 
                 Section {
                     ForEach(jobs) { job in
-                        NavigationLink(value: job) {
-                            JobRowView(job: job)
-                        }
-                        .frame(minHeight: 44)
-                        .listRowBackground(BrandTheme.navyElevated)
-                        .accessibilityHint("Opens job detail")
+                        jobRowLink(job)
                     }
                 } header: {
                     if let total = pagination?.resolvedTotal, total > 0 {
@@ -206,12 +237,7 @@ struct JobsView: View {
 
                 Section {
                     ForEach(myJobs) { job in
-                        NavigationLink(value: job) {
-                            JobRowView(job: job)
-                        }
-                        .frame(minHeight: 44)
-                        .listRowBackground(BrandTheme.navyElevated)
-                        .accessibilityHint("Opens job detail")
+                        jobRowLink(job)
                     }
                 } header: {
                     if let total = myPagination?.resolvedTotal, total > 0 {
@@ -233,6 +259,32 @@ struct JobsView: View {
                 }
             }
             .brandListBackground()
+        }
+    }
+
+    @ViewBuilder
+    private func jobRowLink(_ job: JobSummary) -> some View {
+        if usesSplitView {
+            Button {
+                selectedJob = job
+            } label: {
+                JobRowView(job: job)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(minHeight: 44)
+            .listRowBackground(
+                selectedJob?.id == job.id ? BrandTheme.surfaceRaised : BrandTheme.navyElevated
+            )
+            .accessibilityHint("Shows job detail in the side panel")
+        } else {
+            NavigationLink(value: job) {
+                JobRowView(job: job)
+            }
+            .frame(minHeight: 44)
+            .listRowBackground(BrandTheme.navyElevated)
+            .accessibilityHint("Opens job detail")
         }
     }
 

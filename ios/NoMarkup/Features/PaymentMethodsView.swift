@@ -66,7 +66,17 @@ struct PaymentMethodsView: View {
             presenting: pendingDelete
         ) { method in
             Button("Remove \(method.displayBrand) •••• \(method.displayLastFour)", role: .destructive) {
-                Task { await delete(method) }
+                Task {
+                    let ok = await BiometricGate.authenticateIfRequired(
+                        reason: "Confirm removing a saved payment method with \(BiometricGate.biometryDisplayName)."
+                    )
+                    guard ok else {
+                        pendingDelete = nil
+                        errorMessage = "Authentication canceled — card was not removed."
+                        return
+                    }
+                    await delete(method)
+                }
             }
             Button("Cancel", role: .cancel) {
                 pendingDelete = nil

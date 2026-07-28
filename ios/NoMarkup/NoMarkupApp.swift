@@ -8,6 +8,7 @@ struct NoMarkupApp: App {
 
     init() {
         // Navy + gold chrome for TabView / NavigationStack / lists (matches web dark terminal).
+        // DES.4/9: iOS 26+ scroll-edge stays system/Liquid Glass (see BrandTheme.applyGlobalChrome).
         BrandTheme.applyGlobalChrome()
     }
 
@@ -17,11 +18,12 @@ struct NoMarkupApp: App {
                 .environmentObject(authViewModel)
                 .environmentObject(featureFlags)
                 .environmentObject(PushRegistration.shared)
+                .environmentObject(DeepLinkRouter.shared)
                 .environmentObject(NetworkMonitor.shared)
                 // Brand gold from AccentColor.colorset (showcase --gold: #c9a84c).
                 .tint(BrandTheme.accent)
-                // Luxury shell is dark navy — force dark so system fills match brand, not light gray.
-                .preferredColorScheme(.dark)
+                // DES.3: follow system light/dark — brand surfaces still paint navy/gold explicitly.
+                // (Previously forced .dark; removed so appearance + Dynamic Type adapt.)
                 .task {
                     await featureFlags.refresh()
                 }
@@ -35,44 +37,69 @@ struct NoMarkupApp: App {
 /// Session expiry: `APIClient` posts `.noMarkupSessionExpired` → `AuthViewModel`
 /// clears tokens and sets `isAuthenticated = false` → this view swaps to `LoginView`
 /// and `onChange` below resets push registration state.
+///
+/// Push permission is **not** requested on login (NT.2 / DES.8). We only re-sync an
+/// already-authorized device token; the system dialog is reserved for value moments
+/// (first bid / watchlist) or Account settings.
 struct RootView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var push: PushRegistration
     @EnvironmentObject private var network: NetworkMonitor
     @EnvironmentObject private var featureFlags: FeatureFlags
+    @EnvironmentObject private var deepLinks: DeepLinkRouter
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Optional app lock when "Require Face ID for sensitive actions" is on (IOS-SEC.7).
+    @State private var isBiometricallyUnlocked = !BiometricGate.requireForSensitiveActions
 
     var body: some View {
         Group {
             if auth.isAuthenticated {
-                RootTabView()
+                ZStack {
+                    RootTabView()
+                    if BiometricGate.requireForSensitiveActions, !isBiometricallyUnlocked {
+                        biometricLockOverlay
+                    }
+                }
             } else {
                 LoginView()
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: auth.isAuthenticated)
+        // A11Y.3 — gate chrome transitions when Reduce Motion is on.
+        .animation(BrandTheme.animation(.easeInOut(duration: 0.2), reduceMotion: reduceMotion), value: auth.isAuthenticated)
         // 18+ age gate for signed-in sessions (server-authoritative DOB via PUT /me/dob).
         .ageGateWhenNeeded()
         .safeAreaInset(edge: .top, spacing: 0) {
             if !network.isOnline {
                 OfflineNetworkBanner()
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(
+                        reduceMotion
+                            ? .opacity
+                            : .move(edge: .top).combined(with: .opacity)
+                    )
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: network.isOnline)
+        .animation(BrandTheme.animation(.easeInOut(duration: 0.25), reduceMotion: reduceMotion), value: network.isOnline)
+        .onOpenURL { url in
+            _ = deepLinks.handle(url: url)
+        }
         .onChange(of: auth.isAuthenticated) { _, isAuthed in
             if isAuthed {
-                push.requestAndRegisterIfAuthenticated(
+                isBiometricallyUnlocked = !BiometricGate.requireForSensitiveActions
+                // No system permission spam — register only if already authorized.
+                push.syncIfAuthorized(
                     isAuthenticated: true,
                     isScaffold: auth.isScaffoldSession
                 )
             } else {
-                // Session expired / sign-out — tear down push session for the next login.
                 push.resetSessionState()
+                isBiometricallyUnlocked = true
             }
         }
         .onChange(of: auth.isScaffoldSession) { _, isScaffold in
             if auth.isAuthenticated, !isScaffold {
-                push.requestAndRegisterIfAuthenticated(
+                push.syncIfAuthorized(
                     isAuthenticated: true,
                     isScaffold: false
                 )
@@ -83,16 +110,87 @@ struct RootView: View {
             Task { await featureFlags.refresh() }
         }
         .task(id: auth.isAuthenticated) {
-            // Cold launch with restored session — register for APNs once signed in.
-            push.requestAndRegisterIfAuthenticated(
+            // Cold launch with restored session — sync APNs if already authorized (no prompt).
+            push.syncIfAuthorized(
                 isAuthenticated: auth.isAuthenticated,
                 isScaffold: auth.isScaffoldSession
             )
+            if auth.isAuthenticated, BiometricGate.requireForSensitiveActions, !isBiometricallyUnlocked {
+                await unlockWithBiometrics()
+            }
         }
         .task {
             // DEBUG/UITest: env-driven auto-login after restore settles.
             _ = await auth.applyLaunchTestCredentialsIfNeeded()
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                push.clearBadge()
+            }
+            guard auth.isAuthenticated, BiometricGate.requireForSensitiveActions else { return }
+            if phase == .background {
+                isBiometricallyUnlocked = false
+            } else if phase == .active, !isBiometricallyUnlocked {
+                Task { await unlockWithBiometrics() }
+            }
+        }
+        .alert(
+            NotificationPermissionCopy.prePromptTitle,
+            isPresented: Binding(
+                get: { push.shouldShowPermissionPrePrompt },
+                set: { if !$0 { push.dismissPrePrompt() } }
+            )
+        ) {
+            Button(NotificationPermissionCopy.prePromptConfirm) {
+                push.confirmPrePrompt()
+            }
+            Button(NotificationPermissionCopy.prePromptNotNow, role: .cancel) {
+                push.dismissPrePrompt()
+            }
+        } message: {
+            Text(NotificationPermissionCopy.prePromptBody)
+        }
+    }
+
+    private var biometricLockOverlay: some View {
+        ZStack {
+            BrandTheme.navy.ignoresSafeArea()
+            VStack(spacing: 20) {
+                Image(systemName: "lock.fill")
+                    .font(.largeTitle.weight(.semibold))
+                    .imageScale(.large)
+                    .foregroundStyle(BrandTheme.gold)
+                    .accessibilityHidden(true)
+                Text("NoMarkup is locked")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                Text("Use \(BiometricGate.biometryDisplayName) to continue.")
+                    .font(.subheadline)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                Button {
+                    Task { await unlockWithBiometrics() }
+                } label: {
+                    Text("Unlock")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: 240)
+                        .frame(minHeight: 48)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .accessibilityIdentifier("lock.unlock")
+            }
+            .padding(32)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("lock.overlay")
+    }
+
+    private func unlockWithBiometrics() async {
+        let ok = await BiometricGate.authenticate(
+            reason: "Unlock NoMarkup to view your account and bids."
+        )
+        isBiometricallyUnlocked = ok
     }
 }
 

@@ -162,6 +162,32 @@ struct SecuritySettingsView: View {
             }
 
             Section {
+                Toggle(
+                    "Require \(BiometricGate.biometryDisplayName) for sensitive actions",
+                    isOn: Binding(
+                        get: { BiometricGate.requireForSensitiveActions },
+                        set: { BiometricGate.requireForSensitiveActions = $0 }
+                    )
+                )
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("security.requireBiometric")
+                .accessibilityHint(
+                    "When on, \(BiometricGate.biometryDisplayName) is required to unlock the app, delete your account, and remove payment methods."
+                )
+                if !BiometricGate.canAuthenticate {
+                    Text("This device has no Face ID, Touch ID, or passcode enrolled. The toggle is saved but authentication cannot run until you set one up in iOS Settings.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } header: {
+                Text("Device lock").brandSectionHeader()
+            } footer: {
+                Text("Uses \(BiometricGate.biometryDisplayName) (or device passcode) before destructive account and payment actions, and optionally locks the app when returning from background.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            Section {
                 mfaSectionBody
             } header: {
                 Text("Two-factor authentication").brandSectionHeader()

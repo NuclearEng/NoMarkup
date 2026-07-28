@@ -319,6 +319,7 @@ struct NotificationsView: View {
             _ = try await APIClient.shared.markAllNotificationsRead()
             items = items.map { $0.unread ? $0.markedRead() : $0 }
             unreadCount = 0
+            PushRegistration.shared.clearBadge()
             actionMessage = "All notifications marked as read."
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
@@ -371,6 +372,41 @@ enum NotificationDeepLink {
         // /orders → MyOrders
         if path == "/orders" || path.hasPrefix("/orders/") {
             return Destination(kindLabel: "orders") { MyOrdersView() }
+        }
+        // /listings/{uuid} or /marketplace/listings/{uuid} or /api/v1/listings/{uuid}
+        if let id = matchUUID(path: path, segments: ["listings"]) {
+            return Destination(kindLabel: "listing") { ListingDetailView(listingID: id) }
+        }
+        if let id = matchUUID(path: path, segments: ["marketplace", "listings"]) {
+            return Destination(kindLabel: "listing") { ListingDetailView(listingID: id) }
+        }
+        if let id = matchUUID(path: path, segments: ["api", "v1", "listings"]) {
+            return Destination(kindLabel: "listing") { ListingDetailView(listingID: id) }
+        }
+        // /auctions/{uuid} — goods auction aliases a listing
+        if let id = matchUUID(path: path, segments: ["auctions"]) {
+            return Destination(kindLabel: "listing") { ListingDetailView(listingID: id) }
+        }
+        if let id = matchUUID(path: path, segments: ["marketplace"]) {
+            // /marketplace/{uuid} when the second segment looks like an id
+            return Destination(kindLabel: "listing") { ListingDetailView(listingID: id) }
+        }
+        // Browse roots (no id) — open the relevant tab shell
+        if path == "/jobs" || path == "/marketplace" || path == "/listings" {
+            return nil
+        }
+        // App Intent / widget surfaces
+        if path == "/bids" || path.hasPrefix("/bids/") || path == "/my-bids" {
+            return Destination(kindLabel: "bids") { MyBidsView() }
+        }
+        if path == "/watchlist" || path.hasPrefix("/watchlist/") {
+            return Destination(kindLabel: "watchlist") { WatchlistView() }
+        }
+        if path == "/notifications" || path.hasPrefix("/notifications/") {
+            return Destination(kindLabel: "notifications") { NotificationsView() }
+        }
+        if path == "/jobs/new" || path == "/post-job" {
+            return Destination(kindLabel: "postJob") { PostJobView() }
         }
         return nil
     }

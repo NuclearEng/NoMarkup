@@ -41,29 +41,63 @@ import UIKit
 ///   (explicit consent only). Contract local-terms override remains server residual.
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var channels: [ChatChannelSummary] = []
     @State private var pagination: PaginationMeta?
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var needsSignIn = false
+    /// Split-view selection (iPad regular width) — DES.12 / MP.1.
+    @State private var selectedChannel: ChatChannelSummary?
+
+    private var usesSplitView: Bool { horizontalSizeClass == .regular }
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("Messages")
-                .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-                .refreshable { await load() }
-                .task { await load() }
-                .navigationDestination(for: ChatChannelSummary.self) { channel in
-                    ChatThreadView(channel: channel)
-                        // Refresh inbox unread badges after mark-read in the thread.
-                        .onDisappear {
-                            Task { await load() }
+        Group {
+            if usesSplitView {
+                NavigationSplitView {
+                    listRoot
+                } detail: {
+                    NavigationStack {
+                        if let selectedChannel {
+                            ChatThreadView(channel: selectedChannel)
+                                .onDisappear {
+                                    Task { await load() }
+                                }
+                        } else {
+                            ContentUnavailableView(
+                                "Select a conversation",
+                                systemImage: "bubble.left.and.bubble.right",
+                                description: Text("Choose a thread from your inbox.")
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .brandScreenBackground()
+                        }
+                    }
+                }
+            } else {
+                NavigationStack {
+                    listRoot
+                        .navigationDestination(for: ChatChannelSummary.self) { channel in
+                            ChatThreadView(channel: channel)
+                                // Refresh inbox unread badges after mark-read in the thread.
+                                .onDisappear {
+                                    Task { await load() }
+                                }
                         }
                 }
+            }
         }
+    }
+
+    private var listRoot: some View {
+        content
+            .navigationTitle("Messages")
+            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .refreshable { await load() }
+            .task { await load() }
     }
 
     @ViewBuilder
@@ -111,12 +145,30 @@ struct MessagesView: View {
             List {
                 Section {
                     ForEach(channels) { channel in
-                        NavigationLink(value: channel) {
-                            ChannelRowView(channel: channel)
+                        if usesSplitView {
+                            Button {
+                                selectedChannel = channel
+                            } label: {
+                                ChannelRowView(channel: channel)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .frame(minHeight: 44)
+                            .listRowBackground(
+                                selectedChannel?.id == channel.id
+                                    ? BrandTheme.surfaceRaised
+                                    : BrandTheme.navyElevated
+                            )
+                            .accessibilityHint("Shows conversation in the side panel")
+                        } else {
+                            NavigationLink(value: channel) {
+                                ChannelRowView(channel: channel)
+                            }
+                            .frame(minHeight: 44)
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityHint("Opens conversation")
                         }
-                        .frame(minHeight: 44)
-                        .listRowBackground(BrandTheme.navyElevated)
-                        .accessibilityHint("Opens conversation")
                     }
                 } header: {
                     if let total = pagination?.resolvedTotal, total > 0 {
@@ -169,6 +221,7 @@ struct MessagesView: View {
 
 private struct ChannelRowView: View {
     let channel: ChatChannelSummary
+    @ScaledMetric(relativeTo: .title3) private var iconFrame: CGFloat = 36
 
     /// Server `unread_count` is relative to the authenticated party (gateway).
     private var unreadCount: Int {
@@ -182,7 +235,7 @@ private struct ChannelRowView: View {
             Image(systemName: "bubble.left.and.bubble.right.fill")
                 .font(.title3)
                 .foregroundStyle(BrandTheme.accent)
-                .frame(width: 36, height: 36)
+                .frame(width: iconFrame, height: iconFrame)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -241,6 +294,7 @@ struct ChatThreadView: View {
 
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @StateObject private var chatSocket = ChatWebSocketClient()
     @State private var messages: [ChatMessage] = []
     /// Mutable channel snapshot (seeded from inbox nav, refreshed via GET channel).
@@ -276,6 +330,7 @@ struct ChatThreadView: View {
     @State private var isMarkingRead = false
     #if canImport(UIKit)
     @State private var showCamera = false
+    @State private var showCameraDeniedAlert = false
     @State private var cameraImage: UIImage?
     #endif
     @FocusState private var composerFocused: Bool
@@ -612,6 +667,7 @@ struct ChatThreadView: View {
             CameraImagePicker(image: $cameraImage)
                 .ignoresSafeArea()
         }
+        .cameraDeniedAlert(isPresented: $showCameraDeniedAlert)
         .onChange(of: cameraImage) { _, image in
             guard let image else { return }
             Task { await uploadAndSendCamera(image) }
@@ -622,6 +678,20 @@ struct ChatThreadView: View {
             Task { await uploadAndSendPhoto(item) }
         }
     }
+
+    #if canImport(UIKit)
+    @MainActor
+    private func requestCamera() async {
+        switch await CameraAuthorization.prepareToPresent() {
+        case .ready:
+            showCamera = true
+        case .denied:
+            showCameraDeniedAlert = true
+        case .unavailable:
+            sendError = "Camera is not available on this device. Choose a photo from your library instead."
+        }
+    }
+    #endif
 
     /// Live status strip: Live (WS) vs Updating… (REST poll fallback).
     private var liveUpdateCaption: some View {
@@ -827,8 +897,13 @@ struct ChatThreadView: View {
                     // Only auto-scroll when not filtering (search active would jump oddly).
                     guard searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
                     if let lastID = displayedMessages.last?.id {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        // A11Y.3 — skip scroll animation when Reduce Motion is on.
+                        if accessibilityReduceMotion {
                             proxy.scrollTo(lastID, anchor: .bottom)
+                        } else {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo(lastID, anchor: .bottom)
+                            }
                         }
                     }
                 }
@@ -876,7 +951,7 @@ struct ChatThreadView: View {
                                 .tint(BrandTheme.accent)
                         } else {
                             Image(systemName: "photo.on.rectangle")
-                                .font(.system(size: 22))
+                                .font(.title3)
                                 .foregroundStyle(
                                     canAttachPhoto
                                         ? BrandTheme.accent
@@ -893,10 +968,10 @@ struct ChatThreadView: View {
 
                 #if canImport(UIKit)
                 Button {
-                    showCamera = true
+                    Task { await requestCamera() }
                 } label: {
                     Image(systemName: "camera.fill")
-                        .font(.system(size: 20))
+                        .font(.title3)
                         .foregroundStyle(
                             canAttachPhoto && UIImagePickerController.isSourceTypeAvailable(.camera)
                                 ? BrandTheme.accent
@@ -936,7 +1011,7 @@ struct ChatThreadView: View {
                                 .tint(BrandTheme.accent)
                         } else {
                             Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 32))
+                                .font(.largeTitle)
                                 .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(canSend ? BrandTheme.accent : BrandTheme.textSecondary.opacity(0.5))
                         }

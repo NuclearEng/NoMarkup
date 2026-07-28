@@ -232,7 +232,7 @@ struct CreateListingView: View {
     private func successContent(_ listing: ListingDetail) -> some View {
         VStack(spacing: 20) {
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 40, weight: .medium))
+                .font(.largeTitle.weight(.medium))
                 .foregroundStyle(BrandTheme.success)
                 .accessibilityHidden(true)
 

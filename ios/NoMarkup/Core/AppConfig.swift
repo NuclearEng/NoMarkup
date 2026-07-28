@@ -3,10 +3,13 @@ import Foundation
 /// Runtime configuration for the native client.
 ///
 /// API base URL resolution order:
-/// 1. Process environment `NOMARKUP_API_BASE_URL` (debug launches, CI)
-/// 2. Info.plist key `APIBaseURL` (release packaging)
-/// 3. Debug default `http://localhost:8081` (matches local gateway / `.env.local`)
-/// 4. Release default `https://api.no-markup.com`
+/// 1. Process environment `NOMARKUP_API_BASE_URL` (Debug scheme / CI dogfood only)
+/// 2. **DEBUG + Simulator:** `http://127.0.0.1:8081` (local `make dev` gateway)
+/// 3. Info.plist key `APIBaseURL` when non-empty (staging / custom host)
+/// 4. Production: `https://api.no-markup.com`
+///
+/// **Release never uses cleartext HTTP.** Env / plist `http://…` values fall through
+/// to production HTTPS. LAN dogfood: set scheme env `NOMARKUP_API_BASE_URL` in **Debug only**.
 enum AppConfig {
     /// Production marketing / legal site (hyphenated zone).
     static let publicWebBaseURL = URL(string: "https://no-markup.com")!
@@ -29,38 +32,101 @@ enum AppConfig {
     /// See `docs/compliance/v1-ios-product-cut.md` (free-tier-only digital).
     static let manageSubscriptionURL = publicWebBaseURL.appending(path: "settings/subscription")
 
+    /// Production API host (HTTPS only).
+    static let productionAPIBaseURL = URL(string: "https://api.no-markup.com")!
+
     /// Gateway HTTP base (no trailing slash).
     ///
     /// Resolution:
-    /// 1. `NOMARKUP_API_BASE_URL` env (scheme / CI / Xcode scheme)
+    /// 1. `NOMARKUP_API_BASE_URL` env (Debug scheme / CI) — **Release rejects non-https**
     /// 2. **DEBUG + Simulator:** `http://127.0.0.1:8081` (local `make dev` gateway)
-    /// 3. Info.plist `APIBaseURL` when non-empty (device LAN IP or staging)
-    /// 4. Release: `https://api.no-markup.com`
+    /// 3. Info.plist `APIBaseURL` when non-empty — **Release rejects non-https**
+    /// 4. `https://api.no-markup.com`
     ///
-    /// Simulator prefers localhost over a stale LAN IP in Info.plist so live
-    /// auctions from the Mac stack are reachable. A physical phone cannot use
-    /// localhost — set Info.plist / env to your Mac’s LAN IP (`:8081`).
+    /// Committed Info.plist `APIBaseURL` is empty so Release always hits production HTTPS
+    /// unless an explicit https override is supplied. Physical-device Debug dogfood: set
+    /// scheme env `NOMARKUP_API_BASE_URL` (prefer HTTPS staging / tunnel over cleartext).
     static var apiBaseURL: URL {
-        if let env = ProcessInfo.processInfo.environment["NOMARKUP_API_BASE_URL"],
-           let url = URL(string: env), !env.isEmpty {
-            return url
-        }
-
         #if DEBUG && targetEnvironment(simulator)
-        // Local gateway (bin/dev) listens on 8081 in current dogfood; override via env.
-        return URL(string: "http://127.0.0.1:8081")!
+        let debugSimDefault: URL? = URL(string: "http://127.0.0.1:8081")
+        #else
+        let debugSimDefault: URL? = nil
         #endif
 
-        if let plist = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String,
-           let url = URL(string: plist), !plist.isEmpty {
-            return url
+        #if DEBUG
+        let allowCleartext = true
+        #else
+        let allowCleartext = false
+        #endif
+
+        let env = ProcessInfo.processInfo.environment["NOMARKUP_API_BASE_URL"]
+        let plist = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String
+        let resolved = resolveAPIBaseURL(
+            envValue: env,
+            plistValue: plist,
+            debugSimulatorDefault: debugSimDefault,
+            allowCleartext: allowCleartext
+        )
+        #if !DEBUG
+        if !isHTTPSAPIBase(resolved) {
+            logInsecureBaseOnce(source: "resolved", value: resolved.absoluteString)
+            return productionAPIBaseURL
+        }
+        #endif
+        return resolved
+    }
+
+    /// Pure resolver used by `apiBaseURL` and unit tests.
+    ///
+    /// - Parameters:
+    ///   - envValue: Scheme / process env override.
+    ///   - plistValue: Info.plist `APIBaseURL`.
+    ///   - debugSimulatorDefault: When non-nil (DEBUG simulator), used if env is empty.
+    ///   - allowCleartext: When false (Release), non-https env/plist values are skipped.
+    static func resolveAPIBaseURL(
+        envValue: String?,
+        plistValue: String?,
+        debugSimulatorDefault: URL?,
+        allowCleartext: Bool = true
+    ) -> URL {
+        if let envValue {
+            let trimmed = envValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, let url = URL(string: trimmed) {
+                if isHTTPSAPIBase(url) || allowCleartext {
+                    return url
+                }
+            }
         }
 
-        return URL(string: "https://api.no-markup.com")!
+        if let debugSimulatorDefault {
+            return debugSimulatorDefault
+        }
+
+        if let plistValue {
+            let trimmed = plistValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, let url = URL(string: trimmed) {
+                if isHTTPSAPIBase(url) || allowCleartext {
+                    return url
+                }
+            }
+        }
+
+        return productionAPIBaseURL
+    }
+
+    /// True when the URL scheme is `https` (case-insensitive).
+    static func isHTTPSAPIBase(_ url: URL) -> Bool {
+        (url.scheme?.lowercased() ?? "") == "https"
     }
 
     static var apiBaseURLString: String {
         apiBaseURL.absoluteString
+    }
+
+    /// Archive-safe guard: true when the resolved API base uses `https`.
+    /// Release builds must keep this true (enforced by `apiBaseURL` resolution).
+    static var isReleaseAPIBaseSecure: Bool {
+        isHTTPSAPIBase(apiBaseURL)
     }
 
     /// Host (and port) only for safe UI / debug display.
@@ -68,7 +134,6 @@ enum AppConfig {
     static var apiBaseHostDisplay: String {
         let url = apiBaseURL
         guard let host = url.host, !host.isEmpty else {
-            // Fallback without credentials if host parse fails.
             return url.host ?? "(unknown host)"
         }
         if let port = url.port {
@@ -85,7 +150,7 @@ enum AppConfig {
     }
 
     static var shortVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
     }
 
     static var buildNumber: String {
@@ -142,7 +207,7 @@ enum AppConfig {
     /// Resolution:
     /// 1. `NOMARKUP_GOOGLE_IOS_CLIENT_ID` env
     /// 2. Info.plist `GoogleIosClientID`
-    /// 3. Empty → Google button shows a configuration error on tap
+    /// 3. Empty → Google button hidden (`isGoogleSignInConfigured == false`)
     ///
     /// Must match a gateway `GOOGLE_IOS_CLIENT_ID` (or `GOOGLE_CLIENT_ID`) so
     /// `POST /api/v1/auth/google/native` accepts the id_token `aud` claim.
@@ -160,8 +225,8 @@ enum AppConfig {
         return nil
     }
 
-    /// True when a Google iOS client ID is present (UI may still show the button
-    /// and surface a clearer error if the reverse URL scheme is missing).
+    /// True when a Google iOS client ID and redirect URI are present.
+    /// Login UI hides the Google button when false.
     static var isGoogleSignInConfigured: Bool {
         googleIosClientID != nil && googleOAuthRedirectURI != nil
     }
@@ -170,9 +235,13 @@ enum AppConfig {
     /// Example: client `123-abc.apps.googleusercontent.com` →
     /// scheme `com.googleusercontent.apps.123-abc`.
     static var googleOAuthCallbackScheme: String? {
-        guard let clientID = googleIosClientID,
-              clientID.hasSuffix(".apps.googleusercontent.com")
-        else { return nil }
+        guard let clientID = googleIosClientID else { return nil }
+        return googleOAuthCallbackScheme(forClientID: clientID)
+    }
+
+    /// Pure reverse-client-id scheme (unit-tested).
+    static func googleOAuthCallbackScheme(forClientID clientID: String) -> String? {
+        guard clientID.hasSuffix(".apps.googleusercontent.com") else { return nil }
         let prefix = String(clientID.dropLast(".apps.googleusercontent.com".count))
         guard !prefix.isEmpty else { return nil }
         return "com.googleusercontent.apps.\(prefix)"
@@ -225,6 +294,21 @@ enum AppConfig {
         guard let lat = browseLatitude, let lng = browseLongitude else { return nil }
         guard lat >= -90, lat <= 90, lng >= -180, lng <= 180 else { return nil }
         return (lat, lng)
+    }
+
+    // MARK: - Private
+
+    /// Once-flag for insecure-base diagnostics (Swift 6: nonisolated(unsafe) is intentional —
+    /// best-effort log throttle only; never gates security decisions).
+    private nonisolated(unsafe) static var didLogInsecureBase = false
+
+    private static func logInsecureBaseOnce(source: String, value: String) {
+        guard !didLogInsecureBase else { return }
+        didLogInsecureBase = true
+        // No secrets in the message — host only when parseable.
+        let host = URL(string: value)?.host ?? "(unparseable)"
+        // Use NSLog once so archive diagnostics surface without a logging stack dependency.
+        NSLog("[AppConfig] Ignoring non-HTTPS API base from \(source) (host=\(host)); using production HTTPS.")
     }
 
     private static func optionalDouble(envKey: String, plistKey: String) -> Double? {

@@ -148,8 +148,10 @@ struct TrustScoreView: View {
                         .foregroundStyle(BrandTheme.textSecondary)
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text(score.displayOverall)
-                            .font(.system(size: 40, weight: .bold, design: .rounded).monospacedDigit())
+                            .font(.largeTitle.weight(.bold).monospacedDigit())
                             .foregroundStyle(BrandTheme.goldBright)
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
                         Text("/ 100")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(BrandTheme.textSecondary)

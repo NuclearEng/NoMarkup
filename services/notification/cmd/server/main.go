@@ -102,14 +102,16 @@ func main() {
 		os.Getenv("SENDGRID_FROM_NAME"),
 	)
 
+	apnsCfg := service.LoadAPNsConfigFromEnv()
 	pushDispatcher := service.NewPushDispatcher(
 		os.Getenv("FCM_SERVER_KEY"),
 		os.Getenv("FCM_PROJECT_ID"),
+		apnsCfg,
 	)
 
-	// W3C Web Push (RFC 8030) dispatcher — coexists with FCM. Closes
-	// audit Section J's "FCM-only push" gap. When VAPID_PRIVATE_KEY is
-	// empty, the dispatcher logs and skips (dev-mode parity with FCM).
+	// W3C Web Push (RFC 8030) dispatcher — coexists with FCM/APNs. When
+	// VAPID_PRIVATE_KEY is empty, the dispatcher logs and skips
+	// (dev-mode parity with FCM/APNs).
 	webPushDispatcher := service.NewWebPushDispatcher(
 		pool,
 		os.Getenv("VAPID_PUBLIC_KEY"),
@@ -128,7 +130,14 @@ func main() {
 		slog.Info("email dispatcher running in dev mode (SENDGRID_API_KEY not set)")
 	}
 	if os.Getenv("FCM_SERVER_KEY") == "" {
-		slog.Info("push dispatcher running in dev mode (FCM_SERVER_KEY not set)")
+		slog.Info("push dispatcher FCM path running in dev mode (FCM_SERVER_KEY not set)")
+	}
+	if apnsCfg == nil {
+		slog.Info("push dispatcher APNs path running in dev mode (APNS_* keys not fully set)")
+	} else if os.Getenv("APNS_PRODUCTION") == "true" || os.Getenv("APNS_PRODUCTION") == "1" {
+		slog.Info("push dispatcher APNs path enabled (production host)")
+	} else {
+		slog.Info("push dispatcher APNs path enabled (sandbox host)")
 	}
 	if os.Getenv("VAPID_PRIVATE_KEY") == "" {
 		slog.Warn("web push dispatcher running in dev mode (VAPID_PRIVATE_KEY not set) — generate keys with: go run github.com/SherClockHolmes/webpush-go/cmd/webpush-cli@latest generate")

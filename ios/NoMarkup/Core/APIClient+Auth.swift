@@ -112,6 +112,10 @@ private struct OTPCodeBody: Encodable {
     }
 }
 
+private struct PasskeyOptionsRequestBody: Encodable {
+    let type: String
+}
+
 // MARK: - APIClient auth extension
 
 extension APIClient {
@@ -238,6 +242,33 @@ extension APIClient {
             body: OTPCodeBody(otpCode: trimmed),
             authorized: .required
         )
+    }
+
+    // MARK: - Passkeys (WebAuthn) — client stubs until gateway ships endpoints
+
+    /// POST `/api/v1/auth/passkey/options` — public assertion options (challenge + rpId).
+    /// **Not live on gateway yet** — will 404 until WebAuthn lands server-side.
+    func fetchPasskeyAssertionOptions() async throws -> PasskeyAssertionOptions {
+        let data = try await postAuthJSON(
+            path: "api/v1/auth/passkey/options",
+            body: PasskeyOptionsRequestBody(type: "assertion")
+        )
+        do {
+            return try JSONDecoder().decode(PasskeyAssertionOptions.self, from: data)
+        } catch {
+            throw APIClientError.decoding("Unexpected passkey options response")
+        }
+    }
+
+    /// POST `/api/v1/auth/passkey/verify` — credential assertion → session tokens.
+    @discardableResult
+    func verifyPasskeyAssertion(_ assertion: PasskeyAssertionResult) async throws -> AuthTokenPair {
+        let data = try await postAuthJSON(
+            path: "api/v1/auth/passkey/verify",
+            body: assertion
+        )
+        let response = try decodeAuthResponse(data)
+        return try persistTokens(from: response)
     }
 
     // MARK: - Private helpers (file-local; APIClient internals are private to APIClient.swift)

@@ -34,6 +34,17 @@
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "T10000000000000000000040"
+               BuildableName = "NoMarkupTests.xctest"
+               BlueprintName = "NoMarkupTests"
+               ReferencedContainer = "container:NoMarkup.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "U10000000000000000000008"
                BuildableName = "NoMarkupUITests.xctest"
                BlueprintName = "NoMarkupUITests"

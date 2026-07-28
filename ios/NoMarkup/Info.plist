@@ -47,18 +47,22 @@
 	</array>
 	<key>UIRequiresFullScreen</key>
 	<false/>
-	<!-- APNs remote notifications (device register → POST /api/v1/notifications/devices). -->
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
 	<!--
-	  API base for physical device builds (Simulator DEBUG uses 127.0.0.1:8081 — see AppConfig).
-	  Point this at your Mac's current LAN IP + gateway port (usually :8081) for device dogfood.
-	  Switch back to https://api.no-markup.com when DNS/prod is live.
+	  No UIBackgroundModes / remote-notification: alert pushes do not require background mode.
+	  Only re-add remote-notification if content-available silent push is implemented (MISC.3).
+	  Device register → POST /api/v1/notifications/devices still works without this mode.
+	-->
+	<!--
+	  API base URL override. Leave empty so AppConfig defaults to production HTTPS
+	  (https://api.no-markup.com). Never commit a cleartext LAN URL.
+
+	  Debug / LAN dogfood: set Xcode scheme environment variable
+	  NOMARKUP_API_BASE_URL (e.g. https://staging… or a tunnel). Simulator DEBUG
+	  uses http://127.0.0.1:8081 automatically when this key is empty.
+	  Release builds reject non-https overrides (see AppConfig.apiBaseURL).
 	-->
 	<key>APIBaseURL</key>
-	<string>http://192.168.1.101:8081</string>
+	<string></string>
 	<!-- Stripe publishable key (pk_test_… / pk_live_…). Override with NOMARKUP_STRIPE_PUBLISHABLE_KEY. -->
 	<key>StripePublishableKey</key>
 	<string></string>
@@ -85,6 +89,12 @@
 	<string>NoMarkup needs access to your photos so you can set a profile picture, add portfolio images, and attach photos to jobs, listings, and claims.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>NoMarkup uses the camera so you can take photos for jobs, listings, or your profile instead of choosing an existing photo.</string>
+	<!-- Face ID for optional app lock + sensitive actions (IOS-SEC.7). -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>NoMarkup uses Face ID to protect sensitive actions like account deletion and removing payment methods, and to unlock the app when you enable app lock.</string>
+	<!-- Live Activities for auction countdowns after you place a bid (IOS-SYS.LA.4). -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<!-- Do NOT add NSMicrophoneUsageDescription or NSUserTrackingUsageDescription — unused. -->
 	<key>CFBundleURLTypes</key>
 	<array>
@@ -97,12 +107,16 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<!-- Local gateway only; release API is HTTPS. -->
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
+	<!--
+	  ATS: no NSAllowsLocalNetworking — Release fails closed (HTTPS only).
+	  Simulator DEBUG → AppConfig uses 127.0.0.1 (local loopback).
+	  Device Debug dogfood: prefer HTTPS staging or an HTTPS tunnel via
+	  NOMARKUP_API_BASE_URL (scheme env). Do not re-add cleartext ATS exceptions
+	  for production archives.
+	-->
+	<!-- Export compliance: only exempt encryption (HTTPS / OS crypto). -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<!-- FR-10.4: allow canOpenURL for Google Maps app scheme (optional directions). -->
 	<key>LSApplicationQueriesSchemes</key>
 	<array>

@@ -120,7 +120,7 @@ func (s *Service) SendNotification(ctx context.Context, userID, notifType, title
 			}
 			deliveries = append(deliveries, delivery)
 		case "push":
-			delivery := s.dispatchPush(ctx, userID, title, body, actionURL)
+			delivery := s.dispatchPush(ctx, userID, notifType, title, body, actionURL)
 			if delivery.Delivered {
 				notif.PushSent = true
 			}
@@ -177,14 +177,13 @@ func (s *Service) dispatchEmail(ctx context.Context, userID, notifType, title, b
 // FCM/APNs devices AND every W3C Web Push subscription. The two paths
 // target disjoint subscriber sets (native app installs vs. installed
 // PWA / browser push), so we fan out to both and report success if
-// either one delivers. Audit Section J flagged FCM-only push as MISSING;
-// the WebPushDispatcher closes that gap.
-func (s *Service) dispatchPush(ctx context.Context, userID, title, body, actionURL string) ChannelDelivery {
+// either one delivers. iOS tokens route to APNs; android/web to FCM.
+func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, body, actionURL string) ChannelDelivery {
 	totalSent := 0
 	totalErrs := 0
 	noTokens := false
 
-	// FCM/APNs path (existing, unchanged behavior).
+	// Device token path: route each token by platform (ios → APNs, else FCM).
 	tokens, err := s.deviceRepo.GetDeviceTokens(ctx, userID)
 	if err != nil {
 		slog.Warn("push dispatch: failed to get device tokens",
@@ -195,11 +194,13 @@ func (s *Service) dispatchPush(ctx context.Context, userID, title, body, actionU
 	} else if len(tokens) == 0 {
 		noTokens = true
 	} else {
-		deviceTokenStrings := make([]string, 0, len(tokens))
-		for _, dt := range tokens {
-			deviceTokenStrings = append(deviceTokenStrings, dt.Token)
+		var badge *int
+		if unread, uerr := s.repo.GetUnreadCount(ctx, userID); uerr == nil {
+			// Include the notification about to be persisted.
+			b := unread + 1
+			badge = &b
 		}
-		sent, errs := s.push.SendMultiple(ctx, deviceTokenStrings, title, body, actionURL)
+		sent, errs := s.push.SendMultiple(ctx, tokens, title, body, actionURL, notifType, badge)
 		totalSent += sent
 		totalErrs += len(errs)
 	}
