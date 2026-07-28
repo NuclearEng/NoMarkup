@@ -66,7 +66,6 @@ struct UserReviewsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task {
             resolveCurrentUser()
             await load()
@@ -116,7 +115,7 @@ struct UserReviewsView: View {
                         }
                         Spacer(minLength: 8)
                         if let total = totalReviews ?? pagination?.resolvedTotal {
-                            Text("\(total) review\(total == 1 ? "" : "s")")
+                            Text(String(localized: "\(total) reviews"))
                                 .font(.subheadline)
                                 .foregroundStyle(BrandTheme.textSecondary)
                                 .monospacedDigit()
@@ -415,7 +414,6 @@ private struct RespondToReviewSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
@@ -551,7 +549,6 @@ private struct FlagReviewSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }

@@ -106,7 +106,6 @@ struct PropertyDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -381,7 +380,6 @@ struct EditPropertySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onCancel)

@@ -41,7 +41,6 @@ struct JobDraftsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
         .navigationDestination(for: JobSummary.self) { job in
@@ -117,7 +116,7 @@ struct JobDraftsView: View {
                             .listRowBackground(BrandTheme.navyElevated)
                     }
                 } header: {
-                    Text("\(drafts.count) draft\(drafts.count == 1 ? "" : "s")")
+                    Text(String(localized: "\(drafts.count) drafts"))
                         .brandSectionHeader()
                 } footer: {
                     Text("Publishing makes the job visible to providers. Edit on the web if you need photos or advanced options first.")

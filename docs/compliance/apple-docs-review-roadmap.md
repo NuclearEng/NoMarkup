@@ -350,3 +350,24 @@ Parallelization: after Phase 1, **Design (2)** and **Privacy (3)** can run in pa
 6. https://developer.apple.com/documentation/authenticationservices  
 7. https://developer.apple.com/help/app-store-connect/  
 8. https://developer.apple.com/documentation/updates  
+
+---
+
+## Decision log — IOS-DES.4 Liquid Glass adoption (2026-07-27)
+
+- **Scroll-edge (DES.9/DES.4 opaque half)**: all 70 unconditional
+  `.toolbarBackground(.visible, for: .navigationBar)` sites deleted (57 files);
+  the paired `BrandTheme.navy` color line stays, so pre-26 keeps the branded
+  opaque bar via `UINavigationBarAppearance` while iOS 26+ gets the system
+  scroll-edge (glass) behavior that `BrandTheme.applyGlobalChrome()` already
+  leaves to the system.
+- **Glass API verification (installed Xcode 26.5.0, iOS 26.5 SDK)**: the
+  SwiftUI swiftinterface (`arm64e-apple-ios.swiftinterface`) contains
+  `GlassButtonStyle` / `.glass` and `GlassProminentButtonStyle` /
+  `.glassProminent` (`@available(iOS 26.0, *)`), but **no `glassEffect` view
+  modifier and no `GlassEffectContainer`**. Decision: adopt only the verified
+  API — `buttonStyle(.glassProminent)` behind `if #available(iOS 26.0, *)` on
+  ONE high-value control: the primary **Place bid** CTA in
+  `ios/NoMarkup/Features/ListingDetailView.swift`
+  (`GlassProminentBidCTAStyle`; pre-26 falls back to `.borderedProminent`).
+  `glassEffect` adoption stays deferred until an SDK that actually ships it.

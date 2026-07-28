@@ -120,6 +120,9 @@ func newAPNsProvider(cfg *APNsConfig) (*apnsProvider, error) {
 }
 
 // pushMessage is a single device delivery unit with platform routing metadata.
+// EntityType/EntityID mirror the data["entity_type"]/data["entity_id"] pair
+// emitters attach (listing / contract / conversation ids) and seed the APNs
+// thread-id so related alerts group on the lock screen (IOS-SYS.NT.3).
 type pushMessage struct {
 	DeviceToken string
 	Platform    string
@@ -128,6 +131,8 @@ type pushMessage struct {
 	ActionURL   string
 	NotifType   string
 	Badge       *int
+	EntityType  string
+	EntityID    string
 }
 
 func (a *apnsProvider) send(ctx context.Context, msg pushMessage) error {
@@ -157,12 +162,8 @@ func (a *apnsProvider) send(ctx context.Context, msg pushMessage) error {
 	req.Header.Set("authorization", "bearer "+bearer)
 	req.Header.Set("apns-topic", a.bundleID)
 	req.Header.Set("apns-push-type", "alert")
-	req.Header.Set("apns-priority", "10")
+	req.Header.Set("apns-priority", apnsPriority(msg.NotifType))
 	req.Header.Set("content-type", "application/json")
-	if cat := apnsCategory(msg.NotifType); cat != "" {
-		// Collapse-id is optional; category lives in the payload aps.category.
-		_ = cat
-	}
 
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -180,8 +181,57 @@ func (a *apnsProvider) send(ctx context.Context, msg pushMessage) error {
 		return nil
 	}
 
-	// 410 Gone / Unregistered → token should be pruned by caller if needed.
-	return fmt.Errorf("apns: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	// Typed error so SendMultiple can prune tokens APNs reports as
+	// permanently gone — 410 Unregistered / 400 BadDeviceToken (IOS-SYS.NT.4).
+	return &apnsSendError{
+		StatusCode: resp.StatusCode,
+		Reason:     parseAPNsReason(body),
+		Body:       strings.TrimSpace(string(body)),
+	}
+}
+
+// apnsSendError is a non-200 APNs response. Reason carries the APNs `reason`
+// field (e.g. "Unregistered", "BadDeviceToken") when the body was parseable.
+type apnsSendError struct {
+	StatusCode int
+	Reason     string
+	Body       string
+}
+
+func (e *apnsSendError) Error() string {
+	return fmt.Sprintf("apns: status %d: %s", e.StatusCode, e.Body)
+}
+
+// shouldPruneToken reports whether APNs told us this device token will never
+// work again: 410 Gone ("Unregistered" — app deleted / token invalidated) or
+// 400 "BadDeviceToken" (malformed or wrong-environment token). IOS-SYS.NT.4.
+func (e *apnsSendError) shouldPruneToken() bool {
+	if e.StatusCode == http.StatusGone {
+		return true
+	}
+	return e.StatusCode == http.StatusBadRequest && e.Reason == "BadDeviceToken"
+}
+
+// parseAPNsReason extracts the `reason` field from an APNs error body.
+// Returns "" when the body is empty or not the documented JSON shape.
+func parseAPNsReason(body []byte) string {
+	var parsed struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return ""
+	}
+	return parsed.Reason
+}
+
+// apnsPriority returns the apns-priority header value: promotional pushes go
+// power-considerate at 5 (matching their passive interruption-level);
+// transactional alerts stay at immediate delivery 10. IOS-SYS.NT.3.
+func apnsPriority(notifType string) string {
+	if isPromotionalNotifType(notifType) {
+		return "5"
+	}
+	return "10"
 }
 
 func buildAPNsPayload(msg pushMessage) ([]byte, error) {
@@ -190,7 +240,15 @@ func buildAPNsPayload(msg pushMessage) ([]byte, error) {
 			"title": msg.Title,
 			"body":  msg.Body,
 		},
-		"sound": "default",
+		// IOS-SYS.NT.3: outbid/closing-soon break through as time-sensitive,
+		// promotional stays passive (never lights the screen), rest active.
+		"interruption-level": apnsInterruptionLevel(msg.NotifType),
+	}
+	// IOS-SYS.NT.6: promotional pushes are silent on the wire. The client's
+	// willPresent classifier already mutes them in the foreground; without
+	// this, background delivery still rang.
+	if !isPromotionalNotifType(msg.NotifType) {
+		aps["sound"] = "default"
 	}
 	if msg.Badge != nil {
 		aps["badge"] = *msg.Badge
@@ -198,7 +256,11 @@ func buildAPNsPayload(msg pushMessage) ([]byte, error) {
 	if cat := apnsCategory(msg.NotifType); cat != "" {
 		aps["category"] = cat
 	}
-	// Promotional / soft alerts can be muted client-side via willPresent; keep sound default on wire.
+	// IOS-SYS.NT.3: group every alert about the same auction / contract /
+	// conversation into one lock-screen thread.
+	if tid := apnsThreadID(msg); tid != "" {
+		aps["thread-id"] = tid
+	}
 
 	payload := map[string]any{
 		"aps": aps,
@@ -210,6 +272,37 @@ func buildAPNsPayload(msg pushMessage) ([]byte, error) {
 		payload["type"] = msg.NotifType
 	}
 	return json.Marshal(payload)
+}
+
+// apnsInterruptionLevel maps a notification type to the aps
+// interruption-level (IOS-SYS.NT.3): losing an auction is time-critical for
+// the bidder, promotions must never light the screen, and everything else is
+// a normal active alert.
+func apnsInterruptionLevel(notifType string) string {
+	switch strings.ToLower(strings.TrimSpace(notifType)) {
+	case "bid_outbid", "auction_closing_soon":
+		return "time-sensitive"
+	}
+	if isPromotionalNotifType(notifType) {
+		return "passive"
+	}
+	return "active"
+}
+
+// apnsThreadID derives the aps thread-id from the entity the emitters already
+// attach via data["entity_type"]/data["entity_id"] (listing auctions,
+// contracts, conversations). Empty when no entity is attached — the alert
+// then stays ungrouped, which is correct for account-level notifications.
+func apnsThreadID(msg pushMessage) string {
+	entityID := strings.TrimSpace(msg.EntityID)
+	if entityID == "" {
+		return ""
+	}
+	entityType := strings.TrimSpace(msg.EntityType)
+	if entityType == "" {
+		return entityID
+	}
+	return entityType + ":" + entityID
 }
 
 // apnsCategory maps notification types to UNNotificationCategory identifiers registered on iOS.

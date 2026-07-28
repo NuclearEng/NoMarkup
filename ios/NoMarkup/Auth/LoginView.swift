@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LoginView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var featureFlags: FeatureFlags
     @StateObject private var passkeyAuth = PasskeyAuth()
     @FocusState private var focusedField: Field?
 
@@ -23,7 +24,11 @@ struct LoginView: View {
                         primaryActions
                         authLinks
                         divider
-                        passkeyButton
+                        // IOS-SEC.3: passkey entry is hidden entirely until the server
+                        // `passkeys` flag is on — never a dead-end "coming soon" button.
+                        if PasskeyAuth.isEnabled(in: featureFlags) {
+                            passkeyButton
+                        }
                         SignInWithAppleButtonView { result, nonce in
                             auth.handleSignInWithApple(result: result, nonce: nonce)
                         }
@@ -50,7 +55,6 @@ struct LoginView: View {
             .navigationBarTitleDisplayMode(.large)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .navigationDestination(for: AuthRoute.self) { route in
                 switch route {
                 case .register:
@@ -306,13 +310,13 @@ struct LoginView: View {
         }
     }
 
-    /// Passkey entry (IOS-SEC.2). Shows real ASAuthorization when server-ready; otherwise honest "Coming soon".
+    /// Passkey entry (IOS-SEC.2). Rendered only when the server `passkeys` flag is on.
     private var passkeyButton: some View {
         VStack(spacing: 8) {
             Button {
                 guard !auth.isBusy, !passkeyAuth.isBusy else { return }
                 Task {
-                    await passkeyAuth.signInWithPasskey()
+                    await passkeyAuth.signInWithPasskey(email: auth.email)
                     if passkeyAuth.didCompleteSignIn {
                         passkeyAuth.consumeSignInFlag()
                         auth.adoptExistingSession(status: "Signed in with passkey.")
@@ -327,7 +331,7 @@ struct LoginView: View {
                         Image(systemName: "person.badge.key.fill")
                             .font(.body.weight(.semibold))
                     }
-                    Text(PasskeyAuth.isServerReady ? "Sign in with Passkey" : "Sign in with Passkey")
+                    Text("Sign in with Passkey")
                         .fontWeight(.semibold)
                 }
                 .frame(maxWidth: .infinity)
@@ -338,11 +342,7 @@ struct LoginView: View {
             .disabled(auth.isBusy || passkeyAuth.isBusy)
             .accessibilityIdentifier("login.passkey")
             .accessibilityLabel("Sign in with Passkey")
-            .accessibilityHint(
-                PasskeyAuth.isServerReady
-                    ? "Uses a passkey stored on this device or iCloud Keychain"
-                    : "Passkeys are not available yet; shows coming soon message"
-            )
+            .accessibilityHint("Uses a passkey stored on this device or iCloud Keychain")
 
             if let status = passkeyAuth.statusMessage {
                 Text(status)
@@ -398,4 +398,5 @@ private enum AuthRoute: Hashable {
 #Preview {
     LoginView()
         .environmentObject(AuthViewModel())
+        .environmentObject(FeatureFlags())
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,12 @@ import (
 
 	"github.com/nomarkup/nomarkup/services/notification/internal/domain"
 )
+
+// platformIOSLiveActivity is the platform string the iOS client uses when it
+// registers an ActivityKit Live Activity push token through the standard
+// device-registration path (IOS-SYS.LA.3). Live Activity tokens are
+// per-activity update tokens, NOT alert-push device tokens.
+const platformIOSLiveActivity = "ios_live_activity"
 
 // PushDispatcher sends mobile push notifications.
 //
@@ -68,31 +75,64 @@ func (p *PushDispatcher) Send(ctx context.Context, msg pushMessage) error {
 	switch platform {
 	case "ios":
 		return p.sendAPNs(ctx, msg)
+	case platformIOSLiveActivity:
+		// LA.3: never send an alert push to a Live Activity token (see the
+		// fan-out exclusion in SendMultiple). Guarded here too so a direct
+		// caller cannot fall through to the FCM branch with an APNs
+		// ActivityKit token.
+		slog.Info("push dispatcher: skipping alert push to live-activity token",
+			"device_token", truncateToken(msg.DeviceToken),
+			"type", msg.NotifType,
+		)
+		return nil
 	default:
 		// android, web, or anything else → FCM (best-effort).
 		return p.sendFCM(ctx, msg)
 	}
 }
 
-// SendMultiple dispatches to every registered device token, routing each by platform.
-// Partial failure does not stop delivery to remaining tokens.
+// SendMultiple dispatches the message to every registered device token,
+// routing each by platform. Partial failure does not stop delivery to the
+// remaining tokens. staleTokens returns the tokens APNs declared permanently
+// gone (410 Unregistered / 400 BadDeviceToken) so the caller — who owns the
+// token store — can prune them (IOS-SYS.NT.4).
 func (p *PushDispatcher) SendMultiple(
 	ctx context.Context,
 	tokens []domain.DeviceToken,
-	title, body, actionURL, notifType string,
-	badge *int,
-) (sent int, errs []error) {
+	msg pushMessage,
+) (sent int, staleTokens []string, errs []error) {
 	for _, dt := range tokens {
-		msg := pushMessage{
-			DeviceToken: dt.Token,
-			Platform:    dt.Platform,
-			Title:       title,
-			Body:        body,
-			ActionURL:   actionURL,
-			NotifType:   notifType,
-			Badge:       badge,
+		if strings.EqualFold(strings.TrimSpace(dt.Platform), platformIOSLiveActivity) {
+			// LA.3 (safe half): Live Activity push tokens are ActivityKit
+			// per-activity tokens — an `apns-push-type: alert` POST at one is
+			// malformed, and the FCM default branch would be worse. They are
+			// excluded from alert fan-out; the stored rows remain valid for
+			// every existing query and for unregister-by-token.
+			//
+			// LA.3: the real `liveactivity` dispatch branch (apns-push-type:
+			// liveactivity, apns-topic "<bundle-id>.push-type.liveactivity",
+			// content-state payload) is NOT implementable on current
+			// plumbing: (a) RegisterDeviceRequest.platform is a closed v1
+			// proto enum with no live-activity value, so this platform string
+			// cannot round-trip the RPC — the gateway maps unknown strings to
+			// DEVICE_PLATFORM_UNSPECIFIED, which this service stores as
+			// "unknown"; (b) device_tokens carries no auction_id ↔ token
+			// association, so an auction event cannot be routed to the one
+			// activity it belongs to; (c) the alert dispatch payload carries
+			// no structured auction content-state. Shipping it needs a
+			// v1-additive registration shape (activity token + auction id)
+			// plus an auction-event source with bid state.
+			continue
 		}
-		if err := p.Send(ctx, msg); err != nil {
+
+		dm := msg
+		dm.DeviceToken = dt.Token
+		dm.Platform = dt.Platform
+		if err := p.Send(ctx, dm); err != nil {
+			var apnsErr *apnsSendError
+			if errors.As(err, &apnsErr) && apnsErr.shouldPruneToken() {
+				staleTokens = append(staleTokens, dt.Token)
+			}
 			slog.Warn("push dispatcher: failed to send to device",
 				"device_token", truncateToken(dt.Token),
 				"platform", dt.Platform,
@@ -103,7 +143,7 @@ func (p *PushDispatcher) SendMultiple(
 			sent++
 		}
 	}
-	return sent, errs
+	return sent, staleTokens, errs
 }
 
 func (p *PushDispatcher) sendAPNs(ctx context.Context, msg pushMessage) error {

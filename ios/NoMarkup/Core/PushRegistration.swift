@@ -164,14 +164,18 @@ final class PushRegistration: NSObject, ObservableObject {
 
     // MARK: - Categories (NT.3)
 
+    /// Category action identifiers — shared by registration and `didReceive` branching.
+    nonisolated static var viewActionIdentifier: String { "VIEW" }
+    nonisolated static var dismissActionIdentifier: String { "DISMISS" }
+
     private func registerNotificationCategories() {
         let viewAction = UNNotificationAction(
-            identifier: "VIEW",
+            identifier: Self.viewActionIdentifier,
             title: "View",
             options: [.foreground]
         )
         let dismissAction = UNNotificationAction(
-            identifier: "DISMISS",
+            identifier: Self.dismissActionIdentifier,
             title: "Dismiss",
             options: [.destructive]
         )
@@ -282,11 +286,21 @@ extension PushRegistration: UNUserNotificationCenterDelegate {
     }
 
     /// Tap / action routing (NT.3) → deep link router.
+    ///
+    /// Branches on `response.actionIdentifier`: only the default tap and the
+    /// foreground VIEW action deep-link (and clear the badge on that open). The
+    /// destructive DISMISS action — and any other non-opening identifier — is an
+    /// acknowledgement: it must never navigate, and the badge stays (the server
+    /// computes it from the unread count, which dismissing does not change).
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        guard Self.shouldDeepLink(forActionIdentifier: response.actionIdentifier) else {
+            completionHandler()
+            return
+        }
         let userInfo = response.notification.request.content.userInfo
         let actionURL = Self.actionURL(from: userInfo)
         // Route on MainActor, then complete on this isolation so the non-Sendable
@@ -303,6 +317,19 @@ extension PushRegistration: UNUserNotificationCenterDelegate {
             PushRegistration.shared.clearBadge()
         }
         completionHandler()
+    }
+
+    /// NT.3: whether a notification response should open the deep-linked surface.
+    /// True only for the system default tap and the explicit VIEW action; DISMISS
+    /// (destructive category action), the system dismiss identifier, and unknown
+    /// future action identifiers never navigate.
+    nonisolated static func shouldDeepLink(forActionIdentifier identifier: String) -> Bool {
+        switch identifier {
+        case UNNotificationDefaultActionIdentifier, viewActionIdentifier:
+            return true
+        default:
+            return false
+        }
     }
 
     nonisolated private static func notificationType(from userInfo: [AnyHashable: Any]) -> String {

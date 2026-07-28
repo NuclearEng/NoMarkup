@@ -119,7 +119,6 @@ struct NotificationsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if auth.isAuthenticated, !auth.isScaffoldSession, localUnreadCount > 0 || unreadCount > 0 {

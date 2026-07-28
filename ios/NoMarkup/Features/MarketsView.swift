@@ -26,7 +26,6 @@ struct MarketsView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .searchable(text: $searchText, prompt: "Search cities or regions")
             .task { await load() }
             .refreshable { await load() }
@@ -74,7 +73,7 @@ struct MarketsView: View {
                             .listRowBackground(BrandTheme.navyElevated)
                     }
                 } header: {
-                    Text("\(filtered.count) market\(filtered.count == 1 ? "" : "s")")
+                    Text(String(localized: "\(filtered.count) markets"))
                         .brandSectionHeader()
                 }
             }

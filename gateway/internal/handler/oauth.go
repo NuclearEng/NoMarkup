@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -490,6 +492,20 @@ func appleJWKS(ctx context.Context) (keyfunc.Keyfunc, error) {
 	return appleJWKSInstance, appleJWKSErr
 }
 
+// appleKeyfuncProvider indirects appleJWKS so tests can substitute a locally
+// generated JWKS instead of fetching Apple's over the network. Production
+// always uses appleJWKS.
+var appleKeyfuncProvider = appleJWKS
+
+// sha256Hex returns the lowercase hex encoding of SHA-256(s) — the exact
+// transformation AuthenticationServices clients apply to the raw SIWA nonce
+// before placing it in ASAuthorizationAppleIDRequest.nonce, and therefore the
+// exact value Apple embeds in the id_token `nonce` claim.
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
 // appleAudienceClientIDs returns allowed id_token `aud` values.
 // Web SIWA uses APPLE_CLIENT_ID (Services ID). Native SIWA uses the app bundle
 // id via APPLE_NATIVE_CLIENT_ID (or APPLE_CLIENT_ID when they share one).
@@ -520,14 +536,19 @@ func appleAudienceClientIDs() []string {
 // not been through this function.
 //
 // If expectedNonce is non-empty, the nonce claim on the token must match
-// (binds the token to the original authorization request). Pass "" to skip.
+// (binds the token to the original authorization request). Callers hold the
+// RAW client nonce and must pass sha256Hex(raw) here, because Apple embeds the
+// HASHED nonce the client put on the authorization request — never compare the
+// claim against a client-supplied value directly (IOS-SEC.1: a client sending
+// the hash would make the check a tautology). Pass "" to skip (legacy web
+// redirect flow, which has no nonce).
 func verifyAppleIDToken(ctx context.Context, rawToken, expectedNonce string) (*appleIDTokenClaims, error) {
 	audiences := appleAudienceClientIDs()
 	if len(audiences) == 0 {
 		return nil, errors.New("APPLE_CLIENT_ID not configured")
 	}
 
-	jwks, err := appleJWKS(ctx)
+	jwks, err := appleKeyfuncProvider(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -573,7 +594,11 @@ type nativeAppleSignInRequest struct {
 	IdentityToken string `json:"identity_token"`
 	// FullName is optional — Apple only provides it on first authorization.
 	FullName string `json:"full_name"`
-	// Nonce is optional; when set it must match the id_token nonce claim.
+	// Nonce is the RAW nonce the client generated for this sign-in attempt
+	// (the client puts SHA256hex(nonce) on the ASAuthorization request, so
+	// the id_token carries the hash). REQUIRED on the native exchange
+	// (IOS-SEC.1): without it a captured Apple id_token could be replayed
+	// against this endpoint from any device.
 	Nonce string `json:"nonce"`
 }
 
@@ -591,7 +616,20 @@ func (h *OAuthHandler) NativeAppleSignIn(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	claims, err := verifyAppleIDToken(r.Context(), idToken, strings.TrimSpace(req.Nonce))
+	// IOS-SEC.1: the native exchange REQUIRES the raw nonce. The client sends
+	// the raw value; Apple's id_token carries SHA256hex(raw) in its nonce
+	// claim, so we re-hash server-side before comparing. Comparing the
+	// client's value verbatim would let the client send the hash it read out
+	// of the token itself — a tautology with no replay binding. The web
+	// redirect flow (AppleOAuthCallback) legitimately has no nonce and is
+	// unaffected; the requirement is scoped to this handler.
+	rawNonce := strings.TrimSpace(req.Nonce)
+	if rawNonce == "" {
+		writeError(w, http.StatusBadRequest, "nonce is required: send the raw nonce generated for this Sign in with Apple attempt")
+		return
+	}
+
+	claims, err := verifyAppleIDToken(r.Context(), idToken, sha256Hex(rawNonce))
 	if err != nil {
 		slog.Warn("native apple sign-in: id_token verification failed",
 			"error", err,

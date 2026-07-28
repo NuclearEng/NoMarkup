@@ -1,4 +1,7 @@
+import AppIntents
+import CoreSpotlight
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Listing detail for a single goods **forward auction**.
 /// Buyers bid **up** — highest bid leads; optional buy-now for instant win.
@@ -88,6 +91,46 @@ struct ListingDetailView: View {
             .appending(path: listingID)
     }
 
+    // MARK: - Spotlight donation (IOS-INT.2, donation half)
+
+    /// `NSUserActivity` type donated when the user views a listing.
+    private static let viewListingActivityType = "com.nomarkup.app.viewListing"
+
+    /// On-device Spotlight summary — public-safe fields only (category + pickup area).
+    private var spotlightDescription: String {
+        var parts = ["Local marketplace auction on NoMarkup"]
+        if let category = detail?.categoryName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !category.isEmpty
+        {
+            parts.append(category)
+        }
+        if let area = detail?.locationLabel, !area.isEmpty {
+            parts.append(area)
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Populates the donated activity: searchable title, stable id, canonical web URL.
+    private func configureViewActivity(_ activity: NSUserActivity) {
+        let title = detail?.displayTitle ?? preview?.title ?? "Marketplace listing"
+        activity.title = title
+        activity.isEligibleForSearch = true
+        activity.persistentIdentifier = listingID
+        activity.webpageURL = webListingURL
+        let attributes = CSSearchableItemAttributeSet(contentType: .item)
+        attributes.title = title
+        attributes.contentDescription = spotlightDescription
+        activity.contentAttributeSet = attributes
+        // IOS-INT.4 (view annotation): associate the on-screen view with its App
+        // Intents entity via the SDK's NSUserActivity bridge —
+        // `NSUserActivity.appEntityIdentifier` (`AppEntityAnnotatable`, iOS 18.2+ in
+        // the installed AppIntents swiftinterface). No SwiftUI `.appEntity`-style view
+        // modifier exists in this SDK, so the activity property is the verified API.
+        if #available(iOS 18.2, *) {
+            activity.appEntityIdentifier = EntityIdentifier(for: ListingEntity.self, identifier: listingID)
+        }
+    }
+
     /// Forward auction: highest amount first; winning bid (or #1) is leading.
     private var sortedLadder: [ListingBidRow] {
         bidRows.sorted { lhs, rhs in
@@ -143,7 +186,6 @@ struct ListingDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if auth.isAuthenticated && !auth.isScaffoldSession {
@@ -183,6 +225,10 @@ struct ListingDetailView: View {
             teardownMarketplaceSpectator()
         }
         .refreshable { await load() }
+        // IOS-INT.2 — donate the viewed listing to Spotlight (deep-linkable via the web URL).
+        .userActivity(Self.viewListingActivityType, isActive: detail != nil) { activity in
+            configureViewActivity(activity)
+        }
         .onChange(of: auth.isAuthenticated) { _, _ in
             Task { await refreshWatchState() }
         }
@@ -551,7 +597,7 @@ struct ListingDetailView: View {
     @ViewBuilder
     private func bidCountChip(listing: ListingDetail) -> some View {
         let count = effectiveBidCount(listing: listing)
-        Label("\(count) bid\(count == 1 ? "" : "s")", systemImage: "arrow.up.circle")
+        Label(String(localized: "\(count) bids"), systemImage: "arrow.up.circle")
             .font(.caption.weight(.semibold))
             .foregroundStyle(BrandTheme.textPrimary)
             .padding(.horizontal, 10)
@@ -1046,7 +1092,7 @@ struct ListingDetailView: View {
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .modifier(GlassProminentBidCTAStyle())
                 .tint(BrandTheme.accent)
                 .disabled(
                     isPlacingBid
@@ -2313,7 +2359,6 @@ private struct ListingReportSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDone() }
@@ -2387,5 +2432,25 @@ private struct ListingReportSheet: View {
             )
         )
         .environmentObject(AuthViewModel())
+    }
+}
+
+// MARK: - DES.4 Liquid Glass bid CTA
+
+/// IOS-DES.4: the primary bid CTA adopts Liquid Glass on iOS 26+.
+///
+/// `buttonStyle(.glassProminent)` is verified present in the installed
+/// iOS 26.5 SDK SwiftUI swiftinterface (`GlassProminentButtonStyle`,
+/// `@available(iOS 26.0, *)`); the `glassEffect` view modifier is NOT in that
+/// interface, so it is deliberately not used. Pre-26 falls back to the
+/// existing borderedProminent brand CTA. `.tint(BrandTheme.accent)` at the
+/// call site colors the glass gold on both paths.
+private struct GlassProminentBidCTAStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.buttonStyle(.glassProminent)
+        } else {
+            content.buttonStyle(.borderedProminent)
+        }
     }
 }

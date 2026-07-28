@@ -176,8 +176,11 @@ actor APIClient {
     }
 
     /// POST /api/v1/auth/apple/native — AuthenticationServices identityToken exchange.
-    /// - Parameter nonce: SHA256-hex value set on `ASAuthorizationAppleIDRequest.nonce`
-    ///   (matches id_token `nonce` claim). Gateway compares claim == body without re-hashing.
+    /// - Parameter nonce: RAW nonce whose SHA256 hex was set on
+    ///   `ASAuthorizationAppleIDRequest.nonce` (and therefore appears as the id_token
+    ///   `nonce` claim). REQUIRED by the gateway for native exchanges (absent → 400);
+    ///   it re-hashes and verifies `sha256hex(body.nonce) == id_token.nonce`
+    ///   (IOS-SEC.1 replay binding).
     func signInWithApple(
         identityToken: String,
         fullName: String?,

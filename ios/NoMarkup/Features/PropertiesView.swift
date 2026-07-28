@@ -66,7 +66,6 @@ struct PropertiesView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -140,12 +139,27 @@ struct PropertiesView: View {
                         }
                         .tint(BrandTheme.accent)
                     }
+                    // DES.7 — non-gesture mirror of the swipe-only edit/delete
+                    // (VoiceOver / pointer / full-keyboard).
+                    .contextMenu {
+                        Button {
+                            editingProperty = property
+                        } label: {
+                            Label("Edit property", systemImage: "pencil")
+                        }
+                        Button(role: .destructive) {
+                            Task { await delete(property) }
+                        } label: {
+                            Label("Delete property", systemImage: "trash")
+                        }
+                        .disabled(deletingID == property.id)
+                    }
                 }
                 .onDelete { indexSet in
                     Task { await delete(at: indexSet) }
                 }
             } header: {
-                Text("\(properties.count) propert\(properties.count == 1 ? "y" : "ies")")
+                Text(String(localized: "\(properties.count) properties"))
                     .brandSectionHeader()
             } footer: {
                 Text("Tap a property for job history. Active and upcoming counts use jobs linked to that address. PostJob still lets you pick which property a new auction is for.")
@@ -420,7 +434,6 @@ private struct AddPropertySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onCancel)

@@ -91,7 +91,6 @@ struct VerificationDocumentsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             if canUpload {
                 ToolbarItem(placement: .primaryAction) {
@@ -161,7 +160,7 @@ struct VerificationDocumentsView: View {
                         .listRowBackground(BrandTheme.navyElevated)
                 }
             } header: {
-                Text("\(documents.count) document\(documents.count == 1 ? "" : "s")").brandSectionHeader()
+                Text(String(localized: "\(documents.count) documents")).brandSectionHeader()
             } footer: {
                 Text("JPEG, PNG, or WebP up to 10 MB. MIME type is re-checked server-side; only files you upload under your account can be registered. Insurance and licenses with an expiry date should be renewed before they expire so you can keep bidding on new jobs.")
                     .foregroundStyle(BrandTheme.textSecondary)
@@ -440,7 +439,6 @@ private struct UploadVerificationDocumentSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

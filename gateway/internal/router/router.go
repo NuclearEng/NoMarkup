@@ -111,6 +111,7 @@ func New(
 	insuranceCompetitionHandler *handler.InsuranceCompetitionHandler,
 	providerLicenseHandler *handler.ProviderLicenseHandler,
 	dataExportHandler *handler.DataExportHandler,
+	passkeyHandler *handler.PasskeyHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -201,6 +202,20 @@ func New(
 		r.With(authMW.Handler).Post("/mfa/enable", authHandler.EnableMFA)
 		r.With(authMW.Handler).Post("/mfa/verify-setup", authHandler.ConfirmMFASetup)
 		r.With(authMW.Handler).Delete("/mfa/disable", authHandler.DisableMFA)
+
+		// WebAuthn passkeys (IOS-SEC.2). ALL four routes sit behind the
+		// `passkeys` DB flag (seeded disabled, migration 118; fails closed in
+		// production per SEC-01) — auth is a core surface, but passkeys are a
+		// NEW optional credential type shipping dark until the iOS client
+		// lands. Registration requires a session; assertion is a login
+		// surface (auth rate-limit tier via routeTiers).
+		r.Route("/passkeys", func(r chi.Router) {
+			r.Use(middleware.RequireFlag(dbPool, cacheClient, "passkeys"))
+			r.With(authMW.Handler).Post("/register/options", passkeyHandler.RegisterOptions)
+			r.With(authMW.Handler).Post("/register/verify", passkeyHandler.RegisterVerify)
+			r.Post("/assert/options", passkeyHandler.AssertOptions)
+			r.Post("/assert/verify", passkeyHandler.AssertVerify)
+		})
 	})
 
 	// @public category routes (no auth required)

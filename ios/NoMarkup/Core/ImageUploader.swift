@@ -17,8 +17,8 @@ import UIKit
 /// 5. `POST /api/v1/images/confirm` → public CDN URL for `photo_urls`
 ///
 /// Heavy decode/encode work is **not** MainActor-isolated (IOS-PERF.6 / PERF.3).
-/// SwiftUI call sites stay on MainActor; only UIImage → source `Data` normalization
-/// briefly uses UIKit drawing when needed for camera orientation.
+/// SwiftUI call sites stay on MainActor; camera `UIImage` → JPEG source bytes are
+/// produced inside the same detached hop as the downsample (no main-thread drawing).
 enum ImageUploader: Sendable {
     /// Max bytes accepted by the platform (10 MB — `MAX_FILE_SIZE_BYTES`).
     static let maxFileBytes = 10 * 1024 * 1024
@@ -74,6 +74,25 @@ enum ImageUploader: Sendable {
         )
     }
 
+    #if canImport(UIKit)
+    /// Observer token for the memory-warning purge; lives for the process lifetime.
+    @MainActor private static var memoryWarningObserver: NSObjectProtocol?
+
+    /// Purge `URLCache.shared` on system memory pressure (IOS-PERF.3).
+    /// Call once from app init after `configureCache()`; re-entry is a no-op.
+    @MainActor
+    static func installMemoryWarningPurge() {
+        guard memoryWarningObserver == nil else { return }
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            URLCache.shared.removeAllCachedResponses()
+        }
+    }
+    #endif
+
     // MARK: - Public upload API
 
     /// Upload one PhotosPicker item; returns the public `confirmed_url`.
@@ -124,14 +143,13 @@ enum ImageUploader: Sendable {
 
     #if canImport(UIKit)
     /// Upload a camera-captured UIImage through the same JPEG + imaging pipeline.
-    /// Call from MainActor (SwiftUI). Orientation is normalized before off-main encode.
+    /// Call from MainActor (SwiftUI); all encode work runs off-main (IOS-PERF.6).
     @MainActor
     static func upload(
         uiImage: UIImage,
         context: ImageUploadContext
     ) async throws -> String {
-        let sourceData = try normalizedSourceData(from: uiImage)
-        let prepared = try await prepareJPEG(from: sourceData)
+        let prepared = try await prepareJPEG(from: uiImage)
         return try await APIClient.shared.uploadImage(
             data: prepared.data,
             filename: prepared.filename,
@@ -146,8 +164,7 @@ enum ImageUploader: Sendable {
         uiImage: UIImage,
         documentType: ProviderDocumentType
     ) async throws -> ProviderDocumentUploadResult {
-        let sourceData = try normalizedSourceData(from: uiImage)
-        let prepared = try await prepareJPEG(from: sourceData)
+        let prepared = try await prepareJPEG(from: uiImage)
         return try await APIClient.shared.uploadAndSubmitProviderDocument(
             data: prepared.data,
             filename: prepared.filename,
@@ -189,18 +206,26 @@ enum ImageUploader: Sendable {
     }
 
     #if canImport(UIKit)
-    /// Draw orientation into the pixel buffer so portrait camera shots are upright
-    /// even when gateway AutoOrient is off (IOS-MED.5).
-    @MainActor
-    private static func normalizedSourceData(from image: UIImage) throws -> Data {
-        let upright = image.nm_normalizedOrientation()
-        if let png = upright.pngData() {
-            return png
-        }
-        if let jpg = upright.jpegData(compressionQuality: 1.0) {
-            return jpg
-        }
-        throw APIClientError.httpStatus(400, detail: "Could not read the captured photo.")
+    /// Camera UIImage → JPEG source bytes + downsample entirely off the main actor.
+    /// Orientation invariant (IOS-MED.5 / IOS-PERF.6): `jpegData` bakes `imageOrientation`
+    /// into the EXIF tag, and `encodeJPEGDownsampled` applies it via
+    /// `kCGImageSourceCreateThumbnailWithTransform`, so the uploaded pixels are upright
+    /// (no orientation-flag dependence) without any main-thread renderer redraw.
+    private static func prepareJPEG(from image: UIImage) async throws -> PreparedImage {
+        let maxBytes = maxFileBytes
+        let maxEdge = maxPixelDimension
+        let qualities = jpegQualities
+        return try await Task.detached(priority: .userInitiated) {
+            guard let source = image.jpegData(compressionQuality: 1.0) else {
+                throw APIClientError.httpStatus(400, detail: "Could not read the captured photo.")
+            }
+            return try encodeJPEGDownsampled(
+                from: source,
+                maxPixelSize: maxEdge,
+                qualities: qualities,
+                maxFileBytes: maxBytes
+            )
+        }.value
     }
     #endif
 
@@ -271,23 +296,6 @@ enum ImageUploader: Sendable {
         return mutable as Data
     }
 }
-
-#if canImport(UIKit)
-extension UIImage {
-    /// Redraw so `imageOrientation` is baked into pixels (`.up`).
-    /// Camera captures often ship as sideways bitmaps + orientation flag.
-    fileprivate func nm_normalizedOrientation() -> UIImage {
-        guard imageOrientation != .up else { return self }
-        let format = UIGraphicsImageRendererFormat.default()
-        format.scale = scale
-        format.opaque = false
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        return renderer.image { _ in
-            draw(in: CGRect(origin: .zero, size: size))
-        }
-    }
-}
-#endif
 
 // MARK: - Photo pick section (shared UI for Post Job / Create Listing)
 
@@ -406,10 +414,7 @@ struct PhotoPickSection: View {
                 }
                 .frame(width: 72, height: 72)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(BrandTheme.hairline, lineWidth: 1)
-                )
+                .brandHairlineBorder(cornerRadius: 10)
             }
 
             Button {

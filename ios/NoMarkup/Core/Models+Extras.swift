@@ -19,7 +19,7 @@ struct ProviderReviewSummary: Codable, Sendable, Hashable {
 
     var displayCount: String {
         let n = reviewCount ?? 0
-        return n == 1 ? "1 review" : "\(n) reviews"
+        return String(localized: "\(n) reviews")
     }
 }
 
@@ -318,9 +318,9 @@ struct ProviderProfileDetail: Codable, Sendable, Hashable, Identifiable {
         guard let summary = reviewSummary else { return nil }
         let count = summary.reviewCount ?? 0
         if let rating = summary.averageRating {
-            return "\(rating.formatted(.number.precision(.fractionLength(1)))) · \(count) review\(count == 1 ? "" : "s")"
+            return "\(rating.formatted(.number.precision(.fractionLength(1)))) · \(String(localized: "\(count) reviews"))"
         }
-        return count > 0 ? "\(count) review\(count == 1 ? "" : "s")" : nil
+        return count > 0 ? String(localized: "\(count) reviews") : nil
     }
 
     var portfolioCount: Int {
@@ -336,7 +336,7 @@ struct ProviderProfileDetail: Codable, Sendable, Hashable, Identifiable {
 
     var jobsCompletedLabel: String {
         let n = jobsCompleted ?? 0
-        return n == 1 ? "1 job completed" : "\(n) jobs completed"
+        return String(localized: "\(n) jobs completed")
     }
 }
 
@@ -1723,12 +1723,12 @@ struct TrustTier: Codable, Sendable, Hashable, Identifiable {
 
     var jobsLabel: String {
         guard let minCompletedJobs else { return "—" }
-        return minCompletedJobs == 1 ? "1 job" : "\(minCompletedJobs) jobs"
+        return String(localized: "\(minCompletedJobs) jobs")
     }
 
     var reviewsLabel: String {
         guard let minReviews else { return "—" }
-        return minReviews == 1 ? "1 review" : "\(minReviews) reviews"
+        return String(localized: "\(minReviews) reviews")
     }
 
     /// Sort key: lower ranks first (under_review / new → top_rated).

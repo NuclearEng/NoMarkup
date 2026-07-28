@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/nomarkup/nomarkup/services/notification/internal/domain"
 )
@@ -13,6 +14,7 @@ import (
 type Service struct {
 	repo       domain.NotificationRepository
 	deviceRepo domain.DeviceTokenRepository
+	ledger     domain.SendLedgerRepository
 	email      *EmailDispatcher
 	push       *PushDispatcher
 	webPush    *WebPushDispatcher
@@ -22,11 +24,13 @@ type Service struct {
 // New creates a new notification service. webPush may be nil — in that
 // case browser-side W3C Web Push delivery is skipped and only the FCM/APNs
 // path runs (matches pre-PWA behavior). Both dispatchers run on the same
-// notification — they target different subscriber sets.
-func New(repo domain.NotificationRepository, deviceRepo domain.DeviceTokenRepository, email *EmailDispatcher, push *PushDispatcher, webPush *WebPushDispatcher, sms *SMSDispatcher) *Service {
+// notification — they target different subscriber sets. ledger backs the
+// push cooldowns (IOS-SYS.NT.1); a nil ledger disables them (fail open).
+func New(repo domain.NotificationRepository, deviceRepo domain.DeviceTokenRepository, ledger domain.SendLedgerRepository, email *EmailDispatcher, push *PushDispatcher, webPush *WebPushDispatcher, sms *SMSDispatcher) *Service {
 	return &Service{
 		repo:       repo,
 		deviceRepo: deviceRepo,
+		ledger:     ledger,
 		email:      email,
 		push:       push,
 		webPush:    webPush,
@@ -120,7 +124,7 @@ func (s *Service) SendNotification(ctx context.Context, userID, notifType, title
 			}
 			deliveries = append(deliveries, delivery)
 		case "push":
-			delivery := s.dispatchPush(ctx, userID, notifType, title, body, actionURL)
+			delivery := s.dispatchPush(ctx, userID, notifType, title, body, actionURL, entityType, entityID)
 			if delivery.Delivered {
 				notif.PushSent = true
 			}
@@ -178,7 +182,25 @@ func (s *Service) dispatchEmail(ctx context.Context, userID, notifType, title, b
 // target disjoint subscriber sets (native app installs vs. installed
 // PWA / browser push), so we fan out to both and report success if
 // either one delivers. iOS tokens route to APNs; android/web to FCM.
-func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, body, actionURL string) ChannelDelivery {
+//
+// Before any dispatch the send-ledger cooldown runs (IOS-SYS.NT.1):
+// promotional types cap at 1 push / user / 24h per type and 3 promotional
+// pushes / user / 24h total; everything else shares a generous 20 pushes /
+// user / hour anti-storm cap. A blocked push is skipped — the in-app row
+// still delivers — and counted on notification_push_cooldown_skips_total.
+func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, body, actionURL, entityType, entityID string) ChannelDelivery {
+	if verdict := s.pushCooldownVerdict(ctx, userID, notifType); !verdict.allowed {
+		pushCooldownSkipsTotal.WithLabelValues(verdict.class, verdict.limit).Inc()
+		slog.InfoContext(ctx, "push dispatch skipped: cooldown",
+			"user_id", userID,
+			"type", notifType,
+			"class", verdict.class,
+			"limit", verdict.limit,
+			"reason", verdict.reason,
+		)
+		return ChannelDelivery{Channel: "push", Delivered: false, FailureReason: "rate limited: " + verdict.reason}
+	}
+
 	totalSent := 0
 	totalErrs := 0
 	noTokens := false
@@ -200,9 +222,21 @@ func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, bo
 			b := unread + 1
 			badge = &b
 		}
-		sent, errs := s.push.SendMultiple(ctx, tokens, title, body, actionURL, notifType, badge)
+		sent, stale, errs := s.push.SendMultiple(ctx, tokens, pushMessage{
+			Title:      title,
+			Body:       body,
+			ActionURL:  actionURL,
+			NotifType:  notifType,
+			Badge:      badge,
+			EntityType: entityType,
+			EntityID:   entityID,
+		})
 		totalSent += sent
 		totalErrs += len(errs)
+		// IOS-SYS.NT.4: APNs declared these tokens permanently gone (410
+		// Unregistered / 400 BadDeviceToken) — delete the rows so the next
+		// notification stops pushing at dead devices.
+		s.pruneStaleDeviceTokens(ctx, userID, stale)
 	}
 
 	// W3C Web Push path. Skipped silently when the dispatcher is nil
@@ -214,6 +248,13 @@ func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, bo
 		if webSent > 0 {
 			noTokens = false
 		}
+	}
+
+	if totalSent > 0 {
+		// Consume cooldown budget only for real deliveries: a fan-out where
+		// nothing went out (no tokens / all sends failed) must not burn the
+		// user's 1-per-24h promotional slot.
+		s.recordPushSend(ctx, userID, notifType)
 	}
 
 	if totalSent == 0 && totalErrs > 0 {
@@ -235,6 +276,117 @@ func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, bo
 	}
 
 	return ChannelDelivery{Channel: "push", Delivered: true}
+}
+
+// cooldownVerdict is the outcome of a push cooldown check.
+type cooldownVerdict struct {
+	allowed bool
+	class   string // "promotional" | "transactional"
+	limit   string // cap that tripped: "per_type" | "class_total" | "hourly_storm"
+	reason  string // human-readable, safe to surface in FailureReason
+}
+
+// pushCooldownVerdict enforces the IOS-SYS.NT.1 send-ledger cooldowns.
+//
+// Fail-open posture: this is an anti-spam/anti-storm limiter, not an authz
+// gate — on a ledger read error (or a nil ledger) we allow the push and warn,
+// matching how preference reads already fail toward delivery. The check and
+// the later RecordSend are not transactional; a concurrent race can let one
+// extra push through, which is acceptable for rate limiting.
+func (s *Service) pushCooldownVerdict(ctx context.Context, userID, notifType string) cooldownVerdict {
+	allow := cooldownVerdict{allowed: true}
+	if s.ledger == nil {
+		return allow
+	}
+	now := time.Now().UTC()
+
+	if isPromotionalNotifType(notifType) {
+		perType, err := s.ledger.CountSendsForType(ctx, userID, notifType, pushLedgerChannel, now.Add(-promoPerTypeWindow))
+		if err != nil {
+			slog.WarnContext(ctx, "push cooldown: per-type ledger read failed, allowing send",
+				"user_id", userID, "type", notifType, "error", err)
+			return allow
+		}
+		if perType >= promoPerTypeMax {
+			return cooldownVerdict{
+				class:  "promotional",
+				limit:  "per_type",
+				reason: fmt.Sprintf("promotional cooldown: max %d %q push per user per %s", promoPerTypeMax, notifType, promoPerTypeWindow),
+			}
+		}
+
+		classTotal, err := s.ledger.CountSendsMatching(ctx, userID, pushLedgerChannel, promotionalSendClass(), true, now.Add(-promoClassWindow))
+		if err != nil {
+			slog.WarnContext(ctx, "push cooldown: promotional class ledger read failed, allowing send",
+				"user_id", userID, "type", notifType, "error", err)
+			return allow
+		}
+		if classTotal >= promoClassMax {
+			return cooldownVerdict{
+				class:  "promotional",
+				limit:  "class_total",
+				reason: fmt.Sprintf("promotional cooldown: max %d promotional pushes per user per %s", promoClassMax, promoClassWindow),
+			}
+		}
+		return allow
+	}
+
+	// Transactional (everything non-promotional): generous anti-storm cap.
+	recent, err := s.ledger.CountSendsMatching(ctx, userID, pushLedgerChannel, promotionalSendClass(), false, now.Add(-transactionalWindow))
+	if err != nil {
+		slog.WarnContext(ctx, "push cooldown: transactional ledger read failed, allowing send",
+			"user_id", userID, "type", notifType, "error", err)
+		return allow
+	}
+	if recent >= transactionalMax {
+		return cooldownVerdict{
+			class:  "transactional",
+			limit:  "hourly_storm",
+			reason: fmt.Sprintf("anti-storm cap: max %d transactional pushes per user per %s", transactionalMax, transactionalWindow),
+		}
+	}
+	return allow
+}
+
+// recordPushSend stamps a successful push dispatch into the send ledger.
+// Best-effort: the pushes are already out, so a ledger write failure must not
+// fail the notification — it only weakens the next cooldown check.
+func (s *Service) recordPushSend(ctx context.Context, userID, notifType string) {
+	if s.ledger == nil {
+		return
+	}
+	if err := s.ledger.RecordSend(ctx, userID, notifType, pushLedgerChannel); err != nil {
+		slog.WarnContext(ctx, "push send ledger write failed",
+			"user_id", userID,
+			"type", notifType,
+			"error", err,
+		)
+	}
+}
+
+// pruneStaleDeviceTokens deletes device-token rows APNs reported as
+// permanently unregistered (IOS-SYS.NT.4). DeleteDeviceToken matches on
+// token OR device_id, so passing the raw token value is sufficient.
+func (s *Service) pruneStaleDeviceTokens(ctx context.Context, userID string, staleTokens []string) {
+	for _, token := range staleTokens {
+		err := s.deviceRepo.DeleteDeviceToken(ctx, userID, token)
+		switch {
+		case err == nil:
+			staleDeviceTokensPrunedTotal.Inc()
+			slog.InfoContext(ctx, "pruned unregistered device token",
+				"user_id", userID,
+				"device_token", truncateToken(token),
+			)
+		case errors.Is(err, domain.ErrDeviceTokenNotFound):
+			// Already gone (concurrent unregister) — nothing to do.
+		default:
+			slog.WarnContext(ctx, "failed to prune unregistered device token",
+				"user_id", userID,
+				"device_token", truncateToken(token),
+				"error", err,
+			)
+		}
+	}
 }
 
 // dispatchSMS sends an SMS notification for the given user.

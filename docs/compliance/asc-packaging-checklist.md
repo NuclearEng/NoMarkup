@@ -101,26 +101,30 @@ In-app legal surfaces (SwiftUI → `SFSafariViewController` / `LegalWebView`): P
 
 **Truth (2026-07-27):** Binary registers for remote notifications and associates **Device ID** (`identifierForVendor` and/or push device token) with the account for delivery. Declare **Device ID — collected, linked to user, not used for tracking**. Privacy manifest: `ios/NoMarkup/PrivacyInfo.xcprivacy` (`NSPrivacyTracking=false`).
 
+**Reconciled 2026-07-27 (IOS-DIST.7 / IOS-PRI.7):** this table and the app privacy manifest are now the **same list, both directions**. Every "Yes" row below has a matching `NSPrivacyCollectedDataType` entry in `ios/NoMarkup/PrivacyInfo.xcprivacy` (manifest gained Physical Address, Coarse Location, Purchase History, Customer Support, User ID; this table gained Date of Birth + Sensitive Info; Other User Contact Info corrected to No from code truth). The widget extension ships its own manifest (`ios/NoMarkupWidget/PrivacyInfo.xcprivacy`: Other User Content + app-group UserDefaults `1C8F.1`). Per-row rationale inline. Enter in ASC exactly as below.
+
 | ASC data type | Collected? | Linked to user? | Tracking? | Purposes (typical) | Product evidence |
 |---------------|------------|-----------------|-----------|--------------------|------------------|
 | **Email Address** | Yes | Yes | No | App Functionality, Account Management | Register / login / OAuth / SIWA |
 | **Name** | Yes | Yes | No | App Functionality | Profile, SIWA name once, counterparty display |
 | **Phone Number** | Yes (optional) | Yes | No | App Functionality | Profile / provider onboarding |
-| **Physical Address** | Yes | Yes | No | App Functionality | Jobs, properties, listing pickup |
-| **Other User Contact Info** | Yes | Yes | No | App Functionality | OAuth / chat display names |
+| **Physical Address** | Yes | Yes | No | App Functionality | Jobs, properties, listing pickup — *reconciled: real collection (`PostJobView` optional service address, saved properties, pickup locations) → manifest gained `PhysicalAddress`* |
+| **Date of Birth** | Yes | Yes | No | App Functionality | `AgeGateView` 18+ DOB gate + provider onboarding — *reconciled: was in manifest, missing here; row added* |
+| **Other User Contact Info** | **No** | — | — | — | *Reconciled: no code basis — "OAuth / chat display names" are already Name; no extra contact fields exist in models/API. Do not declare; not in manifest* |
 | **Photos or Videos** | Yes | Yes | No | App Functionality | Avatar, portfolio, job/listing/claim uploads |
 | **Audio Data** | **No** | — | — | — | Mic not used; do not declare |
-| **Customer Support** | Yes | Yes | No | App Functionality | Support / reports |
+| **Customer Support** | Yes | Yes | No | App Functionality | Report / dispute submissions (`reportListing`, `reportUser`, `fileOrderDispute`, no-show notes) — *reconciled: real collection → manifest gained `CustomerSupport`* |
 | **Other User Content** | Yes | Yes | No | App Functionality | Jobs, listings, reviews, chat (UGC) |
-| **Purchase History** | Yes | Yes | No | App Functionality | Orders / escrow metadata (when payment UI ships) |
+| **Purchase History** | Yes | Yes | No | App Functionality | Orders / escrow (`fetchMyOrders`, `payOrder`, pickup/escrow confirmations — payment UI **is** in this binary) — *reconciled: real collection → manifest gained `PurchaseHistory`* |
 | **Payment Info** | Yes (tokenized) | Yes | No | App Functionality | Stripe only — no full PAN on NoMarkup servers |
 | **Precise Location** | Yes (when used) | Yes | No | App Functionality | Job-site check-in GPS |
-| **Coarse Location** | Yes | Yes | No | App Functionality | Market suggestion; coarsened public map |
+| **Coarse Location** | Yes | Yes | No | App Functionality | Market association + lat/lng geo-filtered browse; public map server-coarsened — *reconciled: real collection → manifest gained `CoarseLocation`* |
+| **Sensitive Info** | Yes | Yes | No | App Functionality | Government ID / verification document uploads (`VerificationCenterView` / `VerificationDocumentsView`) — *reconciled: was in manifest, missing here; row added* |
 | **Crash Data** | **No** (first binary) | — | — | — | No Sentry/crash SDK in `Package.resolved` (Stripe only) |
 | **Performance Data** | **No** unless telemetry ships | — | — | — | Do not invent |
 | **Product Interaction** | Only if analytics ships | Yes | No | App Functionality | Prefer omit until consent-gated analytics exists |
 | **Device ID** | **Yes** | **Yes** | **No** | App Functionality | APNs token + `identifierForVendor` via `PushRegistration` — **linked, not tracking** |
-| **User ID** | Yes | Yes | No | App Functionality | Account UUID, OAuth `sub` |
+| **User ID** | Yes | Yes | No | App Functionality | Account UUID, OAuth `sub` — *reconciled: real collection (every authed session) → manifest gained `UserID`* |
 | **Advertising Data** | **No** | — | — | — | No ad network today |
 | **Other Diagnostic Data** | Only as disclosed | Yes | No | App Functionality | Avoid over-declare |
 
@@ -210,7 +214,7 @@ Optional for v1. If filmed: same dual-rail honesty; no regulated features.
 |------|--------|
 | 1024×1024 App Store icon | **Done in tree** — `AppIcon.appiconset/AppIcon-1024.png` (terminal master 37) |
 | No transparency / no rounded-rect baking | Opaque RGB — follow HIG |
-| Dark / tinted appearances | **Open** (IOS-DES.6) — optional for submit; improve when Icon Composer lands |
+| Dark / tinted appearances | **Shipped 2026-07-27** (IOS-DES.6) — real per-appearance files: `AppIcon-1024-dark.png` (background deepened toward black, mark kept bright) + `AppIcon-1024-tinted.png` (grayscale for system tint), each wired to its slot in `Contents.json`. Programmatic derivations of the master — hand-tuned / Icon Composer art can replace them later without re-plumbing. |
 
 ### 6.5 In-App Events (IOS-DIST.13)
 
@@ -396,7 +400,7 @@ Apple asks whether the app uses encryption.
 - [ ] **6.9"** iPhone screenshots for scenes in §6.2
 - [ ] **13"** iPad screenshots for same scenes
 - [ ] Optional preview video
-- [ ] Accessibility nutrition entered per `accessibility-nutrition-claims.md` (VoiceOver only until DT lands)
+- [ ] Accessibility nutrition entered per `accessibility-nutrition-claims.md` (claims flip only after the human AX device passes — code work for Dynamic Type / dark adaptivity has landed)
 
 ### 10.4 Binary content
 
@@ -415,6 +419,7 @@ Apple asks whether the app uses encryption.
 - [x] Push **truthfully declared** (Device ID linked, not tracking) — binary registers APNs
 - [ ] Either no IAP (§7.1) **or** full B2 StoreKit stack (§7.2)
 - [ ] TestFlight internal group + first upload ([`testflight-process.md`](./testflight-process.md))
+- [ ] Push delivery validated: send a test push via the ASC **Push Notifications Console** to a device running the TestFlight build (both alert + badge payload shapes; confirm tap-through deep link) — IOS-SYS.NT.4
 
 ### 10.5 Policy alignment
 

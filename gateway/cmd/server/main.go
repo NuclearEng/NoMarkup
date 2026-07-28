@@ -420,6 +420,13 @@ func main() {
 	challengeHandler := handler.NewChallengeHandler(dbPool)
 	installmentHandler := handler.NewInstallmentHandler(paymentClient)
 	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie, sessionSecret)
+	// WebAuthn passkeys (IOS-SEC.2). Fails fast on invalid RP config (§12);
+	// routes are additionally gated behind the `passkeys` feature flag.
+	passkeyHandler, err := handler.NewPasskeyHandler(dbPool, cacheClient, userClient, authHandler)
+	if err != nil {
+		slog.Error("failed to initialize passkey handler", "error", err)
+		os.Exit(1)
+	}
 	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient, dbPool, piiCipher)
 	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, bidClient, contractClient, cacheClient, userClient, dbPool)
 	disputeHandler := handler.NewDisputeHandler(contractClient, dbPool)
@@ -557,6 +564,7 @@ func main() {
 		insuranceCompetitionHandler,
 		providerLicenseHandler,
 		dataExportHandler,
+		passkeyHandler,
 	)
 
 	srv := &http.Server{

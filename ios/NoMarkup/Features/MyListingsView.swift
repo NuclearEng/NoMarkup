@@ -46,7 +46,6 @@ struct MyListingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
         .onChange(of: statusFilter) { _, _ in
@@ -109,7 +108,7 @@ struct MyListingsView: View {
                         if let total = pagination?.resolvedTotal, total > 0 {
                             Text("\(listings.count) of \(total)").brandSectionHeader()
                         } else {
-                            Text("\(listings.count) listing\(listings.count == 1 ? "" : "s")")
+                            Text(String(localized: "\(listings.count) listings"))
                                 .brandSectionHeader()
                         }
                     } footer: {
@@ -155,7 +154,7 @@ struct MyListingsView: View {
                     .font(.caption)
                     .foregroundStyle(BrandTheme.textSecondary)
                 if let bids = listing.bidCount {
-                    Text("· \(bids) bid\(bids == 1 ? "" : "s")")
+                    Text(String(localized: "· \(bids) bids"))
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }

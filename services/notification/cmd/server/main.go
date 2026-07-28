@@ -146,9 +146,11 @@ func main() {
 		slog.Info("sms dispatcher running in dev mode (TWILIO_ACCOUNT_SID not set)")
 	}
 
-	// Wire up dependencies.
+	// Wire up dependencies. repo triples as the notification store, the
+	// device-token store, and the send ledger backing the push cooldowns
+	// (IOS-SYS.NT.1) — all one PostgresRepository.
 	repo := repository.New(pool)
-	svc := service.New(repo, repo, emailDispatcher, pushDispatcher, webPushDispatcher, smsDispatcher)
+	svc := service.New(repo, repo, repo, emailDispatcher, pushDispatcher, webPushDispatcher, smsDispatcher)
 	srv := notificationgrpc.NewServer(svc)
 
 	// Goods-marketplace retention loop: closing-soon, closing-now, and

@@ -1,5 +1,6 @@
 .PHONY: up down dev dev-full dev-infra dev-status dev-logs migrate-up migrate-down seed proto-gen proto-gen-go proto-gen-rust \
-       verify-proto setup-tools test lint fmt build-gateway build-web build-engines build-services build build-all clean
+       verify-proto setup-tools test lint fmt build-gateway build-web build-engines build-services build build-all clean \
+       ios-archive-lint ios-archive
 
 # ── Native Dev (bin/dev) ─────────────────────────────────────
 
@@ -215,6 +216,23 @@ build-services:
 		(cd services/$$svc && go build -o bin/server ./cmd/server) || exit 1; \
 	done
 	@echo "All Go services built."
+
+# ── iOS archive (IOS-DIST.1) ──────────────────────────────────
+# Fail-closed archive path: lint gates the archive (the Xcode scheme pre-action
+# runs the same script, but Xcode ignores pre-action exit codes — this target
+# does not). Requires DEVELOPER_DIR → Xcode 26+ (docs/compliance/testflight-process.md §1).
+
+ios-archive-lint:
+	./scripts/ios-archive-lint.sh
+
+ios-archive: ios-archive-lint
+	cd ios && xcodebuild archive \
+		-scheme NoMarkup \
+		-project NoMarkup.xcodeproj \
+		-configuration Release \
+		-archivePath build/NoMarkup.xcarchive \
+		-destination 'generic/platform=iOS'
+	@echo "Archive at ios/build/NoMarkup.xcarchive — upload via Xcode Organizer (testflight-process.md §4)."
 
 # ── Clean ─────────────────────────────────────────────────────
 

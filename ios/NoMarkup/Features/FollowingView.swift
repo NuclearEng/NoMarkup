@@ -39,7 +39,6 @@ struct FollowingView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
     }
@@ -93,7 +92,7 @@ struct FollowingView: View {
                 if let total = pagination?.resolvedTotal, total > 0 {
                     Text("\(follows.count) of \(total)").brandSectionHeader()
                 } else {
-                    Text("\(follows.count) seller\(follows.count == 1 ? "" : "s")")
+                    Text(String(localized: "\(follows.count) sellers"))
                         .brandSectionHeader()
                 }
             } footer: {

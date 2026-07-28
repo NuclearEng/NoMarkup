@@ -62,7 +62,6 @@ struct NPSSurveysView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
         .sheet(item: $selectedSurvey) { survey in

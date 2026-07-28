@@ -75,10 +75,10 @@ type webPushPayload struct {
 }
 
 type webPushSubscription struct {
-	ID         string
-	Endpoint   string
-	P256dhKey  string
-	AuthKey    string
+	ID        string
+	Endpoint  string
+	P256dhKey string
+	AuthKey   string
 }
 
 // SendToUser fetches every push_subscriptions row for the user and

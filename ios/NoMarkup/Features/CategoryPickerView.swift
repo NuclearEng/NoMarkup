@@ -98,7 +98,6 @@ struct CategoryPickerView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .tint(BrandTheme.accent)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
@@ -276,7 +275,6 @@ private struct CategorySubtreeView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .tint(BrandTheme.accent)
     }
 }

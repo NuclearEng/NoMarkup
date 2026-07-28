@@ -30,7 +30,6 @@ struct TrustScoreView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .task { await load() }
             .refreshable { await load() }
     }
@@ -172,7 +171,7 @@ struct TrustScoreView: View {
                         .accessibilityLabel("Tier \(score.displayTier)")
 
                     if let points = score.dataPoints, points > 0 {
-                        Text("\(points) data point\(points == 1 ? "" : "s")")
+                        Text(String(localized: "\(points) data points"))
                             .font(.caption2)
                             .foregroundStyle(BrandTheme.textSecondary)
                             .monospacedDigit()

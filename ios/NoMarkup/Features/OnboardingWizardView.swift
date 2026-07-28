@@ -98,7 +98,6 @@ struct OnboardingWizardView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Not now") {
@@ -175,10 +174,7 @@ struct OnboardingWizardView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(BrandTheme.navyElevated, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(BrandTheme.hairline, lineWidth: 1)
-        )
+        .brandHairlineBorder(cornerRadius: 18)
     }
 
     private var stepSubtitle: String {

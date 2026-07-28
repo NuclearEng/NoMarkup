@@ -33,7 +33,6 @@ struct JobsMapView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -180,7 +179,7 @@ struct JobsMapView: View {
         if isLoading { return "Updating…" }
         let count = mappablePins.count
         if count == 0 { return "No open jobs in this area" }
-        return "\(count) job\(count == 1 ? "" : "s") · \(Int(defaultRadiusKm)) km"
+        return "\(String(localized: "\(count) jobs")) · \(Int(defaultRadiusKm)) km"
     }
 
     private func requestUserLocation() {

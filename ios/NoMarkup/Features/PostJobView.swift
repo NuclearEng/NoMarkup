@@ -69,7 +69,6 @@ struct PostJobView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .tint(BrandTheme.accent)
         .onChange(of: categoryId) { _, newValue in
             Task { await refreshMarketRange(categoryId: newValue) }

@@ -37,7 +37,6 @@ struct WatchlistView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
         .navigationDestination(for: ListingSummary.self) { listing in
@@ -90,7 +89,7 @@ struct WatchlistView: View {
                     if let total = pagination?.resolvedTotal, total > 0 {
                         Text("\(listings.count) of \(total)").brandSectionHeader()
                     } else {
-                        Text("\(listings.count) listing\(listings.count == 1 ? "" : "s")")
+                        Text(String(localized: "\(listings.count) listings"))
                             .brandSectionHeader()
                     }
                 } footer: {

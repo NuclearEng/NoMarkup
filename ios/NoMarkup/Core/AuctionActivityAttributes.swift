@@ -17,6 +17,10 @@ struct AuctionActivityAttributes: ActivityAttributes {
         /// Leading amount in integer cents (low for jobs, high for listings).
         var leadingBidCents: Int64
         var endsAt: Date
+        /// Final outcome for the last content state (IOS-SYS.LA.1):
+        /// `"won"` / `"lost"` / `"ended"`. `nil` while the auction is live —
+        /// optional so previously started activities decode unchanged.
+        var outcome: String? = nil
     }
 }
 #endif

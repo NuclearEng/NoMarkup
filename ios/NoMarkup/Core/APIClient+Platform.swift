@@ -33,6 +33,11 @@ extension APIClient {
 
     /// POST `/api/v1/notifications/devices` — register APNs token (Bearer required).
     /// Body: `{ "device_token", "platform": "ios", "device_id" }`.
+    ///
+    /// Also used for Live Activity push tokens (IOS-SYS.LA.3) with
+    /// `platform: "ios_live_activity"` and `device_id: "liveactivity:<auctionID>"`
+    /// — see `AuctionLiveActivityController.observePushToken` for the server-side
+    /// work still required before those pushes flow.
     @discardableResult
     func registerPushDevice(
         deviceToken: String,

@@ -1,4 +1,7 @@
+import AppIntents
+import CoreSpotlight
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Job detail for a single services **reverse auction**.
 /// Providers bid **down** — lowest trusted bid can win.
@@ -102,6 +105,46 @@ struct JobDetailView: View {
         AppConfig.publicWebBaseURL
             .appending(path: "jobs")
             .appending(path: jobID)
+    }
+
+    // MARK: - Spotlight donation (IOS-INT.2, donation half)
+
+    /// `NSUserActivity` type donated when the user views a job.
+    private static let viewJobActivityType = "com.nomarkup.app.viewJob"
+
+    /// On-device Spotlight summary — public-safe fields only (category + area label).
+    private var spotlightDescription: String {
+        var parts = ["Reverse-auction service job on NoMarkup"]
+        if let category = detail?.categoryName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !category.isEmpty
+        {
+            parts.append(category)
+        }
+        if let area = detail?.locationLabel, !area.isEmpty {
+            parts.append(area)
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Populates the donated activity: searchable title, stable id, canonical web URL.
+    private func configureViewActivity(_ activity: NSUserActivity) {
+        let title = detail?.displayTitle ?? preview?.title ?? "Service auction"
+        activity.title = title
+        activity.isEligibleForSearch = true
+        activity.persistentIdentifier = jobID
+        activity.webpageURL = webJobURL
+        let attributes = CSSearchableItemAttributeSet(contentType: .item)
+        attributes.title = title
+        attributes.contentDescription = spotlightDescription
+        activity.contentAttributeSet = attributes
+        // IOS-INT.4 (view annotation): associate the on-screen view with its App
+        // Intents entity via the SDK's NSUserActivity bridge —
+        // `NSUserActivity.appEntityIdentifier` (`AppEntityAnnotatable`, iOS 18.2+ in
+        // the installed AppIntents swiftinterface). No SwiftUI `.appEntity`-style view
+        // modifier exists in this SDK, so the activity property is the verified API.
+        if #available(iOS 18.2, *) {
+            activity.appEntityIdentifier = EntityIdentifier(for: JobEntity.self, identifier: jobID)
+        }
     }
 
     /// Reverse auction ladder. Default: lowest amount first (rank #1 leading).
@@ -298,7 +341,6 @@ struct JobDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .task(id: auctionPollIdentity) {
             await pollLiveAuctionStateLoop()
@@ -319,6 +361,10 @@ struct JobDetailView: View {
             teardownAuctionSockets()
         }
         .refreshable { await load() }
+        // IOS-INT.2 — donate the viewed job to Spotlight (deep-linkable via the web URL).
+        .userActivity(Self.viewJobActivityType, isActive: detail != nil) { activity in
+            configureViewActivity(activity)
+        }
         .confirmationDialog(
             "Award this bid?",
             isPresented: Binding(
@@ -686,8 +732,9 @@ struct JobDetailView: View {
             } header: {
                 Text("Repost").brandSectionHeader()
             } footer: {
+                // PRD FR-3.10 — owner repost restarts the auction with the same job details.
                 Text(
-                    "Auction ended without an award, or you cancelled. Repost starts a fresh bidding window with the same details (FR-3.10)."
+                    "Auction ended without an award, or you cancelled. Repost starts a fresh bidding window with the same details."
                 )
                 .foregroundStyle(BrandTheme.textSecondary)
             }
@@ -935,7 +982,7 @@ struct JobDetailView: View {
     @ViewBuilder
     private func bidCountChip(job: JobDetail) -> some View {
         let count = effectiveBidCount(job: job)
-        Label("\(count) bid\(count == 1 ? "" : "s")", systemImage: "arrow.down.circle")
+        Label(String(localized: "\(count) bids"), systemImage: "arrow.down.circle")
             .font(.caption.weight(.semibold))
             .foregroundStyle(BrandTheme.textPrimary)
             .padding(.horizontal, 10)
@@ -1891,7 +1938,7 @@ struct JobDetailView: View {
                         "Instant offer is live, but no providers are currently available for Instant. Keep the auction open or re-request later."
                 }
             } else if let n, n > 0 {
-                let providers = n == 1 ? "1 available provider" : "\(n) available providers"
+                let providers = String(localized: "\(n) available providers")
                 if let when = expiresLabel {
                     instantMatchMessage = "Instant match sent to \(providers). Offers expire \(when)."
                 } else {

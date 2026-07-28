@@ -4,6 +4,8 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.selectedRootTab) private var selectedRootTab
+    /// A11Y.3: solid hairline divider under Reduce Transparency.
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     @State private var healthOK: Bool?
     @State private var isChecking = false
@@ -57,7 +59,6 @@ struct HomeView: View {
             .navigationBarTitleDisplayMode(.large)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .navigationDestination(for: JobSummary.self) { job in
                 JobDetailView(jobID: job.id, preview: job)
             }
@@ -253,7 +254,7 @@ struct HomeView: View {
 
     private var divider: some View {
         Rectangle()
-            .fill(BrandTheme.hairline)
+            .fill(reduceTransparency ? BrandTheme.hairlineOpaque : BrandTheme.hairline)
             .frame(width: 1)
             .padding(.vertical, 14)
     }
@@ -462,10 +463,7 @@ struct HomeView: View {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(BrandTheme.gradientCardFace)
                 }
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(BrandTheme.hairline, lineWidth: 1)
-                )
+                .brandHairlineBorder(cornerRadius: 18)
             } else {
                 VStack(spacing: 10) {
                     ForEach(listings.prefix(3)) { listing in
@@ -966,10 +964,7 @@ private struct HomeJobCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(BrandTheme.gradientCardFace)
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(BrandTheme.hairline, lineWidth: 1)
-        )
+        .brandHairlineBorder(cornerRadius: 16)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
@@ -1001,7 +996,7 @@ private struct HomeJobCard: View {
 
     @ViewBuilder
     private func bidCountChip(count: Int) -> some View {
-        Label("\(count) bid\(count == 1 ? "" : "s")", systemImage: "arrow.down.circle")
+        Label(String(localized: "\(count) bids"), systemImage: "arrow.down.circle")
             .font(.caption.weight(.semibold))
             .foregroundStyle(BrandTheme.textPrimary)
             .padding(.horizontal, 10)
@@ -1108,7 +1103,7 @@ private struct HomeListingCard: View {
                             .lineLimit(1)
                     }
                     if bidCountValue > 0 {
-                        Text("\(bidCountValue) bid\(bidCountValue == 1 ? "" : "s")")
+                        Text(String(localized: "\(bidCountValue) bids"))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(BrandTheme.goldBright)
                     }
@@ -1141,10 +1136,7 @@ private struct HomeListingCard: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(BrandTheme.gradientCardFace)
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(BrandTheme.hairline, lineWidth: 1)
-        )
+        .brandHairlineBorder(cornerRadius: 16)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }

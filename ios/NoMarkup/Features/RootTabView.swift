@@ -167,9 +167,9 @@ struct RootTabView: View {
         case .messages:
             selectedTab = .messages
             deepLinks.clear()
-        case .job, .listing, .contract, .bids, .watchlist, .notifications, .postJob, .checkIn:
+        case .job, .listing, .contract, .bids, .watchlist, .notifications, .postJob, .checkIn, .orders:
             switch route {
-            case .bids, .watchlist, .notifications, .checkIn:
+            case .bids, .watchlist, .notifications, .checkIn, .orders:
                 selectedTab = .account
             case .postJob, .job:
                 selectedTab = .jobs
@@ -206,6 +206,10 @@ struct RootTabView: View {
             } else {
                 ContractsView()
             }
+        case .orders:
+            // Same surface for list and detail — mirrors the NotificationDeepLink
+            // fallback (`/orders*` → `MyOrdersView`); no order-detail init exists yet.
+            MyOrdersView()
         case .messages:
             MessagesView()
         }

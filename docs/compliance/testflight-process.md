@@ -38,9 +38,9 @@ Do **not** archive with Xcode 16 / iOS 18 SDK for App Store or TestFlight submis
 | **Build number** (`CFBundleVersion` / `CURRENT_PROJECT_VERSION`) | **Monotonic integer** per upload to ASC (never reuse a build for the same version). Increment on every archive that will be uploaded. |
 | Who bumps | Engineer preparing the archive; note build in TestFlight “What to Test” and in device-smoke sign-off. |
 
-Example (current scaffold may still show `0.1.0` / build `2` in Xcode — treat as pre-public):
+Current tree (verified 2026-07-27): **`1.0.0` / build `3`** across all 8 build configurations (`MARKETING_VERSION = 1.0.0`, `CURRENT_PROJECT_VERSION = 3` — lint-checked by `scripts/ios-archive-lint.sh`).
 
-1. Before first **public** candidate: set marketing `1.0.0`, build `1` (or next free integer if TestFlight already used builds under 0.1.x).  
+1. First **public** candidate archives as `1.0.0` build `3` (or the next free integer if a build 3 was already uploaded).  
 2. Each re-upload: leave marketing, **+1** build only.  
 3. Hotfix after 1.0.0: either `1.0.1` + new build, or `1.0.0` + higher build only if notes allow.
 
@@ -53,7 +53,7 @@ Example (current scaffold may still show `0.1.0` / build `2` in Xcode — treat 
 - [ ] `AppConfig` resolves **HTTPS** for Release (empty Info.plist `APIBaseURL` → `https://api.no-markup.com`)  
 - [ ] Unit tests green: `xcodebuild test -only-testing:NoMarkupTests` (see §7)  
 - [ ] No secrets in Info.plist (Stripe/Google keys empty or injected via CI secrets — never commit live keys)  
-- [ ] `PrivacyInfo.xcprivacy` present in app target  
+- [ ] `PrivacyInfo.xcprivacy` present in **both** targets (app `ios/NoMarkup/` + widget `ios/NoMarkupWidget/`)  
 - [ ] Signing: Distribution cert + App Store profile (or Automatic with team that has App Store capability)  
 - [ ] Destination: **Any iOS Device (arm64)** — not a simulator archive for TestFlight  
 

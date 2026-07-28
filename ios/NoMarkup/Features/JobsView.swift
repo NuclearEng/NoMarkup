@@ -96,7 +96,6 @@ struct JobsView: View {
                 }
             }
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
     }
 
     @ViewBuilder

@@ -4,8 +4,7 @@
     "details": [
       {
         "appIDs": [
-          "6L6565278C.com.nomarkup.app",
-          "TEAMID.com.nomarkup.app"
+          "6L6565278C.com.nomarkup.app"
         ],
         "components": [
           {
@@ -62,8 +61,7 @@
   },
   "webcredentials": {
     "apps": [
-      "6L6565278C.com.nomarkup.app",
-      "TEAMID.com.nomarkup.app"
+      "6L6565278C.com.nomarkup.app"
     ]
   }
 }

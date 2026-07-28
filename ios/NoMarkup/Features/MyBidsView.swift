@@ -103,7 +103,6 @@ struct MyBidsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task(id: segment) { await load() }
         .refreshable { await load() }
         .sheet(item: $loweringBid) { bid in
@@ -163,9 +162,22 @@ struct MyBidsView: View {
                                         .accessibilityLabel("Retract goods bid")
                                     }
                                 }
+                                // DES.7 — non-gesture mirror of the swipe-only retract
+                                // (VoiceOver / pointer / full-keyboard), matching the
+                                // service-bid context menu below.
+                                .contextMenu {
+                                    if entry.canRetract() {
+                                        Button(role: .destructive) {
+                                            Task { await retractListingBid(entry) }
+                                        } label: {
+                                            Label("Retract bid", systemImage: "arrow.uturn.backward")
+                                        }
+                                        .disabled(retractingBidID != nil)
+                                    }
+                                }
                         }
                     } header: {
-                        Text("\(listingBids.count) bid\(listingBids.count == 1 ? "" : "s")").brandSectionHeader()
+                        Text(String(localized: "\(listingBids.count) bids")).brandSectionHeader()
                     } footer: {
                         Text("Forward auction: highest bid leads. Winning high bids can be retracted within 60 seconds of placement.")
                             .foregroundStyle(BrandTheme.textSecondary)
@@ -246,7 +258,7 @@ struct MyBidsView: View {
                                 }
                         }
                     } header: {
-                        Text("\(jobBids.count) bid\(jobBids.count == 1 ? "" : "s")").brandSectionHeader()
+                        Text(String(localized: "\(jobBids.count) bids")).brandSectionHeader()
                     } footer: {
                         Text("Reverse auction: providers compete down. Lower price is more competitive. Swipe right to lower, left to withdraw active bids.")
                             .foregroundStyle(BrandTheme.textSecondary)
@@ -548,6 +560,8 @@ struct MyBidsView: View {
                 let response = try await APIClient.shared.fetchMyJobBids(page: 1, pageSize: 40)
                 jobBids = response.bids
             }
+            // IOS-SYS.WD.3 — refresh the widget snapshot from the fresh authoritative list.
+            syncWidgetActiveBidCount()
         } catch let error as APIClientError where error.isUnauthorized {
             listingBids = []
             jobBids = []
@@ -557,6 +571,20 @@ struct MyBidsView: View {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    /// IOS-SYS.WD.3 (caller half) — push the authoritative active-bid count into the
+    /// shared widget snapshot so Home/Lock Screen widgets stop showing 0/stale counts.
+    /// Best-effort from whichever segments have loaded; never throws, no UI impact.
+    private func syncWidgetActiveBidCount() {
+        let activeGoods = listingBids.filter { entry in
+            let status = (entry.listing?.status ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            return status == "active" || status == "open"
+        }.count
+        let activeServices = jobBids.filter { $0.isWithdrawable }.count
+        WidgetSharedStore.setActiveBidCount(activeGoods + activeServices)
     }
 
     /// POST `/api/v1/listings/{id}/bids/{bidId}/retract` — 60s window, leading bid only.
@@ -592,6 +620,11 @@ struct MyBidsView: View {
                 bidId: bidId
             )
             listingBids.removeAll { $0.id == entry.id }
+            // IOS-SYS.LA.1 — retracting the bid ends this auction's Live Activity
+            // (controller no-ops when ActivityKit / Live Activities are unavailable,
+            // same best-effort call shape as the ListingDetailView start site).
+            AuctionLiveActivityController.end(auctionID: listingId)
+            syncWidgetActiveBidCount()
             retractIsError = false
             retractMessage = "Bid retracted: \(entry.displayAmount)."
         } catch let error as APIClientError where error.isUnauthorized {
@@ -624,6 +657,13 @@ struct MyBidsView: View {
             if let idx = jobBids.firstIndex(where: { $0.id == bid.id }) {
                 jobBids[idx] = bid.markedWithdrawn()
             }
+            // IOS-SYS.LA.1 — withdrawing the service bid ends the job's Live Activity
+            // (controller no-ops when ActivityKit / Live Activities are unavailable,
+            // same best-effort call shape as the JobDetailView start site).
+            if let jobId = bid.jobId, !jobId.isEmpty {
+                AuctionLiveActivityController.end(auctionID: jobId)
+            }
+            syncWidgetActiveBidCount()
             withdrawIsError = false
             withdrawMessage = "Bid withdrawn: \(bid.displayAmount)."
         } catch let error as APIClientError where error.isUnauthorized {

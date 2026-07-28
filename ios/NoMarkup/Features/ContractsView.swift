@@ -62,7 +62,7 @@ struct ContractsView: View {
                             .frame(minHeight: 44)
                         }
                     } header: {
-                        Text("\(contracts.count) contract\(contracts.count == 1 ? "" : "s")")
+                        Text(String(localized: "\(contracts.count) contracts"))
                             .brandSectionHeader()
                     } footer: {
                         Text("Contracts are the service side of NoMarkup: reverse-auction awards, milestones, and mutual completion. Local goods orders live under Orders.")
@@ -77,7 +77,6 @@ struct ContractsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
     }

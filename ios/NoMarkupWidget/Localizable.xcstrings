@@ -1,0 +1,198 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@" : {
+
+    },
+    "%@ · ends %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · ends %2$@"
+          }
+        }
+      }
+    },
+    "%lld" : {
+
+    },
+    "%lld active bids" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld active bid"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld active bids"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld minutes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minute"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Active Bids" : {
+
+    },
+    "Active bids" : {
+
+    },
+    "Auction" : {
+
+    },
+    "Auction %@" : {
+
+    },
+    "Auction Type" : {
+
+    },
+    "Auction countdown" : {
+
+    },
+    "Auction ended" : {
+
+    },
+    "Choose which auction the countdown follows." : {
+
+    },
+    "Countdown to your next auction close. Edit the widget to pin one auction or filter jobs vs listings." : {
+
+    },
+    "End" : {
+
+    },
+    "Goods auction" : {
+
+    },
+    "High bid" : {
+
+    },
+    "Idle" : {
+
+    },
+    "Jobs & listings" : {
+
+    },
+    "Leading bid %@" : {
+
+    },
+    "Leading high bid" : {
+
+    },
+    "Leading low bid" : {
+
+    },
+    "Low bid" : {
+
+    },
+    "Marketplace listings" : {
+
+    },
+    "Next Closing" : {
+
+    },
+    "Next closing" : {
+
+    },
+    "No active auctions" : {
+
+    },
+    "See how many auctions you are bidding on." : {
+
+    },
+    "Service bid" : {
+
+    },
+    "Service jobs" : {
+
+    },
+    "Show" : {
+
+    },
+    "Tap to open" : {
+
+    },
+    "bids" : {
+
+    },
+    "ends in %lld hours" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ends in %lld hour"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ends in %lld hours"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ends in %lld minutes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ends in %lld minute"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ends in %lld minutes"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

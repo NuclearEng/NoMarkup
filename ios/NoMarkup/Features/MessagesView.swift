@@ -95,7 +95,6 @@ struct MessagesView: View {
         content
             .navigationTitle("Messages")
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .refreshable { await load() }
             .task { await load() }
     }
@@ -512,7 +511,6 @@ struct ChatThreadView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $searchText, prompt: "Search this conversation")
         .toolbar {
             if canProposeTerms {
@@ -1581,7 +1579,6 @@ private struct ChatReportUserSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDone() }
@@ -1639,6 +1636,8 @@ private enum MessageReceiptStatus: Equatable, Sendable {
 private struct MessageBubbleRow: View {
     let message: ChatMessage
     let isMine: Bool
+    /// A11Y.3: solid incoming-bubble border under Reduce Transparency.
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     /// Receipt under last own message only (nil elsewhere).
     var receipt: MessageReceiptStatus? = nil
     /// Customer-only Accept/Reject for proposed local terms (FR-8.9).
@@ -1903,7 +1902,12 @@ private struct MessageBubbleRow: View {
                     if !isMine {
                         // Incoming: subtle electric-blue border (not gold).
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(BrandTheme.chatIncomingBorder, lineWidth: 1)
+                            .strokeBorder(
+                                reduceTransparency
+                                    ? BrandTheme.chatIncomingBorderOpaque
+                                    : BrandTheme.chatIncomingBorder,
+                                lineWidth: 1
+                            )
                     }
                 }
                 .frame(maxWidth: 320, alignment: isMine ? .trailing : .leading)

@@ -39,7 +39,6 @@ struct SalesExportView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         #if canImport(UIKit)
         .sheet(item: $shareItem, onDismiss: {
             cleanupTempFile()

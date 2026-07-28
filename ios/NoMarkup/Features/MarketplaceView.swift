@@ -81,7 +81,6 @@ struct MarketplaceView: View {
             .refreshable { await load(reset: true) }
             .task { await load(reset: true) }
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
     }
 
     @ViewBuilder

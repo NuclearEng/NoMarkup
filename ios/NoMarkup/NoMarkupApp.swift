@@ -10,6 +10,9 @@ struct NoMarkupApp: App {
         // Navy + gold chrome for TabView / NavigationStack / lists (matches web dark terminal).
         // DES.4/9: iOS 26+ scroll-edge stays system/Liquid Glass (see BrandTheme.applyGlobalChrome).
         BrandTheme.applyGlobalChrome()
+        // IOS-PERF.3: bounded URLCache for AsyncImage / default URL loading + purge on memory pressure.
+        ImageUploader.configureCache()
+        ImageUploader.installMemoryWarningPurge()
     }
 
     var body: some Scene {
@@ -115,8 +118,17 @@ struct RootView: View {
                 isAuthenticated: auth.isAuthenticated,
                 isScaffold: auth.isScaffoldSession
             )
+            // IOS-SYS.LA.1: end Live Activities whose auctions already closed (stale
+            // after relaunch). Controller self-guards ActivityKit availability, same
+            // pattern as the bid-path `startOrUpdate` call sites.
+            AuctionLiveActivityController.sweepStaleActivities()
             if auth.isAuthenticated, BiometricGate.requireForSensitiveActions, !isBiometricallyUnlocked {
                 await unlockWithBiometrics()
+            }
+            // IOS-SYS.WD.3: refresh the widget snapshot with the real active-bid count
+            // once a session is established (cold launch or fresh sign-in). Best-effort.
+            if auth.isAuthenticated, !auth.isScaffoldSession {
+                await refreshWidgetBidSnapshot()
             }
         }
         .task {
@@ -191,6 +203,37 @@ struct RootView: View {
             reason: "Unlock NoMarkup to view your account and bids."
         )
         isBiometricallyUnlocked = ok
+    }
+
+    /// IOS-SYS.WD.3: cold-launch widget snapshot — count distinct auctions with an
+    /// active bid via the same endpoints `MyBidsView.load()` uses. Failure-tolerant:
+    /// when both calls fail (offline), the last snapshot is left untouched.
+    private func refreshWidgetBidSnapshot() async {
+        var auctionIDs = Set<String>()
+        var sawResponse = false
+
+        if let goods = try? await APIClient.shared.fetchMyListingBids(page: 1, pageSize: 40) {
+            sawResponse = true
+            for entry in goods.bids {
+                guard let listingID = entry.listingIdForAPI,
+                      let endsISO = entry.listing?.auctionEndsAt,
+                      let endsAt = CatalogDateFormat.parseISO(endsISO),
+                      endsAt > Date()
+                else { continue }
+                auctionIDs.insert("listing:\(listingID)")
+            }
+        }
+
+        if let services = try? await APIClient.shared.fetchMyJobBids(page: 1, pageSize: 40) {
+            sawResponse = true
+            for bid in services.bids where bid.isWithdrawable {
+                auctionIDs.insert("job:\(bid.jobId ?? bid.id)")
+            }
+        }
+
+        if sawResponse {
+            WidgetSharedStore.setActiveBidCount(auctionIDs.count)
+        }
     }
 }
 

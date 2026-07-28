@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(UIKit)
+import UIKit
+#endif
 @testable import NoMarkup
 
 final class ImageUploaderTests: XCTestCase {
@@ -42,4 +45,52 @@ final class ImageUploaderTests: XCTestCase {
         XCTAssertTrue(ImageUploader.needsDownsample(width: 100, height: 4000))
         XCTAssertFalse(ImageUploader.needsDownsample(width: 3000, height: 3000, maxEdge: 4096))
     }
+
+    // MARK: - IOS-PERF.3 cache wiring
+
+    func testConfigureCacheBoundsSharedURLCache() {
+        ImageUploader.configureCache()
+        XCTAssertEqual(URLCache.shared.memoryCapacity, 64 * 1024 * 1024)
+        XCTAssertEqual(URLCache.shared.diskCapacity, 256 * 1024 * 1024)
+    }
+
+    #if canImport(UIKit)
+    @MainActor
+    func testMemoryWarningPurgeEmptiesSharedCache() {
+        ImageUploader.configureCache()
+        // Idempotent install: second call must not double-register or crash.
+        ImageUploader.installMemoryWarningPurge()
+        ImageUploader.installMemoryWarningPurge()
+
+        // Seed one cached response so the purge has an observable effect.
+        let url = URL(string: "https://example.com/imageuploader-cache-test")!
+        let request = URLRequest(url: url)
+        let response = URLResponse(
+            url: url,
+            mimeType: "text/plain",
+            expectedContentLength: 4,
+            textEncodingName: "utf-8"
+        )
+        URLCache.shared.storeCachedResponse(
+            CachedURLResponse(response: response, data: Data("test".utf8)),
+            for: request
+        )
+
+        NotificationCenter.default.post(
+            name: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil
+        )
+
+        // `removeAllCachedResponses()` drains an internal CFURLCache queue
+        // asynchronously — asserting on the very next statement is a measured
+        // flake (fail/pass/fail on identical binaries). Poll with a bounded
+        // deadline; the assertion below stays the real check.
+        let deadline = Date().addingTimeInterval(2)
+        while URLCache.shared.cachedResponse(for: request) != nil, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        XCTAssertNil(URLCache.shared.cachedResponse(for: request))
+    }
+    #endif
 }

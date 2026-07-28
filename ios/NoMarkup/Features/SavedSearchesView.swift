@@ -118,6 +118,16 @@ struct SavedSearchesView: View {
                             ForEach(searches) { search in
                                 searchRow(search)
                                     .listRowBackground(BrandTheme.navyElevated)
+                                    // DES.7 — swipe/Edit delete plus long-press context menu
+                                    // (VoiceOver / pointer / full-keyboard).
+                                    .contextMenu {
+                                        Button(role: .destructive) {
+                                            Task { await delete(search) }
+                                        } label: {
+                                            Label("Delete saved search", systemImage: "trash")
+                                        }
+                                        .disabled(deletingID == search.id)
+                                    }
                             }
                             .onDelete { indexSet in
                                 Task { await delete(at: indexSet) }
@@ -128,6 +138,16 @@ struct SavedSearchesView: View {
                     }
                 }
                 .brandListBackground()
+                // DES.7 — non-gesture delete affordance: Edit mode exposes per-row
+                // delete buttons for the `.onDelete` rows above.
+                .toolbar {
+                    if !searches.isEmpty {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            EditButton()
+                                .frame(minHeight: 44)
+                        }
+                    }
+                }
             }
         }
         .navigationTitle("Saved searches")
@@ -135,7 +155,6 @@ struct SavedSearchesView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
     }
@@ -212,20 +231,25 @@ struct SavedSearchesView: View {
 
     @MainActor
     private func delete(at offsets: IndexSet) async {
-        statusMessage = nil
-        statusIsError = false
         for index in offsets {
             guard searches.indices.contains(index) else { continue }
-            let search = searches[index]
-            deletingID = search.id
-            do {
-                try await APIClient.shared.deleteSavedSearch(id: search.id)
-                searches.removeAll { $0.id == search.id }
-            } catch {
-                statusIsError = true
-                statusMessage = error.localizedDescription
-            }
-            deletingID = nil
+            await delete(searches[index])
+        }
+    }
+
+    @MainActor
+    private func delete(_ search: SavedSearch) async {
+        statusMessage = nil
+        statusIsError = false
+        deletingID = search.id
+        defer { deletingID = nil }
+
+        do {
+            try await APIClient.shared.deleteSavedSearch(id: search.id)
+            searches.removeAll { $0.id == search.id }
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
         }
     }
 }

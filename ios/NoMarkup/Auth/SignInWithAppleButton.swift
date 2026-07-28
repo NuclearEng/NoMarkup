@@ -6,27 +6,29 @@ import SwiftUI
 /// Requires the `com.apple.developer.applesignin` entitlement (see NoMarkup.entitlements).
 ///
 /// Sets `request.nonce` to the SHA256 hex of a random raw nonce (Apple requirement).
-/// The **hashed** value is returned with the completion so the gateway can bind
-/// `POST /api/v1/auth/apple/native` body `nonce` to the id_token `nonce` claim
-/// (gateway compares claim == body without re-hashing).
+/// The **raw** value is returned with the completion and sent in the
+/// `POST /api/v1/auth/apple/native` body: the gateway re-hashes it and requires
+/// `sha256hex(body.nonce) == id_token.nonce` for native exchanges (IOS-SEC.1 replay binding).
 struct SignInWithAppleButtonView: View {
-    /// Completion: authorization result + SHA256-hex nonce used on the request (nil on cancel/error before request).
+    /// Completion: authorization result + RAW nonce used on the request (nil on cancel/error before request).
     var onCompletion: (Result<ASAuthorization, Error>, String?) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
-    /// Hashed nonce for the in-flight request (matches id_token claim + gateway body).
-    @State private var pendingHashedNonce: String?
+    /// Raw nonce for the in-flight request; its SHA256 hex was set on `request.nonce`
+    /// (and therefore appears as the id_token `nonce` claim).
+    @State private var pendingRawNonce: String?
 
     var body: some View {
         SignInWithAppleButton(.signIn) { request in
             let raw = Self.randomNonceString()
-            let hashed = Self.sha256Hex(raw)
-            pendingHashedNonce = hashed
+            pendingRawNonce = raw
             request.requestedScopes = [.fullName, .email]
-            request.nonce = hashed
+            // Only the digest goes to Apple; the raw nonce stays client-side until the
+            // gateway exchange, which re-hashes and compares against the token claim.
+            request.nonce = Self.sha256Hex(raw)
         } onCompletion: { result in
-            let nonce = pendingHashedNonce
-            pendingHashedNonce = nil
+            let nonce = pendingRawNonce
+            pendingRawNonce = nil
             onCompletion(result, nonce)
         }
         .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)

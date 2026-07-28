@@ -275,24 +275,46 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if resp.GetRefreshToken() != "" {
-		h.setRefreshTokenCookie(w, resp.GetRefreshToken(), resp.GetUserId())
+	if resp.GetMfaRequired() {
+		// An MFA challenge has no real session yet: set the refresh cookie
+		// only if the service issued one, do NOT seed the idle window (that
+		// happens on VerifyMFA's refresh via the normal request flow), and
+		// return the challenge token.
+		if resp.GetRefreshToken() != "" {
+			h.setRefreshTokenCookie(w, resp.GetRefreshToken(), resp.GetUserId())
+		}
+		writeJSON(w, http.StatusOK, authResponse{
+			UserID:               resp.GetUserId(),
+			AccessToken:          resp.GetAccessToken(),
+			AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
+			MFARequired:          true,
+			MFAChallengeToken:    resp.GetMfaChallengeToken(),
+		})
+		return
+	}
+
+	h.completeSessionLogin(w, r, resp.GetUserId(), resp.GetAccessToken(), resp.GetRefreshToken(), resp.GetAccessTokenExpiresAt())
+}
+
+// completeSessionLogin finalizes a fully-authenticated (non-MFA-pending)
+// login: refresh cookie + has_session sentinel, idle-window seed (CLAUDE.md
+// §6), and the standard password-login JSON body. It is THE single
+// login-success path — password login above and the passkey assertion flow
+// (passkey.go) both terminate here so every credential type yields an
+// identical session contract.
+func (h *AuthHandler) completeSessionLogin(w http.ResponseWriter, r *http.Request, userID, accessToken, refreshToken string, expiresAt *timestamppb.Timestamp) {
+	if refreshToken != "" {
+		h.setRefreshTokenCookie(w, refreshToken, userID)
 	}
 
 	// Seed the idle-session sliding window so a freshly logged-in session has
-	// its idle key immediately (CLAUDE.md §6). Only when MFA is NOT pending —
-	// an MFA challenge has no real session yet; that path seeds on VerifyMFA's
-	// refresh via the normal request flow. Fail-open / no-op without authMW.
-	if !resp.GetMfaRequired() {
-		h.touchIdleFromAccessToken(r.Context(), resp.GetAccessToken(), resp.GetUserId())
-	}
+	// its idle key immediately. Fail-open / no-op without authMW.
+	h.touchIdleFromAccessToken(r.Context(), accessToken, userID)
 
 	writeJSON(w, http.StatusOK, authResponse{
-		UserID:               resp.GetUserId(),
-		AccessToken:          resp.GetAccessToken(),
-		AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
-		MFARequired:          resp.GetMfaRequired(),
-		MFAChallengeToken:    resp.GetMfaChallengeToken(),
+		UserID:               userID,
+		AccessToken:          accessToken,
+		AccessTokenExpiresAt: formatTimestamp(expiresAt),
 	})
 }
 

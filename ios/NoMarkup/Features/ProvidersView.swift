@@ -15,7 +15,6 @@ struct ProvidersView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .searchable(text: $searchText, prompt: "Search providers")
             .onSubmit(of: .search) {
                 Task { await load() }
@@ -76,7 +75,7 @@ struct ProvidersView: View {
                         .accessibilityHint("Opens provider profile")
                     }
                 } header: {
-                    Text("\(providers.count) provider\(providers.count == 1 ? "" : "s")")
+                    Text(String(localized: "\(providers.count) providers"))
                         .brandSectionHeader()
                 }
             }
@@ -114,7 +113,7 @@ struct ProvidersView: View {
 
             HStack(spacing: 10) {
                 if let jobs = provider.jobsCompleted, jobs > 0 {
-                    Label("\(jobs) job\(jobs == 1 ? "" : "s")", systemImage: "checkmark.seal")
+                    Label(String(localized: "\(jobs) jobs"), systemImage: "checkmark.seal")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }

@@ -2,26 +2,26 @@ import AuthenticationServices
 import Foundation
 import UIKit
 
-/// Passkey (WebAuthn) client scaffolding (IOS-SEC.2 / SEC.3).
+/// Passkey (WebAuthn) client — sign-in assertion + enrollment (IOS-SEC.2 / SEC.3).
 ///
-/// **Status:** structural foundation only.
-/// - No gateway WebAuthn endpoints are live yet (grep: zero `passkey`/`webauthn` server code).
-/// - Associated Domains `webcredentials:` is owned by a separate agent; without it ASAuthorization
-///   platform credentials cannot complete against `no-markup.com`.
+/// Gateway endpoints (all JSON, WebAuthn-spec shapes, camelCase keys):
+/// - `POST /api/v1/auth/passkeys/assert/options`   (public; optional `{ "email" }`)
+/// - `POST /api/v1/auth/passkeys/assert/verify`    (public; assertion credential → session tokens)
+/// - `POST /api/v1/auth/passkeys/register/options` (authed; creation options)
+/// - `POST /api/v1/auth/passkeys/register/verify`  (authed; attestation credential → 204)
 ///
-/// When server endpoints ship at:
-/// - `POST /api/v1/auth/passkey/options`  (assertion / registration options)
-/// - `POST /api/v1/auth/passkey/verify`   (credential response → session tokens)
-/// flip `isServerReady` (or a feature flag) and the real `ASAuthorizationController` path runs.
+/// Availability is server-driven: public flag map key `"passkeys"`
+/// (`GET /api/v1/flags` via `FeatureFlags`; default false when absent). UI hides
+/// passkey entry points entirely while the flag is off (IOS-SEC.3 — no dead-ends).
 @MainActor
 final class PasskeyAuth: NSObject, ObservableObject {
-    /// Client kill-switch until AASA + gateway WebAuthn exist. Prefer server flag later.
-    static var isServerReady: Bool {
-        // Emergency / dogfood override for local experiments only.
-        if ProcessInfo.processInfo.environment["NOMARKUP_PASSKEYS"] == "1" {
-            return true
-        }
-        return false
+    /// Server flag key gating all passkey UI + flows.
+    static let featureFlagKey = "passkeys"
+
+    /// Whether passkey UI should be shown and flows attempted.
+    /// Reads the shared `FeatureFlags` store; absent key → false.
+    static func isEnabled(in flags: FeatureFlags) -> Bool {
+        flags.isEnabled(featureFlagKey)
     }
 
     @Published var isBusy = false
@@ -41,38 +41,54 @@ final class PasskeyAuth: NSObject, ObservableObject {
         didCompleteSignIn = false
     }
 
-    /// Entry from LoginView. Shows honest "Coming soon" until server + associated domains ship.
-    func signInWithPasskey() async {
+    /// Entry from LoginView (button rendered only while the `passkeys` flag is on).
+    /// - Parameter email: optional hint so the server can narrow `allowCredentials`.
+    func signInWithPasskey(email: String? = nil) async {
         statusMessage = nil
         errorMessage = nil
         didCompleteSignIn = false
-
-        guard Self.isServerReady else {
-            statusMessage =
-                "Passkey sign-in is coming soon. Server WebAuthn and Associated Domains are not live yet — use email, Sign in with Apple, or Google."
-            return
-        }
 
         isBusy = true
         defer { isBusy = false }
 
         do {
-            let options = try await api.fetchPasskeyAssertionOptions()
-            let assertion = try await performAssertion(options: options)
-            // Persists access/refresh tokens to Keychain (same path as password login).
-            _ = try await api.verifyPasskeyAssertion(assertion)
+            let options = try await api.fetchPasskeyAssertionOptions(email: email)
+            let credential = try await performAssertion(options: options)
+            // Persists access/refresh tokens to Keychain (same decode path as password login).
+            _ = try await api.verifyPasskeyAssertion(credential)
             statusMessage = "Signed in with passkey."
             didCompleteSignIn = true
-        } catch let error as PasskeyAuthError {
-            errorMessage = error.localizedDescription
+        } catch let error as ASAuthorizationError where error.code == .canceled {
+            // User dismissed the system sheet — not an error state.
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    // MARK: - ASAuthorization (real controller path)
+    /// Enrollment from Security settings: register/options → platform key → register/verify.
+    /// Requires a signed-in session (register endpoints are authed).
+    func registerPasskey() async {
+        statusMessage = nil
+        errorMessage = nil
 
-    private func performAssertion(options: PasskeyAssertionOptions) async throws -> PasskeyAssertionResult {
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let options = try await api.fetchPasskeyRegistrationOptions()
+            let credential = try await performRegistration(options: options)
+            try await api.registerPasskeyCredential(credential)
+            statusMessage = "Passkey added. You can now sign in with Face ID or Touch ID on your devices."
+        } catch let error as ASAuthorizationError where error.code == .canceled {
+            // User dismissed the system sheet — not an error state.
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - ASAuthorization (real controller paths)
+
+    private func performAssertion(options: PasskeyAssertionOptions) async throws -> PasskeyAssertionCredential {
         let challenge = try Self.decodeBase64URL(options.challenge)
         let rpID = options.rpId
 
@@ -86,26 +102,72 @@ final class PasskeyAuth: NSObject, ObservableObject {
             }
         }
 
-        let controller = ASAuthorizationController(authorizationRequests: [request])
-        controller.delegate = self
-        controller.presentationContextProvider = self
-
-        let authorization: ASAuthorization = try await withCheckedThrowingContinuation { continuation in
-            self.authorizationContinuation = continuation
-            controller.performRequests()
-        }
+        let authorization = try await performAuthorizationRequests([request])
 
         guard let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialAssertion else {
             throw PasskeyAuthError.unexpectedCredential
         }
 
-        return PasskeyAssertionResult(
-            credentialID: credential.credentialID.base64URLEncodedString(),
-            clientDataJSON: credential.rawClientDataJSON.base64URLEncodedString(),
-            authenticatorData: credential.rawAuthenticatorData.base64URLEncodedString(),
-            signature: credential.signature.base64URLEncodedString(),
-            userHandle: credential.userID.map { $0.base64URLEncodedString() }
+        let credentialID = credential.credentialID.base64URLEncodedString()
+        return PasskeyAssertionCredential(
+            id: credentialID,
+            rawId: credentialID,
+            type: "public-key",
+            response: PasskeyAssertionCredential.Response(
+                authenticatorData: credential.rawAuthenticatorData.base64URLEncodedString(),
+                clientDataJSON: credential.rawClientDataJSON.base64URLEncodedString(),
+                signature: credential.signature.base64URLEncodedString(),
+                userHandle: credential.userID.map { $0.base64URLEncodedString() }
+            )
         )
+    }
+
+    private func performRegistration(options: PasskeyRegistrationOptions) async throws -> PasskeyRegistrationCredential {
+        let challenge = try Self.decodeBase64URL(options.challenge)
+        let userID = try Self.decodeBase64URL(options.user.id)
+        let rpID = options.rp?.id ?? "no-markup.com"
+        // Account label shown in the system passkey sheet / iCloud Keychain.
+        let accountName = options.user.name ?? options.user.displayName ?? "NoMarkup"
+
+        let provider = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: rpID)
+        let request = provider.createCredentialRegistrationRequest(
+            challenge: challenge,
+            name: accountName,
+            userID: userID
+        )
+
+        let authorization = try await performAuthorizationRequests([request])
+
+        guard let credential = authorization.credential as? ASAuthorizationPlatformPublicKeyCredentialRegistration else {
+            throw PasskeyAuthError.unexpectedCredential
+        }
+        guard let attestationObject = credential.rawAttestationObject else {
+            throw PasskeyAuthError.unexpectedCredential
+        }
+
+        let credentialID = credential.credentialID.base64URLEncodedString()
+        return PasskeyRegistrationCredential(
+            id: credentialID,
+            rawId: credentialID,
+            type: "public-key",
+            response: PasskeyRegistrationCredential.Response(
+                attestationObject: attestationObject.base64URLEncodedString(),
+                clientDataJSON: credential.rawClientDataJSON.base64URLEncodedString()
+            )
+        )
+    }
+
+    private func performAuthorizationRequests(
+        _ requests: [ASAuthorizationRequest]
+    ) async throws -> ASAuthorization {
+        let controller = ASAuthorizationController(authorizationRequests: requests)
+        controller.delegate = self
+        controller.presentationContextProvider = self
+
+        return try await withCheckedThrowingContinuation { continuation in
+            self.authorizationContinuation = continuation
+            controller.performRequests()
+        }
     }
 
     private static func decodeBase64URL(_ string: String) throws -> Data {
@@ -160,7 +222,12 @@ extension PasskeyAuth: ASAuthorizationControllerPresentationContextProviding {
     }
 }
 
-// MARK: - DTOs
+// MARK: - DTOs (WebAuthn JSON — camelCase keys per spec; never snake_cased on the wire)
+
+/// Server wrapper: `{ "publicKey": <PublicKeyCredentialRequestOptions> }`.
+struct PasskeyAssertionOptionsEnvelope: Decodable, Sendable {
+    let publicKey: PasskeyAssertionOptions
+}
 
 struct PasskeyAssertionOptions: Decodable, Sendable {
     let challenge: String
@@ -194,20 +261,56 @@ struct PasskeyAllowedCredential: Decodable, Sendable {
     let type: String?
 }
 
-struct PasskeyAssertionResult: Encodable, Sendable {
-    let credentialID: String
-    let clientDataJSON: String
-    let authenticatorData: String
-    let signature: String
-    let userHandle: String?
+/// Server wrapper: `{ "publicKey": <PublicKeyCredentialCreationOptions> }`.
+struct PasskeyRegistrationOptionsEnvelope: Decodable, Sendable {
+    let publicKey: PasskeyRegistrationOptions
+}
 
-    enum CodingKeys: String, CodingKey {
-        case credentialID = "credential_id"
-        case clientDataJSON = "client_data_json"
-        case authenticatorData = "authenticator_data"
-        case signature
-        case userHandle = "user_handle"
+struct PasskeyRegistrationOptions: Decodable, Sendable {
+    struct RelyingParty: Decodable, Sendable {
+        let id: String?
+        let name: String?
     }
+
+    struct User: Decodable, Sendable {
+        /// base64url user handle.
+        let id: String
+        let name: String?
+        let displayName: String?
+    }
+
+    let challenge: String
+    let rp: RelyingParty?
+    let user: User
+    let timeout: Int?
+}
+
+/// Standard WebAuthn assertion credential JSON for `assert/verify`.
+struct PasskeyAssertionCredential: Encodable, Sendable {
+    struct Response: Encodable, Sendable {
+        let authenticatorData: String
+        let clientDataJSON: String
+        let signature: String
+        let userHandle: String?
+    }
+
+    let id: String
+    let rawId: String
+    let type: String
+    let response: Response
+}
+
+/// Standard WebAuthn registration credential JSON for `register/verify`.
+struct PasskeyRegistrationCredential: Encodable, Sendable {
+    struct Response: Encodable, Sendable {
+        let attestationObject: String
+        let clientDataJSON: String
+    }
+
+    let id: String
+    let rawId: String
+    let type: String
+    let response: Response
 }
 
 enum PasskeyAuthError: Error, LocalizedError {

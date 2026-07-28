@@ -67,7 +67,6 @@ struct WishlistView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
     }
@@ -134,6 +133,16 @@ struct WishlistView: View {
                     ForEach(items) { item in
                         wishlistRow(item)
                             .listRowBackground(BrandTheme.navyElevated)
+                            // DES.7 — swipe/Edit delete plus long-press context menu
+                            // (VoiceOver / pointer / full-keyboard).
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    Task { await delete(item) }
+                                } label: {
+                                    Label("Remove alert", systemImage: "trash")
+                                }
+                                .disabled(deletingID == item.id)
+                            }
                     }
                     .onDelete { indexSet in
                         Task { await delete(at: indexSet) }
@@ -142,11 +151,21 @@ struct WishlistView: View {
             } header: {
                 Text("Yours").brandSectionHeader()
             } footer: {
-                Text("Price alerts fire when matching marketplace goods go active. Swipe to remove an alert.")
+                Text("Price alerts fire when matching marketplace goods go active. Swipe left, long-press, or tap Edit to remove an alert.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
         .brandListBackground()
+        // DES.7 — non-gesture delete affordance: Edit mode exposes per-row
+        // delete buttons for the `.onDelete` rows above.
+        .toolbar {
+            if !items.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    EditButton()
+                        .frame(minHeight: 44)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -231,20 +250,25 @@ struct WishlistView: View {
 
     @MainActor
     private func delete(at offsets: IndexSet) async {
-        statusMessage = nil
-        statusIsError = false
         for index in offsets {
             guard items.indices.contains(index) else { continue }
-            let item = items[index]
-            deletingID = item.id
-            do {
-                try await APIClient.shared.deleteWishlistItem(id: item.id)
-                items.removeAll { $0.id == item.id }
-            } catch {
-                statusIsError = true
-                statusMessage = error.localizedDescription
-            }
-            deletingID = nil
+            await delete(items[index])
+        }
+    }
+
+    @MainActor
+    private func delete(_ item: WishlistItem) async {
+        statusMessage = nil
+        statusIsError = false
+        deletingID = item.id
+        defer { deletingID = nil }
+
+        do {
+            try await APIClient.shared.deleteWishlistItem(id: item.id)
+            items.removeAll { $0.id == item.id }
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
         }
     }
 }

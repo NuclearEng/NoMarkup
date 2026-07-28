@@ -119,6 +119,8 @@
 		T10000000000000000000003 /* NotificationDeepLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000013 /* NotificationDeepLinkTests.swift */; };
 		T10000000000000000000004 /* ImageUploaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000014 /* ImageUploaderTests.swift */; };
 		T10000000000000000000005 /* DateFormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000015 /* DateFormattingTests.swift */; };
+		T10000000000000000000006 /* LocalizedPluralsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000016 /* LocalizedPluralsTests.swift */; };
+		T10000000000000000000007 /* APIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000017 /* APIClientTests.swift */; };
 		A100000000000000000000C0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C0 /* PrivacyInfo.xcprivacy */; };
 		A100000000000000000000CD /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CD /* Localizable.xcstrings */; };
 		A100000000000000000000C3 /* PasskeyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C3 /* PasskeyAuth.swift */; };
@@ -143,6 +145,8 @@
 		W10000000000000000000009 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = W10000000000000000000022 /* SwiftUI.framework */; };
 		W1000000000000000000000A /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = W10000000000000000000023 /* ActivityKit.framework */; };
 		W1000000000000000000000B /* LocalAuthentication.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = W10000000000000000000024 /* LocalAuthentication.framework */; };
+		W1000000000000000000000C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000017 /* PrivacyInfo.xcprivacy */; };
+		W1000000000000000000000D /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000018 /* Localizable.xcstrings */; };
 		A100000000000000000000C1 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C1 /* DeepLinkRouter.swift */; };
 		A100000000000000000000C2 /* NotificationPermissionCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C2 /* NotificationPermissionCopy.swift */; };
 /* End PBXBuildFile section */
@@ -265,6 +269,8 @@
 		T10000000000000000000013 /* NotificationDeepLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDeepLinkTests.swift; sourceTree = "<group>"; };
 		T10000000000000000000014 /* ImageUploaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageUploaderTests.swift; sourceTree = "<group>"; };
 		T10000000000000000000015 /* DateFormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFormattingTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000016 /* LocalizedPluralsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizedPluralsTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000017 /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTests.swift; sourceTree = "<group>"; };
 		T10000000000000000000020 /* NoMarkupTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B100000000000000000000C3 /* PasskeyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeyAuth.swift; sourceTree = "<group>"; };
 		B100000000000000000000C4 /* BiometricGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricGate.swift; sourceTree = "<group>"; };
@@ -285,6 +291,8 @@
 		W10000000000000000000014 /* AuctionLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuctionLiveActivityWidget.swift; sourceTree = "<group>"; };
 		W10000000000000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		W10000000000000000000016 /* NoMarkupWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NoMarkupWidget.entitlements; sourceTree = "<group>"; };
+		W10000000000000000000017 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		W10000000000000000000018 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		W10000000000000000000020 /* NoMarkupWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NoMarkupWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		W10000000000000000000021 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		W10000000000000000000022 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
@@ -453,6 +461,8 @@
 				T10000000000000000000013 /* NotificationDeepLinkTests.swift */,
 				T10000000000000000000014 /* ImageUploaderTests.swift */,
 				T10000000000000000000015 /* DateFormattingTests.swift */,
+				T10000000000000000000016 /* LocalizedPluralsTests.swift */,
+				T10000000000000000000017 /* APIClientTests.swift */,
 			);
 			path = NoMarkupTests;
 			sourceTree = "<group>";
@@ -609,6 +619,8 @@
 				W10000000000000000000014 /* AuctionLiveActivityWidget.swift */,
 				W10000000000000000000015 /* Info.plist */,
 				W10000000000000000000016 /* NoMarkupWidget.entitlements */,
+				W10000000000000000000017 /* PrivacyInfo.xcprivacy */,
+				W10000000000000000000018 /* Localizable.xcstrings */,
 			);
 			path = NoMarkupWidget;
 			sourceTree = "<group>";
@@ -778,6 +790,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				W1000000000000000000000C /* PrivacyInfo.xcprivacy in Resources */,
+				W1000000000000000000000D /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -916,6 +930,8 @@
 				T10000000000000000000003 /* NotificationDeepLinkTests.swift in Sources */,
 				T10000000000000000000004 /* ImageUploaderTests.swift in Sources */,
 				T10000000000000000000005 /* DateFormattingTests.swift in Sources */,
+				T10000000000000000000006 /* LocalizedPluralsTests.swift in Sources */,
+				T10000000000000000000007 /* APIClientTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

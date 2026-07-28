@@ -268,6 +268,7 @@ final class AuctionWebSocketClient: ObservableObject {
         case "bid_event":
             if let event = Self.decodeBidEvent(obj["data"], envelopeJobID: jobID) {
                 onEvent?(.bidEvent(event))
+                routeLiveActivity(bidEvent: event)
             }
         case "auction_state":
             let state = Self.decodeAuctionState(obj["data"])
@@ -279,12 +280,30 @@ final class AuctionWebSocketClient: ObservableObject {
                     snipeExtensionCount: state.snipe
                 )
             )
+            // IOS-SYS.LA.2: reconcile a running Live Activity with the
+            // authoritative snapshot — leading amount AND close time (which also
+            // picks up anti-snipe extensions). Update-only; never starts one.
+            if !jobID.isEmpty {
+                AuctionLiveActivityController.updateIfActive(
+                    auctionID: jobID,
+                    leadingBidCents: state.lowest,
+                    endsAt: state.endsAt.flatMap { CatalogDateFormat.parseISO($0) }
+                )
+            }
         case "snipe_extended":
             onEvent?(.snipeExtended(jobID: jobID))
-        case "auction_ended":
+        case "auction_ended", "auction_closed":
+            // `auction_closed` is a forward-compatible alias of `auction_ended`
+            // (notification taxonomy name; not published on this feed today).
             permanentStop = true
             isPermanentlyStopped = true
             onEvent?(.auctionEnded(jobID: jobID))
+            // IOS-SYS.LA.1: the auction is over — end the Live Activity with a
+            // final "Ended" card. Won/lost arrives via the award notification
+            // path, not this broadcast feed.
+            if !jobID.isEmpty {
+                AuctionLiveActivityController.end(auctionID: jobID, outcome: .ended)
+            }
             // Stay "connected" briefly then disconnect cleanly without reconnect.
             tearDownSocket(resetBackoff: true)
             status = .disconnected
@@ -303,6 +322,38 @@ final class AuctionWebSocketClient: ObservableObject {
                 status = .disconnected
             }
             onEvent?(.error(msg))
+        default:
+            break
+        }
+    }
+
+    /// IOS-SYS.LA.1 / LA.2: drive the auction Live Activity from live bid
+    /// telemetry. Amount changes are UPDATE-ONLY (`updateIfActive` checks for an
+    /// existing `Activity` for the auction first — spectating never starts one);
+    /// terminal event types end the activity with a final outcome card. Types
+    /// beyond `bid_placed`/`bid_updated`/`bid_withdrawn` are forward-compatible
+    /// with the notification taxonomy (`bid_awarded`, `bid_not_selected`, …).
+    private func routeLiveActivity(bidEvent event: AuctionEvent) {
+        guard let auctionID = event.jobId ?? activeJobID, !auctionID.isEmpty else { return }
+        switch event.eventType ?? "" {
+        case "bid_placed", "bid_updated", "bid_outbid":
+            // Fan-out broadcasts every bid, not just the leader — merge
+            // direction-aware so a trailing bid never overwrites the price.
+            AuctionLiveActivityController.updateIfActive(
+                auctionID: auctionID,
+                leadingBidCents: event.amountCents,
+                onlyIfLeading: true
+            )
+        case "bid_awarded", "auction_won":
+            AuctionLiveActivityController.end(auctionID: auctionID, outcome: .won)
+        case "bid_not_selected", "auction_lost":
+            AuctionLiveActivityController.end(auctionID: auctionID, outcome: .lost)
+        case "auction_closed", "auction_ended":
+            AuctionLiveActivityController.end(auctionID: auctionID, outcome: .ended)
+        case "bid_withdrawn":
+            // Another participant's withdraw leaves the leading amount unknown
+            // until the next `auction_state` reconcile — do not guess or end.
+            break
         default:
             break
         }

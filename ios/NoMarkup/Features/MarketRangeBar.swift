@@ -110,7 +110,7 @@ struct MarketRangeBar: View {
                 .textCase(.uppercase)
             Spacer(minLength: 8)
             if sampleSize > 0, !isIndustrySeeded {
-                Text(sampleSize == 1 ? "1 job" : "\(sampleSize) jobs")
+                Text(String(localized: "\(sampleSize) jobs"))
                     .font(.caption2.weight(.medium).monospacedDigit())
                     .foregroundStyle(BrandTheme.textSecondary)
             } else if isIndustrySeeded {
@@ -206,12 +206,12 @@ struct MarketRangeBar: View {
         switch audience {
         case .customer:
             if sampleSize > 0 {
-                return "Based on \(sampleSize) completed job\(sampleSize == 1 ? "" : "s") in your area, \(servicePhrase) typically costs between \(lowLabel) and \(highLabel)."
+                return "Based on \(String(localized: "\(sampleSize) completed jobs")) in your area, \(servicePhrase) typically costs between \(lowLabel) and \(highLabel)."
             }
             return "\(servicePhrase.prefix(1).uppercased() + servicePhrase.dropFirst()) typically costs between \(lowLabel) and \(highLabel) in your area."
         case .provider:
             if sampleSize > 0 {
-                return "Other providers in your area typically price \(servicePhrase) between \(lowLabel) and \(highLabel) (\(sampleSize) completed job\(sampleSize == 1 ? "" : "s"))."
+                return "Other providers in your area typically price \(servicePhrase) between \(lowLabel) and \(highLabel) (\(String(localized: "\(sampleSize) completed jobs")))."
             }
             return "Other providers in your area typically price \(servicePhrase) between \(lowLabel) and \(highLabel)."
         }

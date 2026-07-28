@@ -7,11 +7,15 @@ package main
 // notification with copy that taps into watched-listing state.
 //
 // Idempotency: each user is matched by a 1-day-wide bucket, so the same
-// user shouldn't get re-notified at the same milestone within the same
-// rolling-window. We further protect against double-sends by recording a
-// per-user, per-stage stamp in `notifications.delivery_log` (handled
-// inside service.SendNotification's downstream dispatcher dedupe — same
-// pattern as welcome_emails.go's stage stamps).
+// user fires each milestone at most once per pass through it — the bucket
+// width is the ONLY dedupe for the email/in-app channels this scheduler
+// uses (unlike welcome_emails.go, which stamps users.welcome_*_sent_at).
+// There is no `notifications.delivery_log` table — an earlier version of
+// this comment cited one that never existed (IOS-SYS.NT.1). The real send
+// ledger is `notification_send_ledger` (migration 117), written inside
+// service.SendNotification's push dispatch: it rate-limits promotional
+// PUSH sends (reengagement_* is classified promotional in
+// internal/service/notif_class.go) but does not dedupe email or in-app.
 //
 // Schema dependency: users.last_active_at exists (migration 020). When
 // it's NULL (e.g. a user who never actually logged a session), we fall

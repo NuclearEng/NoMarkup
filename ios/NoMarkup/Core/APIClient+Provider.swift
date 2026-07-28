@@ -894,7 +894,7 @@ struct QuoteTemplate: Codable, Sendable, Hashable, Identifiable {
 
     var displayUseCount: String {
         let n = useCount ?? 0
-        return n == 1 ? "Used once" : "Used \(n) times"
+        return String(localized: "Used \(n) times")
     }
 }
 

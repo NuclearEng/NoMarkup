@@ -87,7 +87,6 @@ struct ProviderInstantOffersView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task {
             await bootstrap()
         }
@@ -195,7 +194,7 @@ struct ProviderInstantOffersView: View {
                 ProgressView()
                     .tint(BrandTheme.accent)
                     .padding(12)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .brandOverlayChipBackground()
             }
         }
     }

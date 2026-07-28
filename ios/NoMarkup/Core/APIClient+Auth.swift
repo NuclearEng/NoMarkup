@@ -112,8 +112,10 @@ private struct OTPCodeBody: Encodable {
     }
 }
 
-private struct PasskeyOptionsRequestBody: Encodable {
-    let type: String
+/// `assert/options` body — optional email hint narrows `allowCredentials` server-side.
+/// Plain-encoded (nil omitted → `{}`); never snake_cased.
+private struct PasskeyAssertOptionsRequestBody: Encodable {
+    let email: String?
 }
 
 // MARK: - APIClient auth extension
@@ -244,31 +246,60 @@ extension APIClient {
         )
     }
 
-    // MARK: - Passkeys (WebAuthn) — client stubs until gateway ships endpoints
+    // MARK: - Passkeys (WebAuthn) — gateway endpoints under /auth/passkeys/*
 
-    /// POST `/api/v1/auth/passkey/options` — public assertion options (challenge + rpId).
-    /// **Not live on gateway yet** — will 404 until WebAuthn lands server-side.
-    func fetchPasskeyAssertionOptions() async throws -> PasskeyAssertionOptions {
-        let data = try await postAuthJSON(
-            path: "api/v1/auth/passkey/options",
-            body: PasskeyOptionsRequestBody(type: "assertion")
+    /// POST `/api/v1/auth/passkeys/assert/options` — public assertion options.
+    /// Response: `{ "publicKey": <PublicKeyCredentialRequestOptions> }`.
+    /// - Parameter email: optional hint so the server can narrow `allowCredentials`.
+    func fetchPasskeyAssertionOptions(email: String? = nil) async throws -> PasskeyAssertionOptions {
+        let trimmed = email?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let data = try await postPasskeyJSON(
+            pathComponents: ["api", "v1", "auth", "passkeys", "assert", "options"],
+            body: PasskeyAssertOptionsRequestBody(email: (trimmed?.isEmpty == false) ? trimmed : nil),
+            requiresAuth: false
         )
         do {
-            return try JSONDecoder().decode(PasskeyAssertionOptions.self, from: data)
+            return try JSONDecoder().decode(PasskeyAssertionOptionsEnvelope.self, from: data).publicKey
         } catch {
             throw APIClientError.decoding("Unexpected passkey options response")
         }
     }
 
-    /// POST `/api/v1/auth/passkey/verify` — credential assertion → session tokens.
+    /// POST `/api/v1/auth/passkeys/assert/verify` — assertion credential → session tokens
+    /// (same response shape + persistence path as password login).
     @discardableResult
-    func verifyPasskeyAssertion(_ assertion: PasskeyAssertionResult) async throws -> AuthTokenPair {
-        let data = try await postAuthJSON(
-            path: "api/v1/auth/passkey/verify",
-            body: assertion
+    func verifyPasskeyAssertion(_ credential: PasskeyAssertionCredential) async throws -> AuthTokenPair {
+        let data = try await postPasskeyJSON(
+            pathComponents: ["api", "v1", "auth", "passkeys", "assert", "verify"],
+            body: credential,
+            requiresAuth: false
         )
         let response = try decodeAuthResponse(data)
         return try persistTokens(from: response)
+    }
+
+    /// POST `/api/v1/auth/passkeys/register/options` — authed; creation options for enrollment.
+    /// Response: `{ "publicKey": <PublicKeyCredentialCreationOptions> }`.
+    func fetchPasskeyRegistrationOptions() async throws -> PasskeyRegistrationOptions {
+        let data = try await postPasskeyJSON(
+            pathComponents: ["api", "v1", "auth", "passkeys", "register", "options"],
+            body: EmptyJSONObject(),
+            requiresAuth: true
+        )
+        do {
+            return try JSONDecoder().decode(PasskeyRegistrationOptionsEnvelope.self, from: data).publicKey
+        } catch {
+            throw APIClientError.decoding("Unexpected passkey registration options response")
+        }
+    }
+
+    /// POST `/api/v1/auth/passkeys/register/verify` — authed; attestation credential → 204.
+    func registerPasskeyCredential(_ credential: PasskeyRegistrationCredential) async throws {
+        _ = try await postPasskeyJSON(
+            pathComponents: ["api", "v1", "auth", "passkeys", "register", "verify"],
+            body: credential,
+            requiresAuth: true
+        )
     }
 
     // MARK: - Private helpers (file-local; APIClient internals are private to APIClient.swift)
@@ -289,6 +320,64 @@ extension APIClient {
         } catch {
             throw APIClientError.unreachable
         }
+        try AuthHTTP.throwIfNeeded(response: response, data: data)
+        return data
+    }
+
+    /// POST for passkey endpoints. Uses a **plain** `JSONEncoder` — WebAuthn credential
+    /// JSON keys are camelCase per spec and must not be snake_cased by the shared
+    /// `perform` encoder. Authed calls attach Bearer and retry once after a
+    /// single-flight refresh on 401 (mirrors `perform`).
+    private func postPasskeyJSON<Body: Encodable>(
+        pathComponents: [String],
+        body: Body,
+        requiresAuth: Bool,
+        didRefresh: Bool = false
+    ) async throws -> Data {
+        var url = AppConfig.apiBaseURL
+        for component in pathComponents {
+            url = url.appending(path: component)
+        }
+
+        var request: URLRequest
+        if requiresAuth {
+            request = try authorizedRequest(url: url, method: "POST")
+            guard request.value(forHTTPHeaderField: "Authorization") != nil else {
+                throw APIClientError.unauthorized
+            }
+        } else {
+            request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw APIClientError.unreachable
+        }
+
+        if requiresAuth, !didRefresh,
+           let http = response as? HTTPURLResponse, http.statusCode == 401
+        {
+            do {
+                _ = try await refreshSession()
+            } catch {
+                throw APIClientError.unauthorized
+            }
+            return try await postPasskeyJSON(
+                pathComponents: pathComponents,
+                body: body,
+                requiresAuth: true,
+                didRefresh: true
+            )
+        }
+
         try AuthHTTP.throwIfNeeded(response: response, data: data)
         return data
     }

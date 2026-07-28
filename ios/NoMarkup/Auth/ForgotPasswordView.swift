@@ -46,7 +46,6 @@ struct ForgotPasswordView: View {
         .navigationBarTitleDisplayMode(.large)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .onAppear {
             if email.isEmpty, !auth.email.isEmpty {
                 email = auth.email

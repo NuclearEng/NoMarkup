@@ -203,9 +203,9 @@ func insertAndPromptNPS(ctx context.Context, pool *pgxpool.Pool, svc *service.Se
 	)
 	actionURL := "/dashboard?nps=1"
 	data := map[string]string{
-		"entity_type":  contextType,
-		"entity_id":    contextID,
-		"nps_survey":   "1",
+		"entity_type": contextType,
+		"entity_id":   contextID,
+		"nps_survey":  "1",
 	}
 	channels := []string{"in_app", "push"}
 	if _, _, err := svc.SendNotification(ctx, userID, "nps_survey", title, body, actionURL, data, channels); err != nil {

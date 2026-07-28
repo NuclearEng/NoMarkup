@@ -111,7 +111,6 @@ struct ProviderWorkspaceView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
     }
@@ -515,7 +514,7 @@ struct ProviderWorkspaceView: View {
                 ProgressView()
                     .tint(BrandTheme.accent)
                     .padding(12)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .brandOverlayChipBackground()
             }
         }
     }
@@ -671,7 +670,7 @@ struct ProviderWorkspaceView: View {
             let updated = try await APIClient.shared.updateMyProviderPortfolio(images: images)
             profile = updated
             applyProfileToForm(updated)
-            statusMessage = "Portfolio saved (\(images.count) image\(images.count == 1 ? "" : "s"))."
+            statusMessage = "Portfolio saved (\(String(localized: "\(images.count) images")))."
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
         } catch {
@@ -805,7 +804,7 @@ struct ProviderWorkspaceView: View {
             let dayCount = windows.count
             statusMessage = dayCount == 0
                 ? "Weekly schedule cleared."
-                : "Weekly schedule saved (\(dayCount) day\(dayCount == 1 ? "" : "s"))."
+                : "Weekly schedule saved (\(String(localized: "\(dayCount) days")))."
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
         } catch let error as APIClientError where error.isForbidden {

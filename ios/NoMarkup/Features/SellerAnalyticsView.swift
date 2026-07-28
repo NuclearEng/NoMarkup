@@ -61,7 +61,6 @@ struct SellerAnalyticsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
         .onChange(of: range) { _, _ in
@@ -109,7 +108,7 @@ struct SellerAnalyticsView: View {
                                 Text(point.displayGross)
                                     .font(.subheadline.weight(.semibold).monospacedDigit())
                                     .foregroundStyle(BrandTheme.goldBright)
-                                Text("\(point.orderCount ?? 0) order\((point.orderCount ?? 0) == 1 ? "" : "s")")
+                                Text(String(localized: "\(point.orderCount ?? 0) orders"))
                                     .font(.caption2)
                                     .foregroundStyle(BrandTheme.textSecondary)
                             }
@@ -159,7 +158,7 @@ struct SellerAnalyticsView: View {
                 ProgressView()
                     .tint(BrandTheme.accent)
                     .padding(12)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .brandOverlayChipBackground()
             }
         }
     }

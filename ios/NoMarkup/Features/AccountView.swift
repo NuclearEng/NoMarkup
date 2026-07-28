@@ -163,11 +163,9 @@ struct AccountView: View {
                     .accessibilityHint("Resend email verification and complete phone OTP")
 
                     Button("Sign out", role: .destructive) {
-                        // Unregister device while access token is still available.
-                        Task {
-                            await PushRegistration.shared.unregisterAndReset()
-                            auth.signOut()
-                        }
+                        // Device unregister + widget wipe run inside signOut()
+                        // (IOS-SYS.NT.4 / OBS-3) so every sign-out path is covered.
+                        auth.signOut()
                     }
                     .frame(minHeight: 44)
                 } header: {
@@ -576,7 +574,6 @@ struct AccountView: View {
             .brandListBackground()
             .navigationTitle("Account")
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .task {
                 await refreshSessionHints()
                 await refreshUnreadCount()

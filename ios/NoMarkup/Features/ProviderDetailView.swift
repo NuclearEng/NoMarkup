@@ -67,7 +67,6 @@ struct ProviderDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task { await load() }
         .refreshable { await load() }
         .sheet(isPresented: $showReportSheet) {
@@ -293,7 +292,7 @@ struct ProviderDetailView: View {
                 }
 
                 LabeledContent("Portfolio") {
-                    Text("\(profile.portfolioCount) photo\(profile.portfolioCount == 1 ? "" : "s")")
+                    Text(String(localized: "\(profile.portfolioCount) photos"))
                         .foregroundStyle(BrandTheme.textPrimary)
                         .monospacedDigit()
                 }
@@ -563,7 +562,6 @@ private struct UserReportSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDone() }

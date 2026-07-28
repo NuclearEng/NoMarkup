@@ -78,36 +78,41 @@ final class DeepLinkRouter: ObservableObject {
     }
 
     static func route(from url: URL) -> DeepLinkRoute? {
+        guard let parts = segments(from: url) else { return nil }
+        return routeFromSegments(parts)
+    }
+
+    private static func routeFromPath(_ path: String) -> DeepLinkRoute? {
+        routeFromSegments(segments(fromPath: path))
+    }
+
+    /// URL → normalized path segments. `nomarkup://` counts the host as the first
+    /// segment (`nomarkup://orders/x` → `["orders", "x"]`); http(s) uses the path.
+    /// Returns nil for any other scheme.
+    private static func segments(from url: URL) -> [String]? {
         let scheme = (url.scheme ?? "").lowercased()
         if scheme == "nomarkup" {
-            return routeFromNomarkupURL(url)
+            var parts: [String] = []
+            if let host = url.host, !host.isEmpty {
+                parts.append(host)
+            }
+            let pathParts = url.path.split(separator: "/").map(String.init).filter { !$0.isEmpty }
+            parts.append(contentsOf: pathParts)
+            return parts
         }
         if scheme == "https" || scheme == "http" {
-            return routeFromPath(url.path)
+            return segments(fromPath: url.path)
         }
         return nil
     }
 
-    private static func routeFromNomarkupURL(_ url: URL) -> DeepLinkRoute? {
-        var parts: [String] = []
-        if let host = url.host, !host.isEmpty {
-            parts.append(host)
-        }
-        let pathParts = url.path.split(separator: "/").map(String.init).filter { !$0.isEmpty }
-        parts.append(contentsOf: pathParts)
-        guard let first = parts.first?.lowercased() else { return nil }
-        return routeFromSegments([first] + Array(parts.dropFirst()))
-    }
-
-    private static func routeFromPath(_ path: String) -> DeepLinkRoute? {
+    /// Path string → segments with any leading `/api/v1` prefix stripped.
+    private static func segments(fromPath path: String) -> [String] {
         let parts = path.split(separator: "/").map(String.init).filter { !$0.isEmpty }
-        let trimmed: [String]
         if parts.count >= 2, parts[0].lowercased() == "api", parts[1].lowercased() == "v1" {
-            trimmed = Array(parts.dropFirst(2))
-        } else {
-            trimmed = parts
+            return Array(parts.dropFirst(2))
         }
-        return routeFromSegments(trimmed)
+        return parts
     }
 
     private static func routeFromSegments(_ parts: [String]) -> DeepLinkRoute? {
@@ -143,9 +148,13 @@ final class DeepLinkRouter: ObservableObject {
             }
             return nil
         case "orders", "order":
-            // Orders list / detail — surface via messages-adjacent account sheet path later;
-            // keep string pendingActionURL for NotificationDeepLink when typed route is nil.
-            return nil
+            // Orders (IOS-SEC.9): typed end-to-end. `nomarkup://orders` has an empty
+            // `URL.path` (host-only), so a raw-string fallback would dead-end — the
+            // typed case guarantees delivery to the My Orders surface.
+            if parts.count >= 2 {
+                return .orders(id: parts[1])
+            }
+            return .orders(id: nil)
         case "contracts", "contract":
             if parts.count >= 2 {
                 return .contract(id: parts[1])
@@ -170,6 +179,9 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
     case watchlist
     case postJob
     case checkIn(contractID: String?)
+    /// My Orders (IOS-SEC.9). `id` is the order UUID when the link carried one;
+    /// the surface is the same either way (`MyOrdersView` has no detail init yet).
+    case orders(id: String?)
 
     var id: String {
         switch self {
@@ -182,6 +194,7 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
         case .watchlist: return "watchlist"
         case .postJob: return "postJob"
         case .checkIn(let id): return "checkIn:\(id ?? "")"
+        case .orders(let id): return "orders:\(id ?? "")"
         }
     }
 
@@ -199,6 +212,9 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
         case .checkIn(let id):
             if let id, !id.isEmpty { return "/contracts/\(id)" }
             return "/contracts"
+        case .orders(let id):
+            if let id, !id.isEmpty { return "/orders/\(id)" }
+            return "/orders"
         }
     }
 }

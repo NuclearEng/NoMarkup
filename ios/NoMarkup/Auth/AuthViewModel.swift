@@ -400,20 +400,36 @@ final class AuthViewModel: ObservableObject {
     }
 
     func signOut() {
-        // Best-effort server logout (revokes refresh when present). Clear local
-        // tokens after the call so the body can still send the refresh token.
+        // Best-effort server logout (revokes refresh when present). Local token
+        // clear is sequenced after the device unregister so that call can still
+        // authenticate (IOS-SYS.NT.4 — this covers every signOut() path).
         let refreshForLogout = try? tokenStore.read(.refreshToken)
         let shouldCallServer = !isScaffoldSession
+
+        // OBS-3: widgets must not keep rendering auction data after sign-out.
+        WidgetSharedStore.clear()
+
         if shouldCallServer {
             Task {
-                try? await api.logout(refreshToken: refreshForLogout)
+                // Unregister APNs device while the access token is still in the
+                // Keychain; short cap so a dead network never stalls cleanup.
+                await Self.withTimeout(seconds: 3) {
+                    await PushRegistration.shared.unregisterAndReset()
+                }
+                // Skip the deferred wipe if a new session began while cleanup ran.
+                if !self.isAuthenticated {
+                    try? self.tokenStore.clearSession()
+                }
+                try? await self.api.logout(refreshToken: refreshForLogout)
+            }
+        } else {
+            do {
+                try tokenStore.clearSession()
+            } catch {
+                // Still clear UI state even if Keychain delete partially failed.
             }
         }
-        do {
-            try tokenStore.clearSession()
-        } catch {
-            // Still clear UI state even if Keychain delete partially failed.
-        }
+
         isAuthenticated = false
         isScaffoldSession = false
         shouldPresentOnboarding = false
@@ -422,10 +438,28 @@ final class AuthViewModel: ObservableObject {
         statusMessage = nil
     }
 
+    /// Run `operation`, giving up (and cancelling it) after `seconds`.
+    /// Used to cap best-effort sign-out network cleanup.
+    private static func withTimeout(
+        seconds: TimeInterval,
+        _ operation: @escaping @Sendable () async -> Void
+    ) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await operation() }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            }
+            await group.next()
+            group.cancelAll()
+        }
+    }
+
     /// Called when AuthenticationServices completes SIWA.
     /// - Parameters:
     ///   - result: Authorization outcome from the system button.
-    ///   - nonce: SHA256-hex nonce that was set on the request (must match id_token claim; sent to gateway).
+    ///   - nonce: RAW nonce whose SHA256 hex was set on the request. Sent to the
+    ///     gateway, which re-hashes and requires it to match the id_token claim
+    ///     (IOS-SEC.1) — so it must be non-empty for a native exchange.
     func handleSignInWithApple(result: Result<ASAuthorization, Error>, nonce: String?) {
         guard !isBusy else { return }
         errorMessage = nil
@@ -443,6 +477,13 @@ final class AuthViewModel: ObservableObject {
                 errorMessage = "Sign in with Apple did not return an identity token."
                 return
             }
+            // Gateway rejects nonce-less native exchanges — fail fast with clear copy.
+            guard let rawNonce = nonce?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !rawNonce.isEmpty
+            else {
+                errorMessage = "Sign in with Apple could not be verified on this attempt. Please try again."
+                return
+            }
 
             var fullName: String?
             if let name = credential.fullName {
@@ -453,7 +494,7 @@ final class AuthViewModel: ObservableObject {
             }
 
             Task {
-                await exchangeAppleIdentityToken(identityToken, fullName: fullName, nonce: nonce)
+                await exchangeAppleIdentityToken(identityToken, fullName: fullName, nonce: rawNonce)
             }
         case .failure(let error):
             if let authError = error as? ASAuthorizationError, authError.code == .canceled {
@@ -498,6 +539,7 @@ final class AuthViewModel: ObservableObject {
         return hasLetter && hasDigitOrSymbol
     }
 
+    /// - Parameter nonce: RAW request nonce (gateway re-hashes; required for native).
     private func exchangeAppleIdentityToken(
         _ identityToken: String,
         fullName: String?,

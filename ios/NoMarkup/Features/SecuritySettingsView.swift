@@ -1,8 +1,12 @@
 import SwiftUI
 
-/// Security settings — change password, full MFA setup/confirm/disable, age verification.
+/// Security settings — change password, full MFA setup/confirm/disable, age verification,
+/// passkey enrollment (server-flagged).
 struct SecuritySettingsView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var featureFlags: FeatureFlags
+    // Passkey enrollment (IOS-SEC.2) — section shown only when the `passkeys` flag is on.
+    @StateObject private var passkeyAuth = PasskeyAuth()
 
     @State private var currentPassword = ""
     @State private var newPassword = ""
@@ -68,7 +72,6 @@ struct SecuritySettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .task {
             await loadAgeStatus()
             await loadMFAProfile()
@@ -187,6 +190,17 @@ struct SecuritySettingsView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
+            if PasskeyAuth.isEnabled(in: featureFlags) {
+                Section {
+                    passkeySectionBody
+                } header: {
+                    Text("Passkeys").brandSectionHeader()
+                } footer: {
+                    Text("Passkeys sign you in with \(BiometricGate.biometryDisplayName) — nothing to type or phish. Saved to iCloud Keychain and synced across your devices.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+            }
+
             Section {
                 mfaSectionBody
             } header: {
@@ -271,6 +285,47 @@ struct SecuritySettingsView: View {
         }
         .brandListBackground()
         .scrollDismissesKeyboard(.interactively)
+    }
+
+    // MARK: - Passkeys section (IOS-SEC.2 enrollment)
+
+    @ViewBuilder
+    private var passkeySectionBody: some View {
+        Button {
+            guard !passkeyAuth.isBusy else { return }
+            Task { await passkeyAuth.registerPasskey() }
+        } label: {
+            HStack(spacing: 10) {
+                if passkeyAuth.isBusy {
+                    ProgressView()
+                        .tint(BrandTheme.accent)
+                    Text("Adding passkey…")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                } else {
+                    Label("Add a passkey", systemImage: "person.badge.key.fill")
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: 44)
+        }
+        .disabled(passkeyAuth.isBusy)
+        .accessibilityIdentifier("security.addPasskey")
+        .accessibilityLabel("Add a passkey")
+        .accessibilityHint("Creates a passkey for this account with \(BiometricGate.biometryDisplayName) and saves it to iCloud Keychain")
+
+        if let status = passkeyAuth.statusMessage {
+            Text(status)
+                .font(.footnote)
+                .foregroundStyle(BrandTheme.success)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let error = passkeyAuth.errorMessage {
+            Text(error)
+                .font(.footnote)
+                .foregroundStyle(BrandTheme.destructive)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel("Error: \(error)")
+        }
     }
 
     // MARK: - MFA section
@@ -869,6 +924,7 @@ struct SecuritySettingsView: View {
         SecuritySettingsView()
     }
     .environmentObject(AuthViewModel())
+    .environmentObject(FeatureFlags())
     .preferredColorScheme(.dark)
     .tint(BrandTheme.accent)
 }

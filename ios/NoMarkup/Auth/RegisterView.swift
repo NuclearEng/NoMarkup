@@ -36,7 +36,6 @@ struct RegisterView: View {
         .navigationBarTitleDisplayMode(.large)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .onChange(of: auth.isAuthenticated) { _, signedIn in
             if signedIn && !auth.isScaffoldSession {
                 dismiss()

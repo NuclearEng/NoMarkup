@@ -80,7 +80,6 @@ struct QuoteTemplatesView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             if auth.isAuthenticated, !auth.isScaffoldSession, hasProviderRole {
                 ToolbarItem(placement: .primaryAction) {
@@ -145,7 +144,7 @@ struct QuoteTemplatesView: View {
                         }
                 }
             } header: {
-                Text("\(templates.count) template\(templates.count == 1 ? "" : "s")").brandSectionHeader()
+                Text(String(localized: "\(templates.count) templates")).brandSectionHeader()
             } footer: {
                 Text("Templates are private to your account. Apply them when placing service bids on the web or job detail flows.")
                     .foregroundStyle(BrandTheme.textSecondary)

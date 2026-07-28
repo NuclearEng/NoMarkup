@@ -8,10 +8,10 @@ import (
 
 // Sentinel errors for the notification domain.
 var (
-	ErrNotificationNotFound     = errors.New("notification not found")
-	ErrPreferencesNotFound      = errors.New("preferences not found")
-	ErrDeviceTokenNotFound      = errors.New("device token not found")
-	ErrInvalidUnsubscribeToken  = errors.New("invalid unsubscribe token")
+	ErrNotificationNotFound    = errors.New("notification not found")
+	ErrPreferencesNotFound     = errors.New("preferences not found")
+	ErrDeviceTokenNotFound     = errors.New("device token not found")
+	ErrInvalidUnsubscribeToken = errors.New("invalid unsubscribe token")
 )
 
 // Notification represents an in-app notification record.
@@ -49,12 +49,12 @@ type ChannelPrefs struct {
 
 // DeviceToken represents a registered push notification device.
 type DeviceToken struct {
-	ID         string
-	UserID     string
-	Token      string
-	Platform   string // "ios", "android", "web"
-	DeviceID   string // unique device identifier
-	CreatedAt  time.Time
+	ID        string
+	UserID    string
+	Token     string
+	Platform  string // "ios", "android", "web"
+	DeviceID  string // unique device identifier
+	CreatedAt time.Time
 }
 
 // NotificationRepository defines persistence operations for notifications and preferences.
@@ -74,4 +74,28 @@ type DeviceTokenRepository interface {
 	SaveDeviceToken(ctx context.Context, userID, token, platform, deviceID string) error
 	DeleteDeviceToken(ctx context.Context, userID, deviceID string) error
 	GetDeviceTokens(ctx context.Context, userID string) ([]DeviceToken, error)
+}
+
+// SendTypeClass describes a class of notification types as exact names plus
+// name prefixes (a prefix of "welcome_day_" matches welcome_day_1,
+// welcome_day_3, ...). It exists so the Go-side classifier and the SQL
+// cooldown predicate consume one definition instead of drifting apart.
+type SendTypeClass struct {
+	ExactTypes []string
+	Prefixes   []string
+}
+
+// SendLedgerRepository records successful notification sends into
+// notification_send_ledger and answers the cooldown-window count queries that
+// rate-limit push dispatch (IOS-SYS.NT.1).
+type SendLedgerRepository interface {
+	// RecordSend appends one ledger row stamped now().
+	RecordSend(ctx context.Context, userID, notificationType, channel string) error
+	// CountSendsForType counts ledger rows for one exact notification type on
+	// one channel since the given instant.
+	CountSendsForType(ctx context.Context, userID, notificationType, channel string, since time.Time) (int, error)
+	// CountSendsMatching counts ledger rows on `channel` since `since` whose
+	// notification-type membership in `class` equals `matchClass`
+	// (true = inside the class, false = outside it).
+	CountSendsMatching(ctx context.Context, userID, channel string, class SendTypeClass, matchClass bool, since time.Time) (int, error)
 }

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	"github.com/nomarkup/nomarkup/services/notification/internal/domain"
 	"github.com/nomarkup/nomarkup/services/notification/internal/service"
 	grpclib "google.golang.org/grpc"
@@ -479,6 +479,14 @@ func stringToProtoChannel(s string) notificationv1.NotificationChannel {
 }
 
 // protoPlatformToString converts a proto DevicePlatform to a string.
+//
+// LA.3: DevicePlatform has no Live Activity value — a client registering
+// platform "ios_live_activity" over the gateway REST route arrives here as
+// DEVICE_PLATFORM_UNSPECIFIED and is stored as "unknown" (FCM best-effort
+// fan-out, unchanged behavior). The dispatcher-side live-activity exclusion
+// (internal/service/push.go) therefore only engages for rows whose platform
+// column is literally "ios_live_activity"; carrying the string end-to-end
+// needs a v1-additive enum value on RegisterDeviceRequest.
 func protoPlatformToString(p notificationv1.DevicePlatform) string {
 	switch p {
 	case notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS:
