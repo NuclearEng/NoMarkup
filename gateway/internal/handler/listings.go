@@ -140,6 +140,37 @@ func (h *ListingsHandler) sellerTrust(ctx context.Context, sellerID string) (*in
 	return &v, &tier
 }
 
+// sellerGoodsReviewAggregate returns (average_rating, review_count) for
+// published buyer→seller goods reviews of sellerID from listing_order_reviews.
+// Only reviews where the seller is the reviewee (reviewer_role = 'buyer') count
+// — seller ratings of buyers are out of scope for the public seller card.
+// Fail-soft: any DB error returns (nil, 0) so listing detail still loads.
+func (h *ListingsHandler) sellerGoodsReviewAggregate(ctx context.Context, sellerID string) (*float64, int) {
+	if h.db == nil || sellerID == "" {
+		return nil, 0
+	}
+	var avg float64
+	var count int
+	err := h.db.QueryRow(ctx, `
+		SELECT COALESCE(AVG(overall_rating)::float8, 0), COUNT(*)::int
+		  FROM listing_order_reviews
+		 WHERE reviewee_id = $1
+		   AND status = 'published'
+		   AND reviewer_role = 'buyer'`,
+		sellerID,
+	).Scan(&avg, &count)
+	if err != nil {
+		slog.WarnContext(ctx, "seller goods review aggregate failed", "error", err, "seller_id", sellerID)
+		return nil, 0
+	}
+	if count == 0 {
+		return nil, 0
+	}
+	// Round to one decimal for a stable public surface (4.666… → 4.7).
+	rounded := math.Round(avg*10) / 10
+	return &rounded, count
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // JSON shapes — must match web/src/types/index.ts {Listing, ListingDetail,
 // ListingBidHistory, PlaceListingBidResponse, ListingsResponse}.
@@ -201,6 +232,10 @@ type listingDetailJSON struct {
 	SellerListingsCount int     `json:"seller_listings_count"`
 	SellerTrustTier     *string `json:"seller_trust_tier"`
 	SellerTrustScore    *int    `json:"seller_trust_score"`
+	// FE-14: aggregate of published buyer→seller goods reviews
+	// (listing_order_reviews). Null average when the seller has no reviews yet.
+	SellerAverageRating *float64 `json:"seller_average_rating"`
+	SellerReviewCount   int      `json:"seller_review_count"`
 }
 
 type listingBidJSON struct {
@@ -605,6 +640,9 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	// Seller trust: real computed score/tier from the trust engine. Fail-soft —
 	// (nil, nil) when no score yet or the engine is unreachable.
 	d.SellerTrustScore, d.SellerTrustTier = h.sellerTrust(r.Context(), d.SellerID)
+	// FE-14: public seller aggregate from listing_order_reviews (buyer→seller).
+	// Fail-soft on DB error; zero reviews → null average + count 0.
+	d.SellerAverageRating, d.SellerReviewCount = h.sellerGoodsReviewAggregate(r.Context(), d.SellerID)
 	if reserveCents.Valid {
 		v := reserveCents.Int64
 		d.ReservePriceCents = &v

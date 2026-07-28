@@ -53,6 +53,7 @@ vi.mock('@/hooks/useListings', () => ({
   }),
   useListingBids: () => bidsState,
   usePlaceListingBid: () => placeBidState,
+  useRetractListingBid: () => ({ mutate: vi.fn(), isPending: false }),
   useSimilarListings: () => ({ data: { listings: [] }, isLoading: false, isError: false }),
 }));
 
@@ -143,6 +144,8 @@ const detail: ListingDetail = {
   seller_listings_count: 5,
   seller_trust_tier: 'trusted',
   seller_trust_score: 0.9,
+  seller_average_rating: null,
+  seller_review_count: 0,
 };
 
 function renderClient(seed: ListingDetail = detail) {
@@ -168,8 +171,9 @@ afterEach(() => {
 describe('ListingDetailClient', () => {
   it('renders the loading skeleton when the query reports loading', () => {
     listingState.isLoading = true;
-    const { container } = renderClient();
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    renderClient();
+    // FE-04: shared Skeleton with role=status (not raw animate-pulse divs).
+    expect(screen.getByLabelText(/Loading listing/i)).toBeDefined();
   });
 
   it('renders the not-found empty state on error', () => {
@@ -189,6 +193,20 @@ describe('ListingDetailClient', () => {
     renderClient();
     expect(screen.getByText('Jane')).toBeDefined();
     expect(screen.getByText(/trusted seller/i)).toBeDefined();
+    expect(screen.queryByTestId('seller-review-summary')).toBeNull();
+  });
+
+  it('renders the seller goods review aggregate when present (FE-14)', () => {
+    renderClient({
+      ...detail,
+      seller_average_rating: 4.7,
+      seller_review_count: 12,
+    });
+    const summary = screen.getByTestId('seller-review-summary');
+    expect(summary).toBeDefined();
+    expect(summary.textContent).toMatch(/4\.7/);
+    expect(summary.textContent).toMatch(/12 reviews/);
+    expect(screen.getByRole('img', { name: /Rating: 4\.7 out of 5 stars/i })).toBeDefined();
   });
 
   it('renders the bid panel and timer', () => {

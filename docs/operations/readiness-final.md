@@ -81,7 +81,7 @@ Per CLAUDE.md §6:
 | PII at rest | ✅ **XSalsa20-Poly1305** via Go `nacl/secretbox` — *not* AES-256-GCM, and not whole-row: selected fields only (phone, MFA secret, provider service address, EIN/TIN, insurance policy number; migrations `031`/`033`). Email stays plaintext for auth lookup. See CLAUDE.md §6 and tracker SEC-13. |
 | TLS | ⚠️ **edge default + mesh optional.** TLS 1.3 + HSTS at the ingress/CDN (`next.config.ts`). gRPC mesh mTLS is **code-complete, default-off** (`pkg/grpmtls` / `engine_telemetry::load_server_tls`; `docs/operations/mesh-mtls.md`; tracker SEC-05 Done code, claim demoted). Without certs mounted the mesh still uses insecure credentials on the private network. Do not read this row as "TLS 1.3 for all connections". |
 | CORS allowlist (no wildcards in prod) | ✅ |
-| CSP | ✅ `script-src` per-request nonce + `strict-dynamic`, no `'unsafe-eval'` in prod. ⚠️ `style-src` still allows `'unsafe-inline'` (`web/src/middleware.ts:161`) — Next.js/Tailwind inject styles; tracker SEC-11. |
+| CSP | ✅ `script-src` per-request nonce + `strict-dynamic`, no `'unsafe-eval'` in prod. ⚠️ `style-src` allows `'unsafe-inline'` (accepted residual SEC-11 Demoted accepted — no safe Next 15 style-nonce path; CLAUDE §6). |
 | Per-IP + per-user rate limiting | ✅ 5/15min on auth tier |
 | Stripe webhook signature mandatory + replay-safe | ✅ |
 | Idempotency keys on payment mutations | ✅ middleware + DB unique constraint |
@@ -136,7 +136,7 @@ Per CLAUDE.md §11:
 These do not block beta / 1% rollout:
 
 1. **Rust engine `/metrics` — remaining 2 engines.** `bid_processing_duration_seconds`, `trust_score_computation_duration_seconds`, `fraud_scoring_duration_seconds` and `image_processing_duration_seconds` all ship today (see gap #4). What is left is `engines/pricing` and `engines/underwriting`: neither has a `src/metrics.rs` or a `*_METRICS_PORT` listener, and both are `prometheus.io/scrape: "false"` in `deploy/k8s/base/`. (`underwriting/Cargo.toml` already pulls in `prometheus`/`hyper` but never uses them.)
-2. **CSP `style-src 'unsafe-inline'`** — Tailwind v4 + Next.js still require it. Track upstream Next.js progress on RSC nonce-injection support for inline styles.
+2. **CSP `style-src 'unsafe-inline'`** — **closed accepted (SEC-11 Demoted accepted 2026-07-27).** Permanent stack residual: Next 15 script nonce is shipped; full style nonce is not safe (style attributes, Mapbox, nonce↔unsafe-inline interaction). Revisit only if framework/third-party coverage becomes complete.
 3. **External secret-id rotation** — implement `external-secrets-operator` sidecar for Vault AppRole secret-id rotation in K8s.
 4. **Vault token renewal** — add a goroutine to renew Vault tokens before expiry (currently relies on AppRole login on each service start).
 5. **Production restore drill** — execute a full restore on staging quarterly per `docs/operations/backup-disaster-recovery.md`. Local drill (this report) only validates the procedure.

@@ -17,6 +17,7 @@ import { ReportListingButton } from '@/components/marketplace/ReportListingButto
 import { SimilarListings } from '@/components/marketplace/SimilarListings';
 import { SnipeExtensionBanner } from '@/components/marketplace/SnipeExtensionBanner';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
+import { StarRatingDisplay } from '@/components/reviews/StarRating';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -544,13 +545,29 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
           {/* Seller: incoming offers with Accept / Reject / Counter. */}
           {showSellerOffers ? <CounterOfferBanner listingId={listingId} /> : null}
 
-          {/* Seller card */}
-          <Card variant="glass">
+          {/* Seller card — public listing owner profile (FE-14 goods review aggregate). */}
+          <Card variant="glass" data-testid="seller-card">
             <CardHeader>
               <CardTitle className="text-base">Seller</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <p className="font-medium text-zinc-100">{listing.seller_display_name}</p>
+              {listing.seller_review_count > 0 && listing.seller_average_rating !== null ? (
+                <div
+                  className="flex flex-wrap items-center gap-2"
+                  data-testid="seller-review-summary"
+                >
+                  <StarRatingDisplay
+                    rating={listing.seller_average_rating}
+                    size="sm"
+                    showValue
+                  />
+                  <span className="text-zinc-400">
+                    ({String(listing.seller_review_count)} review
+                    {listing.seller_review_count !== 1 ? 's' : ''})
+                  </span>
+                </div>
+              ) : null}
               <p className="text-zinc-400">
                 Member since{' '}
                 {new Date(listing.seller_member_since).toLocaleDateString('en-US', {

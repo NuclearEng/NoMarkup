@@ -56,8 +56,8 @@ There is currently **no Go `templ` app rendering** and **no Rust WASM in the UI*
   (interactivity is irreducible) but delivered server-rendered first paint + SEO. On interactive
   pages, **RSC wins LCP/SEO, not bundle size.** Don't promise a JS cut from RSC on an interactive surface.
 - **Validated (don't re-chase): the app HTML cannot be edge-cached.** Root layout calls
-  `await headers()` for the per-request CSP **script** nonce (styles still allow `'unsafe-inline'` —
-  see security CSP truth). That forces pages into dynamic rendering. `export const revalidate` / ISR
+  `await headers()` for the per-request CSP **script** nonce (styles keep `'unsafe-inline'` —
+  SEC-11 Demoted accepted; see CLAUDE §6). That forces pages into dynamic rendering. `export const revalidate` / ISR
   on app pages is a **no-op for public HTML caching** while the nonce stands — routes serve
   `Cache-Control: private, no-store` class behavior. Edge-caching the HTML would require dropping the
   nonce (a CSP downgrade) — not worth it. **Cache the DATA layer instead.**

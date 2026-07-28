@@ -55,13 +55,20 @@ Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC serv
 - **Local pickup** — 25-mile radius, Mapbox pickup maps, PostGIS-backed geo
 - **Watchlist, Follows, Saved Searches & Feed** — watch listings (live heart state), follow sellers (hydrated follow state + follower counts), save searches, personalized feed
 - **Wishlist & price alerts** — save what you're hunting for (keyword + a max price + optional category); when a matching listing goes live at or under your ceiling, you get a "bid now" notification linking straight to it
-- **Reviews** — **services (contracts)** use double-blind publish (neither side's review surfaces until both submit, or the window closes). Dimensions are overall + role-specific ratings (quality/timeliness/communication/value or payment/scope/access). **Goods (listing orders)** have a separate MVP: after escrow **released**, buyer and seller may each POST an **overall 1–5** rating (optional comment) via `/orders/{id}/reviews` on the order page — **not** double-blind and **not** 8-dimension.
+- **Reviews** — **services (contracts)** use double-blind publish (neither side's review surfaces until both submit, or the window closes). Dimensions are overall + role-specific ratings (quality/timeliness/communication/value or payment/scope/access). **Goods (listing orders)** have a separate MVP: after escrow **released**, buyer and seller may each POST an **overall 1–5** rating (optional comment) via `/orders/{id}/reviews` on the order page — **not** double-blind and **not** 8-dimension. Published buyer→seller ratings aggregate on the public listing detail seller card (`seller_average_rating` / `seller_review_count`).
 - **City selector** — market picker: use-my-location (→ nearest launched market by haversine), recent picks, nearby markets, and type-to-search; only launched cities surface ("more cities coming soon")
 
-### AI-Powered Job Posting
-- **Vision Analysis** — upload a photo; `claude-haiku-4-5-20251001` extracts category, title, description, budget and auto-fills the form
-- **Voice Input** — Web Speech API mic on the title field
-- **Progressive Enhancement** — both are additive; the form works without them
+### AI photo analysis (Anthropic)
+Production vision routes call the real Anthropic Messages API with a **server-hard-coded** model id (client body cannot pick the model — cost-abuse guard):
+
+| Route | Form | Model (`MODEL_ID`) | Extracts |
+|-------|------|--------------------|----------|
+| `POST /api/analyze-job-image` | Job posting | `claude-haiku-4-5-20251001` | category, title, description, budget min/max cents |
+| `POST /api/analyze-listing-image` | Goods sell form | `claude-haiku-4-5-20251001` | category slug, title, description, starting bid cents, condition, confidence |
+
+- **Auth / cost controls** — JWT verified on the web tier (`gateAiRoute`), per-user rate limit (10/min), same-origin gate, `ANTHROPIC_API_KEY` required; missing key → `503` + `{ aiUnavailable: true }` (manual entry still works)
+- **Voice Input** (job title) — Web Speech API mic; additive enhancement
+- **Not AI:** BidCard “Rank estimate” bars are a UI heuristic from current bid rank only — not a trained win-probability model
 
 ### Provider Workspace & Financial OS
 - **Daily Workspace** — today's jobs + 7-day calendar, GPS check-in/out with duration (client lat/lng stored; **server geo-fence** vs job `service_location` / encrypted exact point, default 500 m via `CHECKIN_MAX_DISTANCE_METERS`; fails soft if the job has no usable location), before/after completion photos
@@ -154,7 +161,7 @@ Other security posture:
 - Endpoint authz + ownership scoping on sensitive reads/writes; PII projected out of public reads (license numbers masked)
 - **PII at rest:** selected fields (phone, MFA secret, service address, EIN/TIN, insurance policy number, etc.) use **XSalsa20-Poly1305** via `nacl/secretbox` (libsodium-compatible). **Email stays plaintext** for auth lookup. Not whole-database AES-256-GCM.
 - **TLS:** **edge/public HTTPS TLS 1.3** (ingress/Cloudflare). **Service mesh gRPC is currently plaintext** inside the private network; mTLS is the target, not shipped.
-- **CSP:** per-request **script** nonce (`strict-dynamic`); **`style-src` includes `'unsafe-inline'`** (Next/tooling injects styles). Not a fully nonce-only CSP.
+- **CSP:** per-request **script** nonce (`strict-dynamic`); **`style-src` includes `'unsafe-inline'`** (SEC-11 accepted residual: Next/React style attributes + Mapbox). Not a fully nonce-only CSP.
 - WebSocket: channel/job-participant authz on subscribe, origin allowlist, spectator anonymization + delay, socket lifetime bounded to token `exp`
 - Money paths use locks / WHERE-guards / idempotency keys on many Stripe operations (see adversarial tracker for remaining gaps before live money)
 - Tiered per-IP rate limiting, request-body caps, parameterized SQL only

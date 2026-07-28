@@ -25,14 +25,22 @@ import {
  *
  * 2. CSP NONCE — A cryptographically-random nonce is generated per request
  *    and embedded in the Content-Security-Policy header so we can drop
- *    'unsafe-inline' from script-src. Next.js 15 RSC reads the nonce from the
- *    `x-nonce` request header (set here) and automatically attaches it to its
- *    bootstrapping inline scripts. Page components can also read it via
+ *    'unsafe-inline' from **script-src**. Next.js 15 RSC reads the nonce from
+ *    the `x-nonce` request header (set here) and automatically attaches it to
+ *    its bootstrapping inline scripts. Page components can also read it via
  *    `headers().get('x-nonce')` and pass it to <Script> tags.
  *
  *    The nonce is also paired with 'strict-dynamic', which trusts scripts
  *    transitively loaded by an explicitly-trusted (nonce'd) script. This lets
  *    Next.js bootstrap chunks load without enumerating every chunk URL.
+ *
+ *    **style-src keeps 'unsafe-inline' (SEC-11 Demoted accepted).** There is
+ *    no safe full style-nonce path on Next 15 + Tailwind v4: React/`next/image`
+ *    /route-announcer use style *attributes* (nonces do not apply), Mapbox
+ *    injects un-nonced <style> tags, and CSP Level 2/3 browsers ignore
+ *    'unsafe-inline' when a style-src nonce is present — so a partial nonce
+ *    policy breaks the app. Script-src remains nonce-locked; do not claim a
+ *    fully nonce-only CSP.
  *
  * Cookies in play (soft indicators only — never treated as proof of auth):
  *   - has_session            — HMAC-signed sentinel set by the gateway when a
@@ -173,6 +181,7 @@ function buildCsp(nonce: string): string {
   const directives = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'${scriptSrcEval} https://api.mapbox.com https://js.stripe.com`,
+    // SEC-11 accepted residual: 'unsafe-inline' required for styles (see file header).
     "style-src 'self' 'unsafe-inline' https://api.mapbox.com",
     "img-src 'self' data: blob: https: http://localhost:9000",
     "font-src 'self' data:",

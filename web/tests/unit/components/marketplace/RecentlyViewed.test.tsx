@@ -93,6 +93,8 @@ function makeDetail(over: Partial<ListingDetail> = {}): ListingDetail {
     seller_listings_count: 1,
     seller_trust_tier: null,
     seller_trust_score: null,
+    seller_average_rating: null,
+    seller_review_count: 0,
     ...over,
   };
 }

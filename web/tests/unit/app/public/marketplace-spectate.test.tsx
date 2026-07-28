@@ -106,6 +106,8 @@ const detail: ListingDetail = {
   seller_listings_count: 5,
   seller_trust_tier: 'trusted',
   seller_trust_score: 0.9,
+  seller_average_rating: null,
+  seller_review_count: 0,
 };
 
 beforeEach(() => {

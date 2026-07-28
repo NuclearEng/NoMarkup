@@ -57,6 +57,26 @@ describe('middleware CSP — script-src unsafe-eval policy', () => {
   });
 });
 
+describe('middleware CSP — style-src (SEC-11 Demoted accepted)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("keeps 'unsafe-inline' on style-src (no partial style nonce)", async () => {
+    // Accepted residual: a style-src nonce without covering style attributes /
+    // Mapbox breaks the app because browsers drop 'unsafe-inline' when a nonce
+    // is present. Do not "harden" this to nonce-only without a complete path.
+    vi.stubEnv('NODE_ENV', 'production');
+    const csp = await runMiddleware();
+    const styleSrc = extractDirective(csp, 'style-src');
+    expect(styleSrc).toContain("'unsafe-inline'");
+    expect(styleSrc).not.toMatch(/'nonce-/);
+    const scriptSrc = extractDirective(csp, 'script-src');
+    expect(scriptSrc).toMatch(/'nonce-[A-Za-z0-9+/=]+'/);
+    expect(scriptSrc).toContain("'strict-dynamic'");
+  });
+});
+
 describe('middleware CSP — connect-src (SEC-12)', () => {
   afterEach(() => {
     vi.unstubAllEnvs();

@@ -72,7 +72,7 @@ Stripe, WebSocket fan-out, **Meilisearch** coordination, and **PostGIS** geo. Se
   (hyphenated — the non-hyphen `nomarkup.com` is **not** owned). Origin targets public **DATA**
   caching, not HTML (see §14). **In-repo edge inventory** (auth cache-bypass expression, what is
   not Terraform-managed): `docs/operations/cloudflare-edge.md` + `docs/operations/cdn-cache-auth-bypass.md`.
-  Live CF rules / Account ID / Zone ID: Founder + Vault/`.env.local`, not committed (OPS-24 Partial).
+  Live CF rules / Account ID / Zone ID: Founder + Vault/`.env.local`, not committed (OPS-24 Founder-Action).
 - **Deploy is not production-ready** until `DEPLOY_PROVISIONED=true`, secrets, cluster, and real
   migrate-on-deploy exist (`docs/operations/provisioning-checklist.md`). `deploy/terraform/` is a
   skeleton until IaC is filled in.
@@ -201,8 +201,9 @@ These are non-negotiable. The hooks enforce many automatically.
   (plaintext) on the private network**; target is mTLS — do not claim "TLS 1.3 for all connections."
 - CORS: explicit origin allowlist, no wildcards in prod.
 - **CSP:** script-src uses a per-request **nonce** + `strict-dynamic` (no `'unsafe-eval'` in prod).
-  **`style-src` allows `'unsafe-inline'`** (Next.js / tooling injects styles). Do not claim
-  "no unsafe-inline" without the style exception.
+  **`style-src` allows `'unsafe-inline'`** (Next.js / React style attributes / Mapbox / tooling).
+  **SEC-11 Demoted accepted** — no safe full style-nonce path on Next 15; do not claim
+  "no unsafe-inline" or a fully nonce-only CSP without the style exception.
 - Rate limiting: per-IP tiers. Stricter on auth endpoints (5 attempts/15 min target).
 - File uploads: validate MIME server-side (don't trust Content-Type). **10MB for every context,
   documents included** — there is no separate 25MB doc path (`MAX_FILE_SIZE_BYTES`). Enforced in
@@ -226,14 +227,15 @@ These are non-negotiable. The hooks enforce many automatically.
 - Admin-togglable keys; `RequireFlag` → **503 when the flag row exists and `enabled=false`**.
 - **Fails closed in production** (SEC-01, shipped): missing flag row, DB error, and nil DB all →
   503 when `ENVIRONMENT=production`. Non-production keeps fail-open for missing/error only.
-- **ARC-10 Partial — sticky % (not a full experiment platform):** optional
+- **ARC-10 Done — sticky % (not a full experiment platform):** optional
   `feature_flags.rollout_percent` (0–100, default 100). When `enabled=true` and percent &lt; 100,
   cohort is sticky via `SHA256(userID|key) % 100` (device id fallback). Public `GET /api/v1/flags`
   stays a flat bool map (CDN). Exposure metrics: `feature_flag_checks_total`,
   `experiment_exposures_total`. **Money/regulated keys are binary-only** (allow only at 100%;
   partial fails closed; admin write rejects 1–99). Admin UI (`/admin/flags`) edits sticky % for
   non-money flags and shows Binary-only for money keys. Handler-level `WithExperiment` is
-  control/treatment only — residual: multi-arm stats warehouse / per-user public flag map.
+  control/treatment only — intentional product backlog residual: multi-arm stats warehouse /
+  per-user public flag map.
 - **Caveat:** only 6 route groups call `RequireFlag`. Of the 13 flags in the DB, 7 have no backend
   enforcement at all and gate UI only — toggling those off does not close the API.
 
@@ -258,7 +260,7 @@ These are non-negotiable. The hooks enforce many automatically.
   testcontainers-go. Integration packages under `tests/integration/` + service tests; httptest + bufconn.
 - **Rust**: proptest for numerical code (trust bounds, bid invariants, fraud no-panics, underwriting).
   Criterion benches exist for p99 budgets (**local / not CI-enforced**). k6 under `tests/load/`:
-  optional CI smoke (`k6-smoke` when `K6_BASE_URL` set; artifact `k6-smoke-<run_id>`) only — full load profiles not CI-gated (PERF-10 Partial).
+  optional CI smoke (`k6-smoke` when `K6_BASE_URL` set; artifact `k6-smoke-<run_id>`) only — full load profiles not CI-gated (PERF-10 Done smoke path; capacity Demoted residual).
 
 → **Vitest config + full per-stack detail: `docs/conventions.md`.**
 

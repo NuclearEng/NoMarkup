@@ -170,7 +170,7 @@ exporters:
 
 3. Restart the collector Deployment.
 
-Prefer ExternalSecrets / Vault for the Secret in production (OPS-04 Partial —
+Prefer ExternalSecrets / Vault for the Secret in production (OPS-04 Founder-Action —
 see `deploy/k8s/base/externalsecret.sample.yaml` + `SECRETS.md`; Founder still
 wires Vault). Never commit tokens.
 

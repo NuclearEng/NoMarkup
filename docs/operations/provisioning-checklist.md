@@ -11,11 +11,11 @@ Infra manifests (migration Job, metrics ports, NetworkPolicies, PDBs, HPAs,
 Terraform skeleton) are in-repo. What remains is **provisioning real cloud
 resources + secrets** — not more placeholder YAML.
 
-**OPS-02 (IaC):** `deploy/terraform/` is a **Partial** skeleton (README inventory +
-draft modules for VPC/EKS/RDS/Redis/S3). It is **not** applied and contains **no**
-AWS account IDs. Founder must create the account, remote state, plan/apply (or
-document an external provisioner), enable PostGIS, and load secrets before
-`DEPLOY_PROVISIONED=true`.
+**OPS-02 (IaC):** `deploy/terraform/` is a **Founder-Action** residual — eng skeleton
+only (README inventory + draft modules for VPC/EKS/RDS/Redis/S3). It is **not**
+applied and contains **no** AWS account IDs. Founder must create the account,
+remote state, plan/apply (or document an external provisioner), enable PostGIS,
+and load secrets before `DEPLOY_PROVISIONED=true`.
 
 ---
 
@@ -38,7 +38,7 @@ release tag. Deployments read it via `configMapKeyRef` (category cache bust).
 When provisioned + credentials present, deploy builds/pushes all service images
 (including migrate + engines) to GHCR.
 
-### 4. Provision `nomarkup-secrets` (OPS-04 Partial — Founder wires Vault)
+### 4. Provision `nomarkup-secrets` (OPS-04 Founder-Action — Founder wires Vault)
 
 In-repo samples only; **no live secret store is applied by kustomize**.
 

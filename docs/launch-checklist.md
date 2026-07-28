@@ -164,7 +164,7 @@ From code-complete to real users on production. Every item must be checked off o
 
 ### Endpoint / edge
 - [ ] CORS allowlist: production origins for **`no-markup.com`** / `www` only (no wildcards)
-- [ ] CSP: **script** nonce + no `'unsafe-eval'` in prod; **`style-src` may include `'unsafe-inline'`** (honest exception)
+- [ ] CSP: **script** nonce + no `'unsafe-eval'` in prod; **`style-src` may include `'unsafe-inline'`** (SEC-11 Demoted accepted — permanent Next/Mapbox residual)
 - [ ] Rate limits on auth; CSRF where applicable; admin/support role gates
 - [ ] Idempotency on money mutations (see money tracker for remaining gaps)
 
@@ -193,7 +193,8 @@ From code-complete to real users on production. Every item must be checked off o
 ### Goods marketplace
 - [ ] List → bid (with lock/idempotency) → close/BIN → order/escrow → pickup confirm
 - [ ] After escrow **released**: buyer and/or seller leave overall rating on `/orders/{id}` (MVP; not 8-dim double-blind)
-- [ ] Do **not** expect goods 8-dim double-blind reviews (not productized — residual)
+- [ ] Listing detail seller card shows aggregate goods rating when the seller has published buyer reviews
+- [ ] Do **not** expect goods 8-dim double-blind reviews (intentional product backlog; FE-14 MVP Done)
 
 ### Payments (live Stripe only with small amounts)
 - [ ] Connect onboarding, hold/release, refunds, webhooks
@@ -272,7 +273,7 @@ From code-complete to real users on production. Every item must be checked off o
 - [ ] Track open P0s in `docs/planning/adversarial-action-tracker.md` — **do not take real money** until money + fail-closed items close
 
 ### Claims demoted (docs done; code optional)
-- Feature flags fail-open on missing rows · mesh plaintext gRPC · secretbox not AES-GCM · coverage floors not 80% all stacks · no testcontainers · criterion not CI · k6 smoke optional only (not capacity proof) · no Husky · E2E CI backend-tolerant · North Star not achieved · SW kill-switch · RSC pilots not whole app · WCAG goal not axe-certified · insurance/legal flag-off · win-prob cosmetic · GPS honor system
+- Feature flags fail-open on missing rows · mesh plaintext gRPC · secretbox not AES-GCM · coverage floors not 80% all stacks · no testcontainers · criterion not CI · k6 smoke optional only (not capacity proof) · no Husky · E2E CI backend-tolerant · North Star not achieved · SW kill-switch · RSC pilots not whole app · WCAG goal not axe-certified · insurance/legal flag-off · rank-estimate heuristic (not trained win-prob; FE-12 Done honesty) · GPS server geo-fence (FE-13 Done)
 
 ---
 

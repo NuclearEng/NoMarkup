@@ -95,6 +95,35 @@ spec:
                   name: nomarkup-config
                   key: APP_VERSION
                   optional: true
+            # OPS-25 — optional in-process Vault client (gateway/internal/vault).
+            # All keys optional: when unset, vault.New is a no-op and GetString
+            # falls through to envFrom nomarkup-secrets (ESO primary path, OPS-04).
+            # Founder wires live values in Vault → nomarkup-secrets or sets these
+            # keys directly. Prefer AppRole (ROLE_ID + SECRET_ID) over VAULT_TOKEN.
+            - name: VAULT_ADDR
+              valueFrom:
+                secretKeyRef:
+                  name: nomarkup-secrets
+                  key: VAULT_ADDR
+                  optional: true
+            - name: VAULT_NAMESPACE
+              valueFrom:
+                secretKeyRef:
+                  name: nomarkup-secrets
+                  key: VAULT_NAMESPACE
+                  optional: true
+            - name: VAULT_ROLE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: nomarkup-secrets
+                  key: VAULT_ROLE_ID
+                  optional: true
+            - name: VAULT_SECRET_ID
+              valueFrom:
+                secretKeyRef:
+                  name: nomarkup-secrets
+                  key: VAULT_SECRET_ID
+                  optional: true
           envFrom:
             - configMapRef:
                 name: nomarkup-config

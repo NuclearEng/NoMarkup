@@ -2537,6 +2537,12 @@ export interface ListingDetail extends Listing {
   seller_listings_count: number;
   seller_trust_tier: TrustTier | null;
   seller_trust_score: number | null;
+  /**
+   * FE-14: published buyer→seller goods review aggregate from
+   * `listing_order_reviews`. Null average when the seller has no reviews yet.
+   */
+  seller_average_rating: number | null;
+  seller_review_count: number;
 }
 
 // ────────────────────────────────────────

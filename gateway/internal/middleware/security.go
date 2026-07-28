@@ -13,10 +13,13 @@ func SecurityHeaders(production bool) func(http.Handler) http.Handler {
 
 			// Content-Security-Policy: restrict resource loading to same origin with
 			// specific exceptions for inline styles, data/blob images from S3, and WSS.
-			// NOTE: 'unsafe-inline' for style-src is required because Next.js injects
-			// inline <style> tags at runtime (e.g. for styled-jsx and loading states).
-			// A nonce-based approach would be preferable but requires per-request nonce
-			// generation coordinated with the Next.js rendering pipeline.
+			// NOTE (SEC-11 Demoted accepted): 'unsafe-inline' for style-src is
+			// permanent for this stack. Next.js/React style attributes, Mapbox, and
+			// tooling inject styles that cannot all carry a per-request nonce; a
+			// partial style-src nonce also disables 'unsafe-inline' in browsers and
+			// breaks the app. The Next.js web origin is the real CSP surface
+			// (web/src/middleware.ts — script nonce + style unsafe-inline). This
+			// gateway policy is a coarse default for non-Next responses.
 			h.Set("Content-Security-Policy",
 				"default-src 'self'; "+
 					"script-src 'self'; "+

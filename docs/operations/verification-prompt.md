@@ -144,8 +144,8 @@ accounts: `customer@nomarkup.com` / `provider@nomarkup.com` /
 
 These are non-negotiable per CLAUDE.md §6. Any FAIL is a launch blocker.
 
-- [ ] **CSP nonce**: `curl -I http://localhost:3000/` shows `Content-Security-Policy` with per-request `nonce-XXX` and `'strict-dynamic'`
-- [ ] No `unsafe-inline`, no `unsafe-eval` in CSP
+- [ ] **CSP nonce (scripts)**: `curl -I http://localhost:3000/` shows `Content-Security-Policy` with per-request `nonce-XXX` and `'strict-dynamic'` on `script-src`
+- [ ] **CSP honesty**: no `'unsafe-eval'` on `script-src` in **production**; `style-src` **may** include `'unsafe-inline'` (SEC-11 accepted residual — do not fail the gate for style-src unsafe-inline)
 - [ ] **HSTS**: `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` (or staging-equivalent)
 - [ ] **Auth wrapper coverage**: every API route handler has either `withAuth()` or a documented `// @public` annotation. Run a grep audit: `grep -rL "withAuth\|@public" gateway/internal/handler/*.go` should be empty
 - [ ] **JWT**: tokens signed RS256, ≤15-min access TTL, refresh in HTTP-only secure cookies

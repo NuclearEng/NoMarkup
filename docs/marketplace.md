@@ -86,7 +86,7 @@ the only places where goods has a separate code path.
 | `listing_bids` | Every bid placed (ascending) | Trigger maintains `listings.bid_count` and `listings.current_bid_cents` atomically. |
 | `listing_photos` | Photos attached to a listing | `sort_order` determines hero photo. |
 | `listing_orders` | Post-award escrow record | One per listing (UNIQUE constraint). `escrow_status ∈ {held, pickup_confirmed, released, disputed, refunded}`. |
-| `listing_order_reviews` (116) | Goods order reviews (MVP) | Overall 1–5 after `released`; buyer↔seller; not double-blind / not multi-dim. |
+| `listing_order_reviews` (116) | Goods order reviews (MVP) | Overall 1–5 after `released`; buyer↔seller; not double-blind / not multi-dim. Public seller aggregate on `GET /listings/{id}` (`seller_average_rating`, `seller_review_count` from published buyer→seller rows). |
 | `listing_reports` (036) | Buyer/anyone-flagged policy violations | Reasons: `stolen`, `counterfeit`, `prohibited`, `misleading`, `spam`, `other`. |
 | `disputes` (extended in 035) | Service AND goods disputes | `subject_kind` discriminator, `listing_order_id` soft-FK column, `contract_id` is now nullable, exclusive `disputes_subject_xor` CHECK. |
 
