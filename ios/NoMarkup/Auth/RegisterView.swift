@@ -138,7 +138,7 @@ struct RegisterView: View {
                 Group {
                     if auth.isLoading {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                     } else {
                         Text("Create account")
                             .fontWeight(.semibold)
@@ -149,6 +149,7 @@ struct RegisterView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(auth.isLoading)
             .accessibilityLabel("Create account")
 

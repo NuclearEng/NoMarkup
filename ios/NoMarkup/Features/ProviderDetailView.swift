@@ -226,10 +226,10 @@ struct ProviderDetailView: View {
                                 }
                                 Text(trust.displayTier)
                                     .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(BrandTheme.navy)
+                                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 3)
-                                    .background(BrandTheme.goldBright, in: Capsule())
+                                    .background(BrandTheme.goldBrightFill, in: Capsule())
                             }
                         } else {
                             Text("View")
@@ -357,6 +357,7 @@ struct ProviderDetailView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 }
             } header: {
                 Text("Safety").brandSectionHeader()
@@ -544,7 +545,7 @@ private struct UserReportSheet: View {
                     } label: {
                         if isSubmitting {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Text("Submit report")
@@ -553,6 +554,7 @@ private struct UserReportSheet: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isSubmitting || !auth.isAuthenticated || auth.isScaffoldSession)
                 }
             }

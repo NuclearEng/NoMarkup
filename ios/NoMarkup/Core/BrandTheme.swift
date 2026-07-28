@@ -6,131 +6,311 @@ import UIKit
 // MARK: - Brand palette
 //
 // SSOT: `qa/showcase/index.html` + `docs/brand/showcase-ssot.md`
-// Web: `web/src/styles/globals.css` (`.dark` terminal shell).
-// navy `#07080b`, card `#14161e`, gold `#c9a84c` / bright `#e4c566`,
-// text `#e8ecf1` / `#8b949e`, green `#22c55e`.
-// Prefer these tokens over system gray list chrome so the native shell matches
-// the showcase brand (not a plain iOS settings list).
+// Web: `web/src/styles/globals.css` (`.dark` terminal shell + `:root` light product UI).
+//
+// DES.3 — genuinely adaptive: every token resolves per `userInterfaceStyle`
+// (light/dark) AND `accessibilityContrast` (Increase Contrast) via UIKit
+// dynamic providers, so one call site renders correctly in all four states.
+//
+// Dark (showcase terminal, unchanged): navy `#07080b`, card `#14161e`,
+// gold `#c9a84c` / bright `#e4c566`, text `#e8ecf1` / `#8b949e`, green `#22c55e`.
+// Light (web `:root` product UI, warmed for the brand): paper `#f6f4ef`,
+// card `#ffffff`, raised `#edeae3`, navy ink `#14161e`, interactive gold
+// `#b89938` (AccentColor light), text-sized gold darkened to `#806316`
+// (showcase gold fails 4.5:1 on light — same reason the web keeps `gold-dim`).
+// Gold CTA fills stay literal showcase gold in BOTH modes (web parity:
+// `--brand-gold` is identical in light and dark).
 
 enum BrandTheme {
-    // MARK: A11Y.3 — Increase Contrast plumbing
+    // MARK: Palette hex constants (single source for Color tokens + UIKit chrome)
 
-    /// Wraps a pair of colors into one dynamic color that resolves to
-    /// `increased` when the user enables Increase Contrast
-    /// (`UITraitCollection.accessibilityContrast == .high`). UIKit dynamic
-    /// providers re-resolve on trait changes, so every existing call site
-    /// adapts with no per-site environment plumbing (IOS-A11Y.3).
-    private static func contrastAdaptive(_ standard: Color, increased: Color) -> Color {
+    private enum P {
+        // Screens / surfaces
+        static let screenDark: UInt32 = 0x07080B // showcase --bg-primary
+        static let screenLight: UInt32 = 0xF6F4EF // warm paper
+        static let cardDark: UInt32 = 0x14161E // showcase --bg-card
+        static let cardLight: UInt32 = 0xFFFFFF
+        static let raisedDark: UInt32 = 0x1A1D28 // showcase --bg-card-hover
+        static let raisedLight: UInt32 = 0xEDEAE3
+        static let elevatedTopDark: UInt32 = 0x1E2130 // showcase --bg-elevated
+        static let elevatedTopLight: UInt32 = 0xFFFFFF
+        static let surfaceLowDark: UInt32 = 0x0E1017 // showcase --bg-surface
+        static let surfaceLowLight: UInt32 = 0xFAF8F2
+
+        // Gold
+        static let gold: UInt32 = 0xC9A84C // showcase --gold (fills, dark-mode accents)
+        static let goldBrightHex: UInt32 = 0xE4C566 // showcase --gold-bright
+        static let goldLight: UInt32 = 0xB89938 // AccentColor light — interactive/border gold on light
+        static let goldTextLight: UInt32 = 0x806316 // text-sized gold on light (5.65 white / 5.14 paper / 4.71 raised)
+        static let goldTextLightHC: UInt32 = 0x6B520F // 7.40 white / 6.73 paper / 6.16 raised
+
+        // Text
+        static let textPrimaryDark: UInt32 = 0xE8ECF1
+        static let textPrimaryDarkHC: UInt32 = 0xFFFFFF
+        static let textPrimaryLight: UInt32 = 0x14161E // navy ink (18.05 white / 16.42 paper / 15.03 raised)
+        static let textPrimaryLightHC: UInt32 = 0x07080B
+        static let textSecondaryDark: UInt32 = 0x8B949E
+        static let textSecondaryDarkHC: UInt32 = 0xA8B3BD
+        static let textSecondaryLight: UInt32 = 0x565E6C // 6.54 white / 5.95 paper / 5.44 raised
+        static let textSecondaryLightHC: UInt32 = 0x3D4450 // 9.81 white / 8.92 paper / 8.16 raised
+
+        // Status
+        static let successDark: UInt32 = 0x22C55E
+        static let successLight: UInt32 = 0x147A38 // 5.43 white / 4.94 paper / 4.52 raised
+        static let successLightHC: UInt32 = 0x0F5C2B // 8.12 white / 7.39 paper / 6.76 raised
+        static let destructiveDark: UInt32 = 0xEF4444
+        static let destructiveDarkHC: UInt32 = 0xF87171
+        static let destructiveLight: UInt32 = 0xC81E1E // 5.74 white / 5.22 paper / 4.78 raised
+        static let destructiveLightHC: UInt32 = 0x991B1B // 8.31 white / 7.56 paper / 6.92 raised
+        static let warningDark: UInt32 = 0xD9921A
+        static let warningDarkHC: UInt32 = 0xE8A33D
+        static let warningLight: UInt32 = 0x8A5B08 // 5.86 white / 5.34 paper / 4.88 raised
+        static let warningLightHC: UInt32 = 0x6B4705 // 8.30 white / 7.56 paper / 6.91 raised
+        static let tealDark: UInt32 = 0x4ECDC4
+        static let tealLight: UInt32 = 0x176962 // 6.49 white / 5.91 paper / 5.41 raised
+        static let bidDark: UInt32 = 0x4D8AF0
+        static let bidDarkHC: UInt32 = 0x76A5F5
+        static let bidLight: UInt32 = 0x2662D9 // web light --bid-active hsl(220 70% 50%) — 5.48 white / 4.99 paper / 4.56 raised
+        static let bidLightHC: UInt32 = 0x1D4FB3 // 7.44 white / 6.77 paper / 6.19 raised
+    }
+
+    // MARK: Dynamic color plumbing (IOS-A11Y.3 + DES.3)
+
+    #if canImport(UIKit)
+    private static func ui(_ hex: UInt32, _ alpha: CGFloat = 1) -> UIColor {
+        UIColor(
+            red: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: alpha
+        )
+    }
+
+    /// 4-way dynamic UIColor: `userInterfaceStyle` × `accessibilityContrast`.
+    /// UIKit re-resolves dynamic providers on trait changes, so every call site
+    /// (SwiftUI tokens AND appearance-proxy chrome) adapts with no per-site plumbing.
+    static func dynamicUIColor(
+        light: UIColor,
+        dark: UIColor,
+        lightIncreased: UIColor? = nil,
+        darkIncreased: UIColor? = nil
+    ) -> UIColor {
+        UIColor { traits in
+            let increased = traits.accessibilityContrast == .high
+            if traits.userInterfaceStyle == .dark {
+                return increased ? (darkIncreased ?? dark) : dark
+            }
+            return increased ? (lightIncreased ?? light) : light
+        }
+    }
+    #endif
+
+    /// Plain-hex 4-way adaptive token (alpha 1).
+    private static func adaptive(
+        light: UInt32,
+        dark: UInt32,
+        lightIncreased: UInt32? = nil,
+        darkIncreased: UInt32? = nil
+    ) -> Color {
         #if canImport(UIKit)
-        return Color(uiColor: UIColor { traits in
-            traits.accessibilityContrast == .high ? UIColor(increased) : UIColor(standard)
-        })
+        return Color(uiColor: dynamicUIColor(
+            light: ui(light),
+            dark: ui(dark),
+            lightIncreased: lightIncreased.map { ui($0) },
+            darkIncreased: darkIncreased.map { ui($0) }
+        ))
         #else
-        return standard
+        return solid(dark)
         #endif
+    }
+
+    /// Alpha-aware 4-way adaptive token (for tinted hairlines / washes).
+    private static func adaptive(
+        light: (hex: UInt32, alpha: CGFloat),
+        dark: (hex: UInt32, alpha: CGFloat),
+        lightIncreased: (hex: UInt32, alpha: CGFloat)? = nil,
+        darkIncreased: (hex: UInt32, alpha: CGFloat)? = nil
+    ) -> Color {
+        #if canImport(UIKit)
+        return Color(uiColor: dynamicUIColor(
+            light: ui(light.hex, light.alpha),
+            dark: ui(dark.hex, dark.alpha),
+            lightIncreased: lightIncreased.map { ui($0.hex, $0.alpha) },
+            darkIncreased: darkIncreased.map { ui($0.hex, $0.alpha) }
+        ))
+        #else
+        return solid(dark.hex).opacity(dark.alpha)
+        #endif
+    }
+
+    /// Literal (mode-independent) brand color.
+    private static func solid(_ hex: UInt32) -> Color {
+        Color(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
     }
 
     // MARK: Colors — core chrome
 
-    /// App / dark terminal background — showcase `--bg-primary` `#07080b`.
-    static let navy = Color(red: 0x07 / 255, green: 0x08 / 255, blue: 0x0B / 255)
+    /// Screen background. Dark: showcase `--bg-primary` `#07080b`. Light: warm paper `#f6f4ef`.
+    static let navy = adaptive(light: P.screenLight, dark: P.screenDark)
 
-    /// Card / grouped list row surface — showcase `--bg-card` `#14161e`.
-    static let navyElevated = Color(red: 0x14 / 255, green: 0x16 / 255, blue: 0x1E / 255)
+    /// Card / grouped list row surface. Dark: showcase `--bg-card` `#14161e`. Light: white.
+    static let navyElevated = adaptive(light: P.cardLight, dark: P.cardDark)
 
-    /// Surface one step above card (raised panels) — showcase `--bg-card-hover` `#1a1d28`.
-    static let surfaceRaised = Color(red: 0x1A / 255, green: 0x1D / 255, blue: 0x28 / 255)
+    /// Surface one step above card (raised panels, field fills).
+    /// Dark: showcase `--bg-card-hover` `#1a1d28`. Light: warm `#edeae3`.
+    static let surfaceRaised = adaptive(light: P.raisedLight, dark: P.raisedDark)
 
-    /// Brand gold (primary CTA fill) — showcase `--gold` `#c9a84c`.
+    /// Literal brand navy ink `#07080b` — identical in both modes. Use for
+    /// labels/spinners sitting ON gold or other literal brand fills.
+    static let navyInk = solid(P.screenDark)
+
+    /// Brand gold for accents, borders, icons. Dark: showcase `--gold` `#c9a84c`.
+    /// Light: `#b89938` (matches AccentColor light so tint + token agree).
     /// Prefer `Color("AccentColor")` for interactive tint so the asset catalog stays authoritative.
-    static let gold = Color(red: 0xC9 / 255, green: 0xA8 / 255, blue: 0x4C / 255)
+    static let gold = adaptive(light: P.goldLight, dark: P.gold)
 
-    /// Brand gold bright (emphasis / labels) — showcase `--gold-bright` `#e4c566`.
-    static let goldBright = Color(red: 0xE4 / 255, green: 0xC5 / 255, blue: 0x66 / 255)
+    /// Literal showcase gold `#c9a84c` — CTA fill stop, identical both modes (web parity).
+    static let goldFill = solid(P.gold)
 
-    /// Primary body text on navy — showcase `--text-primary` `#e8ecf1`.
-    static let textPrimary = Color(red: 0xE8 / 255, green: 0xEC / 255, blue: 0xF1 / 255)
+    /// Literal showcase gold-bright `#e4c566` — CTA gradient top / chip fills that
+    /// carry `ctaLabelOnGold` ink. Never use for text on light surfaces.
+    static let goldBrightFill = solid(P.goldBrightHex)
 
-    /// Secondary / muted copy — showcase `--text-secondary` `#8b949e`.
-    /// Measured 6.51:1 on navy / 5.46:1 on `surfaceRaised` (AA pass). Under
-    /// Increase Contrast resolves to `#a8b3bd` — 9.39:1 navy / 7.88:1 raised
-    /// (IOS-A11Y.3).
-    static let textSecondary = contrastAdaptive(
-        Color(red: 0x8B / 255, green: 0x94 / 255, blue: 0x9E / 255),
-        increased: Color(red: 0xA8 / 255, green: 0xB3 / 255, blue: 0xBD / 255)
+    /// Emphasis gold for TEXT and glyphs. Dark: showcase `--gold-bright` `#e4c566`
+    /// (11.90:1 navy). Light: darkened `#806316` — 5.65:1 white / 5.14 paper /
+    /// 4.71 raised (showcase gold is only 2.3:1 on white). Increase Contrast:
+    /// light `#6b520f` (7.40:1 white).
+    static let goldBright = adaptive(
+        light: P.goldTextLight,
+        dark: P.goldBrightHex,
+        lightIncreased: P.goldTextLightHC
     )
 
-    /// Success status — showcase `--green` `#22c55e`.
-    static let success = Color(red: 0x22 / 255, green: 0xC5 / 255, blue: 0x5E / 255)
-
-    /// Destructive / error status — showcase `--red` `#ef4444`.
-    /// Measured 5.32:1 on navy but only 4.46:1 on `surfaceRaised` (under AA) —
-    /// Increase Contrast resolves to `#f87171`: 7.24:1 navy / 6.07:1 raised
-    /// (IOS-A11Y.3).
-    static let destructive = contrastAdaptive(
-        Color(red: 0xEF / 255, green: 0x44 / 255, blue: 0x44 / 255),
-        increased: Color(red: 0xF8 / 255, green: 0x71 / 255, blue: 0x71 / 255)
+    /// Primary body text. Dark: showcase `--text-primary` `#e8ecf1` (HC: white).
+    /// Light: navy ink `#14161e` — 18.05:1 white / 16.42 paper (HC: `#07080b`).
+    static let textPrimary = adaptive(
+        light: P.textPrimaryLight,
+        dark: P.textPrimaryDark,
+        lightIncreased: P.textPrimaryLightHC,
+        darkIncreased: P.textPrimaryDarkHC
     )
 
-    /// Live / data accent — showcase `--teal` `#4ecdc4`.
-    static let teal = Color(red: 0x4E / 255, green: 0xCD / 255, blue: 0xC4 / 255)
+    /// Secondary / muted copy. Dark: `#8b949e` — 6.51:1 navy / 5.46 raised
+    /// (HC `#a8b3bd` — 9.39 / 7.88). Light: `#565e6c` — 6.54:1 white / 5.95
+    /// paper / 5.44 raised (HC `#3d4450` — 9.81 / 8.92 / 8.16).
+    static let textSecondary = adaptive(
+        light: P.textSecondaryLight,
+        dark: P.textSecondaryDark,
+        lightIncreased: P.textSecondaryLightHC,
+        darkIncreased: P.textSecondaryDarkHC
+    )
+
+    /// Success status text/glyphs. Dark: showcase `--green` `#22c55e`.
+    /// Light: `#147a38` — 5.43:1 white / 4.94 paper / 4.52 raised
+    /// (HC `#0f5c2b` — 8.12 white).
+    static let success = adaptive(
+        light: P.successLight,
+        dark: P.successDark,
+        lightIncreased: P.successLightHC
+    )
+
+    /// Literal showcase green `#22c55e` — status chip FILLS that carry navy ink
+    /// (8.79:1) in both modes. Use `success` for text.
+    static let successFill = solid(P.successDark)
+
+    /// Destructive / error status. Dark: `#ef4444` — 5.32:1 navy (HC `#f87171`).
+    /// Light: `#c81e1e` — 5.74:1 white / 5.22 paper / 4.78 raised (HC `#991b1b` — 8.31 white).
+    static let destructive = adaptive(
+        light: P.destructiveLight,
+        dark: P.destructiveDark,
+        lightIncreased: P.destructiveLightHC,
+        darkIncreased: P.destructiveDarkHC
+    )
+
+    /// Live / data accent. Dark: showcase `--teal` `#4ecdc4`.
+    /// Light: `#176962` — 6.49:1 white / 5.91 paper / 5.41 raised.
+    static let teal = adaptive(light: P.tealLight, dark: P.tealDark)
+
+    /// Literal showcase teal `#4ecdc4` — chip fills that carry navy ink (10.05:1). Text uses `teal`.
+    static let tealFill = solid(P.tealDark)
 
     // MARK: Colors — auction / marketplace semantics (web parity)
 
-    /// Leading / active bid highlight — electric blue ≈ web `--bid-active` / `--trust-elite`
-    /// (hsl 220 70% 60% dark shell) — `#4d8af0`.
-    /// Measured 5.92:1 navy / 4.97:1 raised. Increase Contrast resolves to
-    /// `#76a5f5` — 8.08:1 navy / 6.78:1 raised (IOS-A11Y.3).
-    static let bidLeading = contrastAdaptive(
-        Color(red: 0x4D / 255, green: 0x8A / 255, blue: 0xF0 / 255),
-        increased: Color(red: 0x76 / 255, green: 0xA5 / 255, blue: 0xF5 / 255)
+    /// Leading / active bid highlight — web `--bid-active`.
+    /// Dark: `#4d8af0` — 5.92:1 navy / 4.97 raised (HC `#76a5f5` — 8.08 / 6.78).
+    /// Light: `#2662d9` (hsl 220 70% 50%) — 5.48:1 white / 4.99 paper / 4.56 raised
+    /// (HC `#1d4fb3` — 7.44 white).
+    static let bidLeading = adaptive(
+        light: P.bidLight,
+        dark: P.bidDark,
+        lightIncreased: P.bidLightHC,
+        darkIncreased: P.bidDarkHC
     )
 
     /// Alias of `bidLeading` for “live auction / your bid is active” chips.
     static let bidActive = bidLeading
 
-    /// Winning bid / high-trust emerald — showcase green `#22c55e`.
+    /// Winning bid / high-trust emerald — showcase green (adaptive; `successFill` for ink-carrying chips).
     static let bidWinning = success
 
     /// Savings / positive delta (same emerald as winning for consistency).
     static let savings = bidWinning
 
-    /// Warning / medium-trust amber ≈ web `--trust-medium` (hsl 38 80% 45%) — `#d9921a`.
-    /// Measured 7.70:1 navy / 6.46:1 raised. Increase Contrast resolves to
-    /// `#e8a33d` — 9.29:1 navy / 7.79:1 raised (IOS-A11Y.3).
-    static let warning = contrastAdaptive(
-        Color(red: 0xD9 / 255, green: 0x92 / 255, blue: 0x1A / 255),
-        increased: Color(red: 0xE8 / 255, green: 0xA3 / 255, blue: 0x3D / 255)
+    /// Warning / medium-trust amber ≈ web `--trust-medium`.
+    /// Dark: `#d9921a` — 7.70:1 navy / 6.46 raised (HC `#e8a33d` — 9.29 / 7.79).
+    /// Light: `#8a5b08` — 5.86:1 white / 5.34 paper / 4.88 raised (HC `#6b4705` — 8.30 white).
+    static let warning = adaptive(
+        light: P.warningLight,
+        dark: P.warningDark,
+        lightIncreased: P.warningLightHC,
+        darkIncreased: P.warningDarkHC
     )
 
-    /// Subtle blue border for incoming chat (not gold) — derived from `bidActive` at low opacity use sites.
+    /// Literal showcase amber `#d9921a` — banner/chip FILLS carrying navy ink
+    /// (6.57:1) in both modes. Use `warning` for text.
+    static let warningFill = solid(P.warningDark)
+
+    /// Subtle blue border for incoming chat (not gold) — derived from `bidActive`.
     /// Increase Contrast strengthens both hue and alpha (IOS-A11Y.3).
-    static let chatIncomingBorder = contrastAdaptive(
-        Color(red: 0x4D / 255, green: 0x8A / 255, blue: 0xF0 / 255).opacity(0.35),
-        increased: Color(red: 0x76 / 255, green: 0xA5 / 255, blue: 0xF5 / 255).opacity(0.7)
+    static let chatIncomingBorder = adaptive(
+        light: (hex: P.bidLight, alpha: 0.45),
+        dark: (hex: P.bidDark, alpha: 0.35),
+        lightIncreased: (hex: P.bidLightHC, alpha: 0.85),
+        darkIncreased: (hex: P.bidDarkHC, alpha: 0.7)
     )
 
-    /// **Label / icon on gold filled CTAs** — navy (`#07080b`), not pure black and not white.
-    /// Gold `#c9a84c` needs dark text for WCAG contrast; muted-gold + black failures are a known miss.
-    static let ctaLabelOnGold = navy
+    /// **Label / icon on gold filled CTAs** — literal navy ink (`#07080b`), not pure
+    /// black and not white, in BOTH modes (the fill under it is literal gold).
+    /// Gold `#c9a84c` → 8.76:1, `#e4c566` → 11.90:1, `#b89938` → 7.30:1.
+    static let ctaLabelOnGold = navyInk
 
-    /// Asset-catalog gold used for `.tint` / prominent CTAs (falls back to static gold).
+    /// Asset-catalog gold used for `.tint` / prominent CTAs (light `#b89938`, dark `#c9a84c`).
     static var accent: Color {
         // AccentColor.colorset is the single source for interactive gold.
         Color("AccentColor", bundle: .main)
     }
 
     /// Section header / eyebrow label — muted gold for hierarchy without competing with CTAs.
-    /// Composite reads 6.51:1 on navy; Increase Contrast resolves to solid
-    /// `goldBright` `#e4c566` — 11.90:1 (IOS-A11Y.3).
-    static let sectionHeader = contrastAdaptive(gold.opacity(0.85), increased: goldBright)
+    /// Dark: gold 85% — 6.51:1 composite on navy (HC solid `#e4c566` — 11.90:1).
+    /// Light: solid text gold `#806316` — 5.14:1 paper (HC `#6b520f` — 6.73 paper).
+    static let sectionHeader = adaptive(
+        light: (hex: P.goldTextLight, alpha: 1),
+        dark: (hex: P.gold, alpha: 0.85),
+        lightIncreased: (hex: P.goldTextLightHC, alpha: 1),
+        darkIncreased: (hex: P.goldBrightHex, alpha: 1)
+    )
 
     /// Optional gold mesh for home hero cards (subtle, not full-bleed).
+    /// Literal showcase golds — a low-alpha wash reads warm on both paper and navy.
     static var gradientHero: LinearGradient {
         LinearGradient(
             colors: [
-                gold.opacity(0.14),
-                goldBright.opacity(0.05),
+                goldFill.opacity(0.14),
+                goldBrightFill.opacity(0.05),
                 Color.clear,
             ],
             startPoint: .topLeading,
@@ -139,12 +319,13 @@ enum BrandTheme {
     }
 
     /// Premium card face — layered depth without looking like flat gray UIKit.
+    /// Dark: elevated `#1e2130` → card → surface `#0e1017`. Light: white → white → `#faf8f2`.
     static var gradientCardFace: LinearGradient {
         LinearGradient(
             colors: [
-                Color(red: 0x1E / 255, green: 0x21 / 255, blue: 0x30 / 255), // bg-elevated
+                adaptive(light: P.elevatedTopLight, dark: P.elevatedTopDark),
                 navyElevated,
-                Color(red: 0x0E / 255, green: 0x10 / 255, blue: 0x17 / 255), // bg-surface
+                adaptive(light: P.surfaceLowLight, dark: P.surfaceLowDark),
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -152,12 +333,20 @@ enum BrandTheme {
     }
 
     /// Hairline gold edge for elevated surfaces.
-    /// Increase Contrast strengthens the edge (gold 45%) per HIG border
-    /// guidance (IOS-A11Y.3).
-    static let hairline = contrastAdaptive(gold.opacity(0.16), increased: gold.opacity(0.45))
+    /// Dark: gold 16% (HC 45%). Light: light gold 35% (HC 65%) — alpha rises because
+    /// gold tints vanish faster on white than on navy.
+    static let hairline = adaptive(
+        light: (hex: P.goldLight, alpha: 0.35),
+        dark: (hex: P.gold, alpha: 0.16),
+        lightIncreased: (hex: P.goldLight, alpha: 0.65),
+        darkIncreased: (hex: P.gold, alpha: 0.45)
+    )
 
     /// Soft ambient shadow under premium cards (use sparingly).
-    static let cardShadow = Color.black.opacity(0.45)
+    static let cardShadow = adaptive(
+        light: (hex: 0x000000, alpha: 0.12),
+        dark: (hex: 0x000000, alpha: 0.45)
+    )
 
     // MARK: A11Y.3 — Reduce Transparency opaque equivalents
     //
@@ -165,42 +354,49 @@ enum BrandTheme {
     // brand read survives with zero translucency. The Brand* modifiers below
     // swap these in via `@Environment(\.accessibilityReduceTransparency)`.
 
-    /// `hairline` (gold 16%) composited over `navyElevated`; Increase Contrast
-    /// resolves to gold 45% over `surfaceRaised`.
-    static let hairlineOpaque = contrastAdaptive(
-        Color(red: 0x31 / 255, green: 0x2D / 255, blue: 0x25 / 255),
-        increased: Color(red: 0x69 / 255, green: 0x5C / 255, blue: 0x38 / 255)
+    /// `hairline` composited over the card surface.
+    /// Dark: gold 16% over `#14161e` (HC gold 45% over raised). Light: light gold
+    /// 35% over white `#e6dbb9` (HC 65% `#d1bd7e`).
+    static let hairlineOpaque = adaptive(
+        light: 0xE6DBB9,
+        dark: 0x312D25,
+        lightIncreased: 0xD1BD7E,
+        darkIncreased: 0x695C38
     )
 
-    /// Card specular top edge (white 10% over card) as a solid hairline;
-    /// Increase Contrast = white 20% composite.
-    static let cardSpecularOpaque = contrastAdaptive(
-        Color(red: 0x2C / 255, green: 0x2D / 255, blue: 0x34 / 255),
-        increased: Color(red: 0x43 / 255, green: 0x45 / 255, blue: 0x4B / 255)
+    /// Card specular top edge as a solid hairline.
+    /// Dark: white 10% over card (HC 20%). Light: warm gray `#e9e7e2` (HC `#d6d3cc`).
+    static let cardSpecularOpaque = adaptive(
+        light: 0xE9E7E2,
+        dark: 0x2C2D34,
+        lightIncreased: 0xD6D3CC,
+        darkIncreased: 0x43454B
     )
 
-    /// Primary CTA rim (white 18% over gold) as a solid stroke.
-    static let ctaStrokeOnGoldOpaque = Color(red: 0xD3 / 255, green: 0xB8 / 255, blue: 0x6C / 255)
+    /// Primary CTA rim (white 18% over literal gold) as a solid stroke — mode-independent.
+    static let ctaStrokeOnGoldOpaque = solid(0xD3B86C)
 
-    /// Ghost button border (gold 28% / pressed 45%) over `surfaceRaised`.
-    static let ghostBorderOpaque = Color(red: 0x4B / 255, green: 0x44 / 255, blue: 0x32 / 255)
-    static let ghostBorderPressedOpaque = Color(red: 0x69 / 255, green: 0x5C / 255, blue: 0x38 / 255)
+    /// Ghost button border (gold 28% / pressed 45%) over the ghost fill surface.
+    static let ghostBorderOpaque = adaptive(light: 0xEBE2C7, dark: 0x4B4432)
+    static let ghostBorderPressedOpaque = adaptive(light: 0xDFD1A5, dark: 0x695C38)
 
-    /// Empty-state seal rings (gold 35% / 18% over navy).
-    static let sealRingOpaque = Color(red: 0x4B / 255, green: 0x40 / 255, blue: 0x22 / 255)
-    static let sealRingOuterOpaque = Color(red: 0x2A / 255, green: 0x25 / 255, blue: 0x17 / 255)
+    /// Empty-state seal rings (gold 35% / 18% over the screen background).
+    static let sealRingOpaque = adaptive(light: 0xE0D4AF, dark: 0x4B4022)
+    static let sealRingOuterOpaque = adaptive(light: 0xEBE4CE, dark: 0x2A2517)
 
     /// Dollar field border (gold 35% over `surfaceRaised`).
-    static let amountFieldBorderOpaque = Color(red: 0x57 / 255, green: 0x4E / 255, blue: 0x35 / 255)
+    static let amountFieldBorderOpaque = adaptive(light: 0xDACEA7, dark: 0x574E35)
 
     /// Incoming chat bubble border (bid blue 35% over `surfaceRaised`).
-    static let chatIncomingBorderOpaque = Color(red: 0x2C / 255, green: 0x43 / 255, blue: 0x6E / 255)
+    static let chatIncomingBorderOpaque = adaptive(light: 0xA7BAE0, dark: 0x2C436E)
 
-    /// `sectionHeader` (gold 85% over navy) as a solid color; Increase Contrast
-    /// resolves to `goldBright`.
-    static let sectionHeaderOpaque = contrastAdaptive(
-        Color(red: 0xAC / 255, green: 0x90 / 255, blue: 0x42 / 255),
-        increased: goldBright
+    /// `sectionHeader` as a solid color.
+    /// Dark: gold 85% over navy `#ac9042` (HC `#e4c566`). Light: solid text gold (HC darker).
+    static let sectionHeaderOpaque = adaptive(
+        light: P.goldTextLight,
+        dark: 0xAC9042,
+        lightIncreased: P.goldTextLightHC,
+        darkIncreased: P.goldBrightHex
     )
 
     // MARK: Global chrome (UIKit appearance)
@@ -209,7 +405,11 @@ enum BrandTheme {
     /// DES.12 / DES.20: ~720pt max keeps lines scannable without full-bleed stretch.
     static let readableContentWidth: CGFloat = 720
 
-    /// Call once at launch so TabView / NavigationStack / lists pick up navy + gold.
+    /// Call once at launch so TabView / NavigationStack / lists pick up the brand
+    /// in BOTH appearances (navy terminal in dark, warm paper in light — mirrors
+    /// the web, whose light product chrome is light, not forced dark).
+    /// Every color handed to the appearance proxies is a dynamic provider, so
+    /// bars re-resolve on appearance changes with no re-launch.
     /// Keeps system accessibility (Dynamic Type sizes, reduce motion) intact.
     ///
     /// DES.4 / DES.9 — on iOS 26+ leave `scrollEdgeAppearance` at system default so
@@ -217,17 +417,33 @@ enum BrandTheme {
     @MainActor
     static func applyGlobalChrome() {
         #if canImport(UIKit)
-        let navyUI = UIColor(navy)
-        let elevatedUI = UIColor(navyElevated)
-        let goldUI = UIColor(accent)
-        let secondaryUI = UIColor(textSecondary)
-        let primaryUI = UIColor(textPrimary)
+        let screenUI = dynamicUIColor(light: ui(P.screenLight), dark: ui(P.screenDark))
+        let elevatedUI = dynamicUIColor(light: ui(P.cardLight), dark: ui(P.cardDark))
+        let primaryUI = dynamicUIColor(
+            light: ui(P.textPrimaryLight),
+            dark: ui(P.textPrimaryDark),
+            lightIncreased: ui(P.textPrimaryLightHC),
+            darkIncreased: ui(P.textPrimaryDarkHC)
+        )
+        let secondaryUI = dynamicUIColor(
+            light: ui(P.textSecondaryLight),
+            dark: ui(P.textSecondaryDark),
+            lightIncreased: ui(P.textSecondaryLightHC),
+            darkIncreased: ui(P.textSecondaryDarkHC)
+        )
+        // Interactive gold — asset catalog is authoritative (light #b89938 / dark #c9a84c).
+        let goldUI = UIColor(named: "AccentColor") ?? ui(P.gold)
+        // Bar hairline shadows: strong on navy, soft on paper.
+        let barShadowUI = dynamicUIColor(
+            light: UIColor.black.withAlphaComponent(0.12),
+            dark: UIColor.black.withAlphaComponent(0.4)
+        )
 
-        // Tab bar — dark navy, gold selected, muted unselected.
+        // Tab bar — navy in dark / paper in light, gold selected, muted unselected.
         let tabAppearance = UITabBarAppearance()
         tabAppearance.configureWithOpaqueBackground()
-        tabAppearance.backgroundColor = navyUI
-        tabAppearance.shadowColor = UIColor.black.withAlphaComponent(0.4)
+        tabAppearance.backgroundColor = screenUI
+        tabAppearance.shadowColor = barShadowUI
 
         let tabItem = UITabBarItemAppearance()
         tabItem.normal.iconColor = secondaryUI
@@ -248,11 +464,12 @@ enum BrandTheme {
         UITabBar.appearance().tintColor = goldUI
         UITabBar.appearance().unselectedItemTintColor = secondaryUI
 
-        // Navigation bar — opaque navy when scrolled, light titles, gold bar buttons via tint.
+        // Navigation bar — opaque brand surface when scrolled, adaptive titles,
+        // gold bar buttons via tint.
         let navAppearance = UINavigationBarAppearance()
         navAppearance.configureWithOpaqueBackground()
-        navAppearance.backgroundColor = navyUI
-        navAppearance.shadowColor = UIColor.black.withAlphaComponent(0.35)
+        navAppearance.backgroundColor = screenUI
+        navAppearance.shadowColor = barShadowUI
         navAppearance.titleTextAttributes = [.foregroundColor: primaryUI]
         navAppearance.largeTitleTextAttributes = [.foregroundColor: primaryUI]
 
@@ -269,18 +486,22 @@ enum BrandTheme {
         UINavigationBar.appearance().prefersLargeTitles = true
 
         // Grouped / inset list backdrop.
-        UITableView.appearance().backgroundColor = navyUI
-        UICollectionView.appearance().backgroundColor = navyUI
+        UITableView.appearance().backgroundColor = screenUI
+        UICollectionView.appearance().backgroundColor = screenUI
 
-        // Search field chrome on dark lists.
+        // Search field chrome on brand lists.
         UITextField.appearance(whenContainedInInstancesOf: [UISearchBar.self]).defaultTextAttributes = [
             .foregroundColor: primaryUI,
         ]
-        UISearchBar.appearance().barTintColor = navyUI
+        UISearchBar.appearance().barTintColor = screenUI
         UISearchBar.appearance().tintColor = goldUI
 
-        // Segmented control (Jobs Browse/Mine) on dark toolbar.
-        UISegmentedControl.appearance().selectedSegmentTintColor = UIColor(gold.opacity(0.35))
+        // Segmented control (Jobs Browse/Mine, Post-a-job Speed) — warm gold
+        // selection over the system track in both modes; adaptive titles.
+        UISegmentedControl.appearance().selectedSegmentTintColor = dynamicUIColor(
+            light: ui(P.goldLight, 0.4),
+            dark: ui(P.gold, 0.35)
+        )
         UISegmentedControl.appearance().setTitleTextAttributes(
             [.foregroundColor: primaryUI],
             for: .selected
@@ -290,7 +511,7 @@ enum BrandTheme {
             for: .normal
         )
 
-        // Form / secondary fills stay elevated navy rather than system gray.
+        // Form / secondary fills follow the card surface rather than system gray.
         UITableViewCell.appearance().backgroundColor = elevatedUI
 
         // Default control tint (links, switches) — gold matches CTAs.
@@ -313,22 +534,21 @@ private struct BrandListBackgroundModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .scrollContentBackground(.hidden)
-            // Brand navy is already opaque (A11Y.3 reduce-transparency friendly).
+            // Brand surface is opaque in both modes (A11Y.3 reduce-transparency friendly).
             .background(BrandTheme.navy.ignoresSafeArea())
-            // Row fill comes from UITableViewCell appearance + per-row `.listRowBackground` where needed.
+            // Row fill comes from the system grouped cell (adaptive) + per-row `.listRowBackground` where needed.
             .listStyle(.insetGrouped)
-            // Navy chrome needs light status-bar content even when system appearance is light (DES.3).
-            .toolbarColorScheme(.dark, for: .navigationBar)
+        // DES.3: no forced `.toolbarColorScheme(.dark)` — bars are dynamic (paper
+        // in light, navy in dark), so status-bar/title contrast follows the system.
     }
 }
 
 private struct BrandScreenBackgroundModifier: ViewModifier {
     func body(content: Content) -> some View {
         // DES.3: do NOT force `.environment(\.colorScheme, .dark)` — follow system appearance.
-        // Explicit navy/gold brand surfaces still paint the dark terminal shell.
+        // The brand surface itself adapts (paper in light, navy terminal in dark).
         content
             .background(BrandTheme.navy.ignoresSafeArea())
-            .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
@@ -360,6 +580,7 @@ private struct BrandCardModifier: ViewModifier {
     var elevated: Bool
     /// A11Y.3: opaque card chrome (no alpha ramps / washes) under Reduce Transparency.
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
         content
@@ -397,20 +618,21 @@ private struct BrandCardModifier: ViewModifier {
 
     private var specularStyle: AnyShapeStyle {
         if reduceTransparency {
-            AnyShapeStyle(BrandTheme.cardSpecularOpaque)
-        } else {
-            AnyShapeStyle(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.10),
-                        Color.white.opacity(0.02),
-                        Color.clear,
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+            return AnyShapeStyle(BrandTheme.cardSpecularOpaque)
         }
+        // Light cards get a warm top edge (white specular is invisible on white).
+        let specularTint: Color = colorScheme == .dark ? .white : BrandTheme.gold
+        return AnyShapeStyle(
+            LinearGradient(
+                colors: [
+                    specularTint.opacity(0.10),
+                    specularTint.opacity(0.02),
+                    Color.clear,
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 }
 
@@ -449,7 +671,7 @@ private struct BrandOverlayChipModifier: ViewModifier {
 }
 
 /// Muted gold section header — Reduce Transparency swaps the alpha-tinted gold
-/// for its solid composite (A11Y.3); Increase Contrast handled by the tokens.
+/// for its solid composite (A11Y.3); light/dark + Increase Contrast handled by the tokens.
 private struct BrandSectionHeaderModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -500,6 +722,8 @@ struct BrandGhostButtonStyle: ButtonStyle {
 }
 
 /// Primary gold pill — bright fill, navy label, soft glow.
+/// The fill is LITERAL showcase gold in both modes (web parity — `--brand-gold`
+/// does not shift in light), so the label stays `ctaLabelOnGold` navy ink.
 struct BrandPrimaryButtonStyle: ButtonStyle {
     /// A11Y.3: opaque rim under Reduce Transparency (fill is already opaque).
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -515,10 +739,12 @@ struct BrandPrimaryButtonStyle: ButtonStyle {
                     .fill(
                         LinearGradient(
                             colors: [
-                                BrandTheme.goldBright,
-                                BrandTheme.gold,
+                                BrandTheme.goldBrightFill,
+                                BrandTheme.goldFill,
                                 // A11Y.3: fully opaque bottom stop under Reduce Transparency.
-                                reduceTransparency ? BrandTheme.gold : BrandTheme.gold.opacity(0.92),
+                                reduceTransparency
+                                    ? BrandTheme.goldFill
+                                    : BrandTheme.goldFill.opacity(0.92),
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -532,7 +758,7 @@ struct BrandPrimaryButtonStyle: ButtonStyle {
                         lineWidth: 0.5
                     )
             )
-            .shadow(color: BrandTheme.gold.opacity(configuration.isPressed ? 0.15 : 0.35), radius: 16, y: 6)
+            .shadow(color: BrandTheme.goldFill.opacity(configuration.isPressed ? 0.15 : 0.35), radius: 16, y: 6)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .opacity(configuration.isPressed ? 0.94 : 1)
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
@@ -540,12 +766,12 @@ struct BrandPrimaryButtonStyle: ButtonStyle {
 }
 
 extension View {
-    /// Navy grouped-list chrome: hides system gray scroll backdrop, elevated rows.
+    /// Brand grouped-list chrome: hides system gray scroll backdrop, adaptive brand backdrop.
     func brandListBackground() -> some View {
         modifier(BrandListBackgroundModifier())
     }
 
-    /// Full-screen navy fill for non-list empty / loading states.
+    /// Full-screen brand fill for non-list empty / loading states.
     /// Respects system color scheme (no forced dark environment).
     func brandScreenBackground() -> some View {
         modifier(BrandScreenBackgroundModifier())
@@ -566,7 +792,7 @@ extension View {
         buttonStyle(BrandGhostButtonStyle())
     }
 
-    /// Apply elevated navy as the list row surface (call on row content inside `List`).
+    /// Apply the card surface as the list row background (call on row content inside `List`).
     func brandListRowBackground() -> some View {
         listRowBackground(BrandTheme.navyElevated)
     }
@@ -609,7 +835,7 @@ extension View {
         modifier(BrandOverlayChipModifier())
     }
 
-    /// Gold filled CTA with **navy** label (contrast-safe on `#c9a84c` / AccentColor).
+    /// Gold filled CTA with **navy** label (contrast-safe on literal gold).
     /// Prefer `brandPrimaryButton()` for new surfaces; this remains for empty-state CTAs.
     func brandGoldProminentButton() -> some View {
         brandPrimaryButton()

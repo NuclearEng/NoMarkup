@@ -204,6 +204,7 @@ struct NPSSurveysView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isSubmitting)
             }
         }

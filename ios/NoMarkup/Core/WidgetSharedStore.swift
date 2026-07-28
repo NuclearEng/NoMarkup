@@ -169,30 +169,89 @@ enum WidgetSharedStore {
 /// `Core/BrandTheme.swift` (app target only), so this shared constant is the
 /// single source for extension color literals — keep in sync with BrandTheme /
 /// the showcase SSOT.
+///
+/// DES.3 — HOME-SCREEN widgets render in both appearances: `background` /
+/// `primaryText` / `gold(for:)` / `secondaryText(for:)` are light+dark dynamic
+/// (light mirrors the app: paper `#f6f4ef`, navy ink `#14161e`, text gold
+/// `#806316`). The LIVE ACTIVITY intentionally keeps the STATIC navy shell
+/// (`navy` + `gold`/`goldBright` literals) — its card sits on the wallpaper,
+/// not a system surface, so brand chrome stays constant like the app icon.
 enum WidgetBrand {
-    /// Showcase `--bg-primary` `#07080b` — matches `BrandTheme.navy`.
+    /// Showcase `--bg-primary` `#07080b` — static; Live Activity shell + dark widgets.
     static let navy = Color(red: 0x07 / 255, green: 0x08 / 255, blue: 0x0B / 255)
 
-    /// Showcase `--gold` `#c9a84c` — matches `BrandTheme.gold`.
+    /// Showcase `--gold` `#c9a84c` — static literal (Live Activity on navy).
     static let gold = Color(red: 0xC9 / 255, green: 0xA8 / 255, blue: 0x4C / 255)
 
-    /// Showcase `--gold-bright` `#e4c566` — matches `BrandTheme.goldBright`.
+    /// Showcase `--gold-bright` `#e4c566` — static literal (Live Activity on navy).
     static let goldBright = Color(red: 0xE4 / 255, green: 0xC5 / 255, blue: 0x66 / 255)
 
-    // MARK: IOS-A11Y.3 — Increase Contrast variants
-    //
-    // Widget / Live Activity processes can read `\.colorSchemeContrast`; the
-    // widget views pass it through these helpers. Measured on navy `#07080b`:
-    // gold 8.76:1 → goldBright 11.90:1; white 55% ≈ 6.6:1 → 80% ≈ 11.4:1.
+    // MARK: DES.3 — adaptive home-screen widget tokens
 
-    /// Brand gold label color honoring Increase Contrast.
-    static func gold(for contrast: ColorSchemeContrast) -> Color {
-        contrast == .increased ? goldBright : gold
+    #if canImport(UIKit)
+    private static func dynamic(
+        light: UIColor,
+        dark: UIColor
+    ) -> Color {
+        Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? dark : light
+        })
     }
 
-    /// Muted caption on navy honoring Increase Contrast.
+    private static func rgb(_ hex: UInt32, _ alpha: CGFloat = 1) -> UIColor {
+        UIColor(
+            red: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: alpha
+        )
+    }
+
+    /// Widget container fill — navy terminal in dark, warm paper in light
+    /// (matches `BrandTheme.navy`).
+    static let background = dynamic(light: rgb(0xF6F4EF), dark: rgb(0x07080B))
+
+    /// Widget body text — showcase `#e8ecf1` on navy, navy ink `#14161e` on paper.
+    static let primaryText = dynamic(light: rgb(0x14161E), dark: rgb(0xE8ECF1))
+
+    /// Hairline divider on the widget container.
+    static let hairline = dynamic(light: rgb(0x000000, 0.15), dark: rgb(0xFFFFFF, 0.2))
+    #else
+    static let background = navy
+    static let primaryText = Color.white
+    static let hairline = Color.white.opacity(0.2)
+    #endif
+
+    // MARK: IOS-A11Y.3 — Increase Contrast variants (now 4-way with light mode)
+    //
+    // Widget processes read `\.colorSchemeContrast` and pass it through these
+    // helpers; the light/dark half resolves via the dynamic provider.
+    // Dark, on navy `#07080b`: gold 8.76:1 → goldBright 11.90:1; white 55% ≈
+    // 6.6:1 → 80% ≈ 11.4:1. Light, on paper `#f6f4ef`: text gold `#806316`
+    // 5.14:1 → `#6b520f` 6.73:1; ink 62% ≈ 5.9:1 → 85% ≈ 11.3:1.
+
+    /// Brand gold label color honoring Increase Contrast (adaptive light/dark).
+    static func gold(for contrast: ColorSchemeContrast) -> Color {
+        #if canImport(UIKit)
+        if contrast == .increased {
+            return dynamic(light: rgb(0x6B520F), dark: rgb(0xE4C566))
+        }
+        return dynamic(light: rgb(0x806316), dark: rgb(0xC9A84C))
+        #else
+        return contrast == .increased ? goldBright : gold
+        #endif
+    }
+
+    /// Muted caption honoring Increase Contrast (adaptive light/dark).
     static func secondaryText(for contrast: ColorSchemeContrast) -> Color {
-        .white.opacity(contrast == .increased ? 0.8 : 0.55)
+        #if canImport(UIKit)
+        if contrast == .increased {
+            return dynamic(light: rgb(0x14161E, 0.85), dark: rgb(0xFFFFFF, 0.8))
+        }
+        return dynamic(light: rgb(0x14161E, 0.62), dark: rgb(0xFFFFFF, 0.55))
+        #else
+        return .white.opacity(contrast == .increased ? 0.8 : 0.55)
+        #endif
     }
 }
 

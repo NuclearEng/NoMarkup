@@ -67,6 +67,7 @@ struct ProviderInstantOffersView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
                 }

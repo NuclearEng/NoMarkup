@@ -104,7 +104,7 @@ struct WishlistView: View {
                 } label: {
                     if isCreating {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Text("Add to wishlist")
@@ -113,6 +113,7 @@ struct WishlistView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(!canCreate)
             } header: {
                 Text("New alert").brandSectionHeader()

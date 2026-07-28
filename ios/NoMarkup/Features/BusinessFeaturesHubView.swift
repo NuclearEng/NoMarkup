@@ -445,7 +445,7 @@ struct InstantPayoutView: View {
                     Task { await submit() }
                 } label: {
                     if isSubmitting {
-                        ProgressView().tint(BrandTheme.navy)
+                        ProgressView().tint(BrandTheme.ctaLabelOnGold)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Text("Request instant payout")
@@ -454,6 +454,7 @@ struct InstantPayoutView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.gold)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isSubmitting || !flags.isEnabled("instant_payout"))
                 .listRowBackground(BrandTheme.navyElevated)
             } header: {

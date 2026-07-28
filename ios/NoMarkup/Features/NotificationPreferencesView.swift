@@ -166,6 +166,7 @@ struct NotificationPreferencesView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isSaving || editableRows.isEmpty)
                 .accessibilityHint("Updates notification channels on the server")
             }

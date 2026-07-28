@@ -192,7 +192,7 @@ struct UserReviewsView: View {
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(BrandTheme.navy.opacity(0.55), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(BrandTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
             actionButtons(for: review)

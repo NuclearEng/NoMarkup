@@ -94,7 +94,7 @@ struct TrustTiersView: View {
                 if tier.requiresVerification == true {
                     Text("Verified")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(BrandTheme.navy)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(BrandTheme.gold, in: Capsule())

@@ -513,7 +513,7 @@ struct ContractDetailView: View {
                 if isYou {
                     Text("You")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(BrandTheme.navy)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(BrandTheme.gold, in: Capsule())
@@ -606,6 +606,7 @@ struct ContractDetailView: View {
                                 try await APIClient.shared.resumeRecurring(contractId: contract.id)
                             }
                         }
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     }
                     actionButton(
                         title: "Cancel schedule",
@@ -727,6 +728,7 @@ struct ContractDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(
                     actingRecurringInstanceID != nil
                         || actingActionTitle != nil
@@ -761,7 +763,8 @@ struct ContractDetailView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(BrandTheme.goldBright)
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isPayingRecurringInstance || actingActionTitle != nil)
                 .accessibilityHint(
                     "Confirms the PaymentIntent for this visit amount, then captures into escrow"
@@ -784,7 +787,8 @@ struct ContractDetailView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(BrandTheme.goldBright)
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isPayingRecurringInstance || actingActionTitle != nil)
                 .accessibilityHint(
                     "Creates or soft-replays a PaymentIntent for this visit, confirms, then captures into escrow"
@@ -820,6 +824,7 @@ struct ContractDetailView: View {
                                 try await APIClient.shared.acceptContract(id: contract.id)
                             }
                         }
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     } else {
                         Text("You accepted — waiting for the other party.")
                             .font(.footnote)
@@ -854,6 +859,7 @@ struct ContractDetailView: View {
                                 try await APIClient.shared.startContract(id: contract.id)
                             }
                         }
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     }
                     if isProvider && contract.hasStarted && !contract.hasCompletedMark {
                         actionButton(
@@ -921,6 +927,7 @@ struct ContractDetailView: View {
                     ) {
                         showReviewSheet = true
                     }
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     actionButton(
                         title: "Open dispute",
                         systemImage: "exclamationmark.triangle",
@@ -981,7 +988,7 @@ struct ContractDetailView: View {
                     } label: {
                         if isPayingEscrow {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Label(
@@ -993,6 +1000,7 @@ struct ContractDetailView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isBusyForEscrowActions)
                     .accessibilityHint(
                         "Creates a PaymentIntent for this contract amount, opens PaymentSheet, then captures into escrow"
@@ -1064,7 +1072,7 @@ struct ContractDetailView: View {
                             } label: {
                                 if releasingPaymentID == payment.id {
                                     ProgressView()
-                                        .tint(BrandTheme.navy)
+                                        .tint(BrandTheme.ctaLabelOnGold)
                                         .frame(maxWidth: .infinity, minHeight: 44)
                                 } else {
                                     Label("Release escrow · \(payment.displayAmount)", systemImage: "lock.open")
@@ -1195,7 +1203,7 @@ struct ContractDetailView: View {
         } label: {
             if isThisActing {
                 ProgressView()
-                    .tint(prominent ? BrandTheme.navy : BrandTheme.accent)
+                    .tint(prominent ? BrandTheme.ctaLabelOnGold : BrandTheme.accent)
                     .frame(maxWidth: .infinity, minHeight: 44)
             } else {
                 Label(title, systemImage: systemImage)
@@ -1271,7 +1279,7 @@ struct ContractDetailView: View {
                 } label: {
                     if actingMilestoneID == milestone.id {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Label("Submit milestone", systemImage: "paperplane")
@@ -1289,7 +1297,7 @@ struct ContractDetailView: View {
                 } label: {
                     if actingMilestoneID == milestone.id {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Label("Approve milestone", systemImage: "checkmark")
@@ -1398,7 +1406,7 @@ struct ContractDetailView: View {
             } label: {
                 if isSubmittingChangeOrder {
                     ProgressView()
-                        .tint(BrandTheme.navy)
+                        .tint(BrandTheme.ctaLabelOnGold)
                         .frame(maxWidth: .infinity, minHeight: 44)
                 } else {
                     Label("Submit change order", systemImage: "doc.badge.plus")
@@ -1407,6 +1415,7 @@ struct ContractDetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.gold)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(
                 isSubmittingChangeOrder
                     || changeOrderDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1456,7 +1465,7 @@ struct ContractDetailView: View {
                     } label: {
                         if actingChangeOrderID == order.id {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Label("Accept", systemImage: "checkmark")
@@ -1517,7 +1526,7 @@ struct ContractDetailView: View {
                         } label: {
                             if isSubmittingTip {
                                 ProgressView()
-                                    .tint(BrandTheme.navy)
+                                    .tint(BrandTheme.ctaLabelOnGold)
                                     .frame(maxWidth: .infinity, minHeight: 44)
                             } else if let cents = MoneyFormat.cents(fromDollarsText: tipAmountText) {
                                 Label("Send tip · \(MoneyFormat.usd(cents: cents))", systemImage: "heart")
@@ -1529,6 +1538,7 @@ struct ContractDetailView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(BrandTheme.accent)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .disabled(
                             isSubmittingTip
                                 || MoneyFormat.cents(fromDollarsText: tipAmountText) == nil
@@ -1642,6 +1652,7 @@ struct ContractDetailView: View {
                     ) {
                         showGuaranteeClaimSheet = true
                     }
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 }
             } header: {
                 Text("NoMarkup Guarantee").brandSectionHeader()
@@ -1674,6 +1685,7 @@ struct ContractDetailView: View {
             ) {
                 await openContractInvoice(contract)
             }
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
         } header: {
             Text("Documents").brandSectionHeader()
         } footer: {

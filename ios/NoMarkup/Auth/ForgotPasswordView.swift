@@ -91,7 +91,7 @@ struct ForgotPasswordView: View {
                 Group {
                     if auth.isLoading && !showResetForm {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                     } else {
                         Text("Send reset email")
                             .fontWeight(.semibold)
@@ -102,6 +102,7 @@ struct ForgotPasswordView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(auth.isLoading)
             .accessibilityLabel("Send password reset email")
         }
@@ -158,7 +159,7 @@ struct ForgotPasswordView: View {
                 Group {
                     if auth.isLoading {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                     } else {
                         Text("Update password")
                             .fontWeight(.semibold)
@@ -169,6 +170,7 @@ struct ForgotPasswordView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(auth.isLoading)
             .accessibilityLabel("Update password with reset token")
         }

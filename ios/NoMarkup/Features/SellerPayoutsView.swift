@@ -152,6 +152,7 @@ struct SellerPayoutsView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(BrandTheme.accent)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .disabled(isCreating || isOpeningOnboarding)
                         .accessibilityHint("Creates a Stripe Express account for payouts if you do not have one yet")
                     }

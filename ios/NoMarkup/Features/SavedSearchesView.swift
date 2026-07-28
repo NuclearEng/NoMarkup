@@ -87,7 +87,7 @@ struct SavedSearchesView: View {
                         } label: {
                             if isCreating {
                                 ProgressView()
-                                    .tint(BrandTheme.navy)
+                                    .tint(BrandTheme.ctaLabelOnGold)
                                     .frame(maxWidth: .infinity, minHeight: 44)
                             } else {
                                 Text("Save search")
@@ -96,6 +96,7 @@ struct SavedSearchesView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(BrandTheme.accent)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .disabled(
                             isCreating
                                 || newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

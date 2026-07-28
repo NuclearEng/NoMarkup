@@ -154,6 +154,7 @@ struct SecuritySettingsView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isSubmittingAge)
                     .accessibilityHint("Sends your date of birth to the server. Age is verified server-side; DOB is never returned.")
                 }
@@ -279,6 +280,7 @@ struct SecuritySettingsView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(!canSubmitPassword || isChangingPassword)
                 .accessibilityHint("Sends your new password to the server after verifying the current one")
             }
@@ -383,6 +385,7 @@ struct SecuritySettingsView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(isConfirmingMFA || sanitizedTOTP(mfaVerifyCode).count < 6)
             .accessibilityHint("Verifies the code and activates two-factor authentication on your account")
 
@@ -494,6 +497,7 @@ struct SecuritySettingsView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(isEnablingMFA)
             .accessibilityHint("Requests a new authenticator secret and backup codes from the server")
         }

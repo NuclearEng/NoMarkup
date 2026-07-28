@@ -207,6 +207,7 @@ struct CreateListingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(!canSubmit || isSubmitting)
                 .accessibilityHint("Creates the goods listing on the server")
 
@@ -254,6 +255,7 @@ struct CreateListingView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
 
             Button("Done") { dismiss() }
                 .brandGhostButton()

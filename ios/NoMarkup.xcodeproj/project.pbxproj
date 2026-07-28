@@ -87,6 +87,7 @@
 		A10000000000000000000063 /* PaymentMethodsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000063 /* PaymentMethodsView.swift */; };
 		A10000000000000000000064 /* SellerPayoutsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000064 /* SellerPayoutsView.swift */; };
 		U10000000000000000000001 /* NoMarkupUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U10000000000000000000002 /* NoMarkupUITests.swift */; };
+		U20000000000000000000001 /* ScreenshotWalkUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U20000000000000000000002 /* ScreenshotWalkUITests.swift */; };
 		A10000000000000000000070 /* Models+Extras.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000070 /* Models+Extras.swift */; };
 		A10000000000000000000071 /* APIClient+Extras.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000071 /* APIClient+Extras.swift */; };
 		A10000000000000000000072 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000072 /* ProvidersView.swift */; };
@@ -225,6 +226,7 @@
 		B10000000000000000000063 /* PaymentMethodsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentMethodsView.swift; sourceTree = "<group>"; };
 		B10000000000000000000064 /* SellerPayoutsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SellerPayoutsView.swift; sourceTree = "<group>"; };
 		U10000000000000000000002 /* NoMarkupUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupUITests.swift; sourceTree = "<group>"; };
+		U20000000000000000000002 /* ScreenshotWalkUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotWalkUITests.swift; sourceTree = "<group>"; };
 		U10000000000000000000003 /* NoMarkupUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000070 /* Models+Extras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+Extras.swift"; sourceTree = "<group>"; };
 		B10000000000000000000071 /* APIClient+Extras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Extras.swift"; sourceTree = "<group>"; };
@@ -449,6 +451,7 @@
 			isa = PBXGroup;
 			children = (
 				U10000000000000000000002 /* NoMarkupUITests.swift */,
+				U20000000000000000000002 /* ScreenshotWalkUITests.swift */,
 			);
 			path = NoMarkupUITests;
 			sourceTree = "<group>";
@@ -918,6 +921,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				U10000000000000000000001 /* NoMarkupUITests.swift in Sources */,
+				U20000000000000000000001 /* ScreenshotWalkUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

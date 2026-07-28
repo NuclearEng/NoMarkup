@@ -190,6 +190,7 @@ struct RootView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .accessibilityIdentifier("lock.unlock")
             }
             .padding(32)
@@ -254,7 +255,7 @@ private struct OfflineNetworkBanner: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(BrandTheme.warning)
+        .background(BrandTheme.warningFill)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("banner.offline")
         .accessibilityAddTraits(.isStaticText)

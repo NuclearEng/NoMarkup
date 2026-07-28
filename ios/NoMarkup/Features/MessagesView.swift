@@ -247,7 +247,7 @@ private struct ChannelRowView: View {
                     if hasUnread {
                         Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(BrandTheme.navy)
+                            .foregroundStyle(BrandTheme.ctaLabelOnGold)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(BrandTheme.accent))
@@ -1561,7 +1561,7 @@ private struct ChatReportUserSheet: View {
                     } label: {
                         if isSubmitting {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Text("Submit report")
@@ -1570,6 +1570,7 @@ private struct ChatReportUserSheet: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isSubmitting || !auth.isAuthenticated || auth.isScaffoldSession)
                 }
             }
@@ -1937,7 +1938,7 @@ private struct MessageBubbleRow: View {
                     .font(.caption2)
             }
         }
-        .foregroundStyle(onGold ? BrandTheme.navy.opacity(0.75) : BrandTheme.textSecondary)
+        .foregroundStyle(onGold ? BrandTheme.ctaLabelOnGold.opacity(0.75) : BrandTheme.textSecondary)
     }
 
     @ViewBuilder

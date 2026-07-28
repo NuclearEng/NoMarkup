@@ -19,7 +19,7 @@ struct NextClosingWidget: Widget {
         ) { entry in
             NextClosingWidgetView(entry: entry)
                 .containerBackground(for: .widget) {
-                    WidgetBrand.navy
+                    WidgetBrand.background
                 }
         }
         .configurationDisplayName("Next Closing")
@@ -172,16 +172,16 @@ struct NextClosingWidgetView: View {
                         .foregroundStyle(WidgetBrand.gold(for: contrast))
                     Text(entry.title)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(WidgetBrand.primaryText)
                         .lineLimit(family == .systemSmall ? 2 : 3)
                     if let ends = entry.endsAt, ends > Date() {
                         Text(timerInterval: Date()...ends, countsDown: true)
                             .font(.title3.monospacedDigit().weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(WidgetBrand.primaryText)
                     }
                     Text(entry.amountLabel)
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.75))
+                        .foregroundStyle(WidgetBrand.secondaryText(for: contrast))
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

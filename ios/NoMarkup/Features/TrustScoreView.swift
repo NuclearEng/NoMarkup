@@ -164,10 +164,10 @@ struct TrustScoreView: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     Text(score.displayTier)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(BrandTheme.navy)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(BrandTheme.goldBright, in: Capsule())
+                        .background(BrandTheme.goldBrightFill, in: Capsule())
                         .accessibilityLabel("Tier \(score.displayTier)")
 
                     if let points = score.dataPoints, points > 0 {

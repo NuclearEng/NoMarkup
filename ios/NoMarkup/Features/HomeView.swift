@@ -733,10 +733,10 @@ private struct LiveFloorFeatureCard: View {
                         let label = CatalogDateFormat.countdownLabel(iso: ends, now: context.date) ?? "—"
                         Text(label)
                             .font(.caption.weight(.bold).monospacedDigit())
-                            .foregroundStyle(BrandTheme.navy)
+                            .foregroundStyle(BrandTheme.ctaLabelOnGold)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(Capsule().fill(BrandTheme.goldBright))
+                            .background(Capsule().fill(BrandTheme.goldBrightFill))
                     }
                 }
             }

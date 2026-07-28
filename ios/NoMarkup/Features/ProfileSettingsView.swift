@@ -138,6 +138,7 @@ struct ProfileSettingsView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(BrandTheme.accent)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .disabled(isEnablingProvider || isSaving)
                         .accessibilityHint("Adds the provider role so you can bid on service jobs")
                     } header: {
@@ -182,6 +183,7 @@ struct ProfileSettingsView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(!canSave || isSaving)
                 .accessibilityHint("Updates your display name on the server")
             }

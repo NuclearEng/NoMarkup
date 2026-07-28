@@ -975,7 +975,7 @@ struct ListingDetailView: View {
                     } label: {
                         if isBuyingNow {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Label("Buy now \(priceLabel)", systemImage: "apple.logo")
@@ -984,6 +984,7 @@ struct ListingDetailView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isBuyingNow || isPlacingBid || isPostingBond)
                     .accessibilityLabel("Buy now for \(priceLabel) with Apple Pay")
                 }
@@ -1082,7 +1083,7 @@ struct ListingDetailView: View {
                 } label: {
                     if isPlacingBid {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else if let cents = MoneyFormat.cents(fromDollarsText: bidAmountText) {
                         Text("Place bid · \(MoneyFormat.usd(cents: cents))")
@@ -1094,6 +1095,7 @@ struct ListingDetailView: View {
                 }
                 .modifier(GlassProminentBidCTAStyle())
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(
                     isPlacingBid
                         || isPostingBond
@@ -1245,7 +1247,7 @@ struct ListingDetailView: View {
                         Task { await updateOffer(offer, action: .accept) }
                     } label: {
                         if actingOfferID == offer.id {
-                            ProgressView().tint(BrandTheme.navy)
+                            ProgressView().tint(BrandTheme.ctaLabelOnGold)
                         } else {
                             Text("Accept")
                         }
@@ -1288,7 +1290,7 @@ struct ListingDetailView: View {
                     } label: {
                         if actingOfferID == offer.id {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Text("Send counter")
@@ -1297,6 +1299,7 @@ struct ListingDetailView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(
                         actingOfferID != nil
                             || counterAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1344,7 +1347,7 @@ struct ListingDetailView: View {
             } label: {
                 if isSubmittingOffer {
                     ProgressView()
-                        .tint(BrandTheme.navy)
+                        .tint(BrandTheme.ctaLabelOnGold)
                         .frame(maxWidth: .infinity, minHeight: 44)
                 } else {
                     Text("Send offer")
@@ -1353,6 +1356,7 @@ struct ListingDetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(
                 isSubmittingOffer
                     || offerAmountText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1400,7 +1404,7 @@ struct ListingDetailView: View {
                             } label: {
                                 if actingOfferID == offer.id {
                                     ProgressView()
-                                        .tint(BrandTheme.navy)
+                                        .tint(BrandTheme.ctaLabelOnGold)
                                         .frame(maxWidth: .infinity, minHeight: 44)
                                 } else {
                                     Text("Accept counter")
@@ -2341,7 +2345,7 @@ private struct ListingReportSheet: View {
                     } label: {
                         if isSubmitting {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Text("Submit report")
@@ -2350,6 +2354,7 @@ private struct ListingReportSheet: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isSubmitting)
                 }
             }

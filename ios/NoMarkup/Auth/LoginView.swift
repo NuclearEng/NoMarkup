@@ -188,7 +188,7 @@ struct LoginView: View {
                 Group {
                     if auth.isBusy {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                     } else {
                         Text("Verify and sign in")
                             .fontWeight(.semibold)
@@ -199,6 +199,7 @@ struct LoginView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(auth.isBusy)
             .accessibilityLabel("Verify authenticator code and sign in")
 
@@ -238,7 +239,7 @@ struct LoginView: View {
                     if auth.isBusy {
                         // Dark spinner for contrast on brand-gold filled button.
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                     } else {
                         Text("Sign in")
                             .fontWeight(.semibold)
@@ -249,6 +250,7 @@ struct LoginView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(auth.isBusy)
             .accessibilityIdentifier("login.submit")
             .accessibilityLabel("Sign in with email and password")

@@ -13,7 +13,7 @@ struct ActiveBidsWidget: Widget {
         StaticConfiguration(kind: kind, provider: ActiveBidsProvider()) { entry in
             ActiveBidsWidgetView(entry: entry)
                 .containerBackground(for: .widget) {
-                    WidgetBrand.navy
+                    WidgetBrand.background
                 }
         }
         .configurationDisplayName("Active Bids")
@@ -101,7 +101,7 @@ struct ActiveBidsWidgetView: View {
             case .systemMedium:
                 HStack(alignment: .center, spacing: 16) {
                     countBlock
-                    Divider().background(Color.white.opacity(0.2))
+                    Divider().background(WidgetBrand.hairline)
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Next closing")
                             .font(.caption.weight(.semibold))
@@ -109,17 +109,17 @@ struct ActiveBidsWidgetView: View {
                         if let title = entry.nextTitle {
                             Text(title)
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(WidgetBrand.primaryText)
                                 .lineLimit(2)
                         } else {
                             Text("No active auctions")
                                 .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.7))
+                                .foregroundStyle(WidgetBrand.secondaryText(for: contrast))
                         }
                         if let ends = entry.nextEndsAt, ends > Date() {
                             Text(timerInterval: Date()...ends, countsDown: true)
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(.white.opacity(0.85))
+                                .foregroundStyle(WidgetBrand.primaryText.opacity(0.85))
                         }
                     }
                     Spacer(minLength: 0)
@@ -145,7 +145,7 @@ struct ActiveBidsWidgetView: View {
                 .font(.largeTitle.weight(.bold).monospacedDigit())
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
-                .foregroundStyle(.white)
+                .foregroundStyle(WidgetBrand.primaryText)
                 // IOS-A11Y.1: the bare number never reads alone (also covered by
                 // the combined label above; kept so the block stays labeled if
                 // it is ever reused outside this view).

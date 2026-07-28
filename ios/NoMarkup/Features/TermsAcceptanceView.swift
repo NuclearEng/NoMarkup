@@ -173,6 +173,7 @@ struct TermsAcceptanceView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(!canAccept)
                     .listRowBackground(BrandTheme.navyElevated)
                     .accessibilityHint("Records that you accept the current Terms of Service version")

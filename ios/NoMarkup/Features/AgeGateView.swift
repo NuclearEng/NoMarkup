@@ -65,6 +65,7 @@ struct AgeGateView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isSubmitting || auth.isScaffoldSession)
                 .accessibilityHint("Submits your date of birth. The server verifies you are at least 18.")
             }

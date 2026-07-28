@@ -1432,7 +1432,7 @@ struct JobDetailView: View {
                 } label: {
                     if isAwarding, pendingAwardEntry?.id == entry.id {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Label(
@@ -1444,6 +1444,7 @@ struct JobDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isAwarding)
                 .accessibilityLabel(
                     "Award job to \(entry.displayName) for \(entry.displayAmount)"
@@ -1585,7 +1586,7 @@ struct JobDetailView: View {
                 } label: {
                     if isPlacingBid {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else if let cents = MoneyFormat.cents(fromDollarsText: bidAmountText) {
                         Text(isUpdate
@@ -1599,6 +1600,7 @@ struct JobDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isPlacingBid || MoneyFormat.cents(fromDollarsText: bidAmountText) == nil)
                 .accessibilityHint(
                     isUpdate
@@ -1655,7 +1657,7 @@ struct JobDetailView: View {
                     } label: {
                         if isAcceptingOffer {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Label(

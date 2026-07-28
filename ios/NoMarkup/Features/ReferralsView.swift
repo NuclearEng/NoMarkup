@@ -132,7 +132,7 @@ struct ReferralsView: View {
                 } label: {
                     if isRedeeming {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Text("Redeem code")
@@ -141,6 +141,7 @@ struct ReferralsView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(!canRedeem)
             } header: {
                 Text("Redeem").brandSectionHeader()

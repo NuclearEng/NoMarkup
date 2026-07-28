@@ -141,7 +141,7 @@ struct PropertyDetailView: View {
                 if current.isPrimary == true {
                     Text("PRIMARY")
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(BrandTheme.navy)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(BrandTheme.accent, in: Capsule())
@@ -362,7 +362,7 @@ struct EditPropertySheet: View {
                     } label: {
                         if isSaving {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Text("Save changes")
@@ -371,6 +371,7 @@ struct EditPropertySheet: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(!canSubmit)
                 }
             }

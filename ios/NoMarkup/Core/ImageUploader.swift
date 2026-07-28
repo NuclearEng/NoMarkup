@@ -422,7 +422,7 @@ struct PhotoPickSection: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .symbolRenderingMode(.palette)
-                    .foregroundStyle(BrandTheme.textPrimary, BrandTheme.navy.opacity(0.75))
+                    .foregroundStyle(BrandTheme.textPrimary, BrandTheme.navyInk.opacity(0.75))
                     .font(.title3)
                     // Expand hit target to HIG 44×44 without enlarging the glyph.
                     .frame(width: 44, height: 44)

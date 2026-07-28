@@ -307,10 +307,10 @@ struct MyBidsView: View {
                 if entry.isWinning {
                     Text("Winning")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(BrandTheme.navy)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(BrandTheme.bidWinning))
+                        .background(Capsule().fill(BrandTheme.successFill))
                 } else {
                     Text("Outbid / active")
                         .font(.caption2.weight(.medium))
@@ -394,10 +394,10 @@ struct MyBidsView: View {
                 if bid.isOfferAccepted == true {
                     Text("Accepted")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(BrandTheme.navy)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(BrandTheme.bidWinning))
+                        .background(Capsule().fill(BrandTheme.successFill))
                 }
                 if let created = bid.createdAt, !created.isEmpty {
                     Text(CatalogDateFormat.friendlyDateTime(created))
@@ -474,7 +474,7 @@ struct MyBidsView: View {
                     } label: {
                         if isLoweringBid {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else if let cents = MoneyFormat.cents(fromDollarsText: lowerAmountText) {
                             Text("Lower to \(MoneyFormat.usd(cents: cents))")
@@ -486,6 +486,7 @@ struct MyBidsView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isLoweringBid || MoneyFormat.cents(fromDollarsText: lowerAmountText) == nil)
                 } header: {
                     Text("New amount (dollars)").brandSectionHeader()

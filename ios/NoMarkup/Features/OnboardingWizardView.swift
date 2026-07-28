@@ -278,6 +278,7 @@ struct OnboardingWizardView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isBusy || otpCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
 
@@ -409,6 +410,7 @@ struct OnboardingWizardView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(BrandTheme.accent)
+        .foregroundStyle(BrandTheme.ctaLabelOnGold)
         .disabled(!enabled || isBusy)
         .accessibilityLabel(title)
     }

@@ -181,7 +181,7 @@ struct PropertiesView: View {
                     if property.isPrimary == true {
                         Text("PRIMARY")
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(BrandTheme.navy)
+                            .foregroundStyle(BrandTheme.ctaLabelOnGold)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(BrandTheme.accent, in: Capsule())
@@ -416,7 +416,7 @@ private struct AddPropertySheet: View {
                     } label: {
                         if isCreating {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Text("Save property")
@@ -425,6 +425,7 @@ private struct AddPropertySheet: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(!canSubmit)
                 }
             }

@@ -85,6 +85,7 @@ struct ProviderWorkspaceView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
                     .accessibilityHint("Enable the provider role so you can use this workspace")
@@ -227,7 +228,7 @@ struct ProviderWorkspaceView: View {
                     HStack {
                         if isSavingSchedule {
                             ProgressView()
-                                .tint(BrandTheme.accent)
+                                .tint(BrandTheme.ctaLabelOnGold)
                         }
                         Text(isSavingSchedule ? "Saving schedule…" : "Save weekly schedule")
                             .frame(maxWidth: .infinity)
@@ -236,6 +237,7 @@ struct ProviderWorkspaceView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isSavingSchedule || isTogglingInstant || isSaving)
                 .accessibilityHint("Uploads weekly Instant availability windows to the server")
             } header: {
@@ -500,6 +502,7 @@ struct ProviderWorkspaceView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(!canSave || isSaving || isTogglingInstant)
                 .accessibilityHint("Saves business name and bio to the server")
             } footer: {

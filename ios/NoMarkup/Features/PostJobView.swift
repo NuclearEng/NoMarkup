@@ -329,6 +329,7 @@ struct PostJobView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(!canSubmit || isSubmitting)
                 .accessibilityHint(
                     useInstantMatch
@@ -396,6 +397,7 @@ struct PostJobView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
 
             Button("Done") { dismiss() }
                 .brandGhostButton()

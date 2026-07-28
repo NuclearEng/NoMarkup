@@ -197,7 +197,7 @@ struct MyOrdersView: View {
                 } label: {
                     if payingOrderID == order.id {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Label("Pay with Apple Pay", systemImage: "apple.logo")
@@ -206,6 +206,7 @@ struct MyOrdersView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isBusy)
                 .accessibilityHint("Opens Apple Pay or card checkout for this order")
             }
@@ -216,7 +217,7 @@ struct MyOrdersView: View {
                 } label: {
                     if actingOrderID == order.id {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Label("Confirm pickup", systemImage: "checkmark.circle")
@@ -235,7 +236,7 @@ struct MyOrdersView: View {
                 } label: {
                     if actingOrderID == order.id {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     } else {
                         Label("Seller confirm", systemImage: "hand.thumbsup")
@@ -450,7 +451,7 @@ private struct OrderDisputeSheet: View {
                     } label: {
                         if isSubmitting {
                             ProgressView()
-                                .tint(BrandTheme.navy)
+                                .tint(BrandTheme.ctaLabelOnGold)
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Text("Submit dispute")
@@ -459,6 +460,7 @@ private struct OrderDisputeSheet: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isSubmitting || descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).count < 20)
                 }
             }

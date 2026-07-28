@@ -174,7 +174,7 @@ struct JobDraftsView: View {
                 HStack {
                     if publishingID == job.id {
                         ProgressView()
-                            .tint(BrandTheme.navy)
+                            .tint(BrandTheme.ctaLabelOnGold)
                     } else {
                         Image(systemName: "paperplane.fill")
                         Text("Publish")

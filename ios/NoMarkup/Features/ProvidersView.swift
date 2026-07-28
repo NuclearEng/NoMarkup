@@ -98,7 +98,7 @@ struct ProvidersView: View {
                         .foregroundStyle(BrandTheme.ctaLabelOnGold)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(BrandTheme.teal, in: Capsule())
+                        .background(BrandTheme.tealFill, in: Capsule())
                         .accessibilityLabel("Instant available")
                 }
             }
