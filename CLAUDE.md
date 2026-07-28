@@ -231,8 +231,9 @@ These are non-negotiable. The hooks enforce many automatically.
   cohort is sticky via `SHA256(userID|key) % 100` (device id fallback). Public `GET /api/v1/flags`
   stays a flat bool map (CDN). Exposure metrics: `feature_flag_checks_total`,
   `experiment_exposures_total`. **Money/regulated keys are binary-only** (allow only at 100%;
-  partial fails closed; admin write rejects 1–99). Handler-level `WithExperiment` is
-  control/treatment only — no multi-arm stats warehouse.
+  partial fails closed; admin write rejects 1–99). Admin UI (`/admin/flags`) edits sticky % for
+  non-money flags and shows Binary-only for money keys. Handler-level `WithExperiment` is
+  control/treatment only — residual: multi-arm stats warehouse / per-user public flag map.
 - **Caveat:** only 6 route groups call `RequireFlag`. Of the 13 flags in the DB, 7 have no backend
   enforcement at all and gate UI only — toggling those off does not close the API.
 

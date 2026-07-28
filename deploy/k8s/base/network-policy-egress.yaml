@@ -39,9 +39,9 @@
 #    the target CNI is residual until DEPLOY_PROVISIONED.
 # 4. IPv6 is not covered (no ipBlock ::/0 rules). Disable pod IPv6 or extend
 #    rules if dual-stack is enabled.
-# 5. Cross-namespace OTLP backends (e.g. Jaeger in `observability`) need the
-#    otel-collector egress rule below; change the backend URL without updating
-#    this file and traces will black-hole.
+# 5. Cross-namespace OTLP backends (e.g. Tempo lite in `monitoring`, or Jaeger
+#    in `observability`) need the otel-collector egress rule below; change the
+#    backend URL without updating this file and traces will black-hole.
 #
 # Ingress policies remain in network-policy.yaml. Do not re-introduce an
 # allow-all egress path.
@@ -235,7 +235,7 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # Cross-namespace in-cluster OTLP (e.g. jaeger-collector.observability).
+    # Cross-namespace in-cluster OTLP (Tempo lite in monitoring, etc.).
     - to:
         - namespaceSelector: {}
       ports:

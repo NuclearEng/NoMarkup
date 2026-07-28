@@ -184,9 +184,11 @@ still uses insecure credentials so compose and tests keep working.
 
 1. Certs mounted and mTLS **armed** in a real cluster (B1).
 2. Kubelet probes switched to HTTP before arming.
-3. Handlers do **not** yet reject unexpected mesh peers via allowlists; end-user
-   identity still rides on request fields set by the gateway after JWT (that is
-   intentional — mTLS authenticates the mesh peer, not the browser user).
+3. ~~Handlers do not reject unexpected mesh peers~~ — **code shipped** via
+   `MESH_PEER_ALLOWLIST` + `grpmtls` interceptors (default off). Ops still must
+   set the env per Deployment after mTLS is armed. End-user identity still rides
+   on request fields set by the gateway after JWT (intentional — mTLS/allowlist
+   authenticate the mesh peer, not the browser user).
 
 ### C3. `POST /api/v1/orders/{id}/pay` — **shipped**
 - Route: `ListingOrdersHandler.PayOrder`, buyer-only, idempotent key required,

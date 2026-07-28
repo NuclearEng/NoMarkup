@@ -20,8 +20,7 @@ func meshServerOptions(opts []grpc.ServerOption) ([]grpc.ServerOption, error) {
 	if err != nil {
 		return nil, fmt.Errorf("grpmtls load: %w", err)
 	}
-	if cfg.Enabled {
-		// log via caller
-	}
+	// mTLS + optional MESH_PEER_ALLOWLIST interceptor both applied in
+	// AppendServerOptions (empty allowlist = no peer check).
 	return cfg.AppendServerOptions(opts)
 }

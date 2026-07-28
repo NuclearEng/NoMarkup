@@ -1,9 +1,10 @@
-# In-cluster Prometheus + Grafana + Alertmanager (OPS-10)
+# In-cluster Prometheus + Grafana + Alertmanager + Tempo lite (OPS-10 / OPS-09)
 
 Minimal stack that scrapes annotated NoMarkup pods (especially gateway
-`/metrics`) using the configs already under `deploy/monitoring/`. **Not**
-wired into `deploy/k8s/base` — apply separately so app deploys do not depend
-on the monitoring namespace.
+`/metrics`) using the configs already under `deploy/monitoring/`, and
+optionally receives OTLP traces via **Tempo single-binary** for the OTel
+collector dual-export path. **Not** wired into `deploy/k8s/base` — apply
+separately so app deploys do not depend on the monitoring namespace.
 
 | Piece | Path |
 |-------|------|
@@ -11,7 +12,8 @@ on the monitoring namespace.
 | Prometheus config + rules | `deploy/monitoring/prometheus/prometheus.yml`, `alerts.yml` |
 | Alertmanager config | `deploy/monitoring/alertmanager/alertmanager.yml` |
 | Grafana datasources + dashboards | `deploy/monitoring/grafana/` |
-| Manifests | `deploy/monitoring/k8s/*` |
+| Tempo lite config | `deploy/monitoring/tempo/tempo.yaml` |
+| Manifests | `deploy/monitoring/k8s/*` (includes `tempo-*.yaml`) |
 
 ## Prerequisites
 
@@ -54,8 +56,8 @@ kubectl apply -k deploy/monitoring
 ```
 
 Images are public (`prom/prometheus:v2.51.0`, `prom/alertmanager:v0.27.0`,
-`grafana/grafana:10.4.2`) — same Prometheus/Alertmanager pins as
-`docker-compose.yml`. No GHCR pull secrets or founder cloud credentials
+`grafana/grafana:10.4.2`, `grafana/tempo:2.6.1`) — same Prometheus/Alertmanager
+pins as `docker-compose.yml`. No GHCR pull secrets or founder cloud credentials
 required for this stack.
 
 ## Verify scrape (gateway)
@@ -65,6 +67,7 @@ required for this stack.
 kubectl -n monitoring rollout status deploy/prometheus
 kubectl -n monitoring rollout status deploy/alertmanager
 kubectl -n monitoring rollout status deploy/grafana
+kubectl -n monitoring rollout status deploy/tempo
 
 # Port-forward Prometheus UI
 kubectl -n monitoring port-forward svc/prometheus 9090:9090
@@ -87,13 +90,25 @@ kubectl -n monitoring port-forward svc/alertmanager 9093:9093
 # UI: http://localhost:9093
 ```
 
-Grafana (provisioned Prometheus datasource + NoMarkup dashboards):
+Grafana (provisioned Prometheus + Tempo datasources + NoMarkup dashboards):
 
 ```bash
 kubectl -n monitoring port-forward svc/grafana 3000:3000
 # UI: http://localhost:3000  (admin/admin or anonymous Viewer)
 # Dashboards → NoMarkup folder: API Overview, Service Health
+# Explore → Tempo for traces (after otel-collector points at tempo:4318)
 ```
+
+Tempo lite (OPS-09 OTLP backend; query on 3200, OTLP on 4317/4318):
+
+```bash
+kubectl -n monitoring port-forward svc/tempo 3200:3200
+# HTTP API /ready: http://localhost:3200/ready
+```
+
+Staging app overlay already patches
+`otel-collector-backend` → `http://tempo.monitoring.svc.cluster.local:4318`.
+See `docs/operations/otel-collector.md` for apply order and production vendor path.
 
 ## What works when applied correctly
 
@@ -105,15 +120,19 @@ kubectl -n monitoring port-forward svc/grafana 3000:3000
 - **Alertmanager fan-in** at `alertmanager:9093` (same-namespace Service;
   matches the static target in `prometheus.yml`). Blackhole receiver: alerts
   evaluate and show in UIs; nothing pages until Slack/PagerDuty is wired.
-- **Grafana** with auto-provisioned Prometheus (`http://prometheus:9090`) and
-  file dashboards `api-overview` / `service-health`.
+- **Grafana** with auto-provisioned Prometheus (`http://prometheus:9090`),
+  Tempo (`http://tempo:3200`), and file dashboards `api-overview` /
+  `service-health`.
+- **Tempo lite** OTLP/HTTP on `:4318` for the collector dual-export path
+  (NetworkPolicy admits otel-collector from `nomarkup` / `nomarkup-staging`).
 
 ## Non-blocking residuals
 
 | Residual | Impact |
 |----------|--------|
 | **Not cluster-proven in this repo’s CI** | Manifests + configs are complete for apply/scrape without cloud SaaS; live “alerts fire on test” needs a provisioned cluster (`DEPLOY_PROVISIONED`). |
-| **No TSDB / AM / Grafana persistence** | `emptyDir` only — history, silences, and Grafana SQLite lost on pod restart. Add PVCs later if needed. |
+| **No TSDB / AM / Grafana / Tempo persistence** | `emptyDir` only — history, silences, Grafana SQLite, and traces lost on pod restart. Add PVCs later if needed. |
+| **Tempo is lite only** | Single-binary, local store, 48h retention — staging/smoke. Production durability is a Founder vendor/HA choice (`docs/operations/otel-collector.md`). |
 | **Alertmanager blackhole receiver** | Intentional until on-call integrations (Secret-mounted webhook). |
 | **No kube-state-metrics Deployment** | Job `kube-state-metrics` stays DOWN. Rules using `kube_deployment_*` / `kube_pod_*` (e.g. `NoMarkupGatewayDown`) cannot fire until KSM is installed. App HTTP metrics and payment P0s do not need KSM. |
 | **Node / cAdvisor jobs** | Need working kubelet proxy + RBAC; often noisy or partial on managed clusters. Not required for gateway HTTP metrics. |

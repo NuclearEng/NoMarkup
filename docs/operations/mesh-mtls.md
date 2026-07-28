@@ -25,13 +25,39 @@ Shared env vars (Go `pkg/grpmtls` and Rust `engine_telemetry::load_server_tls`):
 | `GRPC_TLS_KEY_FILE` | This process's private key (PEM) |
 | `GRPC_TLS_CA_FILE` | Mesh CA that signed peer certs (PEM) |
 | `GRPC_TLS_SERVER_NAME` | Client dial SNI / cert DNS SAN (default `nomarkup-mesh`) |
-| `GRPC_MTLS_SERVICE_NAME` | Optional explicit service name for allowlists |
+| `GRPC_MTLS_SERVICE_NAME` | Optional explicit service name this process claims |
+| `MESH_PEER_ALLOWLIST` | Optional comma-separated peer service names permitted to call this server (e.g. `gateway,payment`). **Default empty = no peer check.** When set, unary/stream interceptors reject unexpected SPIFFE/CN with `PermissionDenied`. |
 
 Having all three path vars set also enables mTLS even without `GRPC_MTLS=true`.
 Partial paths always fail closed.
 
 Development / compose without certs: leave unset → insecure credentials (same
 as before). Production: generate certs, mount them, set the paths, then arm.
+
+### Peer allowlist (optional application-layer check)
+
+Transport mTLS proves the peer holds a mesh cert signed by the CA. The
+**allowlist** is a second, optional gate: only listed service names may invoke
+RPCs on this process.
+
+- **Code:** `pkg/grpmtls.PeerServiceName` (SPIFFE URI SAN preferred, else CN) +
+  `UnaryServerInterceptor` / `StreamServerInterceptor` + `ParsePeerAllowlist` /
+  `PeerAllowlistFromEnv`.
+- **Wiring:** every Go service server already calls
+  `grpmtls.Config.AppendServerOptions`, which chains the interceptors when
+  `MESH_PEER_ALLOWLIST` is non-empty. No per-handler changes.
+- **Default OFF:** empty / unset allowlist → interceptors are not registered.
+- **Fail closed when armed:** missing peer identity (plaintext dial) or a peer
+  name not on the list → `codes.PermissionDenied`. Do not enable the allowlist
+  without mTLS (or you will reject every call).
+- **Example (job service accepts only gateway):**  
+  `MESH_PEER_ALLOWLIST=gateway`
+- **Example (payment accepts gateway + job):**  
+  `MESH_PEER_ALLOWLIST=gateway,job`
+
+End-user identity still rides on request fields set by the gateway after JWT —
+that is intentional. The allowlist authenticates the **mesh peer**, not the
+browser user.
 
 ## Local cert generation
 
@@ -60,9 +86,10 @@ a separate observability port. Switch the Deployment probes to that HTTP port
 
 1. **Cluster verification (B1):** apply certs + probe switch on staging; confirm
    every service reaches its dependencies and tracing still flows.
-2. **Peer allowlists:** `grpmtls.PeerServiceName` extracts the caller from the
-   cert; handlers can start rejecting unexpected mesh peers. Request-body
-   `customer_id` still comes from the gateway after JWT — that is intentional.
+2. **Peer allowlists (code shipped, default off):** set `MESH_PEER_ALLOWLIST`
+   per Deployment once mTLS is armed and expected callers are known. Residual
+   is **ops** (which names each service should accept), not missing library
+   support.
 3. **Cert rotation / Vault PKI:** not wired; gen script is for local/dev. Prod
    should issue short-lived certs from the platform CA.
 

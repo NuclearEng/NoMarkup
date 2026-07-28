@@ -1,6 +1,7 @@
 package grpmtls
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -17,8 +18,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 func TestLoad_insecureByDefault(t *testing.T) {
@@ -110,6 +114,136 @@ func TestPeerServiceName_fromCN(t *testing.T) {
 	assert.Equal(t, "", PeerServiceName(nil))
 	assert.Equal(t, "", PeerServiceName(&peer.Peer{}))
 }
+
+func TestParsePeerAllowlist(t *testing.T) {
+	assert.Nil(t, ParsePeerAllowlist(""))
+	assert.Nil(t, ParsePeerAllowlist("  ,  , "))
+	got := ParsePeerAllowlist(" gateway ,payment, job ")
+	assert.Equal(t, map[string]struct{}{
+		"gateway": {},
+		"payment": {},
+		"job":     {},
+	}, got)
+}
+
+func TestPeerAllowlistFromEnv_emptyDefault(t *testing.T) {
+	t.Setenv("MESH_PEER_ALLOWLIST", "")
+	assert.Nil(t, PeerAllowlistFromEnv())
+}
+
+func TestUnaryServerInterceptor_emptyAllowlistIsNoop(t *testing.T) {
+	called := false
+	interceptor := UnaryServerInterceptor(nil)
+	resp, err := interceptor(context.Background(), "req", &grpc.UnaryServerInfo{FullMethod: "/t/M"},
+		func(ctx context.Context, req any) (any, error) {
+			called = true
+			return "ok", nil
+		})
+	require.NoError(t, err)
+	assert.Equal(t, "ok", resp)
+	assert.True(t, called)
+}
+
+func TestUnaryServerInterceptor_allow(t *testing.T) {
+	allowed := ParsePeerAllowlist("gateway,payment")
+	uri, err := url.Parse("spiffe://nomarkup/service/gateway")
+	require.NoError(t, err)
+	leaf := &x509.Certificate{
+		Subject: pkix.Name{CommonName: "ignored"},
+		URIs:    []*url.URL{uri},
+	}
+	ctx := peer.NewContext(context.Background(), peerWithLeaf(leaf))
+
+	called := false
+	interceptor := UnaryServerInterceptor(allowed)
+	resp, err := interceptor(ctx, "req", &grpc.UnaryServerInfo{FullMethod: "/t/M"},
+		func(ctx context.Context, req any) (any, error) {
+			called = true
+			return "ok", nil
+		})
+	require.NoError(t, err)
+	assert.Equal(t, "ok", resp)
+	assert.True(t, called)
+}
+
+func TestUnaryServerInterceptor_denyUnknownPeer(t *testing.T) {
+	allowed := ParsePeerAllowlist("gateway")
+	leaf := &x509.Certificate{Subject: pkix.Name{CommonName: "fraud"}}
+	ctx := peer.NewContext(context.Background(), peerWithLeaf(leaf))
+
+	interceptor := UnaryServerInterceptor(allowed)
+	resp, err := interceptor(ctx, "req", &grpc.UnaryServerInfo{FullMethod: "/t/M"},
+		func(ctx context.Context, req any) (any, error) {
+			t.Fatal("handler must not run for denied peer")
+			return nil, nil
+		})
+	assert.Nil(t, resp)
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.PermissionDenied, st.Code())
+	assert.Contains(t, st.Message(), "fraud")
+	assert.Contains(t, st.Message(), "MESH_PEER_ALLOWLIST")
+}
+
+func TestUnaryServerInterceptor_denyMissingPeer(t *testing.T) {
+	// Allowlist armed but no TLS peer (insecure dial) → fail closed.
+	allowed := ParsePeerAllowlist("gateway")
+	interceptor := UnaryServerInterceptor(allowed)
+	_, err := interceptor(context.Background(), "req", &grpc.UnaryServerInfo{FullMethod: "/t/M"},
+		func(ctx context.Context, req any) (any, error) {
+			t.Fatal("handler must not run without peer identity")
+			return nil, nil
+		})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.PermissionDenied, st.Code())
+}
+
+func TestStreamServerInterceptor_allowAndDeny(t *testing.T) {
+	allowed := ParsePeerAllowlist("gateway")
+
+	allowLeaf := &x509.Certificate{Subject: pkix.Name{CommonName: "gateway"}}
+	allowSS := &stubServerStream{ctx: peer.NewContext(context.Background(), peerWithLeaf(allowLeaf))}
+	err := StreamServerInterceptor(allowed)(nil, allowSS, &grpc.StreamServerInfo{FullMethod: "/t/S"},
+		func(srv any, ss grpc.ServerStream) error { return nil })
+	require.NoError(t, err)
+
+	denyLeaf := &x509.Certificate{Subject: pkix.Name{CommonName: "chat"}}
+	denySS := &stubServerStream{ctx: peer.NewContext(context.Background(), peerWithLeaf(denyLeaf))}
+	err = StreamServerInterceptor(allowed)(nil, denySS, &grpc.StreamServerInfo{FullMethod: "/t/S"},
+		func(srv any, ss grpc.ServerStream) error {
+			t.Fatal("handler must not run for denied stream peer")
+			return nil
+		})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.PermissionDenied, st.Code())
+}
+
+func TestAppendServerOptions_wiresAllowlistInterceptor(t *testing.T) {
+	t.Setenv("MESH_PEER_ALLOWLIST", "gateway")
+	t.Setenv("GRPC_MTLS", "")
+	t.Setenv("GRPC_TLS_CERT_FILE", "")
+	t.Setenv("GRPC_TLS_KEY_FILE", "")
+	t.Setenv("GRPC_TLS_CA_FILE", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	opts, err := cfg.AppendServerOptions(nil)
+	require.NoError(t, err)
+	// Creds disabled + allowlist set → two chain options (unary + stream).
+	assert.Len(t, opts, 2)
+}
+
+type stubServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *stubServerStream) Context() context.Context { return s.ctx }
 
 func peerWithLeaf(leaf *x509.Certificate) *peer.Peer {
 	return &peer.Peer{

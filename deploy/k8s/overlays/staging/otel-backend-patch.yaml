@@ -1,0 +1,14 @@
+# OPS-09 — point the collector dual-export backend at optional in-cluster Tempo.
+# Apply Tempo first: kubectl apply -k deploy/monitoring
+# DNS: tempo.monitoring.svc.cluster.local:4318 (OTLP/HTTP).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-backend
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: nomarkup
+data:
+  OTEL_BACKEND_OTLP_HTTP_ENDPOINT: "http://tempo.monitoring.svc.cluster.local:4318"
+  OTEL_BACKEND_OTLP_TLS_INSECURE: "true"

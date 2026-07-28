@@ -18,6 +18,11 @@
 //	GRPC_MTLS_SERVICE_NAME = SPIFFE-ish identity this process presents as the
 //	                         certificate Common Name when minting is external;
 //	                         used by PeerServiceName for allowlists
+//	MESH_PEER_ALLOWLIST    = comma-separated mesh service names permitted to
+//	                         call this server (e.g. "gateway,payment"). Empty
+//	                         (default) = no peer-identity check. When set,
+//	                         Unary/Stream interceptors reject peers whose
+//	                         SPIFFE/CN is not on the list (PermissionDenied).
 //
 // Development default remains insecure credentials when GRPC_MTLS is unset and
 // the cert paths are empty — local `go test` and docker-compose without certs
@@ -26,6 +31,7 @@
 package grpmtls
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -33,9 +39,11 @@ import (
 	"strings"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 // Config is the resolved mTLS posture for one process.
@@ -140,8 +148,10 @@ func (c Config) DialOption() (grpc.DialOption, error) {
 	return grpc.WithTransportCredentials(creds), nil
 }
 
-// AppendServerOptions adds grpc.Creds when mTLS is enabled. When disabled the
-// slice is returned unchanged so callers can keep a single construction path.
+// AppendServerOptions adds grpc.Creds when mTLS is enabled, and optional
+// MESH_PEER_ALLOWLIST unary/stream interceptors when that env is non-empty.
+// When mTLS is disabled and the allowlist is empty the slice is returned
+// unchanged so callers can keep a single construction path.
 func (c Config) AppendServerOptions(opts []grpc.ServerOption) ([]grpc.ServerOption, error) {
 	creds, err := c.ServerCredentials()
 	if err != nil {
@@ -149,6 +159,12 @@ func (c Config) AppendServerOptions(opts []grpc.ServerOption) ([]grpc.ServerOpti
 	}
 	if creds != nil {
 		opts = append(opts, grpc.Creds(creds))
+	}
+	if allowed := PeerAllowlistFromEnv(); len(allowed) > 0 {
+		opts = append(opts,
+			grpc.ChainUnaryInterceptor(UnaryServerInterceptor(allowed)),
+			grpc.ChainStreamInterceptor(StreamServerInterceptor(allowed)),
+		)
 	}
 	return opts, nil
 }
@@ -232,6 +248,73 @@ func PeerServiceName(p *peer.Peer) string {
 		}
 	}
 	return leaf.Subject.CommonName
+}
+
+// PeerAllowlistFromEnv reads MESH_PEER_ALLOWLIST (comma-separated service
+// names). Empty / whitespace-only → nil (no extra check). Unknown names are
+// not validated against a global catalog — operators set what each server
+// accepts.
+func PeerAllowlistFromEnv() map[string]struct{} {
+	return ParsePeerAllowlist(os.Getenv("MESH_PEER_ALLOWLIST"))
+}
+
+// ParsePeerAllowlist parses a comma-separated list of mesh service names into
+// a set. Empty tokens are skipped. Returns nil when the result would be empty
+// so callers can use len(allowed) == 0 as "disabled".
+func ParsePeerAllowlist(s string) map[string]struct{} {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	out := make(map[string]struct{})
+	for _, part := range strings.Split(s, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			continue
+		}
+		out[name] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// peerAllowed reports whether the peer identity from ctx is on the allowlist.
+// Empty allowlist → always true (feature off). Unknown or missing peer name →
+// false (fail closed when the feature is armed).
+func peerAllowed(ctx context.Context, allowed map[string]struct{}) (string, bool) {
+	if len(allowed) == 0 {
+		return "", true
+	}
+	p, _ := peer.FromContext(ctx)
+	name := PeerServiceName(p)
+	_, ok := allowed[name]
+	return name, ok
+}
+
+// UnaryServerInterceptor rejects unary RPCs whose peer SPIFFE/CN is not in
+// allowed. When allowed is empty/nil the interceptor is a no-op (default OFF).
+// Denied calls return codes.PermissionDenied.
+func UnaryServerInterceptor(allowed map[string]struct{}) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		name, ok := peerAllowed(ctx, allowed)
+		if !ok {
+			return nil, status.Errorf(codes.PermissionDenied, "mesh peer %q not in MESH_PEER_ALLOWLIST", name)
+		}
+		return handler(ctx, req)
+	}
+}
+
+// StreamServerInterceptor is the streaming counterpart of UnaryServerInterceptor.
+func StreamServerInterceptor(allowed map[string]struct{}) grpc.StreamServerInterceptor {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		name, ok := peerAllowed(ss.Context(), allowed)
+		if !ok {
+			return status.Errorf(codes.PermissionDenied, "mesh peer %q not in MESH_PEER_ALLOWLIST", name)
+		}
+		return handler(srv, ss)
+	}
 }
 
 func truthy(v string) bool {

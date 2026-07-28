@@ -13,8 +13,9 @@
  *   tests/e2e/axe.spec.ts — Playwright injects axe-core against public
  *   catalog + auth shells (`/`, `/marketplace`, `/jobs`, `/pricing`,
  *   `/login`, `/register`) and protected shells (`/dashboard`,
- *   `/settings/security`) with honest unauth → login axe; skip only when
- *   the page cannot load at all.
+ *   `/settings/security`) with honest unauth → login axe; plus authenticated
+ *   `/dashboard` when SEED_PASSWORD is set (clean skip without credentials).
+ *   Skip when the page cannot load at all.
  *
  * Scope (FE-01):
  *   We mount real lightweight React components (EmptyState, Logo, StarRating,

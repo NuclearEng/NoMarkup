@@ -760,24 +760,38 @@ export function useResolveGoodsDispute() {
 // ─── Feature flags ────────────────────────────────────
 //
 // Gateway-level flags stored directly in PostgreSQL (no gRPC service). The
-// list endpoint returns full metadata for the admin dashboard; the update
-// endpoint flips a single flag's enabled state by key. Toggling a flag here
-// changes what the public `/api/v1/flags` map (useFeatureFlags) returns, so on
-// success we invalidate both the admin list and the public flag cache.
+// list endpoint returns full metadata for the admin dashboard (including ARC-10
+// rollout_percent + binary_only). Update flips enabled and optionally sticky %
+// cohort. Money/regulated keys reject partial % (1–99) server-side. Success
+// invalidates both the admin list and the public `/api/v1/flags` map.
 
 export interface AdminFeatureFlag {
   key: string;
   enabled: boolean;
   description: string;
-  /** Sticky 0-100 cohort when enabled; money/regulated keys are binary_only (0 or 100). */
-  rollout_percent?: number;
+  /** Sticky 0–100 cohort when enabled; money/regulated keys must stay 0 or 100. */
+  rollout_percent: number;
   /** True for money/regulated keys — partial % is rejected by the API. */
-  binary_only?: boolean;
+  binary_only: boolean;
   updated_at: string;
 }
 
 export interface AdminFeatureFlagsResponse {
   flags: AdminFeatureFlag[];
+}
+
+/** Body for PUT /api/v1/admin/flags/{key}. Omit rollout_percent to leave it unchanged. */
+export interface UpdateFeatureFlagInput {
+  key: string;
+  enabled: boolean;
+  rollout_percent?: number;
+}
+
+export interface UpdateFeatureFlagResponse {
+  key: string;
+  enabled: boolean;
+  rollout_percent: number;
+  binary_only: boolean;
 }
 
 export function useAdminFlags() {
@@ -787,14 +801,22 @@ export function useAdminFlags() {
   });
 }
 
+/** Toggle enabled and/or set sticky rollout_percent (non-money flags). */
 export function useToggleFlag() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { key: string; enabled: boolean }) =>
-      api.put<{ key: string; enabled: boolean }>(
+    mutationFn: (vars: UpdateFeatureFlagInput) => {
+      const body: { enabled: boolean; rollout_percent?: number } = {
+        enabled: vars.enabled,
+      };
+      if (vars.rollout_percent !== undefined) {
+        body.rollout_percent = vars.rollout_percent;
+      }
+      return api.put<UpdateFeatureFlagResponse>(
         `/api/v1/admin/flags/${vars.key}`,
-        { enabled: vars.enabled },
-      ),
+        body,
+      );
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: adminKeys.flags() });
       // The public flag map (useFeatureFlags) is now stale — refresh it so the

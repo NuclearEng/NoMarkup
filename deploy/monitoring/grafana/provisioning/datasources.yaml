@@ -1,4 +1,4 @@
-# Grafana datasource provisioning — Prometheus in the same monitoring namespace.
+# Grafana datasource provisioning — Prometheus + Tempo in the monitoring ns.
 # Mounted at /etc/grafana/provisioning/datasources/datasources.yaml
 apiVersion: 1
 
@@ -13,3 +13,14 @@ datasources:
     jsonData:
       timeInterval: 15s
       httpMethod: POST
+  # OPS-09 lite Tempo (single-binary). Explore → Tempo → Search / TraceQL.
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    uid: tempo
+    jsonData:
+      httpMethod: GET
+      tracesToMetrics:
+        datasourceUid: prometheus

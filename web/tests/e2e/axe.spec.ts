@@ -19,17 +19,25 @@
  *   was not. If a session is present and the target stays put, we axe that
  *   surface instead.
  *
+ * Authenticated chrome (SEED_PASSWORD):
+ *   When the seeded stack announces itself via SEED_PASSWORD, a dedicated
+ *   test logs in as the customer seed account and axes `/dashboard` for real.
+ *   Without credentials the suite skips cleanly (HAS_STACK) — not a pass.
+ *
  * Scope (honest residual):
  *   - Public catalog + auth shells + unauth protected-route redirect → login
- *   - Authenticated dashboard/admin chrome only when a session exists
+ *   - Authenticated `/dashboard` axe when SEED_PASSWORD is set (skipped otherwise)
  *   - Blocks serious + critical only (moderate/minor tracked elsewhere)
  *   - color-contrast is ON here (off under jsdom)
- *   - Not a full WCAG 2.2 AA certification gate
+ *   - Not a full WCAG 2.2 AA certification gate; admin chrome not covered here
  */
 
 import { expect, test, type Page } from '@playwright/test';
 import axe from 'axe-core';
 import type { Result } from 'axe-core';
+
+import { loginAs } from './dogfood/fixtures';
+import { HAS_STACK, NO_STACK_REASON } from './helpers/stack';
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -213,4 +221,42 @@ test.describe('axe e2e smoke — protected shells (honest unauth → login)', ()
       }
     });
   }
+});
+
+/**
+ * Authenticated dashboard chrome — only when SEED_PASSWORD announces a seeded
+ * stack (same signal as dogfood). Web-only CI has no seed accounts, so this
+ * describe is skipped cleanly rather than greenwashing a dashboard scan.
+ */
+test.describe('axe e2e smoke — authenticated dashboard (SEED_PASSWORD)', () => {
+  test.beforeEach(() => {
+    test.skip(!HAS_STACK, NO_STACK_REASON);
+  });
+
+  test('/dashboard has no serious/critical axe violations when logged in', async ({
+    page,
+  }) => {
+    await loginAs(page, 'customer');
+
+    // loginAs already lands on /dashboard; re-load so axe sees a settled shell.
+    const loaded = await loadRoute(page, '/dashboard');
+    test.skip(
+      !loaded,
+      '/dashboard did not load after login; skipping authenticated axe',
+    );
+
+    // Must still be on the dashboard — not bounced back to login (bad creds /
+    // auth hydration race). Fail loudly if the stack lied about credentials.
+    expect(
+      isLoginUrl(page.url()),
+      'expected authenticated /dashboard, got login redirect — check SEED_PASSWORD matches seed',
+    ).toBe(false);
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    const violations = await runAxeSeriousCritical(page);
+    expect(
+      violations,
+      `axe serious/critical on authenticated /dashboard:\n${formatViolations(violations)}`,
+    ).toEqual([]);
+  });
 });

@@ -47,6 +47,10 @@ images:
     newTag: v0.1.0
 
 patches:
+  # OPS-09 — dual-export backend → optional in-cluster Tempo (monitoring ns).
+  # Requires `kubectl apply -k deploy/monitoring` so tempo:4318 exists; until
+  # then collector stays Ready (debug exporter) while otlphttp retries.
+  - path: otel-backend-patch.yaml
   # Gateway: 1 replica in staging
   - target:
       kind: Deployment

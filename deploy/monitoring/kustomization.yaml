@@ -1,5 +1,6 @@
-# Optional monitoring stack (OPS-10). Not part of deploy/k8s base/overlays —
-# apply separately after the app mesh so Prometheus can scrape gateway /metrics.
+# Optional monitoring stack (OPS-10 + OPS-09 Tempo lite). Not part of
+# deploy/k8s base/overlays — apply separately after the app mesh so Prometheus
+# can scrape gateway /metrics and the OTel collector can dual-export to Tempo.
 #
 #   kubectl apply -k deploy/monitoring
 #
@@ -7,7 +8,7 @@
 # (see docs/operations/monitoring-stack.md). Reuses prometheus.yml + alerts.yml
 # from this directory tree via configMapGenerator.
 #
-# Stack: Prometheus + Alertmanager + Grafana (datasources + dashboards provisioned).
+# Stack: Prometheus + Alertmanager + Grafana + Tempo (single-binary, local store).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -28,6 +29,10 @@ resources:
   - k8s/alertmanager-service.yaml
   - k8s/grafana-deployment.yaml
   - k8s/grafana-service.yaml
+  # OPS-09 optional in-cluster OTLP/HTTP backend (not HA; emptyDir).
+  - k8s/tempo-deployment.yaml
+  - k8s/tempo-service.yaml
+  - k8s/tempo-network-policy.yaml
 
 # Configs live next to this kustomization so default load restrictions allow
 # them (no --load-restrictor needed). Same files docker-compose mounts for
@@ -50,3 +55,6 @@ configMapGenerator:
     files:
       - api-overview.json=grafana/dashboards/api-overview.json
       - service-health.json=grafana/dashboards/service-health.json
+  - name: tempo-config
+    files:
+      - tempo.yaml=tempo/tempo.yaml

@@ -1,5 +1,5 @@
 // Behavior tests for the admin Feature Flags page.
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminFeatureFlag } from '@/hooks/useAdmin';
 
 import { withQueryClient } from './_helpers';
+
+// Radix Slider observes container size — jsdom has no ResizeObserver.
+globalThis.ResizeObserver = class ResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+} as unknown as typeof globalThis.ResizeObserver;
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -42,6 +49,8 @@ function makeFlag(overrides: Partial<AdminFeatureFlag> = {}): AdminFeatureFlag {
     key: 'live_auction',
     enabled: true,
     description: 'Real-time descending auction view.',
+    rollout_percent: 100,
+    binary_only: false,
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,
   };
@@ -49,7 +58,12 @@ function makeFlag(overrides: Partial<AdminFeatureFlag> = {}): AdminFeatureFlag {
 
 beforeEach(() => {
   useAdminFlagsMock.mockReset();
-  toggleMutateAsync.mockReset().mockResolvedValue({ key: 'k', enabled: false });
+  toggleMutateAsync.mockReset().mockResolvedValue({
+    key: 'k',
+    enabled: false,
+    rollout_percent: 100,
+    binary_only: false,
+  });
   useToggleFlagMock
     .mockReset()
     .mockReturnValue({ mutateAsync: toggleMutateAsync, isPending: false });
@@ -88,8 +102,14 @@ describe('AdminFlagsPage', () => {
     useAdminFlagsMock.mockReturnValue({
       data: {
         flags: [
-          makeFlag({ key: 'live_auction', enabled: true }),
-          makeFlag({ key: 'customer_bnpl', enabled: false, description: 'Buy now, pay later.' }),
+          makeFlag({ key: 'live_auction', enabled: true, binary_only: false }),
+          makeFlag({
+            key: 'customer_bnpl',
+            enabled: false,
+            description: 'Buy now, pay later.',
+            binary_only: true,
+            rollout_percent: 100,
+          }),
         ],
       },
       isLoading: false,
@@ -122,7 +142,15 @@ describe('AdminFlagsPage', () => {
   it('shows a success toast after a successful toggle', async () => {
     const user = userEvent.setup();
     useAdminFlagsMock.mockReturnValue({
-      data: { flags: [makeFlag({ key: 'customer_bnpl', enabled: false })] },
+      data: {
+        flags: [
+          makeFlag({
+            key: 'customer_bnpl',
+            enabled: false,
+            binary_only: true,
+          }),
+        ],
+      },
       isLoading: false,
       isError: false,
     });
@@ -146,5 +174,93 @@ describe('AdminFlagsPage', () => {
     render(withQueryClient(createElement(AdminFlagsPage)));
 
     expect(screen.getByRole('switch', { name: /toggle live auction/i })).toBeDisabled();
+  });
+
+  it('shows sticky rollout controls for non-money flags', () => {
+    useAdminFlagsMock.mockReturnValue({
+      data: {
+        flags: [
+          makeFlag({
+            key: 'smart_matching',
+            enabled: true,
+            rollout_percent: 25,
+            binary_only: false,
+          }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    render(withQueryClient(createElement(AdminFlagsPage)));
+
+    expect(
+      screen.getByRole('slider', { name: /rollout percent for smart matching/i }),
+    ).toHaveAttribute('aria-valuenow', '25');
+    expect(
+      screen.getByRole('spinbutton', { name: /rollout percent input for smart matching/i }),
+    ).toHaveValue(25);
+    expect(screen.getByText(/partial rollout active at/i)).toBeInTheDocument();
+  });
+
+  it('shows Binary only badge and no % slider for money flags', () => {
+    useAdminFlagsMock.mockReturnValue({
+      data: {
+        flags: [
+          makeFlag({
+            key: 'instant_payout',
+            enabled: true,
+            binary_only: true,
+            rollout_percent: 100,
+          }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    render(withQueryClient(createElement(AdminFlagsPage)));
+
+    expect(screen.getByText('Binary only')).toBeInTheDocument();
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/sticky partial rollout is not available/i),
+    ).toBeInTheDocument();
+  });
+
+  it('applying rollout percent calls mutation with enabled + rollout_percent', async () => {
+    const user = userEvent.setup();
+    useAdminFlagsMock.mockReturnValue({
+      data: {
+        flags: [
+          makeFlag({
+            key: 'live_auction',
+            enabled: true,
+            rollout_percent: 100,
+            binary_only: false,
+          }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    render(withQueryClient(createElement(AdminFlagsPage)));
+
+    const input = screen.getByRole('spinbutton', {
+      name: /rollout percent input for live auction/i,
+    });
+    await user.clear(input);
+    await user.type(input, '40');
+
+    const apply = screen.getByRole('button', { name: /^apply$/i });
+    expect(apply).toBeEnabled();
+    await user.click(apply);
+
+    await waitFor(() => {
+      expect(toggleMutateAsync).toHaveBeenCalledWith({
+        key: 'live_auction',
+        enabled: true,
+        rollout_percent: 40,
+      });
+    });
+    expect(toastSuccess).toHaveBeenCalledWith('Live Auction rollout set to 40%');
   });
 });
