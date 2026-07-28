@@ -758,6 +758,10 @@ func New(
 			// Wave 5 polish — mutual handshake + no-show counters.
 			r.Post("/{id}/seller-confirm", listingOrdersHandler.SellerConfirm)
 			r.Post("/{id}/report-no-show", listingOrdersHandler.ReportNoShow)
+			// FE-14 goods order reviews (MVP overall rating; not services double-blind).
+			r.Get("/{id}/reviews/eligibility", listingOrdersHandler.GetListingOrderReviewEligibility)
+			r.Get("/{id}/reviews", listingOrdersHandler.ListListingOrderReviews)
+			r.Post("/{id}/reviews", listingOrdersHandler.CreateListingOrderReview)
 		})
 
 		// "My orders" index — the caller's orders as buyer and/or seller.

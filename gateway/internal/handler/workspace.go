@@ -1,33 +1,100 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"math"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	imagingv1 "github.com/nomarkup/nomarkup/proto/imaging/v1"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
+	"github.com/nomarkup/nomarkup/gateway/internal/crypto"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // WorkspaceHandler handles provider workspace endpoints (check-in/out, completion photos).
+//
+// Check-in / check-out store client lat/lng and enforce a server-side geo-fence
+// against the job's service location (exact point from
+// jobs.service_location_encrypted when available; otherwise the PostGIS
+// service_location geometry). Fail soft when the job has no usable location
+// or the DB is unavailable so providers are never blocked from logging work.
 type WorkspaceHandler struct {
 	cache         *cache.Client
 	imagingClient imagingv1.ImagingServiceClient
+	db            *pgxpool.Pool
+	cipher        *crypto.Cipher
+	// maxDistanceMeters is the geo-fence radius for check-in/out (default 500).
+	maxDistanceMeters float64
+	// resolveJobSite is the production PostGIS + secretbox path; unit tests
+	// override it to exercise fence accept/reject without a live database.
+	resolveJobSite func(ctx context.Context, contractID string) (lat, lng float64, found bool, err error)
 }
 
+// defaultCheckInMaxDistanceMeters is the on-site proximity radius when
+// CHECKIN_MAX_DISTANCE_METERS is unset or invalid.
+const defaultCheckInMaxDistanceMeters = 500.0
+
 // NewWorkspaceHandler creates a new WorkspaceHandler.
-func NewWorkspaceHandler(cacheClient *cache.Client, imagingClient imagingv1.ImagingServiceClient) *WorkspaceHandler {
-	return &WorkspaceHandler{
-		cache:         cacheClient,
-		imagingClient: imagingClient,
+//
+// db and cipher power the FE-13 geo-fence. Either may be nil — check-in then
+// fails soft (no fence). cipher is variadic so existing two-arg composition
+// roots still compile; pass the shared piiCipher for exact-point decrypt.
+func NewWorkspaceHandler(
+	cacheClient *cache.Client,
+	imagingClient imagingv1.ImagingServiceClient,
+	db *pgxpool.Pool,
+	cipher ...*crypto.Cipher,
+) *WorkspaceHandler {
+	h := &WorkspaceHandler{
+		cache:             cacheClient,
+		imagingClient:     imagingClient,
+		db:                db,
+		maxDistanceMeters: checkInMaxDistanceMetersFromEnv(),
 	}
+	if len(cipher) > 0 && cipher[0] != nil {
+		h.cipher = cipher[0]
+	} else if db != nil {
+		// Prefer the shared cipher from main; fall back to FromEnv so a
+		// mis-wired composition root still opens service_location_encrypted
+		// when ENCRYPTION_KEY is present.
+		c, err := crypto.FromEnv()
+		if err != nil {
+			slog.Warn("workspace: no PII cipher; geo-fence will use coarse service_location only",
+				"error", err)
+		} else {
+			h.cipher = c
+		}
+	}
+	h.resolveJobSite = h.lookupJobSite
+	return h
+}
+
+func checkInMaxDistanceMetersFromEnv() float64 {
+	raw := strings.TrimSpace(os.Getenv("CHECKIN_MAX_DISTANCE_METERS"))
+	if raw == "" {
+		return defaultCheckInMaxDistanceMeters
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		slog.Warn("workspace: invalid CHECKIN_MAX_DISTANCE_METERS; using default",
+			"value", raw,
+			"default", defaultCheckInMaxDistanceMeters,
+		)
+		return defaultCheckInMaxDistanceMeters
+	}
+	return v
 }
 
 // checkInData is the Redis-stored check-in record.
@@ -52,6 +119,177 @@ type locationRequest struct {
 
 const workSessionTTL = 24 * time.Hour
 
+// earthRadiusMeters is the mean Earth radius used by haversineMeters.
+const earthRadiusMeters = 6_371_000.0
+
+// haversineMeters returns the great-circle distance between two WGS84 points.
+func haversineMeters(lat1, lng1, lat2, lng2 float64) float64 {
+	toRad := func(d float64) float64 { return d * math.Pi / 180 }
+	dLat := toRad(lat2 - lat1)
+	dLng := toRad(lng2 - lng1)
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(toRad(lat1))*math.Cos(toRad(lat2))*math.Sin(dLng/2)*math.Sin(dLng/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return earthRadiusMeters * c
+}
+
+// parseExactPoint reverses FormatExactPoint ("<lat>,<lng>" with 7 decimals).
+// Mirrors services/job/internal/domain.ParseExactPoint — kept local so the
+// gateway does not import the job service package.
+func parseExactPoint(s string) (lat, lng float64, err error) {
+	latStr, lngStr, ok := strings.Cut(s, ",")
+	if !ok {
+		return 0, 0, fmt.Errorf("parse exact point: want \"<lat>,<lng>\"")
+	}
+	lat, err = strconv.ParseFloat(strings.TrimSpace(latStr), 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse exact point latitude: %w", err)
+	}
+	lng, err = strconv.ParseFloat(strings.TrimSpace(lngStr), 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse exact point longitude: %w", err)
+	}
+	if math.IsNaN(lat) || math.IsNaN(lng) {
+		return 0, 0, fmt.Errorf("parse exact point: coordinate is NaN")
+	}
+	if lat < -90 || lat > 90 {
+		return 0, 0, fmt.Errorf("parse exact point: latitude %g outside [-90,90]", lat)
+	}
+	if lng < -180 || lng > 180 {
+		return 0, 0, fmt.Errorf("parse exact point: longitude %g outside [-180,180]", lng)
+	}
+	return lat, lng, nil
+}
+
+// isUsableJobSite rejects the GDPR / empty sentinel (0,0) and non-finite coords.
+func isUsableJobSite(lat, lng float64) bool {
+	if math.IsNaN(lat) || math.IsNaN(lng) || math.IsInf(lat, 0) || math.IsInf(lng, 0) {
+		return false
+	}
+	// (0,0) is the erasure / unset sentinel written by GDPR delete paths.
+	if lat == 0 && lng == 0 {
+		return false
+	}
+	if lat < -90 || lat > 90 || lng < -180 || lng > 180 {
+		return false
+	}
+	return true
+}
+
+// validateClientLocation rejects missing/out-of-range GPS from the client.
+func validateClientLocation(lat, lng float64) error {
+	if math.IsNaN(lat) || math.IsNaN(lng) || math.IsInf(lat, 0) || math.IsInf(lng, 0) {
+		return errors.New("lat and lng must be finite numbers")
+	}
+	if lat < -90 || lat > 90 {
+		return fmt.Errorf("latitude %g outside [-90,90]", lat)
+	}
+	if lng < -180 || lng > 180 {
+		return fmt.Errorf("longitude %g outside [-180,180]", lng)
+	}
+	return nil
+}
+
+// enforceGeofence loads the job site for contractID and rejects when the
+// provider is farther than maxDistanceMeters. Fail soft (return nil) when
+// there is no usable job location or the lookup cannot complete.
+func (h *WorkspaceHandler) enforceGeofence(ctx context.Context, contractID string, lat, lng float64) error {
+	if h == nil {
+		return nil
+	}
+	resolve := h.resolveJobSite
+	if resolve == nil {
+		resolve = h.lookupJobSite
+	}
+	siteLat, siteLng, found, err := resolve(ctx, contractID)
+	if err != nil {
+		// Fail soft: DB blips must not strand a provider mid-job.
+		slog.WarnContext(ctx, "workspace geo-fence: job site lookup failed; allowing check-in/out",
+			"contract_id", contractID,
+			"error", err,
+		)
+		return nil
+	}
+	if !found || !isUsableJobSite(siteLat, siteLng) {
+		slog.InfoContext(ctx, "workspace geo-fence: no usable job location; allowing check-in/out",
+			"contract_id", contractID,
+		)
+		return nil
+	}
+
+	maxM := h.maxDistanceMeters
+	if maxM <= 0 {
+		maxM = defaultCheckInMaxDistanceMeters
+	}
+	dist := haversineMeters(lat, lng, siteLat, siteLng)
+	if dist > maxM {
+		return fmt.Errorf(
+			"you are too far from the job site to check in/out (%.0f m away; must be within %.0f m)",
+			dist, maxM,
+		)
+	}
+	return nil
+}
+
+// lookupJobSite resolves the service location for the contract's job.
+// Prefers jobs.service_location_encrypted (exact); falls back to
+// ST_Y/ST_X(service_location) for legacy/coarse rows.
+func (h *WorkspaceHandler) lookupJobSite(ctx context.Context, contractID string) (lat, lng float64, found bool, err error) {
+	if h.db == nil {
+		return 0, 0, false, nil
+	}
+
+	var geomLat, geomLng *float64
+	var encrypted *string
+	qErr := h.db.QueryRow(ctx, `
+		SELECT ST_Y(j.service_location), ST_X(j.service_location),
+		       j.service_location_encrypted
+		  FROM contracts c
+		  JOIN jobs j ON j.id = c.job_id
+		 WHERE c.id = $1
+		   AND c.deleted_at IS NULL
+		   AND j.deleted_at IS NULL`, contractID).Scan(&geomLat, &geomLng, &encrypted)
+	if qErr != nil {
+		if errors.Is(qErr, pgx.ErrNoRows) {
+			return 0, 0, false, nil
+		}
+		return 0, 0, false, fmt.Errorf("lookup job site: %w", qErr)
+	}
+
+	if encrypted != nil && *encrypted != "" && h.cipher != nil {
+		plain, derr := h.cipher.DecryptStringOrPassthrough(*encrypted)
+		if derr != nil {
+			// Key misconfig: fall back to coarse geometry rather than hard-fail.
+			slog.WarnContext(ctx, "workspace geo-fence: service_location_encrypted decrypt failed; using coarse geometry",
+				"contract_id", contractID,
+				"error", derr,
+			)
+		} else {
+			exactLat, exactLng, perr := parseExactPoint(plain)
+			if perr != nil {
+				slog.WarnContext(ctx, "workspace geo-fence: encrypted point malformed; using coarse geometry",
+					"contract_id", contractID,
+					"error", perr,
+				)
+			} else if isUsableJobSite(exactLat, exactLng) {
+				return exactLat, exactLng, true, nil
+			}
+		}
+	} else if encrypted != nil && *encrypted != "" && h.cipher == nil {
+		slog.WarnContext(ctx, "workspace geo-fence: encrypted point present but no cipher; using coarse geometry",
+			"contract_id", contractID,
+		)
+	}
+
+	if geomLat == nil || geomLng == nil {
+		return 0, 0, false, nil
+	}
+	if !isUsableJobSite(*geomLat, *geomLng) {
+		return 0, 0, false, nil
+	}
+	return *geomLat, *geomLng, true, nil
+}
+
 // CheckIn handles POST /api/v1/contracts/{id}/checkin.
 func (h *WorkspaceHandler) CheckIn(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
@@ -68,6 +306,14 @@ func (h *WorkspaceHandler) CheckIn(w http.ResponseWriter, r *http.Request) {
 
 	var req locationRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := validateClientLocation(req.Lat, req.Lng); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.enforceGeofence(r.Context(), contractID, req.Lat, req.Lng); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -118,6 +364,14 @@ func (h *WorkspaceHandler) CheckOut(w http.ResponseWriter, r *http.Request) {
 
 	var req locationRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := validateClientLocation(req.Lat, req.Lng); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.enforceGeofence(r.Context(), contractID, req.Lat, req.Lng); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -354,4 +608,3 @@ func (h *WorkspaceHandler) UploadCompletionPhoto(w http.ResponseWriter, r *http.
 		"phase": phase,
 	})
 }
-

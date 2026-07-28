@@ -21,6 +21,8 @@ http.workspace = true
 tower.workspace = true
 pin-project-lite.workspace = true
 tonic.workspace = true
+# Peer cert SPIFFE/CN parsing for MESH_PEER_ALLOWLIST (mirrors Go pkg/grpmtls).
+x509-parser = "0.16"
 futures-util = { version = "0.3", default-features = false, features = ["alloc"], optional = true }
 
 [features]

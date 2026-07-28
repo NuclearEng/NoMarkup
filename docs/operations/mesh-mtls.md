@@ -16,7 +16,8 @@ verification — that is normal. What mTLS authenticates is the **mesh peer**
 
 ## Configuration
 
-Shared env vars (Go `pkg/grpmtls` and Rust `engine_telemetry::load_server_tls`):
+Shared env vars (Go `pkg/grpmtls` and Rust `engine_telemetry::{load_server_tls,
+PeerAllowlist}`):
 
 | Variable | Meaning |
 |----------|---------|
@@ -40,17 +41,25 @@ Transport mTLS proves the peer holds a mesh cert signed by the CA. The
 **allowlist** is a second, optional gate: only listed service names may invoke
 RPCs on this process.
 
-- **Code:** `pkg/grpmtls.PeerServiceName` (SPIFFE URI SAN preferred, else CN) +
-  `UnaryServerInterceptor` / `StreamServerInterceptor` + `ParsePeerAllowlist` /
-  `PeerAllowlistFromEnv`.
-- **Wiring:** every Go service server already calls
+- **Go code:** `pkg/grpmtls.PeerServiceName` (SPIFFE URI SAN preferred, else CN)
+  + `UnaryServerInterceptor` / `StreamServerInterceptor` + `ParsePeerAllowlist`
+  / `PeerAllowlistFromEnv`.
+- **Go wiring:** every Go service server already calls
   `grpmtls.Config.AppendServerOptions`, which chains the interceptors when
   `MESH_PEER_ALLOWLIST` is non-empty. No per-handler changes.
-- **Default OFF:** empty / unset allowlist → interceptors are not registered.
+- **Rust code:** `engine_telemetry::PeerAllowlist` + `peer_allowlist_layer()`
+  (tonic interceptor) + `parse_peer_allowlist` / `peer_service_name_from_der`
+  (SPIFFE URI SAN preferred, else CN — same rules as Go).
+- **Rust wiring:** every engine (`bidding`, `fraud`, `trust`, `imaging`,
+  `pricing`, `underwriting`) applies `.layer(peer_allowlist_layer())` on the
+  tonic `Server` builder. Empty allowlist → interceptor is a no-op (still
+  registered; zero cost beyond one empty-set check).
+- **Default OFF:** empty / unset allowlist → no peer check.
 - **Fail closed when armed:** missing peer identity (plaintext dial) or a peer
-  name not on the list → `codes.PermissionDenied`. Do not enable the allowlist
-  without mTLS (or you will reject every call).
-- **Example (job service accepts only gateway):**  
+  name not on the list → `codes.PermissionDenied` / tonic
+  `Status::permission_denied`. Do not enable the allowlist without mTLS (or
+  you will reject every call).
+- **Example (job service / bidding engine accepts only gateway):**  
   `MESH_PEER_ALLOWLIST=gateway`
 - **Example (payment accepts gateway + job):**  
   `MESH_PEER_ALLOWLIST=gateway,job`
@@ -86,10 +95,11 @@ a separate observability port. Switch the Deployment probes to that HTTP port
 
 1. **Cluster verification (B1):** apply certs + probe switch on staging; confirm
    every service reaches its dependencies and tracing still flows.
-2. **Peer allowlists (code shipped, default off):** set `MESH_PEER_ALLOWLIST`
-   per Deployment once mTLS is armed and expected callers are known. Residual
-   is **ops** (which names each service should accept), not missing library
-   support.
+2. **Peer allowlists (code shipped on Go + Rust, default off):** set
+   `MESH_PEER_ALLOWLIST` per Deployment once mTLS is armed and expected
+   callers are known. Residual is **ops** (which names each service/engine
+   should accept), not missing library support. Engines typically accept
+   `gateway` (and sometimes `job` / `payment` for inter-service dials).
 3. **Cert rotation / Vault PKI:** not wired; gen script is for local/dev. Prod
    should issue short-lived certs from the platform CA.
 

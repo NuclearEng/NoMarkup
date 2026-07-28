@@ -190,9 +190,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "underwriting engine listening"
     );
 
+    let peer_allowlist = engine_telemetry::PeerAllowlist::from_env();
+    if peer_allowlist.is_enabled() {
+        tracing::info!(
+            peers = ?peer_allowlist.peers_sorted(),
+            "gRPC mesh peer allowlist enabled"
+        );
+    }
+
     let mut server = Server::builder()
         .layer(GrpcTraceLayer)
-        .layer(CatchPanicLayer::custom(handle_panic));
+        .layer(CatchPanicLayer::custom(handle_panic))
+        // MESH_PEER_ALLOWLIST: no-op when empty (default). Must sit on the
+        // server stack so every service (including health) is gated the same.
+        .layer(peer_allowlist.into_layer());
     match engine_telemetry::load_server_tls() {
         Ok(Some(tls)) => {
             tracing::info!("gRPC mesh mTLS enabled");

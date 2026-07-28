@@ -7,6 +7,8 @@ import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
 import { OrderPaymentPrompt } from '@/components/orders/OrderPaymentPrompt';
+import { OrderReviewForm } from '@/components/orders/OrderReviewForm';
+import { StarRatingDisplay } from '@/components/reviews/StarRating';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,6 +36,10 @@ import {
   useListingOrder,
   useSellerConfirm,
 } from '@/hooks/useListings';
+import {
+  useListingOrderReviewEligibility,
+  useListingOrderReviews,
+} from '@/hooks/useOrderReviews';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { LISTING_ORDER_STATUS } from '@/types';
@@ -59,6 +65,13 @@ export default function OrderDetailPage() {
   const sellerConfirm = useSellerConfirm();
   const disputeOrder = useDisputeOrder();
   const currentUserId = useAuthStore((s) => s.user?.id);
+
+  const orderCompleted = order?.status === LISTING_ORDER_STATUS.COMPLETED;
+  const {
+    data: reviewEligibility,
+    isLoading: reviewEligibilityLoading,
+  } = useListingOrderReviewEligibility(orderId, orderCompleted);
+  const { data: orderReviews = [] } = useListingOrderReviews(orderId, orderCompleted);
 
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [disputeReason, setDisputeReason] = useState('');
@@ -301,6 +314,64 @@ export default function OrderDetailPage() {
               ) : null}
             </CardContent>
           </Card>
+
+          {/* FE-14: goods order review after escrow release */}
+          {orderCompleted ? (
+            <div className="space-y-4">
+              {orderReviews.length > 0 ? (
+                <Card variant="glass">
+                  <CardHeader>
+                    <CardTitle className="text-base">Reviews on this order</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {orderReviews.map((rev) => (
+                      <div
+                        key={rev.id}
+                        className="space-y-1 border-b border-white/[0.06] pb-3 last:border-0 last:pb-0"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-zinc-200 capitalize">
+                            {rev.reviewer_role === 'buyer' ? 'Buyer' : 'Seller'} review
+                            {rev.reviewer_id === currentUserId ? ' (you)' : ''}
+                          </p>
+                          <StarRatingDisplay rating={rev.overall_rating} size="sm" showValue />
+                        </div>
+                        {rev.comment ? (
+                          <p className="text-sm text-zinc-400 whitespace-pre-wrap">{rev.comment}</p>
+                        ) : (
+                          <p className="text-xs text-zinc-500">No written comment.</p>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {reviewEligibilityLoading ? (
+                <Skeleton className="h-48 rounded-xl" />
+              ) : reviewEligibility?.eligible ? (
+                <OrderReviewForm
+                  orderId={orderId}
+                  revieweeLabel={
+                    isSeller ? 'the buyer' : (order.seller_display_name || 'the seller')
+                  }
+                  reviewWindowClosesAt={reviewEligibility.review_window_closes_at}
+                />
+              ) : reviewEligibility?.already_reviewed ? (
+                <Card variant="glass">
+                  <CardContent className="p-4 text-sm text-muted-foreground">
+                    You already left a review for this order. Thank you.
+                  </CardContent>
+                </Card>
+              ) : reviewEligibility && !reviewEligibility.eligible ? (
+                <Card variant="glass">
+                  <CardContent className="p-4 text-sm text-muted-foreground">
+                    The review window for this order is closed or not open yet.
+                  </CardContent>
+                </Card>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {/* Summary */}

@@ -18,7 +18,7 @@ From code-complete to real users on production. Every item must be checked off o
 
 - [ ] Set repo/environment `DEPLOY_PROVISIONED=true` **only after** cluster + secrets + migrate-on-deploy work
 - [ ] Confirm `deploy.yml` no longer exits placeholder-only (currently fail-closed until provisioned)
-- [ ] Secrets in Vault/ESO/K8s — production overlay has no `REPLACE_ME_*`/`SET_ME_*` (OPS-08 Partial: image tags are `require-ci-stamp` until CI; provision real `GOOGLE_CLIENT_ID` into `nomarkup-secrets`)
+- [ ] Secrets in Vault/ESO/K8s — staging + production overlays have no `REPLACE_ME_*`/`SET_ME_*` (OPS-08 Partial: image tags are `require-ci-stamp` until CI; provision real `GOOGLE_CLIENT_ID` into `nomarkup-secrets` per env)
 - [ ] DNS + TLS for **`no-markup.com`** / **`www.no-markup.com`** only
 - [ ] Run migrations **001 → 073** on production Postgres (PostGIS 3.4)
 - [ ] Smoke: `curl -f https://no-markup.com` and `https://no-markup.com/api/health` (or actual gateway path)
@@ -192,7 +192,8 @@ From code-complete to real users on production. Every item must be checked off o
 
 ### Goods marketplace
 - [ ] List → bid (with lock/idempotency) → close/BIN → order/escrow → pickup confirm
-- [ ] Do **not** expect goods 8-dim double-blind reviews (not productized)
+- [ ] After escrow **released**: buyer and/or seller leave overall rating on `/orders/{id}` (MVP; not 8-dim double-blind)
+- [ ] Do **not** expect goods 8-dim double-blind reviews (not productized — residual)
 
 ### Payments (live Stripe only with small amounts)
 - [ ] Connect onboarding, hold/release, refunds, webhooks

@@ -165,7 +165,8 @@ configMapGenerator:
       # XFF trust boundary — only requests from these CIDRs may set the
       # X-Forwarded-For header that the rate limiter / audit log trusts.
       - TRUSTED_PROXIES=10.0.0.0/8
-      # OAuth aud claims (S4 + Apple OAuth signature verification).
-      # REQUIRED before first staging deploy: set the staging Google OAuth client ID.
+      # Apple OAuth aud (bundle id). Google client ID is NOT in this ConfigMap:
+      # it is provisioned into nomarkup-secrets (see SECRETS.md +
+      # externalsecret.sample.yaml) and injected via gateway envFrom secretRef.
+      # Never invent a real Google client id/secret in-repo (OPS-08).
       - APPLE_CLIENT_ID=com.nomarkup.app.staging
-      - GOOGLE_CLIENT_ID=SET_ME_STAGING_GOOGLE_CLIENT_ID.apps.googleusercontent.com

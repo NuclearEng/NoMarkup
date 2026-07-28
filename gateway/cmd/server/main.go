@@ -420,7 +420,7 @@ func main() {
 	challengeHandler := handler.NewChallengeHandler(dbPool)
 	installmentHandler := handler.NewInstallmentHandler(paymentClient)
 	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie, sessionSecret)
-	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient)
+	workspaceHandler := handler.NewWorkspaceHandler(cacheClient, imagingClient, dbPool, piiCipher)
 	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, bidClient, contractClient, cacheClient, userClient, dbPool)
 	disputeHandler := handler.NewDisputeHandler(contractClient, dbPool)
 	employeesHandler := handler.NewEmployeesHandler(dbPool, piiCipher)

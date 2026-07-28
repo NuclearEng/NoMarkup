@@ -5,6 +5,9 @@
 //! forces them), the server requires a client certificate signed by the mesh
 //! CA. When unset, the server stays plaintext so local `cargo test` and
 //! docker-compose without certs keep working.
+//!
+//! Optional peer identity gating (`MESH_PEER_ALLOWLIST`) lives in
+//! [`crate::peer_allowlist`] and is applied as a tonic interceptor layer.
 
 use std::path::Path;
 

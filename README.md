@@ -55,7 +55,7 @@ Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC serv
 - **Local pickup** — 25-mile radius, Mapbox pickup maps, PostGIS-backed geo
 - **Watchlist, Follows, Saved Searches & Feed** — watch listings (live heart state), follow sellers (hydrated follow state + follower counts), save searches, personalized feed
 - **Wishlist & price alerts** — save what you're hunting for (keyword + a max price + optional category); when a matching listing goes live at or under your ceiling, you get a "bid now" notification linking straight to it
-- **Reviews** — **services (contracts)** use double-blind publish (neither side's review surfaces until both submit, or the window closes). Dimensions are overall + role-specific ratings (quality/timeliness/communication/value or payment/scope/access) — **not** an 8-dimension goods-order review product. Goods order reviews are not a separate double-blind surface yet.
+- **Reviews** — **services (contracts)** use double-blind publish (neither side's review surfaces until both submit, or the window closes). Dimensions are overall + role-specific ratings (quality/timeliness/communication/value or payment/scope/access). **Goods (listing orders)** have a separate MVP: after escrow **released**, buyer and seller may each POST an **overall 1–5** rating (optional comment) via `/orders/{id}/reviews` on the order page — **not** double-blind and **not** 8-dimension.
 - **City selector** — market picker: use-my-location (→ nearest launched market by haversine), recent picks, nearby markets, and type-to-search; only launched cities surface ("more cities coming soon")
 
 ### AI-Powered Job Posting
@@ -64,7 +64,7 @@ Clients → Go API gateway (auth, rate limit, validation, routing) → gRPC serv
 - **Progressive Enhancement** — both are additive; the form works without them
 
 ### Provider Workspace & Financial OS
-- **Daily Workspace** — today's jobs + 7-day calendar, GPS check-in/out with duration (client-supplied lat/lng stored; **no server geo-fence** against the job site yet), before/after completion photos
+- **Daily Workspace** — today's jobs + 7-day calendar, GPS check-in/out with duration (client lat/lng stored; **server geo-fence** vs job `service_location` / encrypted exact point, default 500 m via `CHECKIN_MAX_DISTANCE_METERS`; fails soft if the job has no usable location), before/after completion photos
 - **Working Capital Advances** — **two layers, intentionally separate:**
   - **Limit (underwriting):** deterministic Rust engine (`engines/underwriting`, gRPC) sizes available credit from escrow-settled signals (windowed released earnings, repayment, dispute rate, trust). Pure function, factor bands **1.06–1.18** for the limit decision, hard-capped at `min(35% of trailing-year, $25k)`, fails closed when the engine is unwired, proptest-guarded.
   - **Booking fee:** when an advance is requested, fee = **3% origination + risk-based APR interest** (credit grade), disclosed as line items — not the underwriting factor rate billed as the customer fee.

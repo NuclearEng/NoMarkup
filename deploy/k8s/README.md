@@ -65,10 +65,11 @@ in-cluster is `meili-data` (Meilisearch index storage).
   Missing credentials after the gate is flipped fails with a clear error
   (no echo-only success path).
 
-- **Google OAuth client ID** is not a ConfigMap literal in production. Provision
-  `GOOGLE_CLIENT_ID` (and confidential `GOOGLE_CLIENT_SECRET`) into
-  `nomarkup-secrets` — see [`SECRETS.md`](./SECRETS.md). Do not invent or
-  commit real Google client credentials.
+- **Google OAuth client ID** is not a ConfigMap literal in **staging or
+  production**. Provision `GOOGLE_CLIENT_ID` (and confidential
+  `GOOGLE_CLIENT_SECRET`) into `nomarkup-secrets` — see
+  [`SECRETS.md`](./SECRETS.md). Do not invent or commit real (or `SET_ME_*`)
+  Google client credentials in either overlay (OPS-08).
 
 ## Secrets (OPS-04 Partial)
 

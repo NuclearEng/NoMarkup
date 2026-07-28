@@ -20,7 +20,7 @@ The file `qa/scripts/qa-creds.env` containing `QA_PASSWORD=Password123!` was unt
 - **Priority:** P0 (blast radius: anyone with prior repo access)
 
 ### Done — S2. Set new required env vars in every deploy target
-Wired in commit `68d5cbf`: staging + production overlays declare `ENVIRONMENT`, `JWT_ISSUER`, `JWT_AUDIENCE`, `WS_ALLOWED_ORIGINS`, `TRUSTED_PROXIES`, and `APPLE_CLIENT_ID` in their ConfigMap. **OPS-08 (2026-07-27):** production no longer carries a `GOOGLE_CLIENT_ID` / `SET_ME_*` ConfigMap literal — provision `GOOGLE_CLIENT_ID` (+ confidential `GOOGLE_CLIENT_SECRET`) into `nomarkup-secrets` (see `deploy/k8s/SECRETS.md`). Staging still has a `SET_ME_STAGING_*` ConfigMap placeholder until staging secrets are wired the same way. Image tags in production are fail-closed `require-ci-stamp` until deploy.yml stamps CI-built GHCR tags.
+Wired in commit `68d5cbf`: staging + production overlays declare `ENVIRONMENT`, `JWT_ISSUER`, `JWT_AUDIENCE`, `WS_ALLOWED_ORIGINS`, `TRUSTED_PROXIES`, and `APPLE_CLIENT_ID` in their ConfigMap. **OPS-08 (2026-07-27):** neither staging nor production carries a `GOOGLE_CLIENT_ID` / `SET_ME_*` ConfigMap literal — provision `GOOGLE_CLIENT_ID` (+ confidential `GOOGLE_CLIENT_SECRET`) into `nomarkup-secrets` per environment (see `deploy/k8s/SECRETS.md`). Image tags in production are fail-closed `require-ci-stamp` until deploy.yml stamps CI-built GHCR tags.
 
 #### (original spec preserved below)
 The audit fixes made several env vars mandatory (services refuse to start without them). Deploy WILL fail if these aren't set in Vault / K8s secrets / CI before merging the audit branch.
@@ -483,7 +483,7 @@ These are small (<1 hour) polish items that make users think "oh nice, they thou
 - **S7** Decide: git history rewrite (Option A: filter-repo + force-push, requires every dev to re-clone) vs accept history (Option B). Recommend B unless regulatory.
 - **#6** Provision SendGrid API key + `SENDGRID_FROM_EMAIL` in production secrets.
 - **#7** Provision Sentry DSN (Go services + frontend) in production secrets.
-- **#19** Provision real `GOOGLE_CLIENT_ID` (replace placeholder in `deploy/k8s/overlays/{staging,production}/kustomization.yaml`).
+- **#19** Provision real `GOOGLE_CLIENT_ID` (+ `GOOGLE_CLIENT_SECRET`) into `nomarkup-secrets` for staging and production (not ConfigMap — OPS-08).
 
 **Shipped across audit branch + 2026-04-24/25 sweep (commits `68d5cbf`, `cb4b478`, `a97393b`, `f890143`, `0a9fd90`, `4ea4d99`):**
 - All 8 security audit follow-ups (S1-S8) closed code-side

@@ -2767,6 +2767,36 @@ export interface ListingOrder {
   created_at: string;
 }
 
+// FE-14 goods order review MVP (overall rating only; not services double-blind).
+export interface ListingOrderReview {
+  id: string;
+  order_id: string;
+  listing_id: string;
+  reviewer_id: string;
+  reviewee_id: string;
+  reviewer_role: 'buyer' | 'seller';
+  overall_rating: number;
+  comment: string;
+  status: string;
+  review_window_ends_at: string;
+  created_at: string;
+}
+
+export interface ListingOrderReviewEligibility {
+  eligible: boolean;
+  already_reviewed: boolean;
+  review_window_closes_at?: string;
+}
+
+export interface ListingOrderReviewsResponse {
+  reviews: ListingOrderReview[];
+}
+
+export interface CreateListingOrderReviewInput {
+  overall_rating: number;
+  comment?: string;
+}
+
 // ────────────────────────────────────────
 // AI auto-fill: listing image analysis
 // ────────────────────────────────────────
