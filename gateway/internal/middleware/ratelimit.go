@@ -228,6 +228,7 @@ var routeTiers = []struct {
 	// Native OAuth token exchange (SIWA / Google id_token → JWT pair).
 	{"/api/v1/auth/apple/native", TierAuth},
 	{"/api/v1/auth/google/native", TierAuth},
+	{"/api/v1/auth/facebook/native", TierAuth},
 	// Passkey assertion (unauthenticated login surface, IOS-SEC.2) — same
 	// abuse posture as /login. Covers both /assert/options and
 	// /assert/verify. The register/* endpoints are authed and stay on the

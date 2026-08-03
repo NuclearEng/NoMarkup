@@ -133,28 +133,10 @@ func (h *OAuthHandler) FacebookOAuthCallback(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	client := config.Client(r.Context(), token)
-	resp, err := client.Get("https://graph.facebook.com/v18.0/me?fields=id,name,email,picture.type(large)")
+	fbUser, err := fetchFacebookProfile(r.Context(), token.AccessToken)
 	if err != nil {
 		slog.Error("facebook oauth: graph fetch failed", "error", err)
 		http.Redirect(w, r, h.frontendURL+"/login?error=userinfo_failed", http.StatusTemporaryRedirect)
-		return
-	}
-	defer resp.Body.Close()
-
-	var fbUser struct {
-		ID      string `json:"id"`
-		Name    string `json:"name"`
-		Email   string `json:"email"`
-		Picture struct {
-			Data struct {
-				URL string `json:"url"`
-			} `json:"data"`
-		} `json:"picture"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&fbUser); err != nil {
-		slog.Error("facebook oauth: decode profile failed", "error", err)
-		http.Redirect(w, r, h.frontendURL+"/login?error=decode_failed", http.StatusTemporaryRedirect)
 		return
 	}
 	if fbUser.ID == "" {
@@ -167,7 +149,7 @@ func (h *OAuthHandler) FacebookOAuthCallback(w http.ResponseWriter, r *http.Requ
 		ProviderId: fbUser.ID,
 		Email:      fbUser.Email,
 		Name:       fbUser.Name,
-		AvatarUrl:  fbUser.Picture.Data.URL,
+		AvatarUrl:  fbUser.PictureURL,
 	})
 	if err != nil {
 		slog.Error("failed to find or create oauth user", "provider", "facebook", "error", err)
@@ -219,4 +201,150 @@ func verifyFacebookAppID(ctx context.Context, userToken string) error {
 		return fmt.Errorf("debug_token: app_id mismatch (got %s)", body.Data.AppID)
 	}
 	return nil
+}
+
+// --- Native Facebook (iOS ASWebAuthenticationSession) ---
+
+// nativeFacebookSignInRequest is the body for POST /api/v1/auth/facebook/native.
+//
+// Facebook Login does not mint an OIDC id_token for the basic
+// `email + public_profile` scopes (unlike Google). The native client therefore
+// either:
+//  1. Completes Authorization Code (with optional PKCE) in ASWebAuth and posts
+//     `authorization_code` + `redirect_uri` here so the server can exchange
+//     with FACEBOOK_CLIENT_SECRET, OR
+//  2. Posts a user `access_token` already obtained (e.g. Limited Login SDK)
+//     which we validate via debug_token.
+//
+// Client secret never leaves the server. FACEBOOK_CLIENT_ID is public (App ID).
+type nativeFacebookSignInRequest struct {
+	AuthorizationCode string `json:"authorization_code"`
+	RedirectURI       string `json:"redirect_uri"`
+	AccessToken       string `json:"access_token"`
+}
+
+// NativeFacebookSignIn exchanges a Facebook authorization code (or verified
+// user access token) from a native iOS client for the standard access/refresh
+// token pair as JSON. Mirrors NativeGoogleSignIn / NativeAppleSignIn.
+func (h *OAuthHandler) NativeFacebookSignIn(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(os.Getenv("FACEBOOK_CLIENT_ID")) == "" ||
+		strings.TrimSpace(os.Getenv("FACEBOOK_CLIENT_SECRET")) == "" {
+		writeError(w, http.StatusServiceUnavailable, "facebook oauth is not configured")
+		return
+	}
+
+	var req nativeFacebookSignInRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	accessToken := strings.TrimSpace(req.AccessToken)
+	if accessToken == "" {
+		code := strings.TrimSpace(req.AuthorizationCode)
+		redirectURI := strings.TrimSpace(req.RedirectURI)
+		if code == "" {
+			writeError(w, http.StatusBadRequest, "authorization_code or access_token is required")
+			return
+		}
+		if redirectURI == "" {
+			writeError(w, http.StatusBadRequest, "redirect_uri is required with authorization_code")
+			return
+		}
+
+		config := facebookOAuthConfig()
+		// Override RedirectURL with the client-supplied value so the token
+		// exchange matches the authorize request (native custom scheme).
+		config.RedirectURL = redirectURI
+		token, err := config.Exchange(r.Context(), code)
+		if err != nil {
+			slog.Warn("native facebook sign-in: code exchange failed", "error", err)
+			writeError(w, http.StatusUnauthorized, "invalid facebook authorization code")
+			return
+		}
+		accessToken = token.AccessToken
+	}
+	if accessToken == "" {
+		writeError(w, http.StatusUnauthorized, "facebook access token missing")
+		return
+	}
+
+	if err := verifyFacebookAppID(r.Context(), accessToken); err != nil {
+		slog.Warn("native facebook sign-in: token app_id mismatch", "error", err)
+		writeError(w, http.StatusUnauthorized, "invalid facebook access token")
+		return
+	}
+
+	fbUser, err := fetchFacebookProfile(r.Context(), accessToken)
+	if err != nil {
+		slog.Error("native facebook sign-in: graph fetch failed", "error", err)
+		writeError(w, http.StatusUnauthorized, "failed to load facebook profile")
+		return
+	}
+	if fbUser.ID == "" {
+		writeError(w, http.StatusUnauthorized, "facebook profile missing id")
+		return
+	}
+
+	result, err := h.userClient.FindOrCreateByOAuth(r.Context(), &userv1.FindOrCreateByOAuthRequest{
+		Provider:   "facebook",
+		ProviderId: fbUser.ID,
+		Email:      fbUser.Email,
+		Name:       fbUser.Name,
+		AvatarUrl:  fbUser.PictureURL,
+	})
+	if err != nil {
+		slog.Error("native facebook sign-in: find or create user failed", "error", err)
+		writeGRPCError(w, err)
+		return
+	}
+
+	h.completeOAuthLoginJSON(w, r, result)
+}
+
+// facebookProfile is the Graph /me subset we use for account linking.
+type facebookProfile struct {
+	ID         string
+	Name       string
+	Email      string
+	PictureURL string
+}
+
+// fetchFacebookProfile loads id/name/email/picture for a verified user token.
+func fetchFacebookProfile(ctx context.Context, accessToken string) (facebookProfile, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://graph.facebook.com/v18.0/me?fields=id,name,email,picture.type(large)", nil)
+	if err != nil {
+		return facebookProfile{}, fmt.Errorf("build graph request: %w", err)
+	}
+	// Prefer Authorization header over query token (less likely to land in logs).
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return facebookProfile{}, fmt.Errorf("graph request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return facebookProfile{}, fmt.Errorf("graph returned %d", resp.StatusCode)
+	}
+
+	var body struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Email   string `json:"email"`
+		Picture struct {
+			Data struct {
+				URL string `json:"url"`
+			} `json:"data"`
+		} `json:"picture"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return facebookProfile{}, fmt.Errorf("decode graph: %w", err)
+	}
+	return facebookProfile{
+		ID:         body.ID,
+		Name:       body.Name,
+		Email:      body.Email,
+		PictureURL: body.Picture.Data.URL,
+	}, nil
 }
