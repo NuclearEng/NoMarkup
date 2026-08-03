@@ -7,6 +7,53 @@
 
 ---
 
+## 0. 2026-08-02 re-audit delta
+
+Spot re-check of the 2026-07-27 **Top 10 gaps** + backlog residuals against current `ios/NoMarkup/`, gateway, chat, and payment code. **Full FR matrix below is not rewritten** — treat §0 as the delta; matrix statuses that conflict with §0 are **stale**.
+
+### Flipped STILL_GAP / Missing / Partial → FIXED (or Implemented)
+
+| FR / item | Was (2026-07-27) | Now | Evidence (abbrev.) |
+|---|---|---|---|
+| **FR-4.7** bid filters | **M** | **FIXED** | `JobDetailView` `LadderTrustFilter` + min jobs completed client filters |
+| **FR-4.6** bid sort | **P** ("lite" price/trust) | **FIXED** | Sort: price / trust / rating / jobs volume |
+| **FR-3.1** schedule preference | **P** (hardcoded flexible) | **FIXED** | `PostJobView` schedule picker flexible / specific / range + date fields |
+| **FR-8.1** pre-bid inquiry | **P** | **FIXED** | `createChatChannel(…, inquiry\|bid)` + Ask a Question on `JobDetailView` |
+| **FR-8.3** PDF/file chat attach | **P** (images only) | **FIXED** | `MessagesView` `fileImporter` PDF → `ImageUploader.uploadPDF` / `message_type: file` |
+| **FR-8.8** Share Contact | **P** (server only / no iOS button) | **FIXED** | Gateway `POST /channels/{id}/share-contact` + chat `ShareContactInfo` + iOS confirm UI (file-header comment on share-contact is **stale**) |
+| **FR-10.7** distance display | **M** | **FIXED** (distance; not travel-time ETA) | `distanceLabel` on jobs / providers / marketplace when geo-scoped |
+| **FR-8.10 / FR-17.1** nav unread badges | **P** | **FIXED** | `RootTabView` `.badge` on Messages + Account (notifications) |
+| **FR-15.4** revision 200-char + 3-cap | **P** | **FIXED** | `ContractDetailView` min 200 chars + `revisionsRemaining` / cap gate |
+| **FR-18.3 / 18.4** recurring edit | **P** (display-only) | **FIXED** | `updateRecurringConfig` auto-approve toggle + future rate |
+| **FR-2.2** PDF on verify | **P** (photo-only claim) | **FIXED** | `VerificationDocumentsView` PDF Files picker |
+| **FR-1.1** Facebook native | Gap / matrix stale | **FIXED** | `FacebookOAuthSession` + `/auth/facebook/native` |
+| **FR-10.5** service radius editor | **P** | **FIXED** | `ProviderWorkspaceView` radius slider |
+| **FR-3.8** browse filters | **P** (text only) | **PARTIAL→mostly FIXED** | Category + min starting bid filters on `JobsView` (schedule filter still thin) |
+| **FR-5.1** response/on-time | **P** | **FIXED** | Labels on ProviderWorkspace / ProviderDetail / Providers list |
+| **FR-5.3** terms on public profile | **P** | **FIXED** | Terms block on `ProviderDetailView` |
+| **Instant payout wire** | FinServ residual / not matrix-core | **FIXED** | `payment.proto` `InstantPayout` + gateway routes + `InstantPayoutView` |
+| **Team / Challenges / Legal** | Not in Top-10; product shell | **FIXED** | `EmployeesView`, `ChallengesView`, `LegalServicesView` from Account |
+
+### Still honest residual (do **not** claim FIXED)
+
+| Item | Status | Notes |
+|---|---|---|
+| **§13 Instant AI / live GPS ETA** | **Roadmap (Phase 2)** | Geo/category/trust prefilter + schedule **shipped**; AI match + live ETA **not** productized |
+| **FR-12 StoreKit** digital purchase | **Cut / deferred (B2)** | Free-tier ASC lock intentional |
+| **FR-13 Admin** | **Web-only by design** | Zero admin surfaces in consumer binary |
+| **FR-2.9 Checkr** | **Roadmap / OQ** | Not built |
+| **FR-10.7 travel *time*** | **Partial residual** | Distance labels yes; Maps ETA / traffic time not a dedicated job-card field |
+| **FR-19.2 preferred providers** | **Partial** | Account spend roll-up yes; preferred-provider stats still called out as unavailable in UI copy |
+| **FR-8.6 server chat search** | **Partial** | Local search over loaded messages; no dedicated server search endpoint |
+| **Ops / ASC / smoke / Apple Pay domain / OAuth Console IDs** | **[~] ops** | Not engineering closable without founder/env |
+| **MON-14–18 money races** | **Accepted residual (ADR)** or eng if reopened before regulated live | |
+
+### Implication for §1 counts
+
+The executive counts in §1 (**76 I / 36 P / 2 M** of 158) **overstate Partial/Missing** after this delta. Rough direction: the two former Missing (FR-4.7, FR-10.7) and most of the Top-10 Partials above move to **I**, so in-scope coverage is **materially higher than 67% Implemented**. A full re-census was **not** run 2026-08-02 — use this delta + `prd-ios-parity-backlog.md` for submit honesty.
+
+---
+
 ## 1. Executive summary
 
 ### Coverage by status bucket (158 FR IDs)
