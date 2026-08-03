@@ -1127,12 +1127,12 @@ func (r *PostgresRepository) ClaimInstantPayout(ctx context.Context, providerID 
 
 	available := grossEligible - priorPaidOut
 	if available < amountCents {
-		return nil, fmt.Errorf("claim instant payout: insufficient balance: %w", domain.ErrInvalidAmount)
+		return nil, fmt.Errorf("claim instant payout: %w", domain.ErrInstantPayoutInsufficientBalance)
 	}
 	// Daily cap ($10,000) — matches gateway defaultInstantPayoutMaxPerDayCents.
 	const maxPerDayCents int64 = 1_000_000
 	if todayCents+amountCents > maxPerDayCents {
-		return nil, fmt.Errorf("claim instant payout: daily cap exceeded: %w", domain.ErrInvalidAmount)
+		return nil, fmt.Errorf("claim instant payout: %w", domain.ErrInstantPayoutDailyCap)
 	}
 
 	id := ""

@@ -36,6 +36,7 @@ const (
 	PaymentService_GetPayment_FullMethodName                     = "/nomarkup.payment.v1.PaymentService/GetPayment"
 	PaymentService_ListPayments_FullMethodName                   = "/nomarkup.payment.v1.PaymentService/ListPayments"
 	PaymentService_CreateRefund_FullMethodName                   = "/nomarkup.payment.v1.PaymentService/CreateRefund"
+	PaymentService_InstantPayout_FullMethodName                  = "/nomarkup.payment.v1.PaymentService/InstantPayout"
 	PaymentService_HandleStripeWebhook_FullMethodName            = "/nomarkup.payment.v1.PaymentService/HandleStripeWebhook"
 	PaymentService_CalculateFees_FullMethodName                  = "/nomarkup.payment.v1.PaymentService/CalculateFees"
 	PaymentService_GetFeeConfig_FullMethodName                   = "/nomarkup.payment.v1.PaymentService/GetFeeConfig"
@@ -117,6 +118,10 @@ type PaymentServiceClient interface {
 	ListPayments(ctx context.Context, in *ListPaymentsRequest, opts ...grpc.CallOption) (*ListPaymentsResponse, error)
 	// Refunds
 	CreateRefund(ctx context.Context, in *CreateRefundRequest, opts ...grpc.CallOption) (*CreateRefundResponse, error)
+	// Instant Connect payout — cleared escrow to provider bank (fee + caps).
+	// Payment service owns ledger claim-first + Stripe Instant Payouts.
+	// Live keys never fabricate payout_dev_* ids (MON-09/10/11).
+	InstantPayout(ctx context.Context, in *InstantPayoutRequest, opts ...grpc.CallOption) (*InstantPayoutResponse, error)
 	// Webhooks
 	HandleStripeWebhook(ctx context.Context, in *HandleStripeWebhookRequest, opts ...grpc.CallOption) (*HandleStripeWebhookResponse, error)
 	// Platform fees
@@ -358,6 +363,16 @@ func (c *paymentServiceClient) CreateRefund(ctx context.Context, in *CreateRefun
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateRefundResponse)
 	err := c.cc.Invoke(ctx, PaymentService_CreateRefund_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) InstantPayout(ctx context.Context, in *InstantPayoutRequest, opts ...grpc.CallOption) (*InstantPayoutResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstantPayoutResponse)
+	err := c.cc.Invoke(ctx, PaymentService_InstantPayout_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -830,6 +845,10 @@ type PaymentServiceServer interface {
 	ListPayments(context.Context, *ListPaymentsRequest) (*ListPaymentsResponse, error)
 	// Refunds
 	CreateRefund(context.Context, *CreateRefundRequest) (*CreateRefundResponse, error)
+	// Instant Connect payout — cleared escrow to provider bank (fee + caps).
+	// Payment service owns ledger claim-first + Stripe Instant Payouts.
+	// Live keys never fabricate payout_dev_* ids (MON-09/10/11).
+	InstantPayout(context.Context, *InstantPayoutRequest) (*InstantPayoutResponse, error)
 	// Webhooks
 	HandleStripeWebhook(context.Context, *HandleStripeWebhookRequest) (*HandleStripeWebhookResponse, error)
 	// Platform fees
@@ -957,6 +976,9 @@ func (UnimplementedPaymentServiceServer) ListPayments(context.Context, *ListPaym
 }
 func (UnimplementedPaymentServiceServer) CreateRefund(context.Context, *CreateRefundRequest) (*CreateRefundResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateRefund not implemented")
+}
+func (UnimplementedPaymentServiceServer) InstantPayout(context.Context, *InstantPayoutRequest) (*InstantPayoutResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InstantPayout not implemented")
 }
 func (UnimplementedPaymentServiceServer) HandleStripeWebhook(context.Context, *HandleStripeWebhookRequest) (*HandleStripeWebhookResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method HandleStripeWebhook not implemented")
@@ -1410,6 +1432,24 @@ func _PaymentService_CreateRefund_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PaymentServiceServer).CreateRefund(ctx, req.(*CreateRefundRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_InstantPayout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstantPayoutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).InstantPayout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_InstantPayout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).InstantPayout(ctx, req.(*InstantPayoutRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2262,6 +2302,10 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateRefund",
 			Handler:    _PaymentService_CreateRefund_Handler,
+		},
+		{
+			MethodName: "InstantPayout",
+			Handler:    _PaymentService_InstantPayout_Handler,
 		},
 		{
 			MethodName: "HandleStripeWebhook",

@@ -34,6 +34,11 @@ var (
 	ErrTipAlreadyRecorded = errors.New("tip already recorded")
 	// ErrContractNotCompleted is returned when a tip is attempted on a non-completed contract.
 	ErrContractNotCompleted = errors.New("contract is not completed")
+	// ErrInstantPayoutInsufficientBalance — claim under advisory lock found net
+	// cleared balance below the requested amount (MON-10).
+	ErrInstantPayoutInsufficientBalance = errors.New("instant payout exceeds available cleared balance")
+	// ErrInstantPayoutDailyCap — rolling 24h instant-payout cap would be breached.
+	ErrInstantPayoutDailyCap = errors.New("instant payout daily cap exceeded")
 )
 
 // Payment represents a platform payment.

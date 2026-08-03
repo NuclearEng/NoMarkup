@@ -2578,7 +2578,7 @@
         }
       }
     },
-    "instant_payout flag is off. Production Stripe instant path may also return 503 until wired." : {},
+    "instant_payout flag is off. Enable the flag to request instant Connect payouts." : {},
     "or" : {},
     "to" : {},
     "up" : {},

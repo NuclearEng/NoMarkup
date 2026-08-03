@@ -27,19 +27,17 @@ type PaymentHandler struct {
 	// payment (FR-18.8). Optional: nil → process/capture still succeeds; resume
 	// is best-effort only and must never fail the money path.
 	contractClient contractv1.ContractServiceClient
-	// db backs the instant-payout ledger (instant_payouts). Other gateway
-	// handlers query Postgres directly via pgxpool; we follow that pattern
-	// rather than adding a new gRPC RPC. May be nil in unit tests that don't
-	// exercise the ledger path. Also resets FR-16.7 partial
-	// recurring_configs.payment_retry_count + next_retry_at (migrations 112/113)
-	// after visit capture.
+	// db backs the instant-payout SUMMARY path (sum of prior instant_payouts)
+	// and FR-16.7 recurring payment-retry reset after visit capture. Mutation
+	// InstantPayout is owned by the payment service gRPC. May be nil in unit
+	// tests that don't exercise those paths.
 	db *pgxpool.Pool
 	// resetPaymentRetryFn overrides SQL reset for unit tests (nil in production).
 	resetPaymentRetryFn func(ctx context.Context, recurringID string) error
 }
 
 // NewPaymentHandler creates a new PaymentHandler. db is the gateway's shared
-// pgx pool, used for the instant-payout ledger (idempotency + daily cap).
+// pgx pool (instant-payout summary + FR-16.7 retry reset).
 func NewPaymentHandler(paymentClient paymentv1.PaymentServiceClient, db *pgxpool.Pool) *PaymentHandler {
 	return &PaymentHandler{paymentClient: paymentClient, db: db}
 }
@@ -863,23 +861,25 @@ type instantPayoutRequest struct {
 //
 // RISK MODEL (fail closed): NoMarkup fronts the money instantly, so it is only
 // safe to pay out funds that are CAPTURED and past the escrow/dispute hold.
-// Eligibility is therefore restricted to the provider's own RELEASED and
-// COMPLETED payments (escrow released; COMPLETED means dispute window elapsed)
-// — never pending or in-escrow funds, which can still refund/chargeback and
-// leave the platform holding the loss. The fee is configurable (see
-// instant_payout_pricing.go) so it covers Stripe's instant-payout cost plus a
-// margin, and per-transaction + per-day caps bound clawback exposure.
+// Eligibility is restricted to RELEASED + COMPLETED payments (payment service
+// claim path). Fee, per-txn, and daily caps live in the payment service.
 //
-// Money-safety order of operations (MON-09/10/11):
-//  1. Validate eligibility / caps.
-//  2. CLAIM the balance in the instant_payouts ledger FIRST.
-//  3. Only then execute the Stripe transfer (or refuse if not wired).
-// Never report success with a synthetic payout_dev_* id when a real Stripe
-// key is present — that path returns 503 "not configured".
+// Money-safety (MON-09/10/11) is owned by PaymentService.InstantPayout:
+//  1. Idempotent replay of completed ledger rows.
+//  2. CLAIM ledger first under per-provider advisory lock.
+//  3. Stripe Connect Instant Payout (or payout_dev_* only in payment-service
+//     devMode — never with live keys).
+// Gateway is a thin auth + verified-provider gate + gRPC proxy.
 func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	if h.paymentClient == nil {
+		slog.Error("instant payout: payment client not configured",
+			"provider_id", claims.UserID)
+		writeError(w, http.StatusServiceUnavailable, "instant payout is temporarily unavailable")
 		return
 	}
 
@@ -896,29 +896,14 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 	// Idempotency key: prefer the Idempotency-Key header (the web client always
 	// sends it; the payment route group also enforces it via
 	// middleware.RequireIdempotencyKey), fall back to an optional body field.
-	// The ledger UNIQUE(provider_id, idempotency_key) is the DURABLE dedup —
-	// independent of the Redis response-cache middleware, which can be evicted.
+	// Durable dedup is UNIQUE(provider_id, idempotency_key) in the payment
+	// service ledger — independent of Redis response-cache middleware.
 	idemKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if idemKey == "" {
 		idemKey = strings.TrimSpace(req.IdempotencyKey)
 	}
 
-	// Idempotent replay: if this provider already has a payout under this key,
-	// return the prior ledger result instead of paying again. Durable across
-	// Redis flushes / restarts.
-	if idemKey != "" && h.db != nil {
-		if prior, found, err := h.lookupInstantPayoutByKey(r.Context(), claims.UserID, idemKey); err != nil {
-			slog.Error("instant payout: idempotency lookup failed",
-				"provider_id", claims.UserID, "error", err)
-			writeError(w, http.StatusInternalServerError, "could not process instant payout")
-			return
-		} else if found {
-			writeJSON(w, http.StatusOK, prior)
-			return
-		}
-	}
-
-	// Per-transaction cap. Larger sums route through the free standard payout.
+	// Cheap early reject for oversize amounts (also enforced in payment service).
 	if maxTxn := instantPayoutMaxPerTxnCents(); req.AmountCents > maxTxn {
 		writeError(w, http.StatusUnprocessableEntity,
 			"amount exceeds the per-transaction instant payout limit")
@@ -940,111 +925,28 @@ func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Eligible balance = sum of this provider's RELEASED + COMPLETED payouts
-	// (see grossEligiblePayoutCents).
-	grossEligibleCents, err := h.grossEligiblePayoutCents(r.Context(), claims.UserID)
+	// Payment service owns claim-first ledger + Stripe Instant Payout.
+	// Live keys create a real Connect payout or fail closed; never fabricate
+	// payout_dev_* success ids outside payment-service devMode.
+	resp, err := h.paymentClient.InstantPayout(r.Context(), &paymentv1.InstantPayoutRequest{
+		ProviderId:     claims.UserID,
+		AmountCents:    req.AmountCents,
+		IdempotencyKey: idemKey,
+	})
 	if err != nil {
 		writeGRPCError(w, err)
 		return
 	}
 
-	// NET balance = gross cleared earnings − amount already instant-paid-out.
-	// This pre-lock subtraction makes the early reject ACCURATE (so the provider
-	// sees the right number before we take the lock); the authoritative,
-	// concurrency-safe check is re-done inside insertInstantPayoutWithCap under
-	// the per-provider advisory lock. Without subtracting priorPaidOut a provider
-	// could withdraw the same cleared earnings repeatedly.
-	priorPaidOut := int64(0)
-	if h.db != nil {
-		var perr error
-		priorPaidOut, perr = h.sumAllInstantPayouts(r.Context(), h.db, claims.UserID)
-		if perr != nil {
-			slog.Error("instant payout: prior-payout sum failed",
-				"provider_id", claims.UserID, "error", perr)
-			writeError(w, http.StatusInternalServerError, "could not process instant payout")
-			return
-		}
-	}
-	availableCents := netInstantPayoutAvailableCents(grossEligibleCents, priorPaidOut)
-
-	if req.AmountCents > availableCents {
-		writeError(w, http.StatusUnprocessableEntity,
-			"instant payout exceeds your available cleared balance")
-		return
-	}
-
-	// Configurable platform fee (basis points + minimum), integer-cent math.
-	feeCents := computeInstantPayoutFeeCents(
-		req.AmountCents, instantPayoutFeeBps(), instantPayoutMinFeeCents())
-	if feeCents >= req.AmountCents {
-		// Fee would consume the whole payout (amount below the economic floor).
-		writeError(w, http.StatusUnprocessableEntity,
-			"amount too small for instant payout after fees")
-		return
-	}
-	netCents := req.AmountCents - feeCents
-
-	if h.db == nil {
-		// No ledger backing configured — fail closed rather than report an
-		// unrecorded success (the bug this change exists to kill).
-		slog.Error("instant payout: no db pool configured; refusing to pay without a ledger",
-			"provider_id", claims.UserID)
-		writeError(w, http.StatusInternalServerError, "instant payout is temporarily unavailable")
-		return
-	}
-
-	// MON-11: production Stripe path is not wired through the gateway (no
-	// InstantPayout RPC on the payment service either). When a live Stripe key
-	// is present we MUST NOT fake success with payout_dev_* — fail closed.
-	if hasRealStripeKey() {
-		slog.Error("instant payout: real Stripe key present but gateway Stripe payout is not configured",
-			"provider_id", claims.UserID)
-		writeError(w, http.StatusServiceUnavailable, "instant payout is not configured")
-		return
-	}
-
-	// Dev-only mock payout id. Generated BEFORE the ledger claim so the row
-	// stores a stable stripe_payout_id; no external money moves in this path.
-	stripePayoutID := "payout_dev_" + strings.SplitN(uuid.NewString(), "-", 2)[0]
-	keyArg := idempotencyKeyArg(idemKey)
-
-	// MON-10: CLAIM the balance in the ledger FIRST (under the per-provider
-	// advisory lock + daily cap + net-balance check). Only after a durable
-	// ledger row exists do we consider the payout successful. Previously the
-	// synthetic stripe id was "executed" before the ledger write, so a ledger
-	// failure after a real Stripe transfer could double-pay on retry.
-	//
-	// CONCURRENCY (TOCTOU): daily-cap check + insert are one atomic,
-	// per-provider-serialized step via pg_advisory_xact_lock.
-	row, err := h.insertInstantPayoutWithCap(r.Context(), claims.UserID,
-		req.AmountCents, feeCents, netCents, grossEligibleCents, "completed", stripePayoutID, keyArg)
-	if err != nil {
-		if errors.Is(err, errInstantPayoutInsufficientBalance) {
-			writeError(w, http.StatusUnprocessableEntity,
-				"instant payout exceeds your available cleared balance")
-			return
-		}
-		if errors.Is(err, errInstantPayoutDailyCap) {
-			writeError(w, http.StatusUnprocessableEntity,
-				"amount exceeds the daily instant payout limit")
-			return
-		}
-		// A UNIQUE(provider_id, idempotency_key) collision means a concurrent
-		// request under the same key already wrote the row — replay it instead
-		// of double-paying.
-		if isUniqueViolation(err) && idemKey != "" {
-			if prior, found, lerr := h.lookupInstantPayoutByKey(r.Context(), claims.UserID, idemKey); lerr == nil && found {
-				writeJSON(w, http.StatusOK, prior)
-				return
-			}
-		}
-		slog.Error("instant payout: ledger write failed",
-			"provider_id", claims.UserID, "error", err)
-		writeError(w, http.StatusInternalServerError, "could not record instant payout")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, instantPayoutResponse(row))
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"payout_id":         resp.GetPayoutId(),
+		"amount_cents":      resp.GetAmountCents(),
+		"fee_cents":         resp.GetFeeCents(),
+		"net_cents":         resp.GetNetCents(),
+		"status":            resp.GetStatus(),
+		"estimated_arrival": "Within minutes",
+		"replayed":          resp.GetReplayed(),
+	})
 }
 
 // grossEligiblePayoutCents returns the sum of this provider's RELEASED and
@@ -1158,15 +1060,12 @@ func idempotencyKeyArg(key string) *string {
 	return &key
 }
 
-// executeStripeInstantPayout is retained for call sites / tests that still
-// exercise the helper. Production live-key path MUST return an error (never a
-// fake payout_dev_* id). Dev mode returns a synthetic id. Prefer the
-// InstantPayout handler's inline claim-then-dev-id flow, which claims the
-// ledger before any external side effect (MON-10/11).
+// executeStripeInstantPayout is a historical fail-closed guard retained for
+// unit tests. Production InstantPayout goes through paymentClient.InstantPayout
+// (payment service owns Stripe + ledger). A live key here still refuses a
+// fabricated payout_dev_* id.
 //
-// Returns ("", errInstantPayoutNotConfigured) when a real Stripe key is set
-// but the gateway has no Stripe Payout client wired (payment service owns
-// Stripe; no InstantPayout RPC exists yet).
+// Returns ("", errInstantPayoutNotConfigured) when a real Stripe key is set.
 func executeStripeInstantPayout(_ /* amountCents */, _ /* netCents */ int64) (string, error) {
 	if hasRealStripeKey() {
 		return "", errInstantPayoutNotConfigured

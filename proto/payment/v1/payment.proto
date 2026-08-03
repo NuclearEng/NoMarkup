@@ -48,6 +48,11 @@ service PaymentService {
   // Refunds
   rpc CreateRefund(CreateRefundRequest) returns (CreateRefundResponse);
 
+  // Instant Connect payout — cleared escrow to provider bank (fee + caps).
+  // Payment service owns ledger claim-first + Stripe Instant Payouts.
+  // Live keys never fabricate payout_dev_* ids (MON-09/10/11).
+  rpc InstantPayout(InstantPayoutRequest) returns (InstantPayoutResponse);
+
   // Webhooks
   rpc HandleStripeWebhook(HandleStripeWebhookRequest) returns (HandleStripeWebhookResponse);
 
@@ -421,6 +426,28 @@ message CreateRefundRequest {
 
 message CreateRefundResponse {
   Payment payment = 1;
+}
+
+// ============================================================
+// Instant Payout RPCs
+// ============================================================
+
+message InstantPayoutRequest {
+  string provider_id = 1;
+  int64 amount_cents = 2;
+  // Client Idempotency-Key (or body fallback). Durable dedup on
+  // instant_payouts UNIQUE(provider_id, idempotency_key).
+  string idempotency_key = 3;
+}
+
+message InstantPayoutResponse {
+  string payout_id = 1;
+  string stripe_payout_id = 2;
+  int64 amount_cents = 3;
+  int64 fee_cents = 4;
+  int64 net_cents = 5;
+  string status = 6; // completed | pending | failed
+  bool replayed = 7; // true when prior successful claim was returned
 }
 
 // ============================================================

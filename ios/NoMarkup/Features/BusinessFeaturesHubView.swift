@@ -424,7 +424,7 @@ struct InstantPayoutView: View {
         Form {
             if !flags.isEnabled("instant_payout") {
                 Section {
-                    Text("instant_payout flag is off. Production Stripe instant path may also return 503 until wired.")
+                    Text("instant_payout flag is off. Enable the flag to request instant Connect payouts.")
                         .font(.footnote)
                         .foregroundStyle(BrandTheme.warning)
                         .listRowBackground(BrandTheme.navyElevated)
