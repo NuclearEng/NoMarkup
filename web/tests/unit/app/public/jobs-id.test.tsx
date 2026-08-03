@@ -86,6 +86,15 @@ vi.mock('@/hooks/useInstantMatch', () => ({
   useAcceptOffer: vi.fn(),
   useDeclineOffer: vi.fn(),
 }));
+vi.mock('@/hooks/useChannels', () => ({
+  useCreateChannel: vi.fn(() => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  })),
+}));
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
 vi.mock('@/stores/auth-store', () => ({
   useAuthStore: vi.fn(),
 }));

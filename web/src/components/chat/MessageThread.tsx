@@ -1,11 +1,12 @@
 'use client';
 
-import { AlertTriangle, Check, CheckCheck, Loader2 } from 'lucide-react';
+import { AlertTriangle, Check, CheckCheck, Loader2, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   useChannel,
@@ -18,6 +19,9 @@ import { cn, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { CHANNEL_STATUS, MESSAGE_TYPE } from '@/types';
 import type { ChatMessage } from '@/types';
+
+/** Debounce for FR-8.6 server in-thread search (`q` on GET …/messages). */
+const SEARCH_DEBOUNCE_MS = 300;
 
 function formatDateSeparator(dateString: string): string {
   const date = new Date(dateString);
@@ -473,6 +477,8 @@ function canRespondToProposedTerms(
 export function MessageThread({ channelId }: { channelId: string }) {
   const [beforeCursor, setBeforeCursor] = useState<string | undefined>(undefined);
   const [respondingMessageId, setRespondingMessageId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
@@ -493,9 +499,45 @@ export function MessageThread({ channelId }: { channelId: string }) {
   const channelComposable =
     channel?.status !== CHANNEL_STATUS.CLOSED && channel?.status !== CHANNEL_STATUS.READ_ONLY;
 
-  const { data, isLoading, isError } = useMessages(channelId, {
+  // FR-8.6: debounce server `q`; local filter remains as interim while typing.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQ(searchQuery.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchQuery]);
+
+  // Reset pagination + search when switching channels.
+  useEffect(() => {
+    setBeforeCursor(undefined);
+    setSearchQuery('');
+    setDebouncedQ('');
+    didInitialScrollRef.current = false;
+    prevMessageCountRef.current = 0;
+    prevLastMessageIdRef.current = null;
+  }, [channelId]);
+
+  // Base thread (no server q). Used for normal chat + local-filter interim / fail-soft.
+  const {
+    data,
+    isLoading,
+    isError,
+  } = useMessages(channelId, {
     before: beforeCursor,
     page_size: 20,
+  });
+
+  // FR-8.6 server search — independent query so a search failure never blanks the thread.
+  const {
+    data: serverSearchData,
+    isFetching: isServerSearching,
+    isSuccess: isServerSearchSuccess,
+  } = useMessages(channelId, {
+    page_size: 50,
+    q: debouncedQ || undefined,
+    enabled: !!debouncedQ,
   });
 
   // The gateway returns messages newest-first (ORDER BY created_at DESC).
@@ -503,14 +545,56 @@ export function MessageThread({ channelId }: { channelId: string }) {
   // normalize to ascending order here. This also makes messages[0] the OLDEST
   // message (the correct `before` cursor for load-older pagination) and makes
   // the bottom sentinel line up with the newest message (the scroll target).
-  const messages = useMemo(() => {
-    return [...(data?.messages ?? [])].sort((a, b) => {
+  const sortAsc = (list: ChatMessage[]) =>
+    [...list].sort((a, b) => {
       const delta = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       // Stable tiebreak on id so equal timestamps keep a deterministic order.
       return delta !== 0 ? delta : a.id.localeCompare(b.id);
     });
-  }, [data?.messages]);
-  const hasMore = data?.has_more ?? false;
+
+  const baseMessages = useMemo(
+    () => sortAsc(data?.messages ?? []),
+    // sortAsc is pure/stable for a given list reference
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data?.messages],
+  );
+
+  const serverSearchMessages = useMemo(
+    () => sortAsc(serverSearchData?.messages ?? []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [serverSearchData?.messages],
+  );
+
+  const isSearching = !!searchQuery.trim();
+
+  // Prefer server hits when debounced q matches and the query succeeded; otherwise
+  // local-filter the loaded thread (interim while typing + soft fallback on error).
+  const messages = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return baseMessages;
+
+    const useServer =
+      !!debouncedQ &&
+      debouncedQ.toLowerCase() === q &&
+      isServerSearchSuccess &&
+      serverSearchData !== undefined;
+
+    if (useServer) {
+      return serverSearchMessages;
+    }
+
+    return baseMessages.filter((m) => m.content.toLowerCase().includes(q));
+  }, [
+    baseMessages,
+    searchQuery,
+    debouncedQ,
+    isServerSearchSuccess,
+    serverSearchData,
+    serverSearchMessages,
+  ]);
+
+  const hasMore = !isSearching && (data?.has_more ?? false);
+  const isFetching = isSearching && isServerSearching;
 
   // Peer Seen/Sent: prefer channel last_read watermarks (iOS parity); reply fallback.
   const peerLastReadISO = peerLastReadAtISO(channel, user?.id);
@@ -622,105 +706,147 @@ export function MessageThread({ channelId }: { channelId: string }) {
     }
   }
 
-  if (isLoading && !beforeCursor) {
+  const searchBar = (
+    <div className="shrink-0 border-b px-3 py-2">
+      <div className="relative">
+        <Search
+          className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <Input
+          placeholder="Search messages..."
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+          }}
+          className="min-h-[44px] pl-9"
+          aria-label="Search messages in this conversation"
+        />
+        {isSearching && isFetching ? (
+          <Loader2
+            className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground"
+            aria-hidden="true"
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+
+  if (isLoading && !beforeCursor && !isSearching) {
     return (
-      <div
-        className="flex flex-1 flex-col justify-end gap-3 p-4"
-        role="status"
-        aria-label="Loading messages"
-      >
-        <span className="sr-only">Loading messages</span>
-        <Skeleton className="h-10 w-3/5 self-start rounded-2xl" />
-        <Skeleton className="h-10 w-1/2 self-end rounded-2xl" />
-        <Skeleton className="h-10 w-2/3 self-start rounded-2xl" />
-        <Skeleton className="h-10 w-2/5 self-end rounded-2xl" />
-        <Skeleton className="h-10 w-1/2 self-start rounded-2xl" />
+      <div className="flex min-h-0 flex-1 flex-col">
+        {searchBar}
+        <div
+          className="flex flex-1 flex-col justify-end gap-3 p-4"
+          role="status"
+          aria-label="Loading messages"
+        >
+          <span className="sr-only">Loading messages</span>
+          <Skeleton className="h-10 w-3/5 self-start rounded-2xl" />
+          <Skeleton className="h-10 w-1/2 self-end rounded-2xl" />
+          <Skeleton className="h-10 w-2/3 self-start rounded-2xl" />
+          <Skeleton className="h-10 w-2/5 self-end rounded-2xl" />
+          <Skeleton className="h-10 w-1/2 self-start rounded-2xl" />
+        </div>
       </div>
     );
   }
 
-  if (isError) {
+  if (isError && !isSearching) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <p className="text-sm text-destructive">Failed to load messages.</p>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {searchBar}
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-sm text-destructive">Failed to load messages.</p>
+        </div>
       </div>
     );
   }
 
   if (messages.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <p className="text-sm text-muted-foreground">No messages yet. Start the conversation.</p>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {searchBar}
+        <div className="flex flex-1 items-center justify-center px-4">
+          <p className="text-sm text-muted-foreground">
+            {isSearching
+              ? 'No messages match your search.'
+              : 'No messages yet. Start the conversation.'}
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div ref={scrollContainerRef} className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
-      {hasMore ? (
-        <div className="mb-4 flex justify-center">
-          <Button
-            variant="outline"
-            size="sm"
-            className="min-h-[44px]"
-            onClick={handleLoadOlder}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                Loading...
-              </>
-            ) : (
-              'Load older messages'
-            )}
-          </Button>
+    <div className="flex min-h-0 flex-1 flex-col">
+      {searchBar}
+      <div ref={scrollContainerRef} className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
+        {hasMore ? (
+          <div className="mb-4 flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-h-[44px]"
+              onClick={handleLoadOlder}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                  Loading...
+                </>
+              ) : (
+                'Load older messages'
+              )}
+            </Button>
+          </div>
+        ) : null}
+
+        <div className="space-y-3" role="log" aria-label="Message history" aria-live="polite">
+          {messages.map((message, index) => {
+            const prevMessage = index > 0 ? messages[index - 1] : undefined;
+            const showDateSeparator =
+              !prevMessage || !isSameDay(prevMessage.created_at, message.created_at);
+            const canRespond = canRespondToProposedTerms(message, messages, {
+              isChannelCustomer,
+              channelComposable,
+              currentUserId: user?.id,
+            });
+
+            return (
+              <div key={message.id}>
+                {showDateSeparator ? (
+                  <div className="my-4 flex items-center gap-3" role="separator">
+                    <div className="flex-1 border-t" />
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {formatDateSeparator(message.created_at)}
+                    </span>
+                    <div className="flex-1 border-t" />
+                  </div>
+                ) : null}
+                <MessageBubble
+                  message={message}
+                  isOwnMessage={user?.id === message.sender_id}
+                  senderLabel={user?.id === message.sender_id ? 'You' : otherPartyName}
+                  showReceipt={!!lastOwnReceipt && message.id === lastOwnReceipt.messageId}
+                  isRead={!!lastOwnReceipt?.isRead && message.id === lastOwnReceipt.messageId}
+                  canRespondToTerms={canRespond}
+                  isRespondingToTerms={respondingMessageId === message.id}
+                  onAcceptTerms={() => {
+                    void handleRespondToTerms(message, true);
+                  }}
+                  onRejectTerms={() => {
+                    void handleRespondToTerms(message, false);
+                  }}
+                />
+              </div>
+            );
+          })}
         </div>
-      ) : null}
 
-      <div className="space-y-3" role="log" aria-label="Message history" aria-live="polite">
-        {messages.map((message, index) => {
-          const prevMessage = index > 0 ? messages[index - 1] : undefined;
-          const showDateSeparator =
-            !prevMessage || !isSameDay(prevMessage.created_at, message.created_at);
-          const canRespond = canRespondToProposedTerms(message, messages, {
-            isChannelCustomer,
-            channelComposable,
-            currentUserId: user?.id,
-          });
-
-          return (
-            <div key={message.id}>
-              {showDateSeparator ? (
-                <div className="my-4 flex items-center gap-3" role="separator">
-                  <div className="flex-1 border-t" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {formatDateSeparator(message.created_at)}
-                  </span>
-                  <div className="flex-1 border-t" />
-                </div>
-              ) : null}
-              <MessageBubble
-                message={message}
-                isOwnMessage={user?.id === message.sender_id}
-                senderLabel={user?.id === message.sender_id ? 'You' : otherPartyName}
-                showReceipt={!!lastOwnReceipt && message.id === lastOwnReceipt.messageId}
-                isRead={!!lastOwnReceipt?.isRead && message.id === lastOwnReceipt.messageId}
-                canRespondToTerms={canRespond}
-                isRespondingToTerms={respondingMessageId === message.id}
-                onAcceptTerms={() => {
-                  void handleRespondToTerms(message, true);
-                }}
-                onRejectTerms={() => {
-                  void handleRespondToTerms(message, false);
-                }}
-              />
-            </div>
-          );
-        })}
+        <div ref={bottomRef} />
       </div>
-
-      <div ref={bottomRef} />
     </div>
   );
 }

@@ -1,6 +1,8 @@
 'use client';
 
 import { ArrowLeft } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 
 import { BlockButton } from '@/components/chat/BlockButton';
 import { ChannelList } from '@/components/chat/ChannelList';
@@ -8,6 +10,7 @@ import { MessageInput } from '@/components/chat/MessageInput';
 import { MessageThread } from '@/components/chat/MessageThread';
 import { RelayBanner } from '@/components/chat/RelayBanner';
 import { ReportButton } from '@/components/chat/ReportButton';
+import { ShareContactButton } from '@/components/chat/ShareContactButton';
 import { TypingIndicator } from '@/components/chat/TypingIndicator';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
@@ -31,6 +34,10 @@ const STATUS_COLOR: Record<string, string> = {
   [CONNECTION_STATUS.CONNECTING]: 'bg-yellow-500',
   [CONNECTION_STATUS.DISCONNECTED]: 'bg-red-500',
 };
+
+/** Loose UUID check for deep-link `?channel=` (fail closed on garbage). */
+const CHANNEL_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function ConnectionStatusDot() {
   const connectionStatus = useChatStore((s) => s.connectionStatus);
@@ -96,7 +103,8 @@ function ActiveThread({ channelId }: { channelId: string }) {
             </div>
             <span className="truncate text-sm font-medium">{otherPartyName}</span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center justify-end gap-1">
+            <ShareContactButton channelId={channelId} />
             <ReportButton
               userId={otherPartyId}
               displayName={otherPartyName ?? undefined}
@@ -133,6 +141,14 @@ function NoConversationSelected() {
 export default function MessagesPage() {
   const activeChannelId = useChatStore((state) => state.activeChannelId);
   const setActiveChannel = useChatStore((state) => state.setActiveChannel);
+  const searchParams = useSearchParams();
+
+  // FR-8.1 deep-link: /messages?channel=<uuid> opens that thread.
+  useEffect(() => {
+    const channel = searchParams.get('channel')?.trim() ?? '';
+    if (!channel || !CHANNEL_ID_RE.test(channel)) return;
+    setActiveChannel(channel);
+  }, [searchParams, setActiveChannel]);
 
   return (
     <PageTransition>

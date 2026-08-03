@@ -867,6 +867,8 @@ export interface CreateReviewInput {
 // Chat types
 export const CHANNEL_TYPE = {
   PRE_AWARD: 'pre_award',
+  /** FR-8.1 pre-bid Q&A (no active bid required). */
+  INQUIRY: 'inquiry',
   CONTRACT: 'contract',
   SUPPORT: 'support',
 } as const;

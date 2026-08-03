@@ -63,6 +63,12 @@ vi.mock('@/components/chat/RelayBanner', () => ({
 vi.mock('@/components/chat/BlockButton', () => ({
   BlockButton: () => createElement('div', { 'data-testid': 'block-button' }),
 }));
+vi.mock('@/components/chat/ShareContactButton', () => ({
+  ShareContactButton: () => createElement('div', { 'data-testid': 'share-contact-button' }),
+}));
+vi.mock('@/components/chat/ReportButton', () => ({
+  ReportButton: () => createElement('div', { 'data-testid': 'report-button' }),
+}));
 
 vi.mock('@/hooks/useChannels', () => ({
   useChannel: () => channelState,

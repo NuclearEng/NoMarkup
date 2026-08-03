@@ -7,8 +7,10 @@ import {
   ChevronRight,
   Clock,
   Gavel,
+  Loader2,
   LogIn,
   MapPin,
+  MessageSquare,
   Radio,
   Tag,
   Users,
@@ -17,7 +19,9 @@ import {
   Zap,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { Route } from 'next';
+import { toast } from 'sonner';
 
 import { BidActivityFeed } from '@/components/bids/BidActivityFeed';
 import { BidForm } from '@/components/bids/BidForm';
@@ -42,10 +46,12 @@ import { Separator } from '@/components/ui/separator';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useAuctionTerminal } from '@/hooks/useAuctionTerminal';
 import { useBidCount, useBidsForJob } from '@/hooks/useBids';
+import { useCreateChannel } from '@/hooks/useChannels';
 import { useCountdown } from '@/hooks/useCountdown';
 import { useCreateInstantMatch } from '@/hooks/useInstantMatch';
 import { useJob } from '@/hooks/useJobs';
 import { useSpectatorTerminal } from '@/hooks/useSpectatorTerminal';
+import { getApiErrorMessage } from '@/lib/api';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { JOB_STATUS, USER_ROLE } from '@/types';
@@ -126,6 +132,29 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
 
   // Determine if the job is in a state where bidding/awarding is possible
   const canBid = job?.status === JOB_STATUS.ACTIVE && isProvider && !isJobOwner;
+
+  // FR-8.1 — providers (not the job owner) on an open auction can open a pre-bid
+  // inquiry (or bid channel if they already have an active bid).
+  const canAskQuestion = canBid;
+  const createChannel = useCreateChannel();
+  const router = useRouter();
+
+  async function handleAskQuestion() {
+    if (!canAskQuestion || createChannel.isPending) return;
+    try {
+      const channel = await createChannel.mutateAsync({
+        job_id: jobId,
+        channel_type: existingBid ? 'bid' : 'inquiry',
+      });
+      if (!channel?.id) {
+        toast.error('Could not open chat — no channel returned.');
+        return;
+      }
+      router.push(`/messages?channel=${encodeURIComponent(channel.id)}` as Route);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Could not open chat'));
+    }
+  }
 
   const canAward =
     isJobOwner &&
@@ -368,7 +397,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
         {/* Provider bid form — pinned to bottom for providers who can bid */}
         {canBid ? (
           <div className="sticky bottom-0 z-50 border-t border-white/[0.06] bg-background/95 backdrop-blur-md">
-            <div className="mx-auto max-w-[1400px] px-4 py-4 sm:px-6">
+            <div className="mx-auto max-w-[1400px] space-y-3 px-4 py-4 sm:px-6">
               <BidForm
                 jobId={jobId}
                 existingBid={existingBid}
@@ -378,6 +407,27 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 auctionEndsAt={job.auction_ends_at}
                 categorySlug={job.category_slug}
               />
+              {/* FR-8.1 — pre-bid inquiry on live auctions too */}
+              {canAskQuestion ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-[44px] w-full border-white/10 bg-white/5 text-white/90 hover:bg-white/10"
+                  disabled={createChannel.isPending}
+                  aria-busy={createChannel.isPending}
+                  aria-label="Ask a question"
+                  onClick={() => {
+                    void handleAskQuestion();
+                  }}
+                >
+                  {createChannel.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {createChannel.isPending ? 'Opening chat…' : 'Ask a question'}
+                </Button>
+              ) : null}
             </div>
           </div>
         ) : !isAuthenticated ? (
@@ -708,6 +758,34 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                   <p className="text-muted-foreground text-sm">
                     Only providers can place bids on jobs.
                   </p>
+                ) : null}
+
+                {/* FR-8.1 — pre-bid inquiry / bid channel */}
+                {canAskQuestion ? (
+                  <div className="space-y-2 border-t border-border/60 pt-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="min-h-[44px] w-full"
+                      disabled={createChannel.isPending}
+                      aria-busy={createChannel.isPending}
+                      aria-label="Ask a question"
+                      onClick={() => {
+                        void handleAskQuestion();
+                      }}
+                    >
+                      {createChannel.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                      )}
+                      {createChannel.isPending ? 'Opening chat…' : 'Ask a question'}
+                    </Button>
+                    <p className="text-muted-foreground text-xs">
+                      Opens a private pre-bid inquiry with the customer. Contact info stays
+                      filtered until you explicitly share it.
+                    </p>
+                  </div>
                 ) : null}
               </CardContent>
             </Card>

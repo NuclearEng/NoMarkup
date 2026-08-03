@@ -112,10 +112,14 @@ const sampleMessages: ChatMessage[] = [
 ];
 
 function setMessages(data: { messages: ChatMessage[]; has_more: boolean } | undefined, opts: { isLoading?: boolean; isError?: boolean } = {}): void {
+  const isLoading = opts.isLoading ?? false;
+  const isError = opts.isError ?? false;
   vi.mocked(useMessages).mockReturnValue({
     data,
-    isLoading: opts.isLoading ?? false,
-    isError: opts.isError ?? false,
+    isLoading,
+    isError,
+    isFetching: isLoading,
+    isSuccess: !isLoading && !isError && data !== undefined,
   } as unknown as ReturnType<typeof useMessages>);
 }
 
@@ -415,12 +419,17 @@ describe('MessageThread', () => {
     setMessages({ messages: sampleMessages, has_more: true });
     render(<MessageThread channelId="chan-1" />);
     fireEvent.click(screen.getByText('Load older messages'));
-    const calls = useMessagesMock.mock.calls;
-    const lastCall = calls.at(-1);
-    expect(lastCall).toBeDefined();
-    if (lastCall) {
-      expect(lastCall[0]).toBe('chan-1');
-      const opts = lastCall[1] as { before?: string } | undefined;
+    // Dual useMessages (base + optional search): find the base call with before cursor.
+    const pagedCall = useMessagesMock.mock.calls
+      .reverse()
+      .find((call) => {
+        const opts = call[1] as { before?: string; q?: string } | undefined;
+        return call[0] === 'chan-1' && !!opts?.before && !opts.q;
+      });
+    expect(pagedCall).toBeDefined();
+    if (pagedCall) {
+      expect(pagedCall[0]).toBe('chan-1');
+      const opts = pagedCall[1] as { before?: string } | undefined;
       expect(opts?.before).toBe('msg-1');
     }
   });
@@ -597,10 +606,15 @@ describe('MessageThread', () => {
     render(<MessageThread channelId="chan-1" />);
     fireEvent.click(screen.getByText('Load older messages'));
 
-    const lastCall = useMessagesMock.mock.calls.at(-1);
-    expect(lastCall).toBeDefined();
-    if (lastCall) {
-      const opts = lastCall[1] as { before?: string } | undefined;
+    const pagedCall = useMessagesMock.mock.calls
+      .reverse()
+      .find((call) => {
+        const opts = call[1] as { before?: string; q?: string } | undefined;
+        return call[0] === 'chan-1' && !!opts?.before && !opts.q;
+      });
+    expect(pagedCall).toBeDefined();
+    if (pagedCall) {
+      const opts = pagedCall[1] as { before?: string } | undefined;
       // Must page before the OLDEST message, not the first array element.
       expect(opts?.before).toBe('older');
     }

@@ -12,6 +12,8 @@ import {
   useUnreadCount,
   useSendProposedTerms,
   useRespondToTerms,
+  useCreateChannel,
+  useShareContact,
 } from '@/hooks/useChannels';
 import type { Channel, ChannelsResponse, ChatMessage, MessagesResponse } from '@/types';
 
@@ -117,7 +119,22 @@ describe('useChannels', () => {
     });
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/channels?page=2&per_page=25');
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/channels?page=2&per_page=25&page_size=25',
+    );
+  });
+
+  it('appends q for server inbox search (FR-8.6)', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ channels: [], pagination: { totalCount: 0, page: 1, pageSize: 50, totalPages: 0, hasNext: false } });
+
+    const { result } = renderHook(() => useChannels({ page: 1, per_page: 50, q: 'alice' }), {
+      wrapper: createWrapper(queryClient),
+    });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/channels?page=1&per_page=50&page_size=50&q=alice',
+    );
   });
 });
 
@@ -191,6 +208,20 @@ describe('useMessages', () => {
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       '/api/v1/channels/ch-1/messages?before=msg-99&page_size=50',
+    );
+  });
+
+  it('passes q for in-thread server search (FR-8.6)', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ messages: [], has_more: false });
+
+    const { result } = renderHook(
+      () => useMessages('ch-1', { page_size: 50, q: 'scope' }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/channels/ch-1/messages?page_size=50&q=scope',
     );
   });
 
@@ -415,5 +446,84 @@ describe('useRespondToTerms', () => {
       '/api/v1/channels/ch-1/terms/respond',
       { accepted: false },
     );
+  });
+});
+
+describe('useCreateChannel', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('posts job_id + channel_type and returns the channel (FR-8.1)', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ channel: mockChannel });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useCreateChannel(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ job_id: 'job-1', channel_type: 'inquiry' });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(result.current.data?.id).toBe('ch-1');
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/channels', {
+      job_id: 'job-1',
+      channel_type: 'inquiry',
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['channels'] });
+  });
+});
+
+describe('useShareContact', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('posts phone/email to share-contact and invalidates messages (FR-8.8)', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      contact: { user_id: 'prov-1', phone: '555-0100', shared_at: '2026-04-25T00:00:00Z' },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useShareContact(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      channelId: 'ch-1',
+      input: { phone: '555-0100', email: 'a@example.com' },
+    });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/channels/ch-1/share-contact',
+      { phone: '555-0100', email: 'a@example.com' },
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['messages', 'ch-1'] });
+  });
+
+  it('fails closed when both phone and email are empty', async () => {
+    const { result } = renderHook(() => useShareContact(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ channelId: 'ch-1', input: { phone: '  ', email: '' } });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(api.post)).not.toHaveBeenCalled();
   });
 });

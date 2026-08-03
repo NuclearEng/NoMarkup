@@ -2,7 +2,7 @@
 
 import { MessageSquare, Search } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,9 @@ import type { Channel } from '@/types';
 // Friendly fallback shown when the other party's display name can't be
 // resolved. Never fall back to a raw UUID — that's the bug we're fixing.
 const OTHER_PARTY_FALLBACK = 'Conversation';
+
+/** Debounce for FR-8.6 server inbox search (`q` on GET /channels). */
+const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * Picks the conversation's "other party" relative to the logged-in user.
@@ -39,7 +42,11 @@ function otherParty(
 function channelTypeLabel(channelType: string): string {
   switch (channelType) {
     case CHANNEL_TYPE.PRE_AWARD:
+    case 'bid':
       return 'Pre-Award';
+    case CHANNEL_TYPE.INQUIRY:
+    case 'inquiry':
+      return 'Inquiry';
     case CHANNEL_TYPE.CONTRACT:
       return 'Contract';
     case CHANNEL_TYPE.SUPPORT:
@@ -129,12 +136,30 @@ function ChannelListSkeleton() {
 
 export function ChannelList() {
   const [searchQuery, setSearchQuery] = useState('');
+  // Debounced server `q` — local filter still runs on the returned page as interim.
+  const [debouncedQ, setDebouncedQ] = useState('');
   const activeChannelId = useChatStore((state) => state.activeChannelId);
   const currentUserId = useAuthStore((state) => state.user?.id);
-  const { data, isLoading, isError } = useChannels({ page: 1, per_page: 50 });
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQ(searchQuery.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchQuery]);
+
+  const { data, isLoading, isError } = useChannels({
+    page: 1,
+    per_page: 50,
+    q: debouncedQ || undefined,
+  });
 
   const channels = data?.channels ?? [];
 
+  // Local filter as interim while the user types (before debounce) and as a
+  // client-side refine over the server page after `q` lands.
   const filteredChannels = searchQuery
     ? channels.filter((channel) => {
         const query = searchQuery.toLowerCase();
