@@ -11,15 +11,11 @@
 | Bar | Score | Meaning |
 |-----|------:|---------|
 | **Engineering consumer dual-rail (in-scope FR eng work)** | **100 / 100** | All dual-rail MVP eng work required for auction → contract → escrow → review (services) and list → bid/BIN → order → release/dispute (goods), plus supporting chat/trust/properties/notifications depth listed below, is **implemented in code** with tests where money races demanded them. |
-| **App Store binary submit readiness** | **Not scored as 100** | Blocked by **ops / founder** Decision-IDs below — intentionally **OUT_OF_SCOPE** of this eng bar. |
-| **Full PRD product completeness** | **See full-prd scorecard** | Full PRD eng-max (Decision-IDs excluded) scored in [`full-prd-completion-scorecard-2026-08-02.md`](./full-prd-completion-scorecard-2026-08-02.md). Admin/StoreKit/Instant AI/Checkr/Phases 2–9 remain Decision-IDs there — not dual-rail eng blockers. |
+| **Full PRD eng-max** | **100 / 100** | [`full-prd-completion-scorecard-2026-08-02.md`](./full-prd-completion-scorecard-2026-08-02.md). Checkr + StoreKit **scaffolded** fail-closed; Instant MapKit drive ETA shipped; AI tracking residual Decision-ID; admin iOS **CLOSED_NA**. |
+| **App Store eng packaging pack** | **100 / 100** | Review Notes, content rating answers, privacy inventory, export compliance key, screenshot matrix, launch board, TestFlight founder steps — eng-complete. **Portal submit** still founder (**ASC-OPS**). |
+| **App Store “submitted / live”** | **Not 100** | Requires Team signing, ASC uploads, screenshots capture, always-on review API, seed password in ASC secure field. |
 
-**Honesty clause:** “100/100 eng bar” means **no open dual-rail eng ship tasks** that block claiming core product depth. It does **not** mean:
-
-- every optional polish FR is perfect,
-- production licenses are live,
-- ASC packaging is done,
-- or zero residual docs exist.
+**Honesty clause:** Eng 100 bars mean **no open dual-rail / Full-PRD-eng-max / ASC packaging eng tasks**. They do **not** mean ASC portal was clicked, licenses are live, or Instant AI tracking shipped.
 
 ---
 
@@ -30,9 +26,9 @@ These are **not** counted against the 100/100 eng bar. Closing them is ops, foun
 | Decision-ID | What | Why out of eng bar |
 |-------------|------|--------------------|
 | **ASC-OPS** | Team signing, ASC app record, 1024 icon, 6.7"+12.9" screenshots, privacy labels, age rating, free-tier Review Notes | Human / ASC portal work (`asc-packaging-checklist.md`, `submission-blockers.md`) |
-| **STOREKIT-B2** | StoreKit IAP for digital subscription purchase (FR-12) | Intentional free-tier ASC lock; design in `ios-payment-rails-design.md` / `v1-ios-product-cut.md` |
-| **CHECKR-FR-2.9** | Background checks vendor integration | Open product/vendor decision; not built |
-| **INSTANT-AI-P2** | Instant live GPS ETA + AI match recommendation (§13 Phase 2) | PRD roadmap Phase 2; geo/category/trust prefilter **already shipped** |
+| **STOREKIT-B2** | StoreKit IAP for digital tiers (FR-12) | **SCAFFOLDED** off-by-default (`storekit-scaffold.md`); free-tier ASC-safe. ASC products + JWS verify = ops. |
+| **CHECKR-FR-2.9** | Background checks | **SCAFFOLDED** (`background_checks` flag + API fail-closed without `CHECKR_API_KEY`). Vendor keys = ops. |
+| **INSTANT-AI-P2** | Instant live GPS **tracking** + AI match | Soft + MapKit drive ETA **shipped**; tracking/AI remain Phase 2. |
 | **ADMIN-IOS** | Admin FR-13 surfaces in consumer iOS binary | Web-only by design (PRD FR-13.1) |
 | **FOUNDER-SECRETS** | Vault / live Stripe `sk_live` / Apple Pay merchant / domain association / OAuth Console IDs / `APPLE_NATIVE_CLIENT_ID` / PRE-05 always-on review stack | Founder + env provisioning; not code absence |
 | **R6-LICENSES** | R6.2–R6.6 regulated-rail true-live | License + compliance exit checklists (`regulated-rails-live-flagged.md`) |
