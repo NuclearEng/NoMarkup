@@ -8,12 +8,15 @@ import Foundation
 extension APIClient {
     // MARK: Jobs map
 
-    /// GET `/api/v1/jobs/map?latitude=&longitude=&radius_km=` → `{ "pins": [...] }`.
+    /// GET `/api/v1/jobs/map?latitude=&longitude=&radius_km=&category_ids=` → `{ "pins": [...] }`.
     /// Public, edge-cacheable. Latitude/longitude optional (server may default region).
+    /// `category_ids` is server-side (gateway MapView). Min starting bid is not on this API —
+    /// filter pins client-side when needed (FR-10.2).
     func fetchJobsMap(
         latitude: Double? = nil,
         longitude: Double? = nil,
-        radiusKm: Double = 25
+        radiusKm: Double = 25,
+        categoryIds: [String]? = nil
     ) async throws -> JobsMapResponse {
         var query: [URLQueryItem] = [
             URLQueryItem(name: "radius_km", value: String(radiusKm)),
@@ -21,6 +24,15 @@ extension APIClient {
         if let latitude, let longitude {
             query.append(URLQueryItem(name: "latitude", value: String(latitude)))
             query.append(URLQueryItem(name: "longitude", value: String(longitude)))
+        }
+        if let categoryIds {
+            let joined = categoryIds
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: ",")
+            if !joined.isEmpty {
+                query.append(URLQueryItem(name: "category_ids", value: joined))
+            }
         }
         return try await getJSON(
             pathComponents: ["api", "v1", "jobs", "map"],

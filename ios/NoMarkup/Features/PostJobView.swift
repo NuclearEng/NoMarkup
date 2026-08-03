@@ -9,6 +9,10 @@ struct PostJobView: View {
 
     /// When true, opens with Instant match selected (emergency funnel).
     var preferInstantMatch: Bool = false
+    /// FR-18.7 residual: prefill recurring when customer reposts remaining visits.
+    var prefillRecurring: Bool = false
+    var prefillFrequency: String? = nil
+    var prefillTitle: String? = nil
 
     @State private var title = ""
     @State private var description = ""
@@ -94,6 +98,21 @@ struct PostJobView: View {
                 useInstantMatch = true
                 applyInstantMatchDefaults(enabled: true)
             }
+            // FR-18.7: customer repost remaining schedule after recurring cancel.
+            if prefillRecurring {
+                isRecurring = true
+                let freq = (prefillFrequency ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if recurrenceOptions.contains(freq) {
+                    recurrenceFrequency = freq
+                }
+            }
+            if let t = prefillTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty {
+                title = String(t.prefix(200))
+            }
+            if prefillRecurring, description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                description =
+                    "Repost of remaining visits after a cancelled recurring schedule. Update details and schedule as needed."
+            }
             await loadProperties()
         }
     }
@@ -130,6 +149,13 @@ struct PostJobView: View {
                     .font(.caption)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "Honest pricing: Instant often lands around 1.5–2× a typical reverse-auction result for similar work. Set an accept-now price you’re willing to pay for immediate help — not a hard formula, a common range."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.goldBright)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Instant premium pricing transparency")
                 }
             } header: {
                 Text("Speed").brandSectionHeader()

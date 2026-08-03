@@ -56,7 +56,7 @@ describe('ReviewForm', () => {
     expect(screen.getByRole('button', { name: /Submit Review/ })).toBeDefined();
   });
 
-  it('renders sub-rating fields when direction is customer_to_provider', () => {
+  it('renders customer→provider category labels when direction is customer_to_provider', () => {
     const onSuccess = vi.fn();
     render(
       createElement(ReviewForm, {
@@ -67,13 +67,14 @@ describe('ReviewForm', () => {
       }),
     );
 
-    expect(screen.getByText('Quality')).toBeDefined();
+    // FR-6.2 customer→provider labels (fixed wire fields underneath).
+    expect(screen.getByText('Quality of work')).toBeDefined();
     expect(screen.getByText('Communication')).toBeDefined();
     expect(screen.getByText('Timeliness')).toBeDefined();
     expect(screen.getByText('Value')).toBeDefined();
   });
 
-  it('hides sub-rating fields when direction is provider_to_customer', () => {
+  it('renders provider→customer persona labels on the same fixed wire fields', () => {
     const onSuccess = vi.fn();
     render(
       createElement(ReviewForm, {
@@ -84,8 +85,14 @@ describe('ReviewForm', () => {
       }),
     );
 
-    expect(screen.queryByText('Quality')).toBeNull();
-    expect(screen.queryByText('Communication')).toBeNull();
+    // FR-6.2 residual: API still uses quality/communication/timeliness/value keys.
+    expect(screen.getByText('Payment promptness')).toBeDefined();
+    expect(screen.getByText('Communication')).toBeDefined();
+    expect(screen.getByText('Accuracy of scope')).toBeDefined();
+    expect(screen.getByText('Property access')).toBeDefined();
+    expect(screen.queryByText('Quality of work')).toBeNull();
+    expect(screen.queryByText('Timeliness')).toBeNull();
+    expect(screen.queryByText('Value')).toBeNull();
   });
 
   it('shows a validation error when overall rating is missing', async () => {

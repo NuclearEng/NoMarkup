@@ -5,6 +5,8 @@ import UIKit
 
 /// Notification channel preferences — globals + per-type rows.
 /// When the server returns an empty per-type list, seed product-relevant defaults (NT.1).
+///
+/// FR-17.3: critical types (payment failures, disputes, guarantee) cannot be disabled.
 struct NotificationPreferencesView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var push: PushRegistration
@@ -33,6 +35,8 @@ struct NotificationPreferencesView: View {
         "payment_received",
         "payment_released",
         "payment_failed",
+        "dispute_opened",
+        "dispute_resolved",
         "seller_new_listing",
         "job_matched",
     ]
@@ -108,28 +112,50 @@ struct NotificationPreferencesView: View {
 
                 Toggle("Push notifications", isOn: globalPushBinding)
                     .frame(minHeight: 44)
-                    .accessibilityHint("Turns push on or off for all notification types below")
+                    .accessibilityHint("Turns push on or off for non-critical notification types below")
 
                 Toggle("Email notifications", isOn: globalEmailBinding)
                     .frame(minHeight: 44)
-                    .accessibilityHint("Turns email on or off for all notification types below")
+                    .accessibilityHint("Turns email on or off for non-critical notification types below")
             } header: {
                 Text("Global").brandSectionHeader()
             } footer: {
-                Text("Global toggles update every per-type row. Save to apply on the server.")
-                    .foregroundStyle(BrandTheme.textSecondary)
+                Text(
+                    "Global toggles update non-critical rows. Payment failures, disputes, and guarantee alerts stay on (FR-17.3). Save to apply on the server."
+                )
+                .foregroundStyle(BrandTheme.textSecondary)
             }
 
             ForEach(Array(editableRows.enumerated()), id: \.element.id) { index, row in
+                let critical = Self.isCriticalNotificationType(row.notificationType)
                 Section {
                     Toggle("Push", isOn: binding(for: index, keyPath: \.pushEnabled))
                         .frame(minHeight: 44)
+                        .disabled(critical)
                     Toggle("Email", isOn: binding(for: index, keyPath: \.emailEnabled))
                         .frame(minHeight: 44)
+                        .disabled(critical)
                     Toggle("In-app", isOn: binding(for: index, keyPath: \.inAppEnabled))
                         .frame(minHeight: 44)
+                        .disabled(critical)
                 } header: {
-                    Text(row.displayType).brandSectionHeader()
+                    HStack(spacing: 8) {
+                        Text(row.displayType).brandSectionHeader()
+                        if critical {
+                            Text("Required")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(BrandTheme.goldBright)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(BrandTheme.navyElevated, in: Capsule())
+                                .accessibilityLabel("Required — cannot turn off")
+                        }
+                    }
+                } footer: {
+                    if critical {
+                        Text("Critical alerts cannot be turned off.")
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
                 }
             }
 
@@ -181,7 +207,11 @@ struct NotificationPreferencesView: View {
             set: { newValue in
                 globalPushEnabled = newValue
                 for i in editableRows.indices {
-                    editableRows[i].pushEnabled = newValue
+                    if Self.isCriticalNotificationType(editableRows[i].notificationType) {
+                        editableRows[i].pushEnabled = true
+                    } else {
+                        editableRows[i].pushEnabled = newValue
+                    }
                 }
                 if newValue, !push.isAuthorized {
                     push.requestFromSettings()
@@ -196,7 +226,11 @@ struct NotificationPreferencesView: View {
             set: { newValue in
                 globalEmailEnabled = newValue
                 for i in editableRows.indices {
-                    editableRows[i].emailEnabled = newValue
+                    if Self.isCriticalNotificationType(editableRows[i].notificationType) {
+                        editableRows[i].emailEnabled = true
+                    } else {
+                        editableRows[i].emailEnabled = newValue
+                    }
                 }
             }
         )
@@ -210,13 +244,23 @@ struct NotificationPreferencesView: View {
             },
             set: { newValue in
                 guard editableRows.indices.contains(index) else { return }
+                let type = editableRows[index].notificationType
+                if Self.isCriticalNotificationType(type), newValue == false {
+                    // FR-17.3 — ignore disable attempts for critical types.
+                    editableRows[index][keyPath: keyPath] = true
+                    return
+                }
                 editableRows[index][keyPath: keyPath] = newValue
-                // Keep global push in sync with all-row consensus.
+                // Keep global push in sync with all-row consensus (critical always on).
                 if keyPath == \.pushEnabled {
-                    globalPushEnabled = editableRows.allSatisfy(\.pushEnabled)
+                    globalPushEnabled = editableRows
+                        .filter { !Self.isCriticalNotificationType($0.notificationType) }
+                        .allSatisfy(\.pushEnabled)
                 }
                 if keyPath == \.emailEnabled {
-                    globalEmailEnabled = editableRows.allSatisfy(\.emailEnabled)
+                    globalEmailEnabled = editableRows
+                        .filter { !Self.isCriticalNotificationType($0.notificationType) }
+                        .allSatisfy(\.emailEnabled)
                 }
             }
         )
@@ -236,12 +280,16 @@ struct NotificationPreferencesView: View {
             if loaded.preferences.isEmpty {
                 editableRows = Self.seededDefaultRows()
             } else {
-                editableRows = loaded.preferences
+                editableRows = Self.forceCriticalEnabled(loaded.preferences)
             }
             globalPushEnabled = loaded.globalPushEnabled
-                ?? (editableRows.isEmpty ? true : editableRows.contains(where: \.pushEnabled))
+                ?? (editableRows.isEmpty ? true : editableRows
+                    .filter { !Self.isCriticalNotificationType($0.notificationType) }
+                    .contains(where: \.pushEnabled))
             globalEmailEnabled = loaded.globalEmailEnabled
-                ?? (editableRows.isEmpty ? true : editableRows.contains(where: \.emailEnabled))
+                ?? (editableRows.isEmpty ? true : editableRows
+                    .filter { !Self.isCriticalNotificationType($0.notificationType) }
+                    .contains(where: \.emailEnabled))
             statusMessage = nil
             await push.refreshAuthorizationStatus()
         } catch let error as APIClientError where error.isUnauthorized {
@@ -259,16 +307,25 @@ struct NotificationPreferencesView: View {
         isSaving = true
         defer { isSaving = false }
 
+        // FR-17.3 — never send disabled critical prefs.
+        let payload = Self.forceCriticalEnabled(editableRows)
+
         do {
-            let updated = try await APIClient.shared.updateNotificationPreferences(preferences: editableRows)
+            let updated = try await APIClient.shared.updateNotificationPreferences(preferences: payload)
             response = updated
             if !updated.preferences.isEmpty {
-                editableRows = updated.preferences
+                editableRows = Self.forceCriticalEnabled(updated.preferences)
+            } else {
+                editableRows = payload
             }
             globalPushEnabled = updated.globalPushEnabled
-                ?? editableRows.contains(where: \.pushEnabled)
+                ?? editableRows
+                    .filter { !Self.isCriticalNotificationType($0.notificationType) }
+                    .contains(where: \.pushEnabled)
             globalEmailEnabled = updated.globalEmailEnabled
-                ?? editableRows.contains(where: \.emailEnabled)
+                ?? editableRows
+                    .filter { !Self.isCriticalNotificationType($0.notificationType) }
+                    .contains(where: \.emailEnabled)
             statusMessage = "Preferences saved."
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
@@ -278,24 +335,49 @@ struct NotificationPreferencesView: View {
     }
 
     private static func seededDefaultRows() -> [NotificationPreferenceRow] {
-        defaultPreferenceTypes.map { type in
-            NotificationPreferenceRow(
-                notificationType: type,
-                pushEnabled: true,
-                emailEnabled: Self.defaultEmail(for: type),
-                smsEnabled: false,
-                inAppEnabled: true
-            )
-        }
+        forceCriticalEnabled(
+            defaultPreferenceTypes.map { type in
+                NotificationPreferenceRow(
+                    notificationType: type,
+                    pushEnabled: true,
+                    emailEnabled: defaultEmail(for: type),
+                    smsEnabled: false,
+                    inAppEnabled: true
+                )
+            }
+        )
     }
 
     private static func defaultEmail(for type: String) -> Bool {
         switch type {
         case "bid_awarded", "contract_created", "contract_accepted",
-             "payment_received", "payment_released", "payment_failed":
+             "payment_received", "payment_released", "payment_failed",
+             "dispute_opened", "dispute_resolved":
             return true
         default:
-            return false
+            return isCriticalNotificationType(type)
+        }
+    }
+
+    /// FR-17.3 — payment failures, disputes, guarantee, account flags cannot be disabled.
+    static func isCriticalNotificationType(_ type: String) -> Bool {
+        let t = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if t.isEmpty { return false }
+        if t == "payment_failed" { return true }
+        if t.hasPrefix("dispute_") { return true }
+        if t.contains("guarantee") { return true }
+        if t == "account_flag" || t.hasPrefix("account_flag") { return true }
+        return false
+    }
+
+    private static func forceCriticalEnabled(_ rows: [NotificationPreferenceRow]) -> [NotificationPreferenceRow] {
+        rows.map { row in
+            guard isCriticalNotificationType(row.notificationType) else { return row }
+            var copy = row
+            copy.pushEnabled = true
+            copy.emailEnabled = true
+            copy.inAppEnabled = true
+            return copy
         }
     }
 }

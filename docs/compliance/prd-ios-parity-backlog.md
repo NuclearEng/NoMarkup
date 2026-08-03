@@ -167,6 +167,8 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 - [x] **Perf gate close** — Mark parent `perf-gate-2026-07-26.md` PASS from samples; optional BrandAppIcon true 1x/2x/3x  
 - [x] **FR-5 profile terms** — Portfolio upload UI + global terms editor + local terms in chat + **terms on public ProviderDetail**  
 - [x] **FR-6 review polish** — Category sub-ratings, respond to review, flag review on iOS  
+- [x] **FR-6.2 persona labels (residual)** — UI labels asymmetric per role; wire still fixed 4 CreateReview fields (DB provider→customer columns unused until API extension)  
+- [x] **FR-18.7 repost CTA (residual)** — Customer cancelled-schedule → PostJobView /jobs/new prefill; no backend provider substitution  
 - [x] **FR-8 chat parity** — Attachments (**image + PDF**) + search + native ChatWebSocketClient + typing + last_read Seen + live `read_receipt` + **FR-8.1 inquiry channel** + **FR-8.8 Share contact**  
 - [x] **FR-8.10 / FR-17.1 badges** — Tab-level messages + notifications unread badges (`RootTabView`)  
 - [x] **FR-11 market bars** — Real p25/p50/p75 range bars on post + bid sheet (`/analytics/market/range`)  

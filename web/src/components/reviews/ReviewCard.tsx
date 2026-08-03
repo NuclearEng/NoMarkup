@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useFlagReview, useRespondToReview } from '@/hooks/useReviews';
+import { reviewDimensionsForDirection } from '@/lib/review-dimensions';
 import { formatRelativeTime } from '@/lib/utils';
 import { reviewResponseSchema } from '@/lib/validations';
 import { useAuthStore } from '@/stores/auth-store';
@@ -35,6 +36,24 @@ const FLAG_REASON_LABELS: Record<string, string> = {
   [FLAG_REASON.IRRELEVANT]: 'Irrelevant',
 };
 
+function ratingForDimension(
+  review: Review,
+  key: 'quality' | 'communication' | 'timeliness' | 'value',
+): number | undefined {
+  switch (key) {
+    case 'quality':
+      return review.quality_rating;
+    case 'communication':
+      return review.communication_rating;
+    case 'timeliness':
+      return review.timeliness_rating;
+    case 'value':
+      return review.value_rating;
+    default:
+      return undefined;
+  }
+}
+
 export function ReviewCard({ review }: ReviewCardProps) {
   const user = useAuthStore((state) => state.user);
   const isReviewee = user?.id === review.reviewee_id;
@@ -49,6 +68,15 @@ export function ReviewCard({ review }: ReviewCardProps) {
 
   const respondToReview = useRespondToReview();
   const flagReview = useFlagReview();
+
+  // FR-6.2: persona labels over fixed wire fields.
+  const dimensions = reviewDimensionsForDirection(review.direction);
+  const subRatings = dimensions
+    .map((dim) => {
+      const rating = ratingForDimension(review, dim.key);
+      return rating ? { label: dim.label, rating } : null;
+    })
+    .filter((row): row is { label: string; rating: number } => row !== null);
 
   function handleSubmitResponse() {
     const result = reviewResponseSchema.safeParse(responseText);
@@ -113,33 +141,15 @@ export function ReviewCard({ review }: ReviewCardProps) {
         {/* Overall rating */}
         <StarRatingDisplay rating={review.overall_rating} size="md" showValue />
 
-        {/* Sub-ratings */}
-        {(review.quality_rating ?? review.communication_rating ?? review.timeliness_rating ?? review.value_rating) ? (
+        {/* Sub-ratings — FR-6.2 persona labels */}
+        {subRatings.length > 0 ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-            {review.quality_rating ? (
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Quality</span>
-                <StarRatingDisplay rating={review.quality_rating} size="sm" />
+            {subRatings.map((row) => (
+              <div key={row.label} className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{row.label}</span>
+                <StarRatingDisplay rating={row.rating} size="sm" />
               </div>
-            ) : null}
-            {review.communication_rating ? (
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Communication</span>
-                <StarRatingDisplay rating={review.communication_rating} size="sm" />
-              </div>
-            ) : null}
-            {review.timeliness_rating ? (
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Timeliness</span>
-                <StarRatingDisplay rating={review.timeliness_rating} size="sm" />
-              </div>
-            ) : null}
-            {review.value_rating ? (
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Value</span>
-                <StarRatingDisplay rating={review.value_rating} size="sm" />
-              </div>
-            ) : null}
+            ))}
           </div>
         ) : null}
 

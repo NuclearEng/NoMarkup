@@ -92,19 +92,33 @@ export function JobPostingForm() {
   // Allow deep-linking a pre-selected category, e.g. the /legal vertical's
   // "Post a legal job" CTA passes ?category_id=<legal subtree id>. Empty when
   // absent, so the normal blank flow is unchanged.
+  // FR-18.7 residual: recurring cancel CTA can also pass title / is_recurring /
+  // recurrence_frequency / description so remaining visits can be re-auctioned.
   const presetCategoryId = searchParams.get('category_id') ?? '';
+  const presetTitle = (searchParams.get('title') ?? '').trim().slice(0, 200);
+  const presetDescription = (searchParams.get('description') ?? '').trim().slice(0, 5000);
+  const presetIsRecurring =
+    searchParams.get('is_recurring') === 'true' || searchParams.get('is_recurring') === '1';
+  const rawFreq = (searchParams.get('recurrence_frequency') ?? '').trim().toLowerCase();
+  const presetFrequency =
+    rawFreq === 'weekly' ||
+    rawFreq === 'biweekly' ||
+    rawFreq === 'monthly' ||
+    rawFreq === 'quarterly'
+      ? (rawFreq as JobPostingFormValues['recurrenceFrequency'])
+      : undefined;
   const createJob = useCreateJob();
 
   const form = useForm<JobPostingFormValues>({
     resolver: zodResolver(jobPostingSchema),
     defaultValues: {
       categoryId: presetCategoryId,
-      title: '',
-      description: '',
+      title: presetTitle,
+      description: presetDescription,
       scheduleType: 'flexible',
       scheduledDate: '',
-      isRecurring: false,
-      recurrenceFrequency: undefined,
+      isRecurring: presetIsRecurring,
+      recurrenceFrequency: presetIsRecurring ? presetFrequency : undefined,
       locationAddress: '',
       locationLat: undefined,
       locationLng: undefined,
@@ -1337,6 +1351,10 @@ function StepReview({
               </p>
               <p className="mt-0.5 text-xs text-zinc-400">
                 We&apos;ll match you with a top-rated provider immediately. No waiting for bids.
+              </p>
+              <p className="mt-1.5 text-xs text-amber-200/90">
+                Honest pricing: Instant often lands around 1.5–2× a typical reverse-auction
+                result for similar work — you pay for speed and someone who can start now.
               </p>
             </div>
           </label>

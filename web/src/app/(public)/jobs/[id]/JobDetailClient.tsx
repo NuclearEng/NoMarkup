@@ -724,7 +724,9 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                     <p className="text-muted-foreground text-xs">
                       Sends an Instant offer at your Accept price (
                       {formatCents(job.offer_accepted_cents ?? 0)}) to providers with Instant
-                      availability. Auction stays open until a provider accepts.
+                      availability. Auction stays open until a provider accepts. Instant often
+                      prices about 1.5–2× a typical auction for the same work — a soft range for
+                      speed, not a hard formula.
                     </p>
                   </div>
                 ) : null}

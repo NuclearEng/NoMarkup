@@ -106,7 +106,7 @@ describe('ReviewCard', () => {
         }),
       }),
     );
-    expect(screen.getByText('Quality')).toBeDefined();
+    expect(screen.getByText('Quality of work')).toBeDefined();
     expect(screen.getByText('Communication')).toBeDefined();
     expect(screen.getByText('Timeliness')).toBeDefined();
     expect(screen.getByText('Value')).toBeDefined();
@@ -408,9 +408,29 @@ describe('ReviewCard', () => {
         review: makeReview({ quality_rating: 5 }),
       }),
     );
-    expect(screen.getByText('Quality')).toBeDefined();
+    expect(screen.getByText('Quality of work')).toBeDefined();
     expect(screen.queryByText('Communication')).toBeNull();
     expect(screen.queryByText('Timeliness')).toBeNull();
     expect(screen.queryByText('Value')).toBeNull();
   });
+  it('labels sub-ratings with provider→customer persona names (FR-6.2 residual)', () => {
+    setUser(null);
+    render(
+      createElement(ReviewCard, {
+        review: makeReview({
+          direction: 'provider_to_customer',
+          quality_rating: 5,
+          communication_rating: 4,
+          timeliness_rating: 3,
+          value_rating: 2,
+        }),
+      }),
+    );
+    expect(screen.getByText('Payment promptness')).toBeDefined();
+    expect(screen.getByText('Accuracy of scope')).toBeDefined();
+    expect(screen.getByText('Property access')).toBeDefined();
+    expect(screen.queryByText('Quality of work')).toBeNull();
+    expect(screen.queryByText(/^Quality$/)).toBeNull();
+  });
+
 });

@@ -805,12 +805,14 @@ struct JobDetailView: View {
             } footer: {
                 if let offer = detail?.offerAcceptedCents, offer > 0 {
                     Text(
-                        "Notifies nearby providers at your Instant Accept price (\(MoneyFormat.usd(cents: offer))). Auction stays open until a provider accepts."
+                        "Notifies nearby providers at your Instant Accept price (\(MoneyFormat.usd(cents: offer))). Auction stays open until a provider accepts. Instant often prices about 1.5–2× a typical auction for the same work."
                     )
                     .foregroundStyle(BrandTheme.textSecondary)
                 } else {
-                    Text("Notifies nearby Instant providers. Auction stays open until a provider accepts.")
-                        .foregroundStyle(BrandTheme.textSecondary)
+                    Text(
+                        "Notifies nearby Instant providers. Auction stays open until a provider accepts. Instant often prices about 1.5–2× a typical auction for the same work."
+                    )
+                    .foregroundStyle(BrandTheme.textSecondary)
                 }
             }
         }

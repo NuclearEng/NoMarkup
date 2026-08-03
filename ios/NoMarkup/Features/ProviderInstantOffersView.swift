@@ -127,6 +127,14 @@ struct ProviderInstantOffersView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .listRowBackground(Color.clear)
+                Text(
+                    "Customers are told Instant often prices ~1.5–2× a typical auction for speed. Accept-now is the full award price — no separate premium calc on this screen."
+                )
+                .font(.caption)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .listRowBackground(Color.clear)
+                .accessibilityLabel("Instant premium transparency for providers")
             }
 
             if let statusMessage, !statusMessage.isEmpty {

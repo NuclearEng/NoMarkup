@@ -20,9 +20,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useCreateReview } from '@/hooks/useReviews';
+import { reviewDimensionsForDirection } from '@/lib/review-dimensions';
 import { reviewSchema, type ReviewFormValues } from '@/lib/validations';
 import type { CreateReviewInput } from '@/types';
-import { REVIEW_DIRECTION } from '@/types';
 
 interface ReviewFormProps {
   contractId: string;
@@ -41,7 +41,8 @@ export function ReviewForm({
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
 
-  const isCustomerToProvider = direction === REVIEW_DIRECTION.CUSTOMER_TO_PROVIDER;
+  // FR-6.2: fixed 4 wire fields; labels are persona-specific (see review-dimensions).
+  const dimensions = reviewDimensionsForDirection(direction);
 
   const closesAt = new Date(reviewWindowClosesAt);
   const now = new Date();
@@ -130,86 +131,30 @@ export function ReviewForm({
               )}
             />
 
-            {/* Sub-ratings: only shown for customer_to_provider */}
-            {isCustomerToProvider ? (
-              <div className="grid gap-4 sm:grid-cols-2">
+            {/* FR-6.2 category sub-ratings — both personas; labels differ by direction. */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {dimensions.map((dim) => (
                 <FormField
+                  key={dim.key}
                   control={form.control}
-                  name="qualityRating"
+                  name={dim.formField}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Quality</FormLabel>
+                      <FormLabel>{dim.label}</FormLabel>
                       <FormControl>
                         <StarRatingInput
                           value={field.value ?? 0}
                           onChange={field.onChange}
                           size="sm"
-                          label="Quality rating"
+                          label={dim.a11yLabel}
                         />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-
-                <FormField
-                  control={form.control}
-                  name="communicationRating"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Communication</FormLabel>
-                      <FormControl>
-                        <StarRatingInput
-                          value={field.value ?? 0}
-                          onChange={field.onChange}
-                          size="sm"
-                          label="Communication rating"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="timelinessRating"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Timeliness</FormLabel>
-                      <FormControl>
-                        <StarRatingInput
-                          value={field.value ?? 0}
-                          onChange={field.onChange}
-                          size="sm"
-                          label="Timeliness rating"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="valueRating"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Value</FormLabel>
-                      <FormControl>
-                        <StarRatingInput
-                          value={field.value ?? 0}
-                          onChange={field.onChange}
-                          size="sm"
-                          label="Value rating"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            ) : null}
+              ))}
+            </div>
 
             {/* Comment */}
             <FormField

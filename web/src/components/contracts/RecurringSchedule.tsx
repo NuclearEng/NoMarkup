@@ -10,7 +10,9 @@
 // Security: Pay CTAs are customer-only; amounts always come from the server
 // instance — never client fee math.
 
-import { AlertTriangle, CreditCard, Loader2, Pause, Play, XCircle } from 'lucide-react';
+import { AlertTriangle, CreditCard, Loader2, Pause, Play, RefreshCw, XCircle } from 'lucide-react';
+import Link from 'next/link';
+import type { Route } from 'next';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -58,6 +60,8 @@ export interface RecurringScheduleProps {
   isProvider: boolean;
   /** Embedded config from GetContract when present (fallback seed). */
   embeddedConfig?: ContractRecurringConfig | null;
+  /** Optional job title for FR-18.7 repost deep-link prefill. */
+  jobTitle?: string;
 }
 
 interface PendingVisitPay {
@@ -107,6 +111,28 @@ function statusBadgeVariant(
   }
 }
 
+/** Build /jobs/new query for FR-18.7 customer repost (no backend substitution). */
+export function buildRecurringRepostHref(
+  frequency: string | undefined,
+  jobTitle: string | undefined,
+): string {
+  const params = new URLSearchParams();
+  params.set('is_recurring', 'true');
+  const freq = (frequency ?? '').trim().toLowerCase();
+  if (freq === 'weekly' || freq === 'biweekly' || freq === 'monthly' || freq === 'quarterly') {
+    params.set('recurrence_frequency', freq);
+  }
+  const title = (jobTitle ?? '').trim();
+  if (title.length >= 10) {
+    params.set('title', title.slice(0, 200));
+  }
+  // Honest starter description meeting the 50-char job description minimum.
+  const descBase =
+    'Repost of remaining visits after a cancelled recurring schedule. Update details and schedule as needed.';
+  params.set('description', descBase);
+  return `/jobs/new?${params.toString()}`;
+}
+
 export function RecurringSchedule({
   contractId,
   customerId: _customerId,
@@ -114,6 +140,7 @@ export function RecurringSchedule({
   isCustomer,
   isProvider,
   embeddedConfig,
+  jobTitle,
 }: RecurringScheduleProps) {
   // Always try dedicated endpoints when we have a contract id. Embedded config
   // is a seed; 404/empty means non-recurring and we hide the section.
@@ -599,6 +626,28 @@ export function RecurringSchedule({
                 Cancel schedule
               </Button>
             )}
+          </div>
+        ) : null}
+
+        {/* FR-18.7 residual: customer can repost remaining schedule as a new auction.
+            No backend provider-substitution — honest post-job deep link only. */}
+        {isCancelled && isCustomer ? (
+          <div
+            className="space-y-2 rounded-lg border border-[var(--brand-gold)]/20 bg-zinc-900/50 p-3"
+            data-testid="recurring-repost-cta"
+          >
+            <p className="text-sm text-zinc-200">
+              Need the remaining visits covered? Post a new job for the remaining schedule.
+              Completed visits with the original provider stay on this timeline.
+            </p>
+            <Button asChild className="min-h-[44px] w-full gap-2 sm:w-auto">
+              <Link
+                href={buildRecurringRepostHref(resolved.frequency, jobTitle) as Route}
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                Post a new job for remaining visits
+              </Link>
+            </Button>
           </div>
         ) : null}
 

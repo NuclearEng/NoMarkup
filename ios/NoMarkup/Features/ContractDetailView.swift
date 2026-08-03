@@ -136,6 +136,8 @@ struct ContractDetailView: View {
                 showReviewSheet: $showReviewSheet,
                 showGuaranteeClaimSheet: $showGuaranteeClaimSheet,
                 contractID: contract?.id,
+                // FR-6.2: customer→provider vs provider→customer labels on fixed wire dims.
+                isCustomerReviewing: contract?.isCustomer(userId: currentUserID) ?? true,
                 onMessage: { message in
                     statusIsError = false
                     statusMessage = message
@@ -728,6 +730,27 @@ struct ContractDetailView: View {
                         pendingConfirmActionTitle = "Cancel schedule"
                         showCancelRecurringConfirm = true
                     }
+                } else if contract.isCustomer(userId: currentUserID) {
+                    // FR-18.7 residual: no backend provider substitution — honest repost CTA.
+                    Text("Need the remaining visits covered? Post a new job for the remaining schedule. Completed visits with the original provider stay on this timeline.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    NavigationLink {
+                        PostJobView(
+                            preferInstantMatch: false,
+                            prefillRecurring: true,
+                            prefillFrequency: config.frequency,
+                            prefillTitle: contract.jobTitle
+                        )
+                    } label: {
+                        Label("Post a new job for remaining visits", systemImage: "arrow.triangle.2.circlepath")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                    .accessibilityHint("Opens post-job with recurring prefilled for remaining visits. Does not transfer the old provider.")
                 }
 
                 if recurringInstances.isEmpty {
@@ -2890,6 +2913,8 @@ private struct ContractSheetsModifier: ViewModifier {
     @Binding var showReviewSheet: Bool
     @Binding var showGuaranteeClaimSheet: Bool
     let contractID: String?
+    /// True when current user is the customer (customer→provider review labels).
+    var isCustomerReviewing: Bool = true
     let onMessage: (String) -> Void
 
     func body(content: Content) -> some View {
@@ -2901,7 +2926,11 @@ private struct ContractSheetsModifier: ViewModifier {
             }
             .sheet(isPresented: $showReviewSheet) {
                 if let contractID {
-                    LeaveReviewSheet(contractID: contractID, onSuccess: onMessage)
+                    LeaveReviewSheet(
+                        contractID: contractID,
+                        isCustomerReviewing: isCustomerReviewing,
+                        onSuccess: onMessage
+                    )
                 }
             }
             .sheet(isPresented: $showGuaranteeClaimSheet) {
@@ -3157,6 +3186,9 @@ private struct OpenDisputeSheet: View {
 
 private struct LeaveReviewSheet: View {
     let contractID: String
+    /// FR-6.2: when true, customer→provider labels; else provider→customer.
+    /// Wire fields stay quality/communication/timeliness/value (API residual).
+    var isCustomerReviewing: Bool = true
     var onSuccess: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -3170,6 +3202,14 @@ private struct LeaveReviewSheet: View {
     @State private var isLoadingEligibility = true
     @State private var eligibility: ReviewEligibility?
     @State private var errorMessage: String?
+
+    /// Persona labels over fixed CreateReview wire keys (FR-6.2 residual).
+    private var dimensionLabels: (quality: String, communication: String, timeliness: String, value: String) {
+        if isCustomerReviewing {
+            return ("Quality of work", "Communication", "Timeliness", "Value")
+        }
+        return ("Payment promptness", "Communication", "Accuracy of scope", "Property access")
+    }
 
     private var commentCount: Int {
         comment.trimmingCharacters(in: .whitespacesAndNewlines).count
@@ -3227,21 +3267,25 @@ private struct LeaveReviewSheet: View {
                         .accessibilityLabel("Rating \(rating) of 5 stars")
 
                         Stepper(value: $qualityRating, in: 1 ... 5) {
-                            Text("Quality \(qualityRating)/5")
+                            Text("\(dimensionLabels.quality) \(qualityRating)/5")
                         }
                         .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityLabel("\(dimensionLabels.quality) \(qualityRating) of 5")
                         Stepper(value: $communicationRating, in: 1 ... 5) {
-                            Text("Communication \(communicationRating)/5")
+                            Text("\(dimensionLabels.communication) \(communicationRating)/5")
                         }
                         .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityLabel("\(dimensionLabels.communication) \(communicationRating) of 5")
                         Stepper(value: $timelinessRating, in: 1 ... 5) {
-                            Text("Timeliness \(timelinessRating)/5")
+                            Text("\(dimensionLabels.timeliness) \(timelinessRating)/5")
                         }
                         .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityLabel("\(dimensionLabels.timeliness) \(timelinessRating) of 5")
                         Stepper(value: $valueRating, in: 1 ... 5) {
-                            Text("Value \(valueRating)/5")
+                            Text("\(dimensionLabels.value) \(valueRating)/5")
                         }
                         .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityLabel("\(dimensionLabels.value) \(valueRating) of 5")
 
                         TextField("Comment (required, 50+ characters)", text: $comment, axis: .vertical)
                             .lineLimit(4 ... 10)
@@ -3253,7 +3297,7 @@ private struct LeaveReviewSheet: View {
                     } header: {
                         Text("Review").brandSectionHeader()
                     } footer: {
-                        Text("Reviews are double-blind: they become visible once both parties have submitted. Window is 90 days after completion. Category ratings are optional on the server but recommended.")
+                        Text("Reviews are double-blind: they become visible once both parties have submitted. Window is 90 days after completion. Category labels match your role (FR-6.2); the API still stores them on the shared quality/communication/timeliness/value fields.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }

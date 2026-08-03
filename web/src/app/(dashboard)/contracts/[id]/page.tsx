@@ -517,6 +517,7 @@ export default function ContractDetailPage() {
           isCustomer={isCustomer}
           isProvider={isProvider}
           embeddedConfig={contract.recurring}
+          jobTitle={contract.job_title}
         />
       ) : null}
 

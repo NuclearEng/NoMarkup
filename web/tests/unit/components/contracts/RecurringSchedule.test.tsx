@@ -349,4 +349,63 @@ describe('RecurringSchedule', () => {
     });
     expect(screen.queryByRole('button', { name: /Pay visit/i })).toBeNull();
   });
+  it('shows FR-18.7 repost CTA for customer when schedule is cancelled', async () => {
+    get.mockImplementation(async (path: unknown) => {
+      const p = String(path);
+      if (p.includes('/recurring/instances')) {
+        return { instances: [INSTANCE_COMPLETED] };
+      }
+      if (p.includes('/recurring')) {
+        return { config: { ...CONFIG, status: 'cancelled' } };
+      }
+      return {};
+    });
+    render(
+      createElement(RecurringSchedule, {
+        contractId: 'contract-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+        isCustomer: true,
+        isProvider: false,
+        jobTitle: 'Weekly lawn care service',
+      }),
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('recurring-repost-cta')).toBeDefined();
+    });
+    const link = screen.getByRole('link', { name: /Post a new job for remaining visits/i });
+    expect(link.getAttribute('href')).toContain('/jobs/new');
+    expect(link.getAttribute('href')).toContain('is_recurring=true');
+    expect(link.getAttribute('href')).toContain('recurrence_frequency=weekly');
+    expect(link.getAttribute('href')).toMatch(/title=Weekly(\+|%20)lawn(\+|%20)care(\+|%20)service/);
+  });
+
+  it('hides FR-18.7 repost CTA from provider when cancelled', async () => {
+    get.mockImplementation(async (path: unknown) => {
+      const p = String(path);
+      if (p.includes('/recurring/instances')) {
+        return { instances: [] };
+      }
+      if (p.includes('/recurring')) {
+        return { config: { ...CONFIG, status: 'cancelled' } };
+      }
+      return {};
+    });
+    render(
+      createElement(RecurringSchedule, {
+        contractId: 'contract-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+        isCustomer: false,
+        isProvider: true,
+      }),
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('recurring-schedule')).toBeDefined();
+    });
+    expect(screen.queryByTestId('recurring-repost-cta')).toBeNull();
+  });
+
 });

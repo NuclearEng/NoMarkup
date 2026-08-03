@@ -200,7 +200,7 @@ Legend: **I** Implemented · **P** Partial · **M** Missing · **B** Backend-onl
 | FR | Requirement | Persona | Status | Evidence |
 |---|---|---|---|---|
 | 6.1 | Both parties prompted post-completion; 14-day window | All | **I** | `createContractReview`/`fetchReviewEligibility` `APIClient+Contracts.swift:168-204`; window server-side |
-| 6.2 | Star + text + per-persona category sub-ratings | All | **P** | Quality/communication/timeliness/value wired (`APIClient+Contracts.swift:168-199`); PRD's distinct provider→customer dimensions (payment promptness, scope accuracy, property access) not implemented — same 4 dims both ways; iOS enforces 50-char min |
+| 6.2 | Star + text + per-persona category sub-ratings | All | **P** | UI labels are persona-specific (customer→provider: quality/timeliness/communication/value; provider→customer: payment promptness/scope accuracy/communication/property access) on web `review-dimensions.ts` + iOS `LeaveReviewSheet`. **Residual:** CreateReview API/proto still only accept the fixed 4 wire fields; DB has unused `payment_promptness_rating`/`scope_accuracy_rating`/`access_rating` columns. Trust/analytics still read the shared keys. |
 | 6.3 | Review only with confirmed on-platform payment | All | **I** | `ReviewEligibility` gate + review service enforcement |
 | 6.4 | Double-blind publish (both submit or window closes) | All | **B** | `services/job/internal/service/review.go:104-112`; `gateway/internal/handler/review.go:134-136` |
 | 6.5 | Single public response (500 chars) | All | **I** | `respondToReview` `APIClient+Contracts.swift:213`; `UserReviewsView.swift` |
@@ -350,7 +350,7 @@ Legend: **I** Implemented · **P** Partial · **M** Missing · **B** Backend-onl
 | 18.4 | Rate adjustment for future instances via chat | **P** | Generic proposed-terms chat exists (FR-8.9); no rate-change-for-future-occurrences wiring |
 | 18.5 | Cancel with 1-occurrence notice | **I** | `cancelRecurring` `APIClient+Contracts.swift:457`; notice copy `ContractDetailView.swift:638` |
 | 18.6 | Pause/resume; 90-day auto-cancel | **I** | `pauseRecurring`/`resumeRecurring` `APIClient+Contracts.swift:429-443`; 90-day rule server-side |
-| 18.7 | Provider substitution → repost remaining schedule | **P** | Job repost exists; recurrence-specific substitution flow not found on iOS |
+| 18.7 | Provider substitution → repost remaining schedule | **P** | **UI residual closed (no backend substitution):** cancelled schedule shows customer CTA “Post a new job for remaining visits” → `PostJobView` (iOS) / `/jobs/new?is_recurring=true…` (web) with optional title/frequency prefill. Completed visits preserved on original timeline. No automatic provider reassignment. |
 | 18.8 | Pay-fail → pause, auto-resume | **I** | Pause on `payment_intent.payment_failed` (signature-verified Stripe events; waves 9–15) + resume on success; iOS retry-state surfaces (FR-16.7) |
 
 ### 8.19 Multi-Property (FR-19)

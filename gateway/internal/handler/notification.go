@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
@@ -204,6 +205,28 @@ type updatePreferencesRequest struct {
 	} `json:"preferences"`
 }
 
+// isCriticalNotificationType is FR-17.3: payment failures, disputes, guarantee,
+// and account flags cannot be disabled by the user.
+func isCriticalNotificationType(t string) bool {
+	s := strings.ToLower(strings.TrimSpace(t))
+	if s == "" {
+		return false
+	}
+	if s == "payment_failed" {
+		return true
+	}
+	if strings.HasPrefix(s, "dispute_") {
+		return true
+	}
+	if strings.Contains(s, "guarantee") {
+		return true
+	}
+	if s == "account_flag" || strings.HasPrefix(s, "account_flag") {
+		return true
+	}
+	return false
+}
+
 // UpdatePreferences handles PUT /api/v1/notifications/preferences.
 func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
@@ -217,14 +240,36 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// FR-17.3 — reject any attempt to disable critical notification types.
+	for _, p := range req.Preferences {
+		if !isCriticalNotificationType(p.NotificationType) {
+			continue
+		}
+		if !p.PushEnabled || !p.EmailEnabled || !p.InAppEnabled {
+			writeError(w, http.StatusBadRequest,
+				"critical notification preferences cannot be disabled (payment failures, disputes, guarantee)")
+			return
+		}
+	}
+
 	protoPrefs := make([]*notificationv1.NotificationPreference, 0, len(req.Preferences))
 	for _, p := range req.Preferences {
+		push := p.PushEnabled
+		email := p.EmailEnabled
+		inApp := p.InAppEnabled
+		if isCriticalNotificationType(p.NotificationType) {
+			// Belt-and-suspenders: force critical channels on even if a client
+			// races past the reject check above.
+			push = true
+			email = true
+			inApp = true
+		}
 		protoPrefs = append(protoPrefs, &notificationv1.NotificationPreference{
 			NotificationType: stringToNotificationType(p.NotificationType),
-			PushEnabled:      p.PushEnabled,
-			EmailEnabled:     p.EmailEnabled,
+			PushEnabled:      push,
+			EmailEnabled:     email,
 			SmsEnabled:       p.SmsEnabled,
-			InAppEnabled:     p.InAppEnabled,
+			InAppEnabled:     inApp,
 		})
 	}
 

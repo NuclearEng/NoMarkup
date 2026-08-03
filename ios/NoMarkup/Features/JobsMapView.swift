@@ -6,6 +6,8 @@ import UIKit
 #endif
 
 /// MapKit jobs map — `GET /api/v1/jobs/map` pins (no Mapbox SDK).
+/// FR-10.2: category + min starting bid filters (category via API; min bid client-side —
+/// map endpoint has `max_price_cents` only, not min). Schedule is not on map pins → omitted.
 /// Tap a pin → `JobDetailView`. Centers on user location when permitted.
 struct JobsMapView: View {
     @State private var pins: [JobMapPin] = []
@@ -24,7 +26,23 @@ struct JobsMapView: View {
     @State private var showLocationPrePrompt = false
     @State private var shouldRecenterOnUser = true
 
+    /// FR-10.2 map filters (parity with JobsView browse filters where API allows).
+    @State private var filterCategoryId = ""
+    @State private var filterCategoryName = ""
+    @State private var minStartingBidText = ""
+    @State private var showFilters = false
+
     private let defaultRadiusKm: Double = 25
+
+    private var minStartingBidCents: Int64? {
+        let t = minStartingBidText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return nil }
+        return MoneyFormat.cents(fromDollarsText: t)
+    }
+
+    private var hasActiveFilters: Bool {
+        !filterCategoryId.isEmpty || minStartingBidCents != nil
+    }
 
     var body: some View {
         content
@@ -34,6 +52,20 @@ struct JobsMapView: View {
             #endif
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showFilters.toggle()
+                    } label: {
+                        Label(
+                            "Filters",
+                            systemImage: hasActiveFilters
+                                ? "line.3.horizontal.decrease.circle.fill"
+                                : "line.3.horizontal.decrease.circle"
+                        )
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Filter map pins by category and minimum starting bid")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await reload(recenter: true) }
@@ -51,6 +83,11 @@ struct JobsMapView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("Centers the map on your location when permitted")
+                }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if showFilters {
+                    mapFiltersBar
                 }
             }
             .task {
@@ -82,6 +119,61 @@ struct JobsMapView: View {
             } message: {
                 Text(LocationPurposeCopy.marketPickerPrePrompt)
             }
+    }
+
+    private var mapFiltersBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            NavigationLink {
+                CategoryPickerView(selectedId: $filterCategoryId, selectedName: $filterCategoryName)
+            } label: {
+                HStack {
+                    Text("Category")
+                        .foregroundStyle(BrandTheme.textPrimary)
+                    Spacer()
+                    Text(filterCategoryName.isEmpty ? "Any" : filterCategoryName)
+                        .foregroundStyle(filterCategoryName.isEmpty ? BrandTheme.textSecondary : BrandTheme.goldBright)
+                        .lineLimit(1)
+                }
+                .frame(minHeight: 44)
+            }
+            .accessibilityLabel("Filter by category")
+
+            HStack {
+                Text("Min starting bid ($)")
+                    .foregroundStyle(BrandTheme.textPrimary)
+                TextField("Any", text: $minStartingBidText)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Minimum starting bid in dollars")
+            }
+
+            HStack {
+                Button("Apply") {
+                    Task { await reload(recenter: false) }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .frame(minHeight: 44)
+
+                Button("Clear") {
+                    filterCategoryId = ""
+                    filterCategoryName = ""
+                    minStartingBidText = ""
+                    Task { await reload(recenter: false) }
+                }
+                .buttonStyle(.bordered)
+                .frame(minHeight: 44)
+            }
+
+            Text("Category is applied server-side. Min bid filters pins on device (map API has no min-price param).")
+                .font(.caption2)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(BrandTheme.navyElevated)
     }
 
     @ViewBuilder
@@ -171,15 +263,29 @@ struct JobsMapView: View {
         .brandScreenBackground()
     }
 
+    /// Coordinate pins after optional client-side min starting bid filter.
+    private var filteredPins: [JobMapPin] {
+        guard let minCents = minStartingBidCents else { return pins }
+        return pins.filter { pin in
+            guard let bid = pin.startingBidCents else { return false }
+            return bid >= minCents
+        }
+    }
+
     private var mappablePins: [JobMapPin] {
-        pins.filter(\.hasCoordinate)
+        filteredPins.filter(\.hasCoordinate)
     }
 
     private var footerLabel: String {
         if isLoading { return "Updating…" }
         let count = mappablePins.count
-        if count == 0 { return "No open jobs in this area" }
-        return "\(String(localized: "\(count) jobs")) · \(Int(defaultRadiusKm)) km"
+        if count == 0 {
+            return hasActiveFilters
+                ? "No open jobs match filters in this area"
+                : "No open jobs in this area"
+        }
+        let filterNote = hasActiveFilters ? " · filtered" : ""
+        return "\(String(localized: "\(count) jobs")) · \(Int(defaultRadiusKm)) km\(filterNote)"
     }
 
     private func requestUserLocation() {
@@ -232,10 +338,12 @@ struct JobsMapView: View {
         defer { isLoading = false }
 
         do {
+            let categoryIds: [String]? = filterCategoryId.isEmpty ? nil : [filterCategoryId]
             let response = try await APIClient.shared.fetchJobsMap(
                 latitude: coordinate?.latitude,
                 longitude: coordinate?.longitude,
-                radiusKm: defaultRadiusKm
+                radiusKm: defaultRadiusKm,
+                categoryIds: categoryIds
             )
             pins = response.pins
             errorMessage = nil

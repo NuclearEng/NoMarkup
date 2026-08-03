@@ -187,6 +187,15 @@ struct HomeView: View {
                 .brandGhostButton()
                 .accessibilityHint("Opens emergency Instant match: post a job and notify available providers")
 
+                Text(
+                    "Instant often prices about 1.5–2× a typical auction for the same work — you pay for speed and a provider who can start now."
+                )
+                .font(.caption)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel("Instant pricing note")
+
                 HStack(spacing: 10) {
                     Button {
                         selectedRootTab?.wrappedValue = .marketplace
