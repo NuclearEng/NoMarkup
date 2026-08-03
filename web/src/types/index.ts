@@ -360,6 +360,8 @@ export interface Job {
   is_hourly?: boolean;
   hourly_rate_cents?: number | null;
   same_day_requested?: boolean;
+  /** Present on owner-scoped mine list when the job is tied to a saved property (FR-19). */
+  property_id?: string;
 }
 
 export interface JobDetail extends Job {

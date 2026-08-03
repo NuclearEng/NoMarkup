@@ -33,6 +33,12 @@ vi.mock('next/link', () => ({
     createElement('a', { href }, children),
 }));
 
+const preferredState: {
+  data: unknown;
+  isLoading: boolean;
+  isError: boolean;
+} = { data: { providers: [], preferred_threshold: 3 }, isLoading: false, isError: false };
+
 vi.mock('@/hooks/useProperties', () => ({
   useCreateProperty: () => ({
     mutateAsync: createMutate,
@@ -44,6 +50,11 @@ vi.mock('@/hooks/useProperties', () => ({
     isLoading: propertiesState.isLoading,
     isError: propertiesState.isError,
     refetch,
+  }),
+  usePreferredProviders: () => ({
+    data: preferredState.data,
+    isLoading: preferredState.isLoading,
+    isError: preferredState.isError,
   }),
 }));
 
@@ -70,6 +81,9 @@ beforeEach(() => {
   propertiesState.data = undefined;
   propertiesState.isLoading = false;
   propertiesState.isError = false;
+  preferredState.data = { providers: [], preferred_threshold: 3 };
+  preferredState.isLoading = false;
+  preferredState.isError = false;
   createState.isPending = false;
   refetch.mockClear();
   createMutate.mockClear();
@@ -194,4 +208,39 @@ describe('PropertiesPage', () => {
       expect(screen.queryByText('Add New Property')).toBeNull();
     });
   });
+
+  it('renders preferred providers section (account-wide soft empty)', () => {
+    propertiesState.data = [lakeHouse];
+    render(withQueryClient(createElement(PropertiesPage)));
+    expect(screen.getByText(/providers · all properties/i)).toBeDefined();
+    expect(screen.getByText(/no completed contracts yet/i)).toBeDefined();
+  });
+
+  it('renders preferred provider rows when API returns data', () => {
+    propertiesState.data = [lakeHouse];
+    preferredState.data = {
+      preferred_threshold: 3,
+      providers: [
+        {
+          provider_id: 'pr-1',
+          display_name: 'Ace Plumbing',
+          completed_count: 4,
+          last_completed_at: null,
+          is_preferred: true,
+        },
+      ],
+    };
+    render(withQueryClient(createElement(PropertiesPage)));
+    expect(screen.getByText('Ace Plumbing')).toBeDefined();
+    expect(screen.getByLabelText(/preferred provider/i)).toBeDefined();
+  });
+
+  it('links property nickname and view history to detail route', () => {
+    propertiesState.data = [lakeHouse];
+    render(withQueryClient(createElement(PropertiesPage)));
+    const links = screen.getAllByRole('link');
+    const hrefs = links.map((a) => a.getAttribute('href'));
+    expect(hrefs).toContain('/properties/p1');
+  });
+
 });

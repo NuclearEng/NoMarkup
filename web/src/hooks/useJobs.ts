@@ -170,9 +170,29 @@ export function useCancelJob() {
   });
 }
 
-export function useCustomerJobs(params?: { status?: string; page?: number; page_size?: number }) {
+export interface CustomerJobsParams {
+  status?: string;
+  page?: number;
+  page_size?: number;
+  /** FR-19 — filter to one owned property. */
+  property_id?: string;
+  /** FR-19.3 history filter — category UUID. */
+  category_id?: string;
+  /** FR-19.3 history filter — RFC3339 or YYYY-MM-DD. */
+  date_from?: string;
+  /** FR-19.3 history filter — RFC3339 or YYYY-MM-DD (inclusive end-of-day for date-only). */
+  date_to?: string;
+  /** When false, the query is disabled (e.g. filtered history only when filters active). */
+  enabled?: boolean;
+}
+
+export function useCustomerJobs(params?: CustomerJobsParams) {
   const searchParams = new URLSearchParams();
   if (params?.status) searchParams.set('status', params.status);
+  if (params?.property_id) searchParams.set('property_id', params.property_id);
+  if (params?.category_id) searchParams.set('category_id', params.category_id);
+  if (params?.date_from) searchParams.set('date_from', params.date_from);
+  if (params?.date_to) searchParams.set('date_to', params.date_to);
   if (params?.page !== undefined) searchParams.set('page', String(params.page));
   if (params?.page_size !== undefined) searchParams.set('page_size', String(params.page_size));
   const query = searchParams.toString();
@@ -181,6 +201,7 @@ export function useCustomerJobs(params?: { status?: string; page?: number; page_
   return useQuery({
     queryKey: ['jobs', 'mine', params],
     queryFn: () => api.get<JobsResponse>(path),
+    enabled: params?.enabled !== false,
   });
 }
 

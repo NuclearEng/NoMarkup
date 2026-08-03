@@ -362,7 +362,7 @@ func main() {
 
 	// Analytics service lives on the same gRPC server as the job service.
 	analyticsClient := analyticsv1.NewAnalyticsServiceClient(jobConn)
-	analyticsHandler := handler.NewAnalyticsHandler(analyticsClient, jobClient)
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsClient, jobClient, userClient)
 
 	// Installment, insurance, and tax/invoice RPCs are all part of the unified
 	// PaymentService (proto consolidated — no separate sub-clients), so they

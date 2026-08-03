@@ -1,10 +1,14 @@
 'use client';
 
 import { Plus, Trash2 } from 'lucide-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 
+import { PreferredProvidersSection } from '@/components/properties/PreferredProvidersSection';
+import { PropertySpendLabel } from '@/components/properties/PropertySpendLabel';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,13 +25,18 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { useCreateProperty, useDeleteProperty, useProperties } from '@/hooks/useProperties';
+import {
+  useCreateProperty,
+  useDeleteProperty,
+  usePreferredProviders,
+  useProperties,
+} from '@/hooks/useProperties';
 import { propertySchema } from '@/lib/validations';
-import { formatCents } from '@/lib/utils';
 import type { PropertyFormValues } from '@/lib/validations';
 
 export default function PropertiesPage() {
   const { data: properties, isLoading, isError, refetch } = useProperties();
+  const preferred = usePreferredProviders();
   const createProperty = useCreateProperty();
   const deleteProperty = useDeleteProperty();
   const [showForm, setShowForm] = useState(false);
@@ -79,6 +88,15 @@ export default function PropertiesPage() {
           Add Property
         </Button>
       </div>
+
+      {/* FR-19.2 account-wide preferred / top providers */}
+      <PreferredProvidersSection
+        providers={preferred.data?.providers}
+        isLoading={preferred.isLoading}
+        isError={preferred.isError}
+        preferredThreshold={preferred.data?.preferred_threshold}
+        scope="account"
+      />
 
       {/* Add Property Form */}
       {showForm ? (
@@ -244,7 +262,12 @@ export default function PropertiesPage() {
             <Card key={property.id} className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardContent className="p-5">
                 <div className="mb-2 flex items-start justify-between">
-                  <h3 className="font-semibold">{property.nickname}</h3>
+                  <Link
+                    href={`/properties/${property.id}` as Route}
+                    className="min-h-11 font-semibold text-zinc-100 hover:text-[var(--brand-gold)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {property.nickname}
+                  </Link>
                   <Button
                     variant={deletingId === property.id ? 'destructive' : 'ghost'}
                     size="sm"
@@ -267,14 +290,18 @@ export default function PropertiesPage() {
                 {property.notes ? (
                   <p className="text-zinc-300 mt-1 text-xs">{property.notes}</p>
                 ) : null}
-                <div className="mt-3 flex items-center gap-3">
+                <div className="mt-3 flex flex-wrap items-center gap-3">
                   <Badge variant="secondary">
                     {String(property.active_jobs ?? 0)} active job
                     {(property.active_jobs ?? 0) !== 1 ? 's' : ''}
                   </Badge>
-                  <span className="text-sm font-medium">
-                    {formatCents(property.total_spend_cents ?? 0)} spent
-                  </span>
+                  <PropertySpendLabel propertyId={property.id} />
+                  <Link
+                    href={`/properties/${property.id}` as Route}
+                    className="text-sm font-medium text-[var(--brand-gold)] hover:underline min-h-11 inline-flex items-center"
+                  >
+                    View history
+                  </Link>
                 </div>
               </CardContent>
             </Card>

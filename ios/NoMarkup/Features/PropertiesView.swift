@@ -4,8 +4,8 @@ import SwiftUI
 /// List / add / edit / delete via `GET|POST|PUT|DELETE /api/v1/properties`.
 /// Summary active/upcoming counts via `GET /api/v1/jobs/mine?property_id=`.
 ///
-/// **FR-19.2 spend:** `GET /api/v1/analytics/customers/me/spending` is account-wide
-/// (no per-property filter). Shown as a cross-property roll-up.
+/// **FR-19.2 spend:** `GET /api/v1/analytics/customers/me/spending` account-wide
+/// roll-up here; pass `property_id` on PropertyDetailView for per-property spend.
 ///
 /// **FR-19.2 preferred providers:** `GET /api/v1/me/preferred-providers` (account-wide);
 /// falls back to contract roll-up if the endpoint is unavailable. Preferred badge when
@@ -178,7 +178,7 @@ struct PropertiesView: View {
                 Text(String(localized: "\(properties.count) properties"))
                     .brandSectionHeader()
             } footer: {
-                Text("Tap a property for job history. Active and upcoming counts use jobs linked to that address. PostJob still lets you pick which property a new auction is for. Spend above is account-wide (not per property).")
+                Text("Tap a property for job history and property-scoped spend. Active and upcoming counts use jobs linked to that address. PostJob still lets you pick which property a new auction is for. Spend above is account-wide; detail shows that address only.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
@@ -251,7 +251,7 @@ struct PropertiesView: View {
             } header: {
                 Text("Spend · all properties").brandSectionHeader()
             } footer: {
-                Text("From completed service jobs on your account (trailing 12 months). Not broken down per property — the API has no property filter. Preferred providers below use completed contracts.")
+                Text("From completed service jobs on your account (trailing 12 months). Open a property for spend at that address. Preferred providers below use completed contracts.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         } else if let spendingError {
@@ -439,7 +439,7 @@ struct PropertiesView: View {
         }
     }
 
-    /// FR-19.2 — account-wide spend (soft-fail; properties list still works).
+    /// FR-19.2 — account-wide spend (no property_id; soft-fail; properties list still works).
     @MainActor
     private func loadSpending() async {
         do {

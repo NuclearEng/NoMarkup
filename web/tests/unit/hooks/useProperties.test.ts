@@ -6,10 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   useCreateProperty,
   useDeleteProperty,
+  usePreferredProviders,
   useProperties,
   useUpdateProperty,
 } from '@/hooks/useProperties';
-import type { Property } from '@/hooks/useProperties';
+import type { PreferredProvidersResponse, Property } from '@/hooks/useProperties';
 import { toast } from 'sonner';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -148,5 +149,65 @@ describe('useDeleteProperty', () => {
     result.current.mutate('p-1');
     await waitFor(() => { expect(result.current.isError).toBe(true); });
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
+  });
+});
+
+
+describe('usePreferredProviders', () => {
+  let client: QueryClient;
+  beforeEach(() => { vi.resetAllMocks(); client = qc(); });
+  afterEach(() => { client.clear(); });
+
+  it('fetches account-wide preferred providers from /me', async () => {
+    const body: PreferredProvidersResponse = {
+      providers: [{
+        provider_id: 'prov-1',
+        display_name: 'Ace',
+        completed_count: 4,
+        last_completed_at: '2026-07-01T00:00:00Z',
+        is_preferred: true,
+      }],
+      preferred_threshold: 3,
+    };
+    vi.mocked(api.get).mockResolvedValueOnce(body);
+    const { result } = renderHook(() => usePreferredProviders(), { wrapper: wrap(client) });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/me/preferred-providers');
+    expect(result.current.data?.providers).toHaveLength(1);
+    expect(result.current.data?.providers[0]?.is_preferred).toBe(true);
+  });
+
+  it('scopes via ?property_id= on the me endpoint when not using property path', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ providers: [], preferred_threshold: 3 });
+    const { result } = renderHook(
+      () => usePreferredProviders({ propertyId: 'p-1' }),
+      { wrapper: wrap(client) },
+    );
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/me/preferred-providers?property_id=p-1',
+    );
+  });
+
+  it('uses GET /properties/{id}/preferred-providers when usePropertyPath', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ providers: [], preferred_threshold: 3 });
+    const { result } = renderHook(
+      () => usePreferredProviders({ propertyId: 'p-9', usePropertyPath: true }),
+      { wrapper: wrap(client) },
+    );
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/properties/p-9/preferred-providers',
+    );
+  });
+
+  it('does not fetch when property path is requested without an id', async () => {
+    const { result } = renderHook(
+      () => usePreferredProviders({ usePropertyPath: true }),
+      { wrapper: wrap(client) },
+    );
+    // Disabled query stays idle.
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
   });
 });

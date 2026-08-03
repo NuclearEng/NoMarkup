@@ -32,6 +32,23 @@ export interface CreatePropertyInput {
   notes?: string;
 }
 
+/** FR-19.2 preferred-provider row from dedicated API. */
+export interface PreferredProvider {
+  provider_id: string;
+  display_name: string;
+  completed_count: number;
+  last_completed_at: string | null;
+  is_preferred: boolean;
+}
+
+export interface PreferredProvidersResponse {
+  providers: PreferredProvider[];
+  preferred_threshold: number;
+}
+
+/** PRD FR-19.2 threshold for the Preferred badge. */
+export const PREFERRED_PROVIDER_THRESHOLD = 3;
+
 export function useProperties() {
   return useQuery({
     queryKey: ['properties'],
@@ -39,6 +56,46 @@ export function useProperties() {
       api
         .get<{ properties: Property[] }>('/api/v1/properties')
         .then((res) => res.properties),
+  });
+}
+
+/**
+ * FR-19.2 preferred / top providers from completed contracts.
+ *
+ * - Account-wide: `GET /api/v1/me/preferred-providers`
+ * - Optional `propertyId` query on the me endpoint scopes by ownership-gated property
+ * - Property path: `GET /api/v1/properties/{id}/preferred-providers` when `usePropertyPath` is true
+ *
+ * Fail-soft: callers should treat `isError` as a soft empty (no toast).
+ */
+export function usePreferredProviders(options?: {
+  propertyId?: string;
+  /** Use the property-scoped path instead of `?property_id=` on /me. */
+  usePropertyPath?: boolean;
+  enabled?: boolean;
+}) {
+  const propertyId = options?.propertyId?.trim() || undefined;
+  const wantsPropertyPath = options?.usePropertyPath === true;
+  // Property-path mode requires an id; without it stay disabled (do not fall back to /me).
+  const usePropertyPath = wantsPropertyPath && Boolean(propertyId);
+  const enabled =
+    options?.enabled !== false && (!wantsPropertyPath || Boolean(propertyId));
+
+  const path = usePropertyPath
+    ? `/api/v1/properties/${propertyId as string}/preferred-providers`
+    : (() => {
+        const params = new URLSearchParams();
+        if (propertyId) params.set('property_id', propertyId);
+        const q = params.toString();
+        return `/api/v1/me/preferred-providers${q ? `?${q}` : ''}`;
+      })();
+
+  return useQuery({
+    queryKey: ['preferred-providers', propertyId ?? 'account', usePropertyPath ? 'path' : 'me'],
+    queryFn: () => api.get<PreferredProvidersResponse>(path),
+    enabled,
+    // Soft surface — property dashboard still works without this section.
+    retry: false,
   });
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -369,7 +370,7 @@ func (r *PostgresRepository) GetProviderEarnings(ctx context.Context, providerID
 	return points, nil
 }
 
-func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
+func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string, propertyID string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
 	truncUnit := "month"
 	switch groupBy {
 	case "day":
@@ -380,8 +381,41 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 		truncUnit = "month"
 	}
 
+	// Optional property scope: payments → contracts → jobs.property_id.
+	// idx_jobs_property / idx_jobs_property_fk cover the filter; payments
+	// already constrained by customer_id + status + date.
+	propertyID = strings.TrimSpace(propertyID)
+	var (
+		propertyFilter string
+		baseArgs       []interface{}
+	)
+	if propertyID != "" {
+		propertyFilter = " AND j.property_id = $4"
+		baseArgs = []interface{}{customerID, startDate, endDate, propertyID}
+	} else {
+		baseArgs = []interface{}{customerID, startDate, endDate}
+	}
+
 	// Time series spending.
-	query := fmt.Sprintf(`
+	// When property-scoped we must join jobs; account-wide keeps the lean payments scan.
+	var query string
+	if propertyID != "" {
+		query = fmt.Sprintf(`
+		SELECT date_trunc('%s', p.created_at) AS period_start,
+		       COALESCE(SUM(p.amount_cents), 0)::bigint AS amount,
+		       COUNT(*)::int AS job_count
+		FROM payments p
+		JOIN contracts c ON c.id = p.contract_id
+		JOIN jobs j ON j.id = c.job_id
+		WHERE p.customer_id = $1
+		  AND p.status IN ('completed', 'released', 'escrow')
+		  AND p.created_at >= $2
+		  AND p.created_at <= $3
+		  AND j.property_id = $4
+		GROUP BY period_start
+		ORDER BY period_start ASC`, truncUnit)
+	} else {
+		query = fmt.Sprintf(`
 		SELECT date_trunc('%s', p.created_at) AS period_start,
 		       COALESCE(SUM(p.amount_cents), 0)::bigint AS amount,
 		       COUNT(*)::int AS job_count
@@ -392,8 +426,9 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 		  AND p.created_at <= $3
 		GROUP BY period_start
 		ORDER BY period_start ASC`, truncUnit)
+	}
 
-	rows, err := r.pool.Query(ctx, query, customerID, startDate, endDate)
+	rows, err := r.pool.Query(ctx, query, baseArgs...)
 	if err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("customer spending: %w", err)
 	}
@@ -409,7 +444,7 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 		points = append(points, dp)
 	}
 
-	// Category breakdown.
+	// Category breakdown (always joins jobs; append property filter when set).
 	catRows, err := r.pool.Query(ctx, `
 		SELECT j.category_id,
 		       COALESCE(sc.name, '') AS category_name,
@@ -422,11 +457,11 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 		WHERE p.customer_id = $1
 		  AND p.status IN ('completed', 'released', 'escrow')
 		  AND p.created_at >= $2
-		  AND p.created_at <= $3
+		  AND p.created_at <= $3`+propertyFilter+`
 		GROUP BY j.category_id, sc.name
 		ORDER BY total_spent DESC
 		LIMIT 50`,
-		customerID, startDate, endDate)
+		baseArgs...)
 	if err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("customer spending categories: %w", err)
 	}
@@ -444,13 +479,26 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 
 	// Total spending.
 	var totalSpending int64
-	err = r.pool.QueryRow(ctx, `
-		SELECT COALESCE(SUM(amount_cents), 0)::bigint
-		FROM payments
-		WHERE customer_id = $1
-		  AND status IN ('completed', 'released', 'escrow')
-		  AND created_at >= $2 AND created_at <= $3`,
-		customerID, startDate, endDate).Scan(&totalSpending)
+	if propertyID != "" {
+		err = r.pool.QueryRow(ctx, `
+			SELECT COALESCE(SUM(p.amount_cents), 0)::bigint
+			FROM payments p
+			JOIN contracts c ON c.id = p.contract_id
+			JOIN jobs j ON j.id = c.job_id
+			WHERE p.customer_id = $1
+			  AND p.status IN ('completed', 'released', 'escrow')
+			  AND p.created_at >= $2 AND p.created_at <= $3
+			  AND j.property_id = $4`,
+			baseArgs...).Scan(&totalSpending)
+	} else {
+		err = r.pool.QueryRow(ctx, `
+			SELECT COALESCE(SUM(amount_cents), 0)::bigint
+			FROM payments
+			WHERE customer_id = $1
+			  AND status IN ('completed', 'released', 'escrow')
+			  AND created_at >= $2 AND created_at <= $3`,
+			baseArgs...).Scan(&totalSpending)
+	}
 	if err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("customer spending total: %w", err)
 	}
@@ -477,8 +525,8 @@ func (r *PostgresRepository) GetCustomerSpending(ctx context.Context, customerID
 		) mr ON true
 		WHERE p.customer_id = $1
 		  AND p.status IN ('completed', 'released', 'escrow')
-		  AND p.created_at >= $2 AND p.created_at <= $3`,
-		customerID, startDate, endDate).Scan(&totalSavings)
+		  AND p.created_at >= $2 AND p.created_at <= $3`+propertyFilter,
+		baseArgs...).Scan(&totalSavings)
 	if err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("customer spending savings: %w", err)
 	}

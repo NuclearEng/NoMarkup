@@ -159,6 +159,9 @@ message GetCustomerSpendingRequest {
   string customer_id = 1;
   nomarkup.common.v1.DateRange date_range = 2;
   string group_by = 3;                 // "day", "week", "month"
+  // Optional. When set, scope spend to jobs linked to this property (jobs.property_id).
+  // Gateway must enforce ownership (404 if not owned) before calling the RPC.
+  string property_id = 4;
 }
 
 message GetCustomerSpendingResponse {

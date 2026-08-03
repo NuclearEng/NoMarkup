@@ -192,7 +192,7 @@ func (s *AnalyticsServer) GetProviderEarnings(ctx context.Context, req *analytic
 func (s *AnalyticsServer) GetCustomerSpending(ctx context.Context, req *analyticsv1.GetCustomerSpendingRequest) (*analyticsv1.GetCustomerSpendingResponse, error) {
 	startDate, endDate := parseDateRange(req.GetDateRange())
 
-	points, categories, totalSpending, totalSavings, err := s.svc.GetCustomerSpending(ctx, req.GetCustomerId(), startDate, endDate, req.GetGroupBy())
+	points, categories, totalSpending, totalSavings, err := s.svc.GetCustomerSpending(ctx, req.GetCustomerId(), startDate, endDate, req.GetGroupBy(), req.GetPropertyId())
 	if err != nil {
 		return nil, mapAnalyticsError(err)
 	}

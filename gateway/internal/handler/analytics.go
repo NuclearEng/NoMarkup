@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -10,6 +11,7 @@ import (
 	analyticsv1 "github.com/nomarkup/nomarkup/proto/analytics/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -17,13 +19,15 @@ import (
 
 // AnalyticsHandler handles HTTP endpoints for analytics.
 type AnalyticsHandler struct {
-	client    analyticsv1.AnalyticsServiceClient
-	jobClient jobv1.JobServiceClient // for the Fair-Price engine RPC (GetFairPrice)
+	client     analyticsv1.AnalyticsServiceClient
+	jobClient  jobv1.JobServiceClient // for the Fair-Price engine RPC (GetFairPrice)
+	userClient userv1.UserServiceClient // property ownership for optional property_id filter
 }
 
 // NewAnalyticsHandler creates a new AnalyticsHandler.
-func NewAnalyticsHandler(client analyticsv1.AnalyticsServiceClient, jobClient jobv1.JobServiceClient) *AnalyticsHandler {
-	return &AnalyticsHandler{client: client, jobClient: jobClient}
+// userClient may be nil only in unit tests that never hit property-scoped spending.
+func NewAnalyticsHandler(client analyticsv1.AnalyticsServiceClient, jobClient jobv1.JobServiceClient, userClient userv1.UserServiceClient) *AnalyticsHandler {
+	return &AnalyticsHandler{client: client, jobClient: jobClient, userClient: userClient}
 }
 
 // GetFairPrice serves the Fair Price Index for a (category × geo) cell from the
@@ -357,6 +361,10 @@ func (h *AnalyticsHandler) GetProviderEarnings(w http.ResponseWriter, r *http.Re
 }
 
 // GetCustomerSpending handles GET /api/v1/analytics/customers/me/spending.
+//
+// Optional query property_id scopes spend to jobs linked to that property.
+// Ownership is enforced fail-closed (404 if not owned; 503 if ownership check
+// cannot run). UUID format is validated before any RPC.
 func (h *AnalyticsHandler) GetCustomerSpending(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -369,6 +377,17 @@ func (h *AnalyticsHandler) GetCustomerSpending(w http.ResponseWriter, r *http.Re
 		CustomerId: claims.UserID,
 		DateRange:  parseDateRangeFromQuery(q),
 		GroupBy:    q.Get("group_by"),
+	}
+
+	if prop := strings.TrimSpace(q.Get("property_id")); prop != "" {
+		if !isValidUUID(prop) {
+			writeError(w, http.StatusBadRequest, "property_id must be a valid UUID")
+			return
+		}
+		if !h.ownsPropertyForSpending(w, r, claims.UserID, prop) {
+			return
+		}
+		req.PropertyId = prop
 	}
 
 	resp, err := h.client.GetCustomerSpending(r.Context(), req)
@@ -407,6 +426,30 @@ func (h *AnalyticsHandler) GetCustomerSpending(w http.ResponseWriter, r *http.Re
 }
 
 // --- Helpers ---
+
+// ownsPropertyForSpending verifies propertyID belongs to userID via ListProperties
+// (scoped by user_id). Fail closed: missing user client → 503; gRPC error → mapped
+// status; not in list → 404 (no existence leak of other users' property IDs).
+func (h *AnalyticsHandler) ownsPropertyForSpending(w http.ResponseWriter, r *http.Request, userID, propertyID string) bool {
+	if h.userClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "property ownership check unavailable")
+		return false
+	}
+	resp, err := h.userClient.ListProperties(r.Context(), &userv1.ListPropertiesRequest{
+		UserId: userID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return false
+	}
+	for _, p := range resp.GetProperties() {
+		if p.GetId() == propertyID {
+			return true
+		}
+	}
+	writeError(w, http.StatusNotFound, "property not found")
+	return false
+}
 
 // parseDateRangeFromQuery extracts start_date and end_date from query params.
 func parseDateRangeFromQuery(q interface{ Get(string) string }) *commonv1.DateRange {

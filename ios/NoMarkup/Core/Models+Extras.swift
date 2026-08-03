@@ -457,8 +457,8 @@ struct PropertiesResponse: Codable, Sendable {
 
 /// `GET /api/v1/analytics/customers/me/spending` — account-wide services spend.
 ///
-/// Not per-property: gateway has no `property_id` filter. Surface as a cross-property
-/// roll-up on the Properties dashboard. Preferred providers use
+/// Customer services spend. Optional `property_id` query scopes to one property;
+/// omit for account-wide roll-up (Properties dashboard). Preferred providers use
 /// `GET /api/v1/me/preferred-providers` (fallback: contract roll-up).
 struct CustomerSpendingResponse: Codable, Sendable {
     var dataPoints: [CustomerSpendingDataPoint]?

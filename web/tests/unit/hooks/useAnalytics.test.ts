@@ -386,6 +386,30 @@ describe('useCustomerSpending', () => {
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('group_by=week'));
   });
 
+  it('passes property_id when scoped', async () => {
+    const mockSpending: CustomerSpendingResponse = {
+      data_points: [],
+      total_spent_cents: 12000,
+      total_jobs: 1,
+      average_job_cost_cents: 12000,
+      total_savings_cents: 0,
+      category_breakdown: [],
+    };
+    vi.mocked(api.get).mockResolvedValueOnce(mockSpending);
+    const propId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+    const { result } = renderHook(
+      () => useCustomerSpending('2026-01-01', '2026-12-31', 'month', propId),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      expect.stringContaining(`property_id=${propId}`),
+    );
+  });
+
   it('handles API errors', async () => {
     vi.mocked(api.get).mockRejectedValueOnce(new Error('Server error'));
 

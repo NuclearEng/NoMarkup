@@ -166,12 +166,13 @@ func (s *AnalyticsService) GetProviderEarnings(ctx context.Context, providerID s
 }
 
 // GetCustomerSpending returns spending analytics for a customer, including
-// total savings vs. market median.
-func (s *AnalyticsService) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
+// total savings vs. market median. Optional propertyID scopes to jobs linked
+// to that property (jobs.property_id); empty means account-wide.
+func (s *AnalyticsService) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string, propertyID string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
 	if groupBy == "" {
 		groupBy = "month"
 	}
-	return s.repo.GetCustomerSpending(ctx, customerID, startDate, endDate, groupBy)
+	return s.repo.GetCustomerSpending(ctx, customerID, startDate, endDate, groupBy, propertyID)
 }
 
 // GetPlatformMetrics returns aggregated platform-wide metrics for admin dashboards.

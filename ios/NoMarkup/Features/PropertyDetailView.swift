@@ -6,6 +6,8 @@ import SwiftUI
 ///
 /// FR-19.2 preferred providers: `GET /api/v1/properties/{id}/preferred-providers`,
 /// with contract roll-up fallback.
+/// FR-19.2 spend: `GET /api/v1/analytics/customers/me/spending?property_id=` (ownership
+/// enforced server-side); soft-fails if unavailable.
 struct PropertyDetailView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -18,6 +20,9 @@ struct PropertyDetailView: View {
     @State private var jobsError: String?
     /// Property-scoped preferred / top providers from completed contracts.
     @State private var preferredProviders: [PreferredProviderRollup] = []
+    /// Property-scoped services spend (payments for jobs linked to this property).
+    @State private var spending: CustomerSpendingResponse?
+    @State private var spendingError: String?
     @State private var showEditSheet = false
     @State private var statusMessage: String?
     @State private var statusIsError = false
@@ -116,6 +121,8 @@ struct PropertyDetailView: View {
                 Text("Property").brandSectionHeader()
             }
 
+            propertySpendingSection
+
             if isLoadingJobs && jobs.isEmpty {
                 Section {
                     HStack {
@@ -203,8 +210,14 @@ struct PropertyDetailView: View {
                 .accessibilityHint("Edit nickname, notes, or primary flag")
             }
         }
-        .task { await loadJobs() }
-        .refreshable { await loadJobs() }
+        .task {
+            await loadJobs()
+            await loadSpending()
+        }
+        .refreshable {
+            await loadJobs()
+            await loadSpending()
+        }
         .sheet(isPresented: $showEditSheet) {
             EditPropertySheet(property: current) { updated in
                 current = updated
@@ -434,6 +447,102 @@ struct PropertyDetailView: View {
         }
     }
 
+    /// FR-19.2 — property-scoped services spend (soft-fail).
+    @ViewBuilder
+    private var propertySpendingSection: some View {
+        if let spending {
+            Section {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Total spend")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                        Text(spending.displayTotalSpent)
+                            .font(.title3.weight(.bold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.goldBright)
+                    }
+                    Spacer(minLength: 12)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Jobs")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                        Text("\(spending.totalJobs ?? 0)")
+                            .font(.title3.weight(.bold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.textPrimary)
+                    }
+                }
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "Total spend \(spending.displayTotalSpent), \(spending.totalJobs ?? 0) jobs at this property"
+                )
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Avg job")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                        Text(spending.displayAverageJobCost)
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.textPrimary)
+                    }
+                    Spacer(minLength: 8)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Savings vs market")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                        Text(spending.displayTotalSavings)
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.textPrimary)
+                    }
+                }
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+
+                let cats = Array((spending.categoryBreakdown ?? []).prefix(5))
+                if !cats.isEmpty {
+                    ForEach(cats) { cat in
+                        HStack {
+                            Text(cat.displayName)
+                                .font(.subheadline)
+                                .foregroundStyle(BrandTheme.textPrimary)
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            Text(cat.displaySpent)
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(BrandTheme.goldBright)
+                            if let count = cat.jobCount {
+                                Text("· \(count)")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                        }
+                        .frame(minHeight: 44)
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(cat.displayName), \(cat.displaySpent)")
+                    }
+                }
+            } header: {
+                Text("Spend · this property").brandSectionHeader()
+            } footer: {
+                Text("Completed service payments for jobs linked to this address (trailing 12 months).")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        } else if let spendingError {
+            Section {
+                Text(spendingError)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .listRowBackground(BrandTheme.navyElevated)
+            } header: {
+                Text("Spend").brandSectionHeader()
+            }
+        }
+    }
+
     /// FR-19.2 best-effort — only providers with completed contracts on this property’s jobs.
     @ViewBuilder
     private var preferredProvidersSection: some View {
@@ -480,6 +589,32 @@ struct PropertyDetailView: View {
             } footer: {
                 Text("From completed contracts linked to jobs at this address (server aggregate when available). Preferred = 3+ completed jobs with the same provider.")
                     .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+    }
+
+    /// FR-19.2 property-scoped spend (soft-fail; detail still works without it).
+    @MainActor
+    private func loadSpending() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
+        do {
+            let end = Date()
+            let start = Calendar.current.date(byAdding: .year, value: -1, to: end) ?? end
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "yyyy-MM-dd"
+            spending = try await APIClient.shared.fetchCustomerSpending(
+                startDate: formatter.string(from: start),
+                endDate: formatter.string(from: end),
+                groupBy: "month",
+                propertyId: current.id
+            )
+            spendingError = nil
+        } catch {
+            if spending == nil {
+                spendingError = "Spend summary unavailable right now."
             }
         }
     }

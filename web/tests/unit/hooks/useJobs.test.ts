@@ -467,6 +467,37 @@ describe('useCustomerJobs', () => {
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/jobs/mine');
   });
+
+  it('forwards FR-19.3 property + category + date filters', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(mockJobsResponse);
+
+    const { result } = renderHook(
+      () =>
+        useCustomerJobs({
+          property_id: 'prop-1',
+          category_id: 'cat-9',
+          date_from: '2026-01-01',
+          date_to: '2026-06-30',
+          page_size: 100,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/jobs/mine?property_id=prop-1&category_id=cat-9&date_from=2026-01-01&date_to=2026-06-30&page_size=100',
+    );
+  });
+
+  it('respects enabled: false (no request)', async () => {
+    const { result } = renderHook(
+      () => useCustomerJobs({ property_id: 'prop-1', enabled: false }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+  });
 });
 
 describe('useCustomerDrafts', () => {

@@ -157,7 +157,7 @@ type AnalyticsRepository interface {
 
 	// Customer analytics. Returns spending time series, per-category breakdown,
 	// total spent (cents), and total savings vs. market median (cents).
-	GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]SpendingDataPoint, []CategorySpending, int64, int64, error)
+	GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string, propertyID string) ([]SpendingDataPoint, []CategorySpending, int64, int64, error)
 
 	// Platform analytics (admin)
 	GetPlatformMetrics(ctx context.Context, startDate, endDate time.Time) (*PlatformMetrics, error)

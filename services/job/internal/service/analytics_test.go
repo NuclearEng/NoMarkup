@@ -20,7 +20,7 @@ type mockAnalyticsRepo struct {
 	getCategoryIDBySlugFn         func(slug string) (string, error)
 	getProviderAnalyticsFn        func(ctx context.Context, providerID string, startDate, endDate time.Time) (*domain.ProviderAnalytics, error)
 	getProviderEarningsFn         func(ctx context.Context, providerID string, startDate, endDate time.Time, groupBy string) ([]domain.EarningsDataPoint, error)
-	getCustomerSpendingFn         func(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error)
+	getCustomerSpendingFn         func(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string, propertyID string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error)
 	recordTransactionFn           func(ctx context.Context, transactionID, categoryID, subcategoryID, serviceTypeID, region string, amountCents, platformFeeCents int64, customerID, providerID string, completedAt time.Time) error
 	recordEventFn                 func(ctx context.Context, eventType, userID string, properties map[string]string, occurredAt time.Time) error
 }
@@ -49,8 +49,8 @@ func (m *mockAnalyticsRepo) GetProviderAnalytics(ctx context.Context, providerID
 func (m *mockAnalyticsRepo) GetProviderEarnings(ctx context.Context, providerID string, startDate, endDate time.Time, groupBy string) ([]domain.EarningsDataPoint, error) {
 	return m.getProviderEarningsFn(ctx, providerID, startDate, endDate, groupBy)
 }
-func (m *mockAnalyticsRepo) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
-	return m.getCustomerSpendingFn(ctx, customerID, startDate, endDate, groupBy)
+func (m *mockAnalyticsRepo) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string, propertyID string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
+	return m.getCustomerSpendingFn(ctx, customerID, startDate, endDate, groupBy, propertyID)
 }
 func (m *mockAnalyticsRepo) RecordTransaction(ctx context.Context, transactionID, categoryID, subcategoryID, serviceTypeID, region string, amountCents, platformFeeCents int64, customerID, providerID string, completedAt time.Time) error {
 	return m.recordTransactionFn(ctx, transactionID, categoryID, subcategoryID, serviceTypeID, region, amountCents, platformFeeCents, customerID, providerID, completedAt)
@@ -270,8 +270,9 @@ func TestAnalyticsService_GetCustomerSpending(t *testing.T) {
 			t.Parallel()
 
 			repo := &mockAnalyticsRepo{
-				getCustomerSpendingFn: func(_ context.Context, _ string, _, _ time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
+				getCustomerSpendingFn: func(_ context.Context, _ string, _, _ time.Time, groupBy string, propertyID string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
 					assert.Equal(t, tt.wantGroupBy, groupBy)
+					assert.Empty(t, propertyID)
 					return []domain.SpendingDataPoint{
 							{AmountCents: 25000, JobCount: 2},
 						}, []domain.CategorySpending{
@@ -281,7 +282,7 @@ func TestAnalyticsService_GetCustomerSpending(t *testing.T) {
 			}
 			svc := NewAnalyticsService(repo)
 
-			spending, catSpending, total, savings, err := svc.GetCustomerSpending(context.Background(), "cust-1", time.Now().Add(-30*24*time.Hour), time.Now(), tt.groupBy)
+			spending, catSpending, total, savings, err := svc.GetCustomerSpending(context.Background(), "cust-1", time.Now().Add(-30*24*time.Hour), time.Now(), tt.groupBy, "")
 
 			require.NoError(t, err)
 			assert.Len(t, spending, 1)
@@ -290,6 +291,36 @@ func TestAnalyticsService_GetCustomerSpending(t *testing.T) {
 			assert.Equal(t, int64(5000), savings)
 		})
 	}
+}
+
+func TestAnalyticsService_GetCustomerSpending_PropertyScope(t *testing.T) {
+	t.Parallel()
+
+	const propID = "11111111-1111-1111-1111-111111111111"
+	repo := &mockAnalyticsRepo{
+		getCustomerSpendingFn: func(_ context.Context, customerID string, _, _ time.Time, groupBy string, propertyID string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
+			assert.Equal(t, "cust-1", customerID)
+			assert.Equal(t, "month", groupBy)
+			assert.Equal(t, propID, propertyID)
+			return []domain.SpendingDataPoint{
+					{AmountCents: 10000, JobCount: 1},
+				}, []domain.CategorySpending{
+					{CategoryID: "cat-1", TotalSpentCents: 10000},
+				}, 10000, 0, nil
+		},
+	}
+	svc := NewAnalyticsService(repo)
+
+	spending, cats, total, savings, err := svc.GetCustomerSpending(
+		context.Background(), "cust-1",
+		time.Now().Add(-30*24*time.Hour), time.Now(),
+		"", propID,
+	)
+	require.NoError(t, err)
+	assert.Len(t, spending, 1)
+	assert.Len(t, cats, 1)
+	assert.Equal(t, int64(10000), total)
+	assert.Equal(t, int64(0), savings)
 }
 
 // --- RecordTransaction tests ---

@@ -157,18 +157,21 @@ extension APIClient {
 
     // MARK: Customer spending (FR-19.2)
 
-    /// GET `/api/v1/analytics/customers/me/spending?start_date=&end_date=&group_by=`
+    /// GET `/api/v1/analytics/customers/me/spending?start_date=&end_date=&group_by=&property_id=`
     ///
-    /// Account-wide services spend (not per-property — no `property_id` on gateway).
+    /// Services spend in cents. Omit `propertyId` for account-wide roll-up; pass a
+    /// property UUID to scope to jobs linked to that address (gateway enforces ownership).
     /// Default date window when omitted is last ~3 months (analytics service default).
     /// - Parameters:
     ///   - startDate: `YYYY-MM-DD` optional
     ///   - endDate: `YYYY-MM-DD` optional
     ///   - groupBy: e.g. `month` / `week` / `day` when supported server-side
+    ///   - propertyId: optional UUID for property-scoped spend
     func fetchCustomerSpending(
         startDate: String? = nil,
         endDate: String? = nil,
-        groupBy: String? = nil
+        groupBy: String? = nil,
+        propertyId: String? = nil
     ) async throws -> CustomerSpendingResponse {
         var items: [URLQueryItem] = []
         if let startDate {
@@ -187,6 +190,12 @@ extension APIClient {
             let t = groupBy.trimmingCharacters(in: .whitespacesAndNewlines)
             if !t.isEmpty {
                 items.append(URLQueryItem(name: "group_by", value: t))
+            }
+        }
+        if let propertyId {
+            let t = propertyId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty {
+                items.append(URLQueryItem(name: "property_id", value: t))
             }
         }
         return try await getJSON(

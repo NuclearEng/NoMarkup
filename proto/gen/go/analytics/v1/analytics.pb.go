@@ -958,10 +958,13 @@ func (x *EarningsDataPoint) GetJobCount() int32 {
 }
 
 type GetCustomerSpendingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CustomerId    string                 `protobuf:"bytes,1,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
-	DateRange     *v1.DateRange          `protobuf:"bytes,2,opt,name=date_range,json=dateRange,proto3" json:"date_range,omitempty"`
-	GroupBy       string                 `protobuf:"bytes,3,opt,name=group_by,json=groupBy,proto3" json:"group_by,omitempty"` // "day", "week", "month"
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	CustomerId string                 `protobuf:"bytes,1,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
+	DateRange  *v1.DateRange          `protobuf:"bytes,2,opt,name=date_range,json=dateRange,proto3" json:"date_range,omitempty"`
+	GroupBy    string                 `protobuf:"bytes,3,opt,name=group_by,json=groupBy,proto3" json:"group_by,omitempty"` // "day", "week", "month"
+	// Optional. When set, scope spend to jobs linked to this property (jobs.property_id).
+	// Gateway must enforce ownership (404 if not owned) before calling the RPC.
+	PropertyId    string `protobuf:"bytes,4,opt,name=property_id,json=propertyId,proto3" json:"property_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1013,6 +1016,13 @@ func (x *GetCustomerSpendingRequest) GetDateRange() *v1.DateRange {
 func (x *GetCustomerSpendingRequest) GetGroupBy() string {
 	if x != nil {
 		return x.GroupBy
+	}
+	return ""
+}
+
+func (x *GetCustomerSpendingRequest) GetPropertyId() string {
+	if x != nil {
+		return x.PropertyId
 	}
 	return ""
 }
@@ -2410,13 +2420,15 @@ const file_analytics_v1_analytics_proto_rawDesc = "" +
 	"\x0eearnings_cents\x18\x02 \x01(\x03R\rearningsCents\x12\x1d\n" +
 	"\n" +
 	"fees_cents\x18\x03 \x01(\x03R\tfeesCents\x12\x1b\n" +
-	"\tjob_count\x18\x04 \x01(\x05R\bjobCount\"\x96\x01\n" +
+	"\tjob_count\x18\x04 \x01(\x05R\bjobCount\"\xb7\x01\n" +
 	"\x1aGetCustomerSpendingRequest\x12\x1f\n" +
 	"\vcustomer_id\x18\x01 \x01(\tR\n" +
 	"customerId\x12<\n" +
 	"\n" +
 	"date_range\x18\x02 \x01(\v2\x1d.nomarkup.common.v1.DateRangeR\tdateRange\x12\x19\n" +
-	"\bgroup_by\x18\x03 \x01(\tR\agroupBy\"\xf0\x02\n" +
+	"\bgroup_by\x18\x03 \x01(\tR\agroupBy\x12\x1f\n" +
+	"\vproperty_id\x18\x04 \x01(\tR\n" +
+	"propertyId\"\xf0\x02\n" +
 	"\x1bGetCustomerSpendingResponse\x12I\n" +
 	"\vdata_points\x18\x01 \x03(\v2(.nomarkup.analytics.v1.SpendingDataPointR\n" +
 	"dataPoints\x12*\n" +

@@ -145,16 +145,18 @@ export function useCustomerSpending(
   startDate?: string,
   endDate?: string,
   groupBy?: string,
+  propertyId?: string,
 ) {
   const searchParams = new URLSearchParams();
   if (startDate) searchParams.set('start_date', startDate);
   if (endDate) searchParams.set('end_date', endDate);
   if (groupBy) searchParams.set('group_by', groupBy);
+  if (propertyId) searchParams.set('property_id', propertyId);
   const query = searchParams.toString();
   const path = `/api/v1/analytics/customers/me/spending${query ? `?${query}` : ''}`;
 
   return useQuery({
-    queryKey: ['customer-spending', startDate, endDate, groupBy],
+    queryKey: ['customer-spending', startDate, endDate, groupBy, propertyId ?? null],
     queryFn: async () => {
       try {
         return await api.get<CustomerSpendingResponse>(path);
@@ -163,6 +165,8 @@ export function useCustomerSpending(
         throw error;
       }
     },
+    // Property-scoped cards soft-degrade; skip when id missing.
+    enabled: propertyId === undefined || propertyId.length > 0,
     retry: false,
   });
 }
