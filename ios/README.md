@@ -2,7 +2,7 @@
 
 Native **iPhone + iPad** client for [NoMarkup](https://no-markup.com). This is **not** a WKWebView of the website (App Store Guideline **4.2**). Primary chrome is SwiftUI (`TabView`, native lists/forms). `SFSafariViewController` is used **only** for legal/support HTML.
 
-Payment dual-rail (Stripe for real-world GMV; StoreKit later for digital unlocks) is documented in [`docs/compliance/ios-payment-rails-design.md`](../docs/compliance/ios-payment-rails-design.md). **Do not stub StoreKit** in this tree.
+Payment dual-rail (Stripe for real-world GMV; StoreKit for digital unlocks) is documented in [`docs/compliance/ios-payment-rails-design.md`](../docs/compliance/ios-payment-rails-design.md). StoreKit 2 scaffold lives behind `AppConfig.storeKitEnabled` (**default false**) — see [`docs/compliance/storekit-scaffold.md`](../docs/compliance/storekit-scaffold.md).
 
 Decision record: [`docs/compliance/native-approach-decision.md`](../docs/compliance/native-approach-decision.md).
 
@@ -177,7 +177,7 @@ See `Info.plist` and `Location/LocationPurposeCopy.swift`. Inventory: `docs/comp
 | Rail | Product | This client |
 |------|---------|----------------|
 | **A — Stripe + Apple Pay** | Jobs GMV, goods marketplace, escrow, Connect | **Wired:** buy-now + order pay → Stripe PaymentSheet |
-| **B — StoreKit** | Digital subscriptions / feature unlocks | **Explicitly omitted** — free-tier digital only in v1 |
+| **B — StoreKit** | Digital subscriptions / feature unlocks | **Scaffold, default OFF** — free-tier digital only until ASC products + flag |
 
 ### Rail A setup (device)
 

@@ -1977,11 +1977,11 @@ struct TrustTiersResponse: Codable, Sendable {
     }
 }
 
-// MARK: - Subscription tiers (display / limits only — no IAP)
+// MARK: - Subscription tiers (display / limits; IAP only when AppConfig.storeKitEnabled)
 
 /// Row from `GET /api/v1/subscriptions/tiers` → `{ "tiers": [...] }`.
-/// Read-only in the iOS client: no purchase / StoreKit.
-/// Paid tiers may surface **Manage on web** (billing management) — never a buy CTA.
+/// Free-tier-only binary by default (no purchase CTA, no web digital upgrade).
+/// When `AppConfig.storeKitEnabled`, PlanLimitsView may offer StoreKit purchase.
 struct SubscriptionTier: Codable, Sendable, Hashable, Identifiable {
     /// Wire `id` from the gateway (UUID). Stored separately from `Identifiable.id`.
     var remoteId: String?
@@ -2042,9 +2042,20 @@ struct SubscriptionTier: Codable, Sendable, Hashable, Identifiable {
         (monthlyPriceCents ?? 0) <= 0
     }
 
-    /// Free vs paid label — never a purchase CTA (App Store 3.1.1).
+    /// Free vs paid label — never a purchase CTA when StoreKit is off (App Store 3.1.1).
     var planKindLabel: String {
-        isFree ? "Free" : "Paid (web-only)"
+        planKindLabel(storeKitEnabled: AppConfig.storeKitEnabled)
+    }
+
+    /// - Parameter storeKitEnabled: when false, paid tiers are "read-only" (not sold in-app).
+    func planKindLabel(storeKitEnabled: Bool) -> String {
+        if isFree {
+            return storeKitEnabled ? "Free" : "Included free for launch"
+        }
+        if storeKitEnabled {
+            return "Paid (In-App Purchase)"
+        }
+        return "Paid (not sold in app)"
     }
 
     var maxActiveBidsLabel: String {

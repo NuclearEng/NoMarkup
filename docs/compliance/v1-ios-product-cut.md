@@ -3,7 +3,7 @@
 **Status:** **LOCKED decision for the first App Store binary** (do not re-open without B2 StoreKit)  
 **Date:** 2026-07-26 · **Locked restated:** 2026-07-27  
 **Guideline anchor:** App Store Review **3.1.1** (digital goods/features → IAP inside the app)  
-**Related:** [`ios-payment-rails-design.md`](./ios-payment-rails-design.md) · [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) §7 · [`app-store-review-2026-07-26-launch.md`](./app-store-review-2026-07-26-launch.md) · [`submission-blockers.md`](./submission-blockers.md) · [`prd-ios-parity-backlog.md`](./prd-ios-parity-backlog.md) FR-12
+**Related:** [`storekit-scaffold.md`](./storekit-scaffold.md) · [`ios-payment-rails-design.md`](./ios-payment-rails-design.md) · [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) §7 · [`app-store-review-2026-07-26-launch.md`](./app-store-review-2026-07-26-launch.md) · [`submission-blockers.md`](./submission-blockers.md) · [`prd-ios-parity-backlog.md`](./prd-ios-parity-backlog.md) FR-12
 
 ---
 
@@ -12,10 +12,10 @@
 | Item | Choice |
 |------|--------|
 | **First binary digital commerce** | **Free tier only** — no paid digital subscription purchase in the iOS app |
-| **StoreKit / In-App Purchase** | **Deferred (Stage B2)** — no IAP capability, no product IDs, no purchase/restore UI, **no StoreKit stubs** |
+| **StoreKit / In-App Purchase** | **Scaffold present, default OFF** — see [`storekit-scaffold.md`](./storekit-scaffold.md). `AppConfig.storeKitEnabled` defaults **false**. No purchase UI until ASC products + Review Notes |
 | **Paid Pro / Business digital unlocks** | **Web-only** (Stripe Subscriptions) **or** later IAP when B2 ships |
 | **In-app “buy cheaper on web” for digital** | **Forbidden** (no external digital purchase steering) |
-| **Plan limits UI (`PlanLimitsView`)** | Read-only comparison; **no purchase CTA**; **“Manage on web” only on paid tiers** (existing web billing management — not a buy button) |
+| **Plan limits UI (`PlanLimitsView`)** | Free-tier “Included free for launch”; paid tiers **read-only**; **no web digital upgrade link** while StoreKit is off; IAP Subscribe only when `storeKitEnabled` |
 | **Rail A (physical goods + offline services GMV)** | **Stripe** when payment UI is wired — **not** IAP (**3.1.3(e)**) |
 | **Regulated rails** | **Server-flag gated** (no client hard-offs — below) |
 
@@ -32,8 +32,8 @@ This is **not** a claim that the binary is submission-ready overall (funnel, ASC
 ### In the binary
 
 - Account UI continues to state free-tier / web-only digital posture (no StoreKit IAP).
-- **`PlanLimitsView`:** compare free vs paid limits only. **No purchase / upgrade button.** Paid rows (and a paid section when any paid tier exists) may show **Manage on web** → `https://no-markup.com/settings/subscription` for **existing** web subscription management — not “buy on web.”
-- No paywall, no tier upsell sheet, no Stripe Checkout for analytics/featured/bid-limit unlocks, **no StoreKit stubs**.
+- **`PlanLimitsView`:** free tier “Included free for launch”; paid tiers **read-only comparison**. **No purchase / upgrade button** and **no “Manage on web” digital purchase steering** while `storeKitEnabled` is false.
+- No paywall, no tier upsell sheet, no Stripe Checkout for analytics/featured/bid-limit unlocks. StoreKit code may compile as scaffold but purchase paths stay behind the flag ([`storekit-scaffold.md`](./storekit-scaffold.md)).
 - Users operate under the product **free** baseline (web seed free tier limits apply server-side where enforced):
   - Lower bid / category / portfolio caps vs Pro/Business
   - No paid analytics / featured placement / priority support unlocks sold in-app
@@ -54,7 +54,7 @@ When StoreKit ships:
 4. Multiplatform **Option A**: honor verified web Stripe **and** offer same tiers as IAP.
 5. Schedule 2 / 3.1.2 disclosures on paywall.
 
-Until then: **do not stub StoreKit.**
+Until then: keep `storeKitEnabled` **false** so Review never sees a digital paywall or web digital upgrade CTA. Scaffold details: [`storekit-scaffold.md`](./storekit-scaffold.md).
 
 ---
 
@@ -117,7 +117,7 @@ Use with seed accounts (`customer@nomarkup.com` primary) and live API. Full past
 
 ### Review notes one-liner (digital)
 
-> This build does **not** include In-App Purchases or a digital subscription paywall. Free-tier only for platform digital feature unlocks. Paid Pro/Business remain web-only until a future StoreKit release. Physical goods and real-world service GMV use Stripe under Guideline 3.1.3(e) when payment UI is enabled.
+> This build does **not** include a digital subscription paywall or In-App Purchase flow. Digital feature unlocks are **included free for launch** (free-tier limits). The Plan limits screen is read-only — no upgrade button and no web digital purchase link. Physical goods and real-world service GMV use Apple Pay / Stripe under Guideline 3.1.3(e) when payment UI is enabled.
 
 ---
 
@@ -125,9 +125,9 @@ Use with seed accounts (`customer@nomarkup.com` primary) and live API. Full past
 
 | Criterion | Met when |
 |-----------|----------|
-| No StoreKit / IAP / stubs in binary | No IAP capability; no purchase UI; no StoreKit scaffolding |
+| No live IAP purchase path | `storeKitEnabled` false; no purchase UI; scaffold may exist but is inert |
 | Account discloses omission | Account + Plan limits copy retained |
-| Plan limits: no purchase CTA | Free tiers: limits only; paid: **Manage on web** only (management, not buy) |
+| Plan limits: no purchase CTA | Free: “Included free for launch”; paid: read-only; no web digital upgrade link |
 | No digital Stripe Checkout in binary | No deep-link/paywall for tiers |
 | Regulated rails server-gated | `iOSHardOffKeys` empty; hub gated by `isEnabled` + server flags |
 | ASC free-tier lock (decision) | **Locked** in this doc + backlog FR-12 |

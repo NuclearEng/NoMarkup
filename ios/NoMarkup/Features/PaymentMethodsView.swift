@@ -263,12 +263,12 @@ struct PaymentMethodsView: View {
                 return
             }
             try await RailACheckout.presentSetupIntent(clientSecret: secret)
-            APIClient.shared.clearPaymentSetupIntentIdempotencyKey()
+            await APIClient.shared.clearPaymentSetupIntentIdempotencyKey()
             await load()
             statusMessage = "Card saved."
         } catch let error as RailACheckout.CheckoutError {
             // Sheet canceled / misconfigured — mint a new SI next time.
-            APIClient.shared.clearPaymentSetupIntentIdempotencyKey()
+            await APIClient.shared.clearPaymentSetupIntentIdempotencyKey()
             if !error.isCanceled {
                 errorMessage = error.localizedDescription
             }

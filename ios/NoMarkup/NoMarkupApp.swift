@@ -29,6 +29,8 @@ struct NoMarkupApp: App {
                 // (Previously forced .dark; removed so appearance + Dynamic Type adapt.)
                 .task {
                     await featureFlags.refresh()
+                    // Rail B: only listens / refreshes when AppConfig.storeKitEnabled.
+                    StoreKitManager.shared.startIfEnabled()
                 }
         }
     }

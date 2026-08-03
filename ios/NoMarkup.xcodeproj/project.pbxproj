@@ -31,6 +31,8 @@
 		A100000000000000000000AB /* CameraImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AB /* CameraImagePicker.swift */; };
 		A10000000000000000000001 /* NoMarkupApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* NoMarkupApp.swift */; };
 		A10000000000000000000002 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* AppConfig.swift */; };
+		A100000000000000000000D0 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000D0 /* StoreKitManager.swift */; };
+		A100000000000000000000D1 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B100000000000000000000D1 /* StoreKit.framework */; };
 		A10000000000000000000003 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* KeychainTokenStore.swift */; };
 		A10000000000000000000004 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* APIClient.swift */; };
 		A10000000000000000000005 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* AuthViewModel.swift */; };
@@ -175,6 +177,8 @@
 		B100000000000000000000AB /* CameraImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraImagePicker.swift; sourceTree = "<group>"; };
 		B10000000000000000000001 /* NoMarkupApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupApp.swift; sourceTree = "<group>"; };
 		B10000000000000000000002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		B100000000000000000000D0 /* StoreKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitManager.swift; sourceTree = "<group>"; };
+		B100000000000000000000D1 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 		B10000000000000000000003 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
 		B10000000000000000000004 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		B10000000000000000000005 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
@@ -361,6 +365,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000012 /* AuthenticationServices.framework in Frameworks */,
+				A100000000000000000000D1 /* StoreKit.framework in Frameworks */,
 				A10000000000000000000013 /* SafariServices.framework in Frameworks */,
 				A10000000000000000000014 /* Security.framework in Frameworks */,
 				A10000000000000000000023 /* PassKit.framework in Frameworks */,
@@ -435,6 +440,7 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000012 /* AuthenticationServices.framework */,
+				B100000000000000000000D1 /* StoreKit.framework */,
 				B10000000000000000000013 /* SafariServices.framework */,
 				B10000000000000000000014 /* Security.framework */,
 				B10000000000000000000023 /* PassKit.framework */,
@@ -489,6 +495,7 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000002 /* AppConfig.swift */,
+				B100000000000000000000D0 /* StoreKitManager.swift */,
 				B100000000000000000000C7 /* AuctionActivityAttributes.swift */,
 				B100000000000000000000C6 /* WidgetSharedStore.swift */,
 				B100000000000000000000C2 /* NotificationPermissionCopy.swift */,
@@ -828,6 +835,7 @@
 			files = (
 				A10000000000000000000001 /* NoMarkupApp.swift in Sources */,
 				A10000000000000000000002 /* AppConfig.swift in Sources */,
+				A100000000000000000000D0 /* StoreKitManager.swift in Sources */,
 				A100000000000000000000CC /* OpenPostJobIntent.swift in Sources */,
 				A100000000000000000000CB /* NoMarkupAppShortcuts.swift in Sources */,
 				A100000000000000000000CA /* OpenMyBidsIntent.swift in Sources */,

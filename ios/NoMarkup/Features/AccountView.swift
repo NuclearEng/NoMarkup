@@ -568,7 +568,9 @@ struct AccountView: View {
                         Label("Plan limits", systemImage: "list.bullet.rectangle")
                     }
                     .frame(minHeight: 44)
-                    .accessibilityHint("Compare free and paid provider plan limits. Paid digital plans are not sold in this app.")
+                    .accessibilityHint(AppConfig.storeKitEnabled
+                        ? "Compare plan limits and subscribe with In-App Purchase when products are available."
+                        : "Compare free launch limits and read-only paid tiers. Digital plans are not sold in this app.")
 
                     NavigationLink {
                         RegulatedRailsStatusView()
@@ -578,7 +580,9 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .accessibilityHint("Server feature flags for BNPL, insurance, advances, and related rails")
 
-                    Text("Paid digital subscriptions are web-only (no StoreKit IAP). BNPL, insurance, advances, and instant payout use server flags — open Business & finance when enabled.")
+                    Text(AppConfig.storeKitEnabled
+                        ? "Digital Pro / Business plans use App Store In-App Purchase when enabled. BNPL, insurance, advances, and instant payout use server flags — open Business & finance when enabled."
+                        : "Digital plans are included free for launch in this app (no In-App Purchase, no web digital upgrade). BNPL, insurance, advances, and instant payout use server flags — open Business & finance when enabled.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -593,7 +597,9 @@ struct AccountView: View {
                         "Stripe key",
                         value: AppConfig.stripePublishableKey.isEmpty ? "not set" : "configured"
                     )
-                    Text("Pay with Apple Pay. In-app subscriptions aren’t sold here — free digital features only; paid plans are on the web.")
+                    Text(AppConfig.storeKitEnabled
+                        ? "Pay for jobs and goods with Apple Pay. Digital subscriptions use App Store In-App Purchase when products are live."
+                        : "Pay for jobs and goods with Apple Pay. Digital feature unlocks are free-tier only in this build — no subscription purchase.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } header: {

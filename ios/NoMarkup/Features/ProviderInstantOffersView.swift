@@ -21,6 +21,11 @@ struct ProviderInstantOffersView: View {
     @State private var needsSignIn = false
     @State private var acceptedContractRoute: ContractIDRoute?
     @State private var tick = Date()
+    /// Provider profile service coords (not live GPS) for MapKit drive ETA.
+    @State private var serviceLat: Double?
+    @State private var serviceLng: Double?
+    /// jobId → resolved travel label (MapKit preferred, haversine/server fallback).
+    @State private var travelLabels: [String: String] = [:]
 
     private let refreshInterval: TimeInterval = 30
 
@@ -232,7 +237,7 @@ struct ProviderInstantOffersView: View {
                     .foregroundStyle(countdownColor(for: offer))
             }
 
-            if let travel = offer.approxTravelLabel {
+            if let travel = travelLabel(for: offer) {
                 HStack(spacing: 8) {
                     Image(systemName: "car")
                         .font(.caption)
@@ -243,7 +248,7 @@ struct ProviderInstantOffersView: View {
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
                 .accessibilityLabel(travel)
-                .accessibilityHint("Estimated drive time only — not live GPS tracking")
+                .accessibilityHint("Approximate drive time only — not live GPS tracking of the provider")
             }
 
             HStack(spacing: 10) {
@@ -294,6 +299,14 @@ struct ProviderInstantOffersView: View {
         .accessibilityElement(children: .contain)
     }
 
+    private func travelLabel(for offer: ProviderInstantOffer) -> String? {
+        if let cached = travelLabels[offer.id], !cached.isEmpty {
+            return cached
+        }
+        // Immediate server/haversine fallback while MapKit resolves.
+        return offer.approxTravelLabel
+    }
+
     private func countdownLabel(for offer: ProviderInstantOffer) -> String {
         _ = tick
         if offer.isExpired { return "Expired" }
@@ -332,6 +345,11 @@ struct ProviderInstantOffersView: View {
             hasProviderRole = me.hasProviderRole
             roleChecked = true
             guard hasProviderRole else { return }
+            // Profile service coords for MapKit drive ETA (not live GPS tracking).
+            if let profile = try? await APIClient.shared.fetchMyProviderProfile() {
+                serviceLat = profile.serviceLocation?.latitude
+                serviceLng = profile.serviceLocation?.longitude
+            }
             await refresh(force: true)
         } catch let error as APIClientError where error.isUnauthorized {
             roleChecked = true
@@ -355,6 +373,7 @@ struct ProviderInstantOffersView: View {
             let next = try await APIClient.shared.fetchProviderInstantOffers()
             offers = next.filter(\.hasValidJobId)
             loadError = nil
+            await resolveTravelETAs(for: offers)
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
         } catch let error as APIClientError where error.isForbidden {
@@ -364,6 +383,29 @@ struct ProviderInstantOffersView: View {
             // Keep prior list on soft refresh failure.
             loadError = error.localizedDescription
         }
+    }
+
+    /// Prefer MapKit automobile ETA when service + job coords exist; else server/haversine.
+    /// Still not live GPS tracking of the provider — one-shot estimate only.
+    @MainActor
+    private func resolveTravelETAs(for offers: [ProviderInstantOffer]) async {
+        var next = travelLabels
+        for offer in offers {
+            let jobId = offer.id
+            let estimate = await SoftTravelETA.resolve(
+                fromLat: serviceLat,
+                fromLng: serviceLng,
+                toLat: offer.approxLat,
+                toLng: offer.approxLng,
+                serverMinutes: offer.approxTravelMinutes
+            )
+            if let estimate, let label = SoftTravelETA.label(minutes: estimate.minutes, source: estimate.source) {
+                next[jobId] = label
+            } else if let fallback = offer.approxTravelLabel {
+                next[jobId] = fallback
+            }
+        }
+        travelLabels = next
     }
 
     @MainActor

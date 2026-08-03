@@ -1,160 +1,182 @@
 # Privacy purpose-string + data inventory (web + iOS)
 
-**Date:** 2026-07-27 (header refresh; inventory table still rooted in Phase 3 web map)  
-**Stage:** A Phase 3 deliverable — App Store launch readiness  
+**Date:** 2026-08-02 (refreshed vs live `Info.plist` + free-tier dual-rail binary)  
+**Stage:** App Store launch readiness — packaging  
 **Scope:** Map **web + native** collection surfaces to **Info.plist purpose strings**, **pre-prompt UX**, and **App Store Connect App Privacy** labels.  
-**Native status (2026-07-27):** iOS project exists (`ios/NoMarkup.xcodeproj`). Purpose strings **ship in** [`ios/NoMarkup/Info.plist`](../../ios/NoMarkup/Info.plist); shared copy helpers in [`ios/NoMarkup/Location/LocationPurposeCopy.swift`](../../ios/NoMarkup/Location/LocationPurposeCopy.swift). Camera **is** used on iOS (jobs/listings/profile/verification docs). StoreKit IAP still not stubbed. No Checkr / background-check SDK.
+**Native status:** iOS project `ios/NoMarkup.xcodeproj`. Purpose strings **ship in** [`ios/NoMarkup/Info.plist`](../../ios/NoMarkup/Info.plist); helpers in [`ios/NoMarkup/Location/LocationPurposeCopy.swift`](../../ios/NoMarkup/Location/LocationPurposeCopy.swift). Camera **is** used. Face ID **is** used (optional app lock + sensitive actions). StoreKit IAP **not** in binary. No Checkr SDK. Export: `ITSAppUsesNonExemptEncryption = false`.
 
 **Sources (code + policy):**
 
 | Source | Path / notes |
 |--------|----------------|
-| **iOS Info.plist (live purpose strings)** | `ios/NoMarkup/Info.plist` — `NSLocationWhenInUseUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSCameraUsageDescription` (no mic / no ATT) |
+| **iOS Info.plist (live purpose strings)** | `ios/NoMarkup/Info.plist` — location, photos, camera, Face ID (no mic / no ATT) |
 | **iOS purpose-string helpers** | `ios/NoMarkup/Location/LocationPurposeCopy.swift` |
+| **Privacy manifest** | `ios/NoMarkup/PrivacyInfo.xcprivacy` + widget |
 | Cookie consent | `web/src/components/compliance/CookieConsent.tsx` |
-| Age gate (DOB) | `web/src/components/compliance/AgeGate.tsx` |
-| Location — market | `web/src/components/location/MarketSelector.tsx` + iOS market picker |
-| Location — GPS check-in | `web/src/hooks/useWorkspace.ts`, `web/src/components/providers/CheckInOut.tsx` + iOS provider workspace |
-| Maps / geocoding | Mapbox (web); MapKit / directions helpers (iOS) |
-| Uploads | `web/src/hooks/useImageUpload.ts`; iOS `ImageUploader` + PhotosUI / camera |
-| Auth / OAuth | register/login forms; SIWA on iOS; `gateway/internal/handler/oauth*.go` |
-| Payments | Stripe Elements / PaymentSheet; Apple Pay path; Rail A only on iOS (no StoreKit stub) |
-| Sentry | `web/src/instrumentation-client.ts` (analytics consent gate) |
-| Web push | `web/src/lib/web-push.ts`; iOS APNs registration helpers (optional) |
-| Permissions-Policy | `web/next.config.ts`, `gateway/internal/middleware/security.go` |
-| Export / deletion | `GET /api/v1/me/export`; web settings + iOS `AccountDeletionView` |
-| Privacy policy | `web/src/app/(public)/privacy/page.tsx` + in-app legal web views |
-| PII at rest | `Claude.md` §6 / migrations `031`/`033`/`104`–`107` |
-| Remediation baseline | `docs/compliance/app-store-review-2026-07-26-remediated.md` |
+| Age gate (DOB) | web AgeGate + iOS `AgeGateView` |
+| Location — market | MarketSelector + iOS market picker |
+| Location — GPS check-in | CheckInOut + iOS provider workspace |
+| Uploads | web `useImageUpload`; iOS `ImageUploader` / PhotosUI / camera |
+| Auth / OAuth | SIWA native; Google/Facebook ASWebAuthenticationSession paths |
+| Payments | Stripe PaymentSheet; Rail A only on iOS (no StoreKit) |
+| Push | iOS `PushRegistration` (APNs); web push partial |
+| Export / deletion | `GET` export / `DELETE` users/me; iOS `AccountDeletionView` |
+| Privacy policy | https://no-markup.com/privacy + in-app `LegalWebView` |
 
 **Legend**
 
 | Column | Meaning |
 |--------|---------|
-| **Proposed iOS API** | System permission / framework the future native client would declare or call |
-| **Pre-prompt UI needed?** | In-app explanation *before* the OS dialog (Apple best practice; already partially done on web for GPS/push) |
-| **Tracking?** | Apple “tracking” (link with third-party data for ads / data broker). **Y** only if product behavior meets that bar |
-| **ASC category** | Approximate App Privacy Nutrition Label type (confirm in ASC UI at packaging time) |
+| **Proposed iOS API** | System permission / framework |
+| **Pre-prompt UI needed?** | In-app explanation *before* OS dialog |
+| **Tracking?** | Apple “tracking” (ads / data broker). **Y** only if product meets that bar |
+| **ASC category** | Nutrition Label type |
 
-**Global ATT recommendation:** **No ATT / no `NSUserTrackingUsageDescription` required for the current product model** — no IDFA, no ad network SDK, no cross-app advertising identifier. Sentry and optional analytics are first-party product diagnostics under consent, not advertising tracking. Revisit if a retargeting/ad SDK or IDFA-based measurement is added.
+**Global ATT recommendation:** **No ATT / no `NSUserTrackingUsageDescription`** — no IDFA, no ad network SDK. Revisit if retargeting/ad SDK or IDFA measurement is added.
+
+---
+
+## 0. Info.plist ↔ inventory reconciliation (2026-08-02)
+
+| Key | In Info.plist? | Matches inventory copy? | Notes |
+|-----|:--------------:|:-----------------------:|-------|
+| `NSLocationWhenInUseUsageDescription` | **Yes** | **Yes** | Combined market + check-in string (see §2) |
+| `NSPhotoLibraryUsageDescription` | **Yes** | **Yes** | Consolidated avatar/portfolio/jobs/listings/claims |
+| `NSCameraUsageDescription` | **Yes** | **Yes** | Capture path live via camera picker |
+| `NSFaceIDUsageDescription` | **Yes** | **Yes** (row 39 below) | App lock + account deletion / payment method sensitive actions |
+| `NSMicrophoneUsageDescription` | **No** | **Correct** | Unused |
+| `NSUserTrackingUsageDescription` | **No** | **Correct** | No ATT |
+| `NSSupportsLiveActivities` | **Yes** | N/A (not a purpose string) | Auction countdown Live Activities |
+| `ITSAppUsesNonExemptEncryption` | **`false`** | Export exempt posture | HTTPS / OS crypto only in client |
+| `LSApplicationQueriesSchemes` | `comgooglemaps` | Optional directions | Not a privacy purpose string |
+
+**Copy helpers** in `LocationPurposeCopy.swift` mirror location/photo/camera plist strings for pre-prompts. Face ID string lives only in Info.plist (LocalAuthentication reason strings are separate runtime prompts).
 
 ---
 
 ## 1. Inventory table
 
-| # | Data / permission | Collection surface (web path) | Backend / third party | Proposed iOS API | Info.plist purpose string (draft English) | Pre-prompt UI needed? | ASC privacy label category (approx) | Tracking? Y/N | Notes |
-|---|-------------------|-------------------------------|----------------------|------------------|-------------------------------------------|----------------------|-------------------------------------|---------------|-------|
-| 1 | **Email** | `/register`, `/login`, OAuth return, profile/settings | User service / Postgres (`users.email` plaintext for auth lookup); session JWT | Account credentials (no special plist key); Sign in with Apple / email field | N/A (not a protected resource purpose string) | No (form context is sufficient) | Contact Info → Email Address | N | Required for account; disclosed in Privacy Policy §2. |
-| 2 | **Password** | `/register`, `/login`, reset flows | User service — **argon2id** hash only; never exported | Secure TextField / Keychain optional | N/A | No | (Not listed as collected if only hash stored — treat as account credential; do not claim “password collected” as shareable data) | N | Export deliberately omits password hash / MFA secrets (`data_export.go`). |
-| 3 | **Display name** | `/register`, `/profile`, ProfileForm | User service; shown to counterparties | N/A | N/A | No | Contact Info → Name (or Other User Content if treated as public handle) | N | Public-facing in jobs, listings, chat, reviews. |
-| 4 | **Phone** | ProfileForm (`/profile`), provider onboarding / employees | User service; **encrypted at rest** (`users.phone` secretbox); verification flag | Contacts optional only if native picker used later — **not required today** | If Contacts used later: *“NoMarkup uses your contacts only when you choose a phone number to add to your profile.”* — **not used today** | Soft copy in form (“for SMS alerts / verification”) recommended | Contact Info → Phone Number | N | Optional on profile; Twilio-proxy patterns may exist for relay. |
-| 5 | **Date of birth / age** | `AgeGate` (global layout for authed unverified users) → `useSetDOB` / age-status API | User service; **`users.dob_encrypted`**; `dob_verified_at` audit | N/A (form field) | N/A | Yes (modal already explains 18+ and non-public storage) | Sensitive Info → Other Sensitive Info (or “Other Data”) — age verification | N | Client UX only; gateway enforces ≥18. Not shown publicly. |
-| 6 | **OAuth — Google** | Login/register OAuth buttons → `/oauth/google` + callback | Gateway OAuth; Google OIDC scopes `openid email profile`; stores provider link | ASWebAuthenticationSession / Google SDK (if used) | N/A for Google; disclose in Privacy labels + Privacy Policy | Optional “Continue with Google” is the disclosure | Identifiers → User ID; Contact Info → Email/Name from provider | N | Unlink: `GET/DELETE /me/oauth-accounts/{provider}` + ConnectedAccounts UI. |
-| 7 | **OAuth — Apple** | `/oauth/apple` + form_post callback | Gateway; scopes `name`, `email`; SIWA required on iOS if other social login offered | **AuthenticationServices** (Sign in with Apple) | N/A (SIWA entitlement, not usage description) | SIWA button is sufficient | Identifiers → User ID; Email (may be private relay) | N | **Guideline 4.8:** if third-party login ships on iOS binary, SIWA must be offered equivalently. |
-| 8 | **OAuth — Facebook** | `/oauth/facebook` + callback | Gateway; scopes `email`, `public_profile` | ASWebAuthenticationSession / FB SDK (prefer no FB SDK if web-only OAuth) | If FB SDK: follow Meta’s required strings | Soft prompt if native SDK | Identifiers → User ID; Contact Info | N | Same unlink path as other OAuth. Avoid unused FB SDK permissions. |
-| 9 | **Location — market picker (approx)** | Header / market chip → `MarketSelector` “Use my location” | Browser Geolocation → nearest launched market client-side; markets catalog from API | **CoreLocation** `WhenInUse` | **NSLocationWhenInUseUsageDescription:** *“NoMarkup uses your location to suggest the nearest marketplace city. You can always pick a city manually.”* | **Yes** — web already: “Used to find your nearest NoMarkup market…” | Location → Coarse Location (if only city-level retained) / Precise if raw coords stored | N | Purpose string shipped web (ASR-5.1.5). Prefer not retaining GPS if only market slug is saved. |
-| 10 | **Location — maps / job & listing address** | Job post form geocode; marketplace map; service area maps | **Mapbox** geocoding + tiles; gateway/job service stores address + coarsened geometry | MapKit or Mapbox iOS SDK; no continuous GPS required for typed address | If Mapbox needs location: same When-In-Use string scoped to “show nearby jobs and pickup areas” | Yes when device GPS used; typed address needs no OS dialog | Location → Coarse/Precise depending on stored precision; Physical Address | N | Public `/jobs/map` must use **coarsened** points only (`approximate_location`). Exact service points encrypted alongside coarsened public geometry. |
-| 11 | **Location — GPS check-in / check-out** | Contract workspace `CheckInOut` → `POST .../checkin` / `checkout` | Gateway + contract store; lat/lng with contract for disputes | **CoreLocation** `WhenInUse` (possibly temporary full accuracy) | **NSLocationWhenInUseUsageDescription:** *“NoMarkup uses your location to confirm you arrived at the job site. Check-in location is stored with the contract for dispute protection.”* | **Yes** — web copy already present; GPS **required** (no note-only API) | Location → Precise Location | N | Fail closed without permission. Do not background-track. |
-| 12 | **Photos — avatar** | Profile / avatar upload (`UPLOAD_CONTEXT.AVATAR`) | Gateway → imaging service → S3 presign; variants | **Photo Library** (read) | **NSPhotoLibraryUsageDescription:** *“NoMarkup needs access to your photos so you can set a profile picture.”* | Recommended before first picker | Photos or Files → Photos or Videos; User Content | N | File input / picker today; no camera capture API on web. |
-| 13 | **Photos — portfolio** | Provider portfolio (`PORTFOLIO`) | Imaging + S3 | Photo Library | **NSPhotoLibraryUsageDescription:** *“NoMarkup needs access to your photos so you can add work portfolio images to your provider profile.”* | Yes (first upload) | Photos or Videos; User Content | N | Limit enforced server-side (portfolio image limits). |
-| 14 | **Photos — job** | Job posting / completion evidence (`JOB_PHOTO`) | Imaging + S3; job service | Photo Library; optional **Camera** | Library string: *“…so you can attach photos to job posts and completion evidence.”* Camera: see row 17 | Yes | Photos or Videos; User Content | N | Completion photos also via workspace handler path. |
-| 15 | **Photos — listing (goods)** | Listing posting form (`LISTING`) | Imaging + S3; marketplace listings | Photo Library; optional Camera | *“…so you can add photos of items you list for sale.”* | Yes | Photos or Videos; User Content | N | Local pickup goods marketplace UGC. |
-| 16 | **Files — insurance / documents** | Insurance claim form, guarantee claim (`DOCUMENT`) | Imaging/S3 DOCUMENT context; MIME validated | Photo Library and/or **Files** (UTType PDF/images) | **NSPhotoLibraryUsageDescription** and/or document picker (no extra plist for UIDocumentPicker): *“…so you can upload insurance and claim documents.”* | Yes — sensitive docs | Purchases / Financial Info (claim meta); Files or Docs; User Content | N | `InsuranceClaimForm` uses real `useImageUpload` DOCUMENT context (ASR-2.1.a.1). Cap **10MB** server-side (`MAX_FILE_SIZE_BYTES`); client may mention larger soft limits for docs — align copy with gateway. |
-| 17 | **Camera** | **Not used** on web today (Permissions-Policy deny). **Used on iOS** (jobs, listings, profile, verification docs via `CameraImagePicker`) | Imaging + S3 when capture submitted | `UIImagePickerController` / PhotosUI capture path | **NSCameraUsageDescription** — **live in** `ios/NoMarkup/Info.plist`: *“NoMarkup uses the camera so you can take photos for jobs, listings, or your profile instead of choosing an existing photo.”* | **Yes** before first camera open on iOS | Photos or Videos (if captured images uploaded) | N | Web remains `camera=()`. iOS declares camera because capture ships in binary. |
-| 18 | **Microphone** | **Not used** | N/A | AVAudioSession | **NSMicrophoneUsageDescription** only if voice notes/calls ship | N/A until product needs it | Audio Data (if collected) | N | **Permissions-Policy: `microphone=()`**. Do not declare unused mic permission. |
-| 19 | **Payment method / card metadata** | `/settings/payment-methods`, checkout, bid bonds, orders | **Stripe** Elements / PaymentIntents; Connect Express for providers | PassKit / Stripe iOS SDK; **no raw PAN in app** | N/A for card entry in Stripe UI; Apple Pay has PassKit flows | Wallet sheet is OS-owned | Financial Info → Payment Info; Purchases → Purchase History | N | No full PAN stored by NoMarkup. Privacy Policy: Stripe only. |
-| 20 | **Apple Pay / Payment Request** | `PaymentRequestButton` (Stripe Payment Request API) | Stripe; domain association `/.well-known/apple-developer-merchantid-domain-association` (placeholder noted) | **PassKit** `PKPaymentAuthorizationController` | N/A (wallet UI) | No separate pre-prompt beyond checkout context | Financial Info; Purchases | N | Web: `requestPayerName` + `requestPayerEmail`. Live Apple Pay needs real domain association before production. |
-| 21 | **Provider payout / Connect** | Stripe onboarding UI | Stripe Connect Express; payment service | SafariView / Stripe Connect | N/A | Onboarding copy | Financial Info; Identifiers (Stripe account id) | N | Payouts/escrow; provider never self-releases escrow (product rule). |
-| 22 | **Chat messages** | `/messages`, WebSocket chat | Chat service + Postgres; content filter on create | N/A (network) | N/A | No | User Content → Other User Content; Messages (if labeled) | N | UGC: filter + report + block. Export includes messages **sent**. |
-| 23 | **UGC — jobs** | Job create/edit | Job service; contentfilter | N/A | N/A | No | User Content | N | Includes budgets, categories, service address (PII). |
-| 24 | **UGC — listings** | Marketplace sell / edit | Listing write handlers; contentfilter | N/A | N/A | No | User Content; Physical Address (pickup) | N | Pickup location published by design within 25 mi model. |
-| 25 | **UGC — reviews** | Review forms; review photos (`REVIEW_PHOTO`) | Review handlers; flag/report | Photo Library if photos | Photo string covers review photos | Soft | User Content; Photos | N | FlagReviewButton + admin queue. |
-| 26 | **Reports / blocks** | Report buttons (listing, job, provider, chat) | Gateway + admin queues | N/A | N/A | No | User Content; Other Diagnostic (moderation) | N | Safety surface for Guideline 1.2. |
-| 27 | **Device / crash diagnostics (Sentry)** | Client `instrumentation-client.ts`; server `instrumentation.ts` | **Sentry** | None beyond network; optional MetricKit later | N/A | **Cookie/analytics consent** (web); native: ATT **not** required for crash SDK alone if not used for tracking | Diagnostics → Crash Data, Performance Data | N | **Opt-in** via `nm:consent` analytics. Session Replay **disabled**. `beforeSend` re-checks consent. |
-| 28 | **Cookies / local storage** | CookieConsent banner; session cookies; consent cookie `nm:consent` | Gateway `/cookie-consent` log; auth cookies | App Storage (no OS dialog) | N/A | Consent banner for non-essential | Identifiers → Device ID (if any); Product Interaction | N | Necessary always on; analytics + marketing opt-in default **false**. |
-| 29 | **Optional analytics / marketing flags** | CookieConsent analytics + marketing toggles | Product telemetry / future marketing (consent-gated) | None unless third-party ad SDK | If ATT ever needed: **NSUserTrackingUsageDescription** (see ATT section) | Consent UI | Product Interaction; Advertising Data **only if** ads/retargeting ships | **N today** | Marketing copy says “Personalized recommendations” — **not** IDFA tracking. Do not enable ATT until true cross-app tracking exists. |
-| 30 | **Push notifications (web push partial)** | `PushPermission` soft prompt → VAPID subscribe → `POST /me/push-subscriptions` | Notification service + webpush-go; SW `/sw.js` | **UserNotifications** + APNs | **N/A for remote notifications entitlement**; optional provisional | **Yes** — soft prompt before `requestPermission` (web pattern to copy) | Identifiers → Device ID (push token) | N | SW currently kill-switch/unregister posture in places; push helpers exist. iOS: transactional auction/job alerts — not ads. |
-| 31 | **Service / property address (PII)** | Job post, properties, provider onboarding | **Encrypted:** `jobs.service_address`, `jobs.service_location_encrypted`, `properties.address` / notes / `location_encrypted`; geometry coarsened 0.01° | N/A | N/A | Contextual form labels | Physical Address; Location | N | Readers needing precision decrypt. `provider_profiles.service_location` remains exact plaintext (documented limitation for matching). |
-| 32 | **Provider insurance / EIN / licenses** | Provider onboarding, employee forms, licenses | Encrypted: `ein_tin`, insurance policy numbers, license numbers, employee PII fields | Photo Library for doc images | Document photo strings as above | Yes for sensitive docs | Financial Info; Other Sensitive Info; Contact Info | N | Full encrypted inventory in Claude.md §6. |
-| 33 | **IP address / user agent** | All HTTP; push subscribe sends `user_agent` | Gateway logs (often hashed IP per policy); rate limits | N/A | N/A | No | Diagnostics; Identifiers | N | Privacy Policy §2 device/usage. |
-| 34 | **Account data export** | Settings → Account → “Download my data” | Gateway `DataExportHandler` JSON `nomarkup.data-export.v1` | Files app save | N/A | Confirm download only | (Access right — not a new collection category) | N | Owner-scoped JWT only; sections: profile, jobs, listings, payments meta, messages_sent, etc. |
-| 35 | **Account deletion** | Settings → Account → request deletion (30-day grace) | User service schedule + finalize; Stripe customer delete adapter | N/A | N/A | **Yes** — multi-step confirm + reason (already on web) | (Deletion right — Guideline **5.1.1(v)**) | N | Cancel within grace. Tax/ledger residuals retained as disclosed. |
-| 36 | **MFA secrets** | Settings security (if enabled) | `users.mfa_secret` encrypted; not in export | Local auth / Keychain for TOTP seed display once | N/A | Setup wizard | (Credentials — not shared) | N | Never include in export. |
-| 37 | **Referrals** | `/register?ref=` redeem | User service referrals | N/A | N/A | No | Identifiers / Other | N | Best-effort post-register. |
-| 38 | **Permissions-Policy baseline (web)** | All pages | Next headers + gateway middleware | Documents **denied** camera/mic; geolocation self; payment self | N/A | N/A | N/A | N | Next: `camera=(), microphone=(), geolocation=(self), payment=(self)`. Gateway: `camera=(), microphone=(), geolocation=(self)`. |
+| # | Data / permission | Collection surface (web path) | Backend / third party | Proposed iOS API | Info.plist purpose string (English) | Pre-prompt UI needed? | ASC privacy label category (approx) | Tracking? Y/N | Notes |
+|---|-------------------|-------------------------------|----------------------|------------------|-------------------------------------|----------------------|-------------------------------------|---------------|-------|
+| 1 | **Email** | `/register`, `/login`, OAuth | User service; email plaintext for auth | Credentials / SIWA | N/A | No | Email Address | N | Required for account |
+| 2 | **Password** | login/register/reset | argon2id hash only | SecureField / Keychain | N/A | No | (credential — not shareable data type) | N | Not in export |
+| 3 | **Display name** | profile | User service | N/A | N/A | No | Name | N | Public-facing |
+| 4 | **Phone** | profile / provider | Encrypted at rest | Optional Contacts later — **not required** | N/A today | Soft form copy | Phone Number | N | Optional |
+| 5 | **Date of birth / age** | AgeGate | `dob_encrypted` | Form | N/A | Yes (18+) | Date of Birth | N | Gateway ≥18 |
+| 6 | **OAuth — Google** | OAuth buttons | Gateway OIDC | ASWebAuthenticationSession | N/A | Button disclosure | User ID; Email/Name | N | Unlink path exists |
+| 7 | **OAuth — Apple** | SIWA | Gateway native + web | **AuthenticationServices** | N/A (entitlement) | SIWA button | User ID; Email (relay) | N | **4.8** if other social login |
+| 8 | **OAuth — Facebook** | OAuth | Gateway | ASWebAuthenticationSession | N/A | Soft if native | User ID; Contact | N | Prefer no FB SDK |
+| 9 | **Location — market picker** | MarketSelector | Client nearest market | CoreLocation WhenInUse | Combined When-In-Use (§2) | **Yes** | Coarse Location | N | Manual city always available |
+| 10 | **Location — maps / address** | Job/listing forms | MapKit / geocode; coarsened public map | MapKit; typed address no GPS | Same When-In-Use if GPS used | Yes when GPS | Coarse/Precise; Physical Address | N | Public map coarsened |
+| 11 | **Location — GPS check-in** | CheckInOut | Contract store | CoreLocation WhenInUse | Combined When-In-Use (§2) | **Yes** | Precise Location | N | Fail closed without permission |
+| 12 | **Photos — avatar** | avatar upload | Imaging + S3 | Photo Library / PhotosPicker | Photo library string (§2) | Recommended | Photos or Videos | N | |
+| 13 | **Photos — portfolio** | portfolio | Imaging + S3 | Photo Library | Same | Yes | Photos; User Content | N | Server limits |
+| 14 | **Photos — job** | job photos | Imaging + S3 | Library + Camera | Same + camera string | Yes | Photos; User Content | N | |
+| 15 | **Photos — listing** | listing form | Imaging + S3 | Library + Camera | Same | Yes | Photos; User Content | N | |
+| 16 | **Files — documents** | claims / verification | Imaging DOCUMENT | Library / document picker | Photo string covers images | Yes | Sensitive Info; User Content | N | 10MB server cap |
+| 17 | **Camera** | **iOS only** (web Permissions-Policy deny) | Imaging when submitted | UIImagePicker / capture | **NSCameraUsageDescription** live | **Yes** before first open | Photos or Videos | N | |
+| 18 | **Microphone** | **Not used** | N/A | — | **Do not declare** | N/A | Audio Data — **No** | N | |
+| 19 | **Payment method** | checkout / methods | **Stripe** | Stripe iOS / PassKit | N/A | Checkout context | Payment Info; Purchase History | N | No full PAN on NoMarkup |
+| 20 | **Apple Pay** | PaymentSheet when configured | Stripe + merchant ID | PassKit | N/A | Wallet UI | Financial Info | N | Ops: domain association |
+| 21 | **Provider payout / Connect** | onboarding | Stripe Connect | Safari / Stripe | N/A | Onboarding copy | Financial Info | N | |
+| 22 | **Chat messages** | messages / WS | Chat service | N/A | N/A | No | Other User Content | N | Report/block |
+| 23 | **UGC — jobs** | job create | Job service | N/A | N/A | No | User Content | N | |
+| 24 | **UGC — listings** | sell/edit | Listing handlers | N/A | N/A | No | User Content; Physical Address | N | |
+| 25 | **UGC — reviews** | review forms | Review handlers | Photos if images | Photo string | Soft | User Content | N | |
+| 26 | **Reports / blocks** | report UIs | Gateway + admin | N/A | N/A | No | Customer Support; User Content | N | Guideline 1.2 |
+| 27 | **Crash diagnostics (Sentry)** | web consent-gated | Sentry (web) | **Not in iOS SPM today** | N/A | Consent if added | Crash Data — **No** on first iOS binary | N | Do not declare crash on iOS until SDK ships |
+| 28 | **Cookies / local storage** | CookieConsent | Gateway | App Storage | N/A | Consent non-essential | Product Interaction (if analytics) | N | |
+| 29 | **Optional analytics / marketing** | consent toggles | First-party | None unless ad SDK | ATT only if tracking | Consent UI | Product Interaction; Ads **only if ads** | **N today** | |
+| 30 | **Push notifications** | web partial; **iOS APNs** | Notification service | UserNotifications + APNs | N/A entitlement; soft pre-prompt | **Yes** soft prompt | Device ID | N | Linked for delivery, not tracking |
+| 31 | **Service / property address** | jobs/properties | Encrypted + coarsened geometry | N/A | N/A | Form labels | Physical Address; Location | N | |
+| 32 | **Provider insurance / EIN / licenses** | onboarding | Encrypted fields | Photo for docs | Photo string | Yes | Sensitive Info; Financial | N | |
+| 33 | **IP / user agent** | all HTTP | Gateway logs / rate limit | N/A | N/A | No | Diagnostics | N | |
+| 34 | **Account data export** | Settings export | DataExportHandler | Share sheet | N/A | Confirm only | Access right | N | |
+| 35 | **Account deletion** | Settings / **AccountDeletionView** | 30-day grace | Face ID optional step | Face ID string if biometrics on | **Yes** multi-step | Guideline **5.1.1(v)** | N | In-app required |
+| 36 | **MFA secrets** | security settings | encrypted; not exported | Keychain | N/A | Setup wizard | Credentials | N | |
+| 37 | **Referrals** | `?ref=` | User service | N/A | N/A | No | Identifiers | N | |
+| 38 | **Permissions-Policy (web)** | all pages | Next + gateway | camera/mic denied on web | N/A | N/A | N/A | N | |
+| 39 | **Face ID / biometrics** | N/A web | Local only | **LocalAuthentication** | **NSFaceIDUsageDescription:** *“NoMarkup uses Face ID to protect sensitive actions like account deletion and removing payment methods, and to unlock the app when you enable app lock.”* | Toggle + system prompt | (OS auth — not a separate ASC data type) | N | Optional; user-controlled app lock |
+| 40 | **Device ID (push / vendor)** | APNs registration | Notification devices API | UIDevice / UNUserNotificationCenter | N/A | Soft push pre-prompt | **Device ID** linked, not tracking | N | Must declare in ASC |
 
 ---
 
 ## 2. Consolidated Info.plist keys (native — live)
 
-**Authoritative file:** [`ios/NoMarkup/Info.plist`](../../ios/NoMarkup/Info.plist) (mirrored helpers in `LocationPurposeCopy.swift`).  
-Use only keys for APIs the binary **actually calls**. Prefer one combined location string if a single `WhenInUse` authorization covers market + check-in + maps.
-
-**As shipped (summarized):**
+**Authoritative file:** [`ios/NoMarkup/Info.plist`](../../ios/NoMarkup/Info.plist).
 
 ```xml
-<!-- Location (required if CoreLocation used) — live -->
+<!-- Location — single When-In-Use covers market + check-in -->
 <key>NSLocationWhenInUseUsageDescription</key>
 <string>NoMarkup uses your location to suggest the nearest marketplace city and, when you check in to a job, to confirm you arrived at the job site for dispute protection. You can pick a city manually.</string>
 
-<!-- Photos — live -->
+<!-- Photos -->
 <key>NSPhotoLibraryUsageDescription</key>
 <string>NoMarkup needs access to your photos so you can set a profile picture, add portfolio images, and attach photos to jobs, listings, and claims.</string>
 
-<!-- Camera — live on iOS (capture enabled); still denied on web via Permissions-Policy -->
+<!-- Camera — live on iOS -->
 <key>NSCameraUsageDescription</key>
 <string>NoMarkup uses the camera so you can take photos for jobs, listings, or your profile instead of choosing an existing photo.</string>
 
-<!-- Microphone — do not ship until product uses audio -->
-<!-- NSMicrophoneUsageDescription -->
+<!-- Face ID — app lock + sensitive actions -->
+<key>NSFaceIDUsageDescription</key>
+<string>NoMarkup uses Face ID to protect sensitive actions like account deletion and removing payment methods, and to unlock the app when you enable app lock.</string>
 
-<!-- Tracking — do NOT ship while ATT decision is N -->
-<!-- NSUserTrackingUsageDescription -->
+<!-- Live Activities (not a privacy purpose string) -->
+<key>NSSupportsLiveActivities</key>
+<true/>
+
+<!-- Export compliance — HTTPS / OS crypto only -->
+<key>ITSAppUsesNonExemptEncryption</key>
+<false/>
+
+<!-- Do NOT add: NSMicrophoneUsageDescription, NSUserTrackingUsageDescription -->
 ```
 
-**Photo Library Add-Only / limited library:** Prefer `PHPicker` / `PhotosPicker` (no full-library access) to reduce permission friction; keep `NSPhotoLibraryUsageDescription` for APIs that require it.
+**Photo Library:** Prefer `PhotosPicker` / limited access; keep library string for APIs that require it.
 
 ---
 
-## 3. ASC App Privacy label — roll-up (approximate)
+## 3. ASC App Privacy label — roll-up (aligned with packaging checklist)
 
-Confirm each row in App Store Connect against live binary + third-party SDKs at packaging time.
+Confirm at submit against binary + SDKs. Canonical ASC entry table: [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) §4.2.
 
-| Data type (ASC) | Linked to user? | Used for tracking? | Purposes (typical) | Collected? |
-|-----------------|-----------------|--------------------|--------------------|------------|
-| Email Address | Yes | No | App Functionality, Account | Yes |
-| Name | Yes | No | App Functionality | Yes |
-| Phone Number | Yes | No | App Functionality | Yes (optional) |
-| Physical Address | Yes | No | App Functionality | Yes (jobs/properties/pickup) |
-| Other User Contact Info | Yes | No | App Functionality | OAuth / chat display |
-| Photos or Videos | Yes | No | App Functionality | Yes (uploads) |
-| Audio Data | — | — | — | **No** (mic off) |
-| Customer Support | Yes | No | App Functionality | Support tickets / reports |
-| Other User Content | Yes | No | App Functionality | Jobs, listings, reviews, chat |
-| Purchase History | Yes | No | App Functionality | Yes (orders, escrow meta) |
-| Payment Info | Yes | No | App Functionality | Via Stripe (tokenized) |
-| Precise Location | Yes | No | App Functionality | Check-in; optional market GPS |
-| Coarse Location | Yes | No | App Functionality | Market / maps / coarsened public map |
-| Crash Data | Yes | No | Analytics (opt-in posture) | Sentry when consented |
-| Performance Data | Yes | No | Analytics | Web vitals / Sentry traces when consented |
-| Product Interaction | Yes | No | Analytics / App Functionality | Consent-gated analytics |
-| Device ID | Yes | No | App Functionality | Push tokens |
-| User ID | Yes | No | App Functionality | Account UUID, OAuth sub |
-| Advertising Data | — | — | — | **No** product ad network today |
-| Other Diagnostic Data | Yes | No | Analytics / App Functionality | Logs |
+| Data type (ASC) | Linked to user? | Used for tracking? | Collected? |
+|-----------------|-----------------|--------------------|------------|
+| Email Address | Yes | No | Yes |
+| Name | Yes | No | Yes |
+| Phone Number | Yes | No | Yes (optional) |
+| Physical Address | Yes | No | Yes |
+| Date of Birth | Yes | No | Yes |
+| Other User Contact Info | — | — | **No** (do not declare) |
+| Photos or Videos | Yes | No | Yes |
+| Audio Data | — | — | **No** |
+| Customer Support | Yes | No | Yes (reports/disputes) |
+| Other User Content | Yes | No | Yes |
+| Purchase History | Yes | No | Yes |
+| Payment Info | Yes | No | Yes (tokenized via Stripe) |
+| Precise Location | Yes | No | Yes (check-in) |
+| Coarse Location | Yes | No | Yes |
+| Sensitive Info | Yes | No | Yes (verification docs) |
+| Crash Data | — | — | **No** (first iOS binary — no Sentry SPM) |
+| Performance Data | — | — | **No** unless telemetry ships |
+| Product Interaction | — | — | Prefer omit until analytics ships |
+| Device ID | Yes | No | **Yes** (APNs / vendor ID) |
+| User ID | Yes | No | Yes |
+| Advertising Data | — | — | **No** |
 
-**Third-party SDKs to list when native ships:** Stripe, Mapbox (if embedded), Sentry, Sign in with Apple / Google / Facebook as used, APNs.
+**Third-party SDKs in binary:** Stripe only (SPM). SIWA system. Google/Facebook without mobile ad SDKs when configured.
 
 ---
 
 ## 4. Account deletion & export (Guideline 5.1.1(v))
 
-| Requirement | Web evidence | iOS packaging note |
-|-------------|--------------|--------------------|
-| In-app account deletion | Settings → Account; 30-day grace; cancel restore | Must remain **in-app**, not only web link, if account creation exists in app |
-| Deletion not harder than create | Multi-step confirm with typed confirm — acceptable if not dark-patterned | Keep equivalent flow; deep-link to same API |
-| Data export (good practice / privacy laws) | JSON download owner-scoped | Offer in-app or clearly linked account management |
-| Privacy policy link | `/privacy` in-app + footer | Include in binary metadata + settings |
+| Requirement | Web evidence | iOS evidence |
+|-------------|--------------|--------------|
+| In-app account deletion | Settings → Account | **Account → Your data → Delete Account** (`AccountDeletionView`) |
+| Not harder than create | Multi-step confirm | Toggle + type `DELETE` + optional Face ID |
+| Data export | JSON download | Account → Export Data (share sheet) |
+| Privacy policy link | `/privacy` | Login footer + Account → Privacy Policy (`LegalWebView` / Safari) |
 
 ---
 
@@ -162,45 +184,43 @@ Confirm each row in App Store Connect against live binary + third-party SDKs at 
 
 | Question | Answer |
 |----------|--------|
-| Does the app use IDFA / AppTrackingTransparency today? | **No** (web product; no ad SDK) |
-| Is data used to track users across apps/sites owned by other companies for advertising? | **No** per current Privacy Policy and code paths |
-| Sentry / optional analytics | First-party product diagnostics; consent-gated; not advertising tracking under Apple’s ATT definition |
-| Marketing cookie category | Personalized recommendations flag only; **not** sufficient to declare ATT unless a tracking SDK is added |
-| **Recommendation** | **Do not** add `NSUserTrackingUsageDescription` or ATT prompt in Stage B1 unless a deliberate ad/measurement SDK is introduced. Document re-review trigger: any MMP, Meta/Google Ads SDK, or sharing device data with data brokers. |
+| IDFA / ATT today? | **No** |
+| Data used to track across apps for ads? | **No** |
+| **Recommendation** | Do **not** add `NSUserTrackingUsageDescription` or ATT prompt unless an ad/measurement SDK is introduced |
 
 ---
 
-## 6. Pre-prompt UX checklist (native + web)
+## 6. Pre-prompt UX checklist
 
-| Permission | Web pre-prompt exists? | iOS action |
-|------------|------------------------|------------|
-| Location (market) | Yes (`MarketSelector`) | `LocationPurposeCopy.marketPickerPrePrompt` before `requestWhenInUseAuthorization` |
-| Location (check-in) | Yes (`CheckInOut`) | `LocationPurposeCopy.jobSiteCheckInPrePrompt`; disable CTA if denied |
-| Push | Yes (`PushPermission`) | Soft prompt before UN authorization when APNs path is on |
-| Photos | Implicit (upload control) | PhotosPicker / library path; purpose string in Info.plist |
-| Camera | N/A (disabled on web) | **Enabled on iOS** — purpose string live; keep pre-prompt before first capture |
+| Permission | Web pre-prompt? | iOS action |
+|------------|-----------------|------------|
+| Location (market) | Yes | `LocationPurposeCopy.marketPickerPrePrompt` |
+| Location (check-in) | Yes | `LocationPurposeCopy.jobSiteCheckInPrePrompt` |
+| Push | Yes (web) | Soft prompt before UN authorization |
+| Photos | Implicit | PhotosPicker + purpose string |
+| Camera | N/A web | Purpose string + pre-prompt before first capture |
+| Face ID | N/A | User enables app lock / system prompt on sensitive action |
 | Tracking | N/A | Do not implement ATT |
-| Age / DOB | Yes (`AgeGate`) | Native age-status path for account use |
-| Cookie/analytics | Yes (`CookieConsent`) | Map to native analytics toggle in Settings when diagnostics ship |
+| Age / DOB | Yes | `AgeGateView` |
 
 ---
 
 ## 7. Gaps / non-claims
 
-1. **Info.plist is in repo** (`ios/NoMarkup/Info.plist`) — keep ASC labels + this inventory in sync when keys change.  
-2. **Camera is enabled on iOS**; **mic remains unused** — do not declare `NSMicrophoneUsageDescription`. Web still denies camera/mic via Permissions-Policy.  
-3. **Apple Pay domain association** is still a production ops follow-up (placeholder noted in remediation).  
-4. **provider_profiles.service_location** exact plaintext is a known PII limitation (matching).  
-5. **ASC labels must be revalidated** against the actual binary dependencies at submission.  
-6. **Service worker** may unregister in production kill-switch mode — push is **partial** on web.  
-7. **No Checkr / background-check vendor** — do not list background-check data categories until FR-2.9 is productized.
+1. **Info.plist is SSOT** for purpose strings — keep this inventory + ASC labels in sync when keys change.  
+2. **Camera on iOS**; **mic unused** — do not declare mic.  
+3. **Face ID** declared because optional lock + sensitive actions use LocalAuthentication.  
+4. **Apple Pay domain association** remains ops if Apple Pay is marketed.  
+5. **Crash Data** not declared for first iOS binary (no Sentry in Package.resolved).  
+6. **No Checkr** — do not list background-check categories until productized.  
+7. **Free-tier digital** — no IAP; purchase history still applies to **Rail A** orders/escrow.
 
 ---
 
 ## 8. Row count
 
-**Inventory rows in §1 table: 38**
+**Inventory rows in §1 table: 40** (added Face ID + Device ID push explicit rows; reconciled 2026-08-02).
 
 ---
 
-*Document owner: App Store launch readiness Stage A Phase 3. Update when collection surfaces or third-party SDKs change.*
+*Document owner: App Store launch readiness. Update when collection surfaces or third-party SDKs change.*

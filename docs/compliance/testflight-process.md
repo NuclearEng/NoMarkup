@@ -1,16 +1,31 @@
 # TestFlight process — NoMarkup iOS
 
 **Audit IDs:** IOS-TEST.2 · IOS-DIST.4  
-**Updated:** 2026-07-27  
-**Related:** [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) · [`launch-board.md`](./launch-board.md) · [`device-smoke-checklist.md`](./device-smoke-checklist.md) · [`ios/README.md`](../../ios/README.md)
+**Updated:** 2026-08-02  
+**Related:** [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) · [`launch-board.md`](./launch-board.md) · [`submission-blockers.md`](./submission-blockers.md) · [`app-review-notes.md`](./app-review-notes.md) · [`ios/README.md`](../../ios/README.md)
 
-This is the **process** for internal (and later external) TestFlight. It does **not** claim a live ASC app record or beta group exists until ops creates them.
+**Eng status:** Process + binary prep **done**. Everything below marked **Founder action** is portal / Team / device work only.
+
+---
+
+## 0. What is left for the founder (summary)
+
+Engineering has shipped the free-tier dual-rail binary posture, purpose strings, privacy manifest, export key, review notes, and this process. **You** still must:
+
+1. Create Apple Developer App ID + capabilities (SIWA, Push).  
+2. Create ASC app record.  
+3. Archive with **Xcode 26+** and upload.  
+4. Answer export compliance if ASC prompts (binary already sets exempt).  
+5. Create Internal TestFlight group and enable the build.  
+6. Paste Review Notes + demo password (from seed — not git).  
+7. Capture/upload screenshots when preparing App Store review.  
+8. Keep review API + seed **up** for Apple / testers.
 
 ---
 
 ## 1. Toolchain pin (required for ASC upload)
 
-Apple’s App Store Connect upload floor (as of 2026-04-28 hub guidance): **iOS 26 SDK** → **Xcode 26.x minimum**.
+Apple’s App Store Connect upload floor: **iOS 26 SDK** → **Xcode 26.x minimum**.
 
 | Setting | Value |
 |---------|--------|
@@ -22,11 +37,10 @@ Apple’s App Store Connect upload floor (as of 2026-04-28 hub guidance): **iOS 
 
 ```bash
 export DEVELOPER_DIR=/Applications/Xcode-26.5.0.app/Contents/Developer
-# or: sudo xcode-select -s /Applications/Xcode-26.5.0.app/Contents/Developer
 xcodebuild -version   # must report 26.x
 ```
 
-Do **not** archive with Xcode 16 / iOS 18 SDK for App Store or TestFlight submission — ASC will reject.
+Do **not** archive with Xcode 16 / iOS 18 SDK for App Store or TestFlight — ASC will reject.
 
 ---
 
@@ -34,41 +48,55 @@ Do **not** archive with Xcode 16 / iOS 18 SDK for App Store or TestFlight submis
 
 | Field | Policy |
 |-------|--------|
-| **Marketing version** (`CFBundleShortVersionString` / `MARKETING_VERSION`) | First public App Store: **`1.0.0`**. Local/TestFlight may ship `0.1.x` while iterating; **bump to 1.0.0 before first public review**. |
-| **Build number** (`CFBundleVersion` / `CURRENT_PROJECT_VERSION`) | **Monotonic integer** per upload to ASC (never reuse a build for the same version). Increment on every archive that will be uploaded. |
-| Who bumps | Engineer preparing the archive; note build in TestFlight “What to Test” and in device-smoke sign-off. |
+| **Marketing version** | First public App Store: **`1.0.0`** |
+| **Build number** | **Monotonic integer** per upload (never reuse for same version) |
+| Current tree | **`1.0.0` / build `3`** (`scripts/ios-archive-lint.sh`) |
 
-Current tree (verified 2026-07-27): **`1.0.0` / build `3`** across all 8 build configurations (`MARKETING_VERSION = 1.0.0`, `CURRENT_PROJECT_VERSION = 3` — lint-checked by `scripts/ios-archive-lint.sh`).
-
-1. First **public** candidate archives as `1.0.0` build `3` (or the next free integer if a build 3 was already uploaded).  
-2. Each re-upload: leave marketing, **+1** build only.  
-3. Hotfix after 1.0.0: either `1.0.1` + new build, or `1.0.0` + higher build only if notes allow.
+**Founder:** Each re-upload → leave marketing version, **+1** build only (in Xcode or project).
 
 ---
 
-## 3. Pre-archive checklist (binary truth)
+## 3. Pre-archive checklist
 
-- [ ] `DEVELOPER_DIR` points at Xcode 26.x  
-- [ ] Scheme **NoMarkup**, configuration **Release**  
-- [ ] `AppConfig` resolves **HTTPS** for Release (empty Info.plist `APIBaseURL` → `https://api.no-markup.com`)  
-- [ ] Unit tests green: `xcodebuild test -only-testing:NoMarkupTests` (see §7)  
-- [ ] No secrets in Info.plist (Stripe/Google keys empty or injected via CI secrets — never commit live keys)  
-- [ ] `PrivacyInfo.xcprivacy` present in **both** targets (app `ios/NoMarkup/` + widget `ios/NoMarkupWidget/`)  
-- [ ] Signing: Distribution cert + App Store profile (or Automatic with team that has App Store capability)  
-- [ ] Destination: **Any iOS Device (arm64)** — not a simulator archive for TestFlight  
+### Eng-ready (already true in tree)
+
+- [x] Scheme **NoMarkup**, Release configuration  
+- [x] Empty Info.plist `APIBaseURL` → `https://api.no-markup.com`  
+- [x] Release rejects cleartext overrides (`AppConfig`)  
+- [x] `PrivacyInfo.xcprivacy` in app + widget  
+- [x] `ITSAppUsesNonExemptEncryption = false`  
+- [x] No StoreKit IAP paywall (free-tier lock)  
+- [x] Purpose strings + Face ID string present  
+
+### Founder before archive
+
+- [ ] `DEVELOPER_DIR` → Xcode 26.x  
+- [ ] Signing: your **Team** + Distribution cert + App Store profile (or Automatic with App Store-capable team)  
+- [ ] Destination: **Any iOS Device (arm64)** — not Simulator archive  
+- [ ] Gateway env: `APPLE_NATIVE_CLIENT_ID=com.nomarkup.app` on the API the build will hit  
+- [ ] Optional: inject `NOMARKUP_STRIPE_PUBLISHABLE_KEY` via CI/secrets for payment dogfood — never commit live keys  
+- [ ] Unit tests green (optional but recommended):
+
+```bash
+export DEVELOPER_DIR=/Applications/Xcode-26.5.0.app/Contents/Developer
+cd ios && xcodebuild test -scheme NoMarkup -project NoMarkup.xcodeproj \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -only-testing:NoMarkupTests
+```
 
 ---
 
-## 4. Archive & upload (Xcode 26+)
+## 4. Archive & upload — founder steps
 
-### 4.1 Xcode UI
+### 4.1 Xcode UI (recommended first upload)
 
-1. Open `ios/NoMarkup.xcodeproj` with Xcode 26.x.  
-2. Product → Destination → **Any iOS Device (arm64)**.  
-3. Product → **Archive**.  
-4. Organizer → select archive → **Distribute App** → **App Store Connect** → Upload.  
-5. Leave “Manage Version and Build Number” off if you already set them in the project; otherwise allow Xcode to bump only when you intend it.  
-6. Wait for processing email / ASC **TestFlight** tab → build becomes **Ready to Test** (or **Missing Compliance** — answer export per packaging checklist §9; binary already sets `ITSAppUsesNonExemptEncryption=false`).
+1. Open `ios/NoMarkup.xcodeproj` with **Xcode 26.x**.  
+2. Signing & Capabilities → select **your Team**; ensure **Sign in with Apple** on the App ID.  
+3. Product → Destination → **Any iOS Device (arm64)**.  
+4. Product → **Archive**.  
+5. Organizer → select archive → **Distribute App** → **App Store Connect** → Upload.  
+6. Wait for processing. If **Missing Compliance**: answer export **exempt / HTTPS-only** (see packaging §9). Binary already has `ITSAppUsesNonExemptEncryption=false`.  
+7. TestFlight tab → build **Ready to Test**.
 
 ### 4.2 CLI sketch (optional)
 
@@ -82,56 +110,56 @@ xcodebuild archive \
   -configuration Release \
   -archivePath /tmp/NoMarkup.xcarchive \
   -destination 'generic/platform=iOS'
-
-# Export / upload via Organizer or xcodebuild -exportArchive + altool/notary as team prefers.
-# Prefer Xcode Organizer for first uploads until a CI lane is provisioned.
 ```
 
-There is **no** committed fastlane lane yet — do not claim automated CI upload.
+Prefer Xcode Organizer for first uploads. **No** committed fastlane upload lane yet.
 
 ---
 
-## 5. ASC groups
+## 5. ASC groups — founder steps only
 
 | Group | Purpose | When |
 |-------|---------|------|
-| **Internal** | Team + founder devices (up to 100 App Store Connect users) | **First** — create before first binary. No external beta review. |
-| **External** (optional) | Broader dogfood | After internal smoke; may require Beta App Review. |
+| **Internal** | Team devices (ASC users) | **First** — no external beta review |
+| **External** | Broader dogfood | After internal smoke; may need Beta App Review |
 
-**Ops steps (human):**
+**Steps:**
 
-1. Create ASC app record (bundle `com.nomarkup.app`) if missing — see packaging checklist §10.1.  
+1. Create ASC app record for bundle `com.nomarkup.app` if missing.  
 2. TestFlight → **Internal Testing** → create group e.g. `NoMarkup Internal`.  
 3. Add testers (Apple IDs that are ASC users for internal).  
 4. Enable the processed build for the group.  
-5. External group only after internal PASS on `device-smoke-checklist.md`.
+5. External group only after internal PASS on [`device-smoke-checklist.md`](./device-smoke-checklist.md).
 
 ---
 
-## 6. “What to Test” template
-
-Paste into TestFlight build notes (adapt version/build):
+## 6. “What to Test” template (paste into TestFlight)
 
 ```text
-NoMarkup iOS {MARKETING} ({BUILD}) — internal dogfood
+NoMarkup iOS 1.0.0 ({BUILD}) — internal dogfood
 
 API: https://api.no-markup.com (must be up)
-Seed: customer@nomarkup.com / provider@nomarkup.com (password in 1Password / seed log — never in git)
+Seed: customer@nomarkup.com / provider@nomarkup.com
+Password: use vault / seed log (SEED_PASSWORD) — never commit to git
 
 Please cover:
-1) Cold launch → native login (not a website shell)
+1) Cold launch → native login (TabView shell, not a website)
 2) Marketplace browse + listing detail
 3) Jobs browse + job detail
-4) Sign in (email or SIWA) → Account legal links + Delete Account UI (do not delete seed)
-5) Place-bid UI (error OK if not provider-eligible)
-6) Buy now / Orders pay only on staging you own (Stripe)
-7) Notifications: after first bid/watch, confirm pre-prompt → system dialog; tap a push if server can send
-8) Accessibility: Settings → Accessibility → Display & Text Size → largest; check money labels don’t hard-clip
-9) Device matrix row: your model (prefer SE 3rd gen, Pro Max class, and any iPad)
+4) Sign in (email or SIWA) → Account legal links + Delete Account UI
+   (do not delete shared seed accounts)
+5) Plan limits: free-tier only — no IAP paywall
+6) Place-bid / Buy now only on staging you own (Stripe)
+7) Notifications pre-prompt after bid/watch if shown
+8) Accessibility: largest text — money labels readable
+9) Device matrix: SE, Pro Max class, any iPad
 
 Report: step #, device, OS, screenshot, expected vs actual.
-Regulated rails (BNPL, insurance, advances, instant payout) should stay off unless intentional.
+Regulated rails (BNPL, insurance, advances, instant payout) should stay
+server-flag OFF unless intentional.
 ```
+
+Full App Review notes: [`app-review-notes.md`](./app-review-notes.md).
 
 ---
 
@@ -139,42 +167,40 @@ Regulated rails (BNPL, insurance, advances, instant payout) should stay off unle
 
 | Source | Action |
 |--------|--------|
-| TestFlight / Xcode Organizer crashes | Symbolicate with matching archive dSYM; file issue with build # + stack. |
-| MetricKit / device logs | Attach to same issue; strip PII from screenshots. |
-| Repro gate | If crash on cold launch or login → **block** external group and public submit. |
-| Known non-blockers | Missing Stripe `pk_` → “not configured” (expected without ops). SIWA fails without App ID / keys (document). |
+| TestFlight / Organizer crashes | Symbolicate with matching dSYM; file issue with build # |
+| Repro on cold launch / login | **Block** external group and public submit |
+| Known non-blockers | Missing Stripe `pk_` → “not configured”; SIWA fails without App ID keys |
 
-After a crash fix: **new build number**, re-upload, re-enable group, note “fixes crash in build N”.
+After fix: **new build number**, re-upload, re-enable group.
 
 ---
 
-## 8. Unit tests before upload (TEST.1)
+## 8. Screenshot walk (optional automation)
+
+See [`app-store-screenshot-matrix.md`](./app-store-screenshot-matrix.md).
 
 ```bash
-export DEVELOPER_DIR=/Applications/Xcode-26.5.0.app/Contents/Developer
+# Requires live API + NOMARKUP_UI_TEST_PASSWORD from seed
 cd ios
-xcodebuild test \
-  -scheme NoMarkup \
-  -project NoMarkup.xcodeproj \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
-  -only-testing:NoMarkupTests
+xcodebuild test -scheme NoMarkup -project NoMarkup.xcodeproj \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max' \
+  -only-testing:NoMarkupUITests/ScreenshotWalkUITests
 ```
-
-Target: `ios/NoMarkupTests/` (MoneyFormat, AppConfig HTTPS resolution, NotificationDeepLink / DeepLinkRouter, ImageUploader sniff/downsample helpers, CatalogDateFormat). UI tests (`NoMarkupUITests`) are optional for archive gate (need seed creds).
 
 ---
 
-## 9. Gate on launch board
+## 9. Gate status
 
 | Item | Status |
 |------|--------|
-| Process doc (this file) | **Done** |
-| ASC record + internal group | **Open (ops)** |
-| First archive uploaded | **Open (ops)** |
-| Human device smoke signed | **Open (human)** — see device-smoke checklist |
+| Process doc (this file) | **Done (eng)** |
+| ASC record + internal group | **Open (founder)** |
+| First archive uploaded | **Open (founder)** |
+| Human device smoke signed | **Open (founder/QA)** |
+| App Store Review submit | **Open (founder)** after internal smoke + media + notes |
 
-**Do not** mark TestFlight “shipped” until an internal build is installed on a physical device and smoke is signed.
+**Do not** mark TestFlight “shipped” until an internal build is on a physical device and smoke is signed.
 
 ---
 
-*Owner: iOS launch readiness. Update when ASC groups or CI upload land.*
+*Owner: iOS launch readiness. Eng packaging complete 2026-08-02; remaining steps are founder-only.*

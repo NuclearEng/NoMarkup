@@ -837,7 +837,7 @@ extension APIClient {
     // MARK: Subscription tiers (public, display-only)
 
     /// GET `/api/v1/subscriptions/tiers` → `{ "tiers": [...] }`.
-    /// iOS uses this for limits comparison only — no purchase / StoreKit / web checkout.
+    /// iOS uses this for limits comparison; purchase only via StoreKit when AppConfig.storeKitEnabled.
     func fetchSubscriptionTiers() async throws -> SubscriptionTiersResponse {
         try await getJSON(
             pathComponents: ["api", "v1", "subscriptions", "tiers"],

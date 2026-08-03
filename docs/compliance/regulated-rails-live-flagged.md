@@ -1,8 +1,8 @@
 # Regulated rails — path to `live-flagged` (fail-closed)
 
-**Date:** 2026-07-26  
-**Mandate:** Do **not** enable BNPL / working capital / insurance / lead-gen / instant payout on **iOS**.  
-Hard-offs in `FeatureFlags.iOSHardOffKeys` stay. No StoreKit. No production flag flip from this doc.
+**Date:** 2026-07-26 · **Truth refresh:** 2026-08-02  
+**Mandate:** Do **not** enable BNPL / working capital / insurance / lead-gen / instant payout for **App Review / production** until licenses + live-flagged exit.  
+**Gate model:** Server feature flags + gateway `RequireFlag` (fail closed). `FeatureFlags.iOSHardOffKeys` is **empty** (reserved for emergency kill-switches only) — server is authoritative. No StoreKit. No production flag flip from this doc alone.
 
 **Related:**  
 [`showcase-living-checklist.md`](./showcase-living-checklist.md) R6.2–R6.6 ·  
@@ -27,28 +27,28 @@ Hard-offs in `FeatureFlags.iOSHardOffKeys` stay. No StoreKit. No production flag
 
 ---
 
-## iOS hard-off set (authoritative)
+## Regulated keys (server-authoritative; client hard-off set empty)
 
 ```text
-ios/NoMarkup/Core/FeatureFlags.swift → FeatureFlags.iOSHardOffKeys
+ios/NoMarkup/Core/FeatureFlags.swift → FeatureFlags.iOSHardOffKeys = []
 ```
 
-| Flag key | Showcase row | Product one-liner |
-|----------|--------------|-------------------|
-| `lead_gen` | R6.2 | Outcome / qualified-lead fee on take-rate |
-| `working_capital` | R6.3 | Provider advances against awarded work |
-| `customer_bnpl` | R6.4 | Customer installment (BNPL) plans |
-| `per_job_insurance` | R6.5 | Per-contract insurance quote / purchase / claims |
-| `insurance_competition` | R6.5 | Multi-carrier quote competition |
-| `legal_services` | E7 / expansion | Legal vertical browse + license surfaces |
-| `instant_payout` | R6.6 | Provider instant Connect payout |
+| Flag key | Showcase row | Product one-liner | Review / prod until licenses |
+|----------|--------------|-------------------|------------------------------|
+| `lead_gen` | R6.2 | Outcome / qualified-lead fee on take-rate | **OFF** (server) |
+| `working_capital` | R6.3 | Provider advances against awarded work | **OFF** (server) |
+| `customer_bnpl` | R6.4 | Customer installment (BNPL) plans | **OFF** (server) |
+| `per_job_insurance` | R6.5 | Per-contract insurance quote / purchase / claims | **OFF** (server) |
+| `insurance_competition` | R6.5 | Multi-carrier quote competition | **OFF** (server) |
+| `legal_services` | E7 / expansion | Legal vertical browse + license surfaces | **OFF** (server) |
+| `instant_payout` | R6.6 | Provider instant Connect payout | **OFF** (server) |
 
-Proof path: `isEnabled(_:)` returns `false` if `iOSHardOffKeys.contains(key)` **before** reading `serverFlags`.
+**Proof path:** `isEnabled(_:)` reads `serverFlags` from `GET /api/v1/flags`. Client hard-off list is empty; emergency keys can be added to `iOSHardOffKeys` without a server deploy if needed. Gateway `RequireFlag` still fails closed when flags are disabled.
 
-iOS consumer surface for App Review education (read-only, **no purchase deep links**):
+iOS consumer surface for App Review education:
 
-- `ios/NoMarkup/Features/RegulatedRailsStatusView.swift`
-- Account → under Plan limits: **Regulated capabilities**
+- `ios/NoMarkup/Features/RegulatedRailsStatusView.swift` / Business features hub
+- Account → Feature flag status / Business & finance
 
 ---
 

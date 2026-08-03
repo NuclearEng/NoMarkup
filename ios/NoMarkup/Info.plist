@@ -122,6 +122,16 @@
 	  for production archives.
 	-->
 	<!-- Export compliance: only exempt encryption (HTTPS / OS crypto). -->
+	<!--
+	  StoreKit / Rail B digital subscriptions (FR-12). Default OFF for App Store 3.1.1
+	  free-tier binary. Flip to true only after ASC products + Review Notes.
+	  Override: NOMARKUP_STOREKIT_ENABLED=true
+	-->
+	<key>StoreKitEnabled</key>
+	<false/>
+	<!-- Comma-separated ASC product IDs (or use string array). Defaults match AppConfig.defaultStoreKitProductIDs. -->
+	<key>StoreKitProductIDs</key>
+	<string>nomarkup.provider.pro.monthly,nomarkup.provider.pro.yearly,nomarkup.provider.business.monthly,nomarkup.provider.business.yearly</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<!-- FR-10.4: allow canOpenURL for Google Maps app scheme (optional directions). -->

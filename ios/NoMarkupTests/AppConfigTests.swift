@@ -79,4 +79,26 @@ final class AppConfigTests: XCTestCase {
     func testFacebookOAuthCallbackSchemeIsNomarkup() {
         XCTAssertEqual(AppConfig.facebookOAuthCallbackScheme, "nomarkup")
     }
+
+    func testStoreKitEnabledDefaultsFalse() {
+        // Committed Info.plist sets StoreKitEnabled=false; purchase paths must stay off for 3.1.1 free-tier binary.
+        // Env override may flip true in dogfood schemes — only assert default when env unset.
+        if ProcessInfo.processInfo.environment["NOMARKUP_STOREKIT_ENABLED"] == nil {
+            XCTAssertFalse(AppConfig.storeKitEnabled, "StoreKit must default off until ASC products + Review Notes")
+        }
+    }
+
+    func testDefaultStoreKitProductIDsAreASCDrafts() {
+        let ids = AppConfig.defaultStoreKitProductIDs
+        XCTAssertTrue(ids.contains("nomarkup.provider.pro.monthly"))
+        XCTAssertTrue(ids.contains("nomarkup.provider.pro.yearly"))
+        XCTAssertTrue(ids.contains("nomarkup.provider.business.monthly"))
+        XCTAssertTrue(ids.contains("nomarkup.provider.business.yearly"))
+        XCTAssertEqual(ids.count, 4)
+        // Resolved list is non-empty (plist or defaults).
+        XCTAssertFalse(AppConfig.storeKitProductIDs.isEmpty)
+        for id in AppConfig.storeKitProductIDs {
+            XCTAssertTrue(id.hasPrefix("nomarkup."), "unexpected product id \(id)")
+        }
+    }
 }

@@ -14,6 +14,12 @@ struct VerificationCenterView: View {
     @State private var statusIsError = false
     @State private var isBusy = false
 
+    // FR-2.9 Checkr scaffold — status from server only; never invent PASS.
+    @State private var backgroundCheck: ProviderBackgroundCheck?
+    @State private var backgroundCheckError: String?
+    @State private var backgroundCheckLoading = false
+    @State private var backgroundCheckRequesting = false
+
     var body: some View {
         Form {
             Section {
@@ -90,6 +96,62 @@ struct VerificationCenterView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
+            Section {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Background check")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textPrimary)
+                        Text(backgroundCheck?.displayStatus ?? (backgroundCheckLoading ? "Loading…" : "Not loaded"))
+                            .font(.subheadline)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                        if let err = backgroundCheckError {
+                            Text(err)
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.destructive)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    if backgroundCheckLoading || backgroundCheckRequesting {
+                        ProgressView()
+                            .tint(BrandTheme.accent)
+                    }
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Background check, \(backgroundCheck?.displayStatus ?? "status unknown")")
+
+                Button {
+                    Task { await requestBackgroundCheck() }
+                } label: {
+                    Text(backgroundCheck?.canRequest == false ? "Request unavailable" : "Request background check")
+                }
+                .disabled(
+                    isBusy
+                        || backgroundCheckLoading
+                        || backgroundCheckRequesting
+                        || !auth.isAuthenticated
+                        || (backgroundCheck?.canRequest == false)
+                )
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+
+                Button {
+                    Task { await loadBackgroundCheck() }
+                } label: {
+                    Text("Refresh status")
+                }
+                .disabled(isBusy || backgroundCheckLoading || backgroundCheckRequesting || !auth.isAuthenticated)
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+            } header: {
+                Text("Background check").brandSectionHeader()
+            } footer: {
+                Text("Status comes from Checkr when configured. The app never invents a PASS. Requires the background_checks flag and CHECKR_API_KEY on the server.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
             if let statusMessage {
                 Section {
                     Text(statusMessage)
@@ -110,6 +172,9 @@ struct VerificationCenterView: View {
             if emailForResend.isEmpty {
                 let e = auth.email.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !e.isEmpty { emailForResend = e }
+            }
+            if auth.isAuthenticated {
+                await loadBackgroundCheck()
             }
         }
     }
@@ -169,4 +234,38 @@ struct VerificationCenterView: View {
             statusMessage = error.localizedDescription
         }
     }
+
+    @MainActor
+    private func loadBackgroundCheck() async {
+        guard auth.isAuthenticated else { return }
+        backgroundCheckLoading = true
+        backgroundCheckError = nil
+        defer { backgroundCheckLoading = false }
+        do {
+            backgroundCheck = try await APIClient.shared.fetchMyBackgroundCheck()
+        } catch {
+            // Flag-off / key missing → 503 with clear message — surface, don't fake clear.
+            backgroundCheckError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func requestBackgroundCheck() async {
+        guard auth.isAuthenticated else { return }
+        backgroundCheckRequesting = true
+        backgroundCheckError = nil
+        statusMessage = nil
+        defer { backgroundCheckRequesting = false }
+        do {
+            let result = try await APIClient.shared.requestMyBackgroundCheck()
+            backgroundCheck = result
+            statusIsError = false
+            statusMessage = "Background check requested — status: \(result.displayStatus)."
+        } catch {
+            backgroundCheckError = error.localizedDescription
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
 }

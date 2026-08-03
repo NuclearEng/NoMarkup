@@ -112,6 +112,7 @@ func New(
 	providerLicenseHandler *handler.ProviderLicenseHandler,
 	dataExportHandler *handler.DataExportHandler,
 	passkeyHandler *handler.PasskeyHandler,
+	backgroundCheckHandler *handler.BackgroundCheckHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -585,6 +586,14 @@ func New(
 				r.Post("/me/documents", verificationHandler.UploadDocument)
 				r.Get("/me/documents", verificationHandler.ListDocuments)
 				r.Get("/me/documents/{type}/status", verificationHandler.GetDocumentStatus)
+
+				// FR-2.9 Checkr scaffold — fail-closed without CHECKR_API_KEY on POST.
+				// Flag ships disabled (migration 121).
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireFlag(dbPool, cacheClient, "background_checks"))
+					r.Get("/me/background-check", backgroundCheckHandler.Get)
+					r.Post("/me/background-check", backgroundCheckHandler.Create)
+				})
 
 				// Provider employees (team management).
 				r.Get("/me/employees", employeesHandler.List)

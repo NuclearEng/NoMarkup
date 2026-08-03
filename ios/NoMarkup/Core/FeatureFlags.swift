@@ -23,6 +23,7 @@ final class FeatureFlags: ObservableObject {
         "legal_services",
         "lead_gen",
         "instant_payout",
+        "background_checks",
     ]
 
     /// Raw server map.

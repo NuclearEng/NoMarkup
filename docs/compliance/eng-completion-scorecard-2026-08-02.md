@@ -12,7 +12,7 @@
 |-----|------:|---------|
 | **Engineering consumer dual-rail (in-scope FR eng work)** | **100 / 100** | All dual-rail MVP eng work required for auction → contract → escrow → review (services) and list → bid/BIN → order → release/dispute (goods), plus supporting chat/trust/properties/notifications depth listed below, is **implemented in code** with tests where money races demanded them. |
 | **App Store binary submit readiness** | **Not scored as 100** | Blocked by **ops / founder** Decision-IDs below — intentionally **OUT_OF_SCOPE** of this eng bar. |
-| **Full PRD product completeness** | **Not claimed** | Admin, StoreKit digital purchase, Instant AI/ETA Phase 2, Checkr remain OUT_OF_SCOPE or roadmap. |
+| **Full PRD product completeness** | **See full-prd scorecard** | Full PRD eng-max (Decision-IDs excluded) scored in [`full-prd-completion-scorecard-2026-08-02.md`](./full-prd-completion-scorecard-2026-08-02.md). Admin/StoreKit/Instant AI/Checkr/Phases 2–9 remain Decision-IDs there — not dual-rail eng blockers. |
 
 **Honesty clause:** “100/100 eng bar” means **no open dual-rail eng ship tasks** that block claiming core product depth. It does **not** mean:
 
@@ -137,6 +137,8 @@ No **open MAJOR money race** from MON-14–18 remains in the adversarial tracker
 
 | Doc | Role |
 |-----|------|
+| [`full-prd-completion-scorecard-2026-08-02.md`](./full-prd-completion-scorecard-2026-08-02.md) | **Full PRD eng-max** vs Decision-IDs (FR-1…19 + Phases 2–9) |
+| [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) | **ASC packaging** ops bar (submit packaging — not eng-max) |
 | `prd-ios-parity-backlog.md` | Unified backlog + wave log |
 | `ios-prd-coverage-audit-2026-07-27.md` | FR census + 2026-08-02 delta |
 | `ios-web-feature-matrix.md` | Live/partial/OOS matrix |

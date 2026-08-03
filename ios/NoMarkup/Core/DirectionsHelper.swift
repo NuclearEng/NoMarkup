@@ -240,25 +240,50 @@ enum BidAmountRules {
 
 // MARK: - Soft travel ETA (§13 Instant — not AI, not live GPS)
 
-/// Haversine → urban-drive minutes heuristic for Instant offer cards.
-/// Server usually precomputes `approx_travel_minutes`; this mirrors that rule
-/// for client-side fallback when both endpoints have coordinates.
+/// Driving ETA for Instant offer cards.
+/// Prefer MapKit `MKDirections` when both endpoints have coordinates; fall back
+/// to haversine → urban-drive minutes (same rule as the gateway). Never claims
+/// live GPS tracking of the provider — profile service location or device
+/// source is a one-shot estimate only.
 enum SoftTravelETA {
     /// Mean Earth radius (meters) — same constant as gateway geofence.
     private static let earthRadiusMeters = 6_371_000.0
 
-    /// Soft label for UI. Honest wording: "approx. travel", never "live GPS".
-    static func label(minutes: Int?) -> String? {
+    /// Where the minutes came from (for honest UI labels).
+    enum Source: String, Sendable, Hashable {
+        /// `MKDirections.Request` automobile ETA.
+        case mapKit
+        /// Client haversine × urban-drive heuristic.
+        case haversine
+        /// Server-precomputed `approx_travel_minutes` (also haversine).
+        case server
+    }
+
+    struct Estimate: Sendable, Hashable {
+        let minutes: Int
+        let source: Source
+    }
+
+    /// Soft label for UI. Honest wording: "approx. drive time", never "live GPS".
+    /// MapKit estimates are tagged so users know the source.
+    static func label(minutes: Int?, source: Source? = nil) -> String? {
         guard let minutes, minutes > 0 else { return nil }
+        let core: String
         if minutes < 60 {
-            return "≈ \(minutes) min approx. travel"
+            core = "≈ \(minutes) min approx. drive time"
+        } else {
+            let hours = minutes / 60
+            let rem = minutes % 60
+            if rem == 0 {
+                core = "≈ \(hours)h approx. drive time"
+            } else {
+                core = "≈ \(hours)h \(rem)m approx. drive time"
+            }
         }
-        let hours = minutes / 60
-        let rem = minutes % 60
-        if rem == 0 {
-            return "≈ \(hours)h approx. travel"
+        if source == .mapKit {
+            return "\(core) (MapKit)"
         }
-        return "≈ \(hours)h \(rem)m approx. travel"
+        return core
     }
 
     /// Great-circle distance in meters between two WGS84 points.
@@ -283,7 +308,7 @@ enum SoftTravelETA {
         return min(999, max(1, raw))
     }
 
-    /// Convenience: minutes between two coordinates, or nil if any coord is invalid.
+    /// Convenience: haversine minutes between two coordinates, or nil if any coord is invalid.
     static func minutes(
         fromLat: Double?, fromLng: Double?,
         toLat: Double?, toLng: Double?
@@ -295,5 +320,69 @@ enum SoftTravelETA {
         }
         let m = haversineMeters(lat1: fromLat, lng1: fromLng, lat2: toLat, lng2: toLng)
         return minutes(meters: m)
+    }
+
+    /// Resolve best available ETA for an Instant offer.
+    /// 1) MapKit automobile when `from` + job `approx_lat/lng` are valid
+    /// 2) Server `approx_travel_minutes` when present
+    /// 3) Client haversine when both ends have coords
+    static func resolve(
+        fromLat: Double?,
+        fromLng: Double?,
+        toLat: Double?,
+        toLng: Double?,
+        serverMinutes: Int?
+    ) async -> Estimate? {
+        if let mapKit = await drivingMinutesMapKit(
+            fromLat: fromLat, fromLng: fromLng,
+            toLat: toLat, toLng: toLng
+        ) {
+            return mapKit
+        }
+        if let serverMinutes, serverMinutes > 0 {
+            return Estimate(minutes: min(999, serverMinutes), source: .server)
+        }
+        if let m = minutes(fromLat: fromLat, fromLng: fromLng, toLat: toLat, toLng: toLng) {
+            return Estimate(minutes: m, source: .haversine)
+        }
+        return nil
+    }
+
+    /// `MKDirections.Request` automobile ETA in minutes. Nil on failure / invalid coords.
+    static func drivingMinutesMapKit(
+        fromLat: Double?, fromLng: Double?,
+        toLat: Double?, toLng: Double?
+    ) async -> Estimate? {
+        guard let fromLat, let fromLng, let toLat, let toLng else { return nil }
+        guard (-90...90).contains(fromLat), (-180...180).contains(fromLng),
+              (-90...90).contains(toLat), (-180...180).contains(toLng) else {
+            return nil
+        }
+        // Identical points — skip network directions.
+        if abs(fromLat - toLat) < 0.00001, abs(fromLng - toLng) < 0.00001 {
+            return Estimate(minutes: 1, source: .mapKit)
+        }
+
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(
+            coordinate: CLLocationCoordinate2D(latitude: fromLat, longitude: fromLng)
+        ))
+        request.destination = MKMapItem(placemark: MKPlacemark(
+            coordinate: CLLocationCoordinate2D(latitude: toLat, longitude: toLng)
+        ))
+        request.transportType = .automobile
+        request.requestsAlternateRoutes = false
+
+        let directions = MKDirections(request: request)
+        do {
+            let response = try await directions.calculate()
+            guard let route = response.routes.first else { return nil }
+            let seconds = route.expectedTravelTime
+            guard seconds.isFinite, seconds > 0 else { return nil }
+            let mins = Int((seconds / 60.0).rounded())
+            return Estimate(minutes: min(999, max(1, mins)), source: .mapKit)
+        } catch {
+            return nil
+        }
     }
 }

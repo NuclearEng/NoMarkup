@@ -274,6 +274,28 @@ extension APIClient {
         )
     }
 
+    // MARK: Background check (FR-2.9 Checkr scaffold)
+
+    /// GET `/api/v1/providers/me/background-check` — latest status or `not_started`.
+    /// Gated by `background_checks` feature flag (503 when off / misconfigured).
+    func fetchMyBackgroundCheck() async throws -> ProviderBackgroundCheck {
+        try await getJSON(
+            pathComponents: ["api", "v1", "providers", "me", "background-check"],
+            authorized: true
+        )
+    }
+
+    /// POST `/api/v1/providers/me/background-check` — request Checkr candidate/invitation.
+    /// Fail-closed without `CHECKR_API_KEY` (503). Never invents a PASS client-side.
+    @discardableResult
+    func requestMyBackgroundCheck() async throws -> ProviderBackgroundCheck {
+        try await postJSON(
+            pathComponents: ["api", "v1", "providers", "me", "background-check"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
     // MARK: Verification documents
 
     /// GET `/api/v1/providers/me/documents` → `{ "documents": [...] }`.
@@ -772,8 +794,8 @@ struct ProviderInstantOffer: Codable, Sendable, Hashable, Identifiable {
     var approxLat: Double?
     /// Approximate job site longitude (WGS84). Present when the job has geo.
     var approxLng: Double?
-    /// Soft urban-drive ETA minutes (haversine heuristic). Nil when provider or job coords missing.
-    /// Display as "approx. travel" — never claim live GPS tracking.
+    /// Soft urban-drive ETA minutes (server haversine heuristic). Nil when provider or job coords missing.
+    /// Prefer MapKit on iOS when coords exist; display as "approx. drive time" — never claim live GPS tracking.
     var approxTravelMinutes: Int?
 
     /// Stable list identity — must never mint a fresh UUID per access (breaks ForEach).
@@ -797,9 +819,10 @@ struct ProviderInstantOffer: Codable, Sendable, Hashable, Identifiable {
         MoneyFormat.usd(cents: amountCents ?? 0)
     }
 
-    /// Honest soft ETA label; nil when server omitted minutes (coords missing).
+    /// Honest soft ETA label from server minutes only (haversine). Prefer
+    /// `SoftTravelETA.resolve` + MapKit when caller has provider service coords.
     var approxTravelLabel: String? {
-        SoftTravelETA.label(minutes: approxTravelMinutes)
+        SoftTravelETA.label(minutes: approxTravelMinutes, source: .server)
     }
 
     /// Parsed expiry; nil if missing / unparseable.
@@ -1104,6 +1127,58 @@ struct ProviderDocumentUploadResult: Codable, Sendable, Hashable {
 }
 
 /// Row from `GET /api/v1/providers/me/documents`.
+// MARK: - Background check (FR-2.9)
+
+/// Latest provider background-check status from Checkr scaffold.
+/// Status values are vendor-shaped (`pending`, `clear`, `consider`, …) —
+/// never invent "passed" / PASS client-side.
+struct ProviderBackgroundCheck: Codable, Sendable, Hashable {
+    var status: String?
+    var checkrId: String?
+    var reportUrl: String?
+    var createdAt: String?
+    var updatedAt: String?
+
+    var normalizedStatus: String {
+        let s = status?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return s.isEmpty ? "not_started" : s
+    }
+
+    var isNotStarted: Bool {
+        let s = normalizedStatus
+        return s == "not_started" || s == "none"
+    }
+
+    var isPending: Bool {
+        let s = normalizedStatus
+        return s == "pending" || s == "complete"
+    }
+
+    /// Human status for UI — mirrors Checkr wording; never "PASS".
+    var displayStatus: String {
+        switch normalizedStatus {
+        case "not_started", "none": return "Not started"
+        case "pending": return "Pending"
+        case "clear": return "Clear"
+        case "consider": return "Consider"
+        case "suspended": return "Suspended"
+        case "canceled", "cancelled": return "Canceled"
+        case "dispute": return "Dispute"
+        case "complete": return "Complete (awaiting result)"
+        default: return normalizedStatus.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    var canRequest: Bool {
+        switch normalizedStatus {
+        case "not_started", "none", "canceled", "cancelled", "suspended":
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 struct ProviderVerificationDocument: Codable, Sendable, Hashable, Identifiable {
     let id: String
     var documentType: String?

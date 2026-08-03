@@ -431,6 +431,7 @@ func main() {
 	instantMatchHandler := handler.NewInstantMatchHandler(jobClient, bidClient, contractClient, cacheClient, userClient, dbPool)
 	disputeHandler := handler.NewDisputeHandler(contractClient, dbPool)
 	employeesHandler := handler.NewEmployeesHandler(dbPool, piiCipher)
+	backgroundCheckHandler := handler.NewBackgroundCheckHandler(dbPool)
 	adminMarketplaceHandler := handler.NewAdminMarketplaceHandler(dbPool)
 	listingOrdersHandler := handler.NewListingOrdersHandler(dbPool)
 	// Wire ChargeListingWinner for POST /orders/{id}/pay (buyer pay-retry /
@@ -565,6 +566,7 @@ func main() {
 		providerLicenseHandler,
 		dataExportHandler,
 		passkeyHandler,
+		backgroundCheckHandler,
 	)
 
 	srv := &http.Server{

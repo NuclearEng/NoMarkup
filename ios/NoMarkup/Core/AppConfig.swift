@@ -28,9 +28,74 @@ enum AppConfig {
     static let sellItemURL = publicWebBaseURL.appending(path: "sell")
 
     /// Web subscription **management** (Stripe Customer Portal / settings).
-    /// Used only for paid-tier “Manage on web” — never as a purchase CTA in-app.
-    /// See `docs/compliance/v1-ios-product-cut.md` (free-tier-only digital).
+    /// **Not** used as a digital purchase CTA on iOS (Guideline 3.1.1).
+    /// Reserved for non-digital account billing management if ever needed; PlanLimitsView
+    /// does **not** link here for digital tiers while `storeKitEnabled` is false.
+    /// See `docs/compliance/v1-ios-product-cut.md` + `storekit-scaffold.md`.
     static let manageSubscriptionURL = publicWebBaseURL.appending(path: "settings/subscription")
+
+    // MARK: - StoreKit (Rail B — digital subscriptions; default OFF)
+
+    /// Master switch for In-App Purchase UI + `StoreKitManager` purchase paths.
+    ///
+    /// **Default `false`** until ASC auto-renewable products exist and Review Notes
+    /// describe IAP. When false, the binary is free-tier-only for digital unlocks —
+    /// no purchase CTA, no web digital upgrade link (3.1.1).
+    ///
+    /// Resolution:
+    /// 1. `NOMARKUP_STOREKIT_ENABLED` env (`true` / `1` / `yes`)
+    /// 2. Info.plist `StoreKitEnabled` (bool or string)
+    /// 3. `false`
+    static var storeKitEnabled: Bool {
+        if let env = ProcessInfo.processInfo.environment["NOMARKUP_STOREKIT_ENABLED"] {
+            let trimmed = env.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if ["1", "true", "yes", "on"].contains(trimmed) { return true }
+            if ["0", "false", "no", "off"].contains(trimmed) { return false }
+        }
+        if let number = Bundle.main.object(forInfoDictionaryKey: "StoreKitEnabled") as? NSNumber {
+            return number.boolValue
+        }
+        if let string = Bundle.main.object(forInfoDictionaryKey: "StoreKitEnabled") as? String {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if ["1", "true", "yes", "on"].contains(trimmed) { return true }
+            if ["0", "false", "no", "off"].contains(trimmed) { return false }
+        }
+        return false
+    }
+
+    /// Canonical product ID catalog (draft ASC IDs — create in App Store Connect before enabling).
+    static let defaultStoreKitProductIDs: [String] = [
+        "nomarkup.provider.pro.monthly",
+        "nomarkup.provider.pro.yearly",
+        "nomarkup.provider.business.monthly",
+        "nomarkup.provider.business.yearly",
+    ]
+
+    /// StoreKit product identifiers for Rail B digital tiers.
+    ///
+    /// Resolution:
+    /// 1. `NOMARKUP_STOREKIT_PRODUCT_IDS` env (comma-separated)
+    /// 2. Info.plist `StoreKitProductIDs` (array of strings, or comma-separated string)
+    /// 3. `defaultStoreKitProductIDs`
+    static var storeKitProductIDs: [String] {
+        if let env = ProcessInfo.processInfo.environment["NOMARKUP_STOREKIT_PRODUCT_IDS"] {
+            let parts = env.split(separator: ",").map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }.filter { !$0.isEmpty }
+            if !parts.isEmpty { return parts }
+        }
+        if let array = Bundle.main.object(forInfoDictionaryKey: "StoreKitProductIDs") as? [String] {
+            let parts = array.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            if !parts.isEmpty { return parts }
+        }
+        if let string = Bundle.main.object(forInfoDictionaryKey: "StoreKitProductIDs") as? String {
+            let parts = string.split(separator: ",").map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }.filter { !$0.isEmpty }
+            if !parts.isEmpty { return parts }
+        }
+        return defaultStoreKitProductIDs
+    }
 
     /// Production API host (HTTPS only).
     static let productionAPIBaseURL = URL(string: "https://api.no-markup.com")!
