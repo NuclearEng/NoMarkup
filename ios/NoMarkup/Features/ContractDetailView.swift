@@ -3084,7 +3084,9 @@ private struct OpenDisputeSheet: View {
                     maxCount: 6,
                     photoURLs: $evidenceURLs,
                     isUploading: $isUploadingEvidence,
-                    errorMessage: $errorMessage
+                    errorMessage: $errorMessage,
+                    sectionTitle: "Evidence photos",
+                    footerText: "Optional. Up to 6 photos · JPEG/PNG/WebP · 10 MB each. Library or camera; uploads before submit."
                 )
 
                 if let errorMessage {
@@ -3337,6 +3339,10 @@ private struct LeaveReviewSheet: View {
 // MARK: - Guarantee claim sheet
 
 private struct GuaranteeClaimSheet: View {
+    /// Product parity with web GuaranteeClaimForm + OpenDisputeSheet evidence path.
+    private static let maxEvidencePhotos = 6
+    private static let minDescriptionChars = 50
+
     let contractID: String
     var onSuccess: (String) -> Void
 
@@ -3348,12 +3354,23 @@ private struct GuaranteeClaimSheet: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
+    private var descriptionCount: Int {
+        descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).count
+    }
+
     private var descriptionValid: Bool {
-        descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 50
+        descriptionCount >= Self.minDescriptionChars
+    }
+
+    private var hasEvidence: Bool {
+        !evidenceURLs.isEmpty
     }
 
     private var canSubmitClaim: Bool {
-        !isSubmitting && !isUploadingEvidence && descriptionValid
+        !isSubmitting
+            && !isUploadingEvidence
+            && descriptionValid
+            && hasEvidence
     }
 
     var body: some View {
@@ -3375,24 +3392,42 @@ private struct GuaranteeClaimSheet: View {
                     .lineLimit(5 ... 12)
                     .listRowBackground(BrandTheme.navyElevated)
 
-                    Text("\(descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).count) / 50 min")
+                    Text("\(descriptionCount) / \(Self.minDescriptionChars) min")
                         .font(.caption.monospacedDigit())
-                        .foregroundStyle(descriptionValid ? BrandTheme.success : BrandTheme.textSecondary)
+                        .foregroundStyle(descriptionValid ? BrandTheme.success : BrandTheme.warning)
                         .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityLabel(
+                            descriptionValid
+                                ? "Description length meets the minimum"
+                                : "Description needs \(Self.minDescriptionChars - descriptionCount) more characters"
+                        )
                 } header: {
                     Text("Guarantee claim").brandSectionHeader()
                 } footer: {
-                    Text("Files a NoMarkup Guarantee claim on this completed contract. Attach photo evidence of the issue.")
+                    Text("Files a NoMarkup Guarantee claim on this completed contract. Photo evidence is required (same path as disputes). Our team reviews claims within ~48 hours.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
 
                 PhotoPickSection(
                     context: .job,
-                    maxCount: 6,
+                    maxCount: Self.maxEvidencePhotos,
                     photoURLs: $evidenceURLs,
                     isUploading: $isUploadingEvidence,
-                    errorMessage: $errorMessage
+                    errorMessage: $errorMessage,
+                    sectionTitle: "Evidence photos (required)",
+                    footerText: "At least 1 photo required · up to \(Self.maxEvidencePhotos) · JPEG/PNG/WebP · 10 MB each. Library or camera; uploads before submit."
                 )
+
+                if !hasEvidence && !isUploadingEvidence {
+                    Section {
+                        Text("Add at least one photo showing the issue before submitting.")
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityLabel("Evidence required: add at least one photo")
+                    }
+                }
 
                 if let errorMessage {
                     Section {
@@ -3420,6 +3455,11 @@ private struct GuaranteeClaimSheet: View {
                     }
                     .disabled(!canSubmitClaim)
                     .fontWeight(.semibold)
+                    .accessibilityHint(
+                        canSubmitClaim
+                            ? "Submits the guarantee claim with \(evidenceURLs.count) photo(s)"
+                            : "Requires a 50-character description and at least one evidence photo"
+                    )
                 }
             }
             .overlay {
@@ -3437,6 +3477,14 @@ private struct GuaranteeClaimSheet: View {
     @MainActor
     private func submit() async {
         errorMessage = nil
+        guard descriptionValid else {
+            errorMessage = "Description must be at least \(Self.minDescriptionChars) characters."
+            return
+        }
+        guard hasEvidence else {
+            errorMessage = "Add at least one evidence photo before submitting."
+            return
+        }
         isSubmitting = true
         defer { isSubmitting = false }
         do {
@@ -3447,9 +3495,7 @@ private struct GuaranteeClaimSheet: View {
                 evidenceURLs: evidenceURLs
             )
             onSuccess(
-                evidenceURLs.isEmpty
-                    ? "Guarantee claim submitted."
-                    : "Guarantee claim submitted with \(evidenceURLs.count) evidence photo(s)."
+                "Guarantee claim submitted with \(evidenceURLs.count) evidence photo(s)."
             )
             dismiss()
         } catch {

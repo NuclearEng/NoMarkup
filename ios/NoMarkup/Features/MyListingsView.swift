@@ -150,6 +150,9 @@ struct MyListingsView: View {
                         style: StatusChipStyle.forStatus(status)
                     )
                 }
+                if listing.hasActivePromotion {
+                    StatusChipView(label: "Promoted", style: .warning)
+                }
                 Text(listing.priceCaption)
                     .font(.caption)
                     .foregroundStyle(BrandTheme.textSecondary)

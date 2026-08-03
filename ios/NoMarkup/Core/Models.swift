@@ -205,6 +205,9 @@ struct ListingSummary: Codable, Sendable, Hashable, Identifiable {
     var distanceKm: Double?
     var createdAt: Date?
     var updatedAt: Date?
+    /// Wave 5 paid placement — present when gateway returns the fields.
+    var isPromoted: Bool?
+    var promotedUntil: Date?
 
     var displayTitle: String {
         let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -254,6 +257,15 @@ struct ListingSummary: Codable, Sendable, Hashable, Identifiable {
         guard let ends = auctionEndsAt else { return nil }
         return CatalogDateFormat.countdownLabel(until: ends)
     }
+
+    /// Best-effort: only when list payload includes promote fields.
+    var hasActivePromotion: Bool {
+        guard isPromoted == true else { return false }
+        if let until = promotedUntil {
+            return until > Date()
+        }
+        return true
+    }
 }
 
 /// Detail from `GET /api/v1/listings/{id}` (`{ "listing": ... }`).
@@ -290,6 +302,19 @@ struct ListingDetail: Codable, Sendable, Hashable, Identifiable {
     var sellerListingsCount: Int?
     var sellerTrustTier: String?
     var sellerTrustScore: Int?
+    /// Wave 5 paid placement — present when gateway returns the fields (or after promote confirm).
+    var isPromoted: Bool?
+    var promotedUntil: Date?
+
+    /// True when placement boost is active (flag set and until is in the future when known).
+    var hasActivePromotion: Bool {
+        guard isPromoted == true else { return false }
+        if let until = promotedUntil {
+            return until > Date()
+        }
+        // Flag without expiry still treated as promoted (server truth).
+        return true
+    }
 
     var displayTitle: String {
         let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -349,6 +374,8 @@ struct ListingDetail: Codable, Sendable, Hashable, Identifiable {
         distanceKm = summary.distanceKm
         createdAt = summary.createdAt
         updatedAt = summary.updatedAt
+        isPromoted = summary.isPromoted
+        promotedUntil = summary.promotedUntil
         sellerDisplayName = nil
         sellerMemberSince = nil
         sellerListingsCount = nil
@@ -1250,6 +1277,25 @@ struct ChatChannelSummary: Codable, Sendable, Hashable, Identifiable {
     var typeLabel: String? {
         guard let channelType, !channelType.isEmpty else { return nil }
         return channelType.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    /// Inbox search residual: match party names, display title, last-message preview.
+    func matchesInboxSearch(_ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return true }
+        let folded = q.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        func hit(_ s: String?) -> Bool {
+            guard let s, !s.isEmpty else { return false }
+            return s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+                .contains(folded)
+        }
+        if hit(displayTitle) { return true }
+        if hit(customerName) { return true }
+        if hit(providerName) { return true }
+        if hit(previewText) { return true }
+        if hit(lastMessage?.content) { return true }
+        if hit(typeLabel) { return true }
+        return false
     }
 
     /// Peer's MarkRead watermark relative to `viewerUserID` (customer vs provider).

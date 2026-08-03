@@ -458,7 +458,8 @@ struct PropertiesResponse: Codable, Sendable {
 /// `GET /api/v1/analytics/customers/me/spending` — account-wide services spend.
 ///
 /// Not per-property: gateway has no `property_id` filter. Surface as a cross-property
-/// roll-up on the Properties dashboard. Preferred-providers (FR-19.2) has no API.
+/// roll-up on the Properties dashboard. Preferred providers (FR-19.2) have no dedicated
+/// API — derive best-effort from completed contracts (`PreferredProviderRollup`).
 struct CustomerSpendingResponse: Codable, Sendable {
     var dataPoints: [CustomerSpendingDataPoint]?
     var totalSpentCents: Int64?
@@ -510,6 +511,81 @@ struct CustomerCategorySpending: Codable, Sendable, Hashable, Identifiable {
         MoneyFormat.usd(cents: totalSpentCents ?? 0)
     }
 }
+
+// MARK: - Preferred providers (FR-19.2 best-effort)
+
+/// Derived preferred-provider card from completed contracts.
+///
+/// There is **no** dedicated preferred-providers API. Counts come only from
+/// `GET /api/v1/contracts?status=completed` (provider_id / provider_name already
+/// on the list row). PRD FR-19.2 defines “preferred” as **3+ completed jobs**
+/// at a property (or account-wide when `jobIds` is nil).
+struct PreferredProviderRollup: Identifiable, Hashable, Sendable {
+    /// Provider user id (stable).
+    let id: String
+    let displayName: String
+    let completedJobCount: Int
+
+    /// PRD threshold: 3+ completed jobs.
+    var isPreferred: Bool { completedJobCount >= 3 }
+
+    var countLabel: String {
+        completedJobCount == 1 ? "1 completed job" : "\(completedJobCount) completed jobs"
+    }
+
+    /// Aggregate completed contracts into provider roll-ups.
+    /// - Parameter contracts: Already status-filtered completed rows when possible.
+    /// - Parameter jobIds: When non-nil, only count contracts whose `jobId` is in the set
+    ///   (property-scoped). Account-wide roll-up passes `nil`.
+    static func from(
+        contracts: [ContractSummary],
+        jobIds: Set<String>? = nil
+    ) -> [PreferredProviderRollup] {
+        struct Acc {
+            var name: String
+            var count: Int
+        }
+        var byProvider: [String: Acc] = [:]
+
+        for contract in contracts {
+            let status = (contract.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            // Accept completed-only; callers should already filter via status=completed.
+            if !status.isEmpty, status != "completed" { continue }
+
+            let providerId = contract.providerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !providerId.isEmpty else { continue }
+
+            if let jobIds {
+                let jid = contract.jobId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !jid.isEmpty, jobIds.contains(jid) else { continue }
+            }
+
+            let rawName = contract.providerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let name = rawName.isEmpty ? "Provider \(providerId.prefix(8))" : rawName
+
+            if var existing = byProvider[providerId] {
+                existing.count += 1
+                // Prefer a real name over the truncated-id fallback.
+                if existing.name.hasPrefix("Provider "), !rawName.isEmpty {
+                    existing.name = rawName
+                }
+                byProvider[providerId] = existing
+            } else {
+                byProvider[providerId] = Acc(name: name, count: 1)
+            }
+        }
+
+        return byProvider
+            .map { PreferredProviderRollup(id: $0.key, displayName: $0.value.name, completedJobCount: $0.value.count) }
+            .sorted { lhs, rhs in
+                if lhs.completedJobCount != rhs.completedJobCount {
+                    return lhs.completedJobCount > rhs.completedJobCount
+                }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+    }
+}
+
 
 // MARK: - Wishlist (buyer standing wants)
 

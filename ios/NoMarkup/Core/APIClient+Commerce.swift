@@ -288,6 +288,75 @@ extension APIClient {
         )
     }
 
+    // MARK: Paid listing promotion (Wave 5)
+
+    /// POST `/api/v1/listings/{id}/promote` — mint SetupIntent + pending promotion_charges row.
+    ///
+    /// Server pricebook only (24h=$5 / 72h=$12 / 168h=$25). Sticky Idempotency-Key
+    /// (money-adjacent; gateway does not currently RequireIdempotencyKey on this route
+    /// but client still sends sticky keys — never invent success without confirm).
+    @discardableResult
+    func createListingPromotion(
+        listingId: String,
+        durationHours: Int
+    ) async throws -> PromoteListingResponse {
+        guard ListingPromotionTier.isAllowed(durationHours) else {
+            throw APIClientError.httpStatus(400, detail: "duration_hours must be one of 24, 72, 168")
+        }
+        let body = PromoteListingBody(durationHours: durationHours)
+        let opKey = "promote:\(listingId):\(durationHours)"
+        let headers = idempotencyHeader(for: opKey)
+        do {
+            let response: PromoteListingResponse = try await postJSON(
+                pathComponents: ["api", "v1", "listings", listingId, "promote"],
+                body: body,
+                authorized: .required,
+                headers: headers
+            )
+            // Fresh charge_id minted — next promote attempt is a new operation.
+            clearIdempotencyKey(opKey)
+            return response
+        } catch {
+            throw error
+        }
+    }
+
+    /// POST `/api/v1/listings/{id}/promote/confirm` — off-session charge then flip is_promoted.
+    /// Body is only `{ charge_id }`; amount comes from the server-side pricebook.
+    /// Sticky Idempotency-Key per charge. Fail closed: success only when `is_promoted == true`.
+    @discardableResult
+    func confirmListingPromotion(
+        listingId: String,
+        chargeId: String
+    ) async throws -> ConfirmPromotionResponse {
+        let trimmed = chargeId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "charge_id is required")
+        }
+        let body = ConfirmPromotionBody(chargeId: trimmed)
+        let opKey = "promote-confirm:\(listingId):\(trimmed)"
+        let headers = idempotencyHeader(for: opKey)
+        do {
+            let response: ConfirmPromotionResponse = try await postJSON(
+                pathComponents: ["api", "v1", "listings", listingId, "promote", "confirm"],
+                body: body,
+                authorized: .required,
+                headers: headers
+            )
+            guard response.isPromoted == true, response.status == "succeeded" else {
+                // Never treat a soft payload as success.
+                throw APIClientError.httpStatus(
+                    402,
+                    detail: "Promotion was not activated. Your card may need to be confirmed — try again."
+                )
+            }
+            clearIdempotencyKey(opKey)
+            return response
+        } catch {
+            throw error
+        }
+    }
+
     // MARK: Goods order reviews (FE-14)
 
     /// GET `/api/v1/orders/{id}/reviews/eligibility`
@@ -377,6 +446,14 @@ private struct ConfirmListingBidBondBody: Encodable {
     let bondId: String
 }
 
+private struct PromoteListingBody: Encodable {
+    let durationHours: Int
+}
+
+private struct ConfirmPromotionBody: Encodable {
+    let chargeId: String
+}
+
 // MARK: - Bid bond / retract response models
 
 /// `POST /api/v1/listings/{id}/bid-bond` success body.
@@ -412,4 +489,92 @@ struct ConfirmListingBidBondResponse: Codable, Sendable {
 struct RetractListingBidResponse: Codable, Sendable {
     var bidId: String?
     var listing: ListingDetail?
+}
+
+// MARK: - Paid listing promotion (Wave 5)
+
+/// Canonical promotion pricebook — must match gateway `promotionTiers` and web `PROMOTION_TIERS`.
+enum ListingPromotionTier {
+    struct Tier: Hashable, Identifiable, Sendable {
+        let durationHours: Int
+        let amountCents: Int64
+        let label: String
+
+        var id: Int { durationHours }
+
+        var priceLabel: String {
+            MoneyFormat.usd(cents: amountCents)
+        }
+
+        var pickerLabel: String {
+            "\(label) — \(priceLabel)"
+        }
+    }
+
+    static let all: [Tier] = [
+        Tier(durationHours: 24, amountCents: 500, label: "24 hours"),
+        Tier(durationHours: 72, amountCents: 1_200, label: "3 days"),
+        Tier(durationHours: 168, amountCents: 2_500, label: "1 week"),
+    ]
+
+    static func isAllowed(_ hours: Int) -> Bool {
+        all.contains { $0.durationHours == hours }
+    }
+
+    static func tier(for hours: Int) -> Tier? {
+        all.first { $0.durationHours == hours }
+    }
+
+    static func expectedAmountCents(for hours: Int) -> Int64? {
+        tier(for: hours)?.amountCents
+    }
+}
+
+/// `POST /api/v1/listings/{id}/promote` success body.
+struct PromoteListingResponse: Codable, Sendable {
+    let chargeId: String
+    let listingId: String
+    let durationHours: Int
+    let amountCents: Int64
+    let stripeClientSecret: String
+    var promotedUntilEstimate: String?
+    var status: String?
+
+    /// Dev short-circuit when payment client is nil (`dev_promote_{listingId}`) or DevStore SI.
+    var isDevSetupSecret: Bool {
+        let secret = stripeClientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        return secret.hasPrefix("dev_promote_")
+            || secret.hasPrefix("dev_bond_seti_")
+            || secret.hasPrefix("dev_seti_")
+    }
+
+    /// Real Stripe SetupIntent client secrets (`seti_…_secret_…`).
+    var isStripeSetupSecret: Bool {
+        let secret = stripeClientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        return secret.hasPrefix("seti_") && secret.contains("_secret_")
+    }
+
+    /// Fail-closed check: response amount must match the client pricebook for the tier.
+    func matchesExpectedPricebook() -> Bool {
+        guard let expected = ListingPromotionTier.expectedAmountCents(for: durationHours) else {
+            return false
+        }
+        return amountCents == expected && amountCents > 0
+    }
+}
+
+/// `POST /api/v1/listings/{id}/promote/confirm` success body.
+struct ConfirmPromotionResponse: Codable, Sendable {
+    var chargeId: String?
+    var listingId: String?
+    var isPromoted: Bool?
+    var promotedUntil: String?
+    var status: String?
+
+    var promotedUntilDate: Date? {
+        guard let raw = promotedUntil?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return nil
+        }
+        return CatalogDateFormat.parseISO(raw)
+    }
 }

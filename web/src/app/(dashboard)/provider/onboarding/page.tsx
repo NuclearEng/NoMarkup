@@ -38,18 +38,23 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { getApiErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { StripeOnboarding } from '@/components/payments/StripeOnboarding';
+import { getApiErrorMessage, ApiError } from '@/lib/api';
 import {
+  indexDocumentsByType,
+  isDocumentResubmissionLocked,
+  MAX_DOCUMENT_RESUBMISSIONS,
+  resubmissionLockoutMessage,
   useProviderProfile,
+  useProviderVerificationDocuments,
   useUpdateCategories,
   useUpdatePortfolio,
   useUpdateProviderProfile,
   useSetGlobalTerms,
   useUploadVerificationDocument,
 } from '@/hooks/useProviderProfile';
-import type { ProviderProfile } from '@/types';
+import type { ProviderProfile, ProviderVerificationDocument } from '@/types';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import {
   businessInfoSchema,
@@ -932,6 +937,12 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const { data: existingDocs = [] } = useProviderVerificationDocuments();
+  const existingByType = indexDocumentsByType(existingDocs);
+  const lockedTypes = DOCUMENT_TYPES.filter((dt) =>
+    isDocumentResubmissionLocked(existingByType[dt.key]?.resubmission_count),
+  );
+
   const uploadImage = useImageUpload({
     context: 'document',
     maxSizeBytes: MAX_DOCUMENT_SIZE_BYTES,
@@ -942,6 +953,15 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
 
   function handleFileSelect(docKey: string, file: File | undefined) {
     if (!file) return;
+
+    if (isDocumentResubmissionLocked(existingByType[docKey]?.resubmission_count)) {
+      setErrors((prev) => ({
+        ...prev,
+        [docKey]:
+          'This document type has no re-uploads left (maximum 3). Contact support to continue verification.',
+      }));
+      return;
+    }
 
     // Validate file type
     if (!ACCEPTED_DOCUMENT_TYPES.includes(file.type)) {
@@ -984,11 +1004,21 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
     });
   }
 
+  function hasServerCoverage(docKey: string): boolean {
+    const status = existingByType[docKey]?.status?.toLowerCase() ?? '';
+    return status === 'pending' || status === 'verified';
+  }
+
   async function handleFinish() {
-    // Validate required documents
-    const missingRequired = DOCUMENT_TYPES.filter(
-      (dt) => dt.required && !documents[dt.key],
-    );
+    // Validate required documents — local pick OR already on file (pending/verified).
+    // Locked required types cannot be re-uploaded; surface contact-support instead of a hard fail.
+    const missingRequired = DOCUMENT_TYPES.filter((dt) => {
+      if (!dt.required) return false;
+      if (documents[dt.key]) return false;
+      if (hasServerCoverage(dt.key)) return false;
+      if (isDocumentResubmissionLocked(existingByType[dt.key]?.resubmission_count)) return false;
+      return true;
+    });
 
     if (missingRequired.length > 0) {
       const newErrors: Record<string, string> = {};
@@ -999,6 +1029,20 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
       return;
     }
 
+    const lockedRequiredMissing = DOCUMENT_TYPES.filter(
+      (dt) =>
+        dt.required &&
+        !documents[dt.key] &&
+        !hasServerCoverage(dt.key) &&
+        isDocumentResubmissionLocked(existingByType[dt.key]?.resubmission_count),
+    );
+    if (lockedRequiredMissing.length > 0) {
+      setSubmitError(
+        'One or more required document types have no re-uploads left. Contact support to continue verification.',
+      );
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError(null);
 
@@ -1006,6 +1050,16 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
       // Upload each selected document: first to the image pipeline, then register with verification endpoint
       const entries = Object.entries(documents);
       for (const [docKey, docFile] of entries) {
+        if (isDocumentResubmissionLocked(existingByType[docKey]?.resubmission_count)) {
+          setErrors((prev) => ({
+            ...prev,
+            [docKey]:
+              'This document type has no re-uploads left (maximum 3). Contact support to continue verification.',
+          }));
+          setIsSubmitting(false);
+          return;
+        }
+
         // Step 1: Upload to the image pipeline to get a confirmed URL
         const uploadOutcome = await uploadImage.upload(docFile.file);
         if (!uploadOutcome.ok) {
@@ -1018,25 +1072,51 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
         }
 
         // Step 2: Register the uploaded document with the verification endpoint
-        await uploadDocument.mutateAsync({
-          document_type: docKey,
-          file_url: uploadOutcome.result.confirmedUrl,
-          file_name: docFile.name,
-          mime_type: docFile.file.type,
-          size_bytes: docFile.file.size,
-        });
+        try {
+          await uploadDocument.mutateAsync({
+            document_type: docKey,
+            file_url: uploadOutcome.result.confirmedUrl,
+            file_name: docFile.name,
+            mime_type: docFile.file.type,
+            size_bytes: docFile.file.size,
+          });
+        } catch (err) {
+          // FR-2.10: user service → gateway 422 when resubmission_count >= 3.
+          if (err instanceof ApiError && err.status === 422) {
+            setErrors((prev) => ({
+              ...prev,
+              [docKey]: resubmissionLockoutMessage(err),
+            }));
+            setSubmitError(resubmissionLockoutMessage(err));
+          } else {
+            setErrors((prev) => ({
+              ...prev,
+              [docKey]: getApiErrorMessage(err, `Could not register ${docFile.name}.`),
+            }));
+            setSubmitError(getApiErrorMessage(err, 'Failed to upload documents. Please try again.'));
+          }
+          setIsSubmitting(false);
+          return;
+        }
       }
 
       onNext();
     } catch (err) {
-      setSubmitError(getApiErrorMessage(err, 'Failed to upload documents. Please try again.'));
+      if (err instanceof ApiError && err.status === 422) {
+        setSubmitError(resubmissionLockoutMessage(err));
+      } else {
+        setSubmitError(getApiErrorMessage(err, 'Failed to upload documents. Please try again.'));
+      }
     } finally {
       setIsSubmitting(false);
     }
   }
 
   const hasRequiredDocuments = DOCUMENT_TYPES.filter((dt) => dt.required).every(
-    (dt) => documents[dt.key] !== undefined,
+    (dt) =>
+      documents[dt.key] !== undefined ||
+      hasServerCoverage(dt.key) ||
+      isDocumentResubmissionLocked(existingByType[dt.key]?.resubmission_count),
   );
 
   return (
@@ -1044,8 +1124,21 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
       <p className="text-sm text-zinc-300">
         Upload documents to verify your identity and business credentials.
         Accepted formats: JPG, PNG, WebP, PDF (max{' '}
-        {formatDocumentSize(MAX_DOCUMENT_SIZE_BYTES)}).
+        {formatDocumentSize(MAX_DOCUMENT_SIZE_BYTES)}). After a rejection you may
+        re-upload up to {String(MAX_DOCUMENT_RESUBMISSIONS)} times per document type;
+        after that, contact support — further uploads for that type are blocked.
       </p>
+
+      {lockedTypes.length > 0 ? (
+        <div
+          className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          role="alert"
+        >
+          {lockedTypes.length === 1
+            ? `${lockedTypes[0]?.label ?? 'One document type'} has no re-uploads left. Contact support to continue verification for that type.`
+            : `${String(lockedTypes.length)} document types have no re-uploads left. Contact support to continue verification for those types.`}
+        </div>
+      ) : null}
 
       <div className="space-y-4">
         {DOCUMENT_TYPES.map((docType) => (
@@ -1053,7 +1146,9 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
             key={docType.key}
             config={docType}
             document={documents[docType.key]}
+            existing={existingByType[docType.key]}
             error={errors[docType.key]}
+            locked={isDocumentResubmissionLocked(existingByType[docType.key]?.resubmission_count)}
             onFileSelect={(file) => { handleFileSelect(docType.key, file); }}
             onRemove={() => { handleRemove(docType.key); }}
           />
@@ -1088,16 +1183,25 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
   );
 }
 
+function formatDocStatus(status: string | undefined): string {
+  if (!status) return '';
+  return status.replace(/_/g, ' ');
+}
+
 function DocumentUploadField({
   config,
   document,
+  existing,
   error,
+  locked,
   onFileSelect,
   onRemove,
 }: {
   config: DocumentTypeConfig;
   document: DocumentFile | undefined;
+  existing: ProviderVerificationDocument | undefined;
   error: string | undefined;
+  locked: boolean;
   onFileSelect: (file: File | undefined) => void;
   onRemove: () => void;
 }) {
@@ -1113,8 +1217,8 @@ function DocumentUploadField({
   const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragging(true);
-  }, []);
+    if (!locked) setIsDragging(true);
+  }, [locked]);
 
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -1127,14 +1231,16 @@ function DocumentUploadField({
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
+      if (locked) return;
       const file = e.dataTransfer.files[0];
       onFileSelect(file);
     },
-    [onFileSelect],
+    [onFileSelect, locked],
   );
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (locked) return;
       const file = e.target.files?.[0];
       onFileSelect(file);
       // Reset input so the same file can be selected again
@@ -1142,47 +1248,99 @@ function DocumentUploadField({
         fileInputRef.current.value = '';
       }
     },
-    [onFileSelect],
+    [onFileSelect, locked],
   );
 
   const openFilePicker = useCallback(() => {
+    if (locked) return;
     fileInputRef.current?.click();
-  }, []);
+  }, [locked]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (locked) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         openFilePicker();
       }
     },
-    [openFilePicker],
+    [openFilePicker, locked],
   );
 
   const isPdf = document?.file.type === 'application/pdf';
+  const resubmissionCount = existing?.resubmission_count ?? 0;
+  const showResubmission =
+    resubmissionCount > 0 || existing?.status?.toLowerCase() === 'rejected';
+  const remaining = Math.max(0, MAX_DOCUMENT_RESUBMISSIONS - resubmissionCount);
 
   return (
-    <div className="glass rounded-lg border border-[var(--brand-gold)]/10 p-4">
+    <div
+      className={cn(
+        'glass rounded-lg border p-4',
+        locked ? 'border-destructive/30 opacity-95' : 'border-[var(--brand-gold)]/10',
+      )}
+    >
       <div className="mb-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label htmlFor={inputId} className="text-sm font-medium">
               {config.label}
             </label>
             <Badge variant={config.required ? 'default' : 'secondary'} className="glass-badge text-xs">
               {config.required ? 'Required' : 'Optional'}
             </Badge>
+            {existing?.status ? (
+              <Badge
+                variant={existing.status.toLowerCase() === 'rejected' ? 'destructive' : 'secondary'}
+                className="glass-badge text-xs capitalize"
+              >
+                {formatDocStatus(existing.status)}
+              </Badge>
+            ) : null}
+            {locked ? (
+              <Badge variant="destructive" className="glass-badge text-xs">
+                Locked
+              </Badge>
+            ) : null}
           </div>
           <p className="mt-0.5 text-xs text-zinc-300">
             {config.description}
           </p>
+          {showResubmission ? (
+            <p
+              className={cn(
+                'mt-1 text-xs',
+                locked ? 'font-medium text-destructive' : 'text-zinc-400',
+              )}
+            >
+              Resubmissions: {String(resubmissionCount)} of {String(MAX_DOCUMENT_RESUBMISSIONS)}
+              {locked
+                ? ' — contact support to continue'
+                : remaining > 0
+                  ? ` · ${String(remaining)} re-upload${remaining === 1 ? '' : 's'} left`
+                  : null}
+            </p>
+          ) : null}
+          {existing?.rejection_reason ? (
+            <p className="mt-1 text-xs text-destructive" role="status">
+              {existing.rejection_reason}
+            </p>
+          ) : null}
         </div>
-        {document ? (
+        {document || (existing && !locked && existing.status?.toLowerCase() === 'verified') ? (
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" aria-label="Uploaded" />
         ) : null}
       </div>
 
-      {document ? (
+      {locked ? (
+        <div
+          className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+          role="status"
+        >
+          Re-upload disabled for this document type after {String(MAX_DOCUMENT_RESUBMISSIONS)}{' '}
+          rejections. Contact support to continue verification.
+        </div>
+      ) : document ? (
         <div className="flex items-center gap-3 rounded-md border border-[var(--brand-gold)]/10 bg-white/[0.04] p-3">
           <FileText className="h-8 w-8 shrink-0 text-zinc-300" aria-hidden="true" />
           <div className="min-w-0 flex-1">
@@ -1208,6 +1366,7 @@ function DocumentUploadField({
           role="button"
           tabIndex={0}
           aria-label={`Upload ${config.label}`}
+          aria-disabled={locked}
           className={cn(
             'flex min-h-[80px] cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed px-4 py-4 transition-colors',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
@@ -1231,6 +1390,7 @@ function DocumentUploadField({
             onChange={handleInputChange}
             aria-hidden="true"
             tabIndex={-1}
+            disabled={locked}
           />
           <Upload className="mb-1 h-5 w-5 text-zinc-300" aria-hidden="true" />
           <p className="text-sm text-zinc-300">

@@ -4,7 +4,11 @@ import { type ReactNode, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  indexDocumentsByType,
+  isDocumentResubmissionLocked,
+  resubmissionLockoutMessage,
   useProviderProfile,
+  useProviderVerificationDocuments,
   useSetAvailability,
   useSetGlobalTerms,
   useUpdateCategories,
@@ -19,6 +23,17 @@ vi.mock('@/lib/api', () => {
     constructor(public status: number, public body: string) {
       super(`API ${String(status)}: ${body}`);
       this.name = 'ApiError';
+    }
+    userMessage(fallback: string): string {
+      try {
+        const parsed = JSON.parse(this.body) as { error?: string; message?: string };
+        if (parsed.error) return parsed.error;
+        if (parsed.message) return parsed.message;
+      } catch {
+        // not JSON
+      }
+      if (this.body && this.body.length < 200) return this.body;
+      return fallback;
     }
   }
   return {
@@ -236,6 +251,7 @@ describe('useUploadVerificationDocument', () => {
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/providers/me/documents', input);
     expect(result.current.data?.document_id).toBe('doc-1');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['providerProfile'] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['providerVerificationDocuments'] });
   });
 });
 
@@ -337,5 +353,55 @@ describe('useSetAvailability', () => {
     expect(cached?.instant_enabled).toBe(true);
     expect(cached?.instant_available).toBe(true);
     expect(cached?.schedule?.[0]?.day).toBe('tue');
+  });
+});
+
+describe('useProviderVerificationDocuments + resubmission helpers', () => {
+  let client: QueryClient;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    client = qc();
+  });
+  afterEach(() => {
+    client.clear();
+  });
+
+  it('lists documents from GET /providers/me/documents', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      documents: [
+        { id: 'd1', document_type: 'government_id', status: 'rejected', resubmission_count: 2 },
+      ],
+    });
+    const { result } = renderHook(() => useProviderVerificationDocuments(), { wrapper: wrap(client) });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/providers/me/documents');
+    expect(result.current.data?.[0]?.resubmission_count).toBe(2);
+  });
+
+  it('isDocumentResubmissionLocked at >= 3', () => {
+    expect(isDocumentResubmissionLocked(undefined)).toBe(false);
+    expect(isDocumentResubmissionLocked(2)).toBe(false);
+    expect(isDocumentResubmissionLocked(3)).toBe(true);
+    expect(isDocumentResubmissionLocked(4)).toBe(true);
+  });
+
+  it('indexDocumentsByType prefers higher resubmission_count', () => {
+    const map = indexDocumentsByType([
+      { document_type: 'government_id', status: 'rejected', resubmission_count: 1 },
+      { document_type: 'government_id', status: 'rejected', resubmission_count: 3 },
+      { document_type: 'business_license', status: 'pending', resubmission_count: 0 },
+    ]);
+    expect(map.government_id?.resubmission_count).toBe(3);
+    expect(map.business_license?.status).toBe('pending');
+  });
+
+  it('resubmissionLockoutMessage maps 422 to contact-support copy', () => {
+    const err = new FakeApiError(
+      422,
+      JSON.stringify({ error: 'maximum resubmission attempts reached for this document type; contact support' }),
+    );
+    expect(resubmissionLockoutMessage(err)).toMatch(/contact support/i);
   });
 });

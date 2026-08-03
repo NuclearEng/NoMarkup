@@ -5,6 +5,7 @@ import type {
   GlobalTermsInput,
   PortfolioImage,
   ProviderProfile,
+  ProviderVerificationDocument,
   ServiceCategorySummary,
   UpdateProviderInput,
 } from '@/types';
@@ -107,6 +108,71 @@ export interface UploadDocumentResult {
   status: string;
 }
 
+/** FR-2.10 hard lockout — matches user service MaxDocumentResubmissions. */
+export const MAX_DOCUMENT_RESUBMISSIONS = 3;
+
+export function isDocumentResubmissionLocked(resubmissionCount: number | undefined | null): boolean {
+  return (resubmissionCount ?? 0) >= MAX_DOCUMENT_RESUBMISSIONS;
+}
+
+/**
+ * Friendly copy when POST /providers/me/documents returns 422 (resubmission
+ * lockout) or the server message already mentions contact support.
+ */
+export function resubmissionLockoutMessage(err: unknown, fallback?: string): string {
+  if (err instanceof ApiError && err.status === 422) {
+    const server = err.userMessage('');
+    if (/resubmission|contact support|maximum/i.test(server)) {
+      return 'This document type has no re-uploads left (maximum 3). Contact support to continue verification.';
+    }
+    if (server) return server;
+  }
+  return (
+    fallback ??
+    'This document type has no re-uploads left (maximum 3). Contact support to continue verification.'
+  );
+}
+
+export const providerDocumentsQueryKey = ['providerVerificationDocuments'] as const;
+
+/**
+ * GET `/api/v1/providers/me/documents` — includes `resubmission_count` for FR-2.10 UI.
+ */
+export function useProviderVerificationDocuments() {
+  return useQuery({
+    queryKey: providerDocumentsQueryKey,
+    queryFn: async (): Promise<ProviderVerificationDocument[]> => {
+      const res = await api.get<{ documents: ProviderVerificationDocument[] }>(
+        '/api/v1/providers/me/documents',
+      );
+      return res.documents ?? [];
+    },
+  });
+}
+
+/**
+ * Latest document row per `document_type` (API may return history; UI keys on type).
+ */
+export function indexDocumentsByType(
+  documents: ProviderVerificationDocument[] | undefined,
+): Record<string, ProviderVerificationDocument> {
+  const map: Record<string, ProviderVerificationDocument> = {};
+  if (!documents) return map;
+  for (const doc of documents) {
+    const key = doc.document_type?.trim();
+    if (!key) continue;
+    // Prefer the row with the higher resubmission_count when duplicates exist.
+    const existing = map[key];
+    if (
+      !existing ||
+      (doc.resubmission_count ?? 0) >= (existing.resubmission_count ?? 0)
+    ) {
+      map[key] = doc;
+    }
+  }
+  return map;
+}
+
 export function useUploadVerificationDocument() {
   const queryClient = useQueryClient();
 
@@ -117,6 +183,7 @@ export function useUploadVerificationDocument() {
         .then((res) => res),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['providerProfile'] });
+      void queryClient.invalidateQueries({ queryKey: providerDocumentsQueryKey });
     },
   });
 }

@@ -616,6 +616,9 @@ private struct JobRowView: View {
                         .lineLimit(1)
                 }
                 // FR-10.7: distance when browse is geo-scoped (AppConfig lat/lng).
+                // Travel-time residual: MapKit ETA needs a destination coordinate.
+                // Job list only returns distance_km + approximate city/state (no lat/lng
+                // for privacy). Skip ETA until list/map exposes a coarse destination.
                 if let distance = job.distanceLabel {
                     Label(distance, systemImage: "location")
                         .font(.caption)

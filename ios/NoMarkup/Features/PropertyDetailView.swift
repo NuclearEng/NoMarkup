@@ -2,6 +2,9 @@ import SwiftUI
 
 /// FR-19.3 — per-property job history drill-in.
 /// Loads `GET /api/v1/jobs/mine?property_id=` via `APIClient.fetchJobs(propertyId:)`.
+///
+/// FR-19.2 preferred providers (best-effort): completed contracts whose `job_id`
+/// is in this property’s job list — no dedicated preferred-providers API.
 struct PropertyDetailView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -12,9 +15,14 @@ struct PropertyDetailView: View {
     @State private var jobs: [JobSummary] = []
     @State private var isLoadingJobs = false
     @State private var jobsError: String?
+    /// Property-scoped preferred / top providers from completed contracts.
+    @State private var preferredProviders: [PreferredProviderRollup] = []
     @State private var showEditSheet = false
     @State private var statusMessage: String?
     @State private var statusIsError = false
+    /// FR-19.3 history filters (client-side on loaded property jobs).
+    @State private var historyCategoryFilter = ""
+    @State private var historyDateRange: HistoryDateRange = .all
 
     init(property: PropertyItem, onUpdated: ((PropertyItem) -> Void)? = nil) {
         self.property = property
@@ -32,6 +40,37 @@ struct PropertyDetailView: View {
 
     private var historyJobs: [JobSummary] {
         jobs.filter { !$0.isActiveWork && !$0.isUpcomingWork }
+    }
+
+    /// Distinct non-empty category labels from history (for filter menu).
+    private var historyCategoryOptions: [String] {
+        let names = historyJobs.compactMap { job -> String? in
+            let n = job.categoryName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return n.isEmpty ? nil : n
+        }
+        return Array(Set(names)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private var filteredHistoryJobs: [JobSummary] {
+        historyJobs.filter { job in
+            if !historyCategoryFilter.isEmpty {
+                let name = job.categoryName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if name.caseInsensitiveCompare(historyCategoryFilter) != .orderedSame {
+                    return false
+                }
+            }
+            if let windowStart = historyDateRange.startDate {
+                guard let created = job.createdAt.flatMap({ CatalogDateFormat.parseISO($0) }) else {
+                    return false
+                }
+                if created < windowStart { return false }
+            }
+            return true
+        }
+    }
+
+    private var hasActiveHistoryFilters: Bool {
+        !historyCategoryFilter.isEmpty || historyDateRange != .all
     }
 
     var body: some View {
@@ -89,6 +128,8 @@ struct PropertyDetailView: View {
                     Text("Jobs").brandSectionHeader()
                 }
             } else {
+                preferredProvidersSection
+
                 if !activeJobs.isEmpty {
                     jobSection(title: "Active (\(activeJobs.count))", jobs: activeJobs)
                 }
@@ -96,7 +137,28 @@ struct PropertyDetailView: View {
                     jobSection(title: "Upcoming (\(upcomingJobs.count))", jobs: upcomingJobs)
                 }
                 if !historyJobs.isEmpty {
-                    jobSection(title: "History (\(historyJobs.count))", jobs: historyJobs)
+                    historyFiltersSection
+                    if filteredHistoryJobs.isEmpty {
+                        Section {
+                            Text(hasActiveHistoryFilters
+                                 ? "No history jobs match these filters. Clear category or date range to see all completed work."
+                                 : "No history jobs for this property.")
+                                .font(.subheadline)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .listRowBackground(BrandTheme.navyElevated)
+                                .accessibilityLabel("No matching history jobs")
+                        } header: {
+                            Text("History").brandSectionHeader()
+                        }
+                    } else {
+                        jobSection(
+                            title: hasActiveHistoryFilters
+                                ? "History (\(filteredHistoryJobs.count) of \(historyJobs.count))"
+                                : "History (\(historyJobs.count))",
+                            jobs: filteredHistoryJobs
+                        )
+                    }
                 }
             }
         }
@@ -129,6 +191,87 @@ struct PropertyDetailView: View {
             } onCancel: {
                 showEditSheet = false
             }
+        }
+    }
+
+    private var historyFiltersSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                // Category filter
+                Menu {
+                    Button {
+                        historyCategoryFilter = ""
+                    } label: {
+                        HStack {
+                            Text("All categories")
+                            if historyCategoryFilter.isEmpty {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                    ForEach(historyCategoryOptions, id: \.self) { name in
+                        Button {
+                            historyCategoryFilter = name
+                        } label: {
+                            HStack {
+                                Text(name)
+                                if historyCategoryFilter == name {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Label(
+                            historyCategoryFilter.isEmpty ? "All categories" : historyCategoryFilter,
+                            systemImage: "tag"
+                        )
+                        .foregroundStyle(
+                            historyCategoryFilter.isEmpty ? BrandTheme.textPrimary : BrandTheme.goldBright
+                        )
+                        .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Filter history by category")
+                .accessibilityValue(historyCategoryFilter.isEmpty ? "All categories" : historyCategoryFilter)
+
+                // Date range filter
+                Picker("Date range", selection: $historyDateRange) {
+                    ForEach(HistoryDateRange.allCases) { range in
+                        Text(range.label).tag(range)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(minHeight: 44)
+                .accessibilityLabel("Filter history by date range")
+
+                if hasActiveHistoryFilters {
+                    Button {
+                        historyCategoryFilter = ""
+                        historyDateRange = .all
+                    } label: {
+                        Text("Clear history filters")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(BrandTheme.accent)
+                    .accessibilityHint("Resets category and date range filters")
+                }
+            }
+            .padding(.vertical, 4)
+            .listRowBackground(BrandTheme.navyElevated)
+        } header: {
+            Text("History filters").brandSectionHeader()
+        } footer: {
+            Text("Filters apply to completed and past jobs only. Active and upcoming lists stay unfiltered.")
+                .foregroundStyle(BrandTheme.textSecondary)
         }
     }
 
@@ -257,6 +400,56 @@ struct PropertyDetailView: View {
         }
     }
 
+    /// FR-19.2 best-effort — only providers with completed contracts on this property’s jobs.
+    @ViewBuilder
+    private var preferredProvidersSection: some View {
+        if preferredProviders.isEmpty {
+            EmptyView()
+        } else {
+            Section {
+                ForEach(preferredProviders.prefix(5)) { provider in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(provider.displayName)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                                .lineLimit(1)
+                            Text(provider.countLabel)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                        Spacer(minLength: 8)
+                        if provider.isPreferred {
+                            Text("PREFERRED")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(BrandTheme.accent, in: Capsule())
+                        } else {
+                            Text("\(provider.completedJobCount)/3")
+                                .font(.caption2.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(
+                        provider.isPreferred
+                            ? "\(provider.displayName), preferred, \(provider.countLabel)"
+                            : "\(provider.displayName), \(provider.countLabel)"
+                    )
+                }
+            } header: {
+                Text("Providers at this property").brandSectionHeader()
+            } footer: {
+                Text("From completed contracts linked to jobs at this address. Preferred = 3+ completed jobs with the same provider. Derived from existing contract data only.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+    }
+
     @MainActor
     private func loadJobs() async {
         guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
@@ -267,11 +460,72 @@ struct PropertyDetailView: View {
         do {
             let response = try await APIClient.shared.fetchJobs(propertyId: current.id, pageSize: 100)
             jobs = response.jobs
+            await loadPreferredProviders(for: response.jobs)
         } catch {
             if jobs.isEmpty {
                 jobsError = error.localizedDescription
             }
         }
+    }
+
+    /// Soft-fail preferred providers; property job history still works without it.
+    @MainActor
+    private func loadPreferredProviders(for jobs: [JobSummary]) async {
+        let jobIds = Set(jobs.map(\.id))
+        guard !jobIds.isEmpty else {
+            preferredProviders = []
+            return
+        }
+        do {
+            let response = try await APIClient.shared.fetchContracts(
+                page: 1,
+                pageSize: 100,
+                status: "completed"
+            )
+            preferredProviders = PreferredProviderRollup.from(
+                contracts: response.contracts,
+                jobIds: jobIds
+            )
+        } catch {
+            // Soft-fail: leave previous snapshot or empty.
+            if preferredProviders.isEmpty {
+                preferredProviders = []
+            }
+        }
+    }
+}
+
+
+// MARK: - FR-19.3 history date window
+
+private enum HistoryDateRange: String, CaseIterable, Identifiable {
+    case all
+    case days30
+    case days90
+    case year1
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return "All"
+        case .days30: return "30d"
+        case .days90: return "90d"
+        case .year1: return "1y"
+        }
+    }
+
+    /// Inclusive lower bound for `created_at`; nil means no lower bound.
+    var startDate: Date? {
+        let days: Int?
+        switch self {
+        case .all: days = nil
+        case .days30: days = 30
+        case .days90: days = 90
+        case .year1: days = 365
+        }
+        guard let days else { return nil }
+        return Calendar.current.date(byAdding: .day, value: -days, to: Date())
     }
 }
 

@@ -965,6 +965,8 @@ func (h *ListingsHandler) MyListings(w http.ResponseWriter, r *http.Request) {
 			l.auction_duration_hours, l.auction_ends_at,
 			COALESCE(l.snipe_extension_count,0),
 			l.condition,
+			COALESCE(l.is_promoted, false),
+			l.promoted_until,
 			l.created_at, l.updated_at
 		  FROM listings l
 		  LEFT JOIN service_categories c ON c.id = l.category_id
@@ -982,6 +984,7 @@ func (h *ListingsHandler) MyListings(w http.ResponseWriter, r *http.Request) {
 		var l listingJSON
 		var lat, lng pgtype.Float8
 		var endsAt pgtype.Timestamptz
+		var promotedUntil pgtype.Timestamptz
 		var condition sql.NullString
 		if err := rows.Scan(&l.ID, &l.SellerID, &l.CategoryID,
 			&l.CategoryName, &l.CategorySlug,
@@ -994,6 +997,7 @@ func (h *ListingsHandler) MyListings(w http.ResponseWriter, r *http.Request) {
 			&l.AuctionDurationHours, &endsAt,
 			&l.SnipeExtensionCount,
 			&condition,
+			&l.IsPromoted, &promotedUntil,
 			&l.CreatedAt, &l.UpdatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "scan error")
 			return
@@ -1009,6 +1013,14 @@ func (h *ListingsHandler) MyListings(w http.ResponseWriter, r *http.Request) {
 		if endsAt.Valid {
 			t := endsAt.Time
 			l.AuctionEndsAt = &t
+		}
+		if promotedUntil.Valid {
+			t := promotedUntil.Time
+			if t.After(time.Now().UTC()) && l.IsPromoted {
+				l.PromotedUntil = &t
+			} else if !t.After(time.Now().UTC()) {
+				l.IsPromoted = false
+			}
 		}
 		if condition.Valid {
 			s := condition.String

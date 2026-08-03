@@ -492,12 +492,23 @@ actor APIClient {
         return try await fetchMyJobs(page: page, pageSize: pageSize, propertyId: trimmed)
     }
 
-    /// GET `/api/v1/channels?page=&page_size=` — chat inbox (Bearer required).
-    func fetchChatChannels(page: Int = 1, pageSize: Int = 40) async throws -> ChatChannelsResponse {
-        let items = [
+    /// GET `/api/v1/channels?page=&page_size=&q=` — chat inbox (Bearer required).
+    /// Optional `q`: gateway page-scoped filter on party names + last message (case-insensitive).
+    func fetchChatChannels(
+        page: Int = 1,
+        pageSize: Int = 40,
+        query: String? = nil
+    ) async throws -> ChatChannelsResponse {
+        var items = [
             URLQueryItem(name: "page", value: String(max(1, page))),
             URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
         ]
+        if let query {
+            let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !q.isEmpty {
+                items.append(URLQueryItem(name: "q", value: String(q.prefix(200))))
+            }
+        }
         return try await getJSON(
             pathComponents: ["api", "v1", "channels"],
             query: items,
@@ -2111,6 +2122,12 @@ enum APIClientError: Error, LocalizedError {
     /// First-time listing bid needs a Stripe SetupIntent bond (Wave 4).
     var isBidBondRequired: Bool {
         if case .bidBondRequired = self { return true }
+        return false
+    }
+
+    /// 402 Payment Required that is not a bid-bond gate (e.g. promote confirm, escrow).
+    var isPaymentRequired: Bool {
+        if case .httpStatus(let code, _) = self, code == 402 { return true }
         return false
     }
 

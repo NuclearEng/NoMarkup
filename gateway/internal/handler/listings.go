@@ -221,6 +221,9 @@ type listingJSON struct {
 	// nil when no pending offer exists. Populated by overlayCurrentOffer.
 	CurrentOfferAmountCents *int64          `json:"current_offer_amount_cents"`
 	CurrentOfferBuyerID     *string         `json:"current_offer_buyer_id"`
+	// Seller promote (promoted_listings): true only after charge succeeds.
+	IsPromoted    bool       `json:"is_promoted"`
+	PromotedUntil *time.Time `json:"promoted_until"`
 	CreatedAt            time.Time          `json:"created_at"`
 	UpdatedAt            time.Time          `json:"updated_at"`
 }
@@ -420,6 +423,8 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 			COALESCE(l.snipe_extension_count, 0),
 			`+distanceExpr+`                      AS distance_km,
 			l.condition,
+			COALESCE(l.is_promoted, false),
+			l.promoted_until,
 			l.created_at, l.updated_at
 		  FROM listings l
 		  LEFT JOIN service_categories c ON c.id = l.category_id
@@ -440,6 +445,7 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		var lat, lng pgtype.Float8
 		var distanceKm pgtype.Float8
 		var endsAt pgtype.Timestamptz
+		var promotedUntil pgtype.Timestamptz
 		var reserveCents, buyNowCents pgtype.Int8
 		var reserveMet pgtype.Bool
 		var condition sql.NullString
@@ -456,6 +462,7 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 			&l.SnipeExtensionCount,
 			&distanceKm,
 			&condition,
+			&l.IsPromoted, &promotedUntil,
 			&l.CreatedAt, &l.UpdatedAt); err != nil {
 			slog.Error("listings scan failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "scan error")
@@ -476,6 +483,15 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		if endsAt.Valid {
 			t := endsAt.Time
 			l.AuctionEndsAt = &t
+		}
+		if promotedUntil.Valid {
+			t := promotedUntil.Time
+			// Hide expired promotions so clients do not show a stale badge.
+			if t.After(time.Now().UTC()) && l.IsPromoted {
+				l.PromotedUntil = &t
+			} else if !t.After(time.Now().UTC()) {
+				l.IsPromoted = false
+			}
 		}
 		if reserveCents.Valid {
 			v := reserveCents.Int64
@@ -561,6 +577,7 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	var d listingDetailJSON
 	var lat, lng pgtype.Float8
 	var endsAt pgtype.Timestamptz
+	var promotedUntil pgtype.Timestamptz
 	var memberSince time.Time
 	var reserveCents, buyNowCents pgtype.Int8
 	var reserveMet pgtype.Bool
@@ -586,6 +603,8 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 			l.auction_duration_hours, l.auction_ends_at,
 			COALESCE(l.snipe_extension_count, 0),
 			l.condition,
+			COALESCE(l.is_promoted, false),
+			l.promoted_until,
 			l.created_at, l.updated_at,
 			COALESCE(u.display_name, ''), u.created_at,
 			(SELECT COUNT(*) FROM listings WHERE seller_id = l.seller_id AND status IN ('active','sold'))
@@ -609,6 +628,7 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 		&d.AuctionDurationHours, &endsAt,
 		&d.SnipeExtensionCount,
 		&condition,
+		&d.IsPromoted, &promotedUntil,
 		&d.CreatedAt, &d.UpdatedAt,
 		&d.SellerDisplayName, &memberSince, &d.SellerListingsCount,
 	)
@@ -632,6 +652,14 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	if endsAt.Valid {
 		t := endsAt.Time
 		d.AuctionEndsAt = &t
+	}
+	if promotedUntil.Valid {
+		t := promotedUntil.Time
+		if t.After(time.Now().UTC()) && d.IsPromoted {
+			d.PromotedUntil = &t
+		} else if !t.After(time.Now().UTC()) {
+			d.IsPromoted = false
+		}
 	}
 	// Lazy past-deadline transition: an 'active' auction whose deadline has
 	// elapsed reads as 'ended' (no close-worker flips it). Keeps the badge

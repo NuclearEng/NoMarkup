@@ -249,6 +249,12 @@ func (h *ChatHandler) ShareContact(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListChannels handles GET /api/v1/channels.
+//
+// Optional `q` query: cheap in-memory filter over the returned page after
+// participant name enrichment. Matches party display names and last-message
+// content (case-insensitive substring). Caps at 200 runes. Does not expand
+// SQL/pagination — inbox search residual; clients should request a larger
+// page_size when searching. Empty/omitted q returns the normal list.
 func (h *ChatHandler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -268,6 +274,20 @@ func (h *ChatHandler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	if ps := q.Get("page_size"); ps != "" {
 		if v, err := strconv.Atoi(ps); err == nil {
 			pageSize = int32(v)
+		}
+	}
+
+	// FR-8 residual: optional inbox search string (names + last message).
+	search := strings.TrimSpace(q.Get("q"))
+	if search != "" {
+		// Cap like ListMessages so unbounded client input cannot bloat logs/CPU.
+		if utf8.RuneCountInString(search) > 200 {
+			runes := []rune(search)
+			search = string(runes[:200])
+		}
+		// Prefer a wider page when searching so the page-scoped filter is useful.
+		if pageSize < 100 {
+			pageSize = 100
 		}
 	}
 
@@ -296,12 +316,23 @@ func (h *ChatHandler) ListChannels(w http.ResponseWriter, r *http.Request) {
 		channels = append(channels, protoChannelToJSON(ch, names))
 	}
 
+	if search != "" {
+		channels = filterChannelsByQuery(channels, search)
+	}
+
 	result := map[string]interface{}{
 		"channels": channels,
 	}
 	if pg := resp.GetPagination(); pg != nil {
+		// When q filters the page, surface the filtered length as totalCount so
+		// clients don't claim unfiltered inbox size; hasNext stays from the
+		// unfiltered gRPC page (more channels may exist server-side).
+		totalCount := pg.GetTotalCount()
+		if search != "" {
+			totalCount = int32(len(channels))
+		}
 		result["pagination"] = map[string]interface{}{
-			"totalCount": pg.GetTotalCount(),
+			"totalCount": totalCount,
 			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
@@ -310,6 +341,44 @@ func (h *ChatHandler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// filterChannelsByQuery keeps channels whose party names or last-message content
+// contain needle (case-insensitive). Pure post-enrichment filter — no extra RPCs.
+func filterChannelsByQuery(channels []map[string]interface{}, needle string) []map[string]interface{} {
+	n := strings.ToLower(strings.TrimSpace(needle))
+	if n == "" {
+		return channels
+	}
+	out := make([]map[string]interface{}, 0, len(channels))
+	for _, ch := range channels {
+		if channelMapMatchesQuery(ch, n) {
+			out = append(out, ch)
+		}
+	}
+	return out
+}
+
+func channelMapMatchesQuery(ch map[string]interface{}, needleLower string) bool {
+	if ch == nil {
+		return false
+	}
+	for _, key := range []string{"customer_name", "provider_name"} {
+		if s, ok := ch[key].(string); ok && s != "" {
+			if strings.Contains(strings.ToLower(s), needleLower) {
+				return true
+			}
+		}
+	}
+	// last_message may be map[string]interface{} from protoMessageToJSON
+	if lm, ok := ch["last_message"].(map[string]interface{}); ok && lm != nil {
+		if content, ok := lm["content"].(string); ok && content != "" {
+			if strings.Contains(strings.ToLower(content), needleLower) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // GetChannel handles GET /api/v1/channels/{id}.

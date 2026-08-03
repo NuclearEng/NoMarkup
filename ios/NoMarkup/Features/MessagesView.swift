@@ -30,6 +30,9 @@ import UIKit
 /// - **FR-8.6 conversation search:** in-thread search uses `GET …/messages?q=`
 ///   (membership-scoped ILIKE on the server) with local filter while the request
 ///   is in flight; empty query keeps the normal thread list
+/// - **Inbox search residual:** `MessagesView` searchable filters locally and,
+///   when `q` is non-empty, reloads via `GET /channels?q=` (gateway page-scoped
+///   match on party names + last message content)
 /// - **Read receipts (FR-8.2):** double-check + "Seen" under the caller’s last own
 ///   message when the peer has read it; single check ("Sent") while pending.
 ///   Prefer channel `customer_last_read_at` / `provider_last_read_at` (peer
@@ -59,8 +62,20 @@ struct MessagesView: View {
     @State private var needsSignIn = false
     /// Split-view selection (iPad regular width) — DES.12 / MP.1.
     @State private var selectedChannel: ChatChannelSummary?
+    /// Inbox search residual — local filter + server `q` when non-empty.
+    @State private var inboxSearchText = ""
+    @State private var inboxSearchTask: Task<Void, Never>?
+    @State private var isSearchingInbox = false
 
     private var usesSplitView: Bool { horizontalSizeClass == .regular }
+
+    /// Local filter over the loaded page; used always (instant) and as fail-soft
+    /// when a server `q=` request is in flight or fails.
+    private var displayedChannels: [ChatChannelSummary] {
+        let q = inboxSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return channels }
+        return channels.filter { $0.matchesInboxSearch(q) }
+    }
 
     var body: some View {
         Group {
@@ -104,8 +119,16 @@ struct MessagesView: View {
         content
             .navigationTitle("Messages")
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .searchable(text: $inboxSearchText, prompt: "Search inbox")
+            .onChange(of: inboxSearchText) { _, _ in
+                scheduleInboxSearch()
+            }
             .refreshable { await load() }
             .task { await load() }
+            .onDisappear {
+                inboxSearchTask?.cancel()
+                inboxSearchTask = nil
+            }
     }
 
     @ViewBuilder
@@ -143,16 +166,24 @@ struct MessagesView: View {
             ) {
                 Task { await load() }
             }
-        } else if channels.isEmpty {
+        } else if channels.isEmpty && inboxSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             BrandEmptyState(
                 title: "No conversations yet",
                 systemImage: "bubble.left.and.bubble.right.fill",
                 message: "Chat threads with providers and customers appear here after you bid or award a job. Pull to refresh anytime."
             )
+        } else if displayedChannels.isEmpty {
+            BrandEmptyState(
+                title: "No matching conversations",
+                systemImage: "magnifyingglass",
+                message: isSearchingInbox
+                    ? "Searching inbox…"
+                    : "No conversations match “\(inboxSearchText.trimmingCharacters(in: .whitespacesAndNewlines))”. Clear search to see your full inbox (server search covers party names and last-message previews on the loaded page)."
+            )
         } else {
             List {
                 Section {
-                    ForEach(channels) { channel in
+                    ForEach(displayedChannels) { channel in
                         if usesSplitView {
                             Button {
                                 selectedChannel = channel
@@ -179,13 +210,20 @@ struct MessagesView: View {
                         }
                     }
                 } header: {
-                    if let total = pagination?.resolvedTotal, total > 0 {
+                    let q = inboxSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !q.isEmpty {
+                        Text(
+                            isSearchingInbox
+                                ? "Searching…"
+                                : "\(displayedChannels.count) match\(displayedChannels.count == 1 ? "" : "es")"
+                        ).brandSectionHeader()
+                    } else if let total = pagination?.resolvedTotal, total > 0 {
                         Text("\(channels.count) of \(total)").brandSectionHeader()
                     } else {
                         Text("Inbox").brandSectionHeader()
                     }
                 } footer: {
-                    Text("Unread counts come from each channel’s server unread_count (your party only). Open a conversation for live updates (WebSocket when available, otherwise a few-second refresh). Attach photos from the thread composer. Inbox refreshes when you leave a thread or pull down.")
+                    Text("Unread counts come from each channel’s server unread_count (your party only). Search filters by party name and last-message preview (local + server `q` when typing). Open a conversation for live updates. Inbox refreshes when you leave a thread or pull down.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
@@ -195,7 +233,7 @@ struct MessagesView: View {
     }
 
     @MainActor
-    private func load() async {
+    private func load(query: String? = nil) async {
         if auth.isScaffoldSession {
             channels = []
             pagination = nil
@@ -204,13 +242,38 @@ struct MessagesView: View {
             return
         }
 
-        isLoading = true
+        let q = (query ?? inboxSearchText).trimmingCharacters(in: .whitespacesAndNewlines)
+        let searching = !q.isEmpty
+
+        // Full-screen loader only on cold empty inbox (not on every keystroke).
+        if channels.isEmpty && !searching {
+            isLoading = true
+        }
+        if searching {
+            isSearchingInbox = true
+        }
         errorMessage = nil
         needsSignIn = false
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            if searching {
+                isSearchingInbox = false
+            }
+        }
 
         do {
-            let response = try await APIClient.shared.fetchChatChannels(page: 1, pageSize: 40)
+            // Wider page when searching so gateway page-scoped `q` has more to filter.
+            let pageSize = searching ? 100 : 40
+            let response = try await APIClient.shared.fetchChatChannels(
+                page: 1,
+                pageSize: pageSize,
+                query: searching ? q : nil
+            )
+            // Ignore stale responses if the user kept typing.
+            let still = inboxSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if searching, still != q {
+                return
+            }
             channels = response.channels
             pagination = response.pagination
         } catch let error as APIClientError where error.isUnauthorized {
@@ -221,6 +284,20 @@ struct MessagesView: View {
             if channels.isEmpty {
                 errorMessage = error.localizedDescription
             }
+            // Fail soft when searching: keep prior channels + local filter.
+        }
+    }
+
+    /// Debounced server inbox search when `q` non-empty; clear reloads full inbox.
+    private func scheduleInboxSearch() {
+        inboxSearchTask?.cancel()
+        let q = inboxSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        inboxSearchTask = Task { @MainActor in
+            if !q.isEmpty {
+                try? await Task.sleep(nanoseconds: 280_000_000)
+                if Task.isCancelled { return }
+            }
+            await load(query: q.isEmpty ? "" : q)
         }
     }
 }

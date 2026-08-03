@@ -365,6 +365,10 @@ struct PhotoPickSection: View {
     @Binding var photoURLs: [String]
     @Binding var isUploading: Bool
     @Binding var errorMessage: String?
+    /// Section header label (default "Photos").
+    var sectionTitle: String = "Photos"
+    /// Footer copy. Override for required evidence / clear limits.
+    var footerText: String = "Optional. Library or camera. JPEG/PNG/WebP up to 10 MB each. Photos upload before submit."
 
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var showCamera = false
@@ -445,9 +449,9 @@ struct PhotoPickSection: View {
             }
             #endif
         } header: {
-            Text("Photos").brandSectionHeader()
+            Text(sectionTitle).brandSectionHeader()
         } footer: {
-            Text("Optional. Library or camera. JPEG/PNG/WebP up to 10 MB each. Photos upload before submit.")
+            Text(footerText)
                 .foregroundStyle(BrandTheme.textSecondary)
         }
     }

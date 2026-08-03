@@ -5,8 +5,11 @@ import SwiftUI
 /// Summary active/upcoming counts via `GET /api/v1/jobs/mine?property_id=`.
 ///
 /// **FR-19.2 spend:** `GET /api/v1/analytics/customers/me/spending` is account-wide
-/// (no per-property filter). Shown as a cross-property roll-up. Preferred providers
-/// (3+ jobs at a property) have no API — not surfaced.
+/// (no per-property filter). Shown as a cross-property roll-up.
+///
+/// **FR-19.2 preferred providers:** no dedicated API. Best-effort from
+/// `GET /api/v1/contracts?status=completed` — top providers by completed job count;
+/// PRD “preferred” badge when count ≥ 3. Property-scoped cards live on PropertyDetailView.
 struct PropertiesView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -14,6 +17,9 @@ struct PropertiesView: View {
     @State private var jobCounts: [String: PropertyJobCounts] = [:]
     @State private var spending: CustomerSpendingResponse?
     @State private var spendingError: String?
+    /// Account-wide preferred/top providers from completed contracts (FR-19.2 best-effort).
+    @State private var preferredProviders: [PreferredProviderRollup] = []
+    @State private var preferredProvidersError: String?
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
@@ -122,6 +128,8 @@ struct PropertiesView: View {
             }
 
             spendingSection
+
+            preferredProvidersSection
 
             Section {
                 ForEach(properties) { property in
@@ -243,7 +251,7 @@ struct PropertiesView: View {
             } header: {
                 Text("Spend · all properties").brandSectionHeader()
             } footer: {
-                Text("From completed service jobs on your account (last ~3 months by default). Not broken down per property — the API has no property filter. Preferred-provider stats are not available yet.")
+                Text("From completed service jobs on your account (trailing 12 months). Not broken down per property — the API has no property filter. Preferred providers below use completed contracts.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         } else if let spendingError {
@@ -270,6 +278,61 @@ struct PropertiesView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(value)")
+    }
+
+    /// FR-19.2 — account-wide preferred / top providers from completed contracts.
+    @ViewBuilder
+    private var preferredProvidersSection: some View {
+        if !preferredProviders.isEmpty {
+            Section {
+                ForEach(preferredProviders.prefix(5)) { provider in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(provider.displayName)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                                .lineLimit(1)
+                            Text(provider.countLabel)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                        Spacer(minLength: 8)
+                        if provider.isPreferred {
+                            Text("PREFERRED")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(BrandTheme.accent, in: Capsule())
+                                .accessibilityLabel("Preferred provider")
+                        } else {
+                            Text("\(provider.completedJobCount)/3")
+                                .font(.caption2.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(BrandTheme.textSecondary)
+                                .accessibilityLabel("\(provider.completedJobCount) of 3 jobs toward preferred")
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("Providers · all properties").brandSectionHeader()
+            } footer: {
+                Text("From your completed service contracts (up to 100 recent). “Preferred” means 3+ completed jobs with that provider (PRD FR-19.2). Open a property for property-scoped counts. No separate preferred-providers API — counts are derived only.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        } else if let preferredProvidersError {
+            Section {
+                Text(preferredProvidersError)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .listRowBackground(BrandTheme.navyElevated)
+            } header: {
+                Text("Providers").brandSectionHeader()
+            }
+        }
     }
 
     @ViewBuilder
@@ -365,9 +428,10 @@ struct PropertiesView: View {
 
         do {
             properties = try await APIClient.shared.fetchProperties().properties
-            // Counts + spend are independent; soft-fail inside each helper.
+            // Counts + spend + preferred providers are independent; soft-fail inside each helper.
             await loadJobCounts(for: properties)
             await loadSpending()
+            await loadPreferredProviders()
         } catch {
             if properties.isEmpty {
                 errorMessage = error.localizedDescription
@@ -398,6 +462,27 @@ struct PropertiesView: View {
             // Soft-fail: keep last good snapshot if any; otherwise show a quiet note.
             if spending == nil {
                 spendingError = "Spend summary unavailable right now."
+            }
+        }
+    }
+
+    /// FR-19.2 best-effort — completed contracts only (no invented stats).
+    @MainActor
+    private func loadPreferredProviders() async {
+        do {
+            let response = try await APIClient.shared.fetchContracts(
+                page: 1,
+                pageSize: 100,
+                status: "completed"
+            )
+            preferredProviders = PreferredProviderRollup.from(contracts: response.contracts)
+            // Quiet empty-state note only when we successfully loaded zero rows.
+            preferredProvidersError = preferredProviders.isEmpty
+                ? "No completed contracts yet — preferred providers appear after 3+ jobs with the same provider."
+                : nil
+        } catch {
+            if preferredProviders.isEmpty {
+                preferredProvidersError = "Provider summary unavailable right now."
             }
         }
     }

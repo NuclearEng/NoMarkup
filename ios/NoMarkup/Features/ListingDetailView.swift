@@ -74,6 +74,13 @@ struct ListingDetailView: View {
     @State private var cancelListingIsError = false
     @State private var confirmCancelListing = false
 
+    /// Seller paid placement (POST /listings/{id}/promote + /confirm).
+    @State private var selectedPromoteHours: Int = 24
+    @State private var isPromotingListing = false
+    @State private var promoteStatusMessage: String?
+    @State private var promoteStatusIsError = false
+    @State private var confirmPromoteListing = false
+
     @State private var similarListings: [ListingSummary] = []
     @State private var similarState: SimilarListingsLoadState = .idle
 
@@ -275,6 +282,31 @@ struct ListingDetailView: View {
         } message: {
             Text("Ends this auction for buyers. Listings with active bids cannot be cancelled from the app.")
         }
+        .confirmationDialog(
+            "Promote this listing?",
+            isPresented: $confirmPromoteListing,
+            titleVisibility: .visible
+        ) {
+            Button(promoteConfirmButtonTitle) {
+                Task { await promoteOwnedListing() }
+            }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text(promoteConfirmMessage)
+        }
+    }
+
+    private var promoteConfirmButtonTitle: String {
+        let price = ListingPromotionTier.tier(for: selectedPromoteHours)?.priceLabel
+            ?? MoneyFormat.usd(cents: 0)
+        return "Pay \(price) to promote"
+    }
+
+    private var promoteConfirmMessage: String {
+        let tier = ListingPromotionTier.tier(for: selectedPromoteHours)
+        let label = tier?.label ?? "the selected duration"
+        let price = tier?.priceLabel ?? MoneyFormat.usd(cents: 0)
+        return "You’ll save a card (or use Apple Pay), then we’ll charge \(price) for a \(label) placement boost. The listing is promoted only after payment succeeds."
     }
 
     @ViewBuilder
@@ -319,8 +351,65 @@ struct ListingDetailView: View {
 
             similarListingsSection()
 
-            if isViewerSeller(of: listing), canCancelListing(listing) {
+            if isViewerSeller(of: listing), canManageOwnedListing(listing) {
                 Section {
+                    if listing.hasActivePromotion {
+                        if let until = listing.promotedUntil {
+                            Label(
+                                "Promoted until \(until.formatted(date: .abbreviated, time: .shortened))",
+                                systemImage: "flame.fill"
+                            )
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(BrandTheme.goldBright)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .accessibilityLabel(
+                                "Promoted until \(until.formatted(date: .abbreviated, time: .shortened))"
+                            )
+                        } else {
+                            Label("Promoted", systemImage: "flame.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(BrandTheme.goldBright)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                    }
+
+                    if canPromoteListing(listing) {
+                        if let promoteStatusMessage {
+                            Text(promoteStatusMessage)
+                                .font(.footnote)
+                                .foregroundStyle(promoteStatusIsError ? BrandTheme.destructive : BrandTheme.success)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Picker("Promotion duration", selection: $selectedPromoteHours) {
+                            ForEach(ListingPromotionTier.all) { tier in
+                                Text(tier.pickerLabel).tag(tier.durationHours)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .disabled(isPromotingListing)
+                        .accessibilityLabel("Promotion duration")
+                        .accessibilityHint("Choose how long this listing stays at the top of the marketplace")
+
+                        Button {
+                            confirmPromoteListing = true
+                        } label: {
+                            if isPromotingListing {
+                                ProgressView()
+                                    .tint(BrandTheme.accent)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            } else {
+                                let price = ListingPromotionTier.tier(for: selectedPromoteHours)?.priceLabel
+                                    ?? MoneyFormat.usd(cents: 0)
+                                Label("Promote listing — \(price)", systemImage: "flame")
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
+                        }
+                        .disabled(isPromotingListing || isCancellingListing)
+                        .tint(BrandTheme.accent)
+                        .accessibilityHint("Pay to boost this listing in marketplace ranking for the selected duration")
+                    }
+
                     if let cancelListingMessage {
                         Text(cancelListingMessage)
                             .font(.footnote)
@@ -328,24 +417,26 @@ struct ListingDetailView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    Button(role: .destructive) {
-                        confirmCancelListing = true
-                    } label: {
-                        if isCancellingListing {
-                            ProgressView()
-                                .tint(BrandTheme.destructive)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        } else {
-                            Label("Cancel listing", systemImage: "xmark.circle")
-                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    if canCancelListing(listing) {
+                        Button(role: .destructive) {
+                            confirmCancelListing = true
+                        } label: {
+                            if isCancellingListing {
+                                ProgressView()
+                                    .tint(BrandTheme.destructive)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            } else {
+                                Label("Cancel listing", systemImage: "xmark.circle")
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
                         }
+                        .disabled(isCancellingListing || isPromotingListing)
+                        .accessibilityHint("Cancels your goods listing if there are no active bids")
                     }
-                    .disabled(isCancellingListing)
-                    .accessibilityHint("Cancels your goods listing if there are no active bids")
                 } header: {
                     Text("Manage listing").brandSectionHeader()
                 } footer: {
-                    Text("You own this listing. Cancel only works for draft/active auctions with no active bids.")
+                    Text(manageListingFooter(listing))
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
             }
@@ -454,6 +545,28 @@ struct ListingDetailView: View {
         default:
             return false
         }
+    }
+
+    /// Gateway only promotes `status == active` listings.
+    private func canPromoteListing(_ listing: ListingDetail) -> Bool {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        guard isViewerSeller(of: listing) else { return false }
+        let status = (listing.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return status == "active"
+    }
+
+    private func canManageOwnedListing(_ listing: ListingDetail) -> Bool {
+        canCancelListing(listing) || canPromoteListing(listing)
+    }
+
+    private func manageListingFooter(_ listing: ListingDetail) -> String {
+        if canPromoteListing(listing) && canCancelListing(listing) {
+            return "You own this listing. Promote floats it higher on the marketplace scoreboard for a fixed fee. Cancel only works with no active bids."
+        }
+        if canPromoteListing(listing) {
+            return "You own this listing. Promote floats it higher on the marketplace scoreboard for a fixed fee charged to your card."
+        }
+        return "You own this listing. Cancel only works for draft/active auctions with no active bids."
     }
 
     // MARK: - Auction hero (forward auction)
@@ -1543,6 +1656,114 @@ struct ListingDetailView: View {
         } catch {
             cancelListingIsError = true
             cancelListingMessage = error.localizedDescription
+        }
+    }
+
+    /// Mint promotion → SetupIntent (or dev short-circuit) → confirm off-session charge.
+    /// Fail closed: never show success unless confirm returns `is_promoted=true`.
+    @MainActor
+    private func promoteOwnedListing() async {
+        promoteStatusMessage = nil
+        promoteStatusIsError = false
+
+        guard !auth.isScaffoldSession else {
+            promoteStatusIsError = true
+            promoteStatusMessage =
+                "Browse-only mode has no API credentials. Sign in against a live gateway to promote."
+            return
+        }
+
+        guard ListingPromotionTier.isAllowed(selectedPromoteHours) else {
+            promoteStatusIsError = true
+            promoteStatusMessage = "Choose a valid promotion duration."
+            return
+        }
+
+        let expectedCents = ListingPromotionTier.expectedAmountCents(for: selectedPromoteHours) ?? 0
+        isPromotingListing = true
+        defer { isPromotingListing = false }
+
+        do {
+            let minted = try await APIClient.shared.createListingPromotion(
+                listingId: listingID,
+                durationHours: selectedPromoteHours
+            )
+
+            // Money safety: refuse to present a sheet if server amount diverges from pricebook.
+            guard minted.matchesExpectedPricebook(), minted.amountCents == expectedCents else {
+                promoteStatusIsError = true
+                promoteStatusMessage =
+                    "Promotion price from the server didn’t match the expected fee. Nothing was charged — try again later."
+                return
+            }
+
+            if minted.isDevSetupSecret {
+                // Dev / no-Stripe: confirm still required; gateway short-circuits only in development.
+                let confirmed = try await APIClient.shared.confirmListingPromotion(
+                    listingId: listingID,
+                    chargeId: minted.chargeId
+                )
+                applyPromotionSuccess(confirmed)
+            } else if minted.isStripeSetupSecret {
+                try await RailACheckout.presentSetupIntent(
+                    clientSecret: minted.stripeClientSecret
+                )
+                let confirmed = try await APIClient.shared.confirmListingPromotion(
+                    listingId: listingID,
+                    chargeId: minted.chargeId
+                )
+                applyPromotionSuccess(confirmed)
+            } else {
+                promoteStatusIsError = true
+                promoteStatusMessage =
+                    "Could not start card setup for promotion on this device. Open the listing on the web to promote, or try again later."
+            }
+        } catch let error as RailACheckout.CheckoutError where error.isCanceled {
+            promoteStatusIsError = false
+            promoteStatusMessage = "Promotion canceled. Your card was not charged."
+        } catch let error as RailACheckout.CheckoutError {
+            promoteStatusIsError = true
+            switch error {
+            case .stripeNotConfigured, .missingClientSecret:
+                promoteStatusMessage =
+                    "Apple Pay / card setup isn’t available in this build. Open the listing on the web to promote."
+            default:
+                promoteStatusMessage = error.localizedDescription
+            }
+        } catch let error as APIClientError where error.isUnauthorized {
+            promoteStatusIsError = true
+            promoteStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch let error as APIClientError where error.isPaymentRequired {
+            promoteStatusIsError = true
+            promoteStatusMessage =
+                error.errorDescription
+                ?? "We could not complete the payment for this promotion. Confirm your card and try again."
+        } catch {
+            promoteStatusIsError = true
+            promoteStatusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func applyPromotionSuccess(_ confirmed: ConfirmPromotionResponse) {
+        // Fail closed already enforced in confirmListingPromotion; still only mutate on truthy flag.
+        guard confirmed.isPromoted == true else {
+            promoteStatusIsError = true
+            promoteStatusMessage = "Promotion was not activated. Nothing will show as promoted."
+            return
+        }
+        promoteStatusIsError = false
+        if let until = confirmed.promotedUntilDate {
+            promoteStatusMessage =
+                "Listing promoted until \(until.formatted(date: .abbreviated, time: .shortened))."
+            detail?.isPromoted = true
+            detail?.promotedUntil = until
+        } else if let raw = confirmed.promotedUntil, !raw.isEmpty {
+            promoteStatusMessage = "Listing promoted until \(raw)."
+            detail?.isPromoted = true
+        } else {
+            promoteStatusMessage = "Listing promoted."
+            detail?.isPromoted = true
         }
     }
 

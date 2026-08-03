@@ -145,6 +145,8 @@ vi.mock('@/hooks/useImageUpload', () => ({
   }),
 }));
 
+const verificationDocsState: { data: Array<Record<string, unknown>> } = { data: [] };
+
 vi.mock('@/hooks/useProviderProfile', () => ({
   useProviderProfile: () => providerProfileState,
   useUpdateCategories: () => ({ mutateAsync: updateCategoriesMutate, isPending: false }),
@@ -152,6 +154,27 @@ vi.mock('@/hooks/useProviderProfile', () => ({
   useUpdateProviderProfile: () => ({ mutateAsync: updateProviderMutate, isPending: false }),
   useSetGlobalTerms: () => ({ mutateAsync: setGlobalTermsMutate, isPending: false }),
   useUploadVerificationDocument: () => ({ mutateAsync: uploadVerifDocMutate, isPending: false }),
+  useProviderVerificationDocuments: () => ({
+    data: verificationDocsState.data,
+    isLoading: false,
+    isError: false,
+  }),
+  indexDocumentsByType: (docs: Array<Record<string, unknown>> | undefined) => {
+    const map: Record<string, Record<string, unknown>> = {};
+    for (const doc of docs ?? []) {
+      const key = String(doc.document_type ?? '');
+      if (!key) continue;
+      const existing = map[key];
+      const count = Number(doc.resubmission_count ?? 0);
+      const existingCount = Number(existing?.resubmission_count ?? 0);
+      if (!existing || count >= existingCount) map[key] = doc;
+    }
+    return map;
+  },
+  isDocumentResubmissionLocked: (count: number | undefined | null) => (count ?? 0) >= 3,
+  MAX_DOCUMENT_RESUBMISSIONS: 3,
+  resubmissionLockoutMessage: () =>
+    'This document type has no re-uploads left (maximum 3). Contact support to continue verification.',
 }));
 
 const { default: ProviderOnboardingPage } = await import(
@@ -160,6 +183,7 @@ const { default: ProviderOnboardingPage } = await import(
 
 beforeEach(() => {
   providerProfileState.data = undefined;
+  verificationDocsState.data = [];
   routerPush.mockReset();
   uploadImageMock.mockReset();
   updateCategoriesMutate.mockReset();
@@ -768,7 +792,7 @@ describe('ProviderOnboardingPage', () => {
     const finishBtn = screen.getByRole('button', { name: /Finish/i });
     fireEvent.click(finishBtn);
     await waitFor(() => {
-      expect(screen.getByText(/network kaput/i)).toBeDefined();
+      expect(screen.getAllByText(/network kaput/i).length).toBeGreaterThan(0);
     });
   });
 
@@ -1095,4 +1119,46 @@ describe('ProviderOnboardingPage', () => {
       milestones: [{ description: 'Full Payment', percentage: 100 }],
     });
   });
+
+  it('Verification step surfaces resubmission count and disables locked types', () => {
+    verificationDocsState.data = [
+      {
+        id: 'd1',
+        document_type: 'government_id',
+        status: 'rejected',
+        resubmission_count: 3,
+        rejection_reason: 'Blurry photo',
+      },
+    ];
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    expect(screen.getByText(/Resubmissions:\s*3 of 3/i)).toBeDefined();
+    expect(screen.getAllByText(/contact support to continue/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Re-upload disabled for this document type/i)).toBeDefined();
+    // Drop zone for locked government_id should not be present
+    expect(screen.queryByRole('button', { name: /Upload Government-Issued ID/i })).toBeNull();
+  });
+
+  it('Verification step maps 422 register failure to contact-support copy', async () => {
+    const { ApiError } = await import('@/lib/api');
+    uploadImageMock.mockResolvedValue({
+      ok: true,
+      result: { confirmedUrl: 'https://cdn.example/id.png' },
+    });
+    uploadVerifDocMutate.mockRejectedValueOnce(
+      new ApiError(422, JSON.stringify({ error: 'maximum resubmission attempts reached for this document type; contact support' })),
+    );
+    render(withQueryClient(createElement(ProviderOnboardingPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
+    const govIdLabel = screen.getByText('Government-Issued ID');
+    const card = govIdLabel.closest('.glass');
+    const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const file = new File(['x'], 'id.png', { type: 'image/png' });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: /Finish/i }));
+    await waitFor(() => {
+      expect(screen.getAllByText(/no re-uploads left/i).length).toBeGreaterThan(0);
+    });
+  });
+
 });

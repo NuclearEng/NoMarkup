@@ -1538,6 +1538,17 @@ export interface VerificationDocument {
   created_at?: string;
 }
 
+/** Provider self-service verification doc from GET /providers/me/documents (FR-2.10). */
+export interface ProviderVerificationDocument {
+  id?: string;
+  document_type: string;
+  status: string;
+  /** Rejection / re-upload attempts for this type. Locked at >= 3. */
+  resubmission_count?: number;
+  rejection_reason?: string;
+  expires_at?: string;
+}
+
 export interface Dispute {
   id: string;
   contract_id: string;
