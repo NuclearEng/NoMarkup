@@ -89,12 +89,13 @@ func TestCreateChannel_bidVerification(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.NotNil(t, ch)
-			assert.Equal(t, "pre_award", ch.ChannelType)
+			// Wire "pre_award" normalizes to DB value "bid".
+			assert.Equal(t, "bid", ch.ChannelType)
 		})
 	}
 }
 
-// An empty channel type defaults to pre_award, so it must be gated too —
+// An empty channel type defaults to bid, so it must be gated too —
 // otherwise the check is trivially bypassed by omitting the field.
 func TestCreateChannel_emptyChannelTypeIsAlsoGated(t *testing.T) {
 	t.Parallel()
@@ -107,4 +108,16 @@ func TestCreateChannel_emptyChannelTypeIsAlsoGated(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), domain.ErrNoBidForChat.Error())
 	assert.Nil(t, ch)
+}
+
+// FR-8.1 inquiry is the intentional pre-bid exception — no active bid required.
+func TestCreateChannel_inquiryDoesNotRequireBid(t *testing.T) {
+	t.Parallel()
+
+	svc := New(newMockRepo(), nil)
+	// No bid checker wired — inquiry must still succeed.
+	ch, err := svc.CreateChannel(context.Background(), "job-1", "cust-1", "prov-1", "inquiry")
+	require.NoError(t, err)
+	require.NotNil(t, ch)
+	assert.Equal(t, "inquiry", ch.ChannelType)
 }

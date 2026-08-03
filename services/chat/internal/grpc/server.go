@@ -45,6 +45,22 @@ func (s *Server) CreateChannel(ctx context.Context, req *chatv1.CreateChannelReq
 	}, nil
 }
 
+// ShareContactInfo implements FR-8.8 explicit contact share (opt-in message).
+func (s *Server) ShareContactInfo(ctx context.Context, req *chatv1.ShareContactInfoRequest) (*chatv1.ShareContactInfoResponse, error) {
+	contact, err := s.svc.ShareContactInfo(ctx, req.GetChannelId(), req.GetUserId(), req.GetPhone(), req.GetEmail())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &chatv1.ShareContactInfoResponse{
+		Contact: &chatv1.SharedContact{
+			UserId:   contact.UserID,
+			Phone:    contact.Phone,
+			Email:    contact.Email,
+			SharedAt: timestamppb.New(contact.SharedAt),
+		},
+	}, nil
+}
+
 func (s *Server) GetChannel(ctx context.Context, req *chatv1.GetChannelRequest) (*chatv1.GetChannelResponse, error) {
 	ch, err := s.svc.GetChannel(ctx, req.GetChannelId(), req.GetUserId())
 	if err != nil {
@@ -258,19 +274,21 @@ func domainMessageToProto(m *domain.Message) *chatv1.Message {
 func protoChannelTypeToString(ct chatv1.ChannelType) string {
 	switch ct {
 	case chatv1.ChannelType_CHANNEL_TYPE_PRE_AWARD:
-		return "pre_award"
+		// Maps to DB "bid" via service.normalizeChannelType.
+		return "bid"
 	case chatv1.ChannelType_CHANNEL_TYPE_CONTRACT:
 		return "contract"
 	case chatv1.ChannelType_CHANNEL_TYPE_SUPPORT:
-		return "support"
+		return "contract"
 	default:
-		return "pre_award"
+		return "bid"
 	}
 }
 
 func stringToProtoChannelType(s string) chatv1.ChannelType {
 	switch s {
-	case "pre_award":
+	case "pre_award", "bid", "inquiry":
+		// inquiry is pre-award Q&A; bid is post-bid pre-award. Both surface as PRE_AWARD on wire.
 		return chatv1.ChannelType_CHANNEL_TYPE_PRE_AWARD
 	case "contract":
 		return chatv1.ChannelType_CHANNEL_TYPE_CONTRACT

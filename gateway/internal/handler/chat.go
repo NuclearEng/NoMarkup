@@ -74,6 +74,180 @@ func internalWSDialHeader(secret string) http.Header {
 	return h
 }
 
+// CreateChannel handles POST /api/v1/channels.
+//
+// FR-8.1: providers open an inquiry (pre-bid Q&A) or bid channel against a job.
+// Body: { "job_id": "...", "channel_type": "inquiry"|"bid" }.
+// customer_id is resolved from the job owner; provider_id is the caller when
+// they are not the owner (and vice-versa for customer-initiated).
+func (h *ChatHandler) CreateChannel(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return
+	}
+
+	var body struct {
+		JobID       string `json:"job_id"`
+		ChannelType string `json:"channel_type"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	jobID := strings.TrimSpace(body.JobID)
+	if !isValidUUID(jobID) {
+		writeError(w, http.StatusBadRequest, "invalid job_id")
+		return
+	}
+
+	// Resolve job owner (customer_id). Jobs that are not open still allow
+	// contract chat; inquiry is only useful while bidding is open, but we
+	// leave that policy soft (chat service / bid checker enforce bid types).
+	var customerID string
+	err := h.db.QueryRow(r.Context(), `
+		SELECT customer_id::text FROM jobs WHERE id = $1 AND deleted_at IS NULL`,
+		jobID,
+	).Scan(&customerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "create channel: job lookup failed", "job_id", jobID, "error", err)
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return
+	}
+
+	providerID := claims.UserID
+	// If the customer opens the channel, they are the owner; provider must be
+	// specified... but FR-8.1 pre-bid Q&A is provider→customer. Customer
+	// opening is only valid for post-award convenience when they pass provider
+	// via optional future field; today require caller ≠ owner.
+	if claims.UserID == customerID {
+		writeError(w, http.StatusBadRequest, "job owners cannot open an inquiry channel to themselves")
+		return
+	}
+
+	channelType := strings.TrimSpace(strings.ToLower(body.ChannelType))
+	if channelType == "" {
+		channelType = "inquiry"
+	}
+	// Inquiry is pre-bid (DB 'inquiry'); no bid check. Insert durably then
+	// GetChannel — chat.proto has no INQUIRY enum (PRE_AWARD maps to "bid").
+	if channelType == "inquiry" {
+		var channelID string
+		ierr := h.db.QueryRow(r.Context(), `
+			INSERT INTO chat_channels (job_id, customer_id, provider_id, channel_type, status)
+			VALUES ($1, $2, $3, 'inquiry', 'active')
+			ON CONFLICT (job_id, customer_id, provider_id) DO UPDATE
+			  SET updated_at = now()
+			RETURNING id::text`,
+			jobID, customerID, providerID,
+		).Scan(&channelID)
+		if ierr != nil {
+			slog.ErrorContext(r.Context(), "create inquiry channel failed",
+				"job_id", jobID, "error", ierr)
+			writeError(w, http.StatusServiceUnavailable, "could not open inquiry channel")
+			return
+		}
+		getResp, gerr := h.chatClient.GetChannel(r.Context(), &chatv1.GetChannelRequest{
+			ChannelId: channelID,
+			UserId:    claims.UserID,
+		})
+		if gerr != nil {
+			writeGRPCError(w, gerr)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"channel": protoChannelToJSON(getResp.GetChannel(), nil),
+		})
+		return
+	}
+
+	var protoType chatv1.ChannelType
+	switch channelType {
+	case "bid", "pre_award":
+		protoType = chatv1.ChannelType_CHANNEL_TYPE_PRE_AWARD
+	case "contract":
+		protoType = chatv1.ChannelType_CHANNEL_TYPE_CONTRACT
+	default:
+		writeError(w, http.StatusBadRequest, "channel_type must be inquiry, bid, or contract")
+		return
+	}
+
+	resp, err := h.chatClient.CreateChannel(r.Context(), &chatv1.CreateChannelRequest{
+		JobId:       jobID,
+		CustomerId:  customerID,
+		ProviderId:  providerID,
+		ChannelType: protoType,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"channel": protoChannelToJSON(resp.GetChannel(), nil),
+	})
+}
+
+// ShareContact handles POST /api/v1/channels/{id}/share-contact (FR-8.8).
+// Body: { "phone"?: "...", "email"?: "..." } — at least one required.
+// Explicit opt-in only; does not relax auto contact-info filtering on text.
+func (h *ChatHandler) ShareContact(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	channelID := chi.URLParam(r, "id")
+	if !isValidUUID(channelID) {
+		writeError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+
+	var body struct {
+		Phone string `json:"phone"`
+		Email string `json:"email"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Phone) == "" && strings.TrimSpace(body.Email) == "" {
+		writeError(w, http.StatusBadRequest, "phone or email is required")
+		return
+	}
+	if h.refuseIfChannelBlocked(w, r, channelID, claims.UserID) {
+		return
+	}
+
+	resp, err := h.chatClient.ShareContactInfo(r.Context(), &chatv1.ShareContactInfoRequest{
+		ChannelId: channelID,
+		UserId:    claims.UserID,
+		Phone:     strings.TrimSpace(body.Phone),
+		Email:     strings.TrimSpace(body.Email),
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	c := resp.GetContact()
+	contactJSON := map[string]interface{}{
+		"user_id": c.GetUserId(),
+		"phone":   c.GetPhone(),
+		"email":   c.GetEmail(),
+	}
+	if ts := c.GetSharedAt(); ts != nil {
+		contactJSON["shared_at"] = ts.AsTime().UTC().Format(time.RFC3339Nano)
+	}
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"contact": contactJSON,
+	})
+}
+
 // ListChannels handles GET /api/v1/channels.
 func (h *ChatHandler) ListChannels(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())

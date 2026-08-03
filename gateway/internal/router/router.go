@@ -172,6 +172,8 @@ func New(
 		r.Post("/apple/native", oauthHandler.NativeAppleSignIn)
 		// Native Google (ASWebAuthenticationSession + PKCE id_token → JWT pair).
 		r.Post("/google/native", oauthHandler.NativeGoogleSignIn)
+		// Native Facebook (ASWebAuthenticationSession code → server exchange → JWT pair).
+		r.Post("/facebook/native", oauthHandler.NativeFacebookSignIn)
 		r.Get("/oauth/facebook", oauthHandler.InitFacebookOAuth)
 		r.Get("/callback/facebook", oauthHandler.FacebookOAuthCallback)
 
@@ -940,6 +942,7 @@ func New(
 		// Chat routes
 		r.Route("/channels", func(r chi.Router) {
 			r.Get("/", chatHandler.ListChannels)
+			r.Post("/", chatHandler.CreateChannel) // FR-8.1 inquiry / bid channel open
 			r.Get("/unread", chatHandler.GetUnreadCount)
 			r.Get("/{id}", chatHandler.GetChannel)
 			r.Get("/{id}/messages", chatHandler.ListMessages)
@@ -949,6 +952,8 @@ func New(
 			// Party checks + explicit-consent semantics live in the chat service.
 			r.Post("/{id}/proposed-terms", chatHandler.SendProposedTerms)
 			r.Post("/{id}/terms/respond", chatHandler.RespondToTerms)
+			// FR-8.8 explicit opt-in contact share (post-award / active channel).
+			r.Post("/{id}/share-contact", chatHandler.ShareContact)
 		})
 
 		// ── Communication polish (Wave 5 / Agent P) ─────────────────────

@@ -188,7 +188,7 @@ func TestCreateChannel(t *testing.T) {
 				assert.Equal(t, tt.jobID, ch.JobID)
 				assert.Equal(t, "active", ch.Status)
 				if tt.channelType == "" {
-					assert.Equal(t, "pre_award", ch.ChannelType)
+					assert.Equal(t, "bid", ch.ChannelType)
 				}
 			}
 		})

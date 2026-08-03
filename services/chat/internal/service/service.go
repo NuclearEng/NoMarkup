@@ -42,8 +42,33 @@ func (s *Service) SetLocalTermsBinder(b LocalTermsBinder) {
 	s.termsBinder = b
 }
 
+// normalizeChannelType maps wire/proto aliases onto DB CHECK values
+// (inquiry | bid | contract). Proto "pre_award" and legacy empty → "bid".
+func normalizeChannelType(channelType string) string {
+	switch strings.TrimSpace(strings.ToLower(channelType)) {
+	case "", "pre_award":
+		return "bid"
+	case "inquiry":
+		return "inquiry"
+	case "contract":
+		return "contract"
+	case "bid":
+		return "bid"
+	case "support":
+		// No support table value; store as contract-scoped support chat under contract.
+		return "contract"
+	default:
+		return "bid"
+	}
+}
+
 // CreateChannel validates inputs, enforces chat access rules (FR-8.1),
 // and creates a new channel.
+//
+// Access rules (FR-8.1):
+//   - channel_type "inquiry" — pre-bid Q&A; no active bid required
+//   - channel_type "bid" / "pre_award" — post-bid chat; requires active bid
+//   - channel_type "contract" — post-award; no bid check here (callers award-path)
 func (s *Service) CreateChannel(ctx context.Context, jobID, customerID, providerID, channelType string) (*domain.Channel, error) {
 	if jobID == "" {
 		return nil, fmt.Errorf("create channel: job_id is required")
@@ -54,22 +79,14 @@ func (s *Service) CreateChannel(ctx context.Context, jobID, customerID, provider
 	if providerID == "" {
 		return nil, fmt.Errorf("create channel: provider_id is required")
 	}
-	if channelType == "" {
-		channelType = "pre_award"
-	}
+	channelType = normalizeChannelType(channelType)
 
-	// FR-8.1: For post-bid chat, verify the provider has an active bid on the job.
-	//
-	// Fail closed, and note what that means precisely: a MISSING checker is a
-	// denial, not a skip. This guard previously read `... && s.bidChecker !=
-	// nil`, and SetBidChecker had no call sites anywhere in the repo — so the
-	// checker was permanently nil, the whole branch was dead, and any provider
-	// could open a pre-award channel on any job without ever bidding. A
-	// nil-check that disables the control it guards is worse than no control,
-	// because the surrounding comment claims coverage.
-	if channelType == "pre_award" {
+	// FR-8.1: post-bid ("bid") requires an active bid. Inquiry is the
+	// intentional pre-bid exception. Fail closed when the bid checker is missing
+	// for bid channels — a nil checker must never open post-bid chat.
+	if channelType == "bid" {
 		if s.bidChecker == nil {
-			slog.Error("bid checker is not configured; refusing pre-award chat access",
+			slog.Error("bid checker is not configured; refusing bid chat access",
 				"job_id", jobID,
 				"provider_id", providerID,
 			)
@@ -98,6 +115,55 @@ func (s *Service) CreateChannel(ctx context.Context, jobID, customerID, provider
 	}
 
 	return s.repo.CreateChannel(ctx, ch)
+}
+
+// ShareContactInfo posts an explicit contact_share message after the caller
+// confirms. FR-8.8 — opt-in only; does not relax auto contact detection on text.
+func (s *Service) ShareContactInfo(ctx context.Context, channelID, userID, phone, email string) (*domain.SharedContact, error) {
+	ch, err := s.repo.GetChannel(ctx, channelID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if ch.CustomerID != userID && ch.ProviderID != userID {
+		return nil, fmt.Errorf("share contact: %w", domain.ErrNotChannelMember)
+	}
+	if ch.Status == "closed" || ch.Status == "read_only" {
+		return nil, fmt.Errorf("share contact: %w", domain.ErrChannelClosed)
+	}
+
+	phone = strings.TrimSpace(phone)
+	email = strings.TrimSpace(email)
+	if phone == "" && email == "" {
+		return nil, fmt.Errorf("share contact: phone or email is required")
+	}
+
+	// Persist as a structured contact_share message (content is display text;
+	// clients already decode message_type=contact_share).
+	var parts []string
+	if phone != "" {
+		parts = append(parts, "Phone: "+phone)
+	}
+	if email != "" {
+		parts = append(parts, "Email: "+email)
+	}
+	content := "Contact shared\n" + strings.Join(parts, "\n")
+
+	msg := &domain.Message{
+		ChannelID:   channelID,
+		SenderID:    userID,
+		MessageType: domain.MessageTypeContactShare,
+		Content:     content,
+	}
+	if _, err := s.repo.SendMessage(ctx, msg); err != nil {
+		return nil, fmt.Errorf("share contact: %w", err)
+	}
+
+	return &domain.SharedContact{
+		UserID:   userID,
+		Phone:    phone,
+		Email:    email,
+		SharedAt: time.Now().UTC(),
+	}, nil
 }
 
 // GetChannel validates user membership and returns a channel.
