@@ -90,11 +90,21 @@ func (m *mockRepo) SendMessage(_ context.Context, msg *domain.Message) (*domain.
 	return msg, nil
 }
 
-func (m *mockRepo) ListMessages(_ context.Context, _ string, _ *time.Time, _ int) ([]*domain.Message, error) {
+func (m *mockRepo) ListMessages(_ context.Context, _ string, _ *time.Time, _ int, query string) ([]*domain.Message, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return m.messages, nil
+	q := strings.TrimSpace(strings.ToLower(query))
+	if q == "" {
+		return m.messages, nil
+	}
+	var out []*domain.Message
+	for _, msg := range m.messages {
+		if strings.Contains(strings.ToLower(msg.Content), q) {
+			out = append(out, msg)
+		}
+	}
+	return out, nil
 }
 
 func (m *mockRepo) MarkRead(_ context.Context, _ string, _ string) error {
@@ -445,14 +455,39 @@ func TestListMessages(t *testing.T) {
 	}
 	svc := New(repo, nil)
 
-	msgs, err := svc.ListMessages(context.Background(), "ch-1", "user-1", nil, 50)
+	msgs, err := svc.ListMessages(context.Background(), "ch-1", "user-1", nil, 50, "")
 	require.NoError(t, err)
 	assert.Len(t, msgs, 1)
 
 	// Non-member should be denied.
-	_, err = svc.ListMessages(context.Background(), "ch-1", "user-3", nil, 50)
+	_, err = svc.ListMessages(context.Background(), "ch-1", "user-3", nil, 50, "")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrNotChannelMember) || assert.ObjectsAreEqual("not a member", err.Error()))
+}
+
+func TestListMessages_SearchQuery(t *testing.T) {
+	t.Parallel()
+
+	repo := newMockRepo()
+	repo.channels["ch-1"] = &domain.Channel{
+		ID: "ch-1", CustomerID: "user-1", ProviderID: "user-2", Status: "active",
+	}
+	repo.messages = []*domain.Message{
+		{ID: "msg-1", ChannelID: "ch-1", Content: "Hello world"},
+		{ID: "msg-2", ChannelID: "ch-1", Content: "Invoice attached"},
+		{ID: "msg-3", ChannelID: "ch-1", Content: "hello again"},
+	}
+	svc := New(repo, nil)
+
+	msgs, err := svc.ListMessages(context.Background(), "ch-1", "user-1", nil, 50, "hello")
+	require.NoError(t, err)
+	require.Len(t, msgs, 2)
+	assert.Equal(t, "msg-1", msgs[0].ID)
+	assert.Equal(t, "msg-3", msgs[1].ID)
+
+	// Membership still enforced under search.
+	_, err = svc.ListMessages(context.Background(), "ch-1", "user-3", nil, 50, "hello")
+	require.Error(t, err)
 }
 
 // TestSendTypingIndicatorMembership covers SEC-10: non-members must not publish typing.

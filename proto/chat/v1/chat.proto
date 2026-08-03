@@ -156,6 +156,9 @@ message ListMessagesRequest {
   string user_id = 2;
   nomarkup.common.v1.PaginationRequest pagination = 3;
   optional google.protobuf.Timestamp before = 4;  // cursor-based: messages before this timestamp
+  // FR-8.6: optional case-insensitive content search (ILIKE) scoped to channel
+  // membership. Empty/omitted returns the normal message list.
+  string query = 5;
 }
 
 message ListMessagesResponse {

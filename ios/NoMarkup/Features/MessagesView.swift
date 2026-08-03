@@ -27,7 +27,9 @@ import UIKit
 ///   (opt-in phone/email system card; explicit confirm only).
 /// - Mark read on open / pull-to-refresh / after send / scroll-to-bottom tip
 ///   (`POST …/channels/{id}/read`) — deduped per tip message id
-/// - Local in-thread search over loaded messages
+/// - **FR-8.6 conversation search:** in-thread search uses `GET …/messages?q=`
+///   (membership-scoped ILIKE on the server) with local filter while the request
+///   is in flight; empty query keeps the normal thread list
 /// - **Read receipts (FR-8.2):** double-check + "Seen" under the caller’s last own
 ///   message when the peer has read it; single check ("Sent") while pending.
 ///   Prefer channel `customer_last_read_at` / `provider_last_read_at` (peer
@@ -317,6 +319,10 @@ struct ChatThreadView: View {
     @State private var sendError: String?
     @State private var currentUserID: String?
     @State private var searchText = ""
+    /// Server search hits for FR-8.6 (`q` param); nil means “use local filter / full list”.
+    @State private var serverSearchMessages: [ChatMessage]?
+    @State private var isSearchingServer = false
+    @State private var searchTask: Task<Void, Never>?
     @State private var photoPickerItem: PhotosPickerItem?
     @State private var showPDFImporter = false
     /// Remote user ids currently typing in this channel (from WS `typing` frames).
@@ -404,10 +410,14 @@ struct ChatThreadView: View {
         !typingUserIDs.isEmpty && canCompose
     }
 
-    /// Local filter over loaded messages (no server search endpoint).
+    /// FR-8.6: server search results when available; otherwise local filter over
+    /// loaded messages (instant feedback while the `q=` request is in flight).
     private var displayedMessages: [ChatMessage] {
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return messages }
+        if let serverSearchMessages {
+            return serverSearchMessages
+        }
         return messages.filter { $0.matchesSearch(q) }
     }
 
@@ -535,6 +545,24 @@ struct ChatThreadView: View {
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
         .searchable(text: $searchText, prompt: "Search this conversation")
+        .onSubmit(of: .search) {
+            Task { await runServerSearch(immediate: true) }
+        }
+        .onChange(of: searchText) { _, _ in
+            searchTask?.cancel()
+            let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if q.isEmpty {
+                serverSearchMessages = nil
+                isSearchingServer = false
+                return
+            }
+            // Debounce server search so typing stays snappy; local filter covers interim.
+            searchTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                guard !Task.isCancelled else { return }
+                await runServerSearch(immediate: false)
+            }
+        }
         .toolbar {
             if canProposeTerms {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -899,9 +927,11 @@ struct ChatThreadView: View {
             )
         } else if displayedMessages.isEmpty {
             BrandEmptyState(
-                title: "No matches",
+                title: isSearchingServer ? "Searching…" : "No matches",
                 systemImage: "magnifyingglass",
-                message: "No messages in this thread match “\(searchText.trimmingCharacters(in: .whitespacesAndNewlines))”. Clear search to see the full conversation."
+                message: isSearchingServer
+                    ? "Looking through this conversation on the server…"
+                    : "No messages in this thread match “\(searchText.trimmingCharacters(in: .whitespacesAndNewlines))”. Clear search to see the full conversation (server search covers history beyond the loaded page)."
             )
         } else {
             ScrollViewReader { proxy in
@@ -1168,6 +1198,43 @@ struct ChatThreadView: View {
         } catch {
             safetyStatusIsError = true
             safetyStatusMessage = error.localizedDescription
+        }
+    }
+
+    /// FR-8.6: membership-scoped server content search (`GET …/messages?q=`).
+    @MainActor
+    private func runServerSearch(immediate: Bool) async {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else {
+            serverSearchMessages = nil
+            isSearchingServer = false
+            return
+        }
+        guard canCompose || auth.isAuthenticated else { return }
+
+        isSearchingServer = true
+        defer { isSearchingServer = false }
+
+        do {
+            let response = try await APIClient.shared.fetchChannelMessages(
+                channelID: channel.id,
+                pageSize: 50,
+                query: q
+            )
+            // Drop stale results if the user kept typing.
+            let still = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard still == q else { return }
+            let sorted = response.messages.sorted { lhs, rhs in
+                (lhs.createdAt ?? "") < (rhs.createdAt ?? "")
+            }
+            serverSearchMessages = sorted
+        } catch is CancellationError {
+            // ignore
+        } catch {
+            // Fail soft: keep local filter results.
+            if serverSearchMessages == nil {
+                // no-op; displayedMessages already falls back to local filter
+            }
         }
     }
 

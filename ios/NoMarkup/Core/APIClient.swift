@@ -568,11 +568,16 @@ actor APIClient {
         )
     }
 
-    /// GET `/api/v1/channels/{id}/messages?page_size=` — thread messages (Bearer required).
-    func fetchChannelMessages(channelID: String, pageSize: Int = 50) async throws -> ChatMessagesResponse {
-        let items = [
+    /// GET `/api/v1/channels/{id}/messages?page_size=&q=` — thread messages (Bearer required).
+    /// - Parameter query: FR-8.6 optional server content search (`q`); empty omits the param.
+    func fetchChannelMessages(channelID: String, pageSize: Int = 50, query: String? = nil) async throws -> ChatMessagesResponse {
+        var items = [
             URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
         ]
+        if let q = query?.trimmingCharacters(in: .whitespacesAndNewlines), !q.isEmpty {
+            let capped = String(q.prefix(200))
+            items.append(URLQueryItem(name: "q", value: capped))
+        }
         return try await getJSON(
             pathComponents: ["api", "v1", "channels", channelID, "messages"],
             query: items,

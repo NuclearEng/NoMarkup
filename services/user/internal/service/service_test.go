@@ -51,6 +51,11 @@ type mockUserRepo struct {
 	banUserFn               func(ctx context.Context, userID, reason, adminID string) error
 	insertAuditLogFn        func(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
 	adminSearchUsersFn      func(ctx context.Context, query, status, role string, page, pageSize int) ([]domain.User, int, error)
+	createDocumentFn        func(ctx context.Context, doc *domain.Document) error
+	listDocumentsFn         func(ctx context.Context, userID string) ([]domain.Document, error)
+	getDocumentFn           func(ctx context.Context, documentID string) (*domain.Document, error)
+	getDocumentByUserTypeFn func(ctx context.Context, userID string, docType domain.DocumentType) (*domain.Document, error)
+	updateDocumentStatusFn  func(ctx context.Context, documentID string, status domain.DocumentStatus, rejectionReason string) error
 }
 
 func (m *mockUserRepo) CreateUser(ctx context.Context, user *domain.User) error {
@@ -204,19 +209,34 @@ func (m *mockUserRepo) AdminSearchUsers(ctx context.Context, query, status, role
 func (m *mockUserRepo) UpdatePhoneVerified(_ context.Context, _ string, _ bool) error {
 	return nil
 }
-func (m *mockUserRepo) CreateDocument(_ context.Context, _ *domain.Document) error {
+func (m *mockUserRepo) CreateDocument(ctx context.Context, doc *domain.Document) error {
+	if m.createDocumentFn != nil {
+		return m.createDocumentFn(ctx, doc)
+	}
 	return nil
 }
-func (m *mockUserRepo) GetDocument(_ context.Context, _ string) (*domain.Document, error) {
+func (m *mockUserRepo) GetDocument(ctx context.Context, documentID string) (*domain.Document, error) {
+	if m.getDocumentFn != nil {
+		return m.getDocumentFn(ctx, documentID)
+	}
 	return nil, domain.ErrDocumentNotFound
 }
-func (m *mockUserRepo) GetDocumentByUserAndType(_ context.Context, _ string, _ domain.DocumentType) (*domain.Document, error) {
+func (m *mockUserRepo) GetDocumentByUserAndType(ctx context.Context, userID string, docType domain.DocumentType) (*domain.Document, error) {
+	if m.getDocumentByUserTypeFn != nil {
+		return m.getDocumentByUserTypeFn(ctx, userID, docType)
+	}
 	return nil, domain.ErrDocumentNotFound
 }
-func (m *mockUserRepo) ListDocuments(_ context.Context, _ string) ([]domain.Document, error) {
+func (m *mockUserRepo) ListDocuments(ctx context.Context, userID string) ([]domain.Document, error) {
+	if m.listDocumentsFn != nil {
+		return m.listDocumentsFn(ctx, userID)
+	}
 	return nil, nil
 }
-func (m *mockUserRepo) UpdateDocumentStatus(_ context.Context, _ string, _ domain.DocumentStatus, _ string) error {
+func (m *mockUserRepo) UpdateDocumentStatus(ctx context.Context, documentID string, status domain.DocumentStatus, rejectionReason string) error {
+	if m.updateDocumentStatusFn != nil {
+		return m.updateDocumentStatusFn(ctx, documentID, status, rejectionReason)
+	}
 	return nil
 }
 func (m *mockUserRepo) ListPendingDocuments(_ context.Context, _, _ int) ([]domain.PendingDocument, int, error) {

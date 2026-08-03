@@ -1176,6 +1176,21 @@ struct ProviderVerificationDocument: Codable, Sendable, Hashable, Identifiable {
         if date.timeIntervalSinceNow <= 0 { return 0 }
         return Int(ceil(date.timeIntervalSinceNow / (24 * 60 * 60)))
     }
+
+    // MARK: FR-2.10 — resubmission hard lockout
+
+    /// Max rejections/resubmits per document type (server enforces the same).
+    static let maxResubmissions = 3
+
+    /// True when `resubmission_count >= 3` — further uploads for this type are blocked.
+    var isResubmissionLocked: Bool {
+        (resubmissionCount ?? 0) >= Self.maxResubmissions
+    }
+
+    /// Remaining re-uploads after rejections (0 when locked or unknown count treated as unlimited remaining for display only).
+    var resubmissionsRemaining: Int {
+        max(0, Self.maxResubmissions - (resubmissionCount ?? 0))
+    }
 }
 
 struct ProviderDocumentsResponse: Codable, Sendable {

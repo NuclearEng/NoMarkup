@@ -379,6 +379,14 @@ func (h *ChatHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
+	// FR-8.6: optional content search within the channel (membership-scoped).
+	if search := strings.TrimSpace(q.Get("q")); search != "" {
+		if len(search) > 200 {
+			search = search[:200]
+		}
+		req.Query = search
+	}
+
 	if before := q.Get("before"); before != "" {
 		t, err := time.Parse(time.RFC3339, before)
 		if err == nil {

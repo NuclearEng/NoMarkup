@@ -1193,11 +1193,17 @@ struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     }
 
     /// Case-insensitive match for in-thread search (local filter on loaded messages).
+    /// Server search (FR-8.6 `q=`) covers history beyond the loaded page via ILIKE on content.
     func matchesSearch(_ query: String) -> Bool {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return true }
-        if displayBody.localizedCaseInsensitiveContains(q) { return true }
-        if let content, content.localizedCaseInsensitiveContains(q) { return true }
+        let folded = q.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        let body = displayBody.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        if body.contains(folded) { return true }
+        if let content {
+            let c = content.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            if c.contains(folded) { return true }
+        }
         if normalizedType.localizedCaseInsensitiveContains(q) { return true }
         return false
     }

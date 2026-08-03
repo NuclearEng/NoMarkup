@@ -27,6 +27,9 @@ var (
 	ErrDocumentNotFound         = errors.New("document not found")
 	ErrInvalidDocumentType      = errors.New("invalid document type")
 	ErrMissingFileName          = errors.New("file_name is required")
+	// ErrResubmissionLimitReached is FR-2.10 hard lockout: after 3 rejections
+	// for a document type, further uploads are refused (contact support).
+	ErrResubmissionLimitReached = errors.New("resubmission limit reached")
 	ErrInvalidMFACode           = errors.New("invalid MFA code")
 	ErrMFANotSetup              = errors.New("MFA not set up")
 	ErrMFAAlreadyEnabled        = errors.New("MFA already enabled")
@@ -386,6 +389,10 @@ const (
 	DocStatusVerified    DocumentStatus = "verified"
 	DocStatusRejected    DocumentStatus = "rejected"
 )
+
+// MaxDocumentResubmissions is FR-2.10: max rejection/resubmission attempts
+// per document type before hard lockout (contact support).
+const MaxDocumentResubmissions = 3
 
 // Document represents a verification document uploaded by a provider.
 type Document struct {

@@ -139,7 +139,7 @@ func (s *Server) ListMessages(ctx context.Context, req *chatv1.ListMessagesReque
 		before = &t
 	}
 
-	messages, err := s.svc.ListMessages(ctx, req.GetChannelId(), req.GetUserId(), before, pageSize)
+	messages, err := s.svc.ListMessages(ctx, req.GetChannelId(), req.GetUserId(), before, pageSize, req.GetQuery())
 	if err != nil {
 		return nil, mapDomainError(err)
 	}

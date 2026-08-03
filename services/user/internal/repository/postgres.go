@@ -1364,9 +1364,11 @@ func (r *PostgresRepository) CreateDocument(ctx context.Context, doc *domain.Doc
 	// file_size_bytes and mime_type are NOT NULL; omitting them made every
 	// document upload fail the not-null constraint (a 500 on the happy path —
 	// the feature was effectively dead).
+	// resubmission_count is carried forward on re-upload (FR-2.10) so rejections
+	// accumulate per document type across new pending rows.
 	query := `
-		INSERT INTO verification_documents (user_id, document_type, status, file_name, file_url, mime_type, file_size_bytes, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO verification_documents (user_id, document_type, status, file_name, file_url, mime_type, file_size_bytes, expires_at, resubmission_count)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, created_at, updated_at`
 
 	err := r.pool.QueryRow(ctx, query,
@@ -1378,6 +1380,7 @@ func (r *PostgresRepository) CreateDocument(ctx context.Context, doc *domain.Doc
 		doc.MimeType,
 		doc.SizeBytes,
 		doc.ExpiresAt,
+		doc.ResubmissionCount,
 	).Scan(&doc.ID, &doc.CreatedAt, &doc.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("create document: %w", err)

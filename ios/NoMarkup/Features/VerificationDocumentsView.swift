@@ -116,6 +116,7 @@ struct VerificationDocumentsView: View {
         .refreshable { await load() }
         .sheet(isPresented: $showUploadSheet) {
             UploadVerificationDocumentSheet(
+                allowedTypes: uploadableDocumentTypes,
                 onUploaded: { result in
                     showUploadSheet = false
                     let status = result.displayStatus
@@ -129,7 +130,23 @@ struct VerificationDocumentsView: View {
     }
 
     private var canUpload: Bool {
-        auth.isAuthenticated && !auth.isScaffoldSession && hasProviderRole
+        auth.isAuthenticated && !auth.isScaffoldSession && hasProviderRole && !uploadableDocumentTypes.isEmpty
+    }
+
+    /// Document types that still accept a new upload (FR-2.10: not hard-locked).
+    private var uploadableDocumentTypes: [ProviderDocumentType] {
+        let locked = Set(
+            documents
+                .filter(\.isResubmissionLocked)
+                .compactMap { $0.documentType?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+        return ProviderDocumentType.allCases.filter { !locked.contains($0.rawValue) }
+    }
+
+    /// Types that have exhausted resubmissions (contact support).
+    private var lockedDocuments: [ProviderVerificationDocument] {
+        documents.filter(\.isResubmissionLocked)
     }
 
     private var listContent: some View {
@@ -163,6 +180,26 @@ struct VerificationDocumentsView: View {
                 }
             }
 
+            if !lockedDocuments.isEmpty {
+                Section {
+                    Label {
+                        Text(lockedDocuments.count == 1
+                             ? "1 document type has no re-uploads left. Contact support to continue verification for that type."
+                             : "\(lockedDocuments.count) document types have no re-uploads left. Contact support to continue verification for those types.")
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.destructive)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "lock.fill")
+                            .foregroundStyle(BrandTheme.destructive)
+                    }
+                    .accessibilityLabel("Resubmission lockout")
+                    .listRowBackground(BrandTheme.navyElevated)
+                } header: {
+                    Text("Support required").brandSectionHeader()
+                }
+            }
+
             Section {
                 ForEach(documents) { doc in
                     documentRow(doc)
@@ -171,19 +208,28 @@ struct VerificationDocumentsView: View {
             } header: {
                 Text(String(localized: "\(documents.count) documents")).brandSectionHeader()
             } footer: {
-                Text("JPEG, PNG, WebP, or PDF up to 10 MB. MIME type is re-checked server-side (magic bytes); only files you upload under your account can be registered. Insurance and licenses with an expiry date should be renewed before they expire so you can keep bidding on new jobs. After rejection you may re-upload up to 3 times (resubmission count shown per document); after 3 rejections contact support.")
+                Text("JPEG, PNG, WebP, or PDF up to 10 MB. MIME type is re-checked server-side (magic bytes); only files you upload under your account can be registered. Insurance and licenses with an expiry date should be renewed before they expire so you can keep bidding on new jobs. After rejection you may re-upload up to 3 times (resubmission count shown per document); after 3 rejections contact support — further uploads for that type are blocked.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
             Section {
-                Button {
-                    showUploadSheet = true
-                } label: {
-                    Label("Upload another document", systemImage: "doc.badge.plus")
+                if canUpload {
+                    Button {
+                        showUploadSheet = true
+                    } label: {
+                        Label("Upload another document", systemImage: "doc.badge.plus")
+                    }
+                    .frame(minHeight: 44)
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityHint("Choose document type and pick a photo or PDF to submit for review")
+                } else {
+                    Text("All listed document types are locked after 3 rejections. Contact support to continue.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityLabel("No document types available to upload")
                 }
-                .frame(minHeight: 44)
-                .listRowBackground(BrandTheme.navyElevated)
-                .accessibilityHint("Choose document type and pick a photo or PDF to submit for review")
             }
         }
         .brandListBackground()
@@ -350,6 +396,8 @@ private struct UploadVerificationDocumentSheet: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.dismiss) private var dismiss
 
+    /// FR-2.10: types still eligible for upload (excludes hard-locked).
+    let allowedTypes: [ProviderDocumentType]
     let onUploaded: (ProviderDocumentUploadResult) -> Void
 
     @State private var selectedType: ProviderDocumentType = .driversLicense
@@ -370,26 +418,41 @@ private struct UploadVerificationDocumentSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Document type", selection: $selectedType) {
-                        ForEach(ProviderDocumentType.allCases) { type in
-                            Text(type.displayLabel).tag(type)
+                    if allowedTypes.isEmpty {
+                        Text("No document types can be uploaded. Each type is limited to 3 resubmissions after rejection. Contact support to continue.")
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.destructive)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Picker("Document type", selection: $selectedType) {
+                            ForEach(allowedTypes) { type in
+                                Text(type.displayLabel).tag(type)
+                            }
                         }
-                    }
-                    .pickerStyle(.navigationLink)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Document type")
+                        .pickerStyle(.navigationLink)
+                        .frame(minHeight: 44)
+                        .accessibilityLabel("Document type")
+                        .disabled(allowedTypes.count <= 1)
 
-                    Text(selectedType.detail)
-                        .font(.caption)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        Text(selectedType.detail)
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 } header: {
                     Text("Type").brandSectionHeader()
                 } footer: {
-                    Text("Must match a supported verification type. Review is handled by the platform.")
+                    Text(allowedTypes.isEmpty
+                         ? "Contact support to unlock verification for locked document types."
+                         : "Must match a supported verification type. Types with no re-uploads remaining are hidden. Review is handled by the platform.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
                 .listRowBackground(BrandTheme.navyElevated)
+                .onAppear {
+                    if !allowedTypes.contains(selectedType), let first = allowedTypes.first {
+                        selectedType = first
+                    }
+                }
 
                 Section {
                     PhotosPicker(
@@ -523,7 +586,7 @@ private struct UploadVerificationDocumentSheet: View {
                             Text("Submit")
                         }
                     }
-                    .disabled(isUploading || !hasCapture || !auth.isAuthenticated || auth.isScaffoldSession)
+                    .disabled(isUploading || !hasCapture || allowedTypes.isEmpty || !auth.isAuthenticated || auth.isScaffoldSession)
                     .accessibilityLabel("Submit verification document")
                 }
             }
@@ -592,6 +655,10 @@ private struct UploadVerificationDocumentSheet: View {
     private func submit() async {
         guard auth.isAuthenticated, !auth.isScaffoldSession else {
             errorMessage = "Sign in as a provider to upload documents."
+            return
+        }
+        guard allowedTypes.contains(selectedType) else {
+            errorMessage = "This document type has no re-uploads left. Contact support to continue."
             return
         }
 

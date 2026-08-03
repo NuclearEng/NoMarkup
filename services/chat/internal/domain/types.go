@@ -99,7 +99,7 @@ type ChannelRepository interface {
 	IsJobParticipant(ctx context.Context, jobID string, userID string) (bool, error)
 	ListChannels(ctx context.Context, userID string, page, pageSize int) ([]*Channel, int, error)
 	SendMessage(ctx context.Context, msg *Message) (*Message, error)
-	ListMessages(ctx context.Context, channelID string, before *time.Time, pageSize int) ([]*Message, error)
+	ListMessages(ctx context.Context, channelID string, before *time.Time, pageSize int, query string) ([]*Message, error)
 	MarkRead(ctx context.Context, channelID string, userID string) error
 	GetUnreadCounts(ctx context.Context, userID string) ([]ChannelUnread, error)
 }

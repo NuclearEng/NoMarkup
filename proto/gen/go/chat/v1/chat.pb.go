@@ -877,11 +877,14 @@ func (x *SendMessageResponse) GetMessage() *Message {
 }
 
 type ListMessagesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChannelId     string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Pagination    *v1.PaginationRequest  `protobuf:"bytes,3,opt,name=pagination,proto3" json:"pagination,omitempty"`
-	Before        *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=before,proto3,oneof" json:"before,omitempty"` // cursor-based: messages before this timestamp
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ChannelId  string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
+	UserId     string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Pagination *v1.PaginationRequest  `protobuf:"bytes,3,opt,name=pagination,proto3" json:"pagination,omitempty"`
+	Before     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=before,proto3,oneof" json:"before,omitempty"` // cursor-based: messages before this timestamp
+	// FR-8.6: optional case-insensitive content search (ILIKE) scoped to channel
+	// membership. Empty/omitted returns the normal message list.
+	Query         string `protobuf:"bytes,5,opt,name=query,proto3" json:"query,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -942,6 +945,13 @@ func (x *ListMessagesRequest) GetBefore() *timestamppb.Timestamp {
 		return x.Before
 	}
 	return nil
+}
+
+func (x *ListMessagesRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
 }
 
 type ListMessagesResponse struct {
@@ -1947,7 +1957,7 @@ const file_chat_v1_chat_proto_rawDesc = "" +
 	"\acontent\x18\x04 \x01(\tR\acontent\x12C\n" +
 	"\vattachments\x18\x05 \x03(\v2!.nomarkup.common.v1.FileReferenceR\vattachments\"J\n" +
 	"\x13SendMessageResponse\x123\n" +
-	"\amessage\x18\x01 \x01(\v2\x19.nomarkup.chat.v1.MessageR\amessage\"\xd8\x01\n" +
+	"\amessage\x18\x01 \x01(\v2\x19.nomarkup.chat.v1.MessageR\amessage\"\xee\x01\n" +
 	"\x13ListMessagesRequest\x12\x1d\n" +
 	"\n" +
 	"channel_id\x18\x01 \x01(\tR\tchannelId\x12\x17\n" +
@@ -1955,7 +1965,8 @@ const file_chat_v1_chat_proto_rawDesc = "" +
 	"\n" +
 	"pagination\x18\x03 \x01(\v2%.nomarkup.common.v1.PaginationRequestR\n" +
 	"pagination\x127\n" +
-	"\x06before\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\x06before\x88\x01\x01B\t\n" +
+	"\x06before\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\x06before\x88\x01\x01\x12\x14\n" +
+	"\x05query\x18\x05 \x01(\tR\x05queryB\t\n" +
 	"\a_before\"\x95\x01\n" +
 	"\x14ListMessagesResponse\x125\n" +
 	"\bmessages\x18\x01 \x03(\v2\x19.nomarkup.chat.v1.MessageR\bmessages\x12F\n" +

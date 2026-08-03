@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -301,7 +302,7 @@ func (r *PostgresRepository) SendMessage(ctx context.Context, msg *domain.Messag
 	return msg, nil
 }
 
-func (r *PostgresRepository) ListMessages(ctx context.Context, channelID string, before *time.Time, pageSize int) ([]*domain.Message, error) {
+func (r *PostgresRepository) ListMessages(ctx context.Context, channelID string, before *time.Time, pageSize int, query string) ([]*domain.Message, error) {
 	if pageSize < 1 {
 		pageSize = 50
 	}
@@ -309,10 +310,51 @@ func (r *PostgresRepository) ListMessages(ctx context.Context, channelID string,
 		pageSize = 100
 	}
 
+	// FR-8.6: optional ILIKE content filter. Escape %/_ so user input cannot
+	// broaden the pattern; channel_id predicate keeps the scan membership-scoped
+	// (caller enforces membership). Existing (channel_id, created_at) indexes apply.
+	search := strings.TrimSpace(query)
+	var likePattern string
+	if search != "" {
+		// Cap search length to avoid pathological patterns.
+		if len(search) > 200 {
+			search = search[:200]
+		}
+		esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(search)
+		likePattern = "%" + esc + "%"
+	}
+
 	var rows pgx.Rows
 	var err error
 
-	if before != nil {
+	switch {
+	case search != "" && before != nil:
+		rows, err = r.pool.Query(ctx, `
+			SELECT id, channel_id, sender_id, message_type, content,
+			       COALESCE(attachment_url, ''), COALESCE(attachment_name, ''),
+			       COALESCE(attachment_type, ''), COALESCE(attachment_size, 0),
+			       flagged_contact_info, is_deleted, deleted_at, created_at
+			FROM chat_messages
+			WHERE channel_id = $1 AND created_at < $2 AND is_deleted = false
+			  AND content ILIKE $3 ESCAPE '\'
+			ORDER BY created_at DESC
+			LIMIT $4`,
+			channelID, *before, likePattern, pageSize,
+		)
+	case search != "":
+		rows, err = r.pool.Query(ctx, `
+			SELECT id, channel_id, sender_id, message_type, content,
+			       COALESCE(attachment_url, ''), COALESCE(attachment_name, ''),
+			       COALESCE(attachment_type, ''), COALESCE(attachment_size, 0),
+			       flagged_contact_info, is_deleted, deleted_at, created_at
+			FROM chat_messages
+			WHERE channel_id = $1 AND is_deleted = false
+			  AND content ILIKE $2 ESCAPE '\'
+			ORDER BY created_at DESC
+			LIMIT $3`,
+			channelID, likePattern, pageSize,
+		)
+	case before != nil:
 		rows, err = r.pool.Query(ctx, `
 			SELECT id, channel_id, sender_id, message_type, content,
 			       COALESCE(attachment_url, ''), COALESCE(attachment_name, ''),
@@ -324,7 +366,7 @@ func (r *PostgresRepository) ListMessages(ctx context.Context, channelID string,
 			LIMIT $3`,
 			channelID, *before, pageSize,
 		)
-	} else {
+	default:
 		rows, err = r.pool.Query(ctx, `
 			SELECT id, channel_id, sender_id, message_type, content,
 			       COALESCE(attachment_url, ''), COALESCE(attachment_name, ''),

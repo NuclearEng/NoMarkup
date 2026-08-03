@@ -1546,6 +1546,9 @@ func mapDomainError(err error) error {
 		return status.Error(codes.InvalidArgument, "invalid document type")
 	case errors.Is(err, domain.ErrMissingFileName):
 		return status.Error(codes.InvalidArgument, "file_name is required")
+	case errors.Is(err, domain.ErrResubmissionLimitReached):
+		// FR-2.10 → gateway maps FailedPrecondition to HTTP 422.
+		return status.Error(codes.FailedPrecondition, "maximum resubmission attempts reached for this document type; contact support")
 	case errors.Is(err, domain.ErrAccountDeactivated):
 		return status.Error(codes.PermissionDenied, "account deactivated")
 	case errors.Is(err, domain.ErrProviderProfileNotFound):

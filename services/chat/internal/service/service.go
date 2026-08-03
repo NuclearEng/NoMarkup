@@ -265,7 +265,9 @@ func (s *Service) SendMessage(ctx context.Context, channelID, senderID, messageT
 }
 
 // ListMessages validates user membership and returns paginated messages.
-func (s *Service) ListMessages(ctx context.Context, channelID, userID string, before *time.Time, pageSize int) ([]*domain.Message, error) {
+// query is an optional FR-8.6 content filter (case-insensitive substring);
+// empty means no filter.
+func (s *Service) ListMessages(ctx context.Context, channelID, userID string, before *time.Time, pageSize int, query string) ([]*domain.Message, error) {
 	ch, err := s.repo.GetChannel(ctx, channelID, userID)
 	if err != nil {
 		return nil, err
@@ -275,7 +277,7 @@ func (s *Service) ListMessages(ctx context.Context, channelID, userID string, be
 		return nil, fmt.Errorf("list messages: %w", domain.ErrNotChannelMember)
 	}
 
-	return s.repo.ListMessages(ctx, channelID, before, pageSize)
+	return s.repo.ListMessages(ctx, channelID, before, pageSize, query)
 }
 
 // MarkRead validates user membership and marks messages as read.
