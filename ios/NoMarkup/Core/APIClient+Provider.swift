@@ -768,6 +768,13 @@ struct ProviderInstantOffer: Codable, Sendable, Hashable, Identifiable {
     var jobTitle: String?
     var expiresAt: String?
     var amountCents: Int64?
+    /// Approximate job site latitude (WGS84). Present when the job has geo.
+    var approxLat: Double?
+    /// Approximate job site longitude (WGS84). Present when the job has geo.
+    var approxLng: Double?
+    /// Soft urban-drive ETA minutes (haversine heuristic). Nil when provider or job coords missing.
+    /// Display as "approx. travel" — never claim live GPS tracking.
+    var approxTravelMinutes: Int?
 
     /// Stable list identity — must never mint a fresh UUID per access (breaks ForEach).
     /// Incomplete wire rows use a deterministic fallback; UI filters them via `hasValidJobId`.
@@ -788,6 +795,11 @@ struct ProviderInstantOffer: Codable, Sendable, Hashable, Identifiable {
 
     var displayAmount: String {
         MoneyFormat.usd(cents: amountCents ?? 0)
+    }
+
+    /// Honest soft ETA label; nil when server omitted minutes (coords missing).
+    var approxTravelLabel: String? {
+        SoftTravelETA.label(minutes: approxTravelMinutes)
     }
 
     /// Parsed expiry; nil if missing / unparseable.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/nomarkup/nomarkup/services/user/internal/domain"
 	"github.com/nomarkup/nomarkup/services/user/internal/repository"
@@ -282,8 +283,16 @@ func MarshalSchedule(data interface{}) ([]byte, error) {
 
 // --- Property operations ---
 
+// MaxPropertyPhotos is the product limit for property exterior/access photos.
+const MaxPropertyPhotos = 5
+
 // CreateProperty creates a new property for a customer.
 func (s *Profile) CreateProperty(ctx context.Context, input domain.CreatePropertyInput) (*domain.Property, error) {
+	urls, err := normalizePropertyPhotoURLs(input.PhotoURLs)
+	if err != nil {
+		return nil, err
+	}
+	input.PhotoURLs = urls
 	return s.repo.CreateProperty(ctx, input)
 }
 
@@ -294,7 +303,42 @@ func (s *Profile) ListProperties(ctx context.Context, userID string) ([]domain.P
 
 // UpdateProperty updates a property's mutable fields.
 func (s *Profile) UpdateProperty(ctx context.Context, propertyID string, input domain.UpdatePropertyInput) (*domain.Property, error) {
+	if input.PhotoURLs != nil {
+		urls, err := normalizePropertyPhotoURLs(*input.PhotoURLs)
+		if err != nil {
+			return nil, err
+		}
+		input.PhotoURLs = &urls
+	}
 	return s.repo.UpdateProperty(ctx, propertyID, input)
+}
+
+// normalizePropertyPhotoURLs trims, drops empties, enforces max 5, and rejects
+// obviously non-http(s) URLs. Empty input is valid (no photos).
+func normalizePropertyPhotoURLs(in []string) ([]string, error) {
+	if len(in) == 0 {
+		return []string{}, nil
+	}
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, u := range in {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+			return nil, fmt.Errorf("%w: photo_urls must be http(s) CDN URLs", domain.ErrInvalidPropertyPhotos)
+		}
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		out = append(out, u)
+		if len(out) > MaxPropertyPhotos {
+			return nil, fmt.Errorf("%w: at most %d property photos", domain.ErrInvalidPropertyPhotos, MaxPropertyPhotos)
+		}
+	}
+	return out, nil
 }
 
 // DeleteProperty soft-deletes a property.

@@ -559,7 +559,7 @@ struct PropertiesView: View {
 
 // MARK: - Add property sheet
 
-private struct AddPropertySheet: View {
+struct AddPropertySheet: View {
     var onCreated: (PropertyItem) -> Void
     var onCancel: () -> Void
 
@@ -569,6 +569,8 @@ private struct AddPropertySheet: View {
     @State private var state = ""
     @State private var zip = ""
     @State private var notes = ""
+    @State private var photoURLs: [String] = []
+    @State private var isUploadingPhotos = false
     @State private var isCreating = false
     @State private var errorMessage: String?
 
@@ -579,6 +581,7 @@ private struct AddPropertySheet: View {
             && !state.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !zip.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !isCreating
+            && !isUploadingPhotos
     }
 
     var body: some View {
@@ -629,6 +632,16 @@ private struct AddPropertySheet: View {
                     Text("Gate codes, parking tips, or unit details for providers — not shown publicly.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
+
+                PhotoPickSection(
+                    context: .job,
+                    maxCount: 5,
+                    photoURLs: $photoURLs,
+                    isUploading: $isUploadingPhotos,
+                    errorMessage: $errorMessage,
+                    sectionTitle: "Photos",
+                    footerText: "Optional. Up to 5 exterior/access photos · JPEG/PNG/WebP · 10 MB each."
+                )
 
                 if let errorMessage {
                     Section {
@@ -687,7 +700,8 @@ private struct AddPropertySheet: View {
                 city: city.trimmingCharacters(in: .whitespacesAndNewlines),
                 state: state.trimmingCharacters(in: .whitespacesAndNewlines),
                 zip: zip.trimmingCharacters(in: .whitespacesAndNewlines),
-                notes: notesTrimmed
+                notes: notesTrimmed,
+                photoURLs: photoURLs
             )
             onCreated(created)
         } catch {

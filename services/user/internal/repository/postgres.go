@@ -1976,18 +1976,22 @@ func (r *PostgresRepository) CreateProperty(ctx context.Context, input domain.Cr
 	var addrCol, notesCol string
 	var locationEncrypted *string
 	var piiEncrypted bool
+	photoURLs := input.PhotoURLs
+	if photoURLs == nil {
+		photoURLs = []string{}
+	}
 	err = r.pool.QueryRow(ctx, `
-		INSERT INTO properties (user_id, nickname, address, city, state, zip_code, location, location_encrypted, notes, is_primary, pii_encrypted_v1)
-		VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, TRUE)
+		INSERT INTO properties (user_id, nickname, address, city, state, zip_code, location, location_encrypted, notes, is_primary, pii_encrypted_v1, photo_urls)
+		VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, TRUE, $12)
 		RETURNING id, user_id, nickname, address, city, state, zip_code,
 		          ST_X(location) AS longitude, ST_Y(location) AS latitude, location_encrypted,
-		          COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1`,
+		          COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1, COALESCE(photo_urls, '{}')`,
 		input.UserID, input.Nickname, encAddress, input.City, input.State, input.ZipCode,
-		coarseLng, coarseLat, encLocation, encNotes, input.IsPrimary,
+		coarseLng, coarseLat, encLocation, encNotes, input.IsPrimary, photoURLs,
 	).Scan(
 		&p.ID, &p.UserID, &p.Nickname, &addrCol, &p.City, &p.State, &p.ZipCode,
 		&p.Longitude, &p.Latitude, &locationEncrypted,
-		&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted,
+		&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted, &p.PhotoURLs,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create property: %w", err)
@@ -2017,7 +2021,8 @@ func (r *PostgresRepository) ListProperties(ctx context.Context, userID string) 
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, user_id, COALESCE(nickname, ''), address, city, state, zip_code,
 		       ST_X(location) AS longitude, ST_Y(location) AS latitude, location_encrypted,
-		       COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1
+		       COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1,
+		       COALESCE(photo_urls, '{}')
 		FROM properties
 		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY is_primary DESC, created_at ASC`, userID)
@@ -2035,7 +2040,7 @@ func (r *PostgresRepository) ListProperties(ctx context.Context, userID string) 
 		err := rows.Scan(
 			&p.ID, &p.UserID, &p.Nickname, &addrCol, &p.City, &p.State, &p.ZipCode,
 			&p.Longitude, &p.Latitude, &locationEncrypted,
-			&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted,
+			&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted, &p.PhotoURLs,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("list properties scan: %w", err)
@@ -2079,6 +2084,15 @@ func (r *PostgresRepository) UpdateProperty(ctx context.Context, propertyID stri
 	if input.IsPrimary != nil {
 		setClauses = append(setClauses, fmt.Sprintf("is_primary = $%d", argIdx))
 		args = append(args, *input.IsPrimary)
+		argIdx++
+	}
+	if input.PhotoURLs != nil {
+		urls := *input.PhotoURLs
+		if urls == nil {
+			urls = []string{}
+		}
+		setClauses = append(setClauses, fmt.Sprintf("photo_urls = $%d", argIdx))
+		args = append(args, urls)
 		argIdx++
 	}
 
@@ -2140,12 +2154,13 @@ func (r *PostgresRepository) getPropertyByID(ctx context.Context, propertyID str
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, user_id, COALESCE(nickname, ''), address, city, state, zip_code,
 		       ST_X(location) AS longitude, ST_Y(location) AS latitude, location_encrypted,
-		       COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1
+		       COALESCE(notes, ''), is_primary, created_at, updated_at, pii_encrypted_v1,
+		       COALESCE(photo_urls, '{}')
 		FROM properties
 		WHERE id = $1 AND deleted_at IS NULL`, propertyID).Scan(
 		&p.ID, &p.UserID, &p.Nickname, &addrCol, &p.City, &p.State, &p.ZipCode,
 		&p.Longitude, &p.Latitude, &locationEncrypted,
-		&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted,
+		&notesCol, &p.IsPrimary, &p.CreatedAt, &p.UpdatedAt, &piiEncrypted, &p.PhotoURLs,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

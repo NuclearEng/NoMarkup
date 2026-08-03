@@ -41,7 +41,7 @@ export function ReviewForm({
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
 
-  // FR-6.2: fixed 4 wire fields; labels are persona-specific (see review-dimensions).
+  // FR-6.2: real wire fields by persona (see review-dimensions).
   const dimensions = reviewDimensionsForDirection(direction);
 
   const closesAt = new Date(reviewWindowClosesAt);
@@ -56,6 +56,9 @@ export function ReviewForm({
       communicationRating: undefined,
       timelinessRating: undefined,
       valueRating: undefined,
+      paymentPromptnessRating: undefined,
+      scopeAccuracyRating: undefined,
+      accessRating: undefined,
       comment: '',
     },
     mode: 'onTouched',
@@ -74,15 +77,20 @@ export function ReviewForm({
   }
 
   function handleSubmit(values: ReviewFormValues) {
+    // Build POST body from persona dimensions only — never map labels onto
+    // shared keys. Customer dims and provider dims are distinct wire fields.
     const input: CreateReviewInput = {
       overall_rating: values.overallRating,
-      quality_rating: values.qualityRating,
-      communication_rating: values.communicationRating,
-      timeliness_rating: values.timelinessRating,
-      value_rating: values.valueRating,
       comment: values.comment,
       photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
     };
+
+    for (const dim of dimensions) {
+      const formValue = values[dim.formField];
+      if (typeof formValue === 'number' && formValue >= 1) {
+        input[dim.wireField] = formValue;
+      }
+    }
 
     createReview.mutate(
       { contractId, input },
@@ -131,7 +139,7 @@ export function ReviewForm({
               )}
             />
 
-            {/* FR-6.2 category sub-ratings — both personas; labels differ by direction. */}
+            {/* FR-6.2 category sub-ratings — real fields by persona. */}
             <div className="grid gap-4 sm:grid-cols-2">
               {dimensions.map((dim) => (
                 <FormField

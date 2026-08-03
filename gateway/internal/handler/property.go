@@ -36,6 +36,8 @@ type createPropertyRequest struct {
 	Address   addressRequest `json:"address"`
 	Notes     string         `json:"notes"`
 	IsPrimary bool           `json:"is_primary"`
+	// PhotoURLs: 0–5 public CDN URLs from the imaging pipeline (10MB each).
+	PhotoURLs []string `json:"photo_urls,omitempty"`
 }
 
 type addressRequest struct {
@@ -51,6 +53,8 @@ type updatePropertyRequest struct {
 	Nickname  *string `json:"nickname,omitempty"`
 	Notes     *string `json:"notes,omitempty"`
 	IsPrimary *bool   `json:"is_primary,omitempty"`
+	// PhotoURLs when non-nil replaces the full list (empty array clears). Max 5.
+	PhotoURLs *[]string `json:"photo_urls,omitempty"`
 }
 
 // List handles GET /api/v1/properties.
@@ -113,6 +117,11 @@ func (h *PropertyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	photoURLs, ok := normalizeGatewayPropertyPhotos(w, req.PhotoURLs)
+	if !ok {
+		return
+	}
+
 	addr := &commonv1.Address{
 		Street:  req.Address.Street,
 		City:    req.Address.City,
@@ -140,6 +149,7 @@ func (h *PropertyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Address:   addr,
 		Notes:     req.Notes,
 		IsPrimary: req.IsPrimary,
+		PhotoUrls: photoURLs,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -186,6 +196,15 @@ func (h *PropertyHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Nickname:   req.Nickname,
 		Notes:      req.Notes,
 		IsPrimary:  req.IsPrimary,
+	}
+	if req.PhotoURLs != nil {
+		urls, ok := normalizeGatewayPropertyPhotos(w, *req.PhotoURLs)
+		if !ok {
+			return
+		}
+		update := true
+		grpcReq.UpdatePhotoUrls = &update
+		grpcReq.PhotoUrls = urls
 	}
 
 	resp, err := h.userClient.UpdateProperty(r.Context(), grpcReq)
@@ -406,6 +425,10 @@ func protoPropertyToJSON(p *userv1.Property) map[string]interface{} {
 		return map[string]interface{}{}
 	}
 
+	photoURLs := p.GetPhotoUrls()
+	if photoURLs == nil {
+		photoURLs = []string{}
+	}
 	result := map[string]interface{}{
 		"id":         p.GetId(),
 		"user_id":    p.GetUserId(),
@@ -413,6 +436,7 @@ func protoPropertyToJSON(p *userv1.Property) map[string]interface{} {
 		"notes":      p.GetNotes(),
 		"is_primary": p.GetIsPrimary(),
 		"created_at": formatTimestamp(p.GetCreatedAt()),
+		"photo_urls": photoURLs,
 	}
 
 	if addr := p.GetAddress(); addr != nil {
@@ -430,4 +454,37 @@ func protoPropertyToJSON(p *userv1.Property) map[string]interface{} {
 	}
 
 	return result
+}
+
+// maxPropertyPhotos matches user service MaxPropertyPhotos / DB CHECK.
+const maxPropertyPhotos = 5
+
+// normalizeGatewayPropertyPhotos trims, dedupes, enforces max 5, and requires
+// http(s) CDN URLs. Writes 400 and returns ok=false on violation.
+func normalizeGatewayPropertyPhotos(w http.ResponseWriter, in []string) ([]string, bool) {
+	if len(in) == 0 {
+		return []string{}, true
+	}
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, u := range in {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+			writeError(w, http.StatusBadRequest, "photo_urls must be http(s) URLs")
+			return nil, false
+		}
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		out = append(out, u)
+		if len(out) > maxPropertyPhotos {
+			writeError(w, http.StatusBadRequest, "at most 5 property photos")
+			return nil, false
+		}
+	}
+	return out, true
 }

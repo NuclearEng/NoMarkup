@@ -9,11 +9,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	reviewv1 "github.com/nomarkup/nomarkup/proto/review/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // ReviewHandler handles HTTP endpoints for reviews.
@@ -70,13 +70,16 @@ func (h *ReviewHandler) resolveReviewerNames(ctx context.Context, ids ...string)
 
 // createReviewRequest is the JSON request body for creating a review.
 type createReviewRequest struct {
-	OverallRating       int32    `json:"overall_rating"`
-	QualityRating       *int32   `json:"quality_rating,omitempty"`
-	CommunicationRating *int32   `json:"communication_rating,omitempty"`
-	TimelinessRating    *int32   `json:"timeliness_rating,omitempty"`
-	ValueRating         *int32   `json:"value_rating,omitempty"`
-	Comment             string   `json:"comment"`
-	PhotoURLs           []string `json:"photo_urls,omitempty"`
+	OverallRating           int32    `json:"overall_rating"`
+	QualityRating           *int32   `json:"quality_rating,omitempty"`
+	CommunicationRating     *int32   `json:"communication_rating,omitempty"`
+	TimelinessRating        *int32   `json:"timeliness_rating,omitempty"`
+	ValueRating             *int32   `json:"value_rating,omitempty"`
+	PaymentPromptnessRating *int32   `json:"payment_promptness_rating,omitempty"`
+	ScopeAccuracyRating     *int32   `json:"scope_accuracy_rating,omitempty"`
+	AccessRating            *int32   `json:"access_rating,omitempty"`
+	Comment                 string   `json:"comment"`
+	PhotoURLs               []string `json:"photo_urls,omitempty"`
 }
 
 // CreateReview handles POST /api/v1/contracts/{id}/reviews.
@@ -121,6 +124,15 @@ func (h *ReviewHandler) CreateReview(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ValueRating != nil {
 		grpcReq.ValueRating = req.ValueRating
+	}
+	if req.PaymentPromptnessRating != nil {
+		grpcReq.PaymentPromptnessRating = req.PaymentPromptnessRating
+	}
+	if req.ScopeAccuracyRating != nil {
+		grpcReq.ScopeAccuracyRating = req.ScopeAccuracyRating
+	}
+	if req.AccessRating != nil {
+		grpcReq.AccessRating = req.AccessRating
 	}
 
 	resp, err := h.reviewClient.CreateReview(r.Context(), grpcReq)
@@ -265,7 +277,7 @@ func (h *ReviewHandler) ListReviewsForUser(w http.ResponseWriter, r *http.Reques
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -434,6 +446,15 @@ func protoReviewToJSON(r *reviewv1.Review, names map[string]string) map[string]i
 	}
 	if r.GetValueRating() > 0 {
 		result["value_rating"] = r.GetValueRating()
+	}
+	if r.GetPaymentPromptnessRating() > 0 {
+		result["payment_promptness_rating"] = r.GetPaymentPromptnessRating()
+	}
+	if r.GetScopeAccuracyRating() > 0 {
+		result["scope_accuracy_rating"] = r.GetScopeAccuracyRating()
+	}
+	if r.GetAccessRating() > 0 {
+		result["access_rating"] = r.GetAccessRating()
 	}
 
 	if len(r.GetPhotoUrls()) > 0 {

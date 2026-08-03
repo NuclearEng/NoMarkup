@@ -107,6 +107,14 @@ export function JobPostingForm() {
     rawFreq === 'quarterly'
       ? (rawFreq as JobPostingFormValues['recurrenceFrequency'])
       : undefined;
+  // FR-18.7 deepen: optional property + starting bid from recurring cancel CTA.
+  const presetPropertyId = (searchParams.get('property_id') ?? '').trim();
+  const rawStartingBidCents = (searchParams.get('starting_bid_cents') ?? '').trim();
+  const parsedStartingBidCents = Number(rawStartingBidCents);
+  const presetStartingBidDollars =
+    Number.isFinite(parsedStartingBidCents) && parsedStartingBidCents > 0
+      ? Math.round(parsedStartingBidCents) / 100
+      : undefined;
   const createJob = useCreateJob();
 
   const form = useForm<JobPostingFormValues>({
@@ -122,7 +130,7 @@ export function JobPostingForm() {
       locationAddress: '',
       locationLat: undefined,
       locationLng: undefined,
-      startingBidDollars: undefined,
+      startingBidDollars: presetStartingBidDollars,
       offerAcceptedDollars: undefined,
       auctionDurationHours: 72,
       auctionType: AUCTION_TYPE.SEALED,
@@ -167,6 +175,7 @@ export function JobPostingForm() {
       location_address: values.locationAddress || undefined,
       location_lat: values.locationLat,
       location_lng: values.locationLng,
+      property_id: presetPropertyId || undefined,
       starting_bid_cents: values.startingBidDollars
         ? Math.round(values.startingBidDollars * 100)
         : undefined,

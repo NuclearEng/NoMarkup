@@ -36,6 +36,8 @@ var (
 	ErrInvalidMFAChallengeToken = errors.New("invalid or expired MFA challenge token")
 	ErrEmailNotVerified         = errors.New("email not verified")
 	ErrPropertyNotFound         = errors.New("property not found")
+	// ErrInvalidPropertyPhotos — not http(s), over max 5, or empty after trim when required.
+	ErrInvalidPropertyPhotos    = errors.New("invalid property photos")
 
 	// GDPR / CCPA erasure pipeline.
 	ErrDeletionAlreadyRequested  = errors.New("account deletion already requested")
@@ -432,6 +434,8 @@ type Property struct {
 	Longitude float64
 	Notes     string
 	IsPrimary bool
+	// PhotoURLs are public CDN URLs (0–5) for exterior/access photos.
+	PhotoURLs []string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -448,6 +452,8 @@ type CreatePropertyInput struct {
 	Longitude float64
 	Notes     string
 	IsPrimary bool
+	// PhotoURLs optional; max 5 public CDN URLs from the imaging pipeline.
+	PhotoURLs []string
 }
 
 // UpdatePropertyInput holds optional fields for updating a property.
@@ -455,6 +461,8 @@ type UpdatePropertyInput struct {
 	Nickname  *string
 	Notes     *string
 	IsPrimary *bool
+	// PhotoURLs when non-nil replaces the full photo list (may be empty to clear). Max 5.
+	PhotoURLs *[]string
 }
 
 // UserRepository defines persistence operations for users.

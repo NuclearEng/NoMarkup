@@ -6,8 +6,8 @@ import UIKit
 #endif
 
 /// MapKit jobs map — `GET /api/v1/jobs/map` pins (no Mapbox SDK).
-/// FR-10.2: category + min starting bid filters (category via API; min bid client-side —
-/// map endpoint has `max_price_cents` only, not min). Schedule is not on map pins → omitted.
+/// FR-10.2: category + schedule + min starting bid filters (category/schedule via API;
+/// min bid client-side — map endpoint has `max_price_cents` only, not min).
 /// Tap a pin → `JobDetailView`. Centers on user location when permitted.
 struct JobsMapView: View {
     @State private var pins: [JobMapPin] = []
@@ -30,9 +30,17 @@ struct JobsMapView: View {
     @State private var filterCategoryId = ""
     @State private var filterCategoryName = ""
     @State private var minStartingBidText = ""
+    /// Empty = any; gateway values: flexible | specific_date | date_range.
+    @State private var filterScheduleType = ""
     @State private var showFilters = false
 
     private let defaultRadiusKm: Double = 25
+    private let scheduleFilterOptions: [(id: String, label: String)] = [
+        ("", "Any schedule"),
+        ("flexible", "Flexible"),
+        ("specific_date", "Specific date"),
+        ("date_range", "Date range"),
+    ]
 
     private var minStartingBidCents: Int64? {
         let t = minStartingBidText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -41,7 +49,7 @@ struct JobsMapView: View {
     }
 
     private var hasActiveFilters: Bool {
-        !filterCategoryId.isEmpty || minStartingBidCents != nil
+        !filterCategoryId.isEmpty || minStartingBidCents != nil || !filterScheduleType.isEmpty
     }
 
     var body: some View {
@@ -64,7 +72,7 @@ struct JobsMapView: View {
                         )
                     }
                     .frame(minHeight: 44)
-                    .accessibilityHint("Filter map pins by category and minimum starting bid")
+                    .accessibilityHint("Filter map pins by category, schedule, and minimum starting bid")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -138,6 +146,15 @@ struct JobsMapView: View {
             }
             .accessibilityLabel("Filter by category")
 
+            // FR-3.8 / map parity — schedule_type query (flexible / specific_date / date_range).
+            Picker("Schedule", selection: $filterScheduleType) {
+                ForEach(scheduleFilterOptions, id: \.id) { opt in
+                    Text(opt.label).tag(opt.id)
+                }
+            }
+            .frame(minHeight: 44)
+            .accessibilityLabel("Filter by schedule type")
+
             HStack {
                 Text("Min starting bid ($)")
                     .foregroundStyle(BrandTheme.textPrimary)
@@ -160,13 +177,14 @@ struct JobsMapView: View {
                     filterCategoryId = ""
                     filterCategoryName = ""
                     minStartingBidText = ""
+                    filterScheduleType = ""
                     Task { await reload(recenter: false) }
                 }
                 .buttonStyle(.bordered)
                 .frame(minHeight: 44)
             }
 
-            Text("Category is applied server-side. Min bid filters pins on device (map API has no min-price param).")
+            Text("Category and schedule are applied server-side. Min bid filters pins on device (map API has no min-price param).")
                 .font(.caption2)
                 .foregroundStyle(BrandTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -339,11 +357,13 @@ struct JobsMapView: View {
 
         do {
             let categoryIds: [String]? = filterCategoryId.isEmpty ? nil : [filterCategoryId]
+            let schedule: String? = filterScheduleType.isEmpty ? nil : filterScheduleType
             let response = try await APIClient.shared.fetchJobsMap(
                 latitude: coordinate?.latitude,
                 longitude: coordinate?.longitude,
                 radiusKm: defaultRadiusKm,
-                categoryIds: categoryIds
+                categoryIds: categoryIds,
+                scheduleType: schedule
             )
             pins = response.pins
             errorMessage = nil

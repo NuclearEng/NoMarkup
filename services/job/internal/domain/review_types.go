@@ -8,14 +8,14 @@ import (
 
 // Sentinel errors for the review domain.
 var (
-	ErrReviewNotFound     = errors.New("review not found")
-	ErrNotEligible        = errors.New("not eligible to review")
-	ErrAlreadyReviewed    = errors.New("already reviewed this contract")
-	ErrReviewWindowClosed = errors.New("review window has closed")
-	ErrNotReviewee        = errors.New("only the reviewee can respond")
-	ErrAlreadyResponded   = errors.New("already responded to this review")
-	ErrFlagNotFound       = errors.New("flag not found")
-	ErrFlagAlreadyResolved = errors.New("flag already resolved")
+	ErrReviewNotFound       = errors.New("review not found")
+	ErrNotEligible          = errors.New("not eligible to review")
+	ErrAlreadyReviewed      = errors.New("already reviewed this contract")
+	ErrReviewWindowClosed   = errors.New("review window has closed")
+	ErrNotReviewee          = errors.New("only the reviewee can respond")
+	ErrAlreadyResponded     = errors.New("already responded to this review")
+	ErrFlagNotFound         = errors.New("flag not found")
+	ErrFlagAlreadyResolved  = errors.New("flag already resolved")
 	ErrReviewAlreadyRemoved = errors.New("review already removed")
 )
 
@@ -26,6 +26,10 @@ var (
 // is_flagged or photo_urls columns (flag state is derived from status='flagged'
 // + flagged_at, photos live elsewhere), and the window column is named
 // review_window_ends (no _at suffix).
+//
+// Category ratings are direction-specific (FR-6.2):
+//   - Customer → provider: QualityRating, CommunicationRating, TimelinessRating, ValueRating
+//   - Provider → customer: PaymentPromptnessRating, ScopeAccuracyRating, AccessRating
 type Review struct {
 	ID                  string
 	ContractID          string
@@ -38,13 +42,17 @@ type Review struct {
 	CommunicationRating *int
 	TimelinessRating    *int
 	ValueRating         *int // customer->provider only
-	ReviewText          string
-	Status              string // pending, published, flagged, removed
-	FlaggedAt           *time.Time
-	FlagReason          string
-	ReviewWindowEnds    time.Time
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	// Provider → customer category ratings (FR-6.2)
+	PaymentPromptnessRating *int
+	ScopeAccuracyRating     *int
+	AccessRating            *int // property access
+	ReviewText              string
+	Status                  string // pending, published, flagged, removed
+	FlaggedAt               *time.Time
+	FlagReason              string
+	ReviewWindowEnds        time.Time
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 
 	// Populated via JOIN
 	Response *ReviewResponse

@@ -4499,14 +4499,16 @@ func (x *GetCategoryTreeResponse) GetCategories() []*ServiceCategory {
 }
 
 type Property struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Nickname      string                 `protobuf:"bytes,3,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	Address       *v1.Address            `protobuf:"bytes,4,opt,name=address,proto3" json:"address,omitempty"`
-	Notes         string                 `protobuf:"bytes,5,opt,name=notes,proto3" json:"notes,omitempty"`
-	IsPrimary     bool                   `protobuf:"varint,6,opt,name=is_primary,json=isPrimary,proto3" json:"is_primary,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	UserId    string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Nickname  string                 `protobuf:"bytes,3,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	Address   *v1.Address            `protobuf:"bytes,4,opt,name=address,proto3" json:"address,omitempty"`
+	Notes     string                 `protobuf:"bytes,5,opt,name=notes,proto3" json:"notes,omitempty"`
+	IsPrimary bool                   `protobuf:"varint,6,opt,name=is_primary,json=isPrimary,proto3" json:"is_primary,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Public CDN URLs (0–5). See properties.photo_urls.
+	PhotoUrls     []string `protobuf:"bytes,8,rep,name=photo_urls,json=photoUrls,proto3" json:"photo_urls,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4590,13 +4592,22 @@ func (x *Property) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Property) GetPhotoUrls() []string {
+	if x != nil {
+		return x.PhotoUrls
+	}
+	return nil
+}
+
 type CreatePropertyRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Nickname      string                 `protobuf:"bytes,2,opt,name=nickname,proto3" json:"nickname,omitempty"`
-	Address       *v1.Address            `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`
-	Notes         string                 `protobuf:"bytes,4,opt,name=notes,proto3" json:"notes,omitempty"`
-	IsPrimary     bool                   `protobuf:"varint,5,opt,name=is_primary,json=isPrimary,proto3" json:"is_primary,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	UserId    string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Nickname  string                 `protobuf:"bytes,2,opt,name=nickname,proto3" json:"nickname,omitempty"`
+	Address   *v1.Address            `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`
+	Notes     string                 `protobuf:"bytes,4,opt,name=notes,proto3" json:"notes,omitempty"`
+	IsPrimary bool                   `protobuf:"varint,5,opt,name=is_primary,json=isPrimary,proto3" json:"is_primary,omitempty"`
+	// Optional; 0–5 public CDN URLs from the imaging pipeline.
+	PhotoUrls     []string `protobuf:"bytes,6,rep,name=photo_urls,json=photoUrls,proto3" json:"photo_urls,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4666,6 +4677,13 @@ func (x *CreatePropertyRequest) GetIsPrimary() bool {
 	return false
 }
 
+func (x *CreatePropertyRequest) GetPhotoUrls() []string {
+	if x != nil {
+		return x.PhotoUrls
+	}
+	return nil
+}
+
 type CreatePropertyResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Property      *Property              `protobuf:"bytes,1,opt,name=property,proto3" json:"property,omitempty"`
@@ -4711,13 +4729,16 @@ func (x *CreatePropertyResponse) GetProperty() *Property {
 }
 
 type UpdatePropertyRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PropertyId    string                 `protobuf:"bytes,1,opt,name=property_id,json=propertyId,proto3" json:"property_id,omitempty"`
-	Nickname      *string                `protobuf:"bytes,2,opt,name=nickname,proto3,oneof" json:"nickname,omitempty"`
-	Notes         *string                `protobuf:"bytes,3,opt,name=notes,proto3,oneof" json:"notes,omitempty"`
-	IsPrimary     *bool                  `protobuf:"varint,4,opt,name=is_primary,json=isPrimary,proto3,oneof" json:"is_primary,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	PropertyId string                 `protobuf:"bytes,1,opt,name=property_id,json=propertyId,proto3" json:"property_id,omitempty"`
+	Nickname   *string                `protobuf:"bytes,2,opt,name=nickname,proto3,oneof" json:"nickname,omitempty"`
+	Notes      *string                `protobuf:"bytes,3,opt,name=notes,proto3,oneof" json:"notes,omitempty"`
+	IsPrimary  *bool                  `protobuf:"varint,4,opt,name=is_primary,json=isPrimary,proto3,oneof" json:"is_primary,omitempty"`
+	// When true, replace photo_urls with the list below (may be empty to clear).
+	UpdatePhotoUrls *bool    `protobuf:"varint,5,opt,name=update_photo_urls,json=updatePhotoUrls,proto3,oneof" json:"update_photo_urls,omitempty"`
+	PhotoUrls       []string `protobuf:"bytes,6,rep,name=photo_urls,json=photoUrls,proto3" json:"photo_urls,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *UpdatePropertyRequest) Reset() {
@@ -4776,6 +4797,20 @@ func (x *UpdatePropertyRequest) GetIsPrimary() bool {
 		return *x.IsPrimary
 	}
 	return false
+}
+
+func (x *UpdatePropertyRequest) GetUpdatePhotoUrls() bool {
+	if x != nil && x.UpdatePhotoUrls != nil {
+		return *x.UpdatePhotoUrls
+	}
+	return false
+}
+
+func (x *UpdatePropertyRequest) GetPhotoUrls() []string {
+	if x != nil {
+		return x.PhotoUrls
+	}
+	return nil
 }
 
 type UpdatePropertyResponse struct {
@@ -6817,7 +6852,7 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\x17GetCategoryTreeResponse\x12A\n" +
 	"\n" +
 	"categories\x18\x01 \x03(\v2!.nomarkup.user.v1.ServiceCategoryR\n" +
-	"categories\"\xf6\x01\n" +
+	"categories\"\x95\x02\n" +
 	"\bProperty\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x1a\n" +
@@ -6827,26 +6862,34 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\n" +
 	"is_primary\x18\x06 \x01(\bR\tisPrimary\x129\n" +
 	"\n" +
-	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xb8\x01\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"photo_urls\x18\b \x03(\tR\tphotoUrls\"\xd7\x01\n" +
 	"\x15CreatePropertyRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1a\n" +
 	"\bnickname\x18\x02 \x01(\tR\bnickname\x125\n" +
 	"\aaddress\x18\x03 \x01(\v2\x1b.nomarkup.common.v1.AddressR\aaddress\x12\x14\n" +
 	"\x05notes\x18\x04 \x01(\tR\x05notes\x12\x1d\n" +
 	"\n" +
-	"is_primary\x18\x05 \x01(\bR\tisPrimary\"P\n" +
+	"is_primary\x18\x05 \x01(\bR\tisPrimary\x12\x1d\n" +
+	"\n" +
+	"photo_urls\x18\x06 \x03(\tR\tphotoUrls\"P\n" +
 	"\x16CreatePropertyResponse\x126\n" +
-	"\bproperty\x18\x01 \x01(\v2\x1a.nomarkup.user.v1.PropertyR\bproperty\"\xbe\x01\n" +
+	"\bproperty\x18\x01 \x01(\v2\x1a.nomarkup.user.v1.PropertyR\bproperty\"\xa4\x02\n" +
 	"\x15UpdatePropertyRequest\x12\x1f\n" +
 	"\vproperty_id\x18\x01 \x01(\tR\n" +
 	"propertyId\x12\x1f\n" +
 	"\bnickname\x18\x02 \x01(\tH\x00R\bnickname\x88\x01\x01\x12\x19\n" +
 	"\x05notes\x18\x03 \x01(\tH\x01R\x05notes\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"is_primary\x18\x04 \x01(\bH\x02R\tisPrimary\x88\x01\x01B\v\n" +
+	"is_primary\x18\x04 \x01(\bH\x02R\tisPrimary\x88\x01\x01\x12/\n" +
+	"\x11update_photo_urls\x18\x05 \x01(\bH\x03R\x0fupdatePhotoUrls\x88\x01\x01\x12\x1d\n" +
+	"\n" +
+	"photo_urls\x18\x06 \x03(\tR\tphotoUrlsB\v\n" +
 	"\t_nicknameB\b\n" +
 	"\x06_notesB\r\n" +
-	"\v_is_primary\"P\n" +
+	"\v_is_primaryB\x14\n" +
+	"\x12_update_photo_urls\"P\n" +
 	"\x16UpdatePropertyResponse\x126\n" +
 	"\bproperty\x18\x01 \x01(\v2\x1a.nomarkup.user.v1.PropertyR\bproperty\"8\n" +
 	"\x15DeletePropertyRequest\x12\x1f\n" +

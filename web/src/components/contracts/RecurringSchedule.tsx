@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useJob } from '@/hooks/useJobs';
 import {
   clearVisitPaymentIdempotency,
   formatRecurringFrequency,
@@ -62,6 +63,10 @@ export interface RecurringScheduleProps {
   embeddedConfig?: ContractRecurringConfig | null;
   /** Optional job title for FR-18.7 repost deep-link prefill. */
   jobTitle?: string;
+  /** Linked job id — used to pull category/property/starting bid for FR-18.7. */
+  jobId?: string;
+  /** Contract amount (cents) — fallback starting bid when job has none. */
+  amountCents?: number;
 }
 
 interface PendingVisitPay {
@@ -111,10 +116,19 @@ function statusBadgeVariant(
   }
 }
 
+export interface RecurringRepostPrefill {
+  frequency?: string;
+  jobTitle?: string;
+  propertyId?: string | null;
+  categoryId?: string | null;
+  startingBidCents?: number | null;
+}
+
 /** Build /jobs/new query for FR-18.7 customer repost (no backend substitution). */
 export function buildRecurringRepostHref(
   frequency: string | undefined,
   jobTitle: string | undefined,
+  extra?: Omit<RecurringRepostPrefill, 'frequency' | 'jobTitle'>,
 ): string {
   const params = new URLSearchParams();
   params.set('is_recurring', 'true');
@@ -130,6 +144,18 @@ export function buildRecurringRepostHref(
   const descBase =
     'Repost of remaining visits after a cancelled recurring schedule. Update details and schedule as needed.';
   params.set('description', descBase);
+
+  const propertyId = (extra?.propertyId ?? '').trim();
+  if (propertyId) params.set('property_id', propertyId);
+
+  const categoryId = (extra?.categoryId ?? '').trim();
+  if (categoryId) params.set('category_id', categoryId);
+
+  const bid = extra?.startingBidCents;
+  if (typeof bid === 'number' && Number.isFinite(bid) && bid > 0) {
+    params.set('starting_bid_cents', String(Math.round(bid)));
+  }
+
   return `/jobs/new?${params.toString()}`;
 }
 
@@ -141,12 +167,22 @@ export function RecurringSchedule({
   isProvider,
   embeddedConfig,
   jobTitle,
+  jobId,
+  amountCents,
 }: RecurringScheduleProps) {
   // Always try dedicated endpoints when we have a contract id. Embedded config
   // is a seed; 404/empty means non-recurring and we hide the section.
   const configQuery = useRecurringConfig(contractId, true);
   const config: ContractRecurringConfig | null =
     configQuery.data ?? embeddedConfig ?? null;
+
+  // FR-18.7: soft-fetch linked job for property/category/starting bid prefill.
+  // Only when the customer is viewing a cancelled schedule (repost CTA path).
+  const configStatus = (config?.status ?? '').toLowerCase();
+  const needsRepostPrefill =
+    isCustomer && (configStatus === 'cancelled' || configStatus === 'canceled');
+  const jobQuery = useJob(needsRepostPrefill ? (jobId ?? '') : '');
+  const job = jobQuery.data;
   const hasConfig = !!config?.id;
 
   const instancesQuery = useRecurringInstances(contractId, hasConfig);
@@ -642,7 +678,18 @@ export function RecurringSchedule({
             </p>
             <Button asChild className="min-h-[44px] w-full gap-2 sm:w-auto">
               <Link
-                href={buildRecurringRepostHref(resolved.frequency, jobTitle) as Route}
+                href={
+                  buildRecurringRepostHref(resolved.frequency, jobTitle, {
+                    propertyId: job?.property_id,
+                    categoryId: job?.category_id,
+                    startingBidCents:
+                      job?.starting_bid_cents && job.starting_bid_cents > 0
+                        ? job.starting_bid_cents
+                        : amountCents && amountCents > 0
+                          ? amountCents
+                          : null,
+                  }) as Route
+                }
               >
                 <RefreshCw className="h-4 w-4" aria-hidden="true" />
                 Post a new job for remaining visits

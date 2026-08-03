@@ -175,7 +175,10 @@ extension APIClient {
         qualityRating: Int? = nil,
         communicationRating: Int? = nil,
         timelinessRating: Int? = nil,
-        valueRating: Int? = nil
+        valueRating: Int? = nil,
+        paymentPromptnessRating: Int? = nil,
+        scopeAccuracyRating: Int? = nil,
+        accessRating: Int? = nil
     ) async throws -> ContractReviewResponse {
         let clamped = min(5, max(1, rating))
         let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -197,7 +200,10 @@ extension APIClient {
                 qualityRating: clampOptional(qualityRating),
                 communicationRating: clampOptional(communicationRating),
                 timelinessRating: clampOptional(timelinessRating),
-                valueRating: clampOptional(valueRating)
+                valueRating: clampOptional(valueRating),
+                paymentPromptnessRating: clampOptional(paymentPromptnessRating),
+                scopeAccuracyRating: clampOptional(scopeAccuracyRating),
+                accessRating: clampOptional(accessRating)
             ),
             authorized: .required
         )
@@ -925,10 +931,15 @@ private struct ContractsOpenDisputeBody: Encodable {
 private struct ContractsCreateReviewBody: Encodable {
     let overallRating: Int32
     let comment: String
+    // Customer → provider
     let qualityRating: Int32?
     let communicationRating: Int32?
     let timelinessRating: Int32?
     let valueRating: Int32?
+    // Provider → customer (FR-6.2)
+    let paymentPromptnessRating: Int32?
+    let scopeAccuracyRating: Int32?
+    let accessRating: Int32?
 }
 
 private struct ReviewRespondBody: Encodable {

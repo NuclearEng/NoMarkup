@@ -31,6 +31,11 @@ struct ContractDetailView: View {
     @State private var feeBreakdown: PaymentFeeBreakdown?
     /// Exact service address from linked job (party-only; server-gated on GET /jobs/{id}).
     @State private var serviceExactAddress: JobExactAddress?
+    /// FR-18.7 deepen: property/category/starting bid from linked job (fail-soft).
+    @State private var repostPropertyId: String?
+    @State private var repostCategoryId: String?
+    @State private var repostCategoryName: String?
+    @State private var repostStartingBidCents: Int64?
     /// FR-18 recurring schedule + instance timeline (loaded fail-soft).
     @State private var recurringConfig: ContractRecurringConfig?
     @State private var recurringInstances: [ContractRecurringInstance] = []
@@ -741,7 +746,11 @@ struct ContractDetailView: View {
                             preferInstantMatch: false,
                             prefillRecurring: true,
                             prefillFrequency: config.frequency,
-                            prefillTitle: contract.jobTitle
+                            prefillTitle: contract.jobTitle,
+                            prefillPropertyId: repostPropertyId,
+                            prefillCategoryId: repostCategoryId,
+                            prefillCategoryName: repostCategoryName,
+                            prefillStartingBidCents: repostStartingBidCents ?? contract.amountCents
                         )
                     } label: {
                         Label("Post a new job for remaining visits", systemImage: "arrow.triangle.2.circlepath")
@@ -2053,6 +2062,7 @@ struct ContractDetailView: View {
                 isCustomer: detail.isCustomer(userId: currentUserID),
                 isProvider: detail.isProvider(userId: currentUserID)
             )
+            async let repostPrefill = Self.loadRepostPrefill(jobId: detail.jobId)
             async let recurringResult = Self.loadRecurringBundle(
                 contractId: contractID,
                 embedded: detail.recurring
@@ -2062,6 +2072,11 @@ struct ContractDetailView: View {
             contractPayments = await paymentsResult
             feeBreakdown = await feesResult
             serviceExactAddress = await addressResult
+            let prefill = await repostPrefill
+            repostPropertyId = prefill.propertyId
+            repostCategoryId = prefill.categoryId
+            repostCategoryName = prefill.categoryName
+            repostStartingBidCents = prefill.startingBidCents ?? detail.amountCents
             let recurring = await recurringResult
             recurringConfig = recurring.config
             recurringInstances = recurring.instances
@@ -2082,6 +2097,32 @@ struct ContractDetailView: View {
                 statusIsError = true
                 statusMessage = error.localizedDescription
             }
+        }
+    }
+
+    /// Soft-fail FR-18.7 prefill fields from the linked job.
+    private static func loadRepostPrefill(jobId: String?) async -> (
+        propertyId: String?,
+        categoryId: String?,
+        categoryName: String?,
+        startingBidCents: Int64?
+    ) {
+        guard let jobId, !jobId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return (nil, nil, nil, nil)
+        }
+        do {
+            let job = try await APIClient.shared.fetchJob(id: jobId)
+            let prop = job.propertyId?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cat = job.categoryId?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = job.categoryName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (
+                (prop?.isEmpty == false) ? prop : nil,
+                (cat?.isEmpty == false) ? cat : nil,
+                (name?.isEmpty == false) ? name : nil,
+                job.startingBidCents
+            )
+        } catch {
+            return (nil, nil, nil, nil)
         }
     }
 
@@ -3186,30 +3227,26 @@ private struct OpenDisputeSheet: View {
 
 private struct LeaveReviewSheet: View {
     let contractID: String
-    /// FR-6.2: when true, customer→provider labels; else provider→customer.
-    /// Wire fields stay quality/communication/timeliness/value (API residual).
+    /// FR-6.2: when true, customer→provider dims; else provider→customer real wire fields.
     var isCustomerReviewing: Bool = true
     var onSuccess: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var rating = 5
+    // Customer → provider
     @State private var qualityRating = 5
     @State private var communicationRating = 5
     @State private var timelinessRating = 5
     @State private var valueRating = 5
+    // Provider → customer (FR-6.2 real columns)
+    @State private var paymentPromptnessRating = 5
+    @State private var scopeAccuracyRating = 5
+    @State private var accessRating = 5
     @State private var comment = ""
     @State private var isSubmitting = false
     @State private var isLoadingEligibility = true
     @State private var eligibility: ReviewEligibility?
     @State private var errorMessage: String?
-
-    /// Persona labels over fixed CreateReview wire keys (FR-6.2 residual).
-    private var dimensionLabels: (quality: String, communication: String, timeliness: String, value: String) {
-        if isCustomerReviewing {
-            return ("Quality of work", "Communication", "Timeliness", "Value")
-        }
-        return ("Payment promptness", "Communication", "Accuracy of scope", "Property access")
-    }
 
     private var commentCount: Int {
         comment.trimmingCharacters(in: .whitespacesAndNewlines).count
@@ -3266,26 +3303,44 @@ private struct LeaveReviewSheet: View {
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Rating \(rating) of 5 stars")
 
-                        Stepper(value: $qualityRating, in: 1 ... 5) {
-                            Text("\(dimensionLabels.quality) \(qualityRating)/5")
+                        if isCustomerReviewing {
+                            Stepper(value: $qualityRating, in: 1 ... 5) {
+                                Text("Quality of work \(qualityRating)/5")
+                            }
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityLabel("Quality of work \(qualityRating) of 5")
+                            Stepper(value: $communicationRating, in: 1 ... 5) {
+                                Text("Communication \(communicationRating)/5")
+                            }
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityLabel("Communication \(communicationRating) of 5")
+                            Stepper(value: $timelinessRating, in: 1 ... 5) {
+                                Text("Timeliness \(timelinessRating)/5")
+                            }
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityLabel("Timeliness \(timelinessRating) of 5")
+                            Stepper(value: $valueRating, in: 1 ... 5) {
+                                Text("Value \(valueRating)/5")
+                            }
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityLabel("Value \(valueRating) of 5")
+                        } else {
+                            Stepper(value: $paymentPromptnessRating, in: 1 ... 5) {
+                                Text("Payment promptness \(paymentPromptnessRating)/5")
+                            }
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityLabel("Payment promptness \(paymentPromptnessRating) of 5")
+                            Stepper(value: $scopeAccuracyRating, in: 1 ... 5) {
+                                Text("Accuracy of scope \(scopeAccuracyRating)/5")
+                            }
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityLabel("Accuracy of scope \(scopeAccuracyRating) of 5")
+                            Stepper(value: $accessRating, in: 1 ... 5) {
+                                Text("Property access \(accessRating)/5")
+                            }
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityLabel("Property access \(accessRating) of 5")
                         }
-                        .listRowBackground(BrandTheme.navyElevated)
-                        .accessibilityLabel("\(dimensionLabels.quality) \(qualityRating) of 5")
-                        Stepper(value: $communicationRating, in: 1 ... 5) {
-                            Text("\(dimensionLabels.communication) \(communicationRating)/5")
-                        }
-                        .listRowBackground(BrandTheme.navyElevated)
-                        .accessibilityLabel("\(dimensionLabels.communication) \(communicationRating) of 5")
-                        Stepper(value: $timelinessRating, in: 1 ... 5) {
-                            Text("\(dimensionLabels.timeliness) \(timelinessRating)/5")
-                        }
-                        .listRowBackground(BrandTheme.navyElevated)
-                        .accessibilityLabel("\(dimensionLabels.timeliness) \(timelinessRating) of 5")
-                        Stepper(value: $valueRating, in: 1 ... 5) {
-                            Text("\(dimensionLabels.value) \(valueRating)/5")
-                        }
-                        .listRowBackground(BrandTheme.navyElevated)
-                        .accessibilityLabel("\(dimensionLabels.value) \(valueRating) of 5")
 
                         TextField("Comment (required, 50+ characters)", text: $comment, axis: .vertical)
                             .lineLimit(4 ... 10)
@@ -3297,7 +3352,7 @@ private struct LeaveReviewSheet: View {
                     } header: {
                         Text("Review").brandSectionHeader()
                     } footer: {
-                        Text("Reviews are double-blind: they become visible once both parties have submitted. Window is 90 days after completion. Category labels match your role (FR-6.2); the API still stores them on the shared quality/communication/timeliness/value fields.")
+                        Text("Reviews are double-blind: they become visible once both parties have submitted. Window is 90 days after completion. Category ratings use role-specific fields (FR-6.2).")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
@@ -3363,15 +3418,26 @@ private struct LeaveReviewSheet: View {
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            _ = try await APIClient.shared.createContractReview(
-                id: contractID,
-                rating: rating,
-                comment: comment,
-                qualityRating: qualityRating,
-                communicationRating: communicationRating,
-                timelinessRating: timelinessRating,
-                valueRating: valueRating
-            )
+            if isCustomerReviewing {
+                _ = try await APIClient.shared.createContractReview(
+                    id: contractID,
+                    rating: rating,
+                    comment: comment,
+                    qualityRating: qualityRating,
+                    communicationRating: communicationRating,
+                    timelinessRating: timelinessRating,
+                    valueRating: valueRating
+                )
+            } else {
+                _ = try await APIClient.shared.createContractReview(
+                    id: contractID,
+                    rating: rating,
+                    comment: comment,
+                    paymentPromptnessRating: paymentPromptnessRating,
+                    scopeAccuracyRating: scopeAccuracyRating,
+                    accessRating: accessRating
+                )
+            }
             onSuccess("Review submitted.")
             dismiss()
         } catch {

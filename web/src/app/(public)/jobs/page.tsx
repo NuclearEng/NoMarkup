@@ -67,6 +67,17 @@ function paramsFromSearch(
   const radiusKm = parseIntParam(searchParams['radius_km']);
   if (radiusKm !== undefined) out.radius_km = radiusKm;
 
+  const lat = first(searchParams['latitude'] ?? searchParams['location_lat']);
+  const lng = first(searchParams['longitude'] ?? searchParams['location_lng']);
+  if (lat !== undefined && lat !== '' && lng !== undefined && lng !== '') {
+    const latN = Number(lat);
+    const lngN = Number(lng);
+    if (Number.isFinite(latN) && Number.isFinite(lngN)) {
+      out.location_lat = latN;
+      out.location_lng = lngN;
+    }
+  }
+
   if (first(searchParams['is_recurring']) === 'true') out.is_recurring = true;
 
   return out;

@@ -256,6 +256,7 @@ type GetJobsOnMapInput struct {
 	RadiusKm      float64
 	CategoryIDs   []string
 	MaxPriceCents *int64
+	ScheduleType  *string
 }
 
 // MatchedProvider represents a provider matched to a job by the pre-matching engine.

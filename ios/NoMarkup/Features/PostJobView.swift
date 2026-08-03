@@ -13,6 +13,11 @@ struct PostJobView: View {
     var prefillRecurring: Bool = false
     var prefillFrequency: String? = nil
     var prefillTitle: String? = nil
+    /// FR-18.7 deepen: optional property / category / starting bid from cancelled schedule's job.
+    var prefillPropertyId: String? = nil
+    var prefillCategoryId: String? = nil
+    var prefillCategoryName: String? = nil
+    var prefillStartingBidCents: Int64? = nil
 
     @State private var title = ""
     @State private var description = ""
@@ -113,7 +118,28 @@ struct PostJobView: View {
                 description =
                     "Repost of remaining visits after a cancelled recurring schedule. Update details and schedule as needed."
             }
+            if let cat = prefillCategoryId?.trimmingCharacters(in: .whitespacesAndNewlines), !cat.isEmpty {
+                categoryId = cat
+                if let name = prefillCategoryName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+                    categoryName = name
+                }
+            }
+            if let bid = prefillStartingBidCents, bid > 0 {
+                // Dollar text for DollarAmountField (no trailing zeros on whole dollars).
+                let dollars = Decimal(bid) / 100
+                var rounded = Decimal()
+                var tmp = dollars
+                NSDecimalRound(&rounded, &tmp, 2, .plain)
+                startingBidText = NSDecimalNumber(decimal: rounded).stringValue
+            }
             await loadProperties()
+            // Apply property after properties load so picker selection sticks.
+            if let prop = prefillPropertyId?.trimmingCharacters(in: .whitespacesAndNewlines), !prop.isEmpty {
+                if properties.contains(where: { $0.id == prop }) {
+                    selectedPropertyId = prop
+                    applyPropertySelection(id: prop)
+                }
+            }
         }
     }
 

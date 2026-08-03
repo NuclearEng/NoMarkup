@@ -23,10 +23,29 @@ func NewReviewService(reviewRepo domain.ReviewRepository, contractRepo domain.Co
 	}
 }
 
+// CreateReviewInput holds optional category ratings for CreateReview (FR-6.2).
+// Customer→provider uses Quality/Communication/Timeliness/Value.
+// Provider→customer uses PaymentPromptness/ScopeAccuracy/Access.
+// All category ratings are optional; when present they must be 1–5.
+type CreateReviewInput struct {
+	ContractID              string
+	ReviewerID              string
+	OverallRating           int
+	QualityRating           *int
+	CommunicationRating     *int
+	TimelinessRating        *int
+	ValueRating             *int
+	PaymentPromptnessRating *int
+	ScopeAccuracyRating     *int
+	AccessRating            *int
+	Comment                 string
+	PhotoURLs               []string
+}
+
 // CreateReview creates a review after validating eligibility and input.
-func (s *ReviewService) CreateReview(ctx context.Context, contractID, reviewerID string, overallRating int, qualityRating, communicationRating, timelinessRating, valueRating *int, comment string, photoURLs []string) (*domain.Review, error) {
+func (s *ReviewService) CreateReview(ctx context.Context, in CreateReviewInput) (*domain.Review, error) {
 	// Check eligibility.
-	elig, err := s.reviewRepo.CheckReviewEligibility(ctx, contractID, reviewerID)
+	elig, err := s.reviewRepo.CheckReviewEligibility(ctx, in.ContractID, in.ReviewerID)
 	if err != nil {
 		return nil, fmt.Errorf("create review: %w", err)
 	}
@@ -42,35 +61,38 @@ func (s *ReviewService) CreateReview(ctx context.Context, contractID, reviewerID
 	}
 
 	// Validate overall rating.
-	if overallRating < 1 || overallRating > 5 {
+	if in.OverallRating < 1 || in.OverallRating > 5 {
 		return nil, fmt.Errorf("create review: overall rating must be between 1 and 5")
 	}
 
-	// Validate optional ratings.
-	for _, r := range []*int{qualityRating, communicationRating, timelinessRating, valueRating} {
+	// Validate optional category ratings (1–5 when present).
+	for _, r := range []*int{
+		in.QualityRating, in.CommunicationRating, in.TimelinessRating, in.ValueRating,
+		in.PaymentPromptnessRating, in.ScopeAccuracyRating, in.AccessRating,
+	} {
 		if r != nil && (*r < 1 || *r > 5) {
 			return nil, fmt.Errorf("create review: all ratings must be between 1 and 5")
 		}
 	}
 
 	// Validate comment length.
-	if len(comment) < 50 {
+	if len(in.Comment) < 50 {
 		return nil, fmt.Errorf("create review: comment must be at least 50 characters")
 	}
 
 	// Determine direction and reviewee.
-	contract, err := s.contractRepo.GetContract(ctx, contractID)
+	contract, err := s.contractRepo.GetContract(ctx, in.ContractID)
 	if err != nil {
 		return nil, fmt.Errorf("create review: %w", err)
 	}
 
 	// Persisted column is reviewer_role: "customer" or "provider".
 	var role, direction, revieweeID string
-	if reviewerID == contract.CustomerID {
+	if in.ReviewerID == contract.CustomerID {
 		role = "customer"
 		direction = "customer_to_provider"
 		revieweeID = contract.ProviderID
-	} else if reviewerID == contract.ProviderID {
+	} else if in.ReviewerID == contract.ProviderID {
 		role = "provider"
 		direction = "provider_to_customer"
 		revieweeID = contract.CustomerID
@@ -81,19 +103,27 @@ func (s *ReviewService) CreateReview(ctx context.Context, contractID, reviewerID
 	// photoURLs is currently dropped on the floor — the reviews schema has no
 	// photo_urls column. Photos for reviews are not yet implemented; if/when
 	// they are, add a separate review_photos table or column and persist here.
-	_ = photoURLs
+	_ = in.PhotoURLs
 
+	// Persist persona-appropriate category ratings only. Cross-direction dims
+	// are ignored so a mis-wired client cannot pollute the wrong columns.
 	review := &domain.Review{
-		ContractID:          contractID,
-		ReviewerID:          reviewerID,
-		RevieweeID:          revieweeID,
-		ReviewerRole:        role,
-		OverallRating:       overallRating,
-		QualityRating:       qualityRating,
-		CommunicationRating: communicationRating,
-		TimelinessRating:    timelinessRating,
-		ValueRating:         valueRating,
-		ReviewText:          comment,
+		ContractID:    in.ContractID,
+		ReviewerID:    in.ReviewerID,
+		RevieweeID:    revieweeID,
+		ReviewerRole:  role,
+		OverallRating: in.OverallRating,
+		ReviewText:    in.Comment,
+	}
+	if role == "customer" {
+		review.QualityRating = in.QualityRating
+		review.CommunicationRating = in.CommunicationRating
+		review.TimelinessRating = in.TimelinessRating
+		review.ValueRating = in.ValueRating
+	} else {
+		review.PaymentPromptnessRating = in.PaymentPromptnessRating
+		review.ScopeAccuracyRating = in.ScopeAccuracyRating
+		review.AccessRating = in.AccessRating
 	}
 
 	created, err := s.reviewRepo.CreateReview(ctx, review)
@@ -102,8 +132,8 @@ func (s *ReviewService) CreateReview(ctx context.Context, contractID, reviewerID
 	}
 
 	// Check if both parties have reviewed and publish if so.
-	if err := s.reviewRepo.PublishPendingReviews(ctx, contractID); err != nil {
-		slog.Warn("failed to publish pending reviews", "contract_id", contractID, "error", err)
+	if err := s.reviewRepo.PublishPendingReviews(ctx, in.ContractID); err != nil {
+		slog.Warn("failed to publish pending reviews", "contract_id", in.ContractID, "error", err)
 	}
 
 	// Re-fetch to get potentially updated status.
@@ -114,8 +144,8 @@ func (s *ReviewService) CreateReview(ctx context.Context, contractID, reviewerID
 
 	slog.Info("review created",
 		"review_id", created.ID,
-		"contract_id", contractID,
-		"reviewer_id", reviewerID,
+		"contract_id", in.ContractID,
+		"reviewer_id", in.ReviewerID,
 		"direction", direction,
 	)
 

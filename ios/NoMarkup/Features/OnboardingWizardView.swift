@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Guided multi-step onboarding (PRD FR-1.5 / FR-1.6).
+/// Guided multi-step onboarding (PRD FR-1.5 / FR-1.6 / FR-1.3 address).
 ///
-/// Steps: display name → phone (OTP) → optional provider role.
+/// Steps: display name → phone (OTP) → service address (link to create property) → optional provider role.
 /// Non-blocking: skip allowed on optional steps; dismiss anytime and resume via Account “Finish setup”.
-/// Uses existing `updateMe` / `enableRole` / `sendPhoneOTP` / `verifyPhone` APIs.
+/// Uses existing `updateMe` / `enableRole` / `sendPhoneOTP` / `verifyPhone` / properties APIs.
 struct OnboardingWizardView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.dismiss) private var dismiss
@@ -22,28 +22,33 @@ struct OnboardingWizardView: View {
     @State private var statusMessage: String?
     @State private var needsSignIn = false
     @State private var showVerificationCenter = false
+    @State private var showAddPropertySheet = false
+    @State private var propertySavedNickname: String?
 
     private enum Step: Int, CaseIterable {
         case displayName = 0
         case phone = 1
-        case provider = 2
-        case done = 3
+        case address = 2
+        case provider = 3
+        case done = 4
 
         var title: String {
             switch self {
             case .displayName: return "Display name"
             case .phone: return "Phone"
+            case .address: return "Service address"
             case .provider: return "Provider role"
             case .done: return "You’re set"
             }
         }
 
-        /// Progress through the three guided steps (done = 100%).
+        /// Progress through guided steps (done = 100%).
         var progressPercent: Int {
             switch self {
             case .displayName: return 0
-            case .phone: return 33
-            case .provider: return 66
+            case .phone: return 25
+            case .address: return 50
+            case .provider: return 75
             case .done: return 100
             }
         }
@@ -51,7 +56,7 @@ struct OnboardingWizardView: View {
         var isOptional: Bool {
             switch self {
             case .displayName: return false
-            case .phone, .provider: return true
+            case .phone, .address, .provider: return true
             case .done: return false
             }
         }
@@ -109,6 +114,17 @@ struct OnboardingWizardView: View {
         }
         .navigationDestination(isPresented: $showVerificationCenter) {
             VerificationCenterView()
+        }
+        .sheet(isPresented: $showAddPropertySheet) {
+            NavigationStack {
+                AddPropertySheet { created in
+                    propertySavedNickname = created.displayNickname
+                    statusMessage = "Property “\(created.displayNickname)” saved."
+                    showAddPropertySheet = false
+                } onCancel: {
+                    showAddPropertySheet = false
+                }
+            }
         }
         .task { await loadProfile() }
     }
@@ -183,6 +199,8 @@ struct OnboardingWizardView: View {
             return "How you appear on bids, chat, and your public profile."
         case .phone:
             return "Add a phone number and send an SMS code. Verification is required before some transactions."
+        case .address:
+            return "Save a home or site address so reverse-auction jobs can reuse it (FR-1.3). Optional — manage anytime under Properties."
         case .provider:
             return "Providers bid on service jobs and complete reverse-auction contracts. You can add this anytime."
         case .done:
@@ -197,6 +215,8 @@ struct OnboardingWizardView: View {
             displayNameStep
         case .phone:
             phoneStep
+        case .address:
+            addressStep
         case .provider:
             providerStep
         case .done:
@@ -295,6 +315,49 @@ struct OnboardingWizardView: View {
         }
     }
 
+
+    private var addressStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let nickname = propertySavedNickname {
+                Label("Saved “\(nickname)”", systemImage: "checkmark.seal.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(BrandTheme.success)
+                    .frame(minHeight: 44)
+            } else {
+                Text("Add a service location for reverse-auction jobs. You can skip and manage properties later from Account.")
+                    .font(.subheadline)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button {
+                showAddPropertySheet = true
+            } label: {
+                Label(
+                    propertySavedNickname == nil ? "Add property address" : "Add another property",
+                    systemImage: "house.fill"
+                )
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 48)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
+            .accessibilityHint("Opens the create-property form")
+
+            NavigationLink {
+                PropertiesView()
+            } label: {
+                Label("Open Properties", systemImage: "list.bullet.rectangle")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(BrandTheme.goldBright)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 44)
+            }
+            .accessibilityHint("Manage all saved addresses")
+        }
+    }
+
     private var providerStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             if profile?.hasProviderRole == true {
@@ -342,6 +405,11 @@ struct OnboardingWizardView: View {
                     .font(.caption)
                     .foregroundStyle(BrandTheme.textSecondary)
             }
+            if let nickname = propertySavedNickname {
+                Text("Service address: \(nickname)")
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -370,6 +438,15 @@ struct OnboardingWizardView: View {
                     Task { await continueFromPhone() }
                 }
                 secondarySkipButton(title: "Skip phone") {
+                    step = .address
+                    clearMessages()
+                }
+            case .address:
+                primaryButton(title: "Continue", enabled: !isBusy) {
+                    step = .provider
+                    clearMessages()
+                }
+                secondarySkipButton(title: "Skip address") {
                     step = .provider
                     clearMessages()
                 }
@@ -458,7 +535,7 @@ struct OnboardingWizardView: View {
                 let nameOK = !(me.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
                 let phoneOK = !(me.phone?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
                 if nameOK && phoneOK {
-                    step = .provider
+                    step = .address
                 } else if nameOK {
                     step = .phone
                 }
@@ -558,7 +635,7 @@ struct OnboardingWizardView: View {
             if let me = try? await APIClient.shared.fetchMe() {
                 applyProfile(me)
             }
-            step = .provider
+            step = .address
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
         } catch {
@@ -572,7 +649,7 @@ struct OnboardingWizardView: View {
         clearMessages()
         let trimmed = phone.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            step = .provider
+            step = .address
             return
         }
 
@@ -585,14 +662,14 @@ struct OnboardingWizardView: View {
                 let updated = try await APIClient.shared.updateMe(phone: trimmed)
                 applyProfile(updated)
                 statusMessage = "Phone saved. You can verify anytime from Account."
-                step = .provider
+                step = .address
             } catch let error as APIClientError where error.isUnauthorized {
                 needsSignIn = true
             } catch {
                 errorMessage = error.localizedDescription
             }
         } else {
-            step = .provider
+            step = .address
         }
     }
 

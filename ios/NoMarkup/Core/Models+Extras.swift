@@ -371,6 +371,8 @@ struct PropertyItem: Codable, Sendable, Hashable, Identifiable {
     var notes: String?
     var isPrimary: Bool?
     var address: PropertyAddress?
+    /// Public CDN URLs (0–5) for exterior/access photos.
+    var photoUrls: [String]?
     var createdAt: String?
 
     var displayName: String {

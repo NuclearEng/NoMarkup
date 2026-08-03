@@ -1,7 +1,7 @@
 'use client';
 
 import { SlidersHorizontal, X } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { JobCard } from '@/components/jobs/JobCard';
 import { JobSearchFilters } from '@/components/jobs/JobSearchFilters';
@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSearchJobs } from '@/hooks/useJobs';
+import { useSelectedMarket } from '@/hooks/useSelectedMarket';
 import type { JobsResponse, SearchJobsParams } from '@/types';
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -87,10 +88,36 @@ export function JobsSearchClient({
   );
   const [filters, setFilters] = useState<SearchJobsParams>(seedFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // Shared city context (localStorage). When markets have geocoded lat/lng,
+  // inject them so search projects distance_km (FR-10.7). Skip gracefully when
+  // coords are null (catalog markets currently often lack them).
+  const [selectedMarket] = useSelectedMarket();
 
-  const isSeedFilters = filters === seedFilters;
+  const geoAwareFilters = useMemo<SearchJobsParams>(() => {
+    // Explicit filter/URL coords win over market context.
+    if (filters.location_lat !== undefined && filters.location_lng !== undefined) {
+      return filters;
+    }
+    const lat = selectedMarket?.lat;
+    const lng = selectedMarket?.lng;
+    if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return filters;
+    }
+    return {
+      ...filters,
+      location_lat: lat,
+      location_lng: lng,
+    };
+  }, [filters, selectedMarket]);
+
+  // Seed initialData only when the effective query still matches the server seed
+  // (no client-only geo injection that would diverge from RSC first page).
+  const isSeedFilters =
+    filters === seedFilters &&
+    geoAwareFilters.location_lat === seedFilters.location_lat &&
+    geoAwareFilters.location_lng === seedFilters.location_lng;
   const { data, isLoading, isError, refetch } = useSearchJobs(
-    filters,
+    geoAwareFilters,
     isSeedFilters ? { initialData: initialJobs } : undefined,
   );
 

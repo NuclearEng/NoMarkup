@@ -413,15 +413,17 @@ describe('ReviewCard', () => {
     expect(screen.queryByText('Timeliness')).toBeNull();
     expect(screen.queryByText('Value')).toBeNull();
   });
-  it('labels sub-ratings with provider→customer persona names (FR-6.2 residual)', () => {
+  it('labels sub-ratings with provider→customer real fields (FR-6.2)', () => {
     setUser(null);
     render(
       createElement(ReviewCard, {
         review: makeReview({
           direction: 'provider_to_customer',
+          payment_promptness_rating: 5,
+          scope_accuracy_rating: 3,
+          access_rating: 2,
+          // Customer dims present must not show under provider direction.
           quality_rating: 5,
-          communication_rating: 4,
-          timeliness_rating: 3,
           value_rating: 2,
         }),
       }),
@@ -431,6 +433,7 @@ describe('ReviewCard', () => {
     expect(screen.getByText('Property access')).toBeDefined();
     expect(screen.queryByText('Quality of work')).toBeNull();
     expect(screen.queryByText(/^Quality$/)).toBeNull();
+    expect(screen.queryByText('Timeliness')).toBeNull();
   });
 
 });

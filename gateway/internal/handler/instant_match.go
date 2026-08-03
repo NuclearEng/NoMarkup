@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -260,6 +261,10 @@ func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Soft travel ETA: provider service_location × job approximate/service geo.
+	// Fail-soft when either side is missing — UI skips the label.
+	provLat, provLng, hasProvGeo := h.loadProviderServiceCoords(ctx, claims.UserID)
+
 	// Use the underlying Redis client to scan for matching keys.
 	if h.cache == nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"offers": []interface{}{}})
@@ -339,12 +344,9 @@ func (h *InstantMatchHandler) ListProviderOffers(w http.ResponseWriter, r *http.
 			continue
 		}
 
-		offers = append(offers, map[string]interface{}{
-			"job_id":       jobID,
-			"job_title":    rec.JobTitle,
-			"expires_at":   rec.ExpiresAt,
-			"amount_cents": rec.AmountCents,
-		})
+		offers = append(offers, buildProviderInstantOffer(
+			jobID, rec, matchCtx, provLat, provLng, hasProvGeo,
+		))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"offers": offers})
@@ -1029,4 +1031,80 @@ func trustTierStringNotifyLabel(tier string) string {
 	default:
 		return ""
 	}
+}
+
+// loadProviderServiceCoords returns the provider profile service_location WGS84
+// point used for Instant geo matching. ok=false when missing or unreadable.
+func (h *InstantMatchHandler) loadProviderServiceCoords(
+	ctx context.Context,
+	userID string,
+) (lat, lng float64, ok bool) {
+	if h.db == nil || userID == "" {
+		return 0, 0, false
+	}
+	var plat, plng *float64
+	err := h.db.QueryRow(ctx, `
+		SELECT ST_Y(service_location), ST_X(service_location)
+		  FROM provider_profiles
+		 WHERE user_id = $1
+		   AND service_location IS NOT NULL`,
+		userID,
+	).Scan(&plat, &plng)
+	if err != nil || plat == nil || plng == nil {
+		return 0, 0, false
+	}
+	if *plat == 0 && *plng == 0 {
+		return 0, 0, false
+	}
+	if *plat < -90 || *plat > 90 || *plng < -180 || *plng > 180 {
+		return 0, 0, false
+	}
+	return *plat, *plng, true
+}
+
+// buildProviderInstantOffer assembles one inbox row. When both provider and job
+// have coordinates, includes approx_travel_minutes (haversine → urban-drive
+// heuristic) plus approx_lat/lng for clients that want MapKit. Label on clients
+// must read "approx. travel" — never "live GPS tracking".
+func buildProviderInstantOffer(
+	jobID string,
+	rec instantMatchRecord,
+	matchCtx instantJobMatchContext,
+	provLat, provLng float64,
+	hasProvGeo bool,
+) map[string]interface{} {
+	offer := map[string]interface{}{
+		"job_id":       jobID,
+		"job_title":    rec.JobTitle,
+		"expires_at":   rec.ExpiresAt,
+		"amount_cents": rec.AmountCents,
+	}
+	if !matchCtx.HasGeo {
+		return offer
+	}
+	offer["approx_lat"] = matchCtx.Lat
+	offer["approx_lng"] = matchCtx.Lng
+	if hasProvGeo {
+		meters := haversineMeters(provLat, provLng, matchCtx.Lat, matchCtx.Lng)
+		offer["approx_travel_minutes"] = approxDriveMinutes(meters)
+	}
+	return offer
+}
+
+// approxDriveMinutes converts great-circle meters to a soft urban drive ETA.
+// Rule of thumb: ~2 minutes per mile (~30 mph average with lights / routing
+// overhead). Bounds [1, 999]. Not live traffic / not GPS tracking.
+func approxDriveMinutes(meters float64) int {
+	if meters <= 0 || math.IsNaN(meters) || math.IsInf(meters, 0) {
+		return 1
+	}
+	miles := meters / 1609.344
+	minutes := int(math.Round(miles * 2.0))
+	if minutes < 1 {
+		return 1
+	}
+	if minutes > 999 {
+		return 999
+	}
+	return minutes
 }

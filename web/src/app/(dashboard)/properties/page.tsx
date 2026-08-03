@@ -24,6 +24,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { ImageUpload } from '@/components/ui/ImageUpload';
 import { Input } from '@/components/ui/input';
 import {
   useCreateProperty,
@@ -33,6 +34,7 @@ import {
 } from '@/hooks/useProperties';
 import { propertySchema } from '@/lib/validations';
 import type { PropertyFormValues } from '@/lib/validations';
+import { UPLOAD_CONTEXT } from '@/types';
 
 export default function PropertiesPage() {
   const { data: properties, isLoading, isError, refetch } = useProperties();
@@ -41,6 +43,7 @@ export default function PropertiesPage() {
   const deleteProperty = useDeleteProperty();
   const [showForm, setShowForm] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
 
   const form = useForm<PropertyFormValues>({
     resolver: zodResolver(propertySchema),
@@ -55,8 +58,9 @@ export default function PropertiesPage() {
   });
 
   async function onSubmit(values: PropertyFormValues) {
-    await createProperty.mutateAsync(values);
+    await createProperty.mutateAsync({ ...values, photo_urls: photoUrls });
     form.reset();
+    setPhotoUrls([]);
     setShowForm(false);
   }
 
@@ -191,6 +195,28 @@ export default function PropertiesPage() {
                   )}
                 />
 
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-zinc-200">Photos (optional, up to 5)</p>
+                  <p className="text-xs text-zinc-400">
+                    Exterior or access photos · JPEG/PNG/WebP · 10 MB each. Reuses the platform image pipeline.
+                  </p>
+                  <ImageUpload
+                    context={UPLOAD_CONTEXT.JOB_PHOTO}
+                    multiple
+                    maxFiles={5}
+                    existingImages={photoUrls}
+                    onUploadComplete={(result) => {
+                      setPhotoUrls((prev) =>
+                        prev.length >= 5 ? prev : [...prev, result.confirmedUrl],
+                      );
+                    }}
+                    onRemove={(url) => {
+                      setPhotoUrls((prev) => prev.filter((u) => u !== url));
+                    }}
+                    placeholder="Add property photos"
+                  />
+                </div>
+
                 <div className="flex gap-2">
                   <Button
                     type="submit"
@@ -206,6 +232,7 @@ export default function PropertiesPage() {
                     onClick={() => {
                       setShowForm(false);
                       form.reset();
+                      setPhotoUrls([]);
                     }}
                   >
                     Cancel

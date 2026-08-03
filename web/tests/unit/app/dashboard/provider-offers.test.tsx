@@ -65,6 +65,15 @@ vi.mock('@/hooks/useInstantMatch', () => ({
     isPending: declineState.isPending,
   }),
   useProviderOffers: () => offersState,
+  formatApproxTravel: (minutes: number | undefined | null) => {
+    if (minutes == null || !Number.isFinite(minutes) || minutes <= 0) return null;
+    const m = Math.round(minutes);
+    if (m < 60) return `≈ ${String(m)} min approx. travel`;
+    const hours = Math.floor(m / 60);
+    const rem = m % 60;
+    if (rem === 0) return `≈ ${String(hours)}h approx. travel`;
+    return `≈ ${String(hours)}h ${String(rem)}m approx. travel`;
+  },
 }));
 
 const { default: ProviderOffersPage } = await import(

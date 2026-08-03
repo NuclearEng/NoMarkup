@@ -8,7 +8,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCountdown } from '@/hooks/useCountdown';
-import { useAcceptOffer, useDeclineOffer, useProviderOffers } from '@/hooks/useInstantMatch';
+import {
+  formatApproxTravel,
+  useAcceptOffer,
+  useDeclineOffer,
+  useProviderOffers,
+} from '@/hooks/useInstantMatch';
 import { formatCents } from '@/lib/utils';
 
 interface OfferCardProps {
@@ -16,6 +21,7 @@ interface OfferCardProps {
   jobTitle: string;
   expiresAt: string;
   amountCents: number;
+  approxTravelMinutes?: number;
 }
 
 function OfferCountdown({ expiresAt }: { expiresAt: string }) {
@@ -38,12 +44,13 @@ function OfferCountdown({ expiresAt }: { expiresAt: string }) {
   );
 }
 
-function OfferCard({ jobId, jobTitle, expiresAt, amountCents }: OfferCardProps) {
+function OfferCard({ jobId, jobTitle, expiresAt, amountCents, approxTravelMinutes }: OfferCardProps) {
   const accept = useAcceptOffer(jobId);
   const decline = useDeclineOffer(jobId);
   const { isExpired } = useCountdown(expiresAt);
 
   const isPending = accept.isPending || decline.isPending;
+  const travelLabel = formatApproxTravel(approxTravelMinutes);
 
   return (
     <Card className="border-border/50 bg-card/60 backdrop-blur-sm transition-all duration-200 hover:border-border">
@@ -63,6 +70,15 @@ function OfferCard({ jobId, jobTitle, expiresAt, amountCents }: OfferCardProps) 
                 <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                 <OfferCountdown expiresAt={expiresAt} />
               </span>
+              {travelLabel ? (
+                <span
+                  className="text-xs text-zinc-400"
+                  title="Estimated drive time only — not live GPS tracking"
+                  aria-label={travelLabel}
+                >
+                  {travelLabel}
+                </span>
+              ) : null}
             </div>
           </div>
 
@@ -182,6 +198,7 @@ export default function ProviderOffersPage() {
               jobTitle={offer.job_title || 'Untitled Job'}
               expiresAt={offer.expires_at}
               amountCents={offer.amount_cents}
+              approxTravelMinutes={offer.approx_travel_minutes}
             />
           ))}
         </div>

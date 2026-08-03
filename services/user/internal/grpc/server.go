@@ -803,6 +803,7 @@ func (s *Server) CreateProperty(ctx context.Context, req *userv1.CreatePropertyR
 		Nickname:  req.GetNickname(),
 		Notes:     req.GetNotes(),
 		IsPrimary: req.GetIsPrimary(),
+		PhotoURLs: req.GetPhotoUrls(),
 	}
 
 	if addr := req.GetAddress(); addr != nil {
@@ -834,6 +835,13 @@ func (s *Server) UpdateProperty(ctx context.Context, req *userv1.UpdatePropertyR
 		Notes:     req.Notes,
 		IsPrimary: req.IsPrimary,
 	}
+	if req.UpdatePhotoUrls != nil && req.GetUpdatePhotoUrls() {
+		urls := req.GetPhotoUrls()
+		if urls == nil {
+			urls = []string{}
+		}
+		input.PhotoURLs = &urls
+	}
 
 	prop, err := s.profile.UpdateProperty(ctx, req.GetPropertyId(), input)
 	if err != nil {
@@ -860,6 +868,10 @@ func domainPropertyToProto(p *domain.Property) *userv1.Property {
 		return nil
 	}
 
+	photoURLs := p.PhotoURLs
+	if photoURLs == nil {
+		photoURLs = []string{}
+	}
 	prop := &userv1.Property{
 		Id:        p.ID,
 		UserId:    p.UserID,
@@ -867,6 +879,7 @@ func domainPropertyToProto(p *domain.Property) *userv1.Property {
 		Notes:     p.Notes,
 		IsPrimary: p.IsPrimary,
 		CreatedAt: timestamppb.New(p.CreatedAt),
+		PhotoUrls: photoURLs,
 		Address: &commonv1.Address{
 			Street:  p.Address,
 			City:    p.City,
@@ -1577,6 +1590,8 @@ func mapDomainError(err error) error {
 		return status.Error(codes.Unauthenticated, "invalid or expired MFA challenge token")
 	case errors.Is(err, domain.ErrPropertyNotFound):
 		return status.Error(codes.NotFound, "property not found")
+	case errors.Is(err, domain.ErrInvalidPropertyPhotos):
+		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrDeletionAlreadyRequested):
 		return status.Error(codes.AlreadyExists, "deletion already requested")
 	case errors.Is(err, domain.ErrDeletionNotRequested):

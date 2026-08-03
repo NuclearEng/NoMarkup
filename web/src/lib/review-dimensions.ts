@@ -1,38 +1,54 @@
 /**
- * FR-6.2 category sub-ratings.
+ * FR-6.2 category sub-ratings — real wire fields by persona.
  *
- * Wire fields are fixed: quality_rating, communication_rating,
- * timeliness_rating, value_rating (CreateReview API + proto). The DB also has
- * payment_promptness_rating / scope_accuracy_rating / access_rating columns,
- * but CreateReview does not write or return them — residual until an API
- * extension maps provider→customer into those columns.
+ * Customer → provider: quality / communication / timeliness / value
+ * Provider → customer: payment_promptness / scope_accuracy / access
  *
- * Until then: same four wire keys both ways; UI labels are persona-specific.
+ * Columns exist on `reviews` and are written/returned by CreateReview + list.
  */
 
 import { REVIEW_DIRECTION } from '@/types';
 
-export type ReviewDimensionKey =
+export type CustomerReviewDimensionKey =
   | 'quality'
   | 'communication'
   | 'timeliness'
   | 'value';
 
+export type ProviderReviewDimensionKey =
+  | 'payment_promptness'
+  | 'scope_accuracy'
+  | 'access';
+
+export type ReviewDimensionKey =
+  | CustomerReviewDimensionKey
+  | ProviderReviewDimensionKey;
+
+export type ReviewWireField =
+  | 'quality_rating'
+  | 'communication_rating'
+  | 'timeliness_rating'
+  | 'value_rating'
+  | 'payment_promptness_rating'
+  | 'scope_accuracy_rating'
+  | 'access_rating';
+
+export type ReviewFormField =
+  | 'qualityRating'
+  | 'communicationRating'
+  | 'timelinessRating'
+  | 'valueRating'
+  | 'paymentPromptnessRating'
+  | 'scopeAccuracyRating'
+  | 'accessRating';
+
 export interface ReviewDimensionDef {
   /** Form field / wire mapping key. */
   key: ReviewDimensionKey;
   /** Wire JSON field on CreateReviewInput. */
-  wireField:
-    | 'quality_rating'
-    | 'communication_rating'
-    | 'timeliness_rating'
-    | 'value_rating';
+  wireField: ReviewWireField;
   /** react-hook-form field name. */
-  formField:
-    | 'qualityRating'
-    | 'communicationRating'
-    | 'timelinessRating'
-    | 'valueRating';
+  formField: ReviewFormField;
   /** Short UI label. */
   label: string;
   /** Accessible label for star input. */
@@ -70,45 +86,32 @@ const CUSTOMER_TO_PROVIDER_DIMS: readonly ReviewDimensionDef[] = [
   },
 ] as const;
 
-/**
- * Provider→customer PRD dims mapped onto the fixed 4 wire keys:
- * payment promptness → quality_rating
- * communication → communication_rating
- * accuracy of scope → timeliness_rating
- * property access → value_rating
- */
+/** Provider→customer dims on real DB columns (FR-6.2). */
 const PROVIDER_TO_CUSTOMER_DIMS: readonly ReviewDimensionDef[] = [
   {
-    key: 'quality',
-    wireField: 'quality_rating',
-    formField: 'qualityRating',
+    key: 'payment_promptness',
+    wireField: 'payment_promptness_rating',
+    formField: 'paymentPromptnessRating',
     label: 'Payment promptness',
     a11yLabel: 'Payment promptness rating',
   },
   {
-    key: 'communication',
-    wireField: 'communication_rating',
-    formField: 'communicationRating',
-    label: 'Communication',
-    a11yLabel: 'Communication rating',
-  },
-  {
-    key: 'timeliness',
-    wireField: 'timeliness_rating',
-    formField: 'timelinessRating',
+    key: 'scope_accuracy',
+    wireField: 'scope_accuracy_rating',
+    formField: 'scopeAccuracyRating',
     label: 'Accuracy of scope',
     a11yLabel: 'Accuracy of scope rating',
   },
   {
-    key: 'value',
-    wireField: 'value_rating',
-    formField: 'valueRating',
+    key: 'access',
+    wireField: 'access_rating',
+    formField: 'accessRating',
     label: 'Property access',
     a11yLabel: 'Property access rating',
   },
 ] as const;
 
-/** Persona-specific labels for the fixed four CreateReview wire fields. */
+/** Persona-specific CreateReview dimensions with real wire fields. */
 export function reviewDimensionsForDirection(
   direction: string | undefined | null,
 ): readonly ReviewDimensionDef[] {

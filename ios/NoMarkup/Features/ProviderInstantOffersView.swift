@@ -232,6 +232,20 @@ struct ProviderInstantOffersView: View {
                     .foregroundStyle(countdownColor(for: offer))
             }
 
+            if let travel = offer.approxTravelLabel {
+                HStack(spacing: 8) {
+                    Image(systemName: "car")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .accessibilityHidden(true)
+                    Text(travel)
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .accessibilityLabel(travel)
+                .accessibilityHint("Estimated drive time only — not live GPS tracking")
+            }
+
             HStack(spacing: 10) {
                 Button {
                     Task { await accept(offer) }

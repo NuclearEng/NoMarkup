@@ -25,9 +25,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useCustomerJobs } from '@/hooks/useJobs';
-import { usePreferredProviders, useProperties } from '@/hooks/useProperties';
+import { ImageUpload } from '@/components/ui/ImageUpload';
+import {
+  usePreferredProviders,
+  useProperties,
+  useUpdateProperty,
+} from '@/hooks/useProperties';
 import type { Job } from '@/types';
-import { JOB_STATUS } from '@/types';
+import { JOB_STATUS, UPLOAD_CONTEXT } from '@/types';
 
 const HISTORY_DATE_RANGES = [
   { value: 'all', label: 'All time' },
@@ -66,6 +71,9 @@ export default function PropertyDetailPage() {
   const { data: properties, isLoading: propsLoading, isError: propsError, refetch } =
     useProperties();
   const property = properties?.find((p) => p.id === propertyId);
+  const updateProperty = useUpdateProperty();
+  const [editPhotos, setEditPhotos] = useState<string[] | null>(null);
+  const photoUrls = editPhotos ?? property?.photo_urls ?? [];
 
   const preferred = usePreferredProviders({
     propertyId,
@@ -243,7 +251,69 @@ export default function PropertyDetailPage() {
           </CardContent>
         </Card>
 
-        <PreferredProvidersSection
+  
+      {/* Property photos (1–5) — edit via imaging pipeline */}
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="gold-text text-lg">Photos</CardTitle>
+          <span className="text-xs text-zinc-400">{String(photoUrls.length)}/5</span>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-zinc-400">
+            Optional exterior/access photos · JPEG/PNG/WebP · 10 MB each · not live tracking.
+          </p>
+          <ImageUpload
+            context={UPLOAD_CONTEXT.JOB_PHOTO}
+            multiple
+            maxFiles={5}
+            existingImages={photoUrls}
+            onUploadComplete={(result) => {
+              setEditPhotos((prev) => {
+                const base = prev ?? property?.photo_urls ?? [];
+                if (base.length >= 5) return base;
+                return [...base, result.confirmedUrl];
+              });
+            }}
+            onRemove={(url) => {
+              setEditPhotos((prev) => {
+                const base = prev ?? property?.photo_urls ?? [];
+                return base.filter((u) => u !== url);
+              });
+            }}
+            placeholder="Add property photos"
+          />
+          {editPhotos !== null ? (
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                className="min-h-[44px]"
+                disabled={updateProperty.isPending}
+                onClick={() => {
+                  void updateProperty
+                    .mutateAsync({ id: propertyId, input: { photo_urls: editPhotos } })
+                    .then(() => {
+                      setEditPhotos(null);
+                    });
+                }}
+              >
+                {updateProperty.isPending ? 'Saving…' : 'Save photos'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-[44px]"
+                onClick={() => {
+                  setEditPhotos(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <PreferredProvidersSection
           providers={preferred.data?.providers}
           isLoading={preferred.isLoading}
           isError={preferred.isError}

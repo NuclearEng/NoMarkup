@@ -930,6 +930,12 @@ func (h *JobHandler) MapView(w http.ResponseWriter, r *http.Request) {
 		v, _ := strconv.ParseInt(maxPrice, 10, 64)
 		grpcReq.MaxPriceCents = &v
 	}
+	if schedType := q.Get("schedule_type"); schedType != "" {
+		st := stringToScheduleType(schedType)
+		if st != commonv1.ScheduleType_SCHEDULE_TYPE_UNSPECIFIED {
+			grpcReq.ScheduleType = &st
+		}
+	}
 
 	resp, err := h.jobClient.GetJobsOnMap(r.Context(), grpcReq)
 	if err != nil {

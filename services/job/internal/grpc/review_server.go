@@ -32,33 +32,43 @@ func RegisterReview(s *grpclib.Server, srv *ReviewServer) {
 }
 
 func (s *ReviewServer) CreateReview(ctx context.Context, req *reviewv1.CreateReviewRequest) (*reviewv1.CreateReviewResponse, error) {
-	var qualityRating, communicationRating, timelinessRating, valueRating *int
+	in := service.CreateReviewInput{
+		ContractID:    req.GetContractId(),
+		ReviewerID:    req.GetReviewerId(),
+		OverallRating: int(req.GetOverallRating()),
+		Comment:       req.GetComment(),
+		PhotoURLs:     req.GetPhotoUrls(),
+	}
 	if req.QualityRating != nil {
 		v := int(req.GetQualityRating())
-		qualityRating = &v
+		in.QualityRating = &v
 	}
 	if req.CommunicationRating != nil {
 		v := int(req.GetCommunicationRating())
-		communicationRating = &v
+		in.CommunicationRating = &v
 	}
 	if req.TimelinessRating != nil {
 		v := int(req.GetTimelinessRating())
-		timelinessRating = &v
+		in.TimelinessRating = &v
 	}
 	if req.ValueRating != nil {
 		v := int(req.GetValueRating())
-		valueRating = &v
+		in.ValueRating = &v
+	}
+	if req.PaymentPromptnessRating != nil {
+		v := int(req.GetPaymentPromptnessRating())
+		in.PaymentPromptnessRating = &v
+	}
+	if req.ScopeAccuracyRating != nil {
+		v := int(req.GetScopeAccuracyRating())
+		in.ScopeAccuracyRating = &v
+	}
+	if req.AccessRating != nil {
+		v := int(req.GetAccessRating())
+		in.AccessRating = &v
 	}
 
-	review, err := s.svc.CreateReview(
-		ctx,
-		req.GetContractId(),
-		req.GetReviewerId(),
-		int(req.GetOverallRating()),
-		qualityRating, communicationRating, timelinessRating, valueRating,
-		req.GetComment(),
-		req.GetPhotoUrls(),
-	)
+	review, err := s.svc.CreateReview(ctx, in)
 	if err != nil {
 		return nil, mapReviewDomainError(err)
 	}
@@ -269,6 +279,15 @@ func domainReviewToProto(r *domain.Review) *reviewv1.Review {
 	}
 	if r.ValueRating != nil {
 		pb.ValueRating = int32(*r.ValueRating)
+	}
+	if r.PaymentPromptnessRating != nil {
+		pb.PaymentPromptnessRating = int32(*r.PaymentPromptnessRating)
+	}
+	if r.ScopeAccuracyRating != nil {
+		pb.ScopeAccuracyRating = int32(*r.ScopeAccuracyRating)
+	}
+	if r.AccessRating != nil {
+		pb.AccessRating = int32(*r.AccessRating)
 	}
 
 	if r.Response != nil {

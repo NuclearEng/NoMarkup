@@ -237,3 +237,63 @@ enum BidAmountRules {
         return nil
     }
 }
+
+// MARK: - Soft travel ETA (§13 Instant — not AI, not live GPS)
+
+/// Haversine → urban-drive minutes heuristic for Instant offer cards.
+/// Server usually precomputes `approx_travel_minutes`; this mirrors that rule
+/// for client-side fallback when both endpoints have coordinates.
+enum SoftTravelETA {
+    /// Mean Earth radius (meters) — same constant as gateway geofence.
+    private static let earthRadiusMeters = 6_371_000.0
+
+    /// Soft label for UI. Honest wording: "approx. travel", never "live GPS".
+    static func label(minutes: Int?) -> String? {
+        guard let minutes, minutes > 0 else { return nil }
+        if minutes < 60 {
+            return "≈ \(minutes) min approx. travel"
+        }
+        let hours = minutes / 60
+        let rem = minutes % 60
+        if rem == 0 {
+            return "≈ \(hours)h approx. travel"
+        }
+        return "≈ \(hours)h \(rem)m approx. travel"
+    }
+
+    /// Great-circle distance in meters between two WGS84 points.
+    static func haversineMeters(
+        lat1: Double, lng1: Double,
+        lat2: Double, lng2: Double
+    ) -> Double {
+        let toRad = { (d: Double) in d * .pi / 180 }
+        let dLat = toRad(lat2 - lat1)
+        let dLng = toRad(lng2 - lng1)
+        let a = sin(dLat / 2) * sin(dLat / 2)
+            + cos(toRad(lat1)) * cos(toRad(lat2)) * sin(dLng / 2) * sin(dLng / 2)
+        let c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return earthRadiusMeters * c
+    }
+
+    /// Urban-drive heuristic: ~2 minutes per mile (~30 mph with lights). Bounds [1, 999].
+    static func minutes(meters: Double) -> Int {
+        guard meters.isFinite, meters > 0 else { return 1 }
+        let miles = meters / 1609.344
+        let raw = Int((miles * 2.0).rounded())
+        return min(999, max(1, raw))
+    }
+
+    /// Convenience: minutes between two coordinates, or nil if any coord is invalid.
+    static func minutes(
+        fromLat: Double?, fromLng: Double?,
+        toLat: Double?, toLng: Double?
+    ) -> Int? {
+        guard let fromLat, let fromLng, let toLat, let toLng else { return nil }
+        guard (-90...90).contains(fromLat), (-180...180).contains(fromLng),
+              (-90...90).contains(toLat), (-180...180).contains(toLng) else {
+            return nil
+        }
+        let m = haversineMeters(lat1: fromLat, lng1: fromLng, lat2: toLat, lng2: toLng)
+        return minutes(meters: m)
+    }
+}

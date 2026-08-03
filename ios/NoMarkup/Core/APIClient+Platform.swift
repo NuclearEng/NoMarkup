@@ -8,15 +8,16 @@ import Foundation
 extension APIClient {
     // MARK: Jobs map
 
-    /// GET `/api/v1/jobs/map?latitude=&longitude=&radius_km=&category_ids=` → `{ "pins": [...] }`.
+    /// GET `/api/v1/jobs/map?latitude=&longitude=&radius_km=&category_ids=&schedule_type=` → `{ "pins": [...] }`.
     /// Public, edge-cacheable. Latitude/longitude optional (server may default region).
-    /// `category_ids` is server-side (gateway MapView). Min starting bid is not on this API —
-    /// filter pins client-side when needed (FR-10.2).
+    /// `category_ids` and `schedule_type` are server-side (gateway MapView). Min starting bid is not
+    /// on this API — filter pins client-side when needed (FR-10.2).
     func fetchJobsMap(
         latitude: Double? = nil,
         longitude: Double? = nil,
         radiusKm: Double = 25,
-        categoryIds: [String]? = nil
+        categoryIds: [String]? = nil,
+        scheduleType: String? = nil
     ) async throws -> JobsMapResponse {
         var query: [URLQueryItem] = [
             URLQueryItem(name: "radius_km", value: String(radiusKm)),
@@ -32,6 +33,12 @@ extension APIClient {
                 .joined(separator: ",")
             if !joined.isEmpty {
                 query.append(URLQueryItem(name: "category_ids", value: joined))
+            }
+        }
+        if let scheduleType {
+            let trimmed = scheduleType.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                query.append(URLQueryItem(name: "schedule_type", value: trimmed))
             }
         }
         return try await getJSON(

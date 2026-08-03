@@ -518,6 +518,8 @@ export default function ContractDetailPage() {
           isProvider={isProvider}
           embeddedConfig={contract.recurring}
           jobTitle={contract.job_title}
+          jobId={contract.job_id}
+          amountCents={contract.amount_cents}
         />
       ) : null}
 

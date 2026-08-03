@@ -362,6 +362,11 @@ export interface Job {
   same_day_requested?: boolean;
   /** Present on owner-scoped mine list when the job is tied to a saved property (FR-19). */
   property_id?: string;
+  /**
+   * FR-10.7: present on public search when the request included latitude/longitude.
+   * Null/undefined when the search was not geo-scoped.
+   */
+  distance_km?: number | null;
 }
 
 export interface JobDetail extends Job {
@@ -382,6 +387,8 @@ export interface CreateJobInput {
   location_address?: string;
   location_lat?: number;
   location_lng?: number;
+  /** Optional saved property link (FR-19). */
+  property_id?: string;
   starting_bid_cents?: number;
   offer_accepted_cents?: number;
   auction_duration_hours: number;
@@ -819,10 +826,15 @@ export interface Review {
   reviewee_id: string;
   direction: string;
   overall_rating: number;
+  // Customer → provider category ratings (FR-6.2)
   quality_rating?: number;
   communication_rating?: number;
   timeliness_rating?: number;
   value_rating?: number;
+  // Provider → customer category ratings (FR-6.2)
+  payment_promptness_rating?: number;
+  scope_accuracy_rating?: number;
+  access_rating?: number;
   comment: string;
   photo_urls: string[];
   response?: ReviewResponseData;
@@ -856,10 +868,15 @@ export interface ReviewsForUserResponse {
 
 export interface CreateReviewInput {
   overall_rating: number;
+  // Customer → provider (optional 1–5)
   quality_rating?: number;
   communication_rating?: number;
   timeliness_rating?: number;
   value_rating?: number;
+  // Provider → customer (optional 1–5) — FR-6.2
+  payment_promptness_rating?: number;
+  scope_accuracy_rating?: number;
+  access_rating?: number;
   comment: string;
   photo_urls?: string[];
 }

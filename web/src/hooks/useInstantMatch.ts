@@ -9,6 +9,26 @@ interface ProviderOffer {
   job_title: string;
   expires_at: string;
   amount_cents: number;
+  /** Approximate job site latitude when geo is known. */
+  approx_lat?: number;
+  /** Approximate job site longitude when geo is known. */
+  approx_lng?: number;
+  /**
+   * Soft urban-drive ETA (minutes). Present when provider service_location and
+   * job geo both exist. Display as "approx. travel" — not live GPS tracking.
+   */
+  approx_travel_minutes?: number;
+}
+
+/** Honest soft-ETA label for Instant offer cards. */
+export function formatApproxTravel(minutes: number | undefined | null): string | null {
+  if (minutes == null || !Number.isFinite(minutes) || minutes <= 0) return null;
+  const m = Math.round(minutes);
+  if (m < 60) return `≈ ${String(m)} min approx. travel`;
+  const hours = Math.floor(m / 60);
+  const rem = m % 60;
+  if (rem === 0) return `≈ ${String(hours)}h approx. travel`;
+  return `≈ ${String(hours)}h ${String(rem)}m approx. travel`;
 }
 
 interface ProviderOffersResponse {

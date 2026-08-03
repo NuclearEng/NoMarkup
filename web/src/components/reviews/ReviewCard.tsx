@@ -15,7 +15,10 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useFlagReview, useRespondToReview } from '@/hooks/useReviews';
-import { reviewDimensionsForDirection } from '@/lib/review-dimensions';
+import {
+  reviewDimensionsForDirection,
+  type ReviewDimensionKey,
+} from '@/lib/review-dimensions';
 import { formatRelativeTime } from '@/lib/utils';
 import { reviewResponseSchema } from '@/lib/validations';
 import { useAuthStore } from '@/stores/auth-store';
@@ -38,7 +41,7 @@ const FLAG_REASON_LABELS: Record<string, string> = {
 
 function ratingForDimension(
   review: Review,
-  key: 'quality' | 'communication' | 'timeliness' | 'value',
+  key: ReviewDimensionKey,
 ): number | undefined {
   switch (key) {
     case 'quality':
@@ -49,6 +52,12 @@ function ratingForDimension(
       return review.timeliness_rating;
     case 'value':
       return review.value_rating;
+    case 'payment_promptness':
+      return review.payment_promptness_rating;
+    case 'scope_accuracy':
+      return review.scope_accuracy_rating;
+    case 'access':
+      return review.access_rating;
     default:
       return undefined;
   }
@@ -69,7 +78,7 @@ export function ReviewCard({ review }: ReviewCardProps) {
   const respondToReview = useRespondToReview();
   const flagReview = useFlagReview();
 
-  // FR-6.2: persona labels over fixed wire fields.
+  // FR-6.2: persona labels over real wire fields.
   const dimensions = reviewDimensionsForDirection(review.direction);
   const subRatings = dimensions
     .map((dim) => {
@@ -141,7 +150,7 @@ export function ReviewCard({ review }: ReviewCardProps) {
         {/* Overall rating */}
         <StarRatingDisplay rating={review.overall_rating} size="md" showValue />
 
-        {/* Sub-ratings — FR-6.2 persona labels */}
+        {/* Sub-ratings — FR-6.2 persona fields */}
         {subRatings.length > 0 ? (
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             {subRatings.map((row) => (

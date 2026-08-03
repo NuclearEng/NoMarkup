@@ -18,6 +18,8 @@ export interface Property {
   address: PropertyAddress;
   notes: string | null;
   is_primary?: boolean;
+  /** Public CDN URLs (0–5) for property exterior/access photos. */
+  photo_urls?: string[];
   active_jobs?: number;
   total_spend_cents?: number;
   created_at: string;
@@ -30,6 +32,8 @@ export interface CreatePropertyInput {
   state: string;
   zip_code: string;
   notes?: string;
+  /** 0–5 public CDN URLs from ImageUpload (job_photo context). */
+  photo_urls?: string[];
 }
 
 /** FR-19.2 preferred-provider row from dedicated API. */
@@ -105,7 +109,19 @@ export function useCreateProperty() {
   return useMutation({
     // Gateway returns the property at the top level, not wrapped in { property }.
     mutationFn: async (input: CreatePropertyInput) => {
-      const raw = await api.post<Record<string, unknown>>('/api/v1/properties', input);
+      // Gateway expects nested address + optional photo_urls (0–5).
+      const body = {
+        nickname: input.nickname,
+        address: {
+          street: input.street,
+          city: input.city,
+          state: input.state,
+          zip_code: input.zip_code,
+        },
+        notes: input.notes ?? '',
+        photo_urls: input.photo_urls ?? [],
+      };
+      const raw = await api.post<Record<string, unknown>>('/api/v1/properties', body);
       return raw as unknown as Property;
     },
     onSuccess: () => {
@@ -125,10 +141,19 @@ export function useUpdateProperty() {
     // Gateway exposes PUT /api/v1/properties/{id} (not PATCH); previous PATCH
     // returned 405 and the update silently never happened. Also unwraps the
     // flat-shaped response.
-    mutationFn: async (variables: { id: string; input: Partial<CreatePropertyInput> }) => {
+    mutationFn: async (variables: {
+      id: string;
+      input: Partial<CreatePropertyInput> & { photo_urls?: string[] };
+    }) => {
+      const { input } = variables;
+      // Address is immutable on update; only nickname/notes/primary/photos.
+      const body: Record<string, unknown> = {};
+      if (input.nickname !== undefined) body.nickname = input.nickname;
+      if (input.notes !== undefined) body.notes = input.notes;
+      if (input.photo_urls !== undefined) body.photo_urls = input.photo_urls;
       const raw = await api.put<Record<string, unknown>>(
         `/api/v1/properties/${variables.id}`,
-        variables.input,
+        body,
       );
       return raw as unknown as Property;
     },

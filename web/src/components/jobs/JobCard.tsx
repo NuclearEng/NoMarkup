@@ -123,6 +123,16 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
     [mounted, job.created_at, job.auction_ends_at, job.auction_duration_hours],
   );
 
+  // FR-10.7: server distance_km when browse was geo-scoped (market / lat-lng).
+  const distanceLabel = useMemo(() => {
+    const km = job.distance_km;
+    if (km === null || km === undefined || !Number.isFinite(km)) return null;
+    const miles = km * 0.621371;
+    if (miles < 0.1) return 'less than 0.1 mi';
+    if (miles < 10) return `${miles.toFixed(1)} mi`;
+    return `${String(Math.round(miles))} mi`;
+  }, [job.distance_km]);
+
   return (
     <Link href={`/jobs/${job.id}` as Route} className="block min-w-0">
       <Card
@@ -153,11 +163,18 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
             <span>{job.category_name || 'Uncategorized'}</span>
           </div>
 
-          {/* Location */}
-          {job.location_address ? (
+          {/* Location + optional distance (FR-10.7) */}
+          {job.location_address || distanceLabel ? (
             <div className="flex items-center gap-2 text-sm text-zinc-400">
               <MapPin className="h-3.5 w-3.5 text-[var(--brand-gold)]/60" aria-hidden="true" />
-              <span className="truncate">{job.location_address}</span>
+              {job.location_address ? (
+                <span className="truncate">{job.location_address}</span>
+              ) : null}
+              {distanceLabel ? (
+                <span className="shrink-0 text-xs text-zinc-500">
+                  {job.location_address ? `· ${distanceLabel}` : distanceLabel}
+                </span>
+              ) : null}
             </div>
           ) : null}
 

@@ -619,6 +619,8 @@ message Property {
   string notes = 5;
   bool is_primary = 6;
   google.protobuf.Timestamp created_at = 7;
+  // Public CDN URLs (0–5). See properties.photo_urls.
+  repeated string photo_urls = 8;
 }
 
 message CreatePropertyRequest {
@@ -627,6 +629,8 @@ message CreatePropertyRequest {
   nomarkup.common.v1.Address address = 3;
   string notes = 4;
   bool is_primary = 5;
+  // Optional; 0–5 public CDN URLs from the imaging pipeline.
+  repeated string photo_urls = 6;
 }
 
 message CreatePropertyResponse {
@@ -638,6 +642,9 @@ message UpdatePropertyRequest {
   optional string nickname = 2;
   optional string notes = 3;
   optional bool is_primary = 4;
+  // When true, replace photo_urls with the list below (may be empty to clear).
+  optional bool update_photo_urls = 5;
+  repeated string photo_urls = 6;
 }
 
 message UpdatePropertyResponse {

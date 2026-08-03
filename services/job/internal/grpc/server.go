@@ -323,6 +323,12 @@ func (s *Server) GetJobsOnMap(ctx context.Context, req *jobv1.GetJobsOnMapReques
 		v := req.GetMaxPriceCents()
 		input.MaxPriceCents = &v
 	}
+	if req.ScheduleType != nil {
+		st := protoScheduleTypeToString(req.GetScheduleType())
+		if st != "" {
+			input.ScheduleType = &st
+		}
+	}
 
 	pins, err := s.svc.GetJobsOnMap(ctx, input)
 	if err != nil {

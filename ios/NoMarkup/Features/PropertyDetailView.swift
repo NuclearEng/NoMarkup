@@ -752,6 +752,8 @@ struct EditPropertySheet: View {
     @State private var nickname: String
     @State private var notes: String
     @State private var isPrimary: Bool
+    @State private var photoURLs: [String]
+    @State private var isUploadingPhotos = false
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -766,10 +768,11 @@ struct EditPropertySheet: View {
         _nickname = State(initialValue: property.nickname ?? property.displayNickname)
         _notes = State(initialValue: property.notes ?? "")
         _isPrimary = State(initialValue: property.isPrimary == true)
+        _photoURLs = State(initialValue: property.photoUrls ?? [])
     }
 
     private var canSubmit: Bool {
-        !nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSaving
+        !nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSaving && !isUploadingPhotos
     }
 
     var body: some View {
@@ -813,6 +816,16 @@ struct EditPropertySheet: View {
                     Text("Gate codes, parking tips, or unit details for providers — not shown publicly.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
+
+                PhotoPickSection(
+                    context: .job,
+                    maxCount: 5,
+                    photoURLs: $photoURLs,
+                    isUploading: $isUploadingPhotos,
+                    errorMessage: $errorMessage,
+                    sectionTitle: "Photos",
+                    footerText: "Optional. Up to 5 exterior/access photos · JPEG/PNG/WebP · 10 MB each."
+                )
 
                 if let errorMessage {
                     Section {
@@ -868,7 +881,8 @@ struct EditPropertySheet: View {
                 id: property.id,
                 nickname: nickname.trimmingCharacters(in: .whitespacesAndNewlines),
                 notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
-                isPrimary: isPrimary
+                isPrimary: isPrimary,
+                photoURLs: photoURLs
             )
             onSaved(updated)
         } catch {

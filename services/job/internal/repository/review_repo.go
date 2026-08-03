@@ -19,6 +19,7 @@ const reviewSelectColumns = `
 	r.id, r.contract_id, r.job_id, r.reviewer_id, r.reviewee_id, r.reviewer_role,
 	r.overall_rating, r.quality_rating, r.communication_rating,
 	r.timeliness_rating, r.value_rating,
+	r.payment_promptness_rating, r.scope_accuracy_rating, r.access_rating,
 	r.review_text, r.status,
 	r.flagged_at, r.flag_reason,
 	r.review_window_ends, r.created_at, r.updated_at,
@@ -63,17 +64,20 @@ func (r *PostgresRepository) CreateReview(ctx context.Context, review *domain.Re
 			contract_id, job_id, reviewer_id, reviewee_id, reviewer_role,
 			overall_rating, quality_rating, communication_rating,
 			timeliness_rating, value_rating,
+			payment_promptness_rating, scope_accuracy_rating, access_rating,
 			review_text, status, review_window_ends
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			$6, $7, $8,
 			$9, $10,
-			$11, 'pending', $12
+			$11, $12, $13,
+			$14, 'pending', $15
 		)
 		RETURNING id, created_at, updated_at`,
 		review.ContractID, jobID, review.ReviewerID, review.RevieweeID, role,
 		review.OverallRating, review.QualityRating, review.CommunicationRating,
 		review.TimelinessRating, review.ValueRating,
+		review.PaymentPromptnessRating, review.ScopeAccuracyRating, review.AccessRating,
 		review.ReviewText, windowEnds,
 	).Scan(&reviewID, &createdAt, &updatedAt)
 	if err != nil {
@@ -87,6 +91,7 @@ func (r *PostgresRepository) CreateReview(ctx context.Context, review *domain.Re
 func (r *PostgresRepository) GetReview(ctx context.Context, reviewID string) (*domain.Review, error) {
 	var rev domain.Review
 	var qualityRating, communicationRating, timelinessRating, valueRating *int
+	var paymentPromptness, scopeAccuracy, accessRating *int
 	var flaggedAt *time.Time
 	var flagReason *string
 
@@ -102,6 +107,7 @@ func (r *PostgresRepository) GetReview(ctx context.Context, reviewID string) (*d
 		&rev.ID, &rev.ContractID, &rev.JobID, &rev.ReviewerID, &rev.RevieweeID, &rev.ReviewerRole,
 		&rev.OverallRating, &qualityRating, &communicationRating,
 		&timelinessRating, &valueRating,
+		&paymentPromptness, &scopeAccuracy, &accessRating,
 		&rev.ReviewText, &rev.Status,
 		&flaggedAt, &flagReason,
 		&rev.ReviewWindowEnds, &rev.CreatedAt, &rev.UpdatedAt,
@@ -118,6 +124,9 @@ func (r *PostgresRepository) GetReview(ctx context.Context, reviewID string) (*d
 	rev.CommunicationRating = communicationRating
 	rev.TimelinessRating = timelinessRating
 	rev.ValueRating = valueRating
+	rev.PaymentPromptnessRating = paymentPromptness
+	rev.ScopeAccuracyRating = scopeAccuracy
+	rev.AccessRating = accessRating
 	rev.FlaggedAt = flaggedAt
 	if flagReason != nil {
 		rev.FlagReason = *flagReason
@@ -547,6 +556,7 @@ func (r *PostgresRepository) AdminListFlaggedReviews(ctx context.Context, status
 		       rev.id, rev.contract_id, rev.job_id, rev.reviewer_id, rev.reviewee_id, rev.reviewer_role,
 		       rev.overall_rating, rev.quality_rating, rev.communication_rating,
 		       rev.timeliness_rating, rev.value_rating,
+		       rev.payment_promptness_rating, rev.scope_accuracy_rating, rev.access_rating,
 		       rev.review_text, rev.status,
 		       rev.flagged_at, rev.flag_reason,
 		       rev.review_window_ends, rev.created_at, rev.updated_at
@@ -565,6 +575,7 @@ func (r *PostgresRepository) AdminListFlaggedReviews(ctx context.Context, status
 		var flag domain.ReviewFlag
 		var rev domain.Review
 		var qualityRating, communicationRating, timelinessRating, valueRating *int
+		var paymentPromptness, scopeAccuracy, accessRating *int
 		var revFlaggedAt *time.Time
 		var revFlagReason *string
 		// review_flags.details and resolution_notes are nullable in the schema;
@@ -577,6 +588,7 @@ func (r *PostgresRepository) AdminListFlaggedReviews(ctx context.Context, status
 			&rev.ID, &rev.ContractID, &rev.JobID, &rev.ReviewerID, &rev.RevieweeID, &rev.ReviewerRole,
 			&rev.OverallRating, &qualityRating, &communicationRating,
 			&timelinessRating, &valueRating,
+			&paymentPromptness, &scopeAccuracy, &accessRating,
 			&rev.ReviewText, &rev.Status,
 			&revFlaggedAt, &revFlagReason,
 			&rev.ReviewWindowEnds, &rev.CreatedAt, &rev.UpdatedAt,
@@ -595,6 +607,9 @@ func (r *PostgresRepository) AdminListFlaggedReviews(ctx context.Context, status
 		rev.CommunicationRating = communicationRating
 		rev.TimelinessRating = timelinessRating
 		rev.ValueRating = valueRating
+		rev.PaymentPromptnessRating = paymentPromptness
+		rev.ScopeAccuracyRating = scopeAccuracy
+		rev.AccessRating = accessRating
 		rev.FlaggedAt = revFlaggedAt
 		if revFlagReason != nil {
 			rev.FlagReason = *revFlagReason
@@ -742,6 +757,7 @@ func (r *PostgresRepository) RecalculateProviderRating(ctx context.Context, prov
 func scanReviewRow(rows pgx.Rows) (*domain.Review, error) {
 	var rev domain.Review
 	var qualityRating, communicationRating, timelinessRating, valueRating *int
+	var paymentPromptness, scopeAccuracy, accessRating *int
 	var flaggedAt *time.Time
 	var flagReason *string
 	var respID, respReviewID, respResponderID, respComment *string
@@ -751,6 +767,7 @@ func scanReviewRow(rows pgx.Rows) (*domain.Review, error) {
 		&rev.ID, &rev.ContractID, &rev.JobID, &rev.ReviewerID, &rev.RevieweeID, &rev.ReviewerRole,
 		&rev.OverallRating, &qualityRating, &communicationRating,
 		&timelinessRating, &valueRating,
+		&paymentPromptness, &scopeAccuracy, &accessRating,
 		&rev.ReviewText, &rev.Status,
 		&flaggedAt, &flagReason,
 		&rev.ReviewWindowEnds, &rev.CreatedAt, &rev.UpdatedAt,
@@ -764,6 +781,9 @@ func scanReviewRow(rows pgx.Rows) (*domain.Review, error) {
 	rev.CommunicationRating = communicationRating
 	rev.TimelinessRating = timelinessRating
 	rev.ValueRating = valueRating
+	rev.PaymentPromptnessRating = paymentPromptness
+	rev.ScopeAccuracyRating = scopeAccuracy
+	rev.AccessRating = accessRating
 	rev.FlaggedAt = flaggedAt
 	if flagReason != nil {
 		rev.FlagReason = *flagReason

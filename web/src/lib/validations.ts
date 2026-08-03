@@ -240,10 +240,15 @@ export const revisionNotesSchema = z
 // Review schemas
 export const reviewSchema = z.object({
   overallRating: z.number().int().min(1).max(5),
+  // Customer → provider
   qualityRating: z.number().int().min(1).max(5).optional(),
   communicationRating: z.number().int().min(1).max(5).optional(),
   timelinessRating: z.number().int().min(1).max(5).optional(),
   valueRating: z.number().int().min(1).max(5).optional(),
+  // Provider → customer (FR-6.2)
+  paymentPromptnessRating: z.number().int().min(1).max(5).optional(),
+  scopeAccuracyRating: z.number().int().min(1).max(5).optional(),
+  accessRating: z.number().int().min(1).max(5).optional(),
   comment: z
     .string()
     .min(50, 'Comment must be at least 50 characters')

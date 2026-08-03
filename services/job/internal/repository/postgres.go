@@ -776,6 +776,12 @@ func (r *PostgresRepository) GetJobsOnMap(ctx context.Context, input domain.GetJ
 		argIdx++
 	}
 
+	if input.ScheduleType != nil && *input.ScheduleType != "" {
+		where = append(where, fmt.Sprintf("j.schedule_type = $%d", argIdx))
+		args = append(args, *input.ScheduleType)
+		argIdx++
+	}
+
 	whereClause := strings.Join(where, " AND ")
 
 	query := fmt.Sprintf(`

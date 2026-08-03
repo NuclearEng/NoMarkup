@@ -66,8 +66,10 @@ extension APIClient {
         state: String,
         zip: String,
         notes: String = "",
-        isPrimary: Bool = false
+        isPrimary: Bool = false,
+        photoURLs: [String] = []
     ) async throws -> PropertyItem {
+        let urls = Array(photoURLs.prefix(5).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
         let body = CreatePropertyRequestBody(
             nickname: nickname.trimmingCharacters(in: .whitespacesAndNewlines),
             address: CreatePropertyAddressBody(
@@ -77,7 +79,8 @@ extension APIClient {
                 zipCode: zip.trimmingCharacters(in: .whitespacesAndNewlines)
             ),
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
-            isPrimary: isPrimary
+            isPrimary: isPrimary,
+            photoUrls: urls
         )
         return try await postJSON(
             pathComponents: ["api", "v1", "properties"],
@@ -93,16 +96,19 @@ extension APIClient {
         id: String,
         nickname: String? = nil,
         notes: String? = nil,
-        isPrimary: Bool? = nil
+        isPrimary: Bool? = nil,
+        photoURLs: [String]? = nil
     ) async throws -> PropertyItem {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw APIClientError.httpStatus(400, detail: "Property id is required.")
         }
+        let urls = photoURLs.map { Array($0.prefix(5).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }) }
         let body = UpdatePropertyRequestBody(
             nickname: nickname.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) },
             notes: notes.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) },
-            isPrimary: isPrimary
+            isPrimary: isPrimary,
+            photoUrls: urls
         )
         return try await putJSON(
             pathComponents: ["api", "v1", "properties", trimmed],
@@ -886,6 +892,7 @@ private struct CreatePropertyRequestBody: Encodable {
     let address: CreatePropertyAddressBody
     let notes: String
     let isPrimary: Bool
+    let photoUrls: [String]
 }
 
 /// PUT body for `/api/v1/properties/{id}` — all fields optional; gateway merges non-nil.
@@ -893,6 +900,7 @@ private struct UpdatePropertyRequestBody: Encodable {
     let nickname: String?
     let notes: String?
     let isPrimary: Bool?
+    let photoUrls: [String]?
 }
 
 private struct CreateWishlistItemBody: Encodable {

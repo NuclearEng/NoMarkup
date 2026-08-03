@@ -291,6 +291,7 @@ message GetJobsOnMapRequest {
   double radius_km = 2;
   repeated string category_ids = 3;
   optional int64 max_price_cents = 4;
+  optional nomarkup.common.v1.ScheduleType schedule_type = 5;
 }
 
 message GetJobsOnMapResponse {

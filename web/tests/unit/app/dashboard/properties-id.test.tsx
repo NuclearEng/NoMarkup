@@ -128,6 +128,14 @@ vi.mock('next/link', () => ({
 vi.mock('@/hooks/useProperties', () => ({
   useProperties: () => propertiesState,
   usePreferredProviders: () => preferredState,
+  useUpdateProperty: () => ({
+    mutateAsync: vi.fn(() => Promise.resolve(property)),
+    isPending: false,
+  }),
+}));
+
+vi.mock('@/components/ui/ImageUpload', () => ({
+  ImageUpload: () => createElement('div', { 'data-testid': 'image-upload' }, 'ImageUpload'),
 }));
 
 // useCustomerJobs is called twice (unfiltered + filtered). Return same payload;

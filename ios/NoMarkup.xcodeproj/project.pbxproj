@@ -128,6 +128,7 @@
 		T10000000000000000000005 /* DateFormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000015 /* DateFormattingTests.swift */; };
 		T10000000000000000000006 /* LocalizedPluralsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000016 /* LocalizedPluralsTests.swift */; };
 		T10000000000000000000007 /* APIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000017 /* APIClientTests.swift */; };
+		T10000000000000000000008 /* SoftTravelETATests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000018 /* SoftTravelETATests.swift */; };
 		A100000000000000000000C0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C0 /* PrivacyInfo.xcprivacy */; };
 		A100000000000000000000CD /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CD /* Localizable.xcstrings */; };
 		A100000000000000000000C3 /* PasskeyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C3 /* PasskeyAuth.swift */; };
@@ -285,6 +286,7 @@
 		T10000000000000000000015 /* DateFormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFormattingTests.swift; sourceTree = "<group>"; };
 		T10000000000000000000016 /* LocalizedPluralsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizedPluralsTests.swift; sourceTree = "<group>"; };
 		T10000000000000000000017 /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000018 /* SoftTravelETATests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftTravelETATests.swift; sourceTree = "<group>"; };
 		T10000000000000000000020 /* NoMarkupTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B100000000000000000000C3 /* PasskeyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeyAuth.swift; sourceTree = "<group>"; };
 		B100000000000000000000C4 /* BiometricGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricGate.swift; sourceTree = "<group>"; };
@@ -478,6 +480,7 @@
 				T10000000000000000000015 /* DateFormattingTests.swift */,
 				T10000000000000000000016 /* LocalizedPluralsTests.swift */,
 				T10000000000000000000017 /* APIClientTests.swift */,
+				T10000000000000000000018 /* SoftTravelETATests.swift */,
 			);
 			path = NoMarkupTests;
 			sourceTree = "<group>";
@@ -960,6 +963,7 @@
 				T10000000000000000000005 /* DateFormattingTests.swift in Sources */,
 				T10000000000000000000006 /* LocalizedPluralsTests.swift in Sources */,
 				T10000000000000000000007 /* APIClientTests.swift in Sources */,
+				T10000000000000000000008 /* SoftTravelETATests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
