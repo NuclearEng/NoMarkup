@@ -15,6 +15,8 @@
 | **App Store eng packaging pack** | **100 / 100** | Review Notes, content rating answers, privacy inventory, export compliance key, screenshot matrix, launch board, TestFlight founder steps — eng-complete. **Portal submit** still founder (**ASC-OPS**). |
 | **App Store “submitted / live”** | **Not 100** | Requires Team signing, ASC uploads, screenshots capture, always-on review API, seed password in ASC secure field. |
 
+**Handoff:** founder/next engineer start at [`TURNOVER-2026-08-02.md`](./TURNOVER-2026-08-02.md).
+
 **Honesty clause:** Eng 100 bars mean **no open dual-rail / Full-PRD-eng-max / ASC packaging eng tasks**. They do **not** mean ASC portal was clicked, licenses are live, or Instant AI tracking shipped.
 
 ---
