@@ -33,14 +33,37 @@ struct JobDetailView: View {
     @State private var acceptOfferIsError = false
     @State private var confirmAcceptOffer = false
 
-    /// FR-4.6 lite: ladder sort — price (default reverse-auction lead) or trust.
+    /// FR-4.6: ladder sort — price (default reverse-auction lead), trust, rating, jobs completed.
     private enum LadderSort: String, CaseIterable, Identifiable {
         case price = "Price"
         case trust = "Trust"
+        case rating = "Rating"
+        case volume = "Jobs"
         var id: String { rawValue }
     }
 
+    /// FR-4.7: optional filters applied client-side on the loaded ladder.
+    private enum LadderTrustFilter: String, CaseIterable, Identifiable {
+        case any = "Any trust"
+        case bronze = "Bronze+"
+        case silver = "Silver+"
+        case gold = "Gold+"
+        var id: String { rawValue }
+
+        var minNormalized: Double {
+            switch self {
+            case .any: return -1
+            case .bronze: return 0.25
+            case .silver: return 0.50
+            case .gold: return 0.75
+            }
+        }
+    }
+
     @State private var ladderSort: LadderSort = .price
+    @State private var ladderTrustFilter: LadderTrustFilter = .any
+    @State private var ladderMinJobsCompleted = 0
+    @State private var showLadderFilters = false
 
     @State private var currentUserID: String?
     @State private var pendingAwardEntry: JobBidEntry?
@@ -85,6 +108,11 @@ struct JobDetailView: View {
     @State private var liveSpectatorCount: Int = 0
     /// Throttle ladder refetch when WS bid frames arrive in a burst.
     @State private var lastLadderInvalidateAt: Date = .distantPast
+
+    /// FR-8.1 — open pre-bid inquiry channel (POST /channels channel_type=inquiry).
+    @State private var isOpeningInquiry = false
+    @State private var inquiryError: String?
+    @State private var inquiryChannel: ChatChannelSummary?
 
     /// Showcase H1.4/H1.5 — FPI when usable (median savings); soft-fail otherwise.
     @State private var fairPrice: FairPriceResponse?
@@ -148,9 +176,9 @@ struct JobDetailView: View {
     }
 
     /// Reverse auction ladder. Default: lowest amount first (rank #1 leading).
-    /// Trust sort: highest trust first when scores exist. Withdrawn bids always last.
+    /// FR-4.6 sort + FR-4.7 filters. Withdrawn bids always last.
     private var sortedLadder: [JobBidEntry] {
-        bidEntries.sorted { lhs, rhs in
+        filteredLadder.sorted { lhs, rhs in
             let leftWithdrawn = bidStatusIsWithdrawn(lhs)
             let rightWithdrawn = bidStatusIsWithdrawn(rhs)
             if leftWithdrawn != rightWithdrawn {
@@ -166,12 +194,43 @@ struct JobDetailView: View {
                 let ta = trustSortKey(lhs)
                 let tb = trustSortKey(rhs)
                 if ta != tb { return ta > tb }
-                // Tie-break on price (lower better) then name.
+                let a = lhs.bid?.amountCents ?? Int64.max
+                let b = rhs.bid?.amountCents ?? Int64.max
+                if a != b { return a < b }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            case .rating:
+                let ra = ratingSortKey(lhs)
+                let rb = ratingSortKey(rhs)
+                if ra != rb { return ra > rb }
+                let a = lhs.bid?.amountCents ?? Int64.max
+                let b = rhs.bid?.amountCents ?? Int64.max
+                if a != b { return a < b }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            case .volume:
+                let ja = lhs.jobsCompleted ?? -1
+                let jb = rhs.jobsCompleted ?? -1
+                if ja != jb { return ja > jb }
                 let a = lhs.bid?.amountCents ?? Int64.max
                 let b = rhs.bid?.amountCents ?? Int64.max
                 if a != b { return a < b }
                 return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
             }
+        }
+    }
+
+    /// FR-4.7 client-side filters (min trust band + min jobs completed).
+    private var filteredLadder: [JobBidEntry] {
+        bidEntries.filter { entry in
+            if bidStatusIsWithdrawn(entry) { return true }
+            if ladderMinJobsCompleted > 0 {
+                let jobs = entry.jobsCompleted ?? 0
+                if jobs < ladderMinJobsCompleted { return false }
+            }
+            if ladderTrustFilter != .any {
+                let trust = trustSortKey(entry)
+                if trust < ladderTrustFilter.minNormalized { return false }
+            }
+            return true
         }
     }
 
@@ -182,6 +241,11 @@ struct JobDetailView: View {
             return TrustScoreScale.normalized(v) ?? -1
         }
         return -1
+    }
+
+    /// Star rating (0…5) for sort; missing → -1.
+    private func ratingSortKey(_ entry: JobBidEntry) -> Double {
+        entry.averageRating ?? -1
     }
 
     /// Provider's active bid amount on this job (for lower-only validation).
@@ -308,6 +372,25 @@ struct JobDetailView: View {
             return false
         }
         return true
+    }
+
+    /// FR-8.1 — providers (not the job owner) on an open auction can see "Ask a question".
+    ///
+    /// Backend reality (do not invent success):
+    /// - Chat `CreateChannel` requires an **active bid** for `pre_award` (`ErrNoBidForChat`).
+    /// - Gateway does **not** expose `POST /api/v1/channels` or any pre-bid inquiry / chat-request route
+    ///   (route-map is aspirational; live router only lists/gets channels + messages).
+    /// Honest CTA: explain that messaging requires placing a bid (or open Messages after a bid).
+    private var canShowAskQuestion: Bool {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        guard !isJobOwner else { return false }
+        let status = (detail?.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch status {
+        case "active", "open", "bidding":
+            return true
+        default:
+            return false
+        }
     }
 
     var body: some View {
@@ -453,6 +536,79 @@ struct JobDetailView: View {
                     }
             }
         }
+        .alert("Couldn’t open chat", isPresented: Binding(
+            get: { inquiryError != nil },
+            set: { if !$0 { inquiryError = nil } }
+        )) {
+            Button("OK", role: .cancel) { inquiryError = nil }
+        } message: {
+            Text(inquiryError ?? "Unknown error")
+        }
+        .navigationDestination(item: $inquiryChannel) { channel in
+            ChatThreadView(channel: channel)
+        }
+    }
+
+    // MARK: - FR-8.1 Ask a question (pre-bid inquiry channel)
+
+    @ViewBuilder
+    private var askQuestionSection: some View {
+        if canShowAskQuestion {
+            Section {
+                Button {
+                    Task { await openInquiryChannel() }
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Ask a question")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                            Text("Opens a private pre-bid inquiry with the customer")
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } icon: {
+                        if isOpeningInquiry {
+                            ProgressView()
+                                .tint(BrandTheme.accent)
+                        } else {
+                            Image(systemName: "bubble.left.and.bubble.right")
+                                .foregroundStyle(BrandTheme.accent)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isOpeningInquiry)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityLabel("Ask a question")
+                .accessibilityHint("Opens a pre-bid chat channel with the job owner")
+            } header: {
+                Text("Questions").brandSectionHeader()
+            } footer: {
+                Text(
+                    "Pre-bid inquiries don’t require a bid. Keep questions professional — contact info is still filtered until you explicitly share it."
+                )
+                .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+    }
+
+    @MainActor
+    private func openInquiryChannel() async {
+        inquiryError = nil
+        isOpeningInquiry = true
+        defer { isOpeningInquiry = false }
+        do {
+            let type = hasOwnActiveBid ? "bid" : "inquiry"
+            inquiryChannel = try await APIClient.shared.createChatChannel(jobId: jobID, channelType: type)
+        } catch let error as APIClientError {
+            inquiryError = error.localizedDescription
+        } catch {
+            inquiryError = error.localizedDescription
+        }
     }
 
     @ViewBuilder
@@ -464,6 +620,7 @@ struct JobDetailView: View {
             } else {
                 auctionHeroSection(job)
             }
+            askQuestionSection
             placeBidSection(job)
             acceptOfferSection(job)
             bidLadderSection(job)
@@ -1088,7 +1245,53 @@ struct JobDetailView: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        .accessibilityLabel("Sort bid ladder by price or trust")
+                        .accessibilityLabel("Sort bid ladder by price, trust, rating, or jobs completed")
+
+                        Button {
+                            showLadderFilters.toggle()
+                        } label: {
+                            Label(
+                                showLadderFilters ? "Hide filters" : "Filter bids",
+                                systemImage: "line.3.horizontal.decrease.circle"
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                        .accessibilityHint("Filter the ladder by trust tier and jobs completed")
+
+                        if showLadderFilters {
+                            Picker("Min trust", selection: $ladderTrustFilter) {
+                                ForEach(LadderTrustFilter.allCases) { f in
+                                    Text(f.rawValue).tag(f)
+                                }
+                            }
+                            .frame(minHeight: 44)
+                            .accessibilityLabel("Minimum trust tier filter")
+
+                            Stepper(
+                                value: $ladderMinJobsCompleted,
+                                in: 0 ... 50,
+                                step: 5
+                            ) {
+                                Text(
+                                    ladderMinJobsCompleted == 0
+                                        ? "Min jobs completed: Any"
+                                        : "Min jobs completed: \(ladderMinJobsCompleted)+"
+                                )
+                                .foregroundStyle(BrandTheme.textPrimary)
+                            }
+                            .frame(minHeight: 44)
+                            .accessibilityLabel("Minimum jobs completed filter")
+
+                            if filteredLadder.filter({ !bidStatusIsWithdrawn($0) }).count
+                                < bidEntries.filter({ !bidStatusIsWithdrawn($0) }).count
+                            {
+                                Text(
+                                    "Showing \(filteredLadder.filter { !bidStatusIsWithdrawn($0) }.count) of \(bidEntries.filter { !bidStatusIsWithdrawn($0) }.count) active bids"
+                                )
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                        }
                     }
                     if let awardStatusMessage {
                         Text(awardStatusMessage)
@@ -1114,7 +1317,7 @@ struct JobDetailView: View {
             Text("Auction · bid ladder").brandSectionHeader()
         } footer: {
             if canAward {
-                Text("You own this job. Award a bid to create the contract. Sort by Price (lowest wins) or Trust. Leading badge always follows lowest price.")
+                Text("You own this job. Award a bid to create the contract. Sort by Price (lowest wins), Trust, Rating, or Jobs completed. Filter by trust tier and experience. Leading badge always follows lowest price.")
                     .foregroundStyle(BrandTheme.textSecondary)
             } else {
                 Text("Lowest dollar bid leads. Rank follows the selected sort; Leading badge stays on lowest price. Bids are sealed from other providers.")

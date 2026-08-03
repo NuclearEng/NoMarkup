@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -18,6 +19,12 @@ import UIKit
 /// - Live WS: connect / subscribe / receive / typing / reconnect + poll fallback
 /// - Photo attach via PhotosPicker → `ImageUploader` (job_photo context) →
 ///   `POST …/messages` with `message_type: image` + confirmed URL as content
+/// - **FR-8.3 PDF/file attach:** Files picker → `ImageUploader.uploadPDF`
+///   (`chat_attachment` context, PDF pass-through) → `message_type: file`.
+///   Imaging allows `application/pdf` only on document/chat_attachment prefixes.
+/// - **FR-8.8 Share Contact Info — blocked server-side:** gRPC
+///   `ShareContactInfo` is **Unimplemented** on the chat server; gateway has no
+///   `POST /channels/{id}/share-contact` route. Skip UI button (no fake success).
 /// - Mark read on open / pull-to-refresh / after send / scroll-to-bottom tip
 ///   (`POST …/channels/{id}/read`) — deduped per tip message id
 /// - Local in-thread search over loaded messages
@@ -306,10 +313,12 @@ struct ChatThreadView: View {
     @State private var draft = ""
     @State private var isSending = false
     @State private var isUploadingPhoto = false
+    @State private var isUploadingFile = false
     @State private var sendError: String?
     @State private var currentUserID: String?
     @State private var searchText = ""
     @State private var photoPickerItem: PhotosPickerItem?
+    @State private var showPDFImporter = false
     /// Remote user ids currently typing in this channel (from WS `typing` frames).
     @State private var typingUserIDs: Set<String> = []
     @State private var typingClearTask: Task<Void, Never>?
@@ -324,6 +333,11 @@ struct ChatThreadView: View {
     @State private var termsRespondError: String?
     /// Provider Propose Terms sheet (FR-5.4).
     @State private var showProposeTermsSheet = false
+    /// FR-8.8 share contact (explicit confirm before send).
+    @State private var showShareContactConfirm = false
+    @State private var shareContactPhone = ""
+    @State private var shareContactEmail = ""
+    @State private var isSharingContact = false
     /// Tip message id we last successfully POSTed mark-read for (dedupe scroll/open).
     @State private var lastMarkedReadTipMessageID: String?
     @State private var isMarkingRead = false
@@ -360,11 +374,20 @@ struct ChatThreadView: View {
         canCompose
             && !isSending
             && !isUploadingPhoto
+            && !isUploadingFile
             && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var canAttachPhoto: Bool {
-        canCompose && !isSending && !isUploadingPhoto
+        canCompose && !isSending && !isUploadingPhoto && !isUploadingFile
+    }
+
+    private var canAttachFile: Bool {
+        canCompose && !isSending && !isUploadingPhoto && !isUploadingFile
+    }
+
+    private var isUploadingAttachment: Bool {
+        isUploadingPhoto || isUploadingFile
     }
 
     /// Show the live caption once the thread has content or is idle (not
@@ -533,6 +556,12 @@ struct ChatThreadView: View {
                             Label("Propose terms", systemImage: "doc.badge.plus")
                         }
                     }
+                    // FR-8.8 — explicit opt-in Share Contact Info.
+                    Button {
+                        showShareContactConfirm = true
+                    } label: {
+                        Label("Share contact", systemImage: "person.crop.circle.badge.plus")
+                    }
                     if canMutateSafety {
                         Button {
                             showReportSheet = true
@@ -566,6 +595,19 @@ struct ChatThreadView: View {
             }
         } message: {
             Text("They won’t be able to message you. You can unblock later from Account → Blocked users.")
+        }
+        .alert("Share contact info?", isPresented: $showShareContactConfirm) {
+            TextField("Phone (optional)", text: $shareContactPhone)
+                .textContentType(.telephoneNumber)
+            TextField("Email (optional)", text: $shareContactEmail)
+                .textContentType(.emailAddress)
+            Button("Cancel", role: .cancel) {}
+            Button("Share") {
+                Task { await shareContact() }
+            }
+            .disabled(isSharingContact)
+        } message: {
+            Text("This posts your phone and/or email in the thread as an explicit share. Only do this when you are ready to go off-platform or coordinate handoff.")
         }
         .sheet(isPresented: $showReportSheet) {
             if let target = counterpartyUserID {
@@ -852,7 +894,7 @@ struct ChatThreadView: View {
                 title: "No messages yet",
                 systemImage: "text.bubble",
                 message: canCompose
-                    ? "Say hello below or attach a photo — your first message starts the thread. Messages are plain text or platform photos (don’t paste scripts or HTML). Pull to refresh anytime."
+                    ? "Say hello below or attach a photo or PDF — your first message starts the thread. Messages are plain text, platform photos, or PDF files. Pull to refresh anytime."
                     : "This channel has no messages yet."
             )
         } else if displayedMessages.isEmpty {
@@ -936,7 +978,7 @@ struct ChatThreadView: View {
             }
 
             HStack(alignment: .bottom, spacing: 8) {
-                // Photo attach — library (PhotosPicker). Upload uses our imaging pipeline only.
+                // Photo attach — library (PhotosPicker). Imaging job_photo context.
                 PhotosPicker(
                     selection: $photoPickerItem,
                     matching: .images,
@@ -962,7 +1004,7 @@ struct ChatThreadView: View {
                 }
                 .disabled(!canAttachPhoto)
                 .accessibilityLabel("Attach photo")
-                .accessibilityHint("Upload a photo from your library to this conversation")
+                .accessibilityHint("Upload a photo from your library. JPEG, PNG, or WebP up to 10 MB.")
 
                 #if canImport(UIKit)
                 Button {
@@ -984,6 +1026,46 @@ struct ChatThreadView: View {
                 .accessibilityHint("Capture a photo with the camera for this conversation")
                 #endif
 
+                // FR-8.3 PDF attach — chat_attachment context, pass-through.
+                Button {
+                    showPDFImporter = true
+                } label: {
+                    Group {
+                        if isUploadingFile {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(BrandTheme.accent)
+                        } else {
+                            Image(systemName: "doc.fill")
+                                .font(.title3)
+                                .foregroundStyle(
+                                    canAttachFile
+                                        ? BrandTheme.accent
+                                        : BrandTheme.textSecondary.opacity(0.5)
+                                )
+                        }
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canAttachFile)
+                .accessibilityLabel("Attach PDF")
+                .accessibilityHint("Upload a PDF file up to 10 MB for this conversation")
+                .fileImporter(
+                    isPresented: $showPDFImporter,
+                    allowedContentTypes: [.pdf],
+                    allowsMultipleSelection: false
+                ) { result in
+                    switch result {
+                    case .success(let urls):
+                        guard let url = urls.first else { return }
+                        Task { await uploadAndSendPDF(from: url) }
+                    case .failure(let error):
+                        sendError = error.localizedDescription
+                    }
+                }
+
                 TextField("Message", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .foregroundStyle(BrandTheme.textPrimary)
@@ -996,7 +1078,7 @@ struct ChatThreadView: View {
                             .strokeBorder(BrandTheme.gold.opacity(0.15), lineWidth: 1)
                     )
                     .focused($composerFocused)
-                    .disabled(!canCompose || isSending || isUploadingPhoto)
+                    .disabled(!canCompose || isSending || isUploadingAttachment)
                     .accessibilityLabel("Message")
 
                 Button {
@@ -1055,6 +1137,34 @@ struct ChatThreadView: View {
             needsSignIn = true
             safetyStatusIsError = true
             safetyStatusMessage = "Sign in required to block users."
+        } catch {
+            safetyStatusIsError = true
+            safetyStatusMessage = error.localizedDescription
+        }
+    }
+
+    /// FR-8.8 — opt-in contact share after confirm.
+    @MainActor
+    private func shareContact() async {
+        safetyStatusMessage = nil
+        safetyStatusIsError = false
+        isSharingContact = true
+        defer { isSharingContact = false }
+        do {
+            try await APIClient.shared.shareChannelContact(
+                channelID: channel.id,
+                phone: shareContactPhone,
+                email: shareContactEmail
+            )
+            safetyStatusIsError = false
+            safetyStatusMessage = "Contact shared in this thread."
+            shareContactPhone = ""
+            shareContactEmail = ""
+            await loadMessages(showLoading: false, markRead: true)
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+            safetyStatusIsError = true
+            safetyStatusMessage = "Sign in required to share contact."
         } catch {
             safetyStatusIsError = true
             safetyStatusMessage = error.localizedDescription
@@ -1217,6 +1327,46 @@ struct ChatThreadView: View {
         }
     }
     #endif
+
+    /// Files picker PDF → imaging `chat_attachment` → chat message `message_type: file`.
+    @MainActor
+    private func uploadAndSendPDF(from url: URL) async {
+        guard canCompose else {
+            sendError = "Sign in with a real account to send files."
+            return
+        }
+        isUploadingFile = true
+        sendError = nil
+        defer { isUploadingFile = false }
+
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { url.stopAccessingSecurityScopedResource() }
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let confirmed = try await ImageUploader.uploadPDF(
+                data: data,
+                filename: url.lastPathComponent.isEmpty ? "attachment.pdf" : url.lastPathComponent,
+                context: .chatAttachment
+            )
+            let created = try await APIClient.shared.sendChannelFileMessage(
+                channelID: channel.id,
+                fileURL: confirmed
+            )
+            appendMessageIfNeeded(created)
+            if currentUserID == nil {
+                currentUserID = await APIClient.shared.currentUserID()
+            }
+            await markChannelReadBestEffort()
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+            sendError = "Session expired. Sign in again to send files."
+        } catch {
+            sendError = error.localizedDescription
+        }
+    }
 
     private func appendMessageIfNeeded(_ created: ChatMessage) {
         if messages.contains(where: { $0.id == created.id }) {
@@ -1970,6 +2120,14 @@ private struct MessageBubbleRow: View {
             Label("Photo", systemImage: "photo")
                 .font(.body)
                 .foregroundStyle(isMine ? BrandTheme.ctaLabelOnGold : BrandTheme.textPrimary)
+        } else if message.isFileMessage {
+            // FR-8.3 file row (PDF from chat_attachment upload, or inbound).
+            fileAttachmentBubble
+        } else if message.isContactShareMessage {
+            Label(message.displayBody, systemImage: "person.crop.circle.badge.checkmark")
+                .font(.body)
+                .foregroundStyle(isMine ? BrandTheme.ctaLabelOnGold : BrandTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
         } else {
             // Plain `Text` only — never attributed HTML (XSS-safe).
             Text(message.displayBody)
@@ -1980,12 +2138,50 @@ private struct MessageBubbleRow: View {
         }
     }
 
+    /// Inbound `message_type: file` — label + optional open of safe absolute URL.
+    @ViewBuilder
+    private var fileAttachmentBubble: some View {
+        let tint = isMine ? BrandTheme.ctaLabelOnGold : BrandTheme.textPrimary
+        let secondary = isMine ? BrandTheme.ctaLabelOnGold.opacity(0.85) : BrandTheme.textSecondary
+        if let url = message.safeFileURL {
+            Link(destination: url) {
+                Label {
+                    VStack(alignment: isMine ? .trailing : .leading, spacing: 2) {
+                        Text("File attachment")
+                            .font(.body.weight(.medium))
+                        Text(url.lastPathComponent.isEmpty ? url.host ?? "Open file" : url.lastPathComponent)
+                            .font(.caption2)
+                            .lineLimit(1)
+                            .foregroundStyle(secondary)
+                    }
+                } icon: {
+                    Image(systemName: "doc.fill")
+                }
+                .foregroundStyle(tint)
+                .frame(minHeight: 44, alignment: isMine ? .trailing : .leading)
+            }
+            .accessibilityLabel("File attachment")
+            .accessibilityHint("Opens the attached file URL")
+        } else {
+            Label(message.displayBody, systemImage: "doc.fill")
+                .font(.body)
+                .foregroundStyle(tint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var accessibilityText: String {
         if message.isProposedTermsMessage {
             return isMine ? "You proposed terms: \(message.displayBody)" : "Proposed terms: \(message.displayBody)"
         }
         if message.isImageMessage {
             return isMine ? "You sent a photo" : "Photo"
+        }
+        if message.isFileMessage {
+            return isMine ? "You sent a file" : "File attachment"
+        }
+        if message.isContactShareMessage {
+            return message.displayBody
         }
         if message.isSystemMessage {
             return message.displayBody

@@ -18,6 +18,11 @@
 		A100000000000000000000B4 /* ProviderInstantOffersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B4 /* ProviderInstantOffersView.swift */; };
 		A100000000000000000000B7 /* GoogleOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B7 /* GoogleOAuthSession.swift */; };
 		A100000000000000000000B8 /* GoogleSignInButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B8 /* GoogleSignInButton.swift */; };
+		A100000000000000000000BD0 /* FacebookOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD0 /* FacebookOAuthSession.swift */; };
+		A100000000000000000000BD1 /* FacebookSignInButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD1 /* FacebookSignInButton.swift */; };
+		A100000000000000000000BD2 /* EmployeesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD2 /* EmployeesView.swift */; };
+		A100000000000000000000BD3 /* ChallengesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD3 /* ChallengesView.swift */; };
+		A100000000000000000000BD4 /* LegalServicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD4 /* LegalServicesView.swift */; };
 		A100000000000000000000B2 /* PropertyDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B2 /* PropertyDetailView.swift */; };
 		A100000000000000000000B3 /* OnboardingWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B3 /* OnboardingWizardView.swift */; };
 		A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AE /* BusinessFeaturesHubView.swift */; };
@@ -157,6 +162,11 @@
 		B100000000000000000000B5 /* ShareCardText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCardText.swift; sourceTree = "<group>"; };
 		B100000000000000000000B7 /* GoogleOAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleOAuthSession.swift; sourceTree = "<group>"; };
 		B100000000000000000000B8 /* GoogleSignInButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignInButton.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD0 /* FacebookOAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FacebookOAuthSession.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD1 /* FacebookSignInButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FacebookSignInButton.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD2 /* EmployeesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmployeesView.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD3 /* ChallengesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengesView.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD4 /* LegalServicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalServicesView.swift; sourceTree = "<group>"; };
 		B100000000000000000000AE /* BusinessFeaturesHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessFeaturesHubView.swift; sourceTree = "<group>"; };
 		B100000000000000000000AD /* Models+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+RegulatedRails.swift"; sourceTree = "<group>"; };
 		B100000000000000000000AC /* APIClient+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+RegulatedRails.swift"; sourceTree = "<group>"; };
@@ -523,6 +533,8 @@
 				B100000000000000000000C3 /* PasskeyAuth.swift */,
 				B100000000000000000000B7 /* GoogleOAuthSession.swift */,
 				B100000000000000000000B8 /* GoogleSignInButton.swift */,
+				B100000000000000000000BD0 /* FacebookOAuthSession.swift */,
+				B100000000000000000000BD1 /* FacebookSignInButton.swift */,
 			);
 			path = Auth;
 			sourceTree = "<group>";
@@ -582,6 +594,9 @@
 				B100000000000000000000A5 /* SalesExportView.swift */,
 				B100000000000000000000A6 /* CalendarExportView.swift */,
 				B100000000000000000000A7 /* QuoteTemplatesView.swift */,
+				B100000000000000000000BD2 /* EmployeesView.swift */,
+				B100000000000000000000BD3 /* ChallengesView.swift */,
+				B100000000000000000000BD4 /* LegalServicesView.swift */,
 				B100000000000000000000A8 /* VerificationDocumentsView.swift */,
 				B1000000000000000000000E /* LegalWebView.swift */,
 				B1000000000000000000000F /* AccountDeletionView.swift */,
@@ -827,6 +842,11 @@
 				A100000000000000000000C3 /* PasskeyAuth.swift in Sources */,
 				A100000000000000000000B7 /* GoogleOAuthSession.swift in Sources */,
 				A100000000000000000000B8 /* GoogleSignInButton.swift in Sources */,
+				A100000000000000000000BD0 /* FacebookOAuthSession.swift in Sources */,
+				A100000000000000000000BD1 /* FacebookSignInButton.swift in Sources */,
+				A100000000000000000000BD2 /* EmployeesView.swift in Sources */,
+				A100000000000000000000BD3 /* ChallengesView.swift in Sources */,
+				A100000000000000000000BD4 /* LegalServicesView.swift in Sources */,
 				A10000000000000000000008 /* RootTabView.swift in Sources */,
 				A10000000000000000000009 /* HomeView.swift in Sources */,
 				A1000000000000000000000A /* MarketplaceView.swift in Sources */,

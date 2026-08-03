@@ -466,6 +466,28 @@ extension APIClient {
         return config
     }
 
+    /// PATCH `/api/v1/contracts/{id}/recurring` — FR-18.3 auto-approve + FR-18.4 rate.
+    @discardableResult
+    func updateRecurringConfig(
+        contractId: String,
+        autoApprove: Bool? = nil,
+        proposedRateCents: Int64? = nil
+    ) async throws -> ContractRecurringConfig {
+        struct Body: Encodable {
+            var autoApprove: Bool?
+            var proposedRateCents: Int64?
+        }
+        let response: RecurringConfigEnvelope = try await patchJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "recurring"],
+            body: Body(autoApprove: autoApprove, proposedRateCents: proposedRateCents),
+            authorized: .required
+        )
+        guard let config = response.config else {
+            throw APIClientError.httpStatus(502, detail: "Recurring schedule missing from update response.")
+        }
+        return config
+    }
+
     /// POST `/api/v1/contracts/{id}/recurring/instances/{instanceId}/complete` — provider.
     ///
     /// Status completion is always durable. When the schedule has auto-approve,

@@ -36,6 +36,8 @@ struct ContractDetailView: View {
     @State private var pendingRecurringPay: RecurringApproveResult?
     @State private var isPayingRecurringInstance = false
     @State private var showCancelRecurringConfirm = false
+    /// FR-18.4: draft rate (dollars) for proposed future-instance rate update.
+    @State private var recurringRateText = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
@@ -136,10 +138,11 @@ struct ContractDetailView: View {
                     set: { if !$0 { pendingMilestoneRevisionID = nil } }
                 )
             ) {
-                TextField("What needs to change?", text: $revisionNotesText, axis: .vertical)
+                TextField("What needs to change? (min 200 characters)", text: $revisionNotesText, axis: .vertical)
                 Button("Send request") {
                     guard let mid = pendingMilestoneRevisionID else { return }
-                    let notes = revisionNotesText
+                    let notes = revisionNotesText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard notes.count >= 200 else { return }
                     pendingMilestoneRevisionID = nil
                     Task {
                         await runMilestone(mid) {
@@ -147,12 +150,18 @@ struct ContractDetailView: View {
                         }
                     }
                 }
-                .disabled(revisionNotesText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(revisionNotesText.trimmingCharacters(in: .whitespacesAndNewlines).count < 200)
                 Button("Cancel", role: .cancel) {
                     pendingMilestoneRevisionID = nil
                 }
             } message: {
-                Text("Describe what the provider should fix. This sets the milestone back to revision requested.")
+                let count = revisionNotesText.trimmingCharacters(in: .whitespacesAndNewlines).count
+                let remaining = max(0, 200 - count)
+                Text(
+                    remaining > 0
+                        ? "Describe what the provider should fix (min 200 characters; \(remaining) more needed). Max 3 revisions per milestone."
+                        : "Describe what the provider should fix. This sets the milestone back to revision requested. Max 3 revisions per milestone."
+                )
             }
             .modifier(ContractConfirmationsModifier(
                 showCancelConfirm: $showCancelConfirm,
@@ -554,9 +563,81 @@ struct ContractDetailView: View {
                 if let next = config.nextOccurrence, !next.isEmpty {
                     LabeledContent("Next", value: CatalogDateFormat.friendlyDateTime(next))
                 }
-                if config.autoApprove == true {
+                // FR-18.3 — customer toggles auto-approve (PATCH /recurring).
+                if contract.isCustomer(userId: currentUserID), !config.isCancelled {
+                    Toggle(
+                        "Auto-approve visits",
+                        isOn: Binding(
+                            get: { config.autoApprove == true },
+                            set: { newValue in
+                                Task {
+                                    await runRecurringConfigAction(
+                                        title: "Update auto-approve",
+                                        success: newValue
+                                            ? "Visits will auto-approve on complete."
+                                            : "Auto-approve turned off — you’ll approve each visit."
+                                    ) {
+                                        try await APIClient.shared.updateRecurringConfig(
+                                            contractId: contract.id,
+                                            autoApprove: newValue
+                                        )
+                                    }
+                                }
+                            }
+                        )
+                    )
+                    .tint(BrandTheme.accent)
+                    .frame(minHeight: 44)
+                    .disabled(actingActionTitle != nil)
+                    .accessibilityHint("When on, completed visits approve without a separate customer step")
+                } else if config.autoApprove == true {
                     LabeledContent("Auto-approve", value: "On")
+                } else {
+                    LabeledContent("Auto-approve", value: "Off")
                 }
+
+                // FR-18.4 — propose rate for future instances (customer).
+                if contract.isCustomer(userId: currentUserID), !config.isCancelled {
+                    HStack {
+                        Text("Future rate ($)")
+                            .foregroundStyle(BrandTheme.textPrimary)
+                        TextField(
+                            "e.g. \(MoneyFormat.usd(cents: config.rateCents ?? contract.amountCents ?? 0).replacingOccurrences(of: "$", with: ""))",
+                            text: $recurringRateText
+                        )
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(minHeight: 44)
+                    }
+                    Button {
+                        Task {
+                            guard let cents = MoneyFormat.cents(fromDollarsText: recurringRateText),
+                                  cents > 0
+                            else {
+                                statusIsError = true
+                                statusMessage = "Enter a valid future rate in dollars."
+                                return
+                            }
+                            await runRecurringConfigAction(
+                                title: "Update rate",
+                                success: "Proposed rate updated for future visits."
+                            ) {
+                                try await APIClient.shared.updateRecurringConfig(
+                                    contractId: contract.id,
+                                    proposedRateCents: cents
+                                )
+                            }
+                        }
+                    } label: {
+                        Text("Save future rate")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(BrandTheme.accent)
+                    .disabled(actingActionTitle != nil || recurringRateText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityHint("Applies the new rate to future recurring instances only")
+                }
+
                 // FR-16.7: only when gateway projects payment_retry_count / next_retry_at.
                 if config.hasPaymentRetryInfo {
                     if let count = config.paymentRetryCount, count > 0 {
@@ -1315,13 +1396,27 @@ struct ContractDetailView: View {
                     revisionNotesText = ""
                     pendingMilestoneRevisionID = milestone.id
                 } label: {
-                    Label("Request revision", systemImage: "arrow.uturn.backward")
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                    Label(
+                        "Request revision (\(milestone.revisionsRemaining) left)",
+                        systemImage: "arrow.uturn.backward"
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
                 .tint(BrandTheme.warning)
                 .disabled(actingActionTitle != nil || actingMilestoneID != nil)
-                .accessibilityHint("Ask the provider to revise this milestone before you approve it")
+                .accessibilityHint(
+                    "Ask the provider to revise this milestone before you approve it. Minimum 200 characters. \(milestone.revisionsRemaining) of 3 revisions remaining."
+                )
+            } else if isCustomer,
+                      milestone.normalizedStatus == "submitted",
+                      (milestone.revisionCount ?? 0) >= 3,
+                      contract.normalizedStatus == "active"
+            {
+                Text("Revision limit reached (3 of 3). Approve the milestone or open a dispute.")
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, 4)

@@ -27,8 +27,19 @@ struct JobsView: View {
     @State private var searchText = ""
     @State private var loadMoreError: String?
     @State private var selectedJob: JobSummary?
+    /// FR-3.8 browse filters (category + optional min starting bid).
+    @State private var filterCategoryId = ""
+    @State private var filterCategoryName = ""
+    @State private var minStartingBidText = ""
+    @State private var showBrowseFilters = false
 
     private var usesSplitView: Bool { horizontalSizeClass == .regular }
+
+    private var minStartingBidCents: Int64? {
+        let t = minStartingBidText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return nil }
+        return MoneyFormat.cents(fromDollarsText: t)
+    }
 
     var body: some View {
         Group {
@@ -86,16 +97,90 @@ struct JobsView: View {
                     .accessibilityLabel("Jobs section")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        JobsMapView()
-                    } label: {
-                        Label("Map", systemImage: "map")
+                    HStack(spacing: 12) {
+                        if segment == .browse {
+                            Button {
+                                showBrowseFilters.toggle()
+                            } label: {
+                                Label(
+                                    "Filters",
+                                    systemImage: hasActiveBrowseFilters
+                                        ? "line.3.horizontal.decrease.circle.fill"
+                                        : "line.3.horizontal.decrease.circle"
+                                )
+                            }
+                            .frame(minHeight: 44)
+                            .accessibilityHint("Filter browse by category and minimum starting bid")
+                        }
+                        NavigationLink {
+                            JobsMapView()
+                        } label: {
+                            Label("Map", systemImage: "map")
+                        }
+                        .frame(minHeight: 44)
+                        .accessibilityHint("Shows open jobs on a map")
                     }
-                    .frame(minHeight: 44)
-                    .accessibilityHint("Shows open jobs on a map")
                 }
             }
             .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if segment == .browse, showBrowseFilters {
+                    browseFiltersBar
+                }
+            }
+    }
+
+    private var hasActiveBrowseFilters: Bool {
+        !filterCategoryId.isEmpty || minStartingBidCents != nil
+    }
+
+    private var browseFiltersBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            NavigationLink {
+                CategoryPickerView(selectedId: $filterCategoryId, selectedName: $filterCategoryName)
+            } label: {
+                HStack {
+                    Text("Category")
+                        .foregroundStyle(BrandTheme.textPrimary)
+                    Spacer()
+                    Text(filterCategoryName.isEmpty ? "Any" : filterCategoryName)
+                        .foregroundStyle(filterCategoryName.isEmpty ? BrandTheme.textSecondary : BrandTheme.goldBright)
+                        .lineLimit(1)
+                }
+                .frame(minHeight: 44)
+            }
+            .accessibilityLabel("Filter by category")
+
+            HStack {
+                Text("Min starting bid ($)")
+                    .foregroundStyle(BrandTheme.textPrimary)
+                TextField("Any", text: $minStartingBidText)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(minHeight: 44)
+            }
+
+            HStack {
+                Button("Apply") {
+                    Task { await load(reset: true) }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .frame(minHeight: 44)
+
+                Button("Clear") {
+                    filterCategoryId = ""
+                    filterCategoryName = ""
+                    minStartingBidText = ""
+                    Task { await load(reset: true) }
+                }
+                .buttonStyle(.bordered)
+                .frame(minHeight: 44)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(BrandTheme.navyElevated)
     }
 
     @ViewBuilder
@@ -350,16 +435,27 @@ struct JobsView: View {
         case .browse:
             let nextPage = reset ? 1 : (pagination?.resolvedPage ?? 1) + 1
             do {
+                let categoryIds: [String]? = filterCategoryId.isEmpty
+                    ? nil
+                    : [filterCategoryId]
                 let response = try await APIClient.shared.fetchJobs(
                     page: nextPage,
                     pageSize: pageSize,
-                    q: searchText
+                    q: searchText,
+                    categoryIds: categoryIds,
+                    latitude: AppConfig.browseLatitude,
+                    longitude: AppConfig.browseLongitude
                 )
+                var loaded = response.jobs
+                // Client-side min starting bid (gateway may not expose price filter).
+                if let minCents = minStartingBidCents {
+                    loaded = loaded.filter { ($0.startingBidCents ?? 0) >= minCents }
+                }
                 if reset {
-                    jobs = response.jobs
+                    jobs = loaded
                 } else {
                     let existing = Set(jobs.map(\.id))
-                    jobs.append(contentsOf: response.jobs.filter { !existing.contains($0.id) })
+                    jobs.append(contentsOf: loaded.filter { !existing.contains($0.id) })
                 }
                 pagination = response.pagination
             } catch {
@@ -497,6 +593,13 @@ private struct JobRowView: View {
             HStack(spacing: 12) {
                 if let location = job.locationLabel {
                     Label(location, systemImage: "mappin.and.ellipse")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .lineLimit(1)
+                }
+                // FR-10.7: distance when browse is geo-scoped (AppConfig lat/lng).
+                if let distance = job.distanceLabel {
+                    Label(distance, systemImage: "location")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(1)

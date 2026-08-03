@@ -349,8 +349,8 @@ extension APIClient {
 
     /// Full verification-doc pipeline: imaging upload (`document` context) then register.
     ///
-    /// Returns the create response (`document_id` + `status`). Client enforces 10 MB;
-    /// server re-validates MIME on confirm and ownership on register.
+    /// Accepts image or PDF bytes (PDF is pass-through). Client enforces 10 MB;
+    /// server re-validates MIME on confirm (magic bytes) and ownership on register.
     @discardableResult
     func uploadAndSubmitProviderDocument(
         data: Data,
@@ -374,6 +374,102 @@ extension APIClient {
             expiresAt: expiresAt
         )
     }
+
+    // MARK: Employees (team)
+
+    /// GET `/api/v1/providers/me/employees` → `{ "employees": [...] }`.
+    func fetchMyEmployees() async throws -> [ProviderEmployee] {
+        let wrapped: ProviderEmployeesResponse = try await getJSON(
+            pathComponents: ["api", "v1", "providers", "me", "employees"],
+            authorized: true
+        )
+        return wrapped.employees ?? []
+    }
+
+    /// POST `/api/v1/providers/me/employees` — create a team member.
+    @discardableResult
+    func createEmployee(
+        firstName: String,
+        lastName: String,
+        email: String? = nil,
+        phone: String? = nil,
+        role: String
+    ) async throws -> ProviderEmployee {
+        let first = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let last = lastName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let roleTrimmed = role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !first.isEmpty, !last.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "first_name and last_name are required.")
+        }
+        guard !roleTrimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "role is required.")
+        }
+        struct Body: Encodable {
+            var firstName: String
+            var lastName: String
+            var email: String?
+            var phone: String?
+            var role: String
+            enum CodingKeys: String, CodingKey {
+                case firstName = "first_name"
+                case lastName = "last_name"
+                case email, phone, role
+            }
+        }
+        let emailTrimmed = email?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let phoneTrimmed = phone?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = Body(
+            firstName: first,
+            lastName: last,
+            email: (emailTrimmed?.isEmpty == false) ? emailTrimmed : nil,
+            phone: (phoneTrimmed?.isEmpty == false) ? phoneTrimmed : nil,
+            role: roleTrimmed
+        )
+        let envelope: ProviderEmployeeEnvelope = try await postJSON(
+            pathComponents: ["api", "v1", "providers", "me", "employees"],
+            body: body,
+            authorized: .required
+        )
+        return envelope.employee
+    }
+
+    /// DELETE `/api/v1/providers/me/employees/{id}`.
+    func deleteEmployee(id: String) async throws {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Employee id is required.")
+        }
+        try await deleteEmpty(
+            pathComponents: ["api", "v1", "providers", "me", "employees", trimmed],
+            authorized: .required
+        )
+    }
+
+    // MARK: Challenges
+
+    /// GET `/api/v1/challenges` — active challenges with optional progress (auth required).
+    func fetchActiveChallenges() async throws -> [ProviderChallenge] {
+        let wrapped: ChallengesResponse = try await getJSON(
+            pathComponents: ["api", "v1", "challenges"],
+            authorized: true
+        )
+        return wrapped.challenges ?? []
+    }
+
+    /// POST `/api/v1/challenges/{id}/join` — provider joins a challenge.
+    @discardableResult
+    func joinChallenge(id: String) async throws -> JoinChallengeResponse {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Challenge id is required.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "challenges", trimmed, "join"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
 }
 
 // MARK: - Models (provider me)

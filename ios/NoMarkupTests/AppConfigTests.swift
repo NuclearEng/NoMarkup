@@ -75,4 +75,8 @@ final class AppConfigTests: XCTestCase {
         XCTAssertEqual(AppConfig.marketplaceRadiusKm, 40)
         XCTAssertLessThanOrEqual(AppConfig.marketplaceRadiusKm, 40)
     }
+
+    func testFacebookOAuthCallbackSchemeIsNomarkup() {
+        XCTAssertEqual(AppConfig.facebookOAuthCallbackScheme, "nomarkup")
+    }
 }

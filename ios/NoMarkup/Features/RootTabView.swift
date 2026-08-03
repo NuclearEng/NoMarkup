@@ -13,6 +13,9 @@ struct RootTabView: View {
     @State private var deepLinkSheetView: AnyView?
     /// Typed App Intent / custom-scheme sheet (bids, post job, watchlist, …).
     @State private var presentedRoute: DeepLinkRoute?
+    /// FR-8.10 / FR-17.1 — tab-level unread badges (messages + notifications).
+    @State private var messagesUnread = 0
+    @State private var notificationsUnread = 0
 
     enum Tab: Hashable {
         case home
@@ -42,15 +45,28 @@ struct RootTabView: View {
             MessagesView()
                 .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right.fill") }
                 .tag(Tab.messages)
+                .badge(messagesUnread > 0 ? messagesUnread : 0)
                 .accessibilityIdentifier("tab.messages")
 
             AccountView()
                 .tabItem { Label("Account", systemImage: "person.crop.circle.fill") }
                 .tag(Tab.account)
+                .badge(notificationsUnread > 0 ? notificationsUnread : 0)
                 .accessibilityIdentifier("tab.account")
         }
         .environment(\.selectedRootTab, $selectedTab)
         .accessibilityIdentifier("root.tabview")
+        .task(id: auth.isAuthenticated) {
+            await refreshUnreadBadges()
+        }
+        .onChange(of: selectedTab) { _, tab in
+            // Refresh when leaving messages/account so badges stay honest after reads.
+            if tab != .messages && tab != .account {
+                Task { await refreshUnreadBadges() }
+            } else {
+                Task { await refreshUnreadBadges() }
+            }
+        }
         .onChange(of: auth.shouldPresentOnboarding) { _, shouldShow in
             guard shouldShow, !auth.isScaffoldSession else { return }
             auth.shouldPresentOnboarding = false
@@ -66,6 +82,7 @@ struct RootTabView: View {
             if let route = deepLinks.route {
                 handleTypedRoute(route)
             }
+            Task { await refreshUnreadBadges() }
         }
         .onChange(of: deepLinks.pendingActionURL) { _, _ in
             presentPendingDeepLink()
@@ -180,6 +197,32 @@ struct RootTabView: View {
             }
             presentedRoute = route
             deepLinks.clear()
+        }
+    }
+
+    /// FR-8.10 / FR-17.1 — poll inbox + notification unread for tab badges.
+    @MainActor
+    private func refreshUnreadBadges() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            messagesUnread = 0
+            notificationsUnread = 0
+            return
+        }
+        async let channelsTask = APIClient.shared.fetchChatChannels(page: 1, pageSize: 40)
+        async let notifTask = APIClient.shared.fetchUnreadNotificationCount()
+        do {
+            let channels = try await channelsTask
+            let total = channels.channels.reduce(0) { partial, ch in
+                partial + max(0, ch.unreadCount ?? 0)
+            }
+            messagesUnread = total
+        } catch {
+            // Keep last known count on transient failure.
+        }
+        do {
+            notificationsUnread = try await notifTask
+        } catch {
+            // Keep last known count.
         }
     }
 

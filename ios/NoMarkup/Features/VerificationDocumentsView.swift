@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -10,6 +11,10 @@ import UIKit
 /// - `GET  /api/v1/providers/me/documents` → `{ "documents": [] }`
 /// - `POST /api/v1/providers/me/documents` after imaging pipeline
 ///   (`context: document` → owned `documents/{userID}/…` key).
+///
+/// **FR-2.2:** JPEG, PNG, WebP (photo/camera) and PDF (Files picker). Imaging
+/// accepts `application/pdf` only on `document` / `chat_attachment` contexts;
+/// confirm sniffs magic bytes; process endpoints stay image-only (pass-through).
 ///
 /// **FR-2.8** — when `expires_at` is present, rows show expiry and warn when
 /// within 30 days (or expired). Renewal is re-upload; no Checkr integration.
@@ -78,7 +83,7 @@ struct VerificationDocumentsView: View {
                 BrandEmptyState(
                     title: "No documents yet",
                     systemImage: "doc.badge.plus",
-                    message: "Upload a photo of your driver’s license, insurance, or trade license for platform review. JPEG, PNG, or WebP up to 10 MB.",
+                    message: "Upload a photo or PDF of your driver’s license, insurance, or trade license for platform review. JPEG, PNG, WebP, or PDF up to 10 MB.",
                     actionTitle: "Upload document",
                     action: { showUploadSheet = true }
                 )
@@ -162,7 +167,7 @@ struct VerificationDocumentsView: View {
             } header: {
                 Text(String(localized: "\(documents.count) documents")).brandSectionHeader()
             } footer: {
-                Text("JPEG, PNG, or WebP up to 10 MB. MIME type is re-checked server-side; only files you upload under your account can be registered. Insurance and licenses with an expiry date should be renewed before they expire so you can keep bidding on new jobs.")
+                Text("JPEG, PNG, WebP, or PDF up to 10 MB. MIME type is re-checked server-side (magic bytes); only files you upload under your account can be registered. Insurance and licenses with an expiry date should be renewed before they expire so you can keep bidding on new jobs.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -174,7 +179,7 @@ struct VerificationDocumentsView: View {
                 }
                 .frame(minHeight: 44)
                 .listRowBackground(BrandTheme.navyElevated)
-                .accessibilityHint("Choose document type and pick a photo to submit for review")
+                .accessibilityHint("Choose document type and pick a photo or PDF to submit for review")
             }
         }
         .brandListBackground()
@@ -333,6 +338,9 @@ private struct UploadVerificationDocumentSheet: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var showCamera = false
     @State private var showCameraDeniedAlert = false
+    @State private var showPDFImporter = false
+    @State private var pdfData: Data?
+    @State private var pdfFilename: String?
     #if canImport(UIKit)
     @State private var cameraImage: UIImage?
     #endif
@@ -373,14 +381,14 @@ private struct UploadVerificationDocumentSheet: View {
                     ) {
                         HStack {
                             Label(
-                                hasCapture || pickerItem != nil ? "Change from library" : "Choose from library",
+                                photoSelectedLabel,
                                 systemImage: "photo.on.rectangle.angled"
                             )
                             Spacer()
                             if isUploading {
                                 ProgressView()
                                     .tint(BrandTheme.accent)
-                            } else if hasCapture || pickerItem != nil {
+                            } else if pickerItem != nil || cameraImageSelected {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(BrandTheme.success)
                                     .accessibilityLabel("Photo selected")
@@ -391,7 +399,14 @@ private struct UploadVerificationDocumentSheet: View {
                     .disabled(isUploading)
                     .accessibilityHint("Opens the photo library. JPEG, PNG, or WebP up to 10 MB.")
                     .onChange(of: pickerItem) { _, item in
-                        if item != nil { hasCapture = true }
+                        if item != nil {
+                            hasCapture = true
+                            pdfData = nil
+                            pdfFilename = nil
+                            #if canImport(UIKit)
+                            cameraImage = nil
+                            #endif
+                        }
                     }
 
                     #if canImport(UIKit)
@@ -412,13 +427,48 @@ private struct UploadVerificationDocumentSheet: View {
                         if image != nil {
                             hasCapture = true
                             pickerItem = nil
+                            pdfData = nil
+                            pdfFilename = nil
                         }
                     }
                     #endif
+
+                    Button {
+                        showPDFImporter = true
+                    } label: {
+                        HStack {
+                            Label(
+                                pdfData != nil ? "Change PDF" : "Choose PDF from Files",
+                                systemImage: "doc.fill"
+                            )
+                            Spacer()
+                            if pdfData != nil && !isUploading {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(BrandTheme.success)
+                                    .accessibilityLabel("PDF selected")
+                            }
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .disabled(isUploading)
+                    .accessibilityHint("Opens the Files picker for a PDF up to 10 MB.")
+                    .fileImporter(
+                        isPresented: $showPDFImporter,
+                        allowedContentTypes: [.pdf],
+                        allowsMultipleSelection: false
+                    ) { result in
+                        switch result {
+                        case .success(let urls):
+                            guard let url = urls.first else { return }
+                            loadPDF(from: url)
+                        case .failure(let error):
+                            errorMessage = error.localizedDescription
+                        }
+                    }
                 } header: {
-                    Text("Photo").brandSectionHeader()
+                    Text("File").brandSectionHeader()
                 } footer: {
-                    Text("Library or camera. JPEG, PNG, WebP. Max 10 MB. PDF is not accepted on this path.")
+                    Text("Library, camera, or PDF. JPEG, PNG, WebP, or PDF. Max 10 MB. Server re-checks content type from magic bytes.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
                 .listRowBackground(BrandTheme.navyElevated)
@@ -463,6 +513,21 @@ private struct UploadVerificationDocumentSheet: View {
         .tint(BrandTheme.accent)
     }
 
+    private var photoSelectedLabel: String {
+        if pickerItem != nil || cameraImageSelected {
+            return "Change from library"
+        }
+        return "Choose from library"
+    }
+
+    private var cameraImageSelected: Bool {
+        #if canImport(UIKit)
+        return cameraImage != nil
+        #else
+        return false
+        #endif
+    }
+
     #if canImport(UIKit)
     @MainActor
     private func requestCamera() async {
@@ -472,10 +537,38 @@ private struct UploadVerificationDocumentSheet: View {
         case .denied:
             showCameraDeniedAlert = true
         case .unavailable:
-            errorMessage = "Camera is not available on this device. Choose a photo from your library instead."
+            errorMessage = "Camera is not available on this device. Choose a photo or PDF instead."
         }
     }
     #endif
+
+    private func loadPDF(from url: URL) {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { url.stopAccessingSecurityScopedResource() }
+        }
+        do {
+            let data = try Data(contentsOf: url)
+            guard data.count <= ImageUploader.maxFileBytes else {
+                errorMessage = "PDF must be 10 MB or smaller."
+                return
+            }
+            guard ImageUploader.sniffMime(data) == "application/pdf" else {
+                errorMessage = "Selected file is not a valid PDF."
+                return
+            }
+            pdfData = data
+            pdfFilename = url.lastPathComponent
+            hasCapture = true
+            pickerItem = nil
+            #if canImport(UIKit)
+            cameraImage = nil
+            #endif
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 
     @MainActor
     private func submit() async {
@@ -489,6 +582,15 @@ private struct UploadVerificationDocumentSheet: View {
         defer { isUploading = false }
 
         do {
+            if let pdfData {
+                let result = try await ImageUploader.uploadVerificationDocumentPDF(
+                    data: pdfData,
+                    filename: pdfFilename ?? "document.pdf",
+                    documentType: selectedType
+                )
+                onUploaded(result)
+                return
+            }
             #if canImport(UIKit)
             if let cameraImage {
                 let result = try await ImageUploader.uploadVerificationDocument(
@@ -500,7 +602,7 @@ private struct UploadVerificationDocumentSheet: View {
             }
             #endif
             guard let item = pickerItem else {
-                errorMessage = "Choose or capture a photo of the document first."
+                errorMessage = "Choose a photo or PDF of the document first."
                 return
             }
             let result = try await ImageUploader.uploadVerificationDocument(

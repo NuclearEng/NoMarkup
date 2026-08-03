@@ -123,6 +123,47 @@ extension APIClient {
         )
     }
 
+    // MARK: Customer spending (FR-19.2)
+
+    /// GET `/api/v1/analytics/customers/me/spending?start_date=&end_date=&group_by=`
+    ///
+    /// Account-wide services spend (not per-property — no `property_id` on gateway).
+    /// Default date window when omitted is last ~3 months (analytics service default).
+    /// - Parameters:
+    ///   - startDate: `YYYY-MM-DD` optional
+    ///   - endDate: `YYYY-MM-DD` optional
+    ///   - groupBy: e.g. `month` / `week` / `day` when supported server-side
+    func fetchCustomerSpending(
+        startDate: String? = nil,
+        endDate: String? = nil,
+        groupBy: String? = nil
+    ) async throws -> CustomerSpendingResponse {
+        var items: [URLQueryItem] = []
+        if let startDate {
+            let t = startDate.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty {
+                items.append(URLQueryItem(name: "start_date", value: t))
+            }
+        }
+        if let endDate {
+            let t = endDate.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty {
+                items.append(URLQueryItem(name: "end_date", value: t))
+            }
+        }
+        if let groupBy {
+            let t = groupBy.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty {
+                items.append(URLQueryItem(name: "group_by", value: t))
+            }
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "analytics", "customers", "me", "spending"],
+            query: items,
+            authorized: true
+        )
+    }
+
     // MARK: Wishlist
 
     /// GET `/api/v1/me/wishlist`

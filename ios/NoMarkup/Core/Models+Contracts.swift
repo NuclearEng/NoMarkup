@@ -728,8 +728,15 @@ struct ContractMilestone: Codable, Sendable, Hashable, Identifiable {
     }
 
     /// Customer may request revision while work is submitted for review.
+    /// FR-15.4: submitted only, max 3 revisions (server enforces; UI gates early).
     var canRequestRevisionAsCustomer: Bool {
-        normalizedStatus == "submitted"
+        guard normalizedStatus == "submitted" else { return false }
+        let used = revisionCount ?? 0
+        return used < 3
+    }
+
+    var revisionsRemaining: Int {
+        max(0, 3 - (revisionCount ?? 0))
     }
 }
 

@@ -257,6 +257,36 @@ struct ProviderDetailView: View {
                 }
                 .frame(minHeight: 44)
 
+                // FR-5.1 — response / on-time when available.
+                if let label = profile.responseTimeLabel, !label.isEmpty {
+                    LabeledContent("Avg response", value: label)
+                        .frame(minHeight: 44)
+                } else if let minutes = profile.avgResponseTimeMinutes, minutes > 0 {
+                    LabeledContent("Avg response") {
+                        Text(minutes < 60
+                            ? "\(Int(minutes.rounded())) min"
+                            : String(format: "%.1f hr", minutes / 60))
+                            .foregroundStyle(BrandTheme.textPrimary)
+                    }
+                    .frame(minHeight: 44)
+                }
+                if let onTime = profile.onTimeRate {
+                    LabeledContent("On-time rate") {
+                        Text("\(Int((onTime <= 1 ? onTime * 100 : onTime).rounded()))%")
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .monospacedDigit()
+                    }
+                    .frame(minHeight: 44)
+                }
+                if let radius = profile.serviceRadiusKm, radius > 0 {
+                    LabeledContent("Service radius") {
+                        Text("\(Int(radius.rounded())) km")
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .monospacedDigit()
+                    }
+                    .frame(minHeight: 44)
+                }
+
                 if let summary = profile.reviewSummaryLabel {
                     NavigationLink {
                         UserReviewsView(userId: blockTargetID, displayName: profile.displayLabel)
@@ -301,6 +331,57 @@ struct ProviderDetailView: View {
                 Text("Stats").brandSectionHeader()
             }
             .listRowBackground(BrandTheme.navyElevated)
+
+            // FR-5.3 — global terms visible on public profile.
+            if profile.defaultPaymentTiming != nil
+                || !(profile.cancellationPolicy ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !(profile.warrantyTerms ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                Section {
+                    if let timing = profile.defaultPaymentTiming?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !timing.isEmpty
+                    {
+                        LabeledContent("Payment timing", value: StatusChipStyle.displayLabel(timing))
+                            .frame(minHeight: 44)
+                    }
+                    if let cancel = profile.cancellationPolicy?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !cancel.isEmpty
+                    {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Cancellation")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textSecondary)
+                            Text(cancel)
+                                .font(.subheadline)
+                                .foregroundStyle(BrandTheme.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 44)
+                    }
+                    if let warranty = profile.warrantyTerms?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !warranty.isEmpty
+                    {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Warranty")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textSecondary)
+                            Text(warranty)
+                                .font(.subheadline)
+                                .foregroundStyle(BrandTheme.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 44)
+                    }
+                } header: {
+                    Text("Default terms").brandSectionHeader()
+                } footer: {
+                    Text("These are the provider’s global terms. Local terms may still be negotiated in chat before award.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+            }
 
             if !profile.categoryNames.isEmpty {
                 Section {

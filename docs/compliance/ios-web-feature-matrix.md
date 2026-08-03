@@ -1,6 +1,6 @@
 # iOS ↔ Web feature matrix
 
-**Date:** 2026-07-26 (full product parity pass)  
+**Date:** 2026-08-02 (parity loop re-audit)  
 **Scope:** Native iOS app (`ios/NoMarkup`) vs product web (`web/`, zone `no-markup.com`).  
 **Honesty rule:** status is measured against shipped native code + gateway routes.
 
@@ -53,8 +53,18 @@ Legend:
 | Data export / delete | export, DELETE me | **live** | |
 | Admin | /admin/* | **out of scope** | |
 | StoreKit IAP (digital subscription purchase) | — | **out of scope** | Free-tier read-only; web for paid digital |
-| Google/Facebook OAuth | oauth | **not started** | SIWA + email |
-| Chat / auction WebSocket | /ws/* | **live** (chat native WS + hybrid poll; job auction native WS + hybrid poll) / spectator WS residual | |
+| Google/Facebook OAuth | oauth + native | **live** (config-gated) | SIWA + Google native + Facebook native (App ID + FACEBOOK_* secrets) |
+| Chat / auction WebSocket | /ws/* | **live** | Chat WS + hybrid poll; auction + spectator WS; FR-8.1 inquiry; FR-8.8 share-contact; PDF attach live |
+| Instant payout (prod Stripe) | payments/instant-payout | **live** (flag-gated) | Gateway → payment service gRPC InstantPayout (no gateway `payout_dev_*` with live keys) |
+| Bid ladder sort/filter | jobs bids | **live** | Price / trust / rating / volume + trust band + min jobs filters |
+| Job schedule preference | jobs create | **live** | flexible / specific / range on iOS PostJob |
+| Recurring auto-approve + rate | contracts recurring PATCH | **live** | iOS toggle + future rate |
+| Tab unread badges | channels + notifications | **live** | Messages + Account tab badges |
+| PDF verification + chat attach | images upload (document/chat_attachment) | **live** | Imaging PDF pass-through; iOS + web chat PDF |
+| Facebook OAuth | auth/facebook/native | **live** (config-gated) | ASWebAuth + code exchange; needs FACEBOOK_* + App ID |
+| Provider team / challenges | employees, challenges | **live** | EmployeesView + ChallengesView |
+| Legal services | legal_services flag | **live** (flag-gated) | LegalServicesView when flag on |
+| Job distance FR-10.7 | jobs search + lat/lng | **live** | `distance_km` when browse geo-scoped |
 
 ---
 

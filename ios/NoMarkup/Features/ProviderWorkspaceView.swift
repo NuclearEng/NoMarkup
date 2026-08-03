@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Provider workspace lite — own profile, instant availability, streaks, licenses.
-/// Not full Business OS (no employees / tax / expenses / working capital).
+/// Team (employees) + challenges live here; tax / expenses / working capital stay in Business hub.
 ///
 /// APIs: `GET|PATCH /providers/me`, `PUT …/availability` (instant + weekly windows),
 /// `GET …/streaks`, `GET …/licenses`.
@@ -19,6 +19,8 @@ struct ProviderWorkspaceView: View {
 
     @State private var businessName = ""
     @State private var bio = ""
+    /// FR-10.5 service radius in km (5…200).
+    @State private var serviceRadiusKm: Double = 25
     @State private var instantAvailable = false
     /// Local weekly Instant windows (`day` = mon…sun, times = HH:MM).
     /// Hydrated from GET `/providers/me` → `schedule` (owner-only).
@@ -132,10 +134,27 @@ struct ProviderWorkspaceView: View {
                     .foregroundStyle(BrandTheme.textPrimary)
                     .frame(minHeight: 44)
                     .accessibilityLabel("Bio")
+
+                // FR-10.5 — service radius editor.
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Service radius")
+                            .foregroundStyle(BrandTheme.textPrimary)
+                        Spacer()
+                        Text("\(Int(serviceRadiusKm.rounded())) km")
+                            .font(.subheadline.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(BrandTheme.goldBright)
+                    }
+                    Slider(value: $serviceRadiusKm, in: 5 ... 200, step: 5)
+                        .tint(BrandTheme.accent)
+                        .accessibilityLabel("Service radius in kilometers")
+                        .accessibilityValue("\(Int(serviceRadiusKm.rounded())) kilometers")
+                }
+                .frame(minHeight: 44)
             } header: {
                 Text("Public profile").brandSectionHeader()
             } footer: {
-                Text("Customers see business name and bio on your provider profile and bid cards.")
+                Text("Customers see business name and bio on your provider profile and bid cards. Radius controls which jobs and Instant offers match your territory.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -340,6 +359,22 @@ struct ProviderWorkspaceView: View {
 
             Section {
                 NavigationLink {
+                    EmployeesView()
+                } label: {
+                    Label("Team", systemImage: "person.3")
+                }
+                .frame(minHeight: 44)
+                .accessibilityHint("List, add, or remove provider employees")
+
+                NavigationLink {
+                    ChallengesView()
+                } label: {
+                    Label("Challenges", systemImage: "flag.checkered")
+                }
+                .frame(minHeight: 44)
+                .accessibilityHint("Join seasonal provider challenges and track progress")
+
+                NavigationLink {
                     QuoteTemplatesView()
                 } label: {
                     Label("Quote templates", systemImage: "doc.text")
@@ -382,6 +417,26 @@ struct ProviderWorkspaceView: View {
                     if let jobs = profile.jobsCompleted {
                         LabeledContent("Jobs completed", value: "\(jobs)")
                             .frame(minHeight: 44)
+                    }
+                    // FR-5.1 — response time + on-time rate when gateway projects them.
+                    if let label = profile.responseTimeLabel, !label.isEmpty {
+                        LabeledContent("Avg response", value: label)
+                            .frame(minHeight: 44)
+                    } else if let minutes = profile.avgResponseTimeMinutes, minutes > 0 {
+                        LabeledContent("Avg response") {
+                            Text(minutes < 60
+                                ? "\(Int(minutes.rounded())) min"
+                                : String(format: "%.1f hr", minutes / 60))
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    if let onTime = profile.onTimeRate {
+                        LabeledContent("On-time rate") {
+                            Text("\(Int((onTime <= 1 ? onTime * 100 : onTime).rounded()))%")
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                        .frame(minHeight: 44)
                     }
                     if let complete = profile.profileCompleteness {
                         LabeledContent("Profile completeness") {
@@ -615,6 +670,9 @@ struct ProviderWorkspaceView: View {
     private func applyProfileToForm(_ p: ProviderMeProfile) {
         businessName = p.businessName ?? ""
         bio = p.bio ?? ""
+        if let radius = p.serviceRadiusKm, radius >= 5, radius <= 200 {
+            serviceRadiusKm = radius
+        }
         instantAvailable = p.isInstantAvailable
         if let timing = p.defaultPaymentTiming?.trimmingCharacters(in: .whitespacesAndNewlines),
            !timing.isEmpty
@@ -703,7 +761,8 @@ struct ProviderWorkspaceView: View {
         do {
             let updated = try await APIClient.shared.updateMyProviderProfile(
                 businessName: name,
-                bio: bodyText
+                bio: bodyText,
+                serviceRadiusKm: serviceRadiusKm
             )
             profile = updated
             applyProfileToForm(updated)

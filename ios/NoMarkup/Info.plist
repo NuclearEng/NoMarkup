@@ -79,6 +79,13 @@
 	<key>GoogleIosClientID</key>
 	<string></string>
 	<!--
+	  Facebook Login (FR-1.1): Meta App ID (public; same as gateway FACEBOOK_CLIENT_ID).
+	  Register Valid OAuth Redirect URI: nomarkup://oauth2redirect/facebook
+	  Override: NOMARKUP_FACEBOOK_APP_ID. Client secret stays on the gateway only.
+	-->
+	<key>FacebookAppID</key>
+	<string></string>
+	<!--
 	  Location: single When-In-Use key covers market picker + job-site check-in.
 	  Check-in-only draft (inventory): "NoMarkup uses your location to confirm you arrived at the job site. Check-in location is stored with the contract for dispute protection."
 	  Market-only draft: "NoMarkup uses your location to suggest the nearest marketplace city. You can always pick a city manually."

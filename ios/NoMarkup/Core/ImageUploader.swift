@@ -41,8 +41,16 @@ enum ImageUploader: Sendable {
         max(width, height) > maxEdge
     }
 
-    /// Best-effort magic-byte MIME sniff (used by tests; encode path always re-encodes JPEG).
+    /// Best-effort magic-byte MIME sniff (JPEG/PNG/WebP/PDF).
+    /// Image encode path always re-encodes JPEG; PDF path uploads original bytes.
     nonisolated static func sniffMime(_ data: Data) -> String? {
+        // PDF only needs 4 bytes ("%PDF").
+        if data.count >= 4 {
+            let pdf = [UInt8](data.prefix(4))
+            if pdf[0] == 0x25, pdf[1] == 0x50, pdf[2] == 0x44, pdf[3] == 0x46 {
+                return "application/pdf"
+            }
+        }
         guard data.count >= 12 else { return nil }
         let bytes = [UInt8](data.prefix(12))
         // JPEG
@@ -174,12 +182,62 @@ enum ImageUploader: Sendable {
     }
     #endif
 
+    /// Provider verification document from a PDF file (pass-through; no re-encode).
+    /// Imaging `document` context accepts `application/pdf` after magic-byte confirm.
+    static func uploadVerificationDocumentPDF(
+        data: Data,
+        filename: String = "document.pdf",
+        documentType: ProviderDocumentType
+    ) async throws -> ProviderDocumentUploadResult {
+        let prepared = try preparePDF(data: data, filename: filename)
+        return try await APIClient.shared.uploadAndSubmitProviderDocument(
+            data: prepared.data,
+            filename: prepared.filename,
+            mimeType: prepared.mimeType,
+            documentType: documentType.rawValue
+        )
+    }
+
+    /// Upload a PDF for chat file attach (`chat_attachment` context) → confirmed public URL.
+    static func uploadPDF(
+        data: Data,
+        filename: String = "attachment.pdf",
+        context: ImageUploadContext = .chatAttachment
+    ) async throws -> String {
+        let prepared = try preparePDF(data: data, filename: filename)
+        return try await APIClient.shared.uploadImage(
+            data: prepared.data,
+            filename: prepared.filename,
+            mimeType: prepared.mimeType,
+            context: context
+        )
+    }
+
     // MARK: - Prepare (background)
 
     private struct PreparedImage: Sendable {
         let data: Data
         let filename: String
         let mimeType: String
+    }
+
+    /// Validate PDF magic bytes + 10 MB cap; pass-through (no re-encode).
+    nonisolated private static func preparePDF(data: Data, filename: String) throws -> PreparedImage {
+        guard !data.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Could not read the selected PDF.")
+        }
+        guard data.count <= maxFileBytes else {
+            throw APIClientError.httpStatus(400, detail: "PDF must be 10 MB or smaller.")
+        }
+        guard sniffMime(data) == "application/pdf" else {
+            throw APIClientError.httpStatus(400, detail: "File is not a valid PDF.")
+        }
+        let stem = (filename as NSString).deletingPathExtension
+        let safeStem = stem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "document"
+            : stem
+        let outName = "\(safeStem).pdf"
+        return PreparedImage(data: data, filename: outName, mimeType: "application/pdf")
     }
 
     private static func prepareJPEG(from item: PhotosPickerItem) async throws -> PreparedImage {

@@ -532,6 +532,37 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    /// FR-1.1 Facebook: ASWebAuthenticationSession → authorization code → gateway native exchange.
+    func signInWithFacebook() async {
+        guard !isBusy else { return }
+        errorMessage = nil
+        statusMessage = nil
+
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let session = FacebookOAuthSession()
+            let auth = try await session.signIn()
+            _ = try await api.signInWithFacebook(
+                authorizationCode: auth.authorizationCode,
+                redirectURI: auth.redirectURI
+            )
+            clearSensitiveInMemoryFields()
+            isScaffoldSession = false
+            isAuthenticated = true
+            statusMessage = "Signed in with Facebook."
+            notifyAuthSucceeded()
+        } catch let error as FacebookOAuthSession.SessionError {
+            if case .canceled = error {
+                return
+            }
+            errorMessage = error.localizedDescription
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private static func isStrongPassword(_ password: String) -> Bool {
         guard password.count >= 8 else { return false }
         let hasLetter = password.rangeOfCharacter(from: .letters) != nil

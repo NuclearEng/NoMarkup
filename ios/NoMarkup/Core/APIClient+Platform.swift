@@ -77,7 +77,7 @@ extension APIClient {
     // MARK: Image upload pipeline
 
     /// POST `/api/v1/images/upload-url` — mint a presigned PUT URL (Bearer required).
-    /// Context wire values: `job_photo` | `listing` | `document` (imaging engine allow-list).
+    /// Context wire values: `job_photo` | `listing` | `document` | `chat_attachment` (imaging allow-list).
     func requestImageUploadURL(
         filename: String,
         mimeType: String,
@@ -156,10 +156,10 @@ extension APIClient {
     ) async throws -> String {
         let maxBytes = 10 * 1024 * 1024
         guard data.count > 0 else {
-            throw APIClientError.httpStatus(400, detail: "Image data is empty.")
+            throw APIClientError.httpStatus(400, detail: "File data is empty.")
         }
         guard data.count <= maxBytes else {
-            throw APIClientError.httpStatus(400, detail: "Image must be 10 MB or smaller.")
+            throw APIClientError.httpStatus(400, detail: "File must be 10 MB or smaller.")
         }
 
         let urlResponse = try await requestImageUploadURL(
@@ -252,7 +252,11 @@ enum ImageUploadContext: String, Sendable, Hashable {
     /// Goods listing photos.
     case listing
     /// Provider verification documents (ID, license, insurance) — S3 prefix `documents/{userID}/…`.
+    /// Accepts JPEG/PNG/WebP and PDF (pass-through).
     case document
+    /// Chat file attachments (PDF invoices, scope docs) — S3 prefix `chat-attachments/{userID}/…`.
+    /// Accepts JPEG/PNG/WebP and PDF (pass-through). Photos in chat still use `.job`.
+    case chatAttachment
 
     /// Wire value for `context` on upload-url / confirm.
     var apiValue: String {
@@ -260,6 +264,7 @@ enum ImageUploadContext: String, Sendable, Hashable {
         case .job: return "job_photo"
         case .listing: return "listing"
         case .document: return "document"
+        case .chatAttachment: return "chat_attachment"
         }
     }
 }

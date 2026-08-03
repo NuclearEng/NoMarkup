@@ -453,6 +453,64 @@ struct PropertiesResponse: Codable, Sendable {
     }
 }
 
+// MARK: - Customer spending (FR-19.2 / FR-19.5 lite)
+
+/// `GET /api/v1/analytics/customers/me/spending` — account-wide services spend.
+///
+/// Not per-property: gateway has no `property_id` filter. Surface as a cross-property
+/// roll-up on the Properties dashboard. Preferred-providers (FR-19.2) has no API.
+struct CustomerSpendingResponse: Codable, Sendable {
+    var dataPoints: [CustomerSpendingDataPoint]?
+    var totalSpentCents: Int64?
+    var totalJobs: Int?
+    var averageJobCostCents: Int64?
+    var totalSavingsCents: Int64?
+    var categoryBreakdown: [CustomerCategorySpending]?
+
+    var displayTotalSpent: String {
+        MoneyFormat.usd(cents: totalSpentCents ?? 0)
+    }
+
+    var displayAverageJobCost: String {
+        MoneyFormat.usd(cents: averageJobCostCents ?? 0)
+    }
+
+    var displayTotalSavings: String {
+        MoneyFormat.usd(cents: totalSavingsCents ?? 0)
+    }
+}
+
+struct CustomerSpendingDataPoint: Codable, Sendable, Hashable, Identifiable {
+    var periodStart: String?
+    var amountCents: Int64?
+    var jobCount: Int?
+
+    var id: String { periodStart ?? UUID().uuidString }
+
+    var displayAmount: String {
+        MoneyFormat.usd(cents: amountCents ?? 0)
+    }
+}
+
+struct CustomerCategorySpending: Codable, Sendable, Hashable, Identifiable {
+    var categoryId: String?
+    var categoryName: String?
+    var totalSpentCents: Int64?
+    var jobCount: Int?
+
+    var id: String { categoryId ?? categoryName ?? UUID().uuidString }
+
+    var displayName: String {
+        let n = categoryName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !n.isEmpty { return n }
+        return categoryId ?? "Category"
+    }
+
+    var displaySpent: String {
+        MoneyFormat.usd(cents: totalSpentCents ?? 0)
+    }
+}
+
 // MARK: - Wishlist (buyer standing wants)
 
 struct WishlistItem: Codable, Sendable, Hashable, Identifiable {
@@ -1961,4 +2019,141 @@ struct ToSAcceptance: Codable, Sendable, Hashable {
 struct ToSAcceptResponse: Codable, Sendable {
     var accepted: Bool?
     var tosVersion: String?
+}
+
+// MARK: - Provider employees (team)
+
+/// Row from `GET /api/v1/providers/me/employees`.
+struct ProviderEmployee: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var providerId: String?
+    var firstName: String?
+    var lastName: String?
+    var email: String?
+    var phone: String?
+    var dateOfBirth: String?
+    var role: String?
+    var status: String?
+    var hireDate: String?
+    var backgroundCheckStatus: String?
+    var licenseNumber: String?
+    var licenseState: String?
+    var licenseExpiry: String?
+    var createdAt: String?
+
+    var displayName: String {
+        let first = firstName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let last = lastName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let joined = [first, last].filter { !$0.isEmpty }.joined(separator: " ")
+        return joined.isEmpty ? "Employee" : joined
+    }
+
+    var displayRole: String {
+        let r = role?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return r.isEmpty ? "Team member" : r.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var displayStatus: String {
+        let s = status?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return s.isEmpty ? "—" : StatusChipStyle.displayLabel(s)
+    }
+}
+
+struct ProviderEmployeesResponse: Codable, Sendable {
+    var employees: [ProviderEmployee]?
+}
+
+struct ProviderEmployeeEnvelope: Codable, Sendable {
+    var employee: ProviderEmployee
+}
+
+// MARK: - Provider challenges
+
+/// Active challenge from `GET /api/v1/challenges`.
+struct ProviderChallenge: Codable, Sendable, Hashable, Identifiable {
+    let id: String
+    var title: String?
+    var description: String?
+    var challengeType: String?
+    var targetValue: Int?
+    var rewardType: String?
+    var rewardValue: String?
+    var startsAt: String?
+    var endsAt: String?
+    var isSeasonal: Bool?
+    var seasonName: String?
+    var maxParticipants: Int?
+    var participantCount: Int?
+    var joined: Bool?
+    var myProgress: ChallengeProgress?
+    var timeRemainingSeconds: Int?
+
+    var displayTitle: String {
+        let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "Challenge" : t
+    }
+
+    var displayType: String {
+        let t = challengeType?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? "Challenge" : t.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var rewardLabel: String? {
+        let type = rewardType?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let value = rewardValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if type.isEmpty && value.isEmpty { return nil }
+        if type.isEmpty { return "Reward: \(value)" }
+        if value.isEmpty {
+            return "Reward: \(type.replacingOccurrences(of: "_", with: " ").capitalized)"
+        }
+        return "\(type.replacingOccurrences(of: "_", with: " ").capitalized): \(value)"
+    }
+
+    var timeRemainingLabel: String? {
+        guard let seconds = timeRemainingSeconds, seconds > 0 else { return nil }
+        if seconds < 3600 {
+            return "\(seconds / 60)m left"
+        }
+        if seconds < 86_400 {
+            return "\(seconds / 3600)h left"
+        }
+        return "\(seconds / 86_400)d left"
+    }
+}
+
+struct ChallengeProgress: Codable, Sendable, Hashable {
+    var currentProgress: Int?
+    var percentComplete: Double?
+    var completed: Bool?
+    var rewardClaimed: Bool?
+    var completedAt: String?
+    var joinedAt: String?
+
+    var fractionComplete: Double {
+        if let percentComplete {
+            return percentComplete > 1 ? percentComplete / 100 : percentComplete
+        }
+        return 0
+    }
+
+    func progressCaption(target: Int) -> String {
+        let current = currentProgress ?? 0
+        if completed == true {
+            return rewardClaimed == true ? "Completed · reward claimed" : "Completed"
+        }
+        if target > 0 {
+            return "\(current) / \(target)"
+        }
+        return "\(current) progress"
+    }
+}
+
+struct ChallengesResponse: Codable, Sendable {
+    var challenges: [ProviderChallenge]?
+}
+
+struct JoinChallengeResponse: Codable, Sendable {
+    var participantId: String?
+    var challengeId: String?
+    var joined: Bool?
 }

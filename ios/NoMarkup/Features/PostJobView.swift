@@ -35,10 +35,20 @@ struct PostJobView: View {
     @State private var offerAcceptedText = ""
     @State private var isRecurring = false
     @State private var recurrenceFrequency = "monthly"
+    /// FR-3.1 schedule preference (wire: flexible | specific | range).
+    @State private var scheduleType = "flexible"
+    @State private var preferredDate = Date().addingTimeInterval(86_400)
+    @State private var rangeStart = Date().addingTimeInterval(86_400)
+    @State private var rangeEnd = Date().addingTimeInterval(86_400 * 3)
 
     /// Job service allows 0…168 hours; Instant MVP uses a short 2h window.
-    private let durationOptions = [2, 24, 48, 72, 168]
+    private let durationOptions = [2, 12, 24, 48, 72, 168]
     private let recurrenceOptions = ["weekly", "biweekly", "monthly"]
+    private let scheduleTypeOptions: [(id: String, label: String)] = [
+        ("flexible", "Flexible"),
+        ("specific", "Specific date"),
+        ("range", "Date range"),
+    ]
 
     var body: some View {
         Group {
@@ -234,6 +244,42 @@ struct PostJobView: View {
                         }
                         .frame(minHeight: 44)
                     }
+
+                    // FR-3.1 — schedule preference (not hardcoded flexible).
+                    Picker("Schedule", selection: $scheduleType) {
+                        ForEach(scheduleTypeOptions, id: \.id) { opt in
+                            Text(opt.label).tag(opt.id)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Preferred schedule type")
+                    .accessibilityHint("Flexible, a specific date, or a date range for the work")
+
+                    if scheduleType == "specific" {
+                        DatePicker(
+                            "Preferred date",
+                            selection: $preferredDate,
+                            in: Date()...,
+                            displayedComponents: [.date]
+                        )
+                        .frame(minHeight: 44)
+                        .accessibilityLabel("Preferred service date")
+                    } else if scheduleType == "range" {
+                        DatePicker(
+                            "Earliest",
+                            selection: $rangeStart,
+                            in: Date()...,
+                            displayedComponents: [.date]
+                        )
+                        .frame(minHeight: 44)
+                        DatePicker(
+                            "Latest",
+                            selection: $rangeEnd,
+                            in: rangeStart...,
+                            displayedComponents: [.date]
+                        )
+                        .frame(minHeight: 44)
+                    }
                 }
             } header: {
                 Text(useInstantMatch ? "Instant price" : "Auction").brandSectionHeader()
@@ -241,7 +287,7 @@ struct PostJobView: View {
                 Text(
                     useInstantMatch
                         ? "Accept-now price is what providers are awarded if they accept. Keep it at or below your starting budget. Instant match cannot run without it."
-                        : "Starting bid is the maximum you’re willing to open at. Providers compete by bidding lower. Optional offer-accepted price lets providers lock that amount without auto-award."
+                        : "Starting bid is the maximum you’re willing to open at. Providers compete by bidding lower. Optional offer-accepted price lets providers lock that amount without auto-award. Schedule preference helps providers plan around your timing."
                 )
                 .foregroundStyle(BrandTheme.textSecondary)
             }
@@ -573,7 +619,7 @@ struct PostJobView: View {
                 locationLat: nil,
                 locationLng: nil,
                 publish: shouldPublish,
-                scheduleType: "flexible",
+                scheduleType: useInstantMatch ? "flexible" : scheduleType,
                 photoUrls: photoURLs,
                 propertyId: propertyId.isEmpty ? nil : propertyId,
                 offerAcceptedCents: offerCents,

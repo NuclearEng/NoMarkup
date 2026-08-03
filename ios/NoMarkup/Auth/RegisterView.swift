@@ -16,14 +16,22 @@ struct RegisterView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
-    @State private var alsoProvider = false
+    /// FR-1.2 — Customer / Provider / Both (not customer-only + optional toggle).
+    private enum SignupRole: String, CaseIterable, Identifiable {
+        case customer = "Customer"
+        case provider = "Provider"
+        case both = "Both"
+        var id: String { rawValue }
+    }
+
+    @State private var signupRole: SignupRole = .customer
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 header
                 formFields
-                roleToggle
+                rolePicker
                 actions
             }
             .padding(24)
@@ -112,22 +120,40 @@ struct RegisterView: View {
         }
     }
 
-    private var roleToggle: some View {
-        Toggle(isOn: $alsoProvider) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Also register as a provider")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(BrandTheme.textPrimary)
-                Text("Providers can bid on service jobs. You can always add this later.")
-                    .font(.caption)
-                    .foregroundStyle(BrandTheme.textSecondary)
+    private var rolePicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("I want to…")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(BrandTheme.textPrimary)
+            Picker("Account type", selection: $signupRole) {
+                ForEach(SignupRole.allCases) { role in
+                    Text(role.rawValue).tag(role)
+                }
             }
+            .pickerStyle(.segmented)
+            .frame(minHeight: 44)
+            .accessibilityLabel("Account type")
+            .accessibilityHint("Customer posts jobs and buys goods. Provider bids and sells. Both enables both roles.")
+
+            Text(roleHelpCopy)
+                .font(.caption)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .tint(BrandTheme.accent)
         .padding(14)
         .background(BrandTheme.navyElevated, in: RoundedRectangle(cornerRadius: 12))
         .overlay(fieldStroke)
-        .accessibilityHint("Adds the provider role in addition to customer")
+    }
+
+    private var roleHelpCopy: String {
+        switch signupRole {
+        case .customer:
+            return "Post reverse-auction jobs, shop the marketplace, and pay through escrow. You can enable provider later in Profile."
+        case .provider:
+            return "Bid on service jobs and sell goods. You can enable customer later if you need to hire help."
+        case .both:
+            return "Full dual-role account: hire providers and offer services or goods yourself."
+        }
     }
 
     private var actions: some View {
@@ -204,9 +230,14 @@ struct RegisterView: View {
             return
         }
 
-        var roles = ["customer"]
-        if alsoProvider {
-            roles.append("provider")
+        let roles: [String]
+        switch signupRole {
+        case .customer:
+            roles = ["customer"]
+        case .provider:
+            roles = ["provider"]
+        case .both:
+            roles = ["customer", "provider"]
         }
 
         // Mirror credentials into the shared auth fields so login state stays consistent.

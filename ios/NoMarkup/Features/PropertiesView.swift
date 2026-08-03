@@ -3,11 +3,17 @@ import SwiftUI
 /// Customer multi-property dashboard — FR-19.
 /// List / add / edit / delete via `GET|POST|PUT|DELETE /api/v1/properties`.
 /// Summary active/upcoming counts via `GET /api/v1/jobs/mine?property_id=`.
+///
+/// **FR-19.2 spend:** `GET /api/v1/analytics/customers/me/spending` is account-wide
+/// (no per-property filter). Shown as a cross-property roll-up. Preferred providers
+/// (3+ jobs at a property) have no API — not surfaced.
 struct PropertiesView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
     @State private var properties: [PropertyItem] = []
     @State private var jobCounts: [String: PropertyJobCounts] = [:]
+    @State private var spending: CustomerSpendingResponse?
+    @State private var spendingError: String?
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
@@ -115,6 +121,8 @@ struct PropertiesView: View {
                 }
             }
 
+            spendingSection
+
             Section {
                 ForEach(properties) { property in
                     NavigationLink {
@@ -162,11 +170,106 @@ struct PropertiesView: View {
                 Text(String(localized: "\(properties.count) properties"))
                     .brandSectionHeader()
             } footer: {
-                Text("Tap a property for job history. Active and upcoming counts use jobs linked to that address. PostJob still lets you pick which property a new auction is for.")
+                Text("Tap a property for job history. Active and upcoming counts use jobs linked to that address. PostJob still lets you pick which property a new auction is for. Spend above is account-wide (not per property).")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
         .brandListBackground()
+    }
+
+    /// FR-19.2 / FR-19.5 lite — account-wide services spend roll-up.
+    @ViewBuilder
+    private var spendingSection: some View {
+        if let spending {
+            Section {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Total spend")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                        Text(spending.displayTotalSpent)
+                            .font(.title3.weight(.bold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.goldBright)
+                    }
+                    Spacer(minLength: 12)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Jobs")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textSecondary)
+                        Text("\(spending.totalJobs ?? 0)")
+                            .font(.title3.weight(.bold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.textPrimary)
+                    }
+                }
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "Total spend \(spending.displayTotalSpent), \(spending.totalJobs ?? 0) jobs"
+                )
+
+                HStack {
+                    spendMetric(title: "Avg job", value: spending.displayAverageJobCost)
+                    Spacer(minLength: 8)
+                    spendMetric(title: "Savings vs market", value: spending.displayTotalSavings)
+                }
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+
+                let cats = Array((spending.categoryBreakdown ?? []).prefix(5))
+                if !cats.isEmpty {
+                    ForEach(cats) { cat in
+                        HStack {
+                            Text(cat.displayName)
+                                .font(.subheadline)
+                                .foregroundStyle(BrandTheme.textPrimary)
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            Text(cat.displaySpent)
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(BrandTheme.goldBright)
+                            if let count = cat.jobCount {
+                                Text("· \(count)")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                        }
+                        .frame(minHeight: 44)
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(cat.displayName), \(cat.displaySpent)")
+                    }
+                }
+            } header: {
+                Text("Spend · all properties").brandSectionHeader()
+            } footer: {
+                Text("From completed service jobs on your account (last ~3 months by default). Not broken down per property — the API has no property filter. Preferred-provider stats are not available yet.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        } else if let spendingError {
+            Section {
+                Text(spendingError)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .listRowBackground(BrandTheme.navyElevated)
+            } header: {
+                Text("Spend").brandSectionHeader()
+            }
+        }
+    }
+
+    private func spendMetric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary)
+            Text(value)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(BrandTheme.textPrimary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value)")
     }
 
     @ViewBuilder
@@ -262,10 +365,39 @@ struct PropertiesView: View {
 
         do {
             properties = try await APIClient.shared.fetchProperties().properties
+            // Counts + spend are independent; soft-fail inside each helper.
             await loadJobCounts(for: properties)
+            await loadSpending()
         } catch {
             if properties.isEmpty {
                 errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// FR-19.2 — account-wide spend (soft-fail; properties list still works).
+    @MainActor
+    private func loadSpending() async {
+        do {
+            // Default window: trailing 12 months for year-ish dashboard feel; server
+            // still accepts omission (≈3 months). Explicit range keeps UX predictable.
+            let end = Date()
+            let start = Calendar.current.date(byAdding: .year, value: -1, to: end) ?? end
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "yyyy-MM-dd"
+            spending = try await APIClient.shared.fetchCustomerSpending(
+                startDate: formatter.string(from: start),
+                endDate: formatter.string(from: end),
+                groupBy: "month"
+            )
+            spendingError = nil
+        } catch {
+            // Soft-fail: keep last good snapshot if any; otherwise show a quiet note.
+            if spending == nil {
+                spendingError = "Spend summary unavailable right now."
             }
         }
     }

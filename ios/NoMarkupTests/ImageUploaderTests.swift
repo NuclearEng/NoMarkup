@@ -32,6 +32,11 @@ final class ImageUploaderTests: XCTestCase {
         XCTAssertEqual(ImageUploader.sniffMime(Data(bytes)), "image/webp")
     }
 
+    func testSniffMimePDF() {
+        let bytes: [UInt8] = [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34] // %PDF-1.4
+        XCTAssertEqual(ImageUploader.sniffMime(Data(bytes)), "application/pdf")
+    }
+
     func testSniffMimeRejectsShortOrUnknown() {
         XCTAssertNil(ImageUploader.sniffMime(Data([0x00, 0x01])))
         let garbage = [UInt8](repeating: 0x11, count: 16)

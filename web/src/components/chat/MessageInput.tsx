@@ -1,6 +1,6 @@
 'use client';
 
-import { FileText, Send, X } from 'lucide-react';
+import { FileText, Paperclip, Send, X } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -16,10 +16,11 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useSendMessage, useSendProposedTerms } from '@/hooks/useChannels';
+import { useImageUpload } from '@/hooks/useImageUpload';
 import { useSendTypingIndicator } from '@/hooks/useWebSocket';
 import { getApiErrorMessage } from '@/lib/api';
 import { chatMessageSchema } from '@/lib/validations';
-import { CHANNEL_STATUS } from '@/types';
+import { CHANNEL_STATUS, UPLOAD_CONTEXT } from '@/types';
 
 const MAX_CHAR_COUNT = 2000;
 const MAX_ROWS = 4;
@@ -187,15 +188,22 @@ export function MessageInput({
   const [content, setContent] = useState('');
   const [showProposeTerms, setShowProposeTerms] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const sendMessage = useSendMessage();
   const sendProposedTerms = useSendProposedTerms();
   const sendTypingIndicator = useSendTypingIndicator(channelId);
+  // FR-8.3 — PDF attach via chat_attachment context (imaging pass-through).
+  const pdfUpload = useImageUpload({
+    context: UPLOAD_CONTEXT.CHAT_ATTACHMENT,
+    acceptedTypes: ['application/pdf'],
+  });
 
   const isDisabled =
     channelStatus === CHANNEL_STATUS.READ_ONLY || channelStatus === CHANNEL_STATUS.CLOSED;
 
   const isValid = chatMessageSchema.safeParse(content).success;
-  const isPending = sendMessage.isPending || sendProposedTerms.isPending;
+  const isPending =
+    sendMessage.isPending || sendProposedTerms.isPending || pdfUpload.status === 'uploading' || pdfUpload.status === 'getting_url' || pdfUpload.status === 'confirming';
 
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current;
@@ -257,6 +265,29 @@ export function MessageInput({
         const caret = start + body.length;
         ta.setSelectionRange(caret, caret);
       });
+    }
+  }
+
+  async function handlePdfSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || isPending || isDisabled) return;
+    const outcome = await pdfUpload.upload(file);
+    if (!outcome.ok) {
+      toast.error(outcome.error);
+      return;
+    }
+    try {
+      await sendMessage.mutateAsync({
+        channelId,
+        input: {
+          content: outcome.result.confirmedUrl,
+          message_type: 'file',
+        },
+      });
+      toast.success('PDF attached');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to send PDF.'));
     }
   }
 
@@ -323,6 +354,27 @@ export function MessageInput({
                 <FileText className="h-4 w-4" aria-hidden="true" />
               </Button>
             ) : null}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf"
+              className="sr-only"
+              onChange={(e) => { void handlePdfSelected(e); }}
+              aria-hidden="true"
+              tabIndex={-1}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 shrink-0"
+              disabled={isPending || isDisabled}
+              onClick={() => { fileInputRef.current?.click(); }}
+              aria-label="Attach PDF"
+              title="Attach PDF (max 10 MB)"
+            >
+              <Paperclip className="h-4 w-4" aria-hidden="true" />
+            </Button>
             <div className="relative flex-1">
               <textarea
                 ref={textareaRef}
@@ -349,7 +401,7 @@ export function MessageInput({
           </div>
           <div className="mt-1 flex items-center justify-between">
             <p className="text-[10px] text-muted-foreground">
-              Press Enter to send, Shift+Enter for a new line
+              Enter to send · PDF attach up to 10 MB
             </p>
             <p
               className={`text-[10px] ${content.length > MAX_CHAR_COUNT - 100 ? 'text-amber-600' : 'text-muted-foreground'}`}

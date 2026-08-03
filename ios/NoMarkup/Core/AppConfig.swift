@@ -259,6 +259,51 @@ enum AppConfig {
         return "\(scheme):/oauth2redirect/google"
     }
 
+    // MARK: - Facebook Sign-In (ASWebAuthenticationSession + server code exchange)
+
+    /// Meta / Facebook App ID (public). Same value as gateway `FACEBOOK_CLIENT_ID`.
+    ///
+    /// Resolution:
+    /// 1. `NOMARKUP_FACEBOOK_APP_ID` env
+    /// 2. Info.plist `FacebookAppID`
+    /// 3. Empty → Facebook button hidden (`isFacebookSignInConfigured == false`)
+    ///
+    /// Never put `FACEBOOK_CLIENT_SECRET` on the client. Register redirect URI
+    /// `nomarkup://oauth2redirect/facebook` as a Valid OAuth Redirect URI on the Meta app.
+    static var facebookAppID: String? {
+        if let env = ProcessInfo.processInfo.environment["NOMARKUP_FACEBOOK_APP_ID"] {
+            let trimmed = env.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        if let plist = Bundle.main.object(forInfoDictionaryKey: "FacebookAppID") as? String {
+            let trimmed = plist.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, !trimmed.contains("YOUR_") { return trimmed }
+        }
+        return nil
+    }
+
+    /// True when Facebook App ID and redirect URI are present.
+    static var isFacebookSignInConfigured: Bool {
+        facebookAppID != nil && facebookOAuthRedirectURI != nil
+    }
+
+    /// Callback URL scheme for ASWebAuthenticationSession (`nomarkup`).
+    static var facebookOAuthCallbackScheme: String? {
+        "nomarkup"
+    }
+
+    /// Redirect URI registered with Meta for the native public client.
+    /// Default: `nomarkup://oauth2redirect/facebook`
+    /// Override with Info.plist `FacebookOAuthRedirectURI`.
+    static var facebookOAuthRedirectURI: String? {
+        if let plist = Bundle.main.object(forInfoDictionaryKey: "FacebookOAuthRedirectURI") as? String {
+            let trimmed = plist.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        guard facebookAppID != nil else { return nil }
+        return "nomarkup://oauth2redirect/facebook"
+    }
+
     // MARK: - Goods browse center (optional radius search)
 
     /// Optional marketplace search center latitude.

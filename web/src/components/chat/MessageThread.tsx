@@ -368,6 +368,44 @@ function MessageBubble({
             onAccept={onAcceptTerms}
             onReject={onRejectTerms}
           />
+        ) : normalizedMessageType(message) === MESSAGE_TYPE.IMAGE ? (
+          <div
+            className={cn(
+              'overflow-hidden rounded-lg',
+              isOwnMessage ? 'bg-primary/10' : 'bg-muted',
+            )}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- chat CDN URLs are dynamic */}
+            <img
+              src={message.content}
+              alt="Shared image"
+              className="max-h-64 max-w-full object-contain"
+            />
+          </div>
+        ) : normalizedMessageType(message) === MESSAGE_TYPE.FILE
+          || normalizedMessageType(message) === MESSAGE_TYPE.CONTACT_SHARE ? (
+          <div
+            className={cn(
+              'rounded-lg px-3 py-2 text-sm',
+              isOwnMessage
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-foreground',
+            )}
+          >
+            {normalizedMessageType(message) === MESSAGE_TYPE.FILE
+              && /^https?:\/\//i.test(message.content.trim()) ? (
+              <a
+                href={message.content.trim()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-[44px] items-center gap-2 underline underline-offset-2"
+              >
+                Open attached file
+              </a>
+            ) : (
+              <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            )}
+          </div>
         ) : (
           <div
             className={cn(

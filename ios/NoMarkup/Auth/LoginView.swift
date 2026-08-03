@@ -41,6 +41,12 @@ struct LoginView: View {
                                 Task { await auth.signInWithGoogle() }
                             }
                         }
+                        if AppConfig.isFacebookSignInConfigured {
+                            FacebookSignInButton(isBusy: auth.isBusy || passkeyAuth.isBusy) {
+                                guard !auth.isBusy, !passkeyAuth.isBusy else { return }
+                                Task { await auth.signInWithFacebook() }
+                            }
+                        }
                         scaffoldBypass
                     }
                     footerLegal

@@ -6,6 +6,7 @@ import UIKit
 struct AccountView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var push: PushRegistration
+    @EnvironmentObject private var featureFlags: FeatureFlags
     @State private var exportMessage: String?
     @State private var exportIsError = false
     @State private var isExporting = false
@@ -297,6 +298,34 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Download an iCal file of jobs, contracts, and pickups")
+
+                    NavigationLink {
+                        EmployeesView()
+                    } label: {
+                        Label("Team", systemImage: "person.3")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Manage provider employees")
+
+                    NavigationLink {
+                        ChallengesView()
+                    } label: {
+                        Label("Challenges", systemImage: "flag.checkered")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Join provider challenges and track progress")
+
+                    if featureFlags.isEnabled("legal_services") {
+                        NavigationLink {
+                            LegalServicesView()
+                        } label: {
+                            Label("Legal services", systemImage: "scalemass")
+                        }
+                        .frame(minHeight: 44)
+                        .accessibilityHint("Attorney reverse-auction vertical")
+                    }
 
                     NavigationLink {
                         QuoteTemplatesView()

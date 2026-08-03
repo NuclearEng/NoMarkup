@@ -237,6 +237,32 @@ actor APIClient {
         return pair
     }
 
+    /// POST /api/v1/auth/facebook/native — authorization code (+ redirect_uri) server exchange.
+    ///
+    /// Client never holds FACEBOOK_CLIENT_SECRET. Code comes from ASWebAuthenticationSession.
+    func signInWithFacebook(authorizationCode: String, redirectURI: String) async throws -> AuthTokenPair {
+        let url = AppConfig.apiBaseURL.appending(path: "api/v1/auth/facebook/native")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 20
+        let body: [String: String] = [
+            "authorization_code": authorizationCode,
+            "redirect_uri": redirectURI,
+        ]
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await session.data(for: request)
+        try Self.throwIfNeeded(response: response, data: data)
+        let pair = try decoder.decode(AuthTokenPair.self, from: data)
+        try tokenStore.save(pair.accessToken, for: .accessToken)
+        if let refresh = pair.refreshToken {
+            try tokenStore.save(refresh, for: .refreshToken)
+        }
+        return pair
+    }
+
     /// DELETE /api/v1/users/me — schedule account deletion (30-day grace).
     func requestAccountDeletion(reason: String) async throws {
         let url = AppConfig.apiBaseURL.appending(path: "api/v1/users/me")
@@ -353,13 +379,17 @@ actor APIClient {
         return wrapped.listing
     }
 
-    /// GET `/api/v1/jobs?page=&page_size=&q=&category_ids=`
+    /// GET `/api/v1/jobs?page=&page_size=&q=&category_ids=&latitude=&longitude=&radius_km=`
     /// - Parameter categoryIds: optional comma-joined filter (`category_ids` query; gateway splits on commas).
+    /// - Parameter latitude/longitude: when both set, server returns `distance_km` (FR-10.7).
     func fetchJobs(
         page: Int = 1,
         pageSize: Int = 20,
         q: String? = nil,
-        categoryIds: [String]? = nil
+        categoryIds: [String]? = nil,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        radiusKm: Double? = nil
     ) async throws -> JobsResponse {
         var items = [
             URLQueryItem(name: "page", value: String(max(1, page))),
@@ -377,6 +407,13 @@ actor APIClient {
                 .filter { !$0.isEmpty }
             if !cleaned.isEmpty {
                 items.append(URLQueryItem(name: "category_ids", value: cleaned.joined(separator: ",")))
+            }
+        }
+        if let latitude, let longitude {
+            items.append(URLQueryItem(name: "latitude", value: String(latitude)))
+            items.append(URLQueryItem(name: "longitude", value: String(longitude)))
+            if let radiusKm, radiusKm > 0 {
+                items.append(URLQueryItem(name: "radius_km", value: String(radiusKm)))
             }
         }
         return try await getJSON(pathComponents: ["api", "v1", "jobs"], query: items)
@@ -455,6 +492,60 @@ actor APIClient {
         )
     }
 
+    /// POST `/api/v1/channels` — FR-8.1 open inquiry (pre-bid) or bid channel.
+    /// Body: `{ "job_id", "channel_type": "inquiry"|"bid" }`. Caller must be provider (not job owner).
+    @discardableResult
+    func createChatChannel(jobId: String, channelType: String = "inquiry") async throws -> ChatChannelSummary {
+        struct Body: Encodable {
+            var jobId: String
+            var channelType: String
+        }
+        struct Envelope: Decodable {
+            var channel: ChatChannelSummary?
+        }
+        let type = channelType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let wireType = type.isEmpty ? "inquiry" : type
+        let response: Envelope = try await postJSON(
+            pathComponents: ["api", "v1", "channels"],
+            body: Body(jobId: jobId, channelType: wireType),
+            authorized: .required
+        )
+        guard let channel = response.channel else {
+            throw APIClientError.httpStatus(502, detail: "Channel missing from create response.")
+        }
+        return channel
+    }
+
+    /// POST `/api/v1/channels/{id}/share-contact` — FR-8.8 explicit opt-in contact share.
+    @discardableResult
+    func shareChannelContact(channelID: String, phone: String?, email: String?) async throws {
+        struct Body: Encodable {
+            var phone: String?
+            var email: String?
+        }
+        let phoneTrim = phone?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let emailTrim = email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !phoneTrim.isEmpty || !emailTrim.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Phone or email is required.")
+        }
+        struct ContactEnvelope: Decodable {
+            var contact: SharedContactPayload?
+        }
+        struct SharedContactPayload: Decodable {
+            var userId: String?
+            var phone: String?
+            var email: String?
+        }
+        let _: ContactEnvelope = try await postJSON(
+            pathComponents: ["api", "v1", "channels", channelID, "share-contact"],
+            body: Body(
+                phone: phoneTrim.isEmpty ? nil : phoneTrim,
+                email: emailTrim.isEmpty ? nil : emailTrim
+            ),
+            authorized: .required
+        )
+    }
+
     /// GET `/api/v1/channels/{id}` — single channel (Bearer required).
     /// Includes `customer_last_read_at` / `provider_last_read_at` for read receipts.
     func fetchChatChannel(channelID: String) async throws -> ChatChannelSummary {
@@ -480,8 +571,9 @@ actor APIClient {
     /// Body: `{ "content": "...", "message_type": "text"|"image"|"file" }`.
     /// - **text**: plain body (no HTML). Empty rejected.
     /// - **image**: `content` is the public CDN URL from our imaging upload pipeline
-    ///   (`ImageUploader` → upload-url → PUT → confirm). Gateway accepts `message_type: image`
-    ///   and stores `content` as the URL (no separate attachments array on the REST body).
+    ///   (`ImageUploader` → upload-url → PUT → confirm, usually `job_photo` context).
+    /// - **file**: absolute URL from imaging `chat_attachment` context (PDF pass-through
+    ///   or image). Prefer `sendChannelFileMessage` after `ImageUploader.uploadPDF`.
     /// Returns the created message (201).
     @discardableResult
     func sendChannelMessage(
@@ -497,17 +589,25 @@ actor APIClient {
             guard !trimmed.isEmpty else {
                 throw APIClientError.httpStatus(400, detail: "Message cannot be empty.")
             }
-        } else if wireType == "image" {
-            // Image messages must carry a URL from our upload flow (https preferred).
+        } else if wireType == "image" || wireType == "file" {
+            // Image/file messages must carry a URL from our upload flow (https preferred).
             guard !trimmed.isEmpty else {
-                throw APIClientError.httpStatus(400, detail: "Image URL is required.")
+                throw APIClientError.httpStatus(
+                    400,
+                    detail: wireType == "file" ? "File URL is required." : "Image URL is required."
+                )
             }
             guard let url = URL(string: trimmed),
                   let scheme = url.scheme?.lowercased(),
                   scheme == "https" || scheme == "http",
                   url.host != nil
             else {
-                throw APIClientError.httpStatus(400, detail: "Image URL must be an absolute http(s) URL from upload.")
+                throw APIClientError.httpStatus(
+                    400,
+                    detail: wireType == "file"
+                        ? "File URL must be an absolute http(s) URL from upload."
+                        : "Image URL must be an absolute http(s) URL from upload."
+                )
             }
         } else {
             guard !trimmed.isEmpty else {
@@ -527,13 +627,23 @@ actor APIClient {
     }
 
     /// Upload via imaging pipeline then POST chat message with `message_type: image`.
-    /// Uses `job_photo` storage context (imaging allow-list has no dedicated chat context).
+    /// Uses `job_photo` storage context for public photos.
     @discardableResult
     func sendChannelImageMessage(channelID: String, imageURL: String) async throws -> ChatMessage {
         try await sendChannelMessage(
             channelID: channelID,
             content: imageURL,
             messageType: "image"
+        )
+    }
+
+    /// POST chat message with `message_type: file` after imaging `chat_attachment` upload.
+    @discardableResult
+    func sendChannelFileMessage(channelID: String, fileURL: String) async throws -> ChatMessage {
+        try await sendChannelMessage(
+            channelID: channelID,
+            content: fileURL,
+            messageType: "file"
         )
     }
 
@@ -875,6 +985,25 @@ actor APIClient {
             pathComponents: ["api", "v1", "categories", "tree"]
         )
         return wrapped.categories
+    }
+
+    /// Walks the category tree for a node whose slug matches (case-insensitive).
+    func resolveCategoryId(slug: String) async throws -> String? {
+        let target = slug.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !target.isEmpty else { return nil }
+        let tree = try await fetchCategoryTree()
+        func find(_ nodes: [CategoryNode]) -> String? {
+            for node in nodes {
+                if (node.slug ?? "").lowercased() == target {
+                    return node.id
+                }
+                if let kids = node.children, let hit = find(kids) {
+                    return hit
+                }
+            }
+            return nil
+        }
+        return find(tree)
     }
 
     /// GET `/api/v1/analytics/fair-price?category_id=` / `category_slug=` — optional social proof.

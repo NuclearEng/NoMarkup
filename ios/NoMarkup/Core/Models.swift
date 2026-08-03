@@ -872,10 +872,20 @@ struct JobSummary: Codable, Sendable, Hashable, Identifiable {
     var auctionType: String?
     var createdAt: String?
     var photoUrls: [String]?
+    /// FR-10.7: present when browse was geo-scoped (`latitude`/`longitude` query).
+    var distanceKm: Double?
 
     var displayTitle: String {
         let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return t.isEmpty ? "Untitled job" : t
+    }
+
+    var distanceLabel: String? {
+        guard let distanceKm else { return nil }
+        if distanceKm < 1 {
+            return String(format: "%.0f m away", distanceKm * 1000)
+        }
+        return String(format: "%.1f km away", distanceKm)
     }
 
     var normalizedStatus: String {
@@ -1094,6 +1104,14 @@ struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
 
     var isImageMessage: Bool { normalizedType == "image" }
 
+    /// File / PDF attachment (`message_type == file`). Composer uploads via
+    /// imaging `chat_attachment` context (PDF pass-through).
+    var isFileMessage: Bool { normalizedType == "file" }
+
+    /// Opt-in contact share system card (`message_type == contact_share`).
+    /// FR-8.8 share button is not live (gateway + gRPC ShareContactInfo unimplemented).
+    var isContactShareMessage: Bool { normalizedType == "contact_share" }
+
     /// System-style centered pills: platform system + local-terms accept/reject outcomes.
     var isSystemMessage: Bool {
         switch normalizedType {
@@ -1151,6 +1169,17 @@ struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     /// decode but the composer only attaches via `ImageUploader`.
     var safeImageURL: URL? {
         guard isImageMessage else { return nil }
+        return Self.safeHTTPURL(from: content)
+    }
+
+    /// Absolute http(s) URL for `file` messages when content is a plain URL (no HTML).
+    var safeFileURL: URL? {
+        guard isFileMessage else { return nil }
+        return Self.safeHTTPURL(from: content)
+    }
+
+    /// Shared safe absolute http(s) parse for image/file message content.
+    private static func safeHTTPURL(from content: String?) -> URL? {
         let raw = content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !raw.isEmpty, raw.count <= 2000 else { return nil }
         // Reject whitespace / angle brackets that would indicate HTML injection attempts.
@@ -2129,6 +2158,9 @@ struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
     var trustScore: ProviderTrustScore?
     /// Legacy / alternate: some payloads may send a bare number.
     var trustScoreValue: Double?
+    /// FR-4.5/4.6: optional review summary when gateway projects it.
+    var averageRating: Double?
+    var reviewCount: Int?
 
     var id: String {
         bid?.id ?? UUID().uuidString
@@ -2172,6 +2204,14 @@ struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
         case reviewSummary
     }
 
+    private enum ReviewSummaryKeys: String, CodingKey {
+        case averageRating
+        case avgRating
+        case rating
+        case reviewCount
+        case count
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         bid = try c.decodeIfPresent(JobBidCore.self, forKey: .bid)
@@ -2196,8 +2236,25 @@ struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
             }
             // else: null / unknown shape → leave nil (don't fail whole ladder)
         }
-        // review_summary intentionally ignored (null or object).
-        _ = try? c.decodeIfPresent(FlexibleJSONValue.self, forKey: .reviewSummary)
+
+        averageRating = nil
+        reviewCount = nil
+        if c.contains(.reviewSummary),
+           let nested = try? c.nestedContainer(keyedBy: ReviewSummaryKeys.self, forKey: .reviewSummary)
+        {
+            if let d = try? nested.decodeIfPresent(Double.self, forKey: .averageRating) {
+                averageRating = d
+            } else if let d = try? nested.decodeIfPresent(Double.self, forKey: .avgRating) {
+                averageRating = d
+            } else if let d = try? nested.decodeIfPresent(Double.self, forKey: .rating) {
+                averageRating = d
+            }
+            if let n = try? nested.decodeIfPresent(Int.self, forKey: .reviewCount) {
+                reviewCount = n
+            } else if let n = try? nested.decodeIfPresent(Int.self, forKey: .count) {
+                reviewCount = n
+            }
+        }
     }
 
     func encode(to encoder: Encoder) throws {

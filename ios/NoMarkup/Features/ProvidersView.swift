@@ -122,6 +122,16 @@ struct ProvidersView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(BrandTheme.goldBright)
                 }
+                if let distance = provider.distanceLabel {
+                    Label(distance, systemImage: "location")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                if let response = provider.responseTimeLabel, !response.isEmpty {
+                    Label(response, systemImage: "clock")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
             }
         }
         .padding(.vertical, 4)
