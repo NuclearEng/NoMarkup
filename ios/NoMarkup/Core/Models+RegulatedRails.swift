@@ -354,20 +354,51 @@ struct ExpenseEnvelope: Decodable, Sendable {
 
 // MARK: - Tax
 
+/// 1099-NEC row from `GET/POST /api/v1/providers/me/tax-forms…`
+/// Gateway fields: tax_year, form_type, total_compensation_cents, status, pdf_url.
 struct TaxForm: Decodable, Sendable, Hashable, Identifiable {
     let id: String
-    var year: Int?
+    /// Prefer `tax_year` from the gateway; `year` accepted as a soft alias.
+    var taxYear: Int?
     var formType: String?
     var status: String?
+    var totalCompensationCents: Int64?
+    var pdfUrl: String?
+
+    /// UI convenience — same as taxYear when present.
+    var year: Int? { taxYear }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
-        year = try c.decodeIfPresent(Int.self, forKey: .year)
+        if let y = try c.decodeIfPresent(Int.self, forKey: .taxYear) {
+            taxYear = y
+        } else {
+            taxYear = try c.decodeIfPresent(Int.self, forKey: .year)
+        }
         formType = try c.decodeIfPresent(String.self, forKey: .formType)
         status = try c.decodeIfPresent(String.self, forKey: .status)
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: .totalCompensationCents) {
+            totalCompensationCents = v
+        } else if let v = try? c.decodeIfPresent(Int.self, forKey: .totalCompensationCents) {
+            totalCompensationCents = Int64(v)
+        } else {
+            totalCompensationCents = nil
+        }
+        pdfUrl = try c.decodeIfPresent(String.self, forKey: .pdfUrl)
     }
-    enum CodingKeys: String, CodingKey { case id, year, formType, status }
+
+    enum CodingKeys: String, CodingKey {
+        case id, taxYear, year, formType, status, totalCompensationCents, pdfUrl
+    }
+
+    var displayCompensation: String {
+        MoneyFormat.usd(cents: totalCompensationCents ?? 0)
+    }
+
+    var displayStatus: String {
+        StatusChipStyle.displayLabel(status ?? "draft")
+    }
 }
 
 struct TaxFormsResponse: Decodable, Sendable {
@@ -385,10 +416,62 @@ struct TaxFormsResponse: Decodable, Sendable {
     enum CodingKeys: String, CodingKey { case forms, taxForms }
 }
 
+/// Nested body from `GET /api/v1/providers/me/tax-estimate` (`tax_estimate` map).
+/// All figures are server-side integer cents — never recompute client-side.
 struct TaxEstimate: Decodable, Sendable, Hashable {
-    var year: Int?
-    var estimatedTaxCents: Int64?
-    var grossIncomeCents: Int64?
+    var taxYear: Int?
+    var netEarningsCents: Int64?
+    var totalTaxCents: Int64?
+    var federalIncomeTaxCents: Int64?
+    var seTaxCents: Int64?
+    var stateIncomeTaxCents: Int64?
+    var effectiveRate: Double?
+    var stateCode: String?
+    var hasStateData: Bool?
 
-    var displayEstimate: String { MoneyFormat.usd(cents: estimatedTaxCents ?? 0) }
+    /// Soft aliases for older partial decodes.
+    var year: Int? { taxYear }
+    var estimatedTaxCents: Int64? { totalTaxCents }
+    var grossIncomeCents: Int64? { netEarningsCents }
+
+    var displayEstimate: String { MoneyFormat.usd(cents: totalTaxCents ?? 0) }
+    var displayNetEarnings: String { MoneyFormat.usd(cents: netEarningsCents ?? 0) }
+
+    var displayEffectiveRate: String? {
+        guard let effectiveRate else { return nil }
+        return String(format: "%.1f%%", effectiveRate * 100)
+    }
+}
+
+/// Envelope `{ "tax_estimate": { … } }` from the tax-estimate endpoint.
+struct TaxEstimateResponse: Decodable, Sendable, Hashable {
+    var taxEstimate: TaxEstimate?
+
+    init(from decoder: Decoder) throws {
+        // Accept either nested envelope or flat TaxEstimate body.
+        if let flat = try? TaxEstimate(from: decoder), flat.totalTaxCents != nil || flat.taxYear != nil {
+            taxEstimate = flat
+            return
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        taxEstimate = try c.decodeIfPresent(TaxEstimate.self, forKey: .taxEstimate)
+    }
+
+    enum CodingKeys: String, CodingKey { case taxEstimate }
+}
+
+/// Envelope `{ "tax_form": { … } }` from generate/get tax form.
+struct TaxFormEnvelope: Decodable, Sendable, Hashable {
+    var taxForm: TaxForm?
+
+    init(from decoder: Decoder) throws {
+        if let flat = try? TaxForm(from: decoder) {
+            taxForm = flat
+            return
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        taxForm = try c.decodeIfPresent(TaxForm.self, forKey: .taxForm)
+    }
+
+    enum CodingKeys: String, CodingKey { case taxForm }
 }

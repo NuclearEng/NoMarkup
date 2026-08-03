@@ -285,12 +285,44 @@ extension APIClient {
         return response.forms
     }
 
-    /// GET `/api/v1/providers/me/tax-estimate?year=`
+    /// GET `/api/v1/providers/me/tax-estimate?year=` → unwrapped `tax_estimate` map.
     func fetchTaxEstimate(year: Int) async throws -> TaxEstimate {
-        try await getJSON(
+        let response: TaxEstimateResponse = try await getJSON(
             pathComponents: ["api", "v1", "providers", "me", "tax-estimate"],
             query: [URLQueryItem(name: "year", value: String(year))],
             authorized: true
+        )
+        guard let estimate = response.taxEstimate else {
+            throw APIClientError.httpStatus(502, detail: "Tax estimate missing from response.")
+        }
+        return estimate
+    }
+
+    /// POST `/api/v1/providers/me/tax-forms/{year}/generate` → created 1099-NEC row.
+    @discardableResult
+    func generateTaxForm(year: Int) async throws -> TaxForm {
+        guard year >= 2020, year <= 2100 else {
+            throw APIClientError.httpStatus(400, detail: "Invalid tax year.")
+        }
+        let response: TaxFormEnvelope = try await postJSON(
+            pathComponents: ["api", "v1", "providers", "me", "tax-forms", String(year), "generate"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+        guard let form = response.taxForm else {
+            throw APIClientError.httpStatus(502, detail: "Tax form missing from generate response.")
+        }
+        return form
+    }
+
+    /// GET `/api/v1/providers/me/tax-forms/{year}/download` — HTML 1099-NEC attachment bytes.
+    func downloadTaxForm(year: Int) async throws -> Data {
+        guard year >= 2020, year <= 2100 else {
+            throw APIClientError.httpStatus(400, detail: "Invalid tax year.")
+        }
+        return try await getData(
+            pathComponents: ["api", "v1", "providers", "me", "tax-forms", String(year), "download"],
+            authorized: .required
         )
     }
 }

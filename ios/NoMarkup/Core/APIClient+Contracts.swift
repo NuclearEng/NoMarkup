@@ -17,6 +17,9 @@ import Foundation
 //   GET|POST /api/v1/contracts/{id}/guarantee-claim
 //   POST /api/v1/contracts/{id}/report-noshow|report-abandonment
 //   GET  /api/v1/contracts/{id}/pdf
+//   POST /api/v1/contracts/{id}/checkin|checkout  body: { lat, lng }
+//   GET  /api/v1/contracts/{id}/work-session
+//   POST /api/v1/contracts/{id}/completion-photos  multipart photo + phase
 //   GET|PATCH /api/v1/contracts/{id}/recurring (+ pause|resume|cancel, instances)
 //
 // Escrow (gateway/internal/handler/payment.go) — services path (FR-9):
@@ -822,9 +825,92 @@ extension APIClient {
             throw error
         }
     }
+
+    // MARK: Provider workspace (check-in / check-out / photos)
+
+    /// GET `/api/v1/contracts/{id}/work-session` — Redis-backed check-in state.
+    func fetchWorkSession(contractId: String) async throws -> ContractWorkSession {
+        try await getJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "work-session"],
+            authorized: true
+        )
+    }
+
+    /// POST `/api/v1/contracts/{id}/checkin` body: `{ lat, lng }` (GPS required).
+    @discardableResult
+    func checkInToContract(id: String, lat: Double, lng: Double) async throws -> ContractCheckInResponse {
+        try await postJSON(
+            pathComponents: ["api", "v1", "contracts", id, "checkin"],
+            body: ContractsLocationBody(lat: lat, lng: lng),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/contracts/{id}/checkout` body: `{ lat, lng }` (GPS required).
+    @discardableResult
+    func checkOutOfContract(id: String, lat: Double, lng: Double) async throws -> ContractCheckOutResponse {
+        try await postJSON(
+            pathComponents: ["api", "v1", "contracts", id, "checkout"],
+            body: ContractsLocationBody(lat: lat, lng: lng),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/contracts/{id}/completion-photos` multipart: `photo` + `phase` (`before`|`after`).
+    @discardableResult
+    func uploadCompletionPhoto(
+        contractId: String,
+        imageJPEG: Data,
+        phase: CompletionPhotoPhase,
+        filename: String = "completion.jpg"
+    ) async throws -> ContractCompletionPhotoResponse {
+        guard !imageJPEG.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Photo data is required.")
+        }
+        // Gateway MaxBytesReader cap is 10MB.
+        let maxBytes = 10 * 1024 * 1024
+        guard imageJPEG.count <= maxBytes else {
+            throw APIClientError.httpStatus(413, detail: "Photo must be 10MB or smaller.")
+        }
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+        func append(_ string: String) {
+            if let data = string.data(using: .utf8) {
+                body.append(data)
+            }
+        }
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"phase\"\r\n\r\n")
+        append("\(phase.rawValue)\r\n")
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"photo\"; filename=\"\(filename)\"\r\n")
+        append("Content-Type: image/jpeg\r\n\r\n")
+        body.append(imageJPEG)
+        append("\r\n")
+        append("--\(boundary)--\r\n")
+
+        let data = try await postMultipart(
+            pathComponents: ["api", "v1", "contracts", contractId, "completion-photos"],
+            body: body,
+            boundary: boundary,
+            authorized: .required
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        do {
+            return try decoder.decode(ContractCompletionPhotoResponse.self, from: data)
+        } catch {
+            throw APIClientError.decoding("Could not decode completion photo response: \(error.localizedDescription)")
+        }
+    }
 }
 
 // MARK: - Request bodies (snake_case via encoder keyEncodingStrategy)
+
+private struct ContractsLocationBody: Encodable {
+    let lat: Double
+    let lng: Double
+}
 
 private struct ContractsCancelBody: Encodable {
     let reason: String

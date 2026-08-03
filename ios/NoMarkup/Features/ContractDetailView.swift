@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 #if canImport(UIKit)
@@ -15,6 +16,8 @@ import UIKit
 /// Goods use mutual pickup on listing orders instead (see MyOrdersView).
 struct ContractDetailView: View {
     let contractID: String
+    /// When opened from Siri / check-in deep link, attempt GPS check-in once after load.
+    var autoCheckInOnAppear: Bool = false
 
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.openURL) private var openURL
@@ -77,6 +80,19 @@ struct ContractDetailView: View {
     @State private var tipAmountText = ""
     @State private var isSubmittingTip = false
 
+    // Provider workspace (check-in / completion photos)
+    @State private var workSession: ContractWorkSession?
+    @State private var isWorkspaceActing = false
+    @State private var beforePhotoURL: String?
+    @State private var afterPhotoURL: String?
+    @State private var pendingPhotoPhase: CompletionPhotoPhase?
+    @State private var photoPickerItem: PhotosPickerItem?
+    @State private var showCameraPicker = false
+    @State private var cameraImage: UIImage?
+    @State private var showCameraDeniedAlert = false
+    @State private var didAttemptAutoCheckIn = false
+    @State private var locationProvider = JobSiteLocationProvider()
+
     /// Share sheet for authenticated document downloads.
     @State private var documentShareItem: ExportFileShareItem?
 
@@ -130,7 +146,19 @@ struct ContractDetailView: View {
             .sheet(item: $documentShareItem) { item in
                 ActivityShareSheet(items: [item.url])
             }
+            .fullScreenCover(isPresented: $showCameraPicker) {
+                CameraImagePicker(image: $cameraImage)
+            }
             #endif
+            .onChange(of: photoPickerItem) { _, item in
+                guard let item, let phase = pendingPhotoPhase else { return }
+                Task { await uploadPickedPhoto(item: item, phase: phase) }
+            }
+            .onChange(of: cameraImage) { _, image in
+                guard let image, let phase = pendingPhotoPhase else { return }
+                Task { await uploadCameraPhoto(image, phase: phase) }
+            }
+            .cameraDeniedAlert(isPresented: $showCameraDeniedAlert)
             .alert(
                 "Request milestone revision",
                 isPresented: Binding(
@@ -371,6 +399,8 @@ struct ContractDetailView: View {
             }
 
             actionsSection(contract)
+
+            workspaceSection(contract)
 
             recurringSection(contract)
 
@@ -1032,6 +1062,169 @@ struct ContractDetailView: View {
             }
             .listRowBackground(BrandTheme.navyElevated)
         }
+    }
+
+    // MARK: Provider workspace (check-in / photos)
+
+    @ViewBuilder
+    private func workspaceSection(_ contract: ContractDetail) -> some View {
+        let status = contract.normalizedStatus
+        let showWorkspace = contract.isProvider(userId: currentUserID)
+            && (status == "active" || status == "completed" || contract.hasStarted)
+
+        if showWorkspace {
+        Section {
+            Text(LocationPurposeCopy.jobSiteCheckInPrePrompt)
+                .font(.footnote)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .listRowBackground(BrandTheme.navyElevated)
+
+            LabeledContent("Session") {
+                Text(workSession?.displayStatus ?? "Loading…")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(
+                        workSession?.isCheckedIn == true
+                            ? BrandTheme.success
+                            : BrandTheme.textPrimary
+                    )
+            }
+            .listRowBackground(BrandTheme.navyElevated)
+
+            if let checkedIn = workSession?.checkedInAt, !checkedIn.isEmpty {
+                LabeledContent("Checked in") {
+                    Text(CatalogDateFormat.friendlyDateTime(checkedIn))
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+            }
+            if let checkedOut = workSession?.checkedOutAt, !checkedOut.isEmpty {
+                LabeledContent("Checked out") {
+                    Text(CatalogDateFormat.friendlyDateTime(checkedOut))
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+            }
+            if let duration = workSession?.displayDuration {
+                LabeledContent("Duration") {
+                    Text(duration)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+            }
+
+            if workSession?.isCheckedIn != true {
+                Button {
+                    Task { await performCheckIn() }
+                } label: {
+                    if isWorkspaceActing {
+                        ProgressView()
+                            .tint(BrandTheme.ctaLabelOnGold)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label("Check in at job site", systemImage: "mappin.and.ellipse")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.teal)
+                .disabled(isWorkspaceActing)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityHint("Uses GPS to confirm you arrived at the job site")
+            } else {
+                Button {
+                    Task { await performCheckOut() }
+                } label: {
+                    if isWorkspaceActing {
+                        ProgressView()
+                            .tint(BrandTheme.ctaLabelOnGold)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label("Check out", systemImage: "figure.walk.departure")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.warning)
+                .disabled(isWorkspaceActing)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityHint("Ends the on-site work session with GPS confirmation")
+            }
+
+            if let beforePhotoURL, !beforePhotoURL.isEmpty {
+                LabeledContent("Before photo") {
+                    Text("Uploaded")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandTheme.success)
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+            }
+            if let afterPhotoURL, !afterPhotoURL.isEmpty {
+                LabeledContent("After photo") {
+                    Text("Uploaded")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandTheme.success)
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+            }
+
+            photoActionsRow(phase: .before, title: "Upload before photo", systemImage: "camera")
+            photoActionsRow(phase: .after, title: "Upload after photo", systemImage: "camera.fill")
+        } header: {
+            Text("On-site workspace").brandSectionHeader()
+        } footer: {
+            Text("Check-in requires GPS within the job-site fence. Before/after photos are stored as job evidence (max 10MB). Mark complete may require an after photo on the server.")
+                .foregroundStyle(BrandTheme.textSecondary)
+        }
+        } // showWorkspace
+    }
+
+    @ViewBuilder
+    private func photoActionsRow(phase: CompletionPhotoPhase, title: String, systemImage: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(BrandTheme.textPrimary)
+            HStack(spacing: 12) {
+                PhotosPicker(selection: $photoPickerItem, matching: .images) {
+                    Label("Library", systemImage: "photo")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isWorkspaceActing)
+                .simultaneousGesture(TapGesture().onEnded {
+                    pendingPhotoPhase = phase
+                })
+
+                #if canImport(UIKit)
+                Button {
+                    pendingPhotoPhase = phase
+                    Task {
+                        let result = await CameraAuthorization.prepareToPresent()
+                        switch result {
+                        case .ready:
+                            showCameraPicker = true
+                        case .denied:
+                            showCameraDeniedAlert = true
+                        case .unavailable:
+                            statusIsError = true
+                            statusMessage = "Camera is unavailable on this device. Use the photo library instead."
+                        }
+                    }
+                } label: {
+                    Label("Camera", systemImage: systemImage)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isWorkspaceActing)
+                #endif
+            }
+        }
+        .listRowBackground(BrandTheme.navyElevated)
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: Escrow / payment capture + release (FR-9 services)
@@ -1849,6 +2042,16 @@ struct ContractDetailView: View {
             let recurring = await recurringResult
             recurringConfig = recurring.config
             recurringInstances = recurring.instances
+
+            if detail.isProvider(userId: currentUserID) {
+                workSession = try? await APIClient.shared.fetchWorkSession(contractId: contractID)
+                if autoCheckInOnAppear, !didAttemptAutoCheckIn {
+                    didAttemptAutoCheckIn = true
+                    if workSession?.isCheckedIn != true {
+                        await performCheckIn()
+                    }
+                }
+            }
         } catch {
             if contract == nil {
                 errorMessage = error.localizedDescription
@@ -2502,6 +2705,136 @@ struct ContractDetailView: View {
             statusIsError = true
             statusMessage = error.localizedDescription
         }
+    }
+
+    // MARK: Workspace actions
+
+    @MainActor
+    private func performCheckIn() async {
+        isWorkspaceActing = true
+        statusMessage = nil
+        statusIsError = false
+        defer { isWorkspaceActing = false }
+        do {
+            let coord = try await locationProvider.currentCoordinate()
+            let response = try await APIClient.shared.checkInToContract(
+                id: contractID,
+                lat: coord.latitude,
+                lng: coord.longitude
+            )
+            workSession = try? await APIClient.shared.fetchWorkSession(contractId: contractID)
+            statusIsError = false
+            if let at = response.checkedInAt, !at.isEmpty {
+                statusMessage = "Checked in at \(CatalogDateFormat.friendlyDateTime(at))."
+            } else {
+                statusMessage = "Checked in at the job site."
+            }
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func performCheckOut() async {
+        isWorkspaceActing = true
+        statusMessage = nil
+        statusIsError = false
+        defer { isWorkspaceActing = false }
+        do {
+            let coord = try await locationProvider.currentCoordinate()
+            let response = try await APIClient.shared.checkOutOfContract(
+                id: contractID,
+                lat: coord.latitude,
+                lng: coord.longitude
+            )
+            workSession = try? await APIClient.shared.fetchWorkSession(contractId: contractID)
+            statusIsError = false
+            if let mins = response.durationMinutes {
+                let hours = mins / 60
+                let rem = mins % 60
+                let label = hours > 0 ? "\(hours)h \(rem)m" : "\(rem) min"
+                statusMessage = "Checked out — worked \(label)."
+            } else {
+                statusMessage = "Checked out."
+            }
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func uploadPickedPhoto(item: PhotosPickerItem, phase: CompletionPhotoPhase) async {
+        isWorkspaceActing = true
+        statusMessage = nil
+        statusIsError = false
+        defer {
+            isWorkspaceActing = false
+            photoPickerItem = nil
+            pendingPhotoPhase = nil
+        }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                statusIsError = true
+                statusMessage = "Could not read the selected photo."
+                return
+            }
+            #if canImport(UIKit)
+            let jpeg: Data
+            if let image = UIImage(data: data), let encoded = image.jpegData(compressionQuality: 0.85) {
+                jpeg = encoded
+            } else {
+                jpeg = data
+            }
+            #else
+            let jpeg = data
+            #endif
+            try await uploadCompletionJPEG(jpeg, phase: phase)
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func uploadCameraPhoto(_ image: UIImage, phase: CompletionPhotoPhase) async {
+        isWorkspaceActing = true
+        statusMessage = nil
+        statusIsError = false
+        defer {
+            isWorkspaceActing = false
+            cameraImage = nil
+            pendingPhotoPhase = nil
+        }
+        guard let jpeg = image.jpegData(compressionQuality: 0.85) else {
+            statusIsError = true
+            statusMessage = "Could not encode the camera photo."
+            return
+        }
+        do {
+            try await uploadCompletionJPEG(jpeg, phase: phase)
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func uploadCompletionJPEG(_ jpeg: Data, phase: CompletionPhotoPhase) async throws {
+        let response = try await APIClient.shared.uploadCompletionPhoto(
+            contractId: contractID,
+            imageJPEG: jpeg,
+            phase: phase,
+            filename: "completion-\(phase.rawValue).jpg"
+        )
+        if phase == .before {
+            beforePhotoURL = response.url
+        } else {
+            afterPhotoURL = response.url
+        }
+        statusIsError = false
+        statusMessage = phase == .before ? "Before photo uploaded." : "After photo uploaded."
     }
 
     @MainActor

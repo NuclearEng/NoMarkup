@@ -287,9 +287,57 @@ extension APIClient {
             authorized: .required
         )
     }
+
+    // MARK: Goods order reviews (FE-14)
+
+    /// GET `/api/v1/orders/{id}/reviews/eligibility`
+    func fetchListingOrderReviewEligibility(orderId: String) async throws -> ListingOrderReviewEligibility {
+        try await getJSON(
+            pathComponents: ["api", "v1", "orders", orderId, "reviews", "eligibility"],
+            authorized: true
+        )
+    }
+
+    /// GET `/api/v1/orders/{id}/reviews`
+    func fetchListingOrderReviews(orderId: String) async throws -> [ListingOrderReview] {
+        let response: ListingOrderReviewsResponse = try await getJSON(
+            pathComponents: ["api", "v1", "orders", orderId, "reviews"],
+            authorized: true
+        )
+        return response.reviews
+    }
+
+    /// POST `/api/v1/orders/{id}/reviews` body: `{ overall_rating, comment? }`.
+    /// Overall rating 1–5 required; optional free-text ≤ 2000 chars. Immediate publish (not double-blind).
+    @discardableResult
+    func createListingOrderReview(
+        orderId: String,
+        rating: Int,
+        comment: String = ""
+    ) async throws -> ListingOrderReview {
+        let clamped = min(5, max(1, rating))
+        let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count > 2000 {
+            throw APIClientError.httpStatus(400, detail: "Comment must be at most 2000 characters.")
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "orders", orderId, "reviews"],
+            body: CreateListingOrderReviewBody(
+                overallRating: Int32(clamped),
+                comment: trimmed
+            ),
+            authorized: .required
+        )
+    }
+
 }
 
 // MARK: - Request bodies (snake_case via encoder)
+
+private struct CreateListingOrderReviewBody: Encodable {
+    let overallRating: Int32
+    let comment: String
+}
 
 private struct CreateListingOfferBody: Encodable {
     let amountCents: Int64

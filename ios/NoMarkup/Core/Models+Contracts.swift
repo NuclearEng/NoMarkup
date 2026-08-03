@@ -1398,3 +1398,65 @@ extension StatusChipStyle {
         }
     }
 }
+
+// MARK: - Provider workspace (check-in / work session / completion photos)
+
+/// `GET /api/v1/contracts/{id}/work-session` (Redis-backed session state).
+struct ContractWorkSession: Codable, Sendable, Hashable {
+    var status: String?
+    var checkedInAt: String?
+    var checkedOutAt: String?
+    var durationMinutes: Int?
+
+    var normalizedStatus: String {
+        (status ?? "not_started").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    var isCheckedIn: Bool { normalizedStatus == "checked_in" }
+    var isCheckedOut: Bool { normalizedStatus == "checked_out" }
+    var hasNotStarted: Bool { normalizedStatus == "not_started" || normalizedStatus.isEmpty }
+
+    var displayDuration: String? {
+        guard let durationMinutes, durationMinutes >= 0 else { return nil }
+        let hours = durationMinutes / 60
+        let mins = durationMinutes % 60
+        if hours > 0 {
+            return "\(hours)h \(mins)m"
+        }
+        return "\(mins) min"
+    }
+
+    var displayStatus: String {
+        switch normalizedStatus {
+        case "checked_in": return "Checked in"
+        case "checked_out": return "Checked out"
+        default: return "Not started"
+        }
+    }
+}
+
+/// `POST /api/v1/contracts/{id}/checkin` → `{ checked_in_at }`.
+struct ContractCheckInResponse: Codable, Sendable, Hashable {
+    var checkedInAt: String?
+}
+
+/// `POST /api/v1/contracts/{id}/checkout` → `{ checked_out_at, duration_minutes }`.
+struct ContractCheckOutResponse: Codable, Sendable, Hashable {
+    var checkedOutAt: String?
+    var durationMinutes: Int?
+}
+
+/// `POST /api/v1/contracts/{id}/completion-photos` → `{ url, phase }`.
+struct ContractCompletionPhotoResponse: Codable, Sendable, Hashable {
+    var url: String?
+    var phase: String?
+
+    var isBefore: Bool { (phase ?? "").lowercased() == "before" }
+    var isAfter: Bool { (phase ?? "").lowercased() == "after" }
+}
+
+/// Completion photo phase accepted by the gateway (`before` | `after`).
+enum CompletionPhotoPhase: String, Sendable {
+    case before
+    case after
+}

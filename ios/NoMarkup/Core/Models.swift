@@ -1460,6 +1460,13 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
         return normalizedEscrow == "held"
     }
 
+    /// Buyer or seller may leave a goods review after escrow is released (14-day window enforced server-side).
+    func canLeaveReview(userId: String?) -> Bool {
+        guard let userId, !userId.isEmpty else { return false }
+        guard buyerId == userId || sellerId == userId else { return false }
+        return normalizedEscrow == "released"
+    }
+
     var displayStatus: String {
         if needsPayment { return "Awaiting payment" }
         switch normalizedEscrow {
@@ -1507,7 +1514,7 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
                 return "Next: seller confirm to release escrow to you."
             }
         case "released":
-            return "Escrow released — mutual pickup confirmed on the server."
+            return "Escrow released — leave a review while the window is open."
         case "disputed":
             return "Order is under dispute. Support reviews escrow."
         default:
@@ -1529,6 +1536,91 @@ struct OrderEscrowActionResponse: Codable, Sendable {
 
 struct MyOrdersResponse: Codable, Sendable {
     let orders: [ListingOrderSummary]
+}
+
+// MARK: - Goods order reviews (FE-14)
+
+/// `GET /api/v1/orders/{id}/reviews/eligibility`
+struct ListingOrderReviewEligibility: Decodable, Sendable, Hashable {
+    var eligible: Bool?
+    var alreadyReviewed: Bool?
+    var reviewWindowClosesAt: String?
+
+    var isEligible: Bool { eligible == true }
+
+    var blockedReason: String? {
+        if alreadyReviewed == true {
+            return "You already left a review for this order."
+        }
+        if eligible == true {
+            return nil
+        }
+        if let closes = reviewWindowClosesAt, !closes.isEmpty {
+            return "Not eligible to review (window closes \(CatalogDateFormat.friendlyDateTime(closes)))."
+        }
+        return "Order must be completed (escrow released) and within the 14-day review window."
+    }
+}
+
+/// Published goods order review (`listing_order_reviews`).
+struct ListingOrderReview: Decodable, Sendable, Hashable, Identifiable {
+    let id: String
+    var orderId: String?
+    var listingId: String?
+    var reviewerId: String?
+    var revieweeId: String?
+    var reviewerRole: String?
+    var overallRating: Int?
+    var comment: String?
+    var status: String?
+    var reviewWindowEndsAt: String?
+    var createdAt: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        orderId = try c.decodeIfPresent(String.self, forKey: .orderId)
+        listingId = try c.decodeIfPresent(String.self, forKey: .listingId)
+        reviewerId = try c.decodeIfPresent(String.self, forKey: .reviewerId)
+        revieweeId = try c.decodeIfPresent(String.self, forKey: .revieweeId)
+        reviewerRole = try c.decodeIfPresent(String.self, forKey: .reviewerRole)
+        if let v = try? c.decodeIfPresent(Int.self, forKey: .overallRating) {
+            overallRating = v
+        } else if let v = try? c.decodeIfPresent(Int32.self, forKey: .overallRating) {
+            overallRating = Int(v)
+        } else {
+            overallRating = nil
+        }
+        // Gateway uses "comment" on create response; list may use review_text → reviewText.
+        if let text = try c.decodeIfPresent(String.self, forKey: .comment) {
+            comment = text
+        } else {
+            comment = try c.decodeIfPresent(String.self, forKey: .reviewText)
+        }
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        reviewWindowEndsAt = try c.decodeIfPresent(String.self, forKey: .reviewWindowEndsAt)
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, orderId, listingId, reviewerId, revieweeId, reviewerRole
+        case overallRating, comment, reviewText, status, reviewWindowEndsAt, createdAt
+    }
+}
+
+struct ListingOrderReviewsResponse: Decodable, Sendable {
+    var reviews: [ListingOrderReview]
+
+    init(from decoder: Decoder) throws {
+        if let arr = try? decoder.singleValueContainer().decode([ListingOrderReview].self) {
+            reviews = arr
+            return
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        reviews = try c.decodeIfPresent([ListingOrderReview].self, forKey: .reviews) ?? []
+    }
+
+    enum CodingKeys: String, CodingKey { case reviews }
 }
 
 // MARK: - Best-Offer chain

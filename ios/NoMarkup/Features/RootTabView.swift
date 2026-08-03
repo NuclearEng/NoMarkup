@@ -245,7 +245,7 @@ struct RootTabView: View {
             PostJobView()
         case .checkIn(let contractID):
             if let contractID, !contractID.isEmpty {
-                ContractDetailView(contractID: contractID)
+                ContractDetailView(contractID: contractID, autoCheckInOnAppear: true)
             } else {
                 ContractsView()
             }

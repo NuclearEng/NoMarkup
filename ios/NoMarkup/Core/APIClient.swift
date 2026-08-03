@@ -1444,6 +1444,42 @@ actor APIClient {
         )
     }
 
+    /// POST `multipart/form-data` (completion photos, etc.). Does **not** set JSON Content-Type.
+    /// Caller supplies fully-encoded body + boundary. Reuses auth + 401 refresh path.
+    func postMultipart(
+        pathComponents: [String],
+        body: Data,
+        boundary: String,
+        authorized: AuthMode = .required,
+        headers: [String: String] = [:]
+    ) async throws -> Data {
+        var extra = headers
+        extra["Content-Type"] = "multipart/form-data; boundary=\(boundary)"
+        return try await performRaw(
+            method: "POST",
+            pathComponents: pathComponents,
+            query: [],
+            rawBody: body,
+            auth: authorized,
+            headers: extra
+        )
+    }
+
+    /// GET that returns raw bytes (HTML tax form / invoice downloads).
+    func getData(
+        pathComponents: [String],
+        query: [URLQueryItem] = [],
+        authorized: AuthMode = .required
+    ) async throws -> Data {
+        try await perform(
+            method: "GET",
+            pathComponents: pathComponents,
+            query: query,
+            body: nil as EmptyBody?,
+            auth: authorized
+        )
+    }
+
     /// Transport-level backoff schedule (seconds) before retry attempts 1 and 2.
     private static let transportRetryDelays: [TimeInterval] = [0.4, 1.0]
     /// Maximum number of *retries* after the initial attempt (total attempts = 1 + this).
@@ -1560,6 +1596,110 @@ actor APIClient {
                 }
             } else {
                 // Already refreshed once for this request; still 401 → definitive.
+                Self.postSessionExpired()
+            }
+        }
+
+        try Self.throwIfNeeded(response: response, data: data)
+        return data
+    }
+
+    /// Like `perform`, but sends a pre-encoded body without forcing JSON Content-Type.
+    /// Used for multipart uploads. Auth + 401 refresh mirror `perform`.
+    func performRaw(
+        method: String,
+        pathComponents: [String],
+        query: [URLQueryItem],
+        rawBody: Data?,
+        auth: AuthMode,
+        headers: [String: String] = [:],
+        didRefresh: Bool = false,
+        transportAttempt: Int = 0
+    ) async throws -> Data {
+        var url = AppConfig.apiBaseURL
+        for component in pathComponents {
+            url = url.appending(path: component)
+        }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw APIClientError.unreachable
+        }
+        if !query.isEmpty {
+            components.queryItems = query
+        }
+        guard let finalURL = components.url else {
+            throw APIClientError.unreachable
+        }
+
+        var request: URLRequest
+        switch auth {
+        case .none:
+            request = URLRequest(url: finalURL)
+            request.httpMethod = method
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+        case .optional, .required:
+            request = try authorizedRequest(url: finalURL, method: method)
+            if auth == .required, request.value(forHTTPHeaderField: "Authorization") == nil {
+                throw APIClientError.unauthorized
+            }
+        }
+        request.timeoutInterval = 60
+
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        if let rawBody {
+            request.httpBody = rawBody
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            if Self.shouldRetryTransport(error: error, method: method, attempt: transportAttempt) {
+                let delayIndex = min(transportAttempt, Self.transportRetryDelays.count - 1)
+                let delay = Self.transportRetryDelays[delayIndex]
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                return try await performRaw(
+                    method: method,
+                    pathComponents: pathComponents,
+                    query: query,
+                    rawBody: rawBody,
+                    auth: auth,
+                    headers: headers,
+                    didRefresh: didRefresh,
+                    transportAttempt: transportAttempt + 1
+                )
+            }
+            throw APIClientError.unreachable
+        }
+
+        if auth != .none,
+           let http = response as? HTTPURLResponse,
+           http.statusCode == 401
+        {
+            if !didRefresh {
+                let hasRefresh = (try? tokenStore.read(.refreshToken)).map { !$0.isEmpty } ?? false
+                if hasRefresh {
+                    do {
+                        _ = try await refreshSession()
+                        return try await performRaw(
+                            method: method,
+                            pathComponents: pathComponents,
+                            query: query,
+                            rawBody: rawBody,
+                            auth: auth,
+                            headers: headers,
+                            didRefresh: true,
+                            transportAttempt: 0
+                        )
+                    } catch {
+                        Self.postSessionExpired()
+                    }
+                } else {
+                    Self.postSessionExpired()
+                }
+            } else {
                 Self.postSessionExpired()
             }
         }

@@ -641,21 +641,93 @@ struct TaxCenterView: View {
     @State private var forms: [TaxForm] = []
     @State private var estimate: TaxEstimate?
     @State private var errorMessage: String?
+    @State private var statusMessage: String?
+    @State private var statusIsError = false
+    @State private var isGenerating = false
+    @State private var downloadingYear: Int?
+    @State private var documentShareItem: ExportFileShareItem?
+    @State private var selectedYear: Int = Calendar.current.component(.year, from: Date())
 
-    private var year: Int {
+    private var currentYear: Int {
         Calendar.current.component(.year, from: Date())
+    }
+
+    private var yearChoices: [Int] {
+        let y = currentYear
+        return [y, y - 1, y - 2]
     }
 
     var body: some View {
         List {
             Section {
-                Text(estimate?.displayEstimate ?? "—")
-                    .font(.title2.weight(.bold).monospacedDigit())
-                    .foregroundStyle(BrandTheme.goldBright)
-                    .listRowBackground(BrandTheme.navyElevated)
+                Picker("Tax year", selection: $selectedYear) {
+                    ForEach(yearChoices, id: \.self) { y in
+                        Text(String(y)).tag(y)
+                    }
+                }
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+                .onChange(of: selectedYear) { _, _ in
+                    Task { await load() }
+                }
             } header: {
-                Text("Estimated tax \(year)").brandSectionHeader()
+                Text("Year").brandSectionHeader()
             }
+
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Estimated tax")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                    Text(estimate?.displayEstimate ?? "—")
+                        .font(.title2.weight(.bold).monospacedDigit())
+                        .foregroundStyle(BrandTheme.goldBright)
+                    if let net = estimate?.displayNetEarnings, estimate?.netEarningsCents != nil {
+                        Text("Net earnings \(net)")
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                    if let rate = estimate?.displayEffectiveRate {
+                        Text("Effective rate \(rate)")
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                    Text("Figures are computed server-side in integer cents — never recalculated on device.")
+                        .font(.caption2)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+            } header: {
+                Text("Estimated tax \(selectedYear)").brandSectionHeader()
+            }
+
+            Section {
+                Button {
+                    Task { await generate() }
+                } label: {
+                    if isGenerating {
+                        ProgressView()
+                            .tint(BrandTheme.ctaLabelOnGold)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label("Generate 1099-NEC for \(selectedYear)", systemImage: "doc.badge.plus")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                .disabled(isGenerating || downloadingYear != nil)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityHint("Creates a 1099-NEC tax form for the selected year on the server")
+            } header: {
+                Text("Generate").brandSectionHeader()
+            } footer: {
+                Text("Generation is server-side from your paid compensation. Download returns HTML you can save or print.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
             Section {
                 if forms.isEmpty {
                     Text("No tax forms generated yet.")
@@ -664,19 +736,59 @@ struct TaxCenterView: View {
                         .listRowBackground(BrandTheme.navyElevated)
                 } else {
                     ForEach(forms) { form in
-                        HStack {
-                            Text(form.formType ?? "Form")
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Text(form.year.map(String.init) ?? "")
-                                .font(.caption)
-                                .foregroundStyle(BrandTheme.textSecondary)
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text(form.formType ?? "1099-NEC")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(BrandTheme.textPrimary)
+                                Spacer()
+                                Text(form.taxYear.map(String.init) ?? form.year.map(String.init) ?? "")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                            HStack {
+                                Text(form.displayStatus)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BrandTheme.bidActive)
+                                Spacer()
+                                if let cents = form.totalCompensationCents {
+                                    Text(MoneyFormat.usd(cents: cents))
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(BrandTheme.goldBright)
+                                }
+                            }
+                            if let year = form.taxYear ?? form.year {
+                                Button {
+                                    Task { await download(year: year) }
+                                } label: {
+                                    if downloadingYear == year {
+                                        ProgressView()
+                                            .tint(BrandTheme.accent)
+                                            .frame(maxWidth: .infinity, minHeight: 44)
+                                    } else {
+                                        Label("Download form", systemImage: "arrow.down.doc")
+                                            .frame(maxWidth: .infinity, minHeight: 44)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(isGenerating || downloadingYear != nil)
+                                .accessibilityHint("Downloads the HTML 1099-NEC for year \(year)")
+                            }
                         }
                         .listRowBackground(BrandTheme.navyElevated)
                     }
                 }
             } header: {
                 Text("Forms").brandSectionHeader()
+            }
+
+            if let statusMessage {
+                Section {
+                    Text(statusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(statusIsError ? BrandTheme.destructive : BrandTheme.success)
+                        .listRowBackground(BrandTheme.navyElevated)
+                }
             }
             if let errorMessage {
                 Section {
@@ -692,6 +804,11 @@ struct TaxCenterView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        #if canImport(UIKit)
+        .sheet(item: $documentShareItem) { item in
+            ActivityShareSheet(items: [item.url])
+        }
+        #endif
         .task { await load() }
         .refreshable { await load() }
     }
@@ -701,10 +818,47 @@ struct TaxCenterView: View {
         guard auth.isAuthenticated else { return }
         do {
             forms = try await APIClient.shared.fetchTaxForms()
-            estimate = try? await APIClient.shared.fetchTaxEstimate(year: year)
+            estimate = try? await APIClient.shared.fetchTaxEstimate(year: selectedYear)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func generate() async {
+        isGenerating = true
+        statusMessage = nil
+        statusIsError = false
+        defer { isGenerating = false }
+        do {
+            let form = try await APIClient.shared.generateTaxForm(year: selectedYear)
+            statusIsError = false
+            statusMessage = "Generated \(form.formType ?? "1099-NEC") for \(form.taxYear ?? selectedYear)."
+            await load()
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func download(year: Int) async {
+        downloadingYear = year
+        statusMessage = nil
+        statusIsError = false
+        defer { downloadingYear = nil }
+        do {
+            let data = try await APIClient.shared.downloadTaxForm(year: year)
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("1099-NEC-\(year).html")
+            try data.write(to: url, options: .atomic)
+            documentShareItem = ExportFileShareItem(url: url)
+            statusIsError = false
+            statusMessage = "Tax form ready — choose Save or Share."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
         }
     }
 }

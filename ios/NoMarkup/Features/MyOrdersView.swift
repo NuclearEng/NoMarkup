@@ -22,6 +22,7 @@ struct MyOrdersView: View {
     @State private var noShowOrder: ListingOrderSummary?
     @State private var pendingPickupOrder: ListingOrderSummary?
     @State private var pendingSellerConfirmOrder: ListingOrderSummary?
+    @State private var reviewOrder: ListingOrderSummary?
 
     private var isBusy: Bool {
         payingOrderID != nil || actingOrderID != nil
@@ -117,6 +118,16 @@ struct MyOrdersView: View {
                 }
             }
         }
+        .sheet(item: $reviewOrder) { order in
+            LeaveOrderReviewSheet(order: order) { message, isError in
+                statusMessage = message
+                statusIsError = isError
+                reviewOrder = nil
+                if !isError {
+                    Task { await load() }
+                }
+            }
+        }
         .confirmationDialog(
             "Confirm you picked up this item?",
             isPresented: Binding(
@@ -159,6 +170,7 @@ struct MyOrdersView: View {
         let showSellerConfirm = order.canSellerConfirm(userId: currentUserID)
         let showDispute = order.canFileDisputeAsBuyer(userId: currentUserID)
         let showNoShow = order.canReportNoShow(userId: currentUserID)
+        let showReview = order.canLeaveReview(userId: currentUserID)
 
         VStack(alignment: .leading, spacing: 8) {
             Text(order.displayTitle)
@@ -270,6 +282,20 @@ struct MyOrdersView: View {
                 }
                 .disabled(isBusy)
                 .accessibilityHint("Reports that the other party did not show up for pickup")
+            }
+
+            if showReview {
+                Button {
+                    reviewOrder = order
+                } label: {
+                    Label("Leave review", systemImage: "star")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                .disabled(isBusy)
+                .accessibilityHint("Rate this completed marketplace order")
             }
         }
         .padding(.vertical, 4)
@@ -596,6 +622,166 @@ private struct OrderNoShowSheet: View {
                 message += " A temporary bidding cooldown was applied."
             }
             onFinished(message, false)
+            dismiss()
+        } catch {
+            localError = error.localizedDescription
+        }
+    }
+}
+
+
+// MARK: - Leave goods order review (FE-14)
+
+private struct LeaveOrderReviewSheet: View {
+    let order: ListingOrderSummary
+    var onFinished: (String, Bool) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var rating = 5
+    @State private var comment = ""
+    @State private var isSubmitting = false
+    @State private var isLoadingEligibility = true
+    @State private var eligibility: ListingOrderReviewEligibility?
+    @State private var localError: String?
+
+    private var canSubmit: Bool {
+        !isSubmitting && (eligibility?.isEligible == true)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(order.displayTitle)
+                        .font(.headline)
+                        .foregroundStyle(BrandTheme.textPrimary)
+                    Text(order.displayAmount)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(BrandTheme.goldBright)
+                } header: {
+                    Text("Order").brandSectionHeader()
+                }
+
+                if isLoadingEligibility {
+                    Section {
+                        ProgressView("Checking eligibility…")
+                            .tint(BrandTheme.accent)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
+                } else if let eligibility, !eligibility.isEligible {
+                    Section {
+                        Text(eligibility.blockedReason ?? "Not eligible to review.")
+                            .font(.subheadline)
+                            .foregroundStyle(BrandTheme.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    } header: {
+                        Text("Not available").brandSectionHeader()
+                    }
+                } else {
+                    Section {
+                        Stepper(value: $rating, in: 1 ... 5) {
+                            HStack {
+                                Text("Rating")
+                                Spacer()
+                                Text("\(rating) / 5")
+                                    .font(.body.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(BrandTheme.goldBright)
+                            }
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+
+                        HStack(spacing: 4) {
+                            ForEach(1 ... 5, id: \.self) { star in
+                                Image(systemName: star <= rating ? "star.fill" : "star")
+                                    .foregroundStyle(star <= rating ? BrandTheme.goldBright : BrandTheme.textSecondary)
+                                    .onTapGesture { rating = star }
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Rating \(rating) of 5 stars")
+
+                        TextField("Comment (optional, max 2000)", text: $comment, axis: .vertical)
+                            .lineLimit(3 ... 8)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    } header: {
+                        Text("Review").brandSectionHeader()
+                    } footer: {
+                        Text("Goods reviews publish immediately (not double-blind). Overall rating is required. Window is 14 days after escrow release.")
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                }
+
+                if let localError {
+                    Section {
+                        Text(localError)
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.destructive)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
+                }
+            }
+            .brandListBackground()
+            .navigationTitle("Leave review")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                        .disabled(isSubmitting)
+                        .frame(minHeight: 44)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Submit") {
+                        Task { await submit() }
+                    }
+                    .disabled(!canSubmit)
+                    .fontWeight(.semibold)
+                    .frame(minHeight: 44)
+                }
+            }
+            .overlay {
+                if isSubmitting {
+                    ProgressView()
+                        .tint(BrandTheme.accent)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(BrandTheme.navy.opacity(0.4))
+                }
+            }
+            .task { await loadEligibility() }
+        }
+        .tint(BrandTheme.accent)
+    }
+
+    @MainActor
+    private func loadEligibility() async {
+        isLoadingEligibility = true
+        defer { isLoadingEligibility = false }
+        do {
+            eligibility = try await APIClient.shared.fetchListingOrderReviewEligibility(orderId: order.id)
+            localError = nil
+        } catch {
+            localError = error.localizedDescription
+            eligibility = ListingOrderReviewEligibility(eligible: false, alreadyReviewed: false, reviewWindowClosesAt: nil)
+        }
+    }
+
+    @MainActor
+    private func submit() async {
+        localError = nil
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            _ = try await APIClient.shared.createListingOrderReview(
+                orderId: order.id,
+                rating: rating,
+                comment: comment
+            )
+            onFinished("Review submitted.", false)
             dismiss()
         } catch {
             localError = error.localizedDescription

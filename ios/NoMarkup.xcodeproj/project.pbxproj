@@ -45,6 +45,7 @@
 		A1000000000000000000000E /* LegalWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* LegalWebView.swift */; };
 		A1000000000000000000000F /* AccountDeletionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* AccountDeletionView.swift */; };
 		A10000000000000000000010 /* LocationPurposeCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* LocationPurposeCopy.swift */; };
+		A100000000000000000000BE /* JobSiteLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BE /* JobSiteLocationProvider.swift */; };
 		A10000000000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* Assets.xcassets */; };
 		A10000000000000000000012 /* AuthenticationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* AuthenticationServices.framework */; };
 		A10000000000000000000013 /* SafariServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* SafariServices.framework */; };
@@ -187,6 +188,7 @@
 		B1000000000000000000000E /* LegalWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalWebView.swift; sourceTree = "<group>"; };
 		B1000000000000000000000F /* AccountDeletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletionView.swift; sourceTree = "<group>"; };
 		B10000000000000000000010 /* LocationPurposeCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationPurposeCopy.swift; sourceTree = "<group>"; };
+		B100000000000000000000BE /* JobSiteLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobSiteLocationProvider.swift; sourceTree = "<group>"; };
 		B10000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B10000000000000000000012 /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
 		B10000000000000000000013 /* SafariServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SafariServices.framework; path = System/Library/Frameworks/SafariServices.framework; sourceTree = SDKROOT; };
@@ -611,6 +613,7 @@
 			isa = PBXGroup;
 			children = (
 				B10000000000000000000010 /* LocationPurposeCopy.swift */,
+				B100000000000000000000BE /* JobSiteLocationProvider.swift */,
 			);
 			path = Location;
 			sourceTree = "<group>";
@@ -856,6 +859,7 @@
 				A1000000000000000000000E /* LegalWebView.swift in Sources */,
 				A1000000000000000000000F /* AccountDeletionView.swift in Sources */,
 				A10000000000000000000010 /* LocationPurposeCopy.swift in Sources */,
+				A100000000000000000000BE /* JobSiteLocationProvider.swift in Sources */,
 				A10000000000000000000015 /* Models.swift in Sources */,
 				A10000000000000000000016 /* ListingDetailView.swift in Sources */,
 				A10000000000000000000017 /* JobDetailView.swift in Sources */,

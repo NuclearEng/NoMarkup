@@ -1,4 +1,5 @@
 import AppIntents
+import CoreLocation
 import Foundation
 
 /// Job contract as an App Intents entity (INT.6b). The identifier is the contract
@@ -38,14 +39,17 @@ struct ContractEntityQuery: EntityQuery {
     }
 }
 
-/// Opens check-in flow for a job contract (IOS-SYS.AI.1 / INT.7).
+/// Checks in at a job contract when possible (GPS + API), otherwise opens the app
+/// check-in surface (IOS-SYS.AI.1 / INT.7).
 ///
-/// With a contract, navigates to that contract (where GPS check-in lives).
-/// Without one, opens Contracts so the user can pick a job.
+/// With a contract:
+/// 1. Attempt one-shot GPS + `POST /contracts/{id}/checkin` (real API path).
+/// 2. Always deep-link into the contract so the workspace UI can confirm state.
+/// Without a contract, opens Contracts so the user can pick a job.
 struct CheckInToJobIntent: AppIntent {
     static var title: LocalizedStringResource { "Check In to Job" }
     static var description: IntentDescription {
-        IntentDescription("Opens NoMarkup so you can check in at a job site for dispute protection.")
+        IntentDescription("Checks you in at a job site for dispute protection, or opens NoMarkup so you can check in.")
     }
     static var openAppWhenRun: Bool { true }
 
@@ -59,18 +63,70 @@ struct CheckInToJobIntent: AppIntent {
     )
     var contract: ContractEntity?
 
-    /// Session source — injectable for tests; never refreshes tokens (INT.1).
+    /// Session source — injectable for tests; never refreshes tokens in the guard (INT.1).
     var session: any IntentSessionProviding = KeychainTokenStore()
 
+    /// Optional injectables for tests (location + check-in). Defaults hit CoreLocation + API.
+    var locationCoordinateProvider: (@Sendable () async throws -> (lat: Double, lng: Double))?
+    var checkInAPI: (@Sendable (_ contractId: String, _ lat: Double, _ lng: Double) async throws -> Void)?
+
     @MainActor
-    func perform() async throws -> some IntentResult {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         try IntentAuthGuard.requireSession(session)
         let trimmed = contract?.id.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let trimmed, !trimmed.isEmpty {
-            DeepLinkRouter.shared.open(.checkIn(contractID: trimmed))
-        } else {
+
+        guard let trimmed, !trimmed.isEmpty else {
             DeepLinkRouter.shared.open(.checkIn(contractID: nil))
+            return .result(
+                value: "opened",
+                dialog: IntentDialog("Opening contracts so you can pick a job to check in to.")
+            )
         }
-        return .result()
+
+        var dialogMessage = "Opening contract check-in."
+        var value = "opened"
+
+        // Only attempt the API path when GPS is already authorized (or a test injects
+        // coordinates). Never prompt for location from a headless Siri/Shortcuts run —
+        // that hangs tests and is a poor UX; the contract UI still does the full flow.
+        let canAttemptAPI: Bool
+        if locationCoordinateProvider != nil || checkInAPI != nil {
+            canAttemptAPI = true
+        } else {
+            let status = CLLocationManager().authorizationStatus
+            canAttemptAPI = (status == .authorizedWhenInUse || status == .authorizedAlways)
+        }
+
+        if canAttemptAPI {
+            do {
+                let coord: (lat: Double, lng: Double)
+                if let locationCoordinateProvider {
+                    coord = try await locationCoordinateProvider()
+                } else {
+                    let provider = JobSiteLocationProvider()
+                    let c = try await provider.currentCoordinate(timeoutSeconds: 8)
+                    coord = (c.latitude, c.longitude)
+                }
+
+                if let checkInAPI {
+                    try await checkInAPI(trimmed, coord.lat, coord.lng)
+                } else {
+                    _ = try await APIClient.shared.checkInToContract(
+                        id: trimmed,
+                        lat: coord.lat,
+                        lng: coord.lng
+                    )
+                }
+                dialogMessage = "Checked in to the job site."
+                value = "checked_in"
+            } catch {
+                // Fail soft — deep link still opens the workspace UI for a manual retry.
+                dialogMessage = "Couldn’t check in automatically: \(error.localizedDescription). Opening the contract so you can try again."
+                value = "fallback"
+            }
+        }
+
+        DeepLinkRouter.shared.open(.checkIn(contractID: trimmed))
+        return .result(value: value, dialog: IntentDialog(stringLiteral: dialogMessage))
     }
 }
