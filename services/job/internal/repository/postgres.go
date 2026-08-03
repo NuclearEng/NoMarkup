@@ -686,6 +686,17 @@ func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.Search
 		}
 	}
 
+	// FR-10.7: when geo-scoped, project distance_km from coarse approximate_location.
+	distanceSelect := "NULL::float8 AS distance_km"
+	if input.Latitude != 0 && input.Longitude != 0 {
+		distanceSelect = fmt.Sprintf(
+			"ST_Distance(j.approximate_location::geography, ST_SetSRID(ST_MakePoint($%d, $%d), 4326)::geography) / 1000.0 AS distance_km",
+			argIdx, argIdx+1,
+		)
+		args = append(args, input.Longitude, input.Latitude)
+		argIdx += 2
+	}
+
 	selectQuery := fmt.Sprintf(`
 		SELECT j.id, j.customer_id, COALESCE(j.property_id::text, ''), j.title, j.description,
 		       j.category_id, COALESCE(j.subcategory_id::text, ''), COALESCE(j.service_type_id::text, ''),
@@ -701,13 +712,14 @@ func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.Search
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
 		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
-		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
+		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
+		       %s
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
 		WHERE %s
 		ORDER BY %s
 		LIMIT $%d OFFSET $%d`,
-		whereClause, orderBy, argIdx, argIdx+1)
+		distanceSelect, whereClause, orderBy, argIdx, argIdx+1)
 
 	args = append(args, pageSize, offset)
 
@@ -852,7 +864,8 @@ func (r *PostgresRepository) ListCustomerJobs(ctx context.Context, customerID st
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
 		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
-		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
+		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
+		       NULL::float8 AS distance_km
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
 		WHERE %s
@@ -901,7 +914,8 @@ func (r *PostgresRepository) ListDrafts(ctx context.Context, customerID string) 
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
 		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
-		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
+		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
+		       NULL::float8 AS distance_km
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
 		WHERE j.customer_id = $1 AND j.status = 'draft' AND j.deleted_at IS NULL
@@ -1073,7 +1087,8 @@ func (r *PostgresRepository) AdminListJobs(ctx context.Context, statusFilter *st
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
 		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
-		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
+		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
+		       NULL::float8 AS distance_km
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
 		WHERE %s
@@ -1395,8 +1410,10 @@ func (r *PostgresRepository) getJobPhotos(ctx context.Context, jobID string) ([]
 	return photos, nil
 }
 
-// scanJobRow scans a job from a row that includes category name, slug, icon at
-// the end.
+// scanJobRow scans a job from a row that includes category name, slug, icon,
+// and optional distance_km at the end. Every caller SELECT must end with
+// `NULL::float8 AS distance_km` or a real ST_Distance expression (SearchJobs
+// when geo-scoped). FR-10.7.
 //
 // cipher decrypts jobs.service_address (migration 104). Detection is per VALUE,
 // not per row: `jobs` deliberately carries no pii_encrypted_v1 flag, because a
@@ -1410,6 +1427,7 @@ func scanJobRow(rows pgx.Rows, cipher *crypto.Cipher) (*domain.Job, error) {
 	var awardedProviderID, awardedBidID, repostedFromID string
 	var recurrenceFrequency *string
 	var catName, catSlug, catIcon string
+	var distanceKm *float64
 
 	err := rows.Scan(
 		&j.ID, &j.CustomerID, &propertyID, &j.Title, &j.Description,
@@ -1427,10 +1445,12 @@ func scanJobRow(rows pgx.Rows, cipher *crypto.Cipher) (*domain.Job, error) {
 		&j.CreatedAt, &j.UpdatedAt, &j.DeletedAt,
 		&j.IsHourly, &j.HourlyRateCents, &j.SameDayRequested,
 		&catName, &catSlug, &catIcon,
+		&distanceKm,
 	)
 	if err != nil {
 		return nil, err
 	}
+	j.DistanceKm = distanceKm
 
 	if propertyID != "" {
 		j.PropertyID = propertyID

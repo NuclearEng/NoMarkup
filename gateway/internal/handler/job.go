@@ -1029,6 +1029,10 @@ func protoJobToJSON(j *jobv1.Job) map[string]interface{} {
 	if j.GetOriginalAuctionEndsAt() != nil {
 		result["original_auction_ends_at"] = formatTimestamp(j.GetOriginalAuctionEndsAt())
 	}
+	// FR-10.7: only when search was geo-scoped (optional proto field).
+	if j.DistanceKm != nil {
+		result["distance_km"] = j.GetDistanceKm()
+	}
 
 	// Market range.
 	if mr := j.GetMarketRange(); mr != nil {

@@ -154,8 +154,11 @@ type Job struct {
 	AuctionType           string                 `protobuf:"bytes,31,opt,name=auction_type,json=auctionType,proto3" json:"auction_type,omitempty"` // "sealed" or "live"
 	SnipeExtensionCount   int32                  `protobuf:"varint,32,opt,name=snipe_extension_count,json=snipeExtensionCount,proto3" json:"snipe_extension_count,omitempty"`
 	OriginalAuctionEndsAt *timestamppb.Timestamp `protobuf:"bytes,33,opt,name=original_auction_ends_at,json=originalAuctionEndsAt,proto3" json:"original_auction_ends_at,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// Populated only when search was geo-scoped (caller lat/lng). Coarse
+	// approximate_location distance in km — never exact service point.
+	DistanceKm    *float64 `protobuf:"fixed64,34,opt,name=distance_km,json=distanceKm,proto3,oneof" json:"distance_km,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Job) Reset() {
@@ -417,6 +420,13 @@ func (x *Job) GetOriginalAuctionEndsAt() *timestamppb.Timestamp {
 		return x.OriginalAuctionEndsAt
 	}
 	return nil
+}
+
+func (x *Job) GetDistanceKm() float64 {
+	if x != nil && x.DistanceKm != nil {
+		return *x.DistanceKm
+	}
+	return 0
 }
 
 // Full job detail (includes exact address for awarded provider)
@@ -3636,7 +3646,7 @@ var File_job_v1_job_proto protoreflect.FileDescriptor
 
 const file_job_v1_job_proto_rawDesc = "" +
 	"\n" +
-	"\x10job/v1/job.proto\x12\x0fnomarkup.job.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16common/v1/common.proto\x1a\x12user/v1/user.proto\"\xab\x0e\n" +
+	"\x10job/v1/job.proto\x12\x0fnomarkup.job.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16common/v1/common.proto\x1a\x12user/v1/user.proto\"\xe1\x0e\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vcustomer_id\x18\x02 \x01(\tR\n" +
@@ -3676,10 +3686,13 @@ const file_job_v1_job_proto_rawDesc = "" +
 	"\fcompleted_at\x18\x1e \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x12!\n" +
 	"\fauction_type\x18\x1f \x01(\tR\vauctionType\x122\n" +
 	"\x15snipe_extension_count\x18  \x01(\x05R\x13snipeExtensionCount\x12S\n" +
-	"\x18original_auction_ends_at\x18! \x01(\v2\x1a.google.protobuf.TimestampR\x15originalAuctionEndsAtB\x15\n" +
+	"\x18original_auction_ends_at\x18! \x01(\v2\x1a.google.protobuf.TimestampR\x15originalAuctionEndsAt\x12$\n" +
+	"\vdistance_km\x18\" \x01(\x01H\x03R\n" +
+	"distanceKm\x88\x01\x01B\x15\n" +
 	"\x13_starting_bid_centsB\x17\n" +
 	"\x15_offer_accepted_centsB\x16\n" +
-	"\x14_min_provider_rating\"\xf5\x01\n" +
+	"\x14_min_provider_ratingB\x0e\n" +
+	"\f_distance_km\"\xf5\x01\n" +
 	"\tJobDetail\x12&\n" +
 	"\x03job\x18\x01 \x01(\v2\x14.nomarkup.job.v1.JobR\x03job\x12@\n" +
 	"\rexact_address\x18\x02 \x01(\v2\x1b.nomarkup.common.v1.AddressR\fexactAddress\x122\n" +

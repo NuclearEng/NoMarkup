@@ -94,6 +94,10 @@ type Job struct {
 	HourlyRateCents  *int64
 	SameDayRequested bool
 
+	// FR-10.7: set only when SearchJobs was geo-scoped (caller lat/lng).
+	// Distance is from jobs.approximate_location (coarse grid), never exact.
+	DistanceKm *float64
+
 	// Populated via JOINs
 	Photos      []JobPhoto
 	Category    *ServiceCategory

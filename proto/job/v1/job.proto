@@ -117,6 +117,9 @@ message Job {
   string auction_type = 31; // "sealed" or "live"
   int32 snipe_extension_count = 32;
   google.protobuf.Timestamp original_auction_ends_at = 33;
+  // Populated only when search was geo-scoped (caller lat/lng). Coarse
+  // approximate_location distance in km — never exact service point.
+  optional double distance_km = 34;
 }
 
 // Full job detail (includes exact address for awarded provider)

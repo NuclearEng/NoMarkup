@@ -671,6 +671,11 @@ func domainJobToProto(j *domain.Job) *jobv1.Job {
 		pb.CompletedAt = timestamppb.New(*j.CompletedAt)
 	}
 
+	// FR-10.7: geo-scoped search only (nil otherwise).
+	if j.DistanceKm != nil {
+		pb.DistanceKm = j.DistanceKm
+	}
+
 	return pb
 }
 
