@@ -1228,6 +1228,7 @@ export const UPLOAD_CONTEXT = {
   DOCUMENT: 'document',
   REVIEW_PHOTO: 'review_photo',
   LISTING: 'listing',
+  CHAT_ATTACHMENT: 'chat_attachment',
 } as const;
 export type UploadContext = (typeof UPLOAD_CONTEXT)[keyof typeof UPLOAD_CONTEXT];
 

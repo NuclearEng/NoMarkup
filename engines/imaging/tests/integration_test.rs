@@ -5,8 +5,9 @@
 
 use image::{DynamicImage, GenericImageView, RgbaImage};
 use imaging::models::{
-    ALLOWED_MIME_TYPES, DEFAULT_QUALITY, ImageFormat, ImageVariant, ImagingError,
-    MAX_FILE_SIZE_BYTES, ProcessingOptions, ResizeMode, UploadContext,
+    ALLOWED_MIME_TYPES, DEFAULT_QUALITY, DOCUMENT_ALLOWED_MIME_TYPES, ImageFormat, ImageVariant,
+    ImagingError, MAX_FILE_SIZE_BYTES, ProcessingOptions, ResizeMode, UploadContext,
+    allowed_mime_types_for_object_key, extension_for_mime, is_pdf_bytes, sniff_content_type,
 };
 
 /// Helper: create a solid-color test image of the given dimensions.
@@ -201,6 +202,8 @@ fn upload_context_from_str_all_variants() {
         ("job_photo", UploadContext::JobPhoto),
         ("document", UploadContext::Document),
         ("review_photo", UploadContext::ReviewPhoto),
+        ("listing", UploadContext::Listing),
+        ("chat_attachment", UploadContext::ChatAttachment),
     ];
 
     for (input, expected) in &contexts {
@@ -226,6 +229,12 @@ fn upload_context_path_prefixes() {
     assert_eq!(UploadContext::JobPhoto.path_prefix(), "job-photos");
     assert_eq!(UploadContext::Document.path_prefix(), "documents");
     assert_eq!(UploadContext::ReviewPhoto.path_prefix(), "review-photos");
+    assert_eq!(UploadContext::Listing.path_prefix(), "listings");
+    assert_eq!(UploadContext::ChatAttachment.path_prefix(), "chat-attachments");
+    assert_eq!(
+        UploadContext::from_str_context("chat_attachment"),
+        Some(UploadContext::ChatAttachment)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +247,21 @@ fn allowed_mime_types_correct() {
     assert!(ALLOWED_MIME_TYPES.contains(&"image/png"));
     assert!(ALLOWED_MIME_TYPES.contains(&"image/webp"));
     assert!(!ALLOWED_MIME_TYPES.contains(&"image/gif"));
+    // Image-only list still rejects PDF.
     assert!(!ALLOWED_MIME_TYPES.contains(&"application/pdf"));
+    // Document / chat contexts accept PDF pass-through.
+    assert!(DOCUMENT_ALLOWED_MIME_TYPES.contains(&"application/pdf"));
+    assert!(UploadContext::Document.allows_pdf());
+    assert!(UploadContext::ChatAttachment.allows_pdf());
+    assert!(!UploadContext::JobPhoto.allows_pdf());
+    assert_eq!(sniff_content_type(b"%PDF-1.4"), "application/pdf");
+    assert!(is_pdf_bytes(b"%PDF-1.7"));
+    assert_eq!(extension_for_mime("application/pdf"), "pdf");
+    assert!(allowed_mime_types_for_object_key("documents/u/x.pdf").contains(&"application/pdf"));
+    assert!(
+        allowed_mime_types_for_object_key("chat-attachments/u/x.pdf").contains(&"application/pdf")
+    );
+    assert!(!allowed_mime_types_for_object_key("avatars/u/x.pdf").contains(&"application/pdf"));
 }
 
 #[test]

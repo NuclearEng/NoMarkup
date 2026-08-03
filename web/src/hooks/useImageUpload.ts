@@ -41,9 +41,12 @@ interface UseImageUploadReturn {
 
 /** Short, human-readable list of accepted formats, e.g. "JPEG, PNG, or WEBP". */
 function describeAcceptedTypes(types: string[]): string {
-  const names = types.map((t) => t.replace('image/', '').toUpperCase());
-  if (names.length === 0) return 'a supported image format';
-  if (names.length === 1) return names[0] ?? 'a supported image format';
+  const names = types.map((t) => {
+    if (t === 'application/pdf') return 'PDF';
+    return t.replace('image/', '').toUpperCase();
+  });
+  if (names.length === 0) return 'a supported format';
+  if (names.length === 1) return names[0] ?? 'a supported format';
   return `${names.slice(0, -1).join(', ')}, or ${names[names.length - 1] ?? ''}`;
 }
 

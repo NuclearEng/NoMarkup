@@ -7,13 +7,17 @@
 ///
 /// # Metadata (privacy) invariant
 ///
-/// Every byte sequence this pipeline uploads or returns is produced by a full
-/// decode → transform → re-encode cycle. The `image` crate's encoders write no
-/// EXIF/XMP/IPTC, so **no output can carry the original's metadata** (camera
-/// GPS coordinates in particular). There is deliberately no pass-through path
-/// that copies original bytes. Because the EXIF orientation tag is dropped
-/// with the rest of the metadata, the decoder applies it to the pixels first
-/// (see [`decode_image`]), so stripped outputs still display upright.
+/// Every **image** byte sequence this pipeline uploads or returns is produced
+/// by a full decode → transform → re-encode cycle. The `image` crate's
+/// encoders write no EXIF/XMP/IPTC, so **no image output can carry the
+/// original's metadata** (camera GPS coordinates in particular). Because the
+/// EXIF orientation tag is dropped with the rest of the metadata, the decoder
+/// applies it to the pixels first (see [`decode_image`]), so stripped outputs
+/// still display upright.
+///
+/// **PDF exception (document / chat_attachment contexts only):** PDFs are
+/// stored pass-through after magic-byte sniff on confirm. Process endpoints
+/// that require an image decoder fail closed on PDF.
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -27,9 +31,10 @@ use image::{
 use uuid::Uuid;
 
 use crate::models::{
-    ALLOWED_MIME_TYPES, DEFAULT_QUALITY, ImageFormat, ImageVariant, ImagingError,
+    DEFAULT_QUALITY, ImageFormat, ImageVariant, ImagingError,
     MAX_DECODE_ALLOC_BYTES, MAX_DECODE_DIMENSION, MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS,
     ProcessedJobPhoto, ProcessingOptions, ResizeMode, UploadContext,
+    allowed_mime_types_for_object_key, extension_for_mime, is_pdf_bytes, sniff_content_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -531,6 +536,14 @@ impl ImagePipeline {
         _document_type: &str,
     ) -> Result<(ImageVariant, ImageVariant, u32, u32), ImagingError> {
         let raw = self.download_from_s3(source_key).await?;
+        // PDF is stored pass-through on confirm; process endpoints require a
+        // decodable image (admin thumbnails / EXIF strip). Fail closed.
+        if is_pdf_bytes(&raw) {
+            return Err(ImagingError::InvalidArgument(
+                "PDF documents are stored as pass-through; process/document requires an image"
+                    .into(),
+            ));
+        }
         let img = decode_shared(raw).await?;
 
         // Re-encode at original size (strips EXIF, auto-orients).
@@ -577,8 +590,10 @@ impl ImagePipeline {
         file_size: i64,
         context: UploadContext,
     ) -> Result<(String, String, i64), ImagingError> {
-        // Validate MIME type.
-        if !ALLOWED_MIME_TYPES.contains(&mime_type) {
+        // Validate MIME type against the context allow-list. PDF is only
+        // accepted for document / chat_attachment; pure image contexts stay
+        // fail-closed on non-images.
+        if !context.allowed_mime_types().contains(&mime_type) {
             return Err(ImagingError::UnsupportedMimeType(mime_type.into()));
         }
 
@@ -595,9 +610,8 @@ impl ImagePipeline {
             ));
         }
 
-        // Determine extension from MIME type.
-        let ext =
-            ImageFormat::from_mime(mime_type).map_or("bin", super::models::ImageFormat::extension);
+        // Determine extension from MIME type (includes application/pdf → pdf).
+        let ext = extension_for_mime(mime_type);
 
         // Sanitize filename: take only the stem of the original filename.
         let stem = std::path::Path::new(filename)
@@ -672,18 +686,14 @@ impl ImagePipeline {
         // trust client-supplied content type; validate server-side).
         let bytes = self.download_from_s3(object_key).await?;
 
-        let actual_ct = match image::guess_format(&bytes) {
-            Ok(ImgFmt::Jpeg) => "image/jpeg",
-            Ok(ImgFmt::Png) => "image/png",
-            Ok(ImgFmt::WebP) => "image/webp",
-            // Any other decodable-or-not format is rejected. `application/octet-stream`
-            // is a deliberate "unknown / not an allowed image" sentinel that fails
-            // the ALLOWED_MIME_TYPES check below.
-            _ => "application/octet-stream",
-        }
-        .to_string();
+        // Magic-byte sniff: JPEG/PNG/WebP via image crate + PDF header.
+        // Never trust client-declared Content-Type on the presigned PUT.
+        let actual_ct = sniff_content_type(&bytes);
 
-        let valid = ALLOWED_MIME_TYPES.contains(&actual_ct.as_str());
+        // Context is inferred from the key prefix so PDF is only valid under
+        // documents/ and chat-attachments/; image-only prefixes stay fail-closed.
+        let allowed = allowed_mime_types_for_object_key(object_key);
+        let valid = allowed.contains(&actual_ct.as_str());
         let url = self.public_url(object_key);
 
         tracing::info!(
@@ -1216,6 +1226,10 @@ mod tests {
             UploadContext::from_str_context("listing"),
             Some(UploadContext::Listing)
         );
+        assert_eq!(
+            UploadContext::from_str_context("chat_attachment"),
+            Some(UploadContext::ChatAttachment)
+        );
         assert_eq!(UploadContext::from_str_context("unknown"), None);
     }
 
@@ -1227,6 +1241,46 @@ mod tests {
         assert_eq!(UploadContext::Document.path_prefix(), "documents");
         assert_eq!(UploadContext::ReviewPhoto.path_prefix(), "review-photos");
         assert_eq!(UploadContext::Listing.path_prefix(), "listings");
+        assert_eq!(UploadContext::ChatAttachment.path_prefix(), "chat-attachments");
+    }
+
+    #[test]
+    fn pdf_only_on_document_and_chat_contexts() {
+        assert!(UploadContext::Document.allows_pdf());
+        assert!(UploadContext::ChatAttachment.allows_pdf());
+        assert!(!UploadContext::Avatar.allows_pdf());
+        assert!(!UploadContext::JobPhoto.allows_pdf());
+        assert!(!UploadContext::Listing.allows_pdf());
+        assert!(UploadContext::Document
+            .allowed_mime_types()
+            .contains(&"application/pdf"));
+        assert!(!UploadContext::Avatar
+            .allowed_mime_types()
+            .contains(&"application/pdf"));
+    }
+
+    #[test]
+    fn sniff_content_type_pdf_and_images() {
+        assert_eq!(sniff_content_type(b"%PDF-1.4 rest"), "application/pdf");
+        assert_eq!(
+            sniff_content_type(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0]),
+            "image/jpeg"
+        );
+        assert_eq!(sniff_content_type(b"not-an-image"), "application/octet-stream");
+        assert!(is_pdf_bytes(b"%PDF-1.7"));
+        assert!(!is_pdf_bytes(b"JFIF"));
+    }
+
+    #[test]
+    fn object_key_prefix_gates_pdf() {
+        assert!(allowed_mime_types_for_object_key("documents/u/raw/a.pdf")
+            .contains(&"application/pdf"));
+        assert!(allowed_mime_types_for_object_key("chat-attachments/u/raw/a.pdf")
+            .contains(&"application/pdf"));
+        assert!(!allowed_mime_types_for_object_key("avatars/u/raw/a.pdf")
+            .contains(&"application/pdf"));
+        assert!(!allowed_mime_types_for_object_key("job-photos/u/raw/a.pdf")
+            .contains(&"application/pdf"));
     }
 
     // ------------------------------------------------------------------
@@ -1239,6 +1293,10 @@ mod tests {
         assert!(ALLOWED_MIME_TYPES.contains(&"image/png"));
         assert!(ALLOWED_MIME_TYPES.contains(&"image/webp"));
         assert!(!ALLOWED_MIME_TYPES.contains(&"image/gif"));
+        // Global image list stays PDF-free; document context is separate.
+        assert!(!ALLOWED_MIME_TYPES.contains(&"application/pdf"));
+        assert_eq!(extension_for_mime("application/pdf"), "pdf");
+        assert_eq!(extension_for_mime("image/jpeg"), "jpg");
     }
 
     #[test]

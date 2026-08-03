@@ -526,7 +526,7 @@ const fn domain_format_to_proto(f: ImageFormat) -> i32 {
 fn parse_upload_context(s: &str) -> Result<UploadContext, Status> {
     UploadContext::from_str_context(s).ok_or_else(|| {
         Status::invalid_argument(format!(
-            "invalid context '{s}': expected one of avatar, portfolio, job_photo, document, review_photo"
+            "invalid context '{s}': expected one of avatar, portfolio, job_photo, document, review_photo, listing, chat_attachment"
         ))
     })
 }
