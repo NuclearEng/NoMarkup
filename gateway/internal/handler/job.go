@@ -800,7 +800,40 @@ func (h *JobHandler) ListMine(w http.ResponseWriter, r *http.Request) {
 		grpcReq.StatusFilter = &st
 	}
 	if propID := q.Get("property_id"); propID != "" {
+		if !isValidUUID(propID) {
+			writeError(w, http.StatusBadRequest, "property_id must be a valid UUID")
+			return
+		}
 		grpcReq.PropertyId = &propID
+	}
+	// FR-19.3 history filters (optional; cheap SQL on ListCustomerJobs).
+	if catID := strings.TrimSpace(q.Get("category_id")); catID != "" {
+		if !isValidUUID(catID) {
+			writeError(w, http.StatusBadRequest, "category_id must be a valid UUID")
+			return
+		}
+		grpcReq.CategoryId = &catID
+	}
+	if df := strings.TrimSpace(q.Get("date_from")); df != "" {
+		ts, err := parseTimestamp(df)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "date_from must be RFC3339 or YYYY-MM-DD")
+			return
+		}
+		grpcReq.DateFrom = ts
+	}
+	if dt := strings.TrimSpace(q.Get("date_to")); dt != "" {
+		ts, err := parseTimestamp(dt)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "date_to must be RFC3339 or YYYY-MM-DD")
+			return
+		}
+		// Inclusive end-of-day when caller passes bare YYYY-MM-DD.
+		if len(dt) == 10 {
+			end := ts.AsTime().Add(24*time.Hour - time.Nanosecond)
+			ts = timestamppb.New(end)
+		}
+		grpcReq.DateTo = ts
 	}
 
 	page, pageOK := parsePageParam(q, "page", 1)

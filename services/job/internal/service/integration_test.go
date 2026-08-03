@@ -238,7 +238,7 @@ func TestIntegration_Search_and_ListCustomerJobs(t *testing.T) {
 				HasNext:    false,
 			}, nil
 		},
-		listCustomerJobsFn: func(_ context.Context, customerID string, _ *string, _ *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
+		listCustomerJobsFn: func(_ context.Context, customerID string, _ domain.ListCustomerJobsFilter, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
 			var filtered []*domain.Job
 			for _, j := range jobs {
 				if j.CustomerID == customerID {
@@ -263,13 +263,13 @@ func TestIntegration_Search_and_ListCustomerJobs(t *testing.T) {
 	assert.Equal(t, 2, pag.TotalCount)
 
 	// List customer jobs returns all jobs for a customer.
-	custJobs, custPag, err := svc.ListCustomerJobs(ctx, "cust-1", nil, nil, 1, 20)
+	custJobs, custPag, err := svc.ListCustomerJobs(ctx, "cust-1", domain.ListCustomerJobsFilter{}, 1, 20)
 	require.NoError(t, err)
 	assert.Len(t, custJobs, 2)
 	assert.Equal(t, 2, custPag.TotalCount)
 
 	// Different customer sees different jobs.
-	cust2Jobs, _, err := svc.ListCustomerJobs(ctx, "cust-2", nil, nil, 1, 20)
+	cust2Jobs, _, err := svc.ListCustomerJobs(ctx, "cust-2", domain.ListCustomerJobsFilter{}, 1, 20)
 	require.NoError(t, err)
 	assert.Len(t, cust2Jobs, 1)
 }

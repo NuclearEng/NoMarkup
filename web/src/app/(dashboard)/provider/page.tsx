@@ -84,11 +84,18 @@ export default function ProviderDashboardPage() {
             Manage your provider profile and track performance.
           </p>
         </div>
-        <Link href="/provider/onboarding">
-          <Button variant="outline" className="min-h-[44px]">
-            Edit Profile
-          </Button>
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/provider/verification">
+            <Button variant="outline" className="min-h-[44px]">
+              Verification docs
+            </Button>
+          </Link>
+          <Link href="/provider/onboarding">
+            <Button variant="outline" className="min-h-[44px]">
+              Edit Profile
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Profile completeness */}

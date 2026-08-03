@@ -107,7 +107,7 @@ Of the **114 FRs with an iOS-relevant user surface** (Implemented + Partial + Mi
 1. **FR-4.7 (Missing) + FR-4.6 (Partial)** — No bid filtering at all, and sort is a self-described "FR-4.6 lite" (price/trust only; no review-rating or verification-status sort) — `JobDetailView.swift:36`. This is award-decision tooling on the core auction surface.
 2. **FR-3.1 (Partial)** — Schedule preference is hardcoded `scheduleType: "flexible"` (`PostJobView.swift:576`); no specific-date/date-range picker. Undermines scheduling-dependent flows (FR-15.5 on-time metric, FR-16.4 no-show clock).
 3. **FR-8.1 (Partial)** — Pre-bid "Ask a Question" chat request does not exist on iOS (no entry point on `JobDetailView`); chat opens only post-bid.
-4. **FR-8.3 (Partial)** — Chat attachments are images only (library + camera); no PDF/file attachments for invoices/scope docs (`MessagesView.swift:19,939-984`).
+4. **FR-8.3 (Fixed)** — Chat attachments accept images (library + camera) **and PDF** via Files importer (`MessagesView` → `ImageUploader.uploadPDF` / `message_type: file`).
 5. **FR-10.7 (Missing)** — No travel distance/time shown anywhere on job surfaces (grep empty across `JobsView`/`JobDetailView`).
 6. **FR-8.8 (Partial)** — Server-side contact-info detection + alias relay exist (`services/chat/internal/service/service.go:136,262`), but the PRD's post-award "Share Contact Info" opt-in button and pre-send hold-to-confirm UX are absent on iOS.
 7. **FR-17.1 / FR-8.10 (Partial)** — No navigation-level unread badges: zero `.badge(` usages across Features; notification center is buried under Account (`AccountView.swift:329`); inbox rows do show per-channel unread (`MessagesView.swift:225-243`).
@@ -144,7 +144,7 @@ Legend: **I** Implemented · **P** Partial · **M** Missing · **B** Backend-onl
 | FR | Requirement | Persona | Status | Evidence |
 |---|---|---|---|---|
 | 2.1 | 5 provider doc types (ID, business license, EIN, insurance, trade) | Pr | **I** | `APIClient+Provider.swift:939-943` (all five enum cases) |
-| 2.2 | Upload UI; PDF/JPG/PNG; 10MB | Pr | **P** | `VerificationDocumentsView.swift:165` — "JPEG, PNG, or WebP up to 10 MB"; **PDF not accepted on iOS** (photo-pipeline upload) |
+| 2.2 | Upload UI; PDF/JPG/PNG; 10MB | Pr | **I** | `VerificationDocumentsView` — JPEG/PNG/WebP **and PDF** (Files picker + imaging `document` pass-through); 10 MB |
 | 2.3 | Per-doc status incl. Rejected w/ reason | Pr | **I** | `VerificationDocumentsView.swift:112,232-234`; `rejectionReason` `APIClient+Provider.swift:1004` |
 | 2.4 | Verification badges on provider profiles | Cu/Pr | **P** | Verification visible via trust Risk dimension (`TrustScoreView`); explicit badge row on `ProviderDetailView` not found (grep) |
 | 2.5 | Admin "require verification to bid" toggle | Ad | **W** | Admin panel construct (PRD FR-13.2); `admin_verification.go` exists server-side |
@@ -152,7 +152,7 @@ Legend: **I** Implemented · **P** Partial · **M** Missing · **B** Backend-onl
 | 2.7 | Business license DB integration (MVP: manual admin) | Ad | **W** | Admin manual review; web admin queue |
 | 2.8 | Expiration tracking, 30-day warnings | Pr | **I** | `VerificationDocumentsView.swift:14-15,29-34,147-207` (30-day + expired banners) |
 | 2.9 | Background checks (Checkr) pending OQ#4 | Pr | **R** | PRD Open Question #4; backlog P3 `[~]` "Checkr still open question / not built" — not built anywhere |
-| 2.10 | Rejection reason + max-3 resubmission | Pr | **P** | Reason shown + re-upload possible (`VerificationDocumentsView.swift:232`); 3-attempt counter/lockout not surfaced |
+| 2.10 | Rejection reason + max-3 resubmission | Pr | **I** | Reason + resubmission "N of 3" + hard lockout after 3 (`VerificationDocumentsView`); web durable center `/provider/verification` |
 
 ### 8.3 Job Posting & Reverse Auction (FR-3)
 
@@ -221,7 +221,7 @@ Legend: **I** Implemented · **P** Partial · **M** Missing · **B** Backend-onl
 |---|---|---|---|---|
 | 8.1 | Access rules: post-bid, pre-bid inquiry, post-award, self-bid block | All | **P** | Post-bid + post-award chat live (`MessagesView.swift`); **pre-bid "Ask a Question" absent on iOS** (no entry on `JobDetailView`); self-bid blocked at engine (`engine.rs:68-74`) |
 | 8.2 | Real-time w/ typing + read receipts | All | **I** | `ChatWebSocketClient.swift:7-8,35-43` (`typing`/`read_receipt` frames); `MessagesView.swift:24-29,313-315,500-514` (Seen watermarks) |
-| 8.3 | Text, image, and file/PDF attachments | All | **P** | Text + images (library + camera) `MessagesView.swift:19,939-984,1153-1169`; **no PDF/file attach** |
+| 8.3 | Text, image, and file/PDF attachments | All | **I** | Text + images (library + camera) + **PDF Files attach** (`uploadPDF` / `message_type: file`) |
 | 8.4 | Chat persists across lifecycle | All | **I** | Channel model + server persistence; conversations survive award |
 | 8.5 | Push for new messages (mobile push post-MVP) | All | **P** | APNs registration + device endpoints (`PushRegistration.swift`; `router.go:496`; `push_endpoint.go`); v1 cut lists push "B5 deferred" for review — delivery pipeline ops-gated (`v1-ios-product-cut.md:115`). PRD itself says mobile push is post-MVP. |
 | 8.6 | Search own conversations | All | **P** | Local search over loaded messages only (`MessagesView.swift:23,384-388` — "no server search endpoint") |
@@ -438,7 +438,7 @@ Legend: **I** Implemented · **P** Partial · **M** Missing · **B** Backend-onl
 | 1 | Backlog P0 `[x]` "FR-4 bid advanced — Lower bid, accept-offer, **sort/filter** bids on iOS" | Sort is price/trust "FR-4.6 **lite**" (code's own words, `JobDetailView.swift:36`); **no bid filter UI exists** (FR-4.7) | Medium — checked-off item overstates; FR-4.7 is the audit's only auction-core Missing |
 | 2 | Backlog P0 `[x]` "FR-3 job form + repost — **Full job form** (recurrence, offer-accepted, **schedule**, property)" | `scheduleType: "flexible"` is hardcoded (`PostJobView.swift:576`); no date/date-range picker; no min-rating field; duration set lacks 12h/custom | Medium |
 | 3 | Backlog P1 `[x]` "FR-15/16 evidence — **Revision 200-char + cap UI**" | No 200-char minimum (literal `200` occurs 0× in `ContractDetailView.swift`; submit only blocks empty text, line 150); no 3-revision-cap gating (`revisionCount` decoded, unused) | Medium — claim contradicted on both halves |
-| 4 | Backlog P1 `[x]` "FR-8 chat **parity** — Attachments + search + …" | Attachments are image-only (FR-8.3 requires PDF/file); search is local-only over loaded messages (`MessagesView.swift:384` "no server search endpoint") | Low-Medium — WS/typing/Seen parts are real |
+| 4 | Backlog P1 `[x]` "FR-8 chat **parity** — Attachments + search + …" | Attachments are **image + PDF** (FR-8.3); search is local-only over loaded messages (no server search endpoint) | Low — residual is search, not attach |
 | 5 | `ios-web-feature-matrix.md:56` "Google/Facebook OAuth — **not started**" | Google native OAuth is shipped (`GoogleOAuthSession.swift`; `APIClient.swift:217` → `/auth/google/native`; gateway `oauth_native_google_test.go`) — the backlog itself says so (wave4) | Low — matrix stale (2026-07-26), internally inconsistent with backlog |
 | 6 | `ios-web-feature-matrix.md:57` "…spectator WS **residual**" | Both spectator WS clients shipped: `SpectatorWebSocketClient.swift` (jobs) + `MarketplaceSpectatorWebSocketClient.swift`; waves 19–20 unified watcher counts | Low — matrix stale |
 | 7 | `v1-ios-product-cut.md:115` "Not expected: **Push notifications (B5 deferred)**" (echoed in backlog) | APNs registration + device endpoints + Account "Push notifications on" + prefs push toggles are in the binary (`PushRegistration.swift` 408 lines; `router.go:496`; `AccountView.swift:78`) — registration shipped, **delivery** ops-gated | Low — doc understates code; both true under a careful reading, but review-notes phrasing could mislead a reviewer who receives a push |

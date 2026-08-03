@@ -7,9 +7,9 @@ import SwiftUI
 /// **FR-19.2 spend:** `GET /api/v1/analytics/customers/me/spending` is account-wide
 /// (no per-property filter). Shown as a cross-property roll-up.
 ///
-/// **FR-19.2 preferred providers:** no dedicated API. Best-effort from
-/// `GET /api/v1/contracts?status=completed` — top providers by completed job count;
-/// PRD “preferred” badge when count ≥ 3. Property-scoped cards live on PropertyDetailView.
+/// **FR-19.2 preferred providers:** `GET /api/v1/me/preferred-providers` (account-wide);
+/// falls back to contract roll-up if the endpoint is unavailable. Preferred badge when
+/// count ≥ 3. Property-scoped cards live on PropertyDetailView.
 struct PropertiesView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -17,7 +17,7 @@ struct PropertiesView: View {
     @State private var jobCounts: [String: PropertyJobCounts] = [:]
     @State private var spending: CustomerSpendingResponse?
     @State private var spendingError: String?
-    /// Account-wide preferred/top providers from completed contracts (FR-19.2 best-effort).
+    /// Account-wide preferred/top providers (FR-19.2 API, contract roll-up fallback).
     @State private var preferredProviders: [PreferredProviderRollup] = []
     @State private var preferredProvidersError: String?
     @State private var isLoading = false
@@ -319,7 +319,7 @@ struct PropertiesView: View {
             } header: {
                 Text("Providers · all properties").brandSectionHeader()
             } footer: {
-                Text("From your completed service contracts (up to 100 recent). “Preferred” means 3+ completed jobs with that provider (PRD FR-19.2). Open a property for property-scoped counts. No separate preferred-providers API — counts are derived only.")
+                Text("From completed service contracts on your account (server aggregate when available). “Preferred” means 3+ completed jobs with that provider (PRD FR-19.2). Open a property for property-scoped counts.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         } else if let preferredProvidersError {
@@ -466,9 +466,22 @@ struct PropertiesView: View {
         }
     }
 
-    /// FR-19.2 best-effort — completed contracts only (no invented stats).
+    /// FR-19.2 — prefer dedicated preferred-providers API; fall back to contract roll-up.
     @MainActor
     private func loadPreferredProviders() async {
+        // 1) Dedicated aggregate (full history, correct counts).
+        do {
+            let response = try await APIClient.shared.fetchPreferredProviders()
+            preferredProviders = PreferredProviderRollup.from(apiProviders: response.providers)
+            preferredProvidersError = preferredProviders.isEmpty
+                ? "No completed contracts yet — preferred providers appear after 3+ jobs with the same provider."
+                : nil
+            return
+        } catch {
+            // Soft-fail into legacy client roll-up.
+        }
+
+        // 2) Legacy: page of completed contracts (bounded; may undercount).
         do {
             let response = try await APIClient.shared.fetchContracts(
                 page: 1,
@@ -476,7 +489,6 @@ struct PropertiesView: View {
                 status: "completed"
             )
             preferredProviders = PreferredProviderRollup.from(contracts: response.contracts)
-            // Quiet empty-state note only when we successfully loaded zero rows.
             preferredProvidersError = preferredProviders.isEmpty
                 ? "No completed contracts yet — preferred providers appear after 3+ jobs with the same provider."
                 : nil

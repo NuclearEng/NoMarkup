@@ -2,9 +2,10 @@ import SwiftUI
 
 /// FR-19.3 — per-property job history drill-in.
 /// Loads `GET /api/v1/jobs/mine?property_id=` via `APIClient.fetchJobs(propertyId:)`.
+/// History filters pass `category_id` / `date_from` to the server when set (FR-19.3).
 ///
-/// FR-19.2 preferred providers (best-effort): completed contracts whose `job_id`
-/// is in this property’s job list — no dedicated preferred-providers API.
+/// FR-19.2 preferred providers: `GET /api/v1/properties/{id}/preferred-providers`,
+/// with contract roll-up fallback.
 struct PropertyDetailView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -20,9 +21,13 @@ struct PropertyDetailView: View {
     @State private var showEditSheet = false
     @State private var statusMessage: String?
     @State private var statusIsError = false
-    /// FR-19.3 history filters (client-side on loaded property jobs).
-    @State private var historyCategoryFilter = ""
+    /// FR-19.3 history filters. Category uses server `category_id` when known;
+    /// name is kept for menu labels. Date window maps to `date_from`.
+    @State private var historyCategoryId = ""
+    @State private var historyCategoryName = ""
     @State private var historyDateRange: HistoryDateRange = .all
+    /// Server-filtered history rows when filters are active (keeps active/upcoming unfiltered).
+    @State private var serverHistoryJobs: [JobSummary]?
 
     init(property: PropertyItem, onUpdated: ((PropertyItem) -> Void)? = nil) {
         self.property = property
@@ -42,20 +47,39 @@ struct PropertyDetailView: View {
         jobs.filter { !$0.isActiveWork && !$0.isUpcomingWork }
     }
 
-    /// Distinct non-empty category labels from history (for filter menu).
-    private var historyCategoryOptions: [String] {
-        let names = historyJobs.compactMap { job -> String? in
-            let n = job.categoryName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return n.isEmpty ? nil : n
+    /// Distinct categories from history (id when present) for filter menu.
+    private var historyCategoryOptions: [(id: String, name: String)] {
+        var byKey: [String: String] = [:]
+        for job in historyJobs {
+            let name = job.categoryName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let id = job.categoryId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if name.isEmpty && id.isEmpty { continue }
+            let key = id.isEmpty ? "name:\(name.lowercased())" : id
+            if byKey[key] == nil {
+                byKey[key] = name.isEmpty ? id : name
+            }
         }
-        return Array(Set(names)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        return byKey
+            .map { (id: $0.key.hasPrefix("name:") ? "" : $0.key, name: $0.value) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private var filteredHistoryJobs: [JobSummary] {
-        historyJobs.filter { job in
-            if !historyCategoryFilter.isEmpty {
+        // Server narrows the set when filters are active; client always re-applies
+        // so name-only category filters (no UUID) stay correct on API miss.
+        let base: [JobSummary]
+        if hasActiveHistoryFilters, let serverHistoryJobs {
+            base = serverHistoryJobs
+        } else {
+            base = historyJobs
+        }
+        return base.filter { job in
+            if !historyCategoryId.isEmpty {
+                let id = job.categoryId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if id != historyCategoryId { return false }
+            } else if !historyCategoryName.isEmpty {
                 let name = job.categoryName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                if name.caseInsensitiveCompare(historyCategoryFilter) != .orderedSame {
+                if name.caseInsensitiveCompare(historyCategoryName) != .orderedSame {
                     return false
                 }
             }
@@ -70,7 +94,7 @@ struct PropertyDetailView: View {
     }
 
     private var hasActiveHistoryFilters: Bool {
-        !historyCategoryFilter.isEmpty || historyDateRange != .all
+        !historyCategoryId.isEmpty || !historyCategoryName.isEmpty || historyDateRange != .all
     }
 
     var body: some View {
@@ -200,22 +224,27 @@ struct PropertyDetailView: View {
                 // Category filter
                 Menu {
                     Button {
-                        historyCategoryFilter = ""
+                        historyCategoryId = ""
+                        historyCategoryName = ""
+                        Task { await reloadHistoryWithFilters() }
                     } label: {
                         HStack {
                             Text("All categories")
-                            if historyCategoryFilter.isEmpty {
+                            if historyCategoryId.isEmpty && historyCategoryName.isEmpty {
                                 Image(systemName: "checkmark")
                             }
                         }
                     }
-                    ForEach(historyCategoryOptions, id: \.self) { name in
+                    ForEach(historyCategoryOptions, id: \.name) { option in
                         Button {
-                            historyCategoryFilter = name
+                            historyCategoryId = option.id
+                            historyCategoryName = option.name
+                            Task { await reloadHistoryWithFilters() }
                         } label: {
                             HStack {
-                                Text(name)
-                                if historyCategoryFilter == name {
+                                Text(option.name)
+                                if (!option.id.isEmpty && historyCategoryId == option.id)
+                                    || (option.id.isEmpty && historyCategoryName == option.name) {
                                     Image(systemName: "checkmark")
                                 }
                             }
@@ -224,11 +253,11 @@ struct PropertyDetailView: View {
                 } label: {
                     HStack {
                         Label(
-                            historyCategoryFilter.isEmpty ? "All categories" : historyCategoryFilter,
+                            historyCategoryName.isEmpty ? "All categories" : historyCategoryName,
                             systemImage: "tag"
                         )
                         .foregroundStyle(
-                            historyCategoryFilter.isEmpty ? BrandTheme.textPrimary : BrandTheme.goldBright
+                            historyCategoryName.isEmpty ? BrandTheme.textPrimary : BrandTheme.goldBright
                         )
                         .lineLimit(1)
                         Spacer(minLength: 8)
@@ -240,7 +269,7 @@ struct PropertyDetailView: View {
                     .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Filter history by category")
-                .accessibilityValue(historyCategoryFilter.isEmpty ? "All categories" : historyCategoryFilter)
+                .accessibilityValue(historyCategoryName.isEmpty ? "All categories" : historyCategoryName)
 
                 // Date range filter
                 Picker("Date range", selection: $historyDateRange) {
@@ -251,11 +280,16 @@ struct PropertyDetailView: View {
                 .pickerStyle(.segmented)
                 .frame(minHeight: 44)
                 .accessibilityLabel("Filter history by date range")
+                .onChange(of: historyDateRange) { _, _ in
+                    Task { await reloadHistoryWithFilters() }
+                }
 
                 if hasActiveHistoryFilters {
                     Button {
-                        historyCategoryFilter = ""
+                        historyCategoryId = ""
+                        historyCategoryName = ""
                         historyDateRange = .all
+                        serverHistoryJobs = nil
                     } label: {
                         Text("Clear history filters")
                             .frame(maxWidth: .infinity, minHeight: 44)
@@ -270,7 +304,7 @@ struct PropertyDetailView: View {
         } header: {
             Text("History filters").brandSectionHeader()
         } footer: {
-            Text("Filters apply to completed and past jobs only. Active and upcoming lists stay unfiltered.")
+            Text("Filters apply to completed and past jobs only (server `category_id` / `date_from` when available). Active and upcoming lists stay unfiltered.")
                 .foregroundStyle(BrandTheme.textSecondary)
         }
     }
@@ -444,7 +478,7 @@ struct PropertyDetailView: View {
             } header: {
                 Text("Providers at this property").brandSectionHeader()
             } footer: {
-                Text("From completed contracts linked to jobs at this address. Preferred = 3+ completed jobs with the same provider. Derived from existing contract data only.")
+                Text("From completed contracts linked to jobs at this address (server aggregate when available). Preferred = 3+ completed jobs with the same provider.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
@@ -458,9 +492,15 @@ struct PropertyDetailView: View {
         defer { isLoadingJobs = false }
 
         do {
+            // Unfiltered load so active/upcoming sections stay complete.
             let response = try await APIClient.shared.fetchJobs(propertyId: current.id, pageSize: 100)
             jobs = response.jobs
             await loadPreferredProviders(for: response.jobs)
+            if hasActiveHistoryFilters {
+                await reloadHistoryWithFilters()
+            } else {
+                serverHistoryJobs = nil
+            }
         } catch {
             if jobs.isEmpty {
                 jobsError = error.localizedDescription
@@ -468,9 +508,47 @@ struct PropertyDetailView: View {
         }
     }
 
+    /// FR-19.3 — re-fetch history with server filters; client fallback on failure.
+    @MainActor
+    private func reloadHistoryWithFilters() async {
+        guard hasActiveHistoryFilters else {
+            serverHistoryJobs = nil
+            return
+        }
+        let categoryId = historyCategoryId.isEmpty ? nil : historyCategoryId
+        var dateFrom: String?
+        if let start = historyDateRange.startDate {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            dateFrom = formatter.string(from: start)
+        }
+        do {
+            let response = try await APIClient.shared.fetchJobs(
+                propertyId: current.id,
+                pageSize: 100,
+                categoryId: categoryId,
+                dateFrom: dateFrom
+            )
+            // Keep only non-active/non-upcoming for the history section.
+            serverHistoryJobs = response.jobs.filter { !$0.isActiveWork && !$0.isUpcomingWork }
+        } catch {
+            // Soft-fail: filteredHistoryJobs falls back to client-side filter.
+            serverHistoryJobs = nil
+        }
+    }
+
     /// Soft-fail preferred providers; property job history still works without it.
     @MainActor
     private func loadPreferredProviders(for jobs: [JobSummary]) async {
+        // 1) Dedicated property-scoped API.
+        do {
+            let response = try await APIClient.shared.fetchPreferredProviders(forPropertyId: current.id)
+            preferredProviders = PreferredProviderRollup.from(apiProviders: response.providers)
+            return
+        } catch {
+            // Fall through to contract roll-up.
+        }
+
         let jobIds = Set(jobs.map(\.id))
         guard !jobIds.isEmpty else {
             preferredProviders = []

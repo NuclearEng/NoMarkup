@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { ListingCard } from '@/components/marketplace/ListingCard';
+import { PromoteListingButton } from '@/components/marketplace/PromoteListingButton';
 import { Button } from '@/components/ui/button';
 import { ContentLoader } from '@/components/ui/content-loader';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -100,6 +101,9 @@ function MyListingsContent({ tab }: { tab: SellTab }) {
               >
                 <Link href={`/marketplace/${listing.id}` as Route}>View</Link>
               </Button>
+              {tab === 'active' ? (
+                <PromoteListingButton listing={listing} />
+              ) : null}
               {tab === 'drafts' ? (
                 <Button
                   variant="outline"

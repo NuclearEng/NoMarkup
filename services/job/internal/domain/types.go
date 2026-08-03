@@ -227,6 +227,16 @@ type Pagination struct {
 	HasNext    bool
 }
 
+// ListCustomerJobsFilter holds optional filters for a customer's job list (FR-19.3).
+// Zero values / nil pointers mean "no filter". DateFrom/DateTo bound jobs.created_at.
+type ListCustomerJobsFilter struct {
+	StatusFilter *string
+	PropertyID   *string
+	CategoryID   *string
+	DateFrom     *time.Time
+	DateTo       *time.Time
+}
+
 // JobMapPin represents a lightweight job pin for map display.
 type JobMapPin struct {
 	JobID            string
@@ -278,7 +288,7 @@ type JobRepository interface {
 	CancelJob(ctx context.Context, jobID string, customerID string) (*Job, error)
 	SearchJobs(ctx context.Context, input SearchJobsInput) ([]*Job, *Pagination, error)
 	GetJobsOnMap(ctx context.Context, input GetJobsOnMapInput) ([]JobMapPin, error)
-	ListCustomerJobs(ctx context.Context, customerID string, statusFilter *string, propertyID *string, page, pageSize int) ([]*Job, *Pagination, error)
+	ListCustomerJobs(ctx context.Context, customerID string, filter ListCustomerJobsFilter, page, pageSize int) ([]*Job, *Pagination, error)
 	ListDrafts(ctx context.Context, customerID string) ([]*Job, error)
 	ListServiceCategories(ctx context.Context, level *int, parentID *string) ([]ServiceCategory, error)
 	GetCategoryTree(ctx context.Context) ([]ServiceCategory, error)

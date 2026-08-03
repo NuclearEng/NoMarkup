@@ -191,7 +191,7 @@ func TestJobServiceAddressWriteEncryptsReadDecrypts(t *testing.T) {
 	// 3b. scanJobRow (SearchJobs / ListCustomerJobs / ListDrafts / AdminListJobs).
 	//     The two scanners are separate code paths over the same column, and a
 	//     fix applied to only one of them is the exact regression this covers.
-	listed, _, err := repo.ListCustomerJobs(ctx, customerID, nil, nil, 1, 20)
+	listed, _, err := repo.ListCustomerJobs(ctx, customerID, domain.ListCustomerJobsFilter{}, 1, 20)
 	if err != nil {
 		t.Fatalf("ListCustomerJobs: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestJobServiceAddressLegacyPlaintextPassesThrough(t *testing.T) {
 		t.Errorf("legacy service_address = %q, want passthrough %q", got.ServiceAddress, piiTestAddress)
 	}
 
-	listed, _, err := repo.ListCustomerJobs(ctx, customerID, nil, nil, 1, 20)
+	listed, _, err := repo.ListCustomerJobs(ctx, customerID, domain.ListCustomerJobsFilter{}, 1, 20)
 	if err != nil {
 		t.Fatalf("ListCustomerJobs: %v", err)
 	}
@@ -523,7 +523,7 @@ func TestJobServiceAddressWrongKeyFailsLoud(t *testing.T) {
 		t.Logf("failed loud as expected: %v", err)
 	}
 
-	if _, _, err := repo.ListCustomerJobs(ctx, customerID, nil, nil, 1, 20); err == nil {
+	if _, _, err := repo.ListCustomerJobs(ctx, customerID, domain.ListCustomerJobsFilter{}, 1, 20); err == nil {
 		t.Error("expected scanJobRow to fail loud on unopenable ciphertext too")
 	}
 }

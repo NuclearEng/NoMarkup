@@ -57,6 +57,15 @@ import {
 import type { ProviderProfile, ProviderVerificationDocument } from '@/types';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import {
+  ACCEPTED_DOCUMENT_EXTENSIONS,
+  ACCEPTED_DOCUMENT_MIME_TYPES,
+  formatDocStatus,
+  formatDocumentSize,
+  MAX_DOCUMENT_SIZE_BYTES,
+  PROVIDER_DOCUMENT_TYPES,
+  type DocumentTypeConfig,
+} from '@/lib/provider-verification-docs';
+import {
   businessInfoSchema,
   globalTermsSchema,
   type BusinessInfoFormValues,
@@ -873,62 +882,9 @@ function PortfolioStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => v
 
 // -- Step 6: Document Verification --
 
-const ACCEPTED_DOCUMENT_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'application/pdf',
-];
-
-const ACCEPTED_DOCUMENT_EXTENSIONS = '.jpg,.jpeg,.png,.webp,.pdf';
-
-const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-
-interface DocumentTypeConfig {
-  key: string;
-  label: string;
-  description: string;
-  required: boolean;
-}
-
-const DOCUMENT_TYPES: DocumentTypeConfig[] = [
-  {
-    key: 'government_id',
-    label: 'Government-Issued ID',
-    description: "Driver's license or passport. Used to verify your identity.",
-    required: true,
-  },
-  {
-    key: 'business_license',
-    label: 'Business License',
-    description: 'Your business registration or license certificate.',
-    required: false,
-  },
-  {
-    key: 'proof_of_insurance',
-    label: 'Proof of Insurance',
-    description: 'Liability insurance or bonding documentation.',
-    required: false,
-  },
-  {
-    key: 'trade_license',
-    label: 'Trade-Specific License',
-    description: 'Electrician, plumber, contractor, or other trade license.',
-    required: false,
-  },
-];
-
 interface DocumentFile {
   file: File;
   name: string;
-}
-
-function formatDocumentSize(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  const mb = kb / 1024;
-  return `${mb.toFixed(1)} MB`;
 }
 
 function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
@@ -939,14 +895,14 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
 
   const { data: existingDocs = [] } = useProviderVerificationDocuments();
   const existingByType = indexDocumentsByType(existingDocs);
-  const lockedTypes = DOCUMENT_TYPES.filter((dt) =>
+  const lockedTypes = PROVIDER_DOCUMENT_TYPES.filter((dt) =>
     isDocumentResubmissionLocked(existingByType[dt.key]?.resubmission_count),
   );
 
   const uploadImage = useImageUpload({
     context: 'document',
     maxSizeBytes: MAX_DOCUMENT_SIZE_BYTES,
-    acceptedTypes: ACCEPTED_DOCUMENT_TYPES,
+    acceptedTypes: [...ACCEPTED_DOCUMENT_MIME_TYPES],
   });
 
   const uploadDocument = useUploadVerificationDocument();
@@ -964,7 +920,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
     }
 
     // Validate file type
-    if (!ACCEPTED_DOCUMENT_TYPES.includes(file.type)) {
+    if (!(ACCEPTED_DOCUMENT_MIME_TYPES as readonly string[]).includes(file.type)) {
       setErrors((prev) => ({
         ...prev,
         [docKey]: 'Please upload a JPG, PNG, WebP, or PDF file.',
@@ -1012,7 +968,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
   async function handleFinish() {
     // Validate required documents — local pick OR already on file (pending/verified).
     // Locked required types cannot be re-uploaded; surface contact-support instead of a hard fail.
-    const missingRequired = DOCUMENT_TYPES.filter((dt) => {
+    const missingRequired = PROVIDER_DOCUMENT_TYPES.filter((dt) => {
       if (!dt.required) return false;
       if (documents[dt.key]) return false;
       if (hasServerCoverage(dt.key)) return false;
@@ -1029,7 +985,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
       return;
     }
 
-    const lockedRequiredMissing = DOCUMENT_TYPES.filter(
+    const lockedRequiredMissing = PROVIDER_DOCUMENT_TYPES.filter(
       (dt) =>
         dt.required &&
         !documents[dt.key] &&
@@ -1112,7 +1068,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
     }
   }
 
-  const hasRequiredDocuments = DOCUMENT_TYPES.filter((dt) => dt.required).every(
+  const hasRequiredDocuments = PROVIDER_DOCUMENT_TYPES.filter((dt) => dt.required).every(
     (dt) =>
       documents[dt.key] !== undefined ||
       hasServerCoverage(dt.key) ||
@@ -1141,7 +1097,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
       ) : null}
 
       <div className="space-y-4">
-        {DOCUMENT_TYPES.map((docType) => (
+        {PROVIDER_DOCUMENT_TYPES.map((docType) => (
           <DocumentUploadField
             key={docType.key}
             config={docType}
@@ -1181,11 +1137,6 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
       </div>
     </div>
   );
-}
-
-function formatDocStatus(status: string | undefined): string {
-  if (!status) return '';
-  return status.replace(/_/g, ' ');
 }
 
 function DocumentUploadField({

@@ -649,7 +649,12 @@ func New(
 			r.Post("/", propertyHandler.Create)
 			r.Put("/{id}", propertyHandler.Update)
 			r.Delete("/{id}", propertyHandler.Delete)
+			// FR-19.2 preferred providers scoped to one owned property.
+			r.Get("/{id}/preferred-providers", propertyHandler.ListPreferredProvidersForProperty)
 		})
+
+		// FR-19.2 preferred providers (account-wide; optional ?property_id=).
+		r.Get("/me/preferred-providers", propertyHandler.ListPreferredProviders)
 
 		// Bid routes not nested under a specific job
 		r.Route("/bids", func(r chi.Router) {
@@ -793,8 +798,13 @@ func New(
 		// asserted state change. See promoted_listings.go.
 		r.Get("/me/seller-analytics", sellerAnalyticsHandler.GetSellerAnalytics)
 		r.Get("/me/sales.csv", csvExportHandler.ExportSales)
-		r.Post("/listings/{id}/promote", promotedListingsHandler.PromoteListing)
-		r.Post("/listings/{id}/promote/confirm", promotedListingsHandler.ConfirmPromotion)
+		// MON-06/22: SetupIntent mint + confirm are money-adjacent — Idempotency-Key
+		// required (parity with bid-bond). /promote/confirm charges the tier price
+		// off-session and only then flips listings.is_promoted.
+		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+			Post("/listings/{id}/promote", promotedListingsHandler.PromoteListing)
+		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+			Post("/listings/{id}/promote/confirm", promotedListingsHandler.ConfirmPromotion)
 
 		// ── Marketplace buyer/seller write paths ────────────────────────
 		// Read paths are public and live above. These routes require

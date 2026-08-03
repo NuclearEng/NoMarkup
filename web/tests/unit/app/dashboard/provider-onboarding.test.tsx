@@ -263,7 +263,7 @@ describe('ProviderOnboardingPage', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     const verifyBtn = screen.getByRole('button', { name: /Verification/i });
     fireEvent.click(verifyBtn);
-    expect(screen.getByText(/Government-Issued ID/i)).toBeDefined();
+    expect(screen.getByText(/Driver's License or Government ID/i)).toBeDefined();
     expect(screen.getByText(/Business License/i)).toBeDefined();
   });
 
@@ -356,7 +356,7 @@ describe('ProviderOnboardingPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
     // The form layout exposes fields like ID and Business License — at minimum
     // we assert those headings render.
-    expect(screen.getByText(/Government-Issued ID/i)).toBeDefined();
+    expect(screen.getByText(/Driver's License or Government ID/i)).toBeDefined();
   });
 
   it('Service Area step calls update mutation and advances when Next clicked', async () => {
@@ -435,7 +435,7 @@ describe('ProviderOnboardingPage', () => {
     if (!skipBtn) throw new Error('Skip button missing');
     fireEvent.click(skipBtn);
     // Now should be at verification step
-    expect(screen.getByText(/Government-Issued ID/i)).toBeDefined();
+    expect(screen.getByText(/Driver's License or Government ID/i)).toBeDefined();
     expect(updatePortfolioMutate).not.toHaveBeenCalled();
   });
 
@@ -443,8 +443,8 @@ describe('ProviderOnboardingPage', () => {
     uploadImageMock.mockResolvedValue(undefined);
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    // Add the required document via the hidden file input — find by label "Government-Issued ID"
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    // Add the required document via the hidden file input — find by label "Driver's License or Government ID"
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     expect(card).toBeTruthy();
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
@@ -462,7 +462,7 @@ describe('ProviderOnboardingPage', () => {
   it('Verification step rejects file with disallowed mime type', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     expect(fileInput).toBeTruthy();
@@ -477,7 +477,7 @@ describe('ProviderOnboardingPage', () => {
     const finishBtn = screen.getByRole('button', { name: /Finish/i });
     fireEvent.click(finishBtn);
     await waitFor(() => {
-      expect(screen.getByText(/Government-Issued ID is required/i)).toBeDefined();
+      expect(screen.getByText(/Driver's License or Government ID is required/i)).toBeDefined();
     });
     expect(uploadImageMock).not.toHaveBeenCalled();
   });
@@ -721,7 +721,7 @@ describe('ProviderOnboardingPage', () => {
   it('Verification step rejects file exceeding 10MB size limit', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     expect(fileInput).toBeTruthy();
@@ -735,14 +735,14 @@ describe('ProviderOnboardingPage', () => {
   it('Verification step allows removing a selected document', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     expect(fileInput).toBeTruthy();
     const file = new File(['x'], 'id.png', { type: 'image/png' });
     fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } });
     expect(screen.getByText('id.png')).toBeDefined();
-    const removeBtn = screen.getByRole('button', { name: /Remove Government-Issued ID/i });
+    const removeBtn = screen.getByRole('button', { name: /Remove Driver's License or Government ID/i });
     fireEvent.click(removeBtn);
     expect(screen.queryByText('id.png')).toBeNull();
   });
@@ -751,7 +751,7 @@ describe('ProviderOnboardingPage', () => {
     uploadImageMock.mockResolvedValue({ ok: true, result: { confirmedUrl: 'https://cdn.example/doc-1.pdf' } });
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     expect(fileInput).toBeTruthy();
@@ -766,7 +766,7 @@ describe('ProviderOnboardingPage', () => {
       expect(uploadVerifDocMutate).toHaveBeenCalled();
     });
     expect(uploadVerifDocMutate.mock.calls[0]?.[0]).toMatchObject({
-      document_type: 'government_id',
+      document_type: 'drivers_license',
       file_url: 'https://cdn.example/doc-1.pdf',
       file_name: 'id.pdf',
       mime_type: 'application/pdf',
@@ -783,7 +783,7 @@ describe('ProviderOnboardingPage', () => {
     uploadVerifDocMutate.mockRejectedValueOnce(new Error('network kaput'));
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     expect(fileInput).toBeTruthy();
@@ -801,7 +801,7 @@ describe('ProviderOnboardingPage', () => {
     uploadVerifDocMutate.mockRejectedValueOnce('boom');
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     const file = new File(['x'], 'id.pdf', { type: 'application/pdf' });
@@ -817,7 +817,7 @@ describe('ProviderOnboardingPage', () => {
     uploadImageMock.mockResolvedValue({ ok: false, error: 'Use JPEG, PNG, or WEBP.' });
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     const file = new File(['x'], 'id.png', { type: 'image/png' });
@@ -832,7 +832,7 @@ describe('ProviderOnboardingPage', () => {
   it('Verification document upload supports drag-and-drop interactions', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const dropZone = screen.getByRole('button', { name: /Upload Government-Issued ID/i });
+    const dropZone = screen.getByRole('button', { name: /Upload Driver's License or Government ID/i });
     // Drag enter / over / leave cycle should run handlers without throwing
     fireEvent.dragEnter(dropZone);
     // Drop file message appears within this drop zone
@@ -851,7 +851,7 @@ describe('ProviderOnboardingPage', () => {
   it('Verification document upload handles drop with no files (no-op)', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const dropZone = screen.getByRole('button', { name: /Upload Government-Issued ID/i });
+    const dropZone = screen.getByRole('button', { name: /Upload Driver's License or Government ID/i });
     fireEvent.drop(dropZone, { dataTransfer: { files: [], items: [], types: [] } });
     // No file should appear
     expect(screen.queryByText(/^id\./i)).toBeNull();
@@ -864,7 +864,7 @@ describe('ProviderOnboardingPage', () => {
     try {
       render(withQueryClient(createElement(ProviderOnboardingPage)));
       fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-      const dropZone = screen.getByRole('button', { name: /Upload Government-Issued ID/i });
+      const dropZone = screen.getByRole('button', { name: /Upload Driver's License or Government ID/i });
       fireEvent.keyDown(dropZone, { key: 'Enter' });
       expect(clickSpy).toHaveBeenCalled();
       const callsAfterEnter = clickSpy.mock.calls.length;
@@ -886,7 +886,7 @@ describe('ProviderOnboardingPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
     // Confirm header text shows MB
     expect(screen.getByText(/max\s*10\.0 MB/i)).toBeDefined();
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     // File under 1KB -> "B"
@@ -899,7 +899,7 @@ describe('ProviderOnboardingPage', () => {
   it('Verification step formats KB-sized files', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     const file = new File(['x'], 'mid.png', { type: 'image/png' });
@@ -914,7 +914,7 @@ describe('ProviderOnboardingPage', () => {
     // Skip is present when no required docs uploaded
     expect(screen.getByRole('button', { name: /^Skip$/i })).toBeDefined();
     // Add a required doc
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     const file = new File(['x'], 'id.png', { type: 'image/png' });
@@ -944,7 +944,7 @@ describe('ProviderOnboardingPage', () => {
   it('Verification step displays PDF type label distinctly from images', () => {
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     const pdf = new File(['x'], 'attestation.pdf', { type: 'application/pdf' });
@@ -1124,7 +1124,7 @@ describe('ProviderOnboardingPage', () => {
     verificationDocsState.data = [
       {
         id: 'd1',
-        document_type: 'government_id',
+        document_type: 'drivers_license',
         status: 'rejected',
         resubmission_count: 3,
         rejection_reason: 'Blurry photo',
@@ -1135,8 +1135,8 @@ describe('ProviderOnboardingPage', () => {
     expect(screen.getByText(/Resubmissions:\s*3 of 3/i)).toBeDefined();
     expect(screen.getAllByText(/contact support to continue/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Re-upload disabled for this document type/i)).toBeDefined();
-    // Drop zone for locked government_id should not be present
-    expect(screen.queryByRole('button', { name: /Upload Government-Issued ID/i })).toBeNull();
+    // Drop zone for locked drivers_license should not be present
+    expect(screen.queryByRole('button', { name: /Upload Driver's License or Government ID/i })).toBeNull();
   });
 
   it('Verification step maps 422 register failure to contact-support copy', async () => {
@@ -1150,7 +1150,7 @@ describe('ProviderOnboardingPage', () => {
     );
     render(withQueryClient(createElement(ProviderOnboardingPage)));
     fireEvent.click(screen.getByRole('button', { name: /Verification/i }));
-    const govIdLabel = screen.getByText('Government-Issued ID');
+    const govIdLabel = screen.getByText("Driver's License or Government ID");
     const card = govIdLabel.closest('.glass');
     const fileInput = card?.querySelector('input[type="file"]') as HTMLInputElement | null;
     const file = new File(['x'], 'id.png', { type: 'image/png' });

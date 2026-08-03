@@ -153,14 +153,23 @@ export function useProviderVerificationDocuments() {
 /**
  * Latest document row per `document_type` (API may return history; UI keys on type).
  */
+/** Map legacy wire aliases onto canonical document_type keys. */
+export function normalizeDocumentTypeKey(key: string): string {
+  const k = key.trim();
+  if (k === 'government_id' || k === 'driver_license' || k === 'id') return 'drivers_license';
+  if (k === 'proof_of_insurance') return 'insurance';
+  return k;
+}
+
 export function indexDocumentsByType(
   documents: ProviderVerificationDocument[] | undefined,
 ): Record<string, ProviderVerificationDocument> {
   const map: Record<string, ProviderVerificationDocument> = {};
   if (!documents) return map;
   for (const doc of documents) {
-    const key = doc.document_type?.trim();
-    if (!key) continue;
+    const raw = doc.document_type?.trim();
+    if (!raw) continue;
+    const key = normalizeDocumentTypeKey(raw);
     // Prefer the row with the higher resubmission_count when duplicates exist.
     const existing = map[key];
     if (

@@ -458,8 +458,8 @@ struct PropertiesResponse: Codable, Sendable {
 /// `GET /api/v1/analytics/customers/me/spending` — account-wide services spend.
 ///
 /// Not per-property: gateway has no `property_id` filter. Surface as a cross-property
-/// roll-up on the Properties dashboard. Preferred providers (FR-19.2) have no dedicated
-/// API — derive best-effort from completed contracts (`PreferredProviderRollup`).
+/// roll-up on the Properties dashboard. Preferred providers use
+/// `GET /api/v1/me/preferred-providers` (fallback: contract roll-up).
 struct CustomerSpendingResponse: Codable, Sendable {
     var dataPoints: [CustomerSpendingDataPoint]?
     var totalSpentCents: Int64?
@@ -512,28 +512,65 @@ struct CustomerCategorySpending: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-// MARK: - Preferred providers (FR-19.2 best-effort)
+// MARK: - Preferred providers (FR-19.2)
 
-/// Derived preferred-provider card from completed contracts.
+/// Preferred-provider card for property / account dashboards.
 ///
-/// There is **no** dedicated preferred-providers API. Counts come only from
-/// `GET /api/v1/contracts?status=completed` (provider_id / provider_name already
-/// on the list row). PRD FR-19.2 defines “preferred” as **3+ completed jobs**
-/// at a property (or account-wide when `jobIds` is nil).
+/// Prefer server aggregate `GET /api/v1/me/preferred-providers` (or
+/// `/properties/{id}/preferred-providers`). Falls back to client roll-up from
+/// completed contracts when the dedicated API is unavailable.
 struct PreferredProviderRollup: Identifiable, Hashable, Sendable {
     /// Provider user id (stable).
     let id: String
     let displayName: String
     let completedJobCount: Int
+    /// ISO-8601 last completion when provided by the dedicated API.
+    let lastCompletedAt: String?
+    /// Server `is_preferred` when present; otherwise derived from count ≥ 3.
+    private let serverIsPreferred: Bool?
 
     /// PRD threshold: 3+ completed jobs.
-    var isPreferred: Bool { completedJobCount >= 3 }
+    var isPreferred: Bool {
+        if let serverIsPreferred { return serverIsPreferred }
+        return completedJobCount >= 3
+    }
 
     var countLabel: String {
         completedJobCount == 1 ? "1 completed job" : "\(completedJobCount) completed jobs"
     }
 
-    /// Aggregate completed contracts into provider roll-ups.
+    init(
+        id: String,
+        displayName: String,
+        completedJobCount: Int,
+        lastCompletedAt: String? = nil,
+        isPreferred: Bool? = nil
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.completedJobCount = completedJobCount
+        self.lastCompletedAt = lastCompletedAt
+        self.serverIsPreferred = isPreferred
+    }
+
+    /// Map dedicated API rows → roll-ups (already sorted server-side by count desc).
+    static func from(apiProviders: [PreferredProviderAPIItem]) -> [PreferredProviderRollup] {
+        apiProviders.compactMap { item in
+            let id = item.providerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !id.isEmpty else { return nil }
+            let rawName = item.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let name = rawName.isEmpty ? "Provider \(id.prefix(8))" : rawName
+            return PreferredProviderRollup(
+                id: id,
+                displayName: name,
+                completedJobCount: item.completedCount ?? 0,
+                lastCompletedAt: item.lastCompletedAt,
+                isPreferred: item.isPreferred
+            )
+        }
+    }
+
+    /// Aggregate completed contracts into provider roll-ups (legacy fallback).
     /// - Parameter contracts: Already status-filtered completed rows when possible.
     /// - Parameter jobIds: When non-nil, only count contracts whose `jobId` is in the set
     ///   (property-scoped). Account-wide roll-up passes `nil`.
@@ -576,13 +613,45 @@ struct PreferredProviderRollup: Identifiable, Hashable, Sendable {
         }
 
         return byProvider
-            .map { PreferredProviderRollup(id: $0.key, displayName: $0.value.name, completedJobCount: $0.value.count) }
+            .map {
+                PreferredProviderRollup(
+                    id: $0.key,
+                    displayName: $0.value.name,
+                    completedJobCount: $0.value.count
+                )
+            }
             .sorted { lhs, rhs in
                 if lhs.completedJobCount != rhs.completedJobCount {
                     return lhs.completedJobCount > rhs.completedJobCount
                 }
                 return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
             }
+    }
+}
+
+/// `GET /api/v1/me/preferred-providers` / `/properties/{id}/preferred-providers` row.
+struct PreferredProviderAPIItem: Codable, Sendable, Hashable {
+    var providerId: String?
+    var displayName: String?
+    var completedCount: Int?
+    var lastCompletedAt: String?
+    var isPreferred: Bool?
+}
+
+/// Wrapper for preferred-providers list responses.
+struct PreferredProvidersResponse: Codable, Sendable {
+    var providers: [PreferredProviderAPIItem]
+    var preferredThreshold: Int?
+
+    init(providers: [PreferredProviderAPIItem] = [], preferredThreshold: Int? = nil) {
+        self.providers = providers
+        self.preferredThreshold = preferredThreshold
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        providers = try c.decodeIfPresent([PreferredProviderAPIItem].self, forKey: .providers) ?? []
+        preferredThreshold = try c.decodeIfPresent(Int.self, forKey: .preferredThreshold)
     }
 }
 

@@ -62,7 +62,7 @@ func newPropTestHandler() *mockPropertyUserClient {
 
 func TestPropertyUpdate_CrossUser_IsBlocked(t *testing.T) {
 	mock := newPropTestHandler()
-	h := NewPropertyHandler(mock)
+	h := NewPropertyHandler(mock, nil)
 
 	r := httptest.NewRequest(http.MethodPut, "/api/v1/properties/"+ownedPropID,
 		strings.NewReader(`{"nickname":"HACKED"}`))
@@ -78,7 +78,7 @@ func TestPropertyUpdate_CrossUser_IsBlocked(t *testing.T) {
 
 func TestPropertyDelete_CrossUser_IsBlocked(t *testing.T) {
 	mock := newPropTestHandler()
-	h := NewPropertyHandler(mock)
+	h := NewPropertyHandler(mock, nil)
 
 	r := httptest.NewRequest(http.MethodDelete, "/api/v1/properties/"+ownedPropID, nil)
 	r = addClaimsToRequest(r, propAttackerID, "eve@example.com", []string{"customer"})
@@ -93,7 +93,7 @@ func TestPropertyDelete_CrossUser_IsBlocked(t *testing.T) {
 
 func TestPropertyUpdate_Owner_Succeeds(t *testing.T) {
 	mock := newPropTestHandler()
-	h := NewPropertyHandler(mock)
+	h := NewPropertyHandler(mock, nil)
 
 	r := httptest.NewRequest(http.MethodPut, "/api/v1/properties/"+ownedPropID,
 		strings.NewReader(`{"nickname":"My Cabin"}`))
@@ -109,7 +109,7 @@ func TestPropertyUpdate_Owner_Succeeds(t *testing.T) {
 
 func TestPropertyDelete_Owner_Succeeds(t *testing.T) {
 	mock := newPropTestHandler()
-	h := NewPropertyHandler(mock)
+	h := NewPropertyHandler(mock, nil)
 
 	r := httptest.NewRequest(http.MethodDelete, "/api/v1/properties/"+ownedPropID, nil)
 	r = addClaimsToRequest(r, propOwnerID, "owner@example.com", []string{"customer"})
@@ -120,4 +120,57 @@ func TestPropertyDelete_Owner_Succeeds(t *testing.T) {
 
 	require.Equal(t, http.StatusNoContent, rec.Code, "owner delete must succeed")
 	assert.True(t, mock.deleteCalled, "downstream DeleteProperty must be called for the owner")
+}
+
+func TestPreferredProviders_NilDB_ServiceUnavailable(t *testing.T) {
+	mock := newPropTestHandler()
+	h := NewPropertyHandler(mock, nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/me/preferred-providers", nil)
+	r = addClaimsToRequest(r, propOwnerID, "owner@example.com", []string{"customer"})
+	rec := httptest.NewRecorder()
+
+	h.ListPreferredProviders(rec, r)
+
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+}
+
+func TestPreferredProvidersForProperty_CrossUser_IsBlocked(t *testing.T) {
+	mock := newPropTestHandler()
+	h := NewPropertyHandler(mock, nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/properties/"+ownedPropID+"/preferred-providers", nil)
+	r = addClaimsToRequest(r, propAttackerID, "eve@example.com", []string{"customer"})
+	r = withChiURLParam(r, "id", ownedPropID)
+	rec := httptest.NewRecorder()
+
+	h.ListPreferredProvidersForProperty(rec, r)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code, "cross-user preferred providers must 404")
+}
+
+func TestPreferredProviders_QueryProperty_CrossUser_IsBlocked(t *testing.T) {
+	mock := newPropTestHandler()
+	h := NewPropertyHandler(mock, nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/me/preferred-providers?property_id="+ownedPropID, nil)
+	r = addClaimsToRequest(r, propAttackerID, "eve@example.com", []string{"customer"})
+	rec := httptest.NewRecorder()
+
+	h.ListPreferredProviders(rec, r)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code, "cross-user ?property_id= must 404")
+}
+
+func TestPreferredProviders_InvalidPropertyUUID(t *testing.T) {
+	mock := newPropTestHandler()
+	h := NewPropertyHandler(mock, nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/me/preferred-providers?property_id=not-a-uuid", nil)
+	r = addClaimsToRequest(r, propOwnerID, "owner@example.com", []string{"customer"})
+	rec := httptest.NewRecorder()
+
+	h.ListPreferredProviders(rec, r)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }

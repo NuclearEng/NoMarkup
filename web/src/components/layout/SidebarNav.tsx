@@ -19,6 +19,7 @@ import {
   Search,
   Settings,
   Shield,
+  ShieldCheck,
   Sparkles,
   Tag,
   Trophy,
@@ -31,6 +32,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { useUnreadCount as useChatUnreadCount } from '@/hooks/useChannels';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -53,6 +55,7 @@ export const PROVIDER_NAV_ITEMS: NavItem[] = [
   { href: '/bids' as Route, label: 'My Bids', icon: Gavel },
   { href: '/provider/offers' as Route, label: 'Instant Offers', icon: Zap },
   { href: '/provider/team' as Route, label: 'Team', icon: Users },
+  { href: '/provider/verification' as Route, label: 'Verification', icon: ShieldCheck },
   { href: '/provider/advances' as Route, label: 'Working Capital', icon: Banknote },
   { href: '/provider/business' as Route, label: 'Business Tools', icon: Building2 },
   { href: '/provider/challenges' as Route, label: 'Challenges', icon: Trophy },
@@ -160,6 +163,8 @@ export function SidebarNav() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isHydrating = useAuthStore((s) => s.isHydrating);
   const navItems = useNavItems();
+  const { data: chatUnread } = useChatUnreadCount();
+  const messagesUnread = chatUnread?.total_unread ?? 0;
 
   // Public/logged-out: no sidebar. Also suppress during the hydrate window so
   // we don't flash a sidebar that then disappears if the session fails to
@@ -199,7 +204,15 @@ export function SidebarNav() {
                 style={{ opacity: active ? 1 : 0.6 }}
                 aria-hidden="true"
               />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.href === '/messages' && messagesUnread > 0 ? (
+                <span
+                  className="ml-auto inline-flex min-h-[1.25rem] min-w-[1.25rem] items-center justify-center rounded-full bg-brand-gold/20 px-1.5 text-[0.65rem] font-semibold tabular-nums text-brand-gold"
+                  aria-label={`${String(messagesUnread)} unread messages`}
+                >
+                  {messagesUnread > 99 ? '99+' : String(messagesUnread)}
+                </span>
+              ) : null}
             </Link>
           );
         })}

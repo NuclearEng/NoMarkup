@@ -4,21 +4,31 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
+// PreferredProviderMinCompletions is the PRD FR-19.2 threshold for the
+// "preferred" badge (3+ completed jobs with the same provider).
+const PreferredProviderMinCompletions = 3
+
 // PropertyHandler handles HTTP endpoints for customer properties.
 type PropertyHandler struct {
 	userClient userv1.UserServiceClient
+	// db backs FR-19.2 preferred-providers aggregation (contracts ⋈ jobs).
+	// May be nil in unit tests that never hit that route.
+	db *pgxpool.Pool
 }
 
 // NewPropertyHandler creates a new PropertyHandler.
-func NewPropertyHandler(userClient userv1.UserServiceClient) *PropertyHandler {
-	return &PropertyHandler{userClient: userClient}
+// db may be nil; ListPreferredProviders* then return 503.
+func NewPropertyHandler(userClient userv1.UserServiceClient, db *pgxpool.Pool) *PropertyHandler {
+	return &PropertyHandler{userClient: userClient, db: db}
 }
 
 type createPropertyRequest struct {
@@ -29,10 +39,10 @@ type createPropertyRequest struct {
 }
 
 type addressRequest struct {
-	Street   string   `json:"street"`
-	City     string   `json:"city"`
-	State    string   `json:"state"`
-	ZipCode  string   `json:"zip_code"`
+	Street    string   `json:"street"`
+	City      string   `json:"city"`
+	State     string   `json:"state"`
+	ZipCode   string   `json:"zip_code"`
 	Latitude  *float64 `json:"latitude,omitempty"`
 	Longitude *float64 `json:"longitude,omitempty"`
 }
@@ -215,6 +225,156 @@ func (h *PropertyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListPreferredProviders handles GET /api/v1/me/preferred-providers.
+//
+// FR-19.2 — aggregates completed contracts joined to jobs for the authenticated
+// customer. Optional query `property_id` scopes to one owned property.
+//
+// Response: { "providers": [ { provider_id, display_name, completed_count,
+// last_completed_at, is_preferred } ], "preferred_threshold": 3 }
+func (h *PropertyHandler) ListPreferredProviders(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	var propertyID string
+	if prop := strings.TrimSpace(r.URL.Query().Get("property_id")); prop != "" {
+		if !isValidUUID(prop) {
+			writeError(w, http.StatusBadRequest, "property_id must be a valid UUID")
+			return
+		}
+		if !h.ownsProperty(w, r, claims.UserID, prop) {
+			return
+		}
+		propertyID = prop
+	}
+
+	h.writePreferredProviders(w, r, claims.UserID, propertyID)
+}
+
+// ListPreferredProvidersForProperty handles
+// GET /api/v1/properties/{id}/preferred-providers (FR-19.2 property scope).
+func (h *PropertyHandler) ListPreferredProvidersForProperty(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	propertyID := strings.TrimSpace(chi.URLParam(r, "id"))
+	if propertyID == "" || !isValidUUID(propertyID) {
+		writeError(w, http.StatusBadRequest, "property id required")
+		return
+	}
+	if !h.ownsProperty(w, r, claims.UserID, propertyID) {
+		return
+	}
+
+	h.writePreferredProviders(w, r, claims.UserID, propertyID)
+}
+
+// writePreferredProviders runs the aggregation query and writes JSON.
+// propertyID empty = account-wide; non-empty = jobs.property_id filter.
+func (h *PropertyHandler) writePreferredProviders(w http.ResponseWriter, r *http.Request, customerID, propertyID string) {
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "preferred providers unavailable")
+		return
+	}
+
+	// Aggregate completed contracts ⋈ jobs. Prefer completed_at; fall back to
+	// updated_at when completed_at is null (legacy rows). Display name is
+	// public-safe only (users.display_name) — never email/phone.
+	const baseSQL = `
+		SELECT c.provider_id::text,
+		       COALESCE(NULLIF(TRIM(u.display_name), ''), '') AS display_name,
+		       COUNT(*)::int AS completed_count,
+		       MAX(COALESCE(c.completed_at, c.updated_at)) AS last_completed_at
+		  FROM contracts c
+		  JOIN jobs j ON j.id = c.job_id
+		  LEFT JOIN users u ON u.id = c.provider_id AND u.deleted_at IS NULL
+		 WHERE c.customer_id = $1
+		   AND c.status = 'completed'
+		   AND j.deleted_at IS NULL`
+
+	var (
+		query string
+		args  []interface{}
+	)
+	if propertyID != "" {
+		query = baseSQL + `
+		   AND j.property_id = $2
+		 GROUP BY c.provider_id, u.display_name
+		 ORDER BY completed_count DESC, last_completed_at DESC NULLS LAST
+		 LIMIT 50`
+		args = []interface{}{customerID, propertyID}
+	} else {
+		query = baseSQL + `
+		 GROUP BY c.provider_id, u.display_name
+		 ORDER BY completed_count DESC, last_completed_at DESC NULLS LAST
+		 LIMIT 50`
+		args = []interface{}{customerID}
+	}
+
+	rows, err := h.db.Query(r.Context(), query, args...)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "preferred providers query failed",
+			"error", err,
+			"customer_id", customerID,
+			"property_id", propertyID,
+		)
+		writeError(w, http.StatusInternalServerError, "failed to load preferred providers")
+		return
+	}
+	defer rows.Close()
+
+	providers := make([]map[string]interface{}, 0, 16)
+	for rows.Next() {
+		var (
+			providerID      string
+			displayName     string
+			completedCount  int
+			lastCompletedAt *time.Time
+		)
+		if err := rows.Scan(&providerID, &displayName, &completedCount, &lastCompletedAt); err != nil {
+			slog.ErrorContext(r.Context(), "preferred providers scan failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to load preferred providers")
+			return
+		}
+		if displayName == "" {
+			// Stable fallback when display_name is empty (mirrors iOS roll-up).
+			if len(providerID) >= 8 {
+				displayName = "Provider " + providerID[:8]
+			} else {
+				displayName = "Provider"
+			}
+		}
+		row := map[string]interface{}{
+			"provider_id":     providerID,
+			"display_name":    displayName,
+			"completed_count": completedCount,
+			"is_preferred":    completedCount >= PreferredProviderMinCompletions,
+		}
+		if lastCompletedAt != nil {
+			row["last_completed_at"] = lastCompletedAt.UTC().Format(time.RFC3339)
+		} else {
+			row["last_completed_at"] = nil
+		}
+		providers = append(providers, row)
+	}
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(r.Context(), "preferred providers rows error", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to load preferred providers")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"providers":           providers,
+		"preferred_threshold": PreferredProviderMinCompletions,
+	})
 }
 
 // ownsProperty verifies that propertyID belongs to userID by listing the

@@ -62,7 +62,7 @@ func TestListCustomerJobs_ColumnParity(t *testing.T) {
 	repo := NewPostgresRepository(pool, testCipher(t))
 	ctx := context.Background()
 
-	jobs, pagination, err := repo.ListCustomerJobs(ctx, seededCustomerID, nil, nil, 1, 20)
+	jobs, pagination, err := repo.ListCustomerJobs(ctx, seededCustomerID, domain.ListCustomerJobsFilter{}, 1, 20)
 	require.NoError(t, err, "ListCustomerJobs must not return a scan error")
 	require.NotNil(t, pagination)
 	require.Greater(t, pagination.TotalCount, 0,

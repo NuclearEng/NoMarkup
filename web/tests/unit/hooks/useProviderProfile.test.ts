@@ -390,10 +390,11 @@ describe('useProviderVerificationDocuments + resubmission helpers', () => {
   it('indexDocumentsByType prefers higher resubmission_count', () => {
     const map = indexDocumentsByType([
       { document_type: 'government_id', status: 'rejected', resubmission_count: 1 },
-      { document_type: 'government_id', status: 'rejected', resubmission_count: 3 },
+      { document_type: 'drivers_license', status: 'rejected', resubmission_count: 3 },
       { document_type: 'business_license', status: 'pending', resubmission_count: 0 },
     ]);
-    expect(map.government_id?.resubmission_count).toBe(3);
+    // Legacy government_id aliases onto drivers_license for lockout UI.
+    expect(map.drivers_license?.resubmission_count).toBe(3);
     expect(map.business_license?.status).toBe('pending');
   });
 

@@ -23,7 +23,7 @@ type mockJobRepo struct {
 	closeAuctionFn      func(ctx context.Context, jobID string, customerID string) (*domain.Job, error)
 	cancelJobFn         func(ctx context.Context, jobID string, customerID string) (*domain.Job, error)
 	searchJobsFn        func(ctx context.Context, input domain.SearchJobsInput) ([]*domain.Job, *domain.Pagination, error)
-	listCustomerJobsFn  func(ctx context.Context, customerID string, statusFilter *string, propertyID *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error)
+	listCustomerJobsFn  func(ctx context.Context, customerID string, filter domain.ListCustomerJobsFilter, page, pageSize int) ([]*domain.Job, *domain.Pagination, error)
 	listDraftsFn        func(ctx context.Context, customerID string) ([]*domain.Job, error)
 	listServiceCatsFn   func(ctx context.Context, level *int, parentID *string) ([]domain.ServiceCategory, error)
 	getCategoryTreeFn   func(ctx context.Context) ([]domain.ServiceCategory, error)
@@ -61,8 +61,8 @@ func (m *mockJobRepo) CancelJob(ctx context.Context, jobID string, customerID st
 func (m *mockJobRepo) SearchJobs(ctx context.Context, input domain.SearchJobsInput) ([]*domain.Job, *domain.Pagination, error) {
 	return m.searchJobsFn(ctx, input)
 }
-func (m *mockJobRepo) ListCustomerJobs(ctx context.Context, customerID string, statusFilter *string, propertyID *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
-	return m.listCustomerJobsFn(ctx, customerID, statusFilter, propertyID, page, pageSize)
+func (m *mockJobRepo) ListCustomerJobs(ctx context.Context, customerID string, filter domain.ListCustomerJobsFilter, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
+	return m.listCustomerJobsFn(ctx, customerID, filter, page, pageSize)
 }
 func (m *mockJobRepo) ListDrafts(ctx context.Context, customerID string) ([]*domain.Job, error) {
 	return m.listDraftsFn(ctx, customerID)
@@ -742,7 +742,7 @@ func TestJobService_ListCustomerJobs(t *testing.T) {
 	t.Parallel()
 
 	repo := &mockJobRepo{
-		listCustomerJobsFn: func(_ context.Context, customerID string, statusFilter *string, _ *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
+		listCustomerJobsFn: func(_ context.Context, customerID string, filter domain.ListCustomerJobsFilter, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
 			assert.Equal(t, "cust-1", customerID)
 			return []*domain.Job{
 				{ID: "j1", Status: "active"},
@@ -751,7 +751,7 @@ func TestJobService_ListCustomerJobs(t *testing.T) {
 	}
 	svc := newTestJobService(repo)
 
-	jobs, pag, err := svc.ListCustomerJobs(context.Background(), "cust-1", nil, nil, 1, 20)
+	jobs, pag, err := svc.ListCustomerJobs(context.Background(), "cust-1", domain.ListCustomerJobsFilter{}, 1, 20)
 
 	require.NoError(t, err)
 	assert.Len(t, jobs, 1)

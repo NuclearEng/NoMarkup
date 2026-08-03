@@ -31,6 +31,7 @@ func (v *Verification) UploadDocument(ctx context.Context, userID string, docTyp
 	if userID == "" {
 		return nil, fmt.Errorf("upload document: user_id is required")
 	}
+	docType = normalizeDocumentType(docType)
 	if docType == "" || !isValidDocumentType(docType) {
 		return nil, fmt.Errorf("upload document: %w", domain.ErrInvalidDocumentType)
 	}
@@ -86,7 +87,7 @@ func (v *Verification) resubmissionState(ctx context.Context, userID string, doc
 	maxCount := 0
 	rejectedRows := 0
 	for _, d := range docs {
-		if d.Type != docType {
+		if normalizeDocumentType(d.Type) != docType {
 			continue
 		}
 		if d.ResubmissionCount > maxCount {
@@ -164,6 +165,19 @@ func (v *Verification) AdminReviewDocument(ctx context.Context, documentID strin
 	return nil
 }
 
+// normalizeDocumentType maps legacy / alternate client wire values onto the
+// canonical domain types used for storage and FR-2.10 resubmission tracking.
+func normalizeDocumentType(dt domain.DocumentType) domain.DocumentType {
+	switch dt {
+	case "government_id", "driver_license", "id":
+		return domain.DocDriversLicense
+	case "proof_of_insurance":
+		return domain.DocInsurance
+	default:
+		return dt
+	}
+}
+
 // isValidDocumentType checks whether a document type is one of the known types.
 func isValidDocumentType(dt domain.DocumentType) bool {
 	switch dt {
@@ -177,3 +191,4 @@ func isValidDocumentType(dt domain.DocumentType) bool {
 		return false
 	}
 }
+

@@ -446,13 +446,17 @@ actor APIClient {
 
     // MARK: - Authenticated catalog / chat
 
-    /// GET `/api/v1/jobs/mine?page=&page_size=&property_id=&status=` — owner-scoped jobs (Bearer required).
-    /// `property_id` filters to one saved service location (FR-19 property dashboard).
+    /// GET `/api/v1/jobs/mine?page=&page_size=&property_id=&status=&category_id=&date_from=&date_to=`
+    /// Owner-scoped jobs (Bearer required). `property_id` filters to one saved location (FR-19).
+    /// Optional FR-19.3 history filters: `category_id` (UUID), `date_from` / `date_to` (RFC3339 or YYYY-MM-DD).
     func fetchMyJobs(
         page: Int = 1,
         pageSize: Int = 20,
         propertyId: String? = nil,
-        status: String? = nil
+        status: String? = nil,
+        categoryId: String? = nil,
+        dateFrom: String? = nil,
+        dateTo: String? = nil
     ) async throws -> JobsMineResponse {
         var items = [
             URLQueryItem(name: "page", value: String(max(1, page))),
@@ -470,6 +474,24 @@ actor APIClient {
                 items.append(URLQueryItem(name: "status", value: trimmed))
             }
         }
+        if let categoryId {
+            let trimmed = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                items.append(URLQueryItem(name: "category_id", value: trimmed))
+            }
+        }
+        if let dateFrom {
+            let trimmed = dateFrom.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                items.append(URLQueryItem(name: "date_from", value: trimmed))
+            }
+        }
+        if let dateTo {
+            let trimmed = dateTo.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                items.append(URLQueryItem(name: "date_to", value: trimmed))
+            }
+        }
         return try await getJSON(
             pathComponents: ["api", "v1", "jobs", "mine"],
             query: items,
@@ -480,16 +502,27 @@ actor APIClient {
     /// GET `/api/v1/jobs/mine?property_id=` — job history for one property (FR-19.3).
     ///
     /// Gateway filters customer jobs by `property_id` on the mine route (not the public list).
+    /// Optional `categoryId` / `dateFrom` / `dateTo` are server-side FR-19.3 history filters.
     func fetchJobs(
         propertyId: String,
         page: Int = 1,
-        pageSize: Int = 50
+        pageSize: Int = 50,
+        categoryId: String? = nil,
+        dateFrom: String? = nil,
+        dateTo: String? = nil
     ) async throws -> JobsMineResponse {
         let trimmed = propertyId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw APIClientError.httpStatus(400, detail: "Property id is required.")
         }
-        return try await fetchMyJobs(page: page, pageSize: pageSize, propertyId: trimmed)
+        return try await fetchMyJobs(
+            page: page,
+            pageSize: pageSize,
+            propertyId: trimmed,
+            categoryId: categoryId,
+            dateFrom: dateFrom,
+            dateTo: dateTo
+        )
     }
 
     /// GET `/api/v1/channels?page=&page_size=&q=` — chat inbox (Bearer required).

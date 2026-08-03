@@ -354,15 +354,28 @@ func (s *Server) GetJobsOnMap(ctx context.Context, req *jobv1.GetJobsOnMapReques
 }
 
 func (s *Server) ListCustomerJobs(ctx context.Context, req *jobv1.ListCustomerJobsRequest) (*jobv1.ListCustomerJobsResponse, error) {
-	var statusFilter *string
+	filter := domain.ListCustomerJobsFilter{}
 	if req.StatusFilter != nil {
 		sf := protoJobStatusToString(req.GetStatusFilter())
-		statusFilter = &sf
+		filter.StatusFilter = &sf
 	}
-	var propertyID *string
 	if req.PropertyId != nil {
 		v := req.GetPropertyId()
-		propertyID = &v
+		filter.PropertyID = &v
+	}
+	if req.CategoryId != nil {
+		v := req.GetCategoryId()
+		if v != "" {
+			filter.CategoryID = &v
+		}
+	}
+	if ts := req.GetDateFrom(); ts != nil {
+		t := ts.AsTime()
+		filter.DateFrom = &t
+	}
+	if ts := req.GetDateTo(); ts != nil {
+		t := ts.AsTime()
+		filter.DateTo = &t
 	}
 
 	page := 1
@@ -376,7 +389,7 @@ func (s *Server) ListCustomerJobs(ctx context.Context, req *jobv1.ListCustomerJo
 		}
 	}
 
-	jobs, pagination, err := s.svc.ListCustomerJobs(ctx, req.GetCustomerId(), statusFilter, propertyID, page, pageSize)
+	jobs, pagination, err := s.svc.ListCustomerJobs(ctx, req.GetCustomerId(), filter, page, pageSize)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}

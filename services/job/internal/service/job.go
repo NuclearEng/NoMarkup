@@ -233,9 +233,9 @@ func (s *JobService) SearchJobs(ctx context.Context, input domain.SearchJobsInpu
 	return jobs, pagination, nil
 }
 
-// ListCustomerJobs lists jobs for a customer.
-func (s *JobService) ListCustomerJobs(ctx context.Context, customerID string, statusFilter *string, propertyID *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
-	jobs, pagination, err := s.repo.ListCustomerJobs(ctx, customerID, statusFilter, propertyID, page, pageSize)
+// ListCustomerJobs lists jobs for a customer with optional FR-19.3 filters.
+func (s *JobService) ListCustomerJobs(ctx context.Context, customerID string, filter domain.ListCustomerJobsFilter, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
+	jobs, pagination, err := s.repo.ListCustomerJobs(ctx, customerID, filter, page, pageSize)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list customer jobs: %w", err)
 	}

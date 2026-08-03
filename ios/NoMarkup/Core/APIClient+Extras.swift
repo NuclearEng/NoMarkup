@@ -123,6 +123,38 @@ extension APIClient {
         )
     }
 
+    // MARK: Preferred providers (FR-19.2)
+
+    /// GET `/api/v1/me/preferred-providers` — account-wide completed-contract aggregate.
+    /// Optional `propertyId` scopes to one owned property (`?property_id=`).
+    /// Prefer this over client contract roll-up when the gateway supports it.
+    func fetchPreferredProviders(propertyId: String? = nil) async throws -> PreferredProvidersResponse {
+        var items: [URLQueryItem] = []
+        if let propertyId {
+            let trimmed = propertyId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                items.append(URLQueryItem(name: "property_id", value: trimmed))
+            }
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "me", "preferred-providers"],
+            query: items,
+            authorized: true
+        )
+    }
+
+    /// GET `/api/v1/properties/{id}/preferred-providers` — property-scoped (ownership gated).
+    func fetchPreferredProviders(forPropertyId propertyId: String) async throws -> PreferredProvidersResponse {
+        let trimmed = propertyId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Property id is required.")
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "properties", trimmed, "preferred-providers"],
+            authorized: true
+        )
+    }
+
     // MARK: Customer spending (FR-19.2)
 
     /// GET `/api/v1/analytics/customers/me/spending?start_date=&end_date=&group_by=`

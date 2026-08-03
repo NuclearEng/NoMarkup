@@ -160,3 +160,33 @@ func TestUploadDocument_Validation(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrMissingFileName))
 }
+
+func TestUploadDocument_NormalizesLegacyType(t *testing.T) {
+	t.Parallel()
+
+	var last *domain.Document
+	repo := &mockUserRepo{
+		listDocumentsFn: func(_ context.Context, _ string) ([]domain.Document, error) {
+			return nil, nil
+		},
+		createDocumentFn: func(_ context.Context, doc *domain.Document) error {
+			doc.ID = "norm-1"
+			last = doc
+			return nil
+		},
+	}
+	svc := NewVerification(repo)
+
+	doc, err := svc.UploadDocument(context.Background(), "user-1", domain.DocumentType("government_id"),
+		"id.pdf", "documents/user-1/id.pdf", "application/pdf", 100)
+	require.NoError(t, err)
+	require.NotNil(t, last)
+	assert.Equal(t, domain.DocDriversLicense, doc.Type)
+	assert.Equal(t, domain.DocDriversLicense, last.Type)
+
+	doc, err = svc.UploadDocument(context.Background(), "user-1", domain.DocumentType("proof_of_insurance"),
+		"ins.pdf", "documents/user-1/ins.pdf", "application/pdf", 100)
+	require.NoError(t, err)
+	assert.Equal(t, domain.DocInsurance, doc.Type)
+	assert.Equal(t, domain.DocInsurance, last.Type)
+}

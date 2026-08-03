@@ -312,6 +312,11 @@ message ListCustomerJobsRequest {
   optional JobStatus status_filter = 2;
   optional string property_id = 3;
   nomarkup.common.v1.PaginationRequest pagination = 4;
+  // FR-19.3 history filters (optional). category_id is a UUID; date_from/date_to
+  // filter jobs.created_at (inclusive lower, inclusive upper when set).
+  optional string category_id = 5;
+  optional google.protobuf.Timestamp date_from = 6;
+  optional google.protobuf.Timestamp date_to = 7;
 }
 
 message ListCustomerJobsResponse {

@@ -1,6 +1,7 @@
 'use client';
 
 import type { Route } from 'next';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -140,6 +141,12 @@ export default function ProfilePage() {
               >
                 Edit Profile
               </Button>
+
+              {isProvider ? (
+                <Button variant="outline" asChild className="min-h-[44px]">
+                  <Link href={'/provider/verification' as Route}>Verification documents</Link>
+                </Button>
+              ) : null}
 
               {!isProvider && !isAdmin ? (
                 <Button

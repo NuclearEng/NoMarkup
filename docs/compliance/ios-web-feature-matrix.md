@@ -30,6 +30,7 @@ Legend:
 | Category tree picker | categories/tree | **live** | `CategoryPickerView` |
 | Fair price hint | analytics/fair-price | **live** | Soft hint on create |
 | Sell listing | listings POST | **live** | Photos: library **+ camera** |
+| Listing promote (paid float) | listings/{id}/promote + confirm | **live** | Stripe SetupIntent on web+iOS; scoreboard `is_promoted` pill |
 | Providers / follow / feed / reviews | providers, follows, feed | **live** | |
 | Properties / watchlist / wishlist / saved | me/* | **live** | |
 | Seller analytics / sales CSV / calendar ICS | seller-analytics, sales.csv, calendar.ics | **live** | Share sheet exports |

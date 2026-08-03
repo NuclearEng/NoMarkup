@@ -809,19 +809,34 @@ func (r *PostgresRepository) GetJobsOnMap(ctx context.Context, input domain.GetJ
 	return pins, nil
 }
 
-func (r *PostgresRepository) ListCustomerJobs(ctx context.Context, customerID string, statusFilter *string, propertyID *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
+func (r *PostgresRepository) ListCustomerJobs(ctx context.Context, customerID string, filter domain.ListCustomerJobsFilter, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
 	where := []string{"j.customer_id = $1", "j.deleted_at IS NULL"}
 	args := []interface{}{customerID}
 	argIdx := 2
 
-	if statusFilter != nil && *statusFilter != "" {
+	if filter.StatusFilter != nil && *filter.StatusFilter != "" {
 		where = append(where, fmt.Sprintf("j.status = $%d", argIdx))
-		args = append(args, *statusFilter)
+		args = append(args, *filter.StatusFilter)
 		argIdx++
 	}
-	if propertyID != nil && *propertyID != "" {
+	if filter.PropertyID != nil && *filter.PropertyID != "" {
 		where = append(where, fmt.Sprintf("j.property_id = $%d", argIdx))
-		args = append(args, *propertyID)
+		args = append(args, *filter.PropertyID)
+		argIdx++
+	}
+	if filter.CategoryID != nil && *filter.CategoryID != "" {
+		where = append(where, fmt.Sprintf("j.category_id = $%d", argIdx))
+		args = append(args, *filter.CategoryID)
+		argIdx++
+	}
+	if filter.DateFrom != nil {
+		where = append(where, fmt.Sprintf("j.created_at >= $%d", argIdx))
+		args = append(args, *filter.DateFrom)
+		argIdx++
+	}
+	if filter.DateTo != nil {
+		where = append(where, fmt.Sprintf("j.created_at <= $%d", argIdx))
+		args = append(args, *filter.DateTo)
 		argIdx++
 	}
 

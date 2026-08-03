@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import { activeNavHref, useNavItems } from '@/components/layout/SidebarNav';
+import { useUnreadCount as useChatUnreadCount } from '@/hooks/useChannels';
 import type { NavItem } from '@/components/layout/SidebarNav';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -48,6 +49,8 @@ export function MobileTabBar() {
   const user = useAuthStore((s) => s.user);
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
   const allNavItems = useNavItems();
+  const { data: chatUnread } = useChatUnreadCount();
+  const messagesUnread = chatUnread?.total_unread ?? 0;
 
   const [moreOpen, setMoreOpen] = useState(false);
   // Focus management for the hand-rolled "More" drawer: close on Escape and move
@@ -103,14 +106,29 @@ export function MobileTabBar() {
                 active ? 'text-brand-gold' : 'text-muted-foreground active:text-foreground',
               )}
               aria-current={active ? 'page' : undefined}
+              aria-label={
+                item.href === '/messages' && messagesUnread > 0
+                  ? `Messages, ${String(messagesUnread)} unread`
+                  : undefined
+              }
             >
-              <item.icon
-                className={cn(
-                  'h-5 w-5 transition-transform duration-150',
-                  active ? 'text-brand-gold scale-110' : 'text-muted-foreground',
-                )}
-                aria-hidden="true"
-              />
+              <span className="relative">
+                <item.icon
+                  className={cn(
+                    'h-5 w-5 transition-transform duration-150',
+                    active ? 'text-brand-gold scale-110' : 'text-muted-foreground',
+                  )}
+                  aria-hidden="true"
+                />
+                {item.href === '/messages' && messagesUnread > 0 ? (
+                  <span
+                    className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-gold px-1 text-[0.55rem] font-bold tabular-nums text-background"
+                    aria-hidden="true"
+                  >
+                    {messagesUnread > 99 ? '99+' : String(messagesUnread)}
+                  </span>
+                ) : null}
+              </span>
               <span>{item.label}</span>
             </Link>
           );

@@ -374,7 +374,7 @@ func main() {
 	// Webhook handler receives raw payloads and forwards them to backend services
 	// which perform Stripe signature verification via stripe.webhooks.constructEvent().
 	webhookHandler := handler.NewWebhookHandler(paymentClient, subscriptionClient)
-	propertyHandler := handler.NewPropertyHandler(userClient)
+	propertyHandler := handler.NewPropertyHandler(userClient, dbPool)
 	verificationHandler := handler.NewVerificationHandler(userClient)
 	workingCapitalHandler := handler.NewWorkingCapitalHandler(paymentClient, dbPool)
 	expenseHandler := handler.NewExpenseHandler(paymentClient)
