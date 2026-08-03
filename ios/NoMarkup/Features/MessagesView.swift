@@ -22,9 +22,9 @@ import UIKit
 /// - **FR-8.3 PDF/file attach:** Files picker → `ImageUploader.uploadPDF`
 ///   (`chat_attachment` context, PDF pass-through) → `message_type: file`.
 ///   Imaging allows `application/pdf` only on document/chat_attachment prefixes.
-/// - **FR-8.8 Share Contact Info — blocked server-side:** gRPC
-///   `ShareContactInfo` is **Unimplemented** on the chat server; gateway has no
-///   `POST /channels/{id}/share-contact` route. Skip UI button (no fake success).
+/// - **FR-8.8 Share Contact Info — shipped:** toolbar **Share contact** confirm
+///   → `POST /api/v1/channels/{id}/share-contact` → chat `ShareContactInfo`
+///   (opt-in phone/email system card; explicit confirm only).
 /// - Mark read on open / pull-to-refresh / after send / scroll-to-bottom tip
 ///   (`POST …/channels/{id}/read`) — deduped per tip message id
 /// - Local in-thread search over loaded messages

@@ -424,6 +424,28 @@ extension APIClient {
         )
     }
 
+    /// Sticky Idempotency-Key operation id for card SetupIntent mint (FR-9.2).
+    /// Cleared by the caller after PaymentSheet completes or the user cancels.
+    static let paymentSetupIntentIdempotencyKey = "payment-setup-intent"
+
+    /// POST `/api/v1/payments/setup-intent` — mint Stripe SetupIntent to save a card (FR-9.2).
+    /// Requires Idempotency-Key (money-adjacent gateway middleware). Sticky key
+    /// is retained on mint so network retries dedupe; caller must clear via
+    /// `clearPaymentSetupIntentIdempotencyKey()` after sheet complete/cancel.
+    func createPaymentSetupIntent() async throws -> PaymentSetupIntentResponse {
+        let headers = idempotencyHeader(for: Self.paymentSetupIntentIdempotencyKey)
+        return try await postJSON(
+            pathComponents: ["api", "v1", "payments", "setup-intent"],
+            body: EmptyJSONObject(),
+            authorized: .required,
+            headers: headers
+        )
+    }
+
+    func clearPaymentSetupIntentIdempotencyKey() {
+        clearIdempotencyKey(Self.paymentSetupIntentIdempotencyKey)
+    }
+
     /// DELETE `/api/v1/payments/methods/{id}`
     func deletePaymentMethod(id: String) async throws {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)

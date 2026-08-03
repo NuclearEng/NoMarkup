@@ -1388,7 +1388,7 @@ func (r *PostgresRepository) CreateDocument(ctx context.Context, doc *domain.Doc
 func (r *PostgresRepository) GetDocument(ctx context.Context, documentID string) (*domain.Document, error) {
 	query := `
 		SELECT id, user_id, document_type, status, file_name, file_url,
-		       rejection_reason, expires_at, created_at, updated_at
+		       rejection_reason, resubmission_count, expires_at, created_at, updated_at
 		FROM verification_documents
 		WHERE id = $1`
 
@@ -1397,7 +1397,7 @@ func (r *PostgresRepository) GetDocument(ctx context.Context, documentID string)
 	var expiresAt *time.Time
 	err := r.pool.QueryRow(ctx, query, documentID).Scan(
 		&doc.ID, &doc.UserID, &doc.Type, &doc.Status,
-		&fileName, &storageURL, &rejectionReason,
+		&fileName, &storageURL, &rejectionReason, &doc.ResubmissionCount,
 		&expiresAt, &doc.CreatedAt, &doc.UpdatedAt,
 	)
 	if err != nil {
@@ -1422,7 +1422,7 @@ func (r *PostgresRepository) GetDocument(ctx context.Context, documentID string)
 func (r *PostgresRepository) GetDocumentByUserAndType(ctx context.Context, userID string, docType domain.DocumentType) (*domain.Document, error) {
 	query := `
 		SELECT id, user_id, document_type, status, file_name, file_url,
-		       rejection_reason, expires_at, created_at, updated_at
+		       rejection_reason, resubmission_count, expires_at, created_at, updated_at
 		FROM verification_documents
 		WHERE user_id = $1 AND document_type = $2
 		ORDER BY created_at DESC
@@ -1433,7 +1433,7 @@ func (r *PostgresRepository) GetDocumentByUserAndType(ctx context.Context, userI
 	var expiresAt *time.Time
 	err := r.pool.QueryRow(ctx, query, userID, string(docType)).Scan(
 		&doc.ID, &doc.UserID, &doc.Type, &doc.Status,
-		&fileName, &storageURL, &rejectionReason,
+		&fileName, &storageURL, &rejectionReason, &doc.ResubmissionCount,
 		&expiresAt, &doc.CreatedAt, &doc.UpdatedAt,
 	)
 	if err != nil {
@@ -1458,7 +1458,7 @@ func (r *PostgresRepository) GetDocumentByUserAndType(ctx context.Context, userI
 func (r *PostgresRepository) ListDocuments(ctx context.Context, userID string) ([]domain.Document, error) {
 	query := `
 		SELECT id, user_id, document_type, status, file_name, file_url,
-		       rejection_reason, expires_at, created_at, updated_at
+		       rejection_reason, resubmission_count, expires_at, created_at, updated_at
 		FROM verification_documents
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -1477,7 +1477,7 @@ func (r *PostgresRepository) ListDocuments(ctx context.Context, userID string) (
 		var expiresAt *time.Time
 		err := rows.Scan(
 			&doc.ID, &doc.UserID, &doc.Type, &doc.Status,
-			&fileName, &storageURL, &rejectionReason,
+			&fileName, &storageURL, &rejectionReason, &doc.ResubmissionCount,
 			&expiresAt, &doc.CreatedAt, &doc.UpdatedAt,
 		)
 		if err != nil {
@@ -1502,9 +1502,16 @@ func (r *PostgresRepository) ListDocuments(ctx context.Context, userID string) (
 }
 
 func (r *PostgresRepository) UpdateDocumentStatus(ctx context.Context, documentID string, status domain.DocumentStatus, rejectionReason string) error {
+	// FR-2.10: each rejection increments resubmission_count (max 3 attempts per doc).
 	query := `
 		UPDATE verification_documents
-		SET status = $1, rejection_reason = $2, updated_at = now()
+		SET status = $1,
+		    rejection_reason = $2,
+		    resubmission_count = CASE
+		      WHEN $1 = 'rejected' THEN resubmission_count + 1
+		      ELSE resubmission_count
+		    END,
+		    updated_at = now()
 		WHERE id = $3`
 
 	tag, err := r.pool.Exec(ctx, query, string(status), rejectionReason, documentID)

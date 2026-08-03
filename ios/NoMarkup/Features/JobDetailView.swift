@@ -1610,6 +1610,12 @@ struct JobDetailView: View {
             trustChip(for: entry)
                 .padding(.leading, 40)
 
+            // FR-4.5 — small verification chips when gateway projects badges.
+            if !entry.verifiedBadges.isEmpty {
+                verificationBadgeRow(entry.verifiedBadges)
+                    .padding(.leading, 40)
+            }
+
             if showWithdraw {
                 Button(role: .destructive) {
                     Task { await withdrawOwnBid(entry) }
@@ -1691,6 +1697,31 @@ struct JobDetailView: View {
                 .font(.caption2)
                 .foregroundStyle(BrandTheme.textSecondary)
         }
+    }
+
+    @ViewBuilder
+    private func verificationBadgeRow(_ badges: [BidVerificationBadge]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(Array(badges.enumerated()), id: \.offset) { _, badge in
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.caption2)
+                            .foregroundStyle(BrandTheme.success)
+                            .accessibilityHidden(true)
+                        Text(badge.displayShortLabel)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(BrandTheme.success)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(BrandTheme.success.opacity(0.14), in: Capsule())
+                    .accessibilityLabel("Verified \(badge.displayShortLabel)")
+                }
+            }
+            .frame(minHeight: 44, alignment: .leading)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private func isOwnBid(_ entry: JobBidEntry) -> Bool {

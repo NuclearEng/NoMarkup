@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// Manage saved payment methods (cards). Adding a card is via Stripe checkout on orders.
+/// Manage saved payment methods (cards). FR-9.2: add a card via SetupIntent + PaymentSheet.
 struct PaymentMethodsView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
     @State private var methods: [PaymentMethodRow] = []
     @State private var isLoading = false
+    @State private var isAddingCard = false
     @State private var deletingID: String?
     @State private var errorMessage: String?
     @State private var statusMessage: String?
@@ -26,7 +27,7 @@ struct PaymentMethodsView: View {
                 BrandEmptyState(
                     title: "Sign in required",
                     systemImage: "lock.circle",
-                    message: "Sign in to view and remove saved cards.",
+                    message: "Sign in to view, add, and remove saved cards.",
                     actionTitle: "Sign in",
                     action: { auth.signOut() }
                 )
@@ -53,6 +54,26 @@ struct PaymentMethodsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .toolbar {
+            if auth.isAuthenticated, !auth.isScaffoldSession, !needsSignIn {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        Task { await addCard() }
+                    } label: {
+                        if isAddingCard {
+                            ProgressView()
+                                .tint(BrandTheme.accent)
+                        } else {
+                            Image(systemName: "plus.circle.fill")
+                        }
+                    }
+                    .disabled(isAddingCard)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel("Add card")
+                    .accessibilityHint("Saves a card with Stripe for faster checkout")
+                }
+            }
+        }
         .task { await load() }
         .refreshable { await load() }
         .confirmationDialog(
@@ -81,17 +102,40 @@ struct PaymentMethodsView: View {
                 pendingDelete = nil
             }
         } message: { method in
-            Text("Removes \(method.displayBrand) ending in \(method.displayLastFour) from your account. You can add a card again during checkout.")
+            Text("Removes \(method.displayBrand) ending in \(method.displayLastFour) from your account. You can add a card again here or during checkout.")
         }
     }
 
     private var listContent: some View {
         List {
             Section {
-                Text("Add a card during order checkout (Stripe). This screen is manage-only — remove outdated cards here.")
+                Text("Save a card for faster checkout. Cards are stored with Stripe — NoMarkup never sees full card numbers.")
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .listRowBackground(BrandTheme.navyElevated)
+            }
+
+            Section {
+                Button {
+                    Task { await addCard() }
+                } label: {
+                    if isAddingCard {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                                .tint(BrandTheme.accent)
+                            Text("Opening secure card form…")
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    } else {
+                        Label("Add card", systemImage: "creditcard.and.123")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                }
+                .disabled(isAddingCard)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityHint("Opens Stripe PaymentSheet to save a card without charging")
             }
 
             if methods.isEmpty {
@@ -100,6 +144,7 @@ struct PaymentMethodsView: View {
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .listRowBackground(BrandTheme.navyElevated)
                 } header: {
                     Text("Cards").brandSectionHeader()
                 }
@@ -118,6 +163,7 @@ struct PaymentMethodsView: View {
                     Text(statusMessage)
                         .font(.footnote)
                         .foregroundStyle(BrandTheme.success)
+                        .listRowBackground(BrandTheme.navyElevated)
                 }
             }
 
@@ -127,6 +173,7 @@ struct PaymentMethodsView: View {
                         .font(.footnote)
                         .foregroundStyle(BrandTheme.destructive)
                         .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
                 }
             }
         }
@@ -196,6 +243,40 @@ struct PaymentMethodsView: View {
             needsSignIn = true
             methods = []
         } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// FR-9.2 — SetupIntent → PaymentSheet (Apple Pay / card) → refresh list.
+    @MainActor
+    private func addCard() async {
+        guard !isAddingCard else { return }
+        errorMessage = nil
+        statusMessage = nil
+        isAddingCard = true
+        defer { isAddingCard = false }
+
+        do {
+            let setup = try await APIClient.shared.createPaymentSetupIntent()
+            guard let secret = setup.resolvedClientSecret else {
+                errorMessage = "Could not start card setup — no client secret from the server."
+                return
+            }
+            try await RailACheckout.presentSetupIntent(clientSecret: secret)
+            APIClient.shared.clearPaymentSetupIntentIdempotencyKey()
+            await load()
+            statusMessage = "Card saved."
+        } catch let error as RailACheckout.CheckoutError {
+            // Sheet canceled / misconfigured — mint a new SI next time.
+            APIClient.shared.clearPaymentSetupIntentIdempotencyKey()
+            if !error.isCanceled {
+                errorMessage = error.localizedDescription
+            }
+            statusMessage = nil
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch {
+            // Keep sticky key on mint/network failure so retries dedupe.
             errorMessage = error.localizedDescription
         }
     }

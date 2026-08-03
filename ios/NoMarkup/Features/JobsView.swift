@@ -27,11 +27,20 @@ struct JobsView: View {
     @State private var searchText = ""
     @State private var loadMoreError: String?
     @State private var selectedJob: JobSummary?
-    /// FR-3.8 browse filters (category + optional min starting bid).
+    /// FR-3.8 browse filters (category + min starting bid + schedule type).
     @State private var filterCategoryId = ""
     @State private var filterCategoryName = ""
     @State private var minStartingBidText = ""
+    /// Empty = any; otherwise gateway values: flexible | specific_date | date_range.
+    @State private var filterScheduleType = ""
     @State private var showBrowseFilters = false
+
+    private let scheduleFilterOptions: [(id: String, label: String)] = [
+        ("", "Any schedule"),
+        ("flexible", "Flexible"),
+        ("specific_date", "Specific date"),
+        ("date_range", "Date range"),
+    ]
 
     private var usesSplitView: Bool { horizontalSizeClass == .regular }
 
@@ -110,7 +119,7 @@ struct JobsView: View {
                                 )
                             }
                             .frame(minHeight: 44)
-                            .accessibilityHint("Filter browse by category and minimum starting bid")
+                            .accessibilityHint("Filter browse by category, schedule, and minimum starting bid")
                         }
                         NavigationLink {
                             JobsMapView()
@@ -131,7 +140,7 @@ struct JobsView: View {
     }
 
     private var hasActiveBrowseFilters: Bool {
-        !filterCategoryId.isEmpty || minStartingBidCents != nil
+        !filterCategoryId.isEmpty || minStartingBidCents != nil || !filterScheduleType.isEmpty
     }
 
     private var browseFiltersBar: some View {
@@ -150,6 +159,15 @@ struct JobsView: View {
                 .frame(minHeight: 44)
             }
             .accessibilityLabel("Filter by category")
+
+            // FR-3.8 — schedule_type query (flexible / specific_date / date_range).
+            Picker("Schedule", selection: $filterScheduleType) {
+                ForEach(scheduleFilterOptions, id: \.id) { opt in
+                    Text(opt.label).tag(opt.id)
+                }
+            }
+            .frame(minHeight: 44)
+            .accessibilityLabel("Filter by schedule type")
 
             HStack {
                 Text("Min starting bid ($)")
@@ -172,6 +190,7 @@ struct JobsView: View {
                     filterCategoryId = ""
                     filterCategoryName = ""
                     minStartingBidText = ""
+                    filterScheduleType = ""
                     Task { await load(reset: true) }
                 }
                 .buttonStyle(.bordered)
@@ -438,19 +457,18 @@ struct JobsView: View {
                 let categoryIds: [String]? = filterCategoryId.isEmpty
                     ? nil
                     : [filterCategoryId]
+                let schedule: String? = filterScheduleType.isEmpty ? nil : filterScheduleType
                 let response = try await APIClient.shared.fetchJobs(
                     page: nextPage,
                     pageSize: pageSize,
                     q: searchText,
                     categoryIds: categoryIds,
                     latitude: AppConfig.browseLatitude,
-                    longitude: AppConfig.browseLongitude
+                    longitude: AppConfig.browseLongitude,
+                    scheduleType: schedule,
+                    minPriceCents: minStartingBidCents
                 )
-                var loaded = response.jobs
-                // Client-side min starting bid (gateway may not expose price filter).
-                if let minCents = minStartingBidCents {
-                    loaded = loaded.filter { ($0.startingBidCents ?? 0) >= minCents }
-                }
+                let loaded = response.jobs
                 if reset {
                     jobs = loaded
                 } else {

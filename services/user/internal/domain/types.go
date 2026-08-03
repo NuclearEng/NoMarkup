@@ -389,18 +389,19 @@ const (
 
 // Document represents a verification document uploaded by a provider.
 type Document struct {
-	ID              string
-	UserID          string
-	Type            DocumentType
-	Status          DocumentStatus
-	FileName        string
-	StorageURL      string
-	MimeType        string
-	SizeBytes       int64
-	RejectionReason string
-	ExpiresAt       *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                string
+	UserID            string
+	Type              DocumentType
+	Status            DocumentStatus
+	FileName          string
+	StorageURL        string
+	MimeType          string
+	SizeBytes         int64
+	RejectionReason   string
+	ResubmissionCount int // FR-2.10: rejections of this document type / row (max 3)
+	ExpiresAt         *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // PendingDocument is a verification document awaiting admin review, joined with

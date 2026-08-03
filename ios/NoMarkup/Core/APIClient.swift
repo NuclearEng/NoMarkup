@@ -379,9 +379,11 @@ actor APIClient {
         return wrapped.listing
     }
 
-    /// GET `/api/v1/jobs?page=&page_size=&q=&category_ids=&latitude=&longitude=&radius_km=`
+    /// GET `/api/v1/jobs?page=&page_size=&q=&category_ids=&latitude=&longitude=&radius_km=&schedule_type=&min_price_cents=`
     /// - Parameter categoryIds: optional comma-joined filter (`category_ids` query; gateway splits on commas).
     /// - Parameter latitude/longitude: when both set, server returns `distance_km` (FR-10.7).
+    /// - Parameter scheduleType: `flexible` | `specific_date` | `date_range` (FR-3.8).
+    /// - Parameter minPriceCents: maps to gateway `min_price_cents` (starting bid floor).
     func fetchJobs(
         page: Int = 1,
         pageSize: Int = 20,
@@ -389,7 +391,9 @@ actor APIClient {
         categoryIds: [String]? = nil,
         latitude: Double? = nil,
         longitude: Double? = nil,
-        radiusKm: Double? = nil
+        radiusKm: Double? = nil,
+        scheduleType: String? = nil,
+        minPriceCents: Int64? = nil
     ) async throws -> JobsResponse {
         var items = [
             URLQueryItem(name: "page", value: String(max(1, page))),
@@ -415,6 +419,15 @@ actor APIClient {
             if let radiusKm, radiusKm > 0 {
                 items.append(URLQueryItem(name: "radius_km", value: String(radiusKm)))
             }
+        }
+        if let scheduleType {
+            let trimmed = scheduleType.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                items.append(URLQueryItem(name: "schedule_type", value: trimmed))
+            }
+        }
+        if let minPriceCents, minPriceCents > 0 {
+            items.append(URLQueryItem(name: "min_price_cents", value: String(minPriceCents)))
         }
         return try await getJSON(pathComponents: ["api", "v1", "jobs"], query: items)
     }

@@ -18,6 +18,10 @@ import UIKit
 ///
 /// **FR-2.8** — when `expires_at` is present, rows show expiry and warn when
 /// within 30 days (or expired). Renewal is re-upload; no Checkr integration.
+///
+/// **FR-2.10** — when API provides `resubmission_count`, rows show
+/// "N of 3" attempts. Max 3 resubmissions after rejection; contact support
+/// after the third rejection (server tracks count on reject).
 struct VerificationDocumentsView: View {
     @EnvironmentObject private var auth: AuthViewModel
 
@@ -167,7 +171,7 @@ struct VerificationDocumentsView: View {
             } header: {
                 Text(String(localized: "\(documents.count) documents")).brandSectionHeader()
             } footer: {
-                Text("JPEG, PNG, WebP, or PDF up to 10 MB. MIME type is re-checked server-side (magic bytes); only files you upload under your account can be registered. Insurance and licenses with an expiry date should be renewed before they expire so you can keep bidding on new jobs.")
+                Text("JPEG, PNG, WebP, or PDF up to 10 MB. MIME type is re-checked server-side (magic bytes); only files you upload under your account can be registered. Insurance and licenses with an expiry date should be renewed before they expire so you can keep bidding on new jobs. After rejection you may re-upload up to 3 times (resubmission count shown per document); after 3 rejections contact support.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -241,11 +245,25 @@ struct VerificationDocumentsView: View {
                     .foregroundStyle(BrandTheme.destructive)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            HStack(alignment: .firstTextBaseline) {
-                if let count = doc.resubmissionCount, count > 0 {
-                    Text("Resubmissions: \(count)")
-                        .font(.caption2)
-                        .foregroundStyle(BrandTheme.textSecondary)
+            // FR-2.10 — surface attempt count / max 3 when API provides it.
+            // Show on rejected docs always; on other statuses only when count > 0.
+            let isRejected = (doc.status ?? "").lowercased() == "rejected"
+            let showResubmission = doc.resubmissionCount.map { $0 > 0 || isRejected } ?? false
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if showResubmission, let count = doc.resubmissionCount {
+                    let remaining = max(0, 3 - count)
+                    Text("Resubmissions: \(count) of 3")
+                        .font(.caption2.weight(.medium).monospacedDigit())
+                        .foregroundStyle(count >= 3 ? BrandTheme.destructive : BrandTheme.textSecondary)
+                    if isRejected, count >= 3 {
+                        Text("Contact support to continue")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(BrandTheme.destructive)
+                    } else if isRejected, remaining > 0 {
+                        Text(remaining == 1 ? "1 re-upload left" : "\(remaining) re-uploads left")
+                            .font(.caption2)
+                            .foregroundStyle(BrandTheme.warning)
+                    }
                 }
                 Spacer(minLength: 8)
                 if doc.expiresAtDate != nil || (doc.expiresAt.map { !$0.isEmpty } ?? false) {

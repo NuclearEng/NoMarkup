@@ -456,10 +456,11 @@ func (s *Server) GetDocumentStatus(ctx context.Context, req *userv1.GetDocumentS
 	}
 
 	resp := &userv1.GetDocumentStatusResponse{
-		Id:              doc.ID,
-		DocumentType:    string(doc.Type),
-		Status:          stringToProtoVerificationStatus(string(doc.Status)),
-		RejectionReason: doc.RejectionReason,
+		Id:                doc.ID,
+		DocumentType:      string(doc.Type),
+		Status:            stringToProtoVerificationStatus(string(doc.Status)),
+		RejectionReason:   doc.RejectionReason,
+		ResubmissionCount: int32(doc.ResubmissionCount),
 	}
 	if doc.ExpiresAt != nil {
 		resp.ExpiresAt = timestamppb.New(*doc.ExpiresAt)
@@ -480,10 +481,11 @@ func (s *Server) ListDocuments(ctx context.Context, req *userv1.ListDocumentsReq
 	protoDocs := make([]*userv1.GetDocumentStatusResponse, 0, len(docs))
 	for _, doc := range docs {
 		pd := &userv1.GetDocumentStatusResponse{
-			Id:              doc.ID,
-			DocumentType:    string(doc.Type),
-			Status:          stringToProtoVerificationStatus(string(doc.Status)),
-			RejectionReason: doc.RejectionReason,
+			Id:                doc.ID,
+			DocumentType:      string(doc.Type),
+			Status:            stringToProtoVerificationStatus(string(doc.Status)),
+			RejectionReason:   doc.RejectionReason,
+			ResubmissionCount: int32(doc.ResubmissionCount),
 		}
 		if doc.ExpiresAt != nil {
 			pd.ExpiresAt = timestamppb.New(*doc.ExpiresAt)

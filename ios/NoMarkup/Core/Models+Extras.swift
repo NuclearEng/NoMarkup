@@ -834,6 +834,17 @@ struct PaymentMethodsResponse: Codable, Sendable {
     }
 }
 
+/// Response from `POST /api/v1/payments/setup-intent` (FR-9.2).
+struct PaymentSetupIntentResponse: Codable, Sendable, Hashable {
+    var clientSecret: String?
+
+    /// Non-empty Stripe SetupIntent client secret (`seti_…_secret_…`).
+    var resolvedClientSecret: String? {
+        let s = clientSecret?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return s.isEmpty ? nil : s
+    }
+}
+
 // MARK: - Stripe Connect (provider)
 
 struct StripeAccountStatus: Codable, Sendable, Hashable {

@@ -623,6 +623,9 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 	// them from the user service so the bid cards and the award confirmation show
 	// who is actually bidding (the endpoint is already job-owner-only).
 	namesByProvider := h.resolveProviderNames(r.Context(), providerIDs)
+	// FR-4.5: verification badges (engine leaves badges empty; enrich from
+	// verified documents via user service). Fail-soft when userClient is nil.
+	badgesByProvider := h.batchVerificationBadges(r.Context(), providerIDs)
 
 	bids := make([]map[string]interface{}, 0, len(resp.GetBids()))
 	for _, bwp := range resp.GetBids() {
@@ -637,6 +640,11 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 				avatarURL = n["avatar_url"]
 			}
 		}
+		// Prefer engine-supplied badges when present; otherwise use enrichment.
+		badges := protoVerificationBadgesToJSON(bwp.GetBadges())
+		if len(badges) == 0 {
+			badges = badgesByProvider[pid]
+		}
 		entry := map[string]interface{}{
 			"bid":                    protoBidToJSON(bwp.GetBid()),
 			"provider_display_name":  displayName,
@@ -648,6 +656,8 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 			// BidCard then renders without a trust gauge, never an error.
 			"trust_score":    trustByProvider[bwp.GetBid().GetProviderId()],
 			"review_summary": nil,
+			// FR-4.5 — verified document types for badge chips (may be empty).
+			"badges": badges,
 		}
 		bids = append(bids, entry)
 	}
@@ -655,6 +665,115 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"bids": bids,
 	})
+}
+
+
+// batchVerificationBadges loads verified document types per provider (FR-4.5).
+// Concurrent fan-out mirrors batchTrustScores; fail-soft on any error.
+func (h *BidHandler) batchVerificationBadges(ctx context.Context, providerIDs []string) map[string][]map[string]interface{} {
+	out := make(map[string][]map[string]interface{})
+	if h.userClient == nil || len(providerIDs) == 0 {
+		return out
+	}
+
+	unique := make([]string, 0, len(providerIDs))
+	seen := make(map[string]struct{}, len(providerIDs))
+	for _, id := range providerIDs {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	const maxConcurrent = 8
+	sem := make(chan struct{}, maxConcurrent)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, id := range unique {
+		wg.Add(1)
+		go func(providerID string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			resp, err := h.userClient.ListDocuments(ctx, &userv1.ListDocumentsRequest{UserId: providerID})
+			if err != nil {
+				slog.DebugContext(ctx, "bid list verification badges lookup failed", "error", err, "provider_id", providerID)
+				return
+			}
+			badges := make([]map[string]interface{}, 0)
+			for _, d := range resp.GetDocuments() {
+				if verificationStatusToString(d.GetStatus()) != "verified" {
+					continue
+				}
+				docType := d.GetDocumentType()
+				if docType == "" {
+					continue
+				}
+				entry := map[string]interface{}{
+					"document_type": docType,
+					"status":        "verified",
+				}
+				if d.GetExpiresAt() != nil {
+					entry["expires_at"] = formatTimestamp(d.GetExpiresAt())
+				}
+				badges = append(badges, entry)
+			}
+			if len(badges) == 0 {
+				return
+			}
+			mu.Lock()
+			out[providerID] = badges
+			mu.Unlock()
+		}(id)
+	}
+	wg.Wait()
+	return out
+}
+
+// protoVerificationBadgesToJSON maps bid-engine VerificationBadge protos to JSON maps.
+// Only verified badges are projected onto the customer ladder.
+func protoVerificationBadgesToJSON(badges []*userv1.VerificationBadge) []map[string]interface{} {
+	if len(badges) == 0 {
+		return nil
+	}
+	out := make([]map[string]interface{}, 0, len(badges))
+	for _, b := range badges {
+		if b == nil {
+			continue
+		}
+		status := verificationStatusToString(b.GetStatus())
+		if status == "" {
+			status = "verified"
+		}
+		if status != "verified" {
+			continue
+		}
+		docType := b.GetDocumentType()
+		if docType == "" {
+			continue
+		}
+		entry := map[string]interface{}{
+			"document_type": docType,
+			"status":        status,
+		}
+		if b.GetExpiresAt() != nil {
+			entry["expires_at"] = formatTimestamp(b.GetExpiresAt())
+		}
+		if b.GetVerifiedAt() != nil {
+			entry["verified_at"] = formatTimestamp(b.GetVerifiedAt())
+		}
+		out = append(out, entry)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // batchTrustScores fetches the real computed trust score for a set of provider

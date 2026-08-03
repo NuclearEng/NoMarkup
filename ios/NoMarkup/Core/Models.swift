@@ -1109,7 +1109,7 @@ struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
     var isFileMessage: Bool { normalizedType == "file" }
 
     /// Opt-in contact share system card (`message_type == contact_share`).
-    /// FR-8.8 share button is not live (gateway + gRPC ShareContactInfo unimplemented).
+    /// FR-8.8: posted via `POST /channels/{id}/share-contact` (ShareContactInfo).
     var isContactShareMessage: Bool { normalizedType == "contact_share" }
 
     /// System-style centered pills: platform system + local-terms accept/reject outcomes.
@@ -2241,6 +2241,39 @@ struct UserTrustHistoryResponse: Codable, Sendable {
     }
 }
 
+/// FR-4.5 verification badge chip from bid ladder payload (`badges[]`).
+struct BidVerificationBadge: Codable, Sendable, Hashable {
+    var documentType: String?
+    var status: String?
+    var verifiedAt: String?
+    var expiresAt: String?
+
+    /// Short label for a capsule chip (e.g. "ID", "License", "Insurance").
+    var displayShortLabel: String {
+        let raw = (documentType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch raw {
+        case "drivers_license", "driver_license", "id", "government_id":
+            return "ID"
+        case "business_license":
+            return "Business"
+        case "trade_license":
+            return "License"
+        case "insurance":
+            return "Insurance"
+        case "ein", "ein_tin":
+            return "EIN"
+        default:
+            if raw.isEmpty { return "Verified" }
+            return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    var isVerified: Bool {
+        let s = (status ?? "verified").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return s.isEmpty || s == "verified"
+    }
+}
+
 struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
     var bid: JobBidCore?
     var providerDisplayName: String?
@@ -2253,9 +2286,16 @@ struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
     /// FR-4.5/4.6: optional review summary when gateway projects it.
     var averageRating: Double?
     var reviewCount: Int?
+    /// FR-4.5: verified document badges when gateway projects them.
+    var badges: [BidVerificationBadge]?
 
     var id: String {
         bid?.id ?? UUID().uuidString
+    }
+
+    /// Verified badges only — empty when payload has none (UI skips).
+    var verifiedBadges: [BidVerificationBadge] {
+        (badges ?? []).filter(\.isVerified)
     }
 
     var displayName: String {
@@ -2294,6 +2334,7 @@ struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
         case jobsCompleted
         case trustScore
         case reviewSummary
+        case badges
     }
 
     private enum ReviewSummaryKeys: String, CodingKey {
@@ -2347,6 +2388,16 @@ struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
                 reviewCount = n
             }
         }
+
+        // FR-4.5 — optional badges array; missing/null → nil (skip UI chips).
+        if c.contains(.badges),
+           let list = try? c.decodeIfPresent([BidVerificationBadge].self, forKey: .badges),
+           !list.isEmpty
+        {
+            badges = list
+        } else {
+            badges = nil
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -2357,6 +2408,7 @@ struct JobBidEntry: Codable, Sendable, Hashable, Identifiable {
         try c.encodeIfPresent(providerAvatarUrl, forKey: .providerAvatarUrl)
         try c.encodeIfPresent(jobsCompleted, forKey: .jobsCompleted)
         try c.encodeIfPresent(trustScore, forKey: .trustScore)
+        try c.encodeIfPresent(badges, forKey: .badges)
     }
 }
 
