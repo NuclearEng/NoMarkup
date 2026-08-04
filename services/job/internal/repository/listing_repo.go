@@ -941,6 +941,67 @@ func (r *ListingPostgresRepository) ReleaseAuthorizedBidBonds(ctx context.Contex
 	return tag.RowsAffected(), nil
 }
 
+// SweepStrandedBidBonds is the backfill for fail-soft primary release paths:
+// authorized bonds on non-active listings (except unpaid winners) and abandoned
+// pending SetupIntents. Idempotent CAS updates only.
+func (r *ListingPostgresRepository) SweepStrandedBidBonds(ctx context.Context, pendingOlderThan time.Duration, limit int) (int64, int64, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	if pendingOlderThan <= 0 {
+		pendingOlderThan = 24 * time.Hour
+	}
+
+	// Release authorized bonds when the listing is terminal AND the bond holder
+	// is not the buyer of a still-unpaid win (pending_payment). Held/released/
+	// cancelled/refunded orders mean the bond should already be free.
+	relTag, err := r.pool.Exec(ctx, `
+		UPDATE bid_bonds b
+		   SET status = 'released', updated_at = now()
+		 WHERE b.id IN (
+		   SELECT b2.id
+		     FROM bid_bonds b2
+		     JOIN listings l ON l.id = b2.listing_id
+		    WHERE b2.status = 'authorized'
+		      AND l.status IN ('sold', 'expired', 'cancelled')
+		      AND NOT EXISTS (
+		            SELECT 1
+		              FROM listing_orders o
+		             WHERE o.listing_id = b2.listing_id
+		               AND o.buyer_id = b2.user_id
+		               AND o.escrow_status = 'pending_payment'
+		          )
+		    ORDER BY b2.updated_at ASC
+		    LIMIT $1
+		 )`,
+		limit,
+	)
+	if err != nil {
+		return 0, 0, fmt.Errorf("sweep stranded authorized bid bonds: %w", err)
+	}
+
+	// Cancel abandoned pending SetupIntents (never confirmed).
+	// Interval as seconds — portable vs Go duration string formats.
+	canTag, err := r.pool.Exec(ctx, `
+		UPDATE bid_bonds
+		   SET status = 'cancelled', updated_at = now()
+		 WHERE id IN (
+		   SELECT id
+		     FROM bid_bonds
+		    WHERE status = 'pending'
+		      AND created_at < now() - make_interval(secs => $1::double precision)
+		    ORDER BY created_at ASC
+		    LIMIT $2
+		 )`,
+		pendingOlderThan.Seconds(),
+		limit,
+	)
+	if err != nil {
+		return relTag.RowsAffected(), 0, fmt.Errorf("sweep pending bid bonds: %w", err)
+	}
+	return relTag.RowsAffected(), canTag.RowsAffected(), nil
+}
+
 // generateUUID returns a fresh UUID v4 string.
 func generateUUID() string {
 	return uuid.NewString()

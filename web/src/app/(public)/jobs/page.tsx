@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 
 import { JobsSearchClient } from './JobsSearchClient';
 import type { Job, JobsResponse, SearchJobsParams } from '@/types';
+import { serverFetch } from '@/lib/server-fetch';
 
 // Server-side API origin. Mirror marketplace browse: prefer server-only
 // API_URL, fall back to public var, then localhost for dev. Jobs search is a
@@ -127,7 +128,7 @@ async function fetchJobs(queryString: string): Promise<JobsResponse> {
     const url = queryString
       ? `${API_URL}/api/v1/jobs?${queryString}`
       : `${API_URL}/api/v1/jobs`;
-    const res = await fetch(url, { next: { revalidate: 30 } });
+    const res = await serverFetch(url, { next: { revalidate: 30 } });
     if (!res.ok) return EMPTY_RESPONSE;
     const body = (await res.json()) as {
       jobs?: Job[] | null;

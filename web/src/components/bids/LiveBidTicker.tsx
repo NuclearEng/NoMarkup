@@ -54,7 +54,7 @@ export function LiveBidTicker({
       <div className="flex items-baseline gap-3">
         <span
           className={cn(
-            'text-4xl font-bold tracking-tight tabular-nums transition-colors duration-300 sm:text-5xl',
+            'text-4xl font-bold tracking-tight font-mono tabular-nums transition-colors duration-300 sm:text-5xl',
             flash && direction === 'down' && 'text-bid-winning',
             flash && direction === 'up' && 'text-destructive',
             !flash && 'text-foreground',

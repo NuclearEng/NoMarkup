@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { useAuthStore } from '@/stores/auth-store';
 
+import { CommandPaletteTrigger } from '@/components/command/command-palette';
 import { MarketChip } from '@/components/location/MarketChip';
 
 import { Logo } from './Logo';
@@ -53,6 +54,7 @@ export function Header() {
         <nav className="hidden items-center gap-4 md:flex" aria-label="Main">
           {/* Current-city switcher — reflects/updates the shared market context. */}
           <MarketChip className="max-w-[11rem]" />
+          <CommandPaletteTrigger />
           {isHydrating ? null : isAuthenticated ? (
             <>
               <Button size="sm" className="min-h-[44px]" asChild>

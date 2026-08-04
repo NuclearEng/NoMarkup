@@ -5,6 +5,7 @@ import type { PublicProvider } from '@/hooks/useProviders';
 import { sanitizeJsonLd } from '@/lib/json-ld';
 
 import { ProviderProfileClient } from './ProviderProfileClient';
+import { serverFetch } from '@/lib/server-fetch';
 
 // Server-side API origin. Mirror marketplace/[id] + jobs/[id]: prefer the
 // server-only API_URL, fall back to the public var, then localhost for dev.
@@ -27,7 +28,7 @@ const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
  */
 async function fetchProvider(id: string): Promise<PublicProvider | null> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/providers/${id}`, {
+    const res = await serverFetch(`${API_URL}/api/v1/providers/${id}`, {
       next: { revalidate: 60 },
     });
     if (!res.ok) return null;

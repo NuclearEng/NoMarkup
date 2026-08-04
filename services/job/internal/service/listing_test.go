@@ -68,6 +68,10 @@ func (m *mockListingRepo) FindEndedAuctions(ctx context.Context, limit int) ([]s
 	}
 	return nil, nil
 }
+func (m *mockListingRepo) SweepStrandedBidBonds(ctx context.Context, pendingOlderThan time.Duration, limit int) (int64, int64, error) {
+	return 0, 0, nil
+}
+
 func (m *mockListingRepo) ReleaseAuthorizedBidBonds(ctx context.Context, listingID, excludeUserID string) (int64, error) {
 	if m.releaseBondsFn != nil {
 		return m.releaseBondsFn(ctx, listingID, excludeUserID)

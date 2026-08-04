@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import type { Job, JobsResponse } from '@/types';
 
 import { LegalLandingClient } from './LegalLandingClient';
+import { serverFetch } from '@/lib/server-fetch';
 
 // Server-side API origin. Mirrors the marketplace page: prefer server-only
 // API_URL, fall back to the public var, then localhost for dev. All reads here
@@ -44,7 +45,7 @@ interface RawCategoryNode {
  */
 async function resolveLegalCategoryId(): Promise<string | null> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/categories/tree`, {
+    const res = await serverFetch(`${API_URL}/api/v1/categories/tree`, {
       next: { revalidate: 300 },
     });
     if (!res.ok) return null;
@@ -73,7 +74,7 @@ async function resolveLegalCategoryId(): Promise<string | null> {
  */
 async function isLegalServicesEnabled(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/flags`, { next: { revalidate: 60 } });
+    const res = await serverFetch(`${API_URL}/api/v1/flags`, { next: { revalidate: 60 } });
     if (!res.ok) return false;
     const flags = (await res.json()) as Record<string, boolean | undefined>;
     return flags['legal_services'] ?? false;
@@ -87,7 +88,7 @@ async function fetchLegalJobs(categoryId: string | null): Promise<JobsResponse> 
   try {
     const params = new URLSearchParams({ page: '1', page_size: '12' });
     if (categoryId) params.set('category_ids', categoryId);
-    const res = await fetch(`${API_URL}/api/v1/jobs?${params.toString()}`, {
+    const res = await serverFetch(`${API_URL}/api/v1/jobs?${params.toString()}`, {
       next: { revalidate: 30 },
     });
     if (!res.ok) return EMPTY_JOBS;

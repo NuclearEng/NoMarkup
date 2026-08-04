@@ -82,14 +82,19 @@ Each service gets `{name}.pem` + `{name}-key.pem` with:
 
 ## Kubelet probes
 
+**2026-08-03:** Rust engine Deployments (bidding, fraud, trust, imaging,
+underwriting, pricing) use **HTTP** `GET /healthz` on the named `metrics` port
+(not `grpc:`). Go services already use HTTP. That probe switch is done in-repo —
+still verify on a live cluster before arming mTLS.
+
 Native gRPC liveness/readiness probes **cannot** present a client certificate.
 When mTLS is armed (`ClientAuth = RequireAndVerifyClientCert`), those probes
 fail and the pod restarts.
 
-Every Go service and Rust engine already exposes HTTP `/healthz` / `/readyz` on
-a separate observability port. Switch the Deployment probes to that HTTP port
-**before** arming mTLS in a cluster. Do not enable mTLS while probes still use
-`grpc:`.
+Go services expose HTTP `/healthz` + `/readyz` on the metrics port. Rust engines
+expose process `/healthz` on the metrics port (Deployments already probe that —
+2026-08-03). Confirm probes on staging before arming mTLS. Do not re-enable
+`grpc:` probes under mTLS.
 
 ## What remains after arming
 

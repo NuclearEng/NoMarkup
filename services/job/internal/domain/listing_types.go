@@ -163,6 +163,10 @@ type ListingRepository interface {
 	// listing. excludeUserID keeps the winner's bond until payment (empty =
 	// release all, e.g. expired auction).
 	ReleaseAuthorizedBidBonds(ctx context.Context, listingID, excludeUserID string) (int64, error)
+	// SweepStrandedBidBonds releases authorized bonds on terminal listings
+	// (except unpaid winners still in pending_payment) and cancels stale
+	// pending SetupIntents older than pendingOlderThan. limit caps each UPDATE.
+	SweepStrandedBidBonds(ctx context.Context, pendingOlderThan time.Duration, limit int) (released, cancelled int64, err error)
 
 	// Post-award
 	GetListingOrder(ctx context.Context, orderID string) (*ListingOrder, error)

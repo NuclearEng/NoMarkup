@@ -81,12 +81,11 @@ git), apply ClusterSecretStore + ExternalSecrets (or sealed overlays), confirm
 
 ## Recommended (not strictly blocking)
 
-- **Migration-numbering CI lint.** There is no check for gaps/duplicates in
-  `database/migrations/`. Add a CI step that fails on a missing or duplicate
-  sequence number so two branches can't both grab `0NN`.
-- **Schema-version readiness gate.** Have `/readyz` (or the migration Job's
-  completion) confirm the DB is at the expected migration version, so a service
-  can't serve traffic against an un-migrated DB.
+- **Migration-numbering CI lint.** **Done** — `scripts/check-migration-sequence.sh`
+  + CI job **Migration Sequence Lint** (fail on dupe/gap).
+- **Schema-version readiness gate.** **Done (optional env)** — gateway
+  `/readyz` checks `schema_migrations` when `EXPECTED_SCHEMA_VERSION` is set
+  (503 if dirty or version behind). Stamp from deploy/migrate job for prod.
 
 ---
 

@@ -236,7 +236,8 @@ describe('JobCard', () => {
     );
     const bar = screen.getByRole('progressbar');
     const fill = bar.firstElementChild as HTMLElement | null;
-    expect(fill?.className).toContain('bg-red-500');
+    // Semantic tokens (not raw red/amber/emerald hex utilities).
+    expect(fill?.className).toContain('bg-destructive/70');
   });
 
   it('paints the progress bar amber when between 50% and 80% elapsed', () => {
@@ -253,7 +254,7 @@ describe('JobCard', () => {
     );
     const bar = screen.getByRole('progressbar');
     const fill = bar.firstElementChild as HTMLElement | null;
-    expect(fill?.className).toContain('bg-amber-500');
+    expect(fill?.className).toContain('bg-trust-medium/60');
   });
 
   it('paints the progress bar emerald when < 50% elapsed', () => {
@@ -270,6 +271,20 @@ describe('JobCard', () => {
     );
     const bar = screen.getByRole('progressbar');
     const fill = bar.firstElementChild as HTMLElement | null;
-    expect(fill?.className).toContain('bg-emerald-500');
+    expect(fill?.className).toContain('bg-bid-winning/50');
+  });
+
+  it('shows Ending now ribbon when auction ends within 10 minutes', () => {
+    const endsAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    render(
+      <JobCard
+        job={{
+          ...mockJob,
+          auction_ends_at: endsAt,
+          auction_duration_hours: 24,
+        }}
+      />,
+    );
+    expect(screen.getByText('Ending now')).toBeInTheDocument();
   });
 });

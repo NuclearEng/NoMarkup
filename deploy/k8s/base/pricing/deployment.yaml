@@ -62,15 +62,17 @@ spec:
               drop:
                 - ALL
           livenessProbe:
-            grpc:
-              port: 50061
+            httpGet:
+              path: /healthz
+              port: metrics
             initialDelaySeconds: 10
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
-            grpc:
-              port: 50061
+            httpGet:
+              path: /healthz
+              port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5

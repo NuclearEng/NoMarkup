@@ -320,6 +320,17 @@ func main() {
 		envInt("AUCTION_CLOSE_BATCH", 100),
 	)
 
+	// Bid-bond safety net: release stranded authorized bonds on terminal
+	// listings and cancel abandoned pending SetupIntents (handoff C11 residual).
+	runBidBondSweepCron(
+		sigCtx,
+		listingService,
+		envDuration("BID_BOND_SWEEP_INTERVAL", 5*time.Minute),
+		envDuration("BID_BOND_SWEEP_INITIAL_DELAY", 45*time.Second),
+		envDuration("BID_BOND_PENDING_MAX_AGE", 24*time.Hour),
+		envInt("BID_BOND_SWEEP_BATCH", 200),
+	)
+
 	// Fair Price Index refresher. `fair_price_index` is a materialized view: it
 	// is a snapshot that never updates itself, and nothing in the tree refreshed
 	// it, so the public pricing endpoint served an empty list on every database

@@ -121,7 +121,9 @@ describe('api request methods', () => {
     if (!call) throw new Error('fetch was not called');
     const headers = call[1]?.headers as Record<string, string>;
     expect(headers[HEADER_REQUEST_ID]).toMatch(/^[0-9a-f]{16}$/);
-    expect(parseTraceparent(headers[HEADER_TRACEPARENT])).not.toBeNull();
+    const tp = headers[HEADER_TRACEPARENT];
+    expect(tp).toBeDefined();
+    expect(parseTraceparent(tp as string)).not.toBeNull();
   });
 
   it('POST serializes body as JSON', async () => {

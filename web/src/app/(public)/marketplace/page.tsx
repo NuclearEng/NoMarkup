@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 
 import { ListingBrowseClient } from '@/components/marketplace/ListingBrowseClient';
+import { serverFetch } from '@/lib/server-fetch';
 import type { Listing, ListingsResponse, SearchListingsParams } from '@/types';
 
 // Server-side API origin. Mirror next.config.ts / the detail page: prefer the
@@ -130,7 +131,7 @@ export const metadata: Metadata = {
  */
 async function fetchListings(queryString: string): Promise<ListingsResponse> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/listings?${queryString}`, {
+    const res = await serverFetch(`${API_URL}/api/v1/listings?${queryString}`, {
       next: { revalidate: 30 },
     });
     if (!res.ok) return EMPTY_RESPONSE;

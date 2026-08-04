@@ -34,6 +34,11 @@ interface TerminalGridProps {
   startingPriceCents: number;
   marketRange: MarketRange;
   mockProviders: readonly MockProvider[];
+  jobId?: string;
+  snipeExtensionCount?: number;
+  jobDescription?: string;
+  jobTitle?: string;
+  jobCategory?: string;
 }
 
 export function TerminalGrid({
@@ -42,6 +47,11 @@ export function TerminalGrid({
   startingPriceCents,
   marketRange,
   mockProviders,
+  jobId,
+  snipeExtensionCount = 0,
+  jobDescription,
+  jobTitle,
+  jobCategory,
 }: TerminalGridProps) {
   const { layouts, activeLayoutId, isEditing, removeWidget, updateWidgetLayouts } =
     useTerminalLayoutStore();
@@ -137,8 +147,24 @@ export function TerminalGrid({
       startingPriceCents,
       marketRange,
       mockProviders,
+      jobId,
+      snipeExtensionCount,
+      jobDescription,
+      jobTitle,
+      jobCategory,
     }),
-    [sim, auctionEndsAt, startingPriceCents, marketRange, mockProviders],
+    [
+      sim,
+      auctionEndsAt,
+      startingPriceCents,
+      marketRange,
+      mockProviders,
+      jobId,
+      snipeExtensionCount,
+      jobDescription,
+      jobTitle,
+      jobCategory,
+    ],
   );
 
   if (widgets.length === 0) {

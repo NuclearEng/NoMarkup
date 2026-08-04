@@ -3,10 +3,12 @@ package router
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1350,6 +1352,28 @@ func metricsRequestIsLocal(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+// checkSchemaVersion verifies golang-migrate's schema_migrations table against
+// EXPECTED_SCHEMA_VERSION. Returns (ok, detail for checks map).
+func checkSchemaVersion(ctx context.Context, pool *pgxpool.Pool, expectedRaw string) (bool, string) {
+	expected, err := strconv.ParseInt(expectedRaw, 10, 64)
+	if err != nil || expected < 0 {
+		return false, "invalid EXPECTED_SCHEMA_VERSION=" + expectedRaw
+	}
+	var version int64
+	var dirty bool
+	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations LIMIT 1`).Scan(&version, &dirty)
+	if err != nil {
+		return false, "unhealthy: " + err.Error()
+	}
+	if dirty {
+		return false, fmt.Sprintf("dirty at version %d", version)
+	}
+	if version < expected {
+		return false, fmt.Sprintf("behind: have %d, need >= %d", version, expected)
+	}
+	return true, fmt.Sprintf("ok (version %d)", version)
+}
+
 // readinessHandler returns 200 only when all critical backing dependencies
 // are reachable. Used by Kubernetes readiness probes and load balancers to
 // remove the pod from rotation when it is unable to serve real traffic.
@@ -1357,12 +1381,16 @@ func metricsRequestIsLocal(r *http.Request) bool {
 // Probes:
 //   - PostgreSQL: pgxpool.Ping with 1s deadline (only when DATABASE_URL is set).
 //   - Redis: cache.Ping with 1s deadline (only when REDIS_URL is set).
+//   - Schema version (optional): when EXPECTED_SCHEMA_VERSION is set and DB is
+//     reachable, SELECT version, dirty FROM schema_migrations; 503 if dirty or
+//     version < expected. Unset = skip (local/dev default).
 //
 // Downstream gRPC services are NOT probed here because gateway uses
 // grpc.NewClient with lazy connection — a 503 here would mask actual gateway
 // health when a single dependency is briefly unhealthy. Prefer per-service
 // readiness probes on each backend.
 func readinessHandler(dbPool *pgxpool.Pool, cacheClient *cache.Client) http.HandlerFunc {
+	expectedSchema := strings.TrimSpace(os.Getenv("EXPECTED_SCHEMA_VERSION"))
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 1*time.Second)
 		defer cancel()
@@ -1376,9 +1404,19 @@ func readinessHandler(dbPool *pgxpool.Pool, cacheClient *cache.Client) http.Hand
 				ready = false
 			} else {
 				checks["postgres"] = "ok"
+				if expectedSchema != "" {
+					ok, detail := checkSchemaVersion(ctx, dbPool, expectedSchema)
+					checks["schema"] = detail
+					if !ok {
+						ready = false
+					}
+				} else {
+					checks["schema"] = "skipped (EXPECTED_SCHEMA_VERSION not set)"
+				}
 			}
 		} else {
 			checks["postgres"] = "skipped (DATABASE_URL not set)"
+			checks["schema"] = "skipped (no database)"
 		}
 
 		if cacheClient != nil {

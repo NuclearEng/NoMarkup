@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { AnimatedPrice } from '@/components/bids/AnimatedPrice';
 import { BuyItNowButton } from '@/components/marketplace/BuyItNowButton';
 import { BuyerOfferCard } from '@/components/marketplace/BuyerOfferCard';
 import { CounterOfferBanner } from '@/components/marketplace/CounterOfferBanner';
@@ -22,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { MonoPrice } from '@/components/ui/mono-price';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkline } from '@/components/ui/sparkline';
@@ -367,23 +369,27 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
           ) : null}
 
           {/* Hero auction status */}
-          <Card variant="glass" className="border-[var(--brand-gold)]/20">
+          <Card
+            id="listing-bid-panel"
+            variant="glass"
+            className="scroll-mt-24 border-[var(--brand-gold)]/20"
+          >
             <CardHeader className="pb-2">
               <p className="text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                 Current bid
               </p>
               <div className="flex items-baseline justify-between gap-3">
                 <CardTitle
-                  className="text-3xl font-bold text-[var(--brand-gold)] tabular-nums"
-                  style={{
-                    textShadow:
-                      '0 0 20px rgba(212,160,23,0.3), 0 0 40px rgba(212,160,23,0.15)',
-                  }}
+                  className="text-3xl font-bold text-[var(--brand-gold)] [text-shadow:0_0_20px_rgba(201,168,76,0.3)]"
                 >
-                  {formatCents(listing.current_bid_cents)}
+                  <AnimatedPrice cents={listing.current_bid_cents} />
                 </CardTitle>
                 <span className="text-xs text-zinc-500">
-                  Started at {formatCents(listing.starting_price_cents)}
+                  Started at{' '}
+                  <MonoPrice
+                    cents={listing.starting_price_cents}
+                    className="text-zinc-400"
+                  />
                 </span>
               </div>
               {/* Reserve-not-met badge — only render when the listing has
@@ -600,6 +606,50 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
 
       {/* Similar items rail — Meilisearch-ranked, hidden when none match. */}
       <SimilarListings listingId={listingId} />
+
+      {/* Robinhood-style sticky bid dock (mobile only) — desktop sidebar already
+          keeps the bid panel in view. Respects tab bar + safe-area. */}
+      {!auctionExpired && !isOwnListing ? (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] bg-background/95 px-4 py-3 backdrop-blur-md supports-[padding:max(0px)]:pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
+          <div className="mx-auto flex max-w-6xl items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">
+                Current bid
+              </p>
+              <AnimatedPrice
+                cents={listing.current_bid_cents}
+                className="text-lg font-bold text-brand-gold"
+              />
+            </div>
+            {listing.auction_ends_at ? (
+              <div className="shrink-0">
+                <AuctionTimer auctionEndsAt={listing.auction_ends_at} compact />
+              </div>
+            ) : null}
+            {isAuthenticated ? (
+              <Button
+                type="button"
+                className="min-h-[44px] shrink-0 bg-bid-winning font-semibold text-white hover:bg-bid-winning/90"
+                onClick={() => {
+                  document
+                    .getElementById('listing-bid-panel')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              >
+                Place bid
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                className="min-h-[44px] shrink-0 bg-bid-winning font-semibold text-white hover:bg-bid-winning/90"
+                asChild
+              >
+                <Link href={'/login' as Route}>Sign in to bid</Link>
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { ListingDetailClient } from '@/components/marketplace/ListingDetailClient';
 import { sanitizeJsonLd } from '@/lib/json-ld';
 import type { ListingDetail, ListingPhoto } from '@/types';
+import { serverFetch } from '@/lib/server-fetch';
 
 // Server-side API origin. Mirror next.config.ts: prefer the server-only
 // API_URL, fall back to the public var, then localhost for dev. Public read
@@ -26,7 +27,7 @@ const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
  */
 async function fetchListing(id: string): Promise<ListingDetail | null> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/listings/${id}`, {
+    const res = await serverFetch(`${API_URL}/api/v1/listings/${id}`, {
       next: { revalidate: 15 },
     });
     if (!res.ok) return null;

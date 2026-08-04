@@ -51,7 +51,9 @@ import { useCountdown } from '@/hooks/useCountdown';
 import { useCreateInstantMatch } from '@/hooks/useInstantMatch';
 import { useJob } from '@/hooks/useJobs';
 import { useSpectatorTerminal } from '@/hooks/useSpectatorTerminal';
+import { useTerminalHotkeys } from '@/hooks/useTerminalHotkeys';
 import { getApiErrorMessage } from '@/lib/api';
+import { MonoPrice } from '@/components/ui/mono-price';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { JOB_STATUS, USER_ROLE } from '@/types';
@@ -113,6 +115,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
         isConnected: participantTerminal.isConnected,
         error: participantTerminal.error,
         spectatorCount: 0,
+        snipeExtensionCount: participantTerminal.snipeExtensionCount,
       }
     : {
         sim: spectatorTerminal.sim,
@@ -120,6 +123,8 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
         isConnected: spectatorTerminal.isConnected,
         error: spectatorTerminal.error,
         spectatorCount: spectatorTerminal.spectatorCount,
+        // Spectator WS may lag REST; prefer job seed then stream when available.
+        snipeExtensionCount: job?.snipe_extension_count ?? 0,
       };
 
   const auctionEndsAt = useMemo(
@@ -132,6 +137,13 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
 
   // Determine if the job is in a state where bidding/awarding is possible
   const canBid = job?.status === JOB_STATUS.ACTIVE && isProvider && !isJobOwner;
+
+  // Bloomberg keyboard layer on live terminal surfaces.
+  useTerminalHotkeys({
+    enabled: isLiveAuction,
+    mode: isSpectatorFeed ? 'spectate' : 'live',
+    live: { canBid, bidInputId: 'live-bid-amount' },
+  });
 
   // FR-8.1 — providers (not the job owner) on an open auction can open a pre-bid
   // inquiry (or bid channel if they already have an active bid).
@@ -391,6 +403,16 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
             startingPriceCents={startingPriceCents}
             marketRange={marketRange}
             mockProviders={terminal.providers}
+            jobId={jobId}
+            snipeExtensionCount={
+              Math.max(
+                terminal.snipeExtensionCount,
+                job.snipe_extension_count ?? 0,
+              )
+            }
+            jobTitle={job.title}
+            jobDescription={job.description}
+            jobCategory={job.category_name}
           />
         </div>
 
@@ -406,6 +428,7 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 marketRange={job.market_range}
                 auctionEndsAt={job.auction_ends_at}
                 categorySlug={job.category_slug}
+                variant="dock"
               />
               {/* FR-8.1 — pre-bid inquiry on live auctions too */}
               {canAskQuestion ? (
@@ -589,10 +612,19 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                   {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''} placed
                 </p>
                 {job.lowest_bid_cents ? (
-                  <p className="text-sm font-medium text-green-600">
-                    Lowest: {formatCents(job.lowest_bid_cents)}
+                  <p className="text-sm font-medium text-bid-winning">
+                    Lowest:{' '}
+                    <MonoPrice cents={job.lowest_bid_cents} className="text-base font-bold" />
                   </p>
-                ) : null}
+                ) : (
+                  <p className="text-muted-foreground text-sm">
+                    Waiting · starting{' '}
+                    <MonoPrice
+                      cents={job.starting_bid_cents}
+                      className="text-foreground font-medium"
+                    />
+                  </p>
+                )}
               </div>
             </div>
 
@@ -637,10 +669,10 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
         <div className="space-y-6">
           {/* Sealed bid auction UI — enhanced with Polymarket/Robinhood-style ticker */}
           <div className="space-y-4">
-            {/* Live Bid Ticker — hero price display */}
-            {job.lowest_bid_cents && job.starting_bid_cents ? (
+            {/* Live Bid Ticker — hero price display (starting bid when no bids yet) */}
+            {job.starting_bid_cents ? (
               <LiveBidTicker
-                currentBid={job.lowest_bid_cents}
+                currentBid={job.lowest_bid_cents ?? job.starting_bid_cents}
                 startingPrice={job.starting_bid_cents}
                 totalBids={displayBidCount}
                 timeRemaining={!auctionExpired ? timeLeft : undefined}
@@ -680,16 +712,20 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 {job.starting_bid_cents ? (
                   <div>
                     <p className="text-muted-foreground text-xs">Starting Bid</p>
-                    <p className="text-lg font-semibold">{formatCents(job.starting_bid_cents)}</p>
+                    <MonoPrice
+                      cents={job.starting_bid_cents}
+                      className="text-lg font-semibold"
+                    />
                   </div>
                 ) : null}
 
                 {job.offer_accepted_cents ? (
                   <div>
                     <p className="text-muted-foreground text-xs">Instant Accept Price</p>
-                    <p className="text-lg font-semibold text-green-600">
-                      {formatCents(job.offer_accepted_cents)}
-                    </p>
+                    <MonoPrice
+                      cents={job.offer_accepted_cents}
+                      className="text-lg font-semibold text-bid-winning"
+                    />
                   </div>
                 ) : null}
 

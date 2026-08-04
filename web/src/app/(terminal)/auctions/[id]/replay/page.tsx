@@ -21,7 +21,8 @@ import { TerminalGrid } from '@/components/terminal/terminal-grid';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useReplayTerminal, SPEED_OPTIONS } from '@/hooks/useReplayTerminal';
+import { useReplayTerminal, SPEED_OPTIONS, type SpeedOption } from '@/hooks/useReplayTerminal';
+import { useTerminalHotkeys } from '@/hooks/useTerminalHotkeys';
 import { formatCents } from '@/lib/utils';
 import type { MarketRange } from '@/types';
 
@@ -218,6 +219,25 @@ export default function AuctionReplayPage() {
     return 100 / (replay.totalBidCount - 1);
   }, [replay.totalBidCount]);
 
+  useTerminalHotkeys({
+    enabled: !replay.isLoading && !replay.isError,
+    mode: 'replay',
+    replay: {
+      isPlaying: replay.isPlaying,
+      play: replay.handlePlay,
+      pause: replay.handlePause,
+      restart: replay.handleRestart,
+      speeds: SPEED_OPTIONS,
+      setSpeed: (s) => {
+        replay.handleSpeedChange(s as SpeedOption);
+      },
+      scrubBy: (delta) => {
+        const next = Math.min(100, Math.max(0, replay.scrubValue + delta * scrubStep));
+        replay.handleScrub([next]);
+      },
+    },
+  });
+
   if (replay.isLoading) {
     return <ReplayLoadingSkeleton />;
   }
@@ -403,6 +423,15 @@ export default function AuctionReplayPage() {
           startingPriceCents={replay.startingBidCents}
           marketRange={marketRange}
           mockProviders={replay.mockProviders}
+          jobId={jobId}
+          snipeExtensionCount={0}
+          jobTitle={replay.jobTitle}
+          jobDescription={
+            replay.jobTitle
+              ? `Replay of “${replay.jobTitle}”. Scrub timeline or press Space to play.`
+              : 'Auction replay'
+          }
+          jobCategory={replay.category}
         />
       </div>
 

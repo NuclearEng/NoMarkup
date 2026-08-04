@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useJob } from '@/hooks/useJobs';
 import { useSpectatorTerminal } from '@/hooks/useSpectatorTerminal';
+import { useTerminalHotkeys } from '@/hooks/useTerminalHotkeys';
 import type { MarketRange } from '@/types';
 
 const FALLBACK_MARKET_RANGE: MarketRange = {
@@ -34,6 +35,8 @@ export default function SpectatorPage() {
 
   const startingPriceCents = job?.starting_bid_cents ?? 0;
   const marketRange = job?.market_range ?? FALLBACK_MARKET_RANGE;
+
+  useTerminalHotkeys({ enabled: !isLoading && !isError && !!job, mode: 'spectate' });
 
   if (isLoading) {
     return (
@@ -215,6 +218,11 @@ export default function SpectatorPage() {
           startingPriceCents={startingPriceCents}
           marketRange={marketRange}
           mockProviders={providers}
+          jobId={jobId}
+          snipeExtensionCount={job.snipe_extension_count ?? 0}
+          jobTitle={job.title}
+          jobDescription={job.description}
+          jobCategory={job.category_name}
         />
       </div>
     </div>

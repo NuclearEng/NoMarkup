@@ -158,9 +158,11 @@ access; not doable from the repo alone.
 - Bid-bond capturable PM **persisted** (migration 114 + ConfirmBidBond CAS sets
   `stripe_payment_method_id`; refuse 402 without PM; dev `pm_dev_<bond_id>`).
   Capture-on-buyer-no-show is implemented on order ReportNoShow (forfeit
-  authorized bond). Release-on-win/lose and cron backfill of stranded
-  authorized bonds remain open — only the
-  artifact is stored.
+  authorized bond). **Release-on-win/lose is implemented** (auction close /
+  cancel / winner-after-held). **Stranded backfill shipped 2026-08-03**:
+  `SweepStrandedBidBonds` + `runBidBondSweepCron` (job service) releases
+  authorized bonds on terminal listings (except unpaid winners) and cancels
+  pending SetupIntents older than `BID_BOND_PENDING_MAX_AGE` (default 24h).
 - `provider_profiles.service_location` stays exact at rest. It is the indexed
   `ST_DWithin` target and backs the distance `ORDER BY`; ciphertext cannot be
   indexed and coarsening perturbs a 30%-weighted ranking term. Documented as a

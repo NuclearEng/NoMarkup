@@ -7,6 +7,7 @@ import {
 import type { PricingOverviewCategory } from '@/hooks/usePricing';
 
 import { LandingPageClient } from './LandingPageClient';
+import { serverFetch } from '@/lib/server-fetch';
 
 // Server-side API origin. Mirror marketplace / jobs detail: prefer the
 // server-only API_URL, fall back to the public var, then localhost for dev.
@@ -40,7 +41,7 @@ async function fetchPricingOverview(): Promise<{
   categories: PricingOverviewCategory[];
 } | null> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/pricing`, {
+    const res = await serverFetch(`${API_URL}/api/v1/pricing`, {
       next: { revalidate: 60 },
     });
     if (!res.ok) return null;

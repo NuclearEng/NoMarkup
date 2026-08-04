@@ -7,7 +7,8 @@ import { memo, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { cn, formatCents, formatRelativeTime } from '@/lib/utils';
+import { MonoPrice } from '@/components/ui/mono-price';
+import { cn, formatRelativeTime } from '@/lib/utils';
 import type { Job } from '@/types';
 import { JOB_STATUS } from '@/types';
 
@@ -73,13 +74,18 @@ function getStatusBorderColor(status: string): string {
   }
 }
 
-/** Determine if the auction is ending soon (< 4 hours) */
-function getAuctionUrgency(auctionEndsAt: string | null): 'none' | 'warning' | 'critical' {
+/**
+ * Scoreboard urgency — aligned with marketplace ScoreboardCard bands so dual-rail
+ * browse feels like one market (critical &lt;10m, urgent &lt;60m).
+ */
+function getAuctionUrgency(
+  auctionEndsAt: string | null,
+): 'none' | 'urgent' | 'critical' {
   if (!auctionEndsAt) return 'none';
   const remaining = new Date(auctionEndsAt).getTime() - Date.now();
   if (remaining <= 0) return 'none';
-  if (remaining < 60 * 60 * 1000) return 'critical'; // < 1 hour
-  if (remaining < 4 * 60 * 60 * 1000) return 'warning'; // < 4 hours
+  if (remaining < 10 * 60 * 1000) return 'critical';
+  if (remaining < 60 * 60 * 1000) return 'urgent';
   return 'none';
 }
 
@@ -109,7 +115,11 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
     setMounted(true);
   }, []);
 
-  const _urgency = useMemo(() => getAuctionUrgency(job.auction_ends_at), [job.auction_ends_at]);
+  // Post-mount only — Date.now() would otherwise SSR/client-mismatch the glow.
+  const urgency = useMemo(
+    () => (mounted ? getAuctionUrgency(job.auction_ends_at) : 'none'),
+    [mounted, job.auction_ends_at],
+  );
 
   const elapsedPercent = useMemo(
     () =>
@@ -133,6 +143,13 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
     return `${String(Math.round(miles))} mi`;
   }, [job.distance_km]);
 
+  const urgencyBorder =
+    urgency === 'critical'
+      ? 'border-destructive/50 shadow-[0_0_30px_hsl(var(--status-disputed)/0.18)]'
+      : urgency === 'urgent'
+        ? 'border-brand-gold/40 shadow-[0_0_24px_var(--brand-gold-glow)]'
+        : 'border-[var(--brand-gold)]/10';
+
   return (
     <Link href={`/jobs/${job.id}` as Route} className="block min-w-0">
       <Card
@@ -142,10 +159,37 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
           // refusing below its min-content (a grid item defaults to min-width:auto),
           // which pushed a 2px horizontal scroll at 320px. overflow-hidden +
           // truncation below handle the clipped content.
-          'w-full min-w-0 glass-interactive glass-highlight relative overflow-hidden border border-l-[3px] border-[var(--brand-gold)]/10',
+          'w-full min-w-0 glass-interactive glass-highlight relative overflow-hidden border border-l-[3px]',
+          urgencyBorder,
           getStatusBorderColor(job.status),
         )}
       >
+        {urgency !== 'none' ? (
+          <span
+            className={cn(
+              'absolute top-2 right-2 z-[3] inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase',
+              urgency === 'critical'
+                ? 'bg-destructive text-destructive-foreground'
+                : 'bg-brand-gold text-background',
+            )}
+          >
+            <span className="relative flex h-2 w-2" aria-hidden="true">
+              <span
+                className={cn(
+                  'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
+                  urgency === 'critical' ? 'bg-destructive/60' : 'bg-brand-gold-dim',
+                )}
+              />
+              <span
+                className={cn(
+                  'relative inline-flex h-2 w-2 rounded-full',
+                  urgency === 'critical' ? 'bg-destructive/40' : 'bg-brand-gold-dim',
+                )}
+              />
+            </span>
+            {urgency === 'critical' ? 'Ending now' : 'Closing soon'}
+          </span>
+        ) : null}
         <CardHeader className="relative z-[2] pb-3">
           <div className="flex items-start justify-between gap-2">
             <h3 className="line-clamp-2 min-w-0 text-base leading-snug font-semibold break-words text-zinc-100">
@@ -208,23 +252,20 @@ export const JobCard = memo(function JobCard({ job }: JobCardProps) {
             </div>
             {job.starting_bid_cents ? (
               <span className="text-sm font-medium text-zinc-300">
-                From {formatCents(job.starting_bid_cents)}
+                From{' '}
+                <MonoPrice cents={job.starting_bid_cents} className="text-zinc-200" />
               </span>
             ) : null}
           </div>
 
-          {/* Lowest bid - prominent display with emerald glow */}
+          {/* Lowest bid - prominent mono display with emerald glow */}
           {job.lowest_bid_cents ? (
             <div className="flex items-baseline gap-1.5">
               <span className="text-xs font-medium text-zinc-500">Lowest:</span>
-              <span
-                className="text-lg font-bold text-bid-winning tabular-nums"
-                style={{
-                  textShadow: '0 0 16px hsl(var(--bid-winning) / 0.3), 0 0 32px hsl(var(--bid-winning) / 0.1)',
-                }}
-              >
-                {formatCents(job.lowest_bid_cents)}
-              </span>
+              <MonoPrice
+                cents={job.lowest_bid_cents}
+                className="text-lg font-bold text-bid-winning [text-shadow:0_0_16px_hsl(var(--bid-winning)/0.3)]"
+              />
             </div>
           ) : null}
 

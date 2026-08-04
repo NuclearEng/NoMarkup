@@ -7,11 +7,13 @@ carries a 16-byte Poly1305 tag.
 
 | Table                | Columns                                                                       |
 |----------------------|-------------------------------------------------------------------------------|
-| `users`              | `phone`, `mfa_secret`                                                         |
+| `users`              | `phone`, `mfa_secret`, `dob_encrypted`                                         |
 | `users`              | `mfa_backup_codes` (argon2id-hashed, **one-way** — not encrypted, never re-keyed) |
 | `provider_profiles`  | `service_address`, `ein_tin`, `insurance_policy_number`                       |
-| `provider_employees` | `email`, `phone`, `license_number`, `insurance_policy_number`                 |
-| `properties`         | `address`, `notes`                                                            |
+| `provider_employees` | `email`, `phone`, `license_number`, `insurance_policy_number`, `date_of_birth_encrypted` |
+| `provider_licenses`  | `license_number` (public badge path uses DecryptStringOrPassthrough — set `ENCRYPTION_KEY_PREVIOUS` **before** cutover or the badge 500s) |
+| `properties`         | `address`, `notes`, `location_encrypted`                                       |
+| `jobs`               | `service_address`, `service_location_encrypted`                              |
 
 Not encrypted, deliberately: `users.email` (auth lookup),
 `provider_profiles.insurance_provider` (a carrier name, not personal data),

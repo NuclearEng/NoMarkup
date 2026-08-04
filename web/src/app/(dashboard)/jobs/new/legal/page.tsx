@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { LegalIntakeForm } from '@/components/forms/LegalIntakeForm';
+import { serverFetch } from '@/lib/server-fetch';
 
 // Server-side API origin. Mirrors the legal landing page: prefer server-only
 // API_URL, fall back to the public var, then localhost for dev.
@@ -23,7 +24,7 @@ export const metadata: Metadata = {
  */
 async function isLegalServicesEnabled(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/flags`, { next: { revalidate: 60 } });
+    const res = await serverFetch(`${API_URL}/api/v1/flags`, { next: { revalidate: 60 } });
     if (!res.ok) return true;
     const flags = (await res.json()) as Record<string, boolean | undefined>;
     return flags['legal_services'] ?? true;

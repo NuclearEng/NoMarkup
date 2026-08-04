@@ -8,6 +8,7 @@ import type { MouseEvent } from 'react';
 
 import { CountdownClock } from '@/components/marketplace/CountdownClock';
 import { WatcherBadge } from '@/components/marketplace/WatcherBadge';
+import { MonoPrice } from '@/components/ui/mono-price';
 import { useWatchListing } from '@/hooks/useWatchlist';
 import { canNextImageLoad, formatCents } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -200,9 +201,10 @@ export function ScoreboardCard({
         <div className="flex items-baseline justify-between">
           <div>
             <p className="text-[11px] tracking-wider text-zinc-500 uppercase">Current bid</p>
-            <p className="text-2xl font-bold tabular-nums text-zinc-100">
-              {formatCents(listing.current_bid_cents)}
-            </p>
+            <MonoPrice
+              cents={listing.current_bid_cents}
+              className="text-2xl font-bold text-zinc-100"
+            />
           </div>
           <div className="text-right">
             <p className="text-[11px] tracking-wider text-zinc-500 uppercase">Closes in</p>

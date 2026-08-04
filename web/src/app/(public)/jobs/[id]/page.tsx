@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { sanitizeJsonLd } from '@/lib/json-ld';
+import { serverFetch } from '@/lib/server-fetch';
 import type { JobDetail } from '@/types';
 
 import { JobDetailClient } from './JobDetailClient';
@@ -27,7 +28,7 @@ const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
  */
 async function fetchJob(id: string): Promise<JobDetail | null> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/jobs/${id}`, {
+    const res = await serverFetch(`${API_URL}/api/v1/jobs/${id}`, {
       next: { revalidate: 15 },
     });
     if (!res.ok) return null;

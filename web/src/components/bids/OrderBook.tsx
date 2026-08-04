@@ -258,10 +258,10 @@ export function OrderBook({ jobId, bids, startingPrice, className }: OrderBookPr
                 </TooltipContent>
               </Tooltip>
 
-              {/* Price */}
+              {/* Price — mono terminal figures */}
               <span
                 className={cn(
-                  'relative z-10 text-right text-xs font-bold tabular-nums',
+                  'relative z-10 text-right font-mono text-xs font-bold tabular-nums tracking-tight',
                   isLowest ? 'text-bid-winning' : 'text-zinc-100',
                 )}
                 style={{ textShadow: isLowest ? '0 0 8px rgba(34,197,94,0.4)' : '0 1px 2px rgba(0,0,0,0.2)' }}

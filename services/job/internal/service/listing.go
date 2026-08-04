@@ -322,6 +322,15 @@ func (s *ListingService) releaseListingBidBonds(ctx context.Context, listingID, 
 	}
 }
 
+// SweepStrandedBidBonds backfills authorized bonds missed by fail-soft primary
+// paths and cancels abandoned pending SetupIntents.
+func (s *ListingService) SweepStrandedBidBonds(ctx context.Context, pendingOlderThan time.Duration, limit int) (released, cancelled int64, err error) {
+	if s == nil || s.repo == nil {
+		return 0, 0, nil
+	}
+	return s.repo.SweepStrandedBidBonds(ctx, pendingOlderThan, limit)
+}
+
 // CloseEndedAuctions resolves auctions whose deadline has passed but that are
 // still status='active'. It fetches a bounded batch of ended auctions and
 // closes each one via CloseListingAuction. Returns (closed, expired) counts:

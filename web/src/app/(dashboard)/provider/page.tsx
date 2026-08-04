@@ -1,6 +1,7 @@
 'use client';
 
 import { Briefcase, DollarSign, Gavel, Star } from 'lucide-react';
+import type { Route } from 'next';
 import Link from 'next/link';
 
 import { EarningsChart } from '@/components/analytics/EarningsChart';
@@ -85,12 +86,12 @@ export default function ProviderDashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/provider/verification">
+          <Link href={'/provider/verification' as Route}>
             <Button variant="outline" className="min-h-[44px]">
               Verification docs
             </Button>
           </Link>
-          <Link href="/provider/onboarding">
+          <Link href={'/provider/onboarding' as Route}>
             <Button variant="outline" className="min-h-[44px]">
               Edit Profile
             </Button>

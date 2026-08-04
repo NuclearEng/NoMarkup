@@ -125,7 +125,12 @@ export const AnimatedPrice = memo(function AnimatedPrice({
 
   return (
     <span
-      className={cn('inline-flex items-baseline tabular-nums', flashClass, className)}
+      className={cn(
+        // Terminal money stack — JetBrains Mono + tabular figures (Bloomberg density).
+        'inline-flex items-baseline font-mono tabular-nums tracking-tight',
+        flashClass,
+        className,
+      )}
       aria-live="polite"
       aria-atomic="true"
     >

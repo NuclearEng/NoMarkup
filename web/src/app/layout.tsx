@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { preconnect } from 'react-dom';
 import '@/styles/globals.css';
 
+import { CommandPalette } from '@/components/command/command-palette';
 import { AgeGate } from '@/components/compliance/AgeGate';
 import { CookieConsent } from '@/components/compliance/CookieConsent';
 import { ToSReaccept } from '@/components/compliance/ToSReaccept';
@@ -143,6 +144,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <WebVitalsReporter />
           <main id="main-content">{children}</main>
           <Toaster position="bottom-right" richColors closeButton />
+          {/* Global ⌘K / Ctrl+K jump palette — Bloomberg × Linear navigation. */}
+          <CommandPalette />
           <ServiceWorkerRegistrar />
           <InstallPrompt />
           <CookieConsent />

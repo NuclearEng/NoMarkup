@@ -19,9 +19,10 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { MonoPrice } from '@/components/ui/mono-price';
 import { useFairPrice } from '@/hooks/useAnalytics';
 import { useAcceptOffer, usePlaceBid, useUpdateBid } from '@/hooks/useBids';
-import { formatCents } from '@/lib/utils';
+import { cn, formatCents } from '@/lib/utils';
 import { bidSchema, type BidFormValues } from '@/lib/validations';
 import type { Bid, MarketRange } from '@/types';
 
@@ -34,6 +35,12 @@ interface BidFormProps {
   auctionEndsAt: string | null;
   categorySlug?: string;
   zipCode?: string;
+  /**
+   * `dock` — Robinhood-style sticky bar: hide market intel chrome, keep
+   * amount + step + one primary CTA. Used under the live auction terminal.
+   * `default` — full provider form with fair-price + confirm.
+   */
+  variant?: 'default' | 'dock';
 }
 
 function isAuctionClosed(auctionEndsAt: string | null): boolean {
@@ -50,7 +57,9 @@ export function BidForm({
   auctionEndsAt,
   categorySlug,
   zipCode,
+  variant = 'default',
 }: BidFormProps) {
+  const isDock = variant === 'dock';
   const [showConfirm, setShowConfirm] = useState(false);
   const [showAcceptConfirm, setShowAcceptConfirm] = useState(false);
 
@@ -58,12 +67,12 @@ export function BidForm({
   const updateBid = useUpdateBid();
   const acceptOffer = useAcceptOffer();
 
-  // Live Fair-Price hint — "bids here usually settle $X–$Y" near the bid form.
+  // Live Fair-Price hint — skip on dock (density; intel lives in terminal widgets).
   const {
     data: fairPrice,
     isLoading: fairPriceLoading,
     isError: fairPriceError,
-  } = useFairPrice({ categorySlug, zip: zipCode });
+  } = useFairPrice({ categorySlug: isDock ? undefined : categorySlug, zip: zipCode });
 
   const auctionClosed = isAuctionClosed(auctionEndsAt);
   const isUpdate = existingBid !== null;
@@ -123,7 +132,23 @@ export function BidForm({
       form.setError('amountDollars', { message: error });
       return;
     }
+    // Dock: existing bidders lower-in-one-tap (they already know the flow).
+    // First bid always confirms so we never one-shot a wrong amount.
+    if (isDock && existingBid !== null) {
+      handleConfirmedSubmit();
+      return;
+    }
     setShowConfirm(true);
+  }
+
+  function applyQuickCut(percent: number) {
+    const base =
+      form.getValues('amountDollars') ||
+      (existingBid ? existingBid.amount_cents / 100 : null) ||
+      (startingBidCents ? startingBidCents / 100 : null);
+    if (base == null || !Number.isFinite(base)) return;
+    const next = Math.max(0.01, Math.round(base * (1 - percent) * 100) / 100);
+    form.setValue('amountDollars', next, { shouldValidate: true, shouldDirty: true });
   }
 
   function handleConfirmedSubmit() {
@@ -176,32 +201,45 @@ export function BidForm({
   }
 
   return (
-    <div className="space-y-6">
+    <div className={cn(isDock ? 'space-y-3' : 'space-y-6')}>
       {/* Existing bid display */}
       {existingBid ? (
-        <div className="bg-muted/50 rounded-lg border p-4">
+        <div
+          className={cn(
+            'bg-muted/50 rounded-lg border',
+            isDock ? 'flex items-center justify-between gap-3 px-3 py-2' : 'p-4',
+          )}
+        >
           <div className="flex items-center gap-2">
             <CheckCircle
               className="h-4 w-4 text-bid-winning"
               aria-hidden="true"
             />
-            <p className="text-sm font-medium">Your Current Bid</p>
+            <p className="text-sm font-medium">
+              {isDock ? 'Your bid' : 'Your Current Bid'}
+            </p>
           </div>
-          <p className="mt-1 text-2xl font-bold">{formatCents(existingBid.amount_cents)}</p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            You can only lower your bid, never raise it.
-          </p>
+          <MonoPrice
+            cents={existingBid.amount_cents}
+            className={cn(
+              'font-bold text-bid-winning',
+              isDock ? 'text-lg' : 'mt-1 text-2xl',
+            )}
+          />
+          {!isDock ? (
+            <p className="text-muted-foreground mt-1 text-xs">
+              You can only lower your bid, never raise it.
+            </p>
+          ) : null}
         </div>
       ) : null}
 
-      {/* Market range */}
-      {marketRange && marketRange.sample_size > 0 ? (
+      {/* Market intel — full form only */}
+      {!isDock && marketRange && marketRange.sample_size > 0 ? (
         <MarketRangeDisplay marketRange={marketRange} />
       ) : null}
 
-      {/* Live Fair-Price hint — where bids in this category/area settle. Only
-          render once we have a category to key the engine read on. */}
-      {categorySlug ? (
+      {!isDock && categorySlug ? (
         <FairPriceBand
           compact
           fairPrice={fairPrice}
@@ -211,8 +249,9 @@ export function BidForm({
         />
       ) : null}
 
-      {/* Fair Price Index suggestion */}
-      {categorySlug ? <BidSuggestion categorySlug={categorySlug} zipCode={zipCode} /> : null}
+      {!isDock && categorySlug ? (
+        <BidSuggestion categorySlug={categorySlug} zipCode={zipCode} />
+      ) : null}
 
       {/* Bid form */}
       {showConfirm ? (
@@ -220,12 +259,16 @@ export function BidForm({
           <h4 className="font-medium">Confirm Your Bid</h4>
           <p className="text-muted-foreground text-sm">
             You are about to {isUpdate ? 'lower your bid to' : 'place a bid of'}{' '}
-            <span className="text-foreground font-semibold">{formatCents(amountCents)}</span>.
+            <MonoPrice
+              cents={amountCents}
+              className="text-foreground font-semibold"
+            />
+            .
             {isUpdate ? ' This cannot be undone.' : ''}
           </p>
           <div className="flex gap-3">
             <Button
-              className="min-h-[44px] flex-1"
+              className="min-h-[44px] flex-1 bg-bid-winning text-white hover:bg-bid-winning/90"
               onClick={handleConfirmedSubmit}
               disabled={isPending}
             >
@@ -261,16 +304,36 @@ export function BidForm({
             onSubmit={(e) => {
               void form.handleSubmit(handleFormSubmit)(e);
             }}
-            className="space-y-4"
+            className={cn(isDock ? 'space-y-2' : 'space-y-4')}
           >
+            {isDock ? (
+              <div className="flex flex-wrap gap-1.5" aria-label="Quick bid cuts">
+                {[0.05, 0.1, 0.15].map((pct) => (
+                  <Button
+                    key={pct}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-[36px] border-white/10 bg-white/[0.03] font-mono text-xs text-zinc-300 hover:border-bid-winning/40 hover:text-bid-winning"
+                    onClick={() => {
+                      applyQuickCut(pct);
+                    }}
+                  >
+                    −{String(Math.round(pct * 100))}%
+                  </Button>
+                ))}
+              </div>
+            ) : null}
             <FormField
               control={form.control}
               name="amountDollars"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{isUpdate ? 'Lower Your Bid' : 'Your Bid Amount'}</FormLabel>
+                  {!isDock ? (
+                    <FormLabel>{isUpdate ? 'Lower Your Bid' : 'Your Bid Amount'}</FormLabel>
+                  ) : null}
                   <FormControl>
-                    <div className="flex items-stretch gap-2">
+                    <div className={cn('flex items-stretch gap-2', isDock && 'gap-1.5')}>
                       <Button
                         type="button"
                         variant="outline"
@@ -287,11 +350,12 @@ export function BidForm({
                           aria-hidden="true"
                         />
                         <Input
+                          id={isDock ? 'live-bid-amount' : undefined}
                           type="number"
                           step="0.01"
                           min="0.01"
                           placeholder="0.00"
-                          className="min-h-[44px] pl-9"
+                          className="min-h-[44px] pl-9 font-mono tabular-nums"
                           {...field}
                           value={field.value || ''}
                           onChange={(e) => {
@@ -312,48 +376,58 @@ export function BidForm({
                       </Button>
                     </div>
                   </FormControl>
-                  <div className="flex items-center justify-between gap-3 pt-1">
-                    <FormDescription className="m-0">
-                      Enter your bid in dollars.
-                      {startingBidCents
-                        ? ` Must be less than ${formatCents(startingBidCents)}.`
-                        : ''}
-                    </FormDescription>
-                    <label htmlFor="bid-step-input" className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
-                      <span>Step</span>
-                      <span className="text-muted-foreground/70">$</span>
-                      <Input
-                        id="bid-step-input"
-                        type="number"
-                        inputMode="decimal"
-                        min="0.01"
-                        // step must align with min: min=0.01 + step=1 makes the
-                        // HTML5 valid grid 0.01/1.01/2.01..., so a natural
-                        // whole-dollar step (1, 5, 10) is rejected with a raw
-                        // browser "nearest valid values" popup. The onChange
-                        // rounds to cents, so a 0.01 grid is the right one.
-                        step="0.01"
-                        className="h-8 w-20 text-xs"
-                        value={stepDollars}
-                        onChange={(e) => {
-                          const v = parseFloat(e.target.value);
-                          if (Number.isFinite(v) && v > 0) {
-                            persistStep(Math.round(v * 100) / 100);
-                          }
-                        }}
-                        aria-label="Bid increment in dollars"
-                      />
-                    </label>
-                  </div>
+                  {!isDock ? (
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <FormDescription className="m-0">
+                        Enter your bid in dollars.
+                        {startingBidCents
+                          ? ` Must be less than ${formatCents(startingBidCents)}.`
+                          : ''}
+                      </FormDescription>
+                      <label htmlFor="bid-step-input" className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
+                        <span>Step</span>
+                        <span className="text-muted-foreground/70">$</span>
+                        <Input
+                          id="bid-step-input"
+                          type="number"
+                          inputMode="decimal"
+                          min="0.01"
+                          step="0.01"
+                          className="h-8 w-20 text-xs font-mono"
+                          value={stepDollars}
+                          onChange={(e) => {
+                            const v = parseFloat(e.target.value);
+                            if (Number.isFinite(v) && v > 0) {
+                              persistStep(Math.round(v * 100) / 100);
+                            }
+                          }}
+                          aria-label="Bid increment in dollars"
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <Button type="submit" className="min-h-[44px] w-full" disabled={isPending}>
+            <Button
+              type="submit"
+              className={cn(
+                'min-h-[44px] w-full',
+                isDock &&
+                  'bg-bid-winning font-semibold text-white hover:bg-bid-winning/90',
+              )}
+              disabled={isPending}
+            >
               {isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                   {isUpdate ? 'Lowering Bid...' : 'Placing Bid...'}
+                </>
+              ) : amountCents > 0 ? (
+                <>
+                  {isUpdate ? 'Lower bid — ' : 'Place bid — '}
+                  <MonoPrice cents={amountCents} className="ml-1" />
                 </>
               ) : isUpdate ? (
                 'Lower Bid'
