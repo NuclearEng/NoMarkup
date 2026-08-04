@@ -17,12 +17,20 @@
 | `instant_payout` | Instant payout |
 | `customer_bnpl` | BNPL installments |
 | `background_checks` | Checkr scaffold POST |
+| `marketplace_offers` | Best-offer create/list/update (seeded migration **122**) |
+| `provider_business_os` | Expenses, tax forms, tax estimate, quote templates |
 
 Money/regulated keys are **binary-only** (no sticky % partial rollout).
 
-## UI-only (flag map hides chrome; API may remain open)
+## UI-only / open API residual
 
-Examples (not exhaustive): `fair_price_index`, `smart_matching`, `provider_business_os`, `lead_gen` (confirm against seed + router). **Do not claim “flag off = API off”** for these until `RequireFlag` is wired.
+| Key | Notes |
+|-----|--------|
+| `fair_price_index` | Public pricing/fair-price endpoints stay open (landing ticker depends on them; default seed false would 503 catalog if gated) |
+| `smart_matching` | No dedicated route group yet |
+| `lead_gen` | Dual-gate on fee-config only — do not gate core payments |
+
+**Do not claim “flag off = API off”** for residual rows.
 
 ## Ops
 

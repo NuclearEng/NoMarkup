@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { MonoPrice } from '@/components/ui/mono-price';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMyBids } from '@/hooks/useBids';
+import { useMyListingBids } from '@/hooks/useListings';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -16,15 +17,18 @@ import { USER_ROLE } from '@/types';
 
 /**
  * Active positions blotter — StockX multi-watch style: service bids I'm in +
- * goods I'm watching. Single desk for dual-rail market focus.
+ * goods bids + watched auctions. Single desk for dual-rail market focus.
  */
 export default function PositionsPage() {
   const user = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
   const myBids = useMyBids(undefined, 1);
-  const watchlist = useWatchlist(1, { enabled: true });
+  const myListingBids = useMyListingBids(1);
+  const watchlist = useWatchlist(1, { enabled: isAuthenticated });
 
   const bids = myBids.data?.bids ?? [];
+  const goodsBids = myListingBids.data?.bids ?? [];
   const watched = watchlist.data?.listings ?? [];
 
   return (
@@ -97,6 +101,63 @@ export default function PositionsPage() {
                   <MonoPrice
                     cents={b.amount_cents}
                     className="shrink-0 text-base font-semibold text-bid-winning"
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Goods bids I'm in */}
+      <section aria-labelledby="positions-goods-bids-heading" className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2
+            id="positions-goods-bids-heading"
+            className="flex items-center gap-2 text-sm font-semibold tracking-wide text-zinc-300 uppercase"
+          >
+            <Gavel className="h-4 w-4 text-brand-gold" aria-hidden="true" />
+            My goods bids
+          </h2>
+          <Button variant="outline" size="sm" className="min-h-[36px]" asChild>
+            <Link href={'/bids' as Route}>Goods bids</Link>
+          </Button>
+        </div>
+        {myListingBids.isLoading ? (
+          <Skeleton className="h-16 w-full" />
+        ) : goodsBids.length === 0 ? (
+          <EmptyState
+            title="No goods bids"
+            description="Bid on marketplace auctions to track them here."
+            action={
+              <Button asChild className="min-h-[44px]">
+                <Link href={'/marketplace' as Route}>Marketplace</Link>
+              </Button>
+            }
+          />
+        ) : (
+          <ul className="space-y-2">
+            {goodsBids.slice(0, 12).map((row) => (
+              <li key={row.bid.id}>
+                <Link
+                  href={`/marketplace/${row.listing.id}` as Route}
+                  className="glass flex min-h-[56px] items-center justify-between gap-3 rounded-xl border border-white/[0.06] px-4 py-3 transition-colors hover:border-brand-gold/30"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-zinc-100">
+                      {row.listing.title}
+                    </p>
+                    <p className="text-xs text-zinc-500">
+                      {row.bid.is_winning ? 'Winning' : 'Outbid'} ·{' '}
+                      {String(row.listing.bid_count)} bids
+                    </p>
+                  </div>
+                  <MonoPrice
+                    cents={row.bid.amount_cents}
+                    className={cn(
+                      'shrink-0 text-base font-semibold',
+                      row.bid.is_winning ? 'text-bid-winning' : 'text-zinc-300',
+                    )}
                   />
                 </Link>
               </li>

@@ -45,7 +45,7 @@ Close every **eng-closable** gap that blocks “best-in-class platform / Near-SO
 |----|------|--------|--------|
 | B1 | Goods sticky dock: real place-bid (amount + max + CTA), not scroll theater | M | **Done** |
 | B2 | iOS listing proxy bid (`max_bid_cents` + UI) | M | **Done** |
-| B3 | iOS sticky bid chrome on listing detail | M | **Partial** — form section always visible; true safe-area overlay deferred |
+| B3 | iOS sticky bid chrome on listing detail | M | **Done** — `safeAreaInset` dock |
 
 ---
 
@@ -55,7 +55,10 @@ Close every **eng-closable** gap that blocks “best-in-class platform / Near-SO
 |----|------|--------|--------|
 | C1 | ⌘K v2: search live jobs/listings + UUID jump | M | **Done** |
 | C2 | Active positions rail (`/me/positions`) | M | **Done** |
-| C3 | Goods spectate: AnimatedPrice + mono densify | M | **Done** |
+| C3 | Goods spectate: TerminalGrid + ascending adapter | M | **Done** (2026-08-04 wave) |
+| C4 | Positions: goods bids + watchlist | S | **Done** |
+| C5 | RequireFlag marketplace_offers + provider_business_os | M | **Done** |
+| C6 | Seed `marketplace_offers` (mig 122) | S | **Done** |
 
 ---
 
@@ -63,9 +66,9 @@ Close every **eng-closable** gap that blocks “best-in-class platform / Near-SO
 
 | ID | Item | Effort | Status |
 |----|------|--------|--------|
-| D1 | WebVitalsReporter → document Sentry field P75 path + env | S | Planned / partial |
-| D2 | LHCI floor comment ratchet note (not break CI) | S | Planned |
-| D3 | Goods review multi-dim (if cheap) | M | Planned if time |
+| D1 | WebVitalsReporter → document Sentry field path | S | **Done** |
+| D2 | LHCI floor ratchet rule comment | S | **Done** |
+| D3 | Goods review multi-dim | M | **Planned** (schema + both clients — not cheap) |
 
 ---
 
@@ -101,11 +104,13 @@ Close every **eng-closable** gap that blocks “best-in-class platform / Near-SO
 
 ## Definition of done (eng)
 
-- [ ] Sticky goods bid places bid from dock  
-- [ ] iOS max bid ships  
-- [ ] Docs no longer claim AES-GCM / prod fail-open flags  
-- [ ] Command palette can jump to live market entities  
-- [ ] Positions surface exists  
-- [ ] Plan statuses updated Done  
+- [x] Sticky goods bid places bid from dock  
+- [x] iOS max bid ships  
+- [x] Docs no longer claim AES-GCM / prod fail-open flags  
+- [x] Command palette can jump to live market entities  
+- [x] Positions surface exists  
+- [x] Goods TerminalGrid spectate  
+- [x] marketplace_offers + provider_business_os API-gated  
+- [x] Plan statuses updated  
 
 Commercial / production SOTA remains Founder + pilot (Wave F).

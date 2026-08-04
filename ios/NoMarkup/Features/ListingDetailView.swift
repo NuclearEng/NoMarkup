@@ -312,6 +312,71 @@ struct ListingDetailView: View {
         return "You’ll save a card (or use Apple Pay), then we’ll charge \(price) for a \(label) placement boost. The listing is promoted only after payment succeeds."
     }
 
+    /// Sticky RH-style bid CTA when the auction is open and the viewer can bid.
+    private func showStickyBidDock(for listing: ListingDetail) -> Bool {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return false }
+        let status = (listing.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if status == "sold" || status == "cancelled" || status == "expired" || status == "ended" {
+            return false
+        }
+        if let ends = listing.auctionEndsAt, ends < Date() {
+            return false
+        }
+        // Seller cannot bid on own listing.
+        if isViewerSeller(of: listing) { return false }
+        return true
+    }
+
+    @ViewBuilder
+    private func stickyBidDock(for listing: ListingDetail) -> some View {
+        VStack(spacing: 8) {
+            if let leading = leadingBidCents {
+                Text("High \(MoneyFormat.usd(cents: leading))")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(spacing: 10) {
+                DollarAmountField(
+                    text: $bidAmountText,
+                    placeholder: "Bid $",
+                    accessibilityLabelText: "Your bid in dollars"
+                )
+                Button {
+                    Task { await placeListingBid() }
+                } label: {
+                    if isPlacingBid {
+                        ProgressView()
+                            .tint(BrandTheme.ctaLabelOnGold)
+                            .frame(minWidth: 88, minHeight: 44)
+                    } else {
+                        Text("Bid")
+                            .font(.body.weight(.semibold))
+                            .frame(minWidth: 88, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                .disabled(
+                    isPlacingBid
+                        || isPostingBond
+                        || isBuyingNow
+                        || MoneyFormat.cents(fromDollarsText: bidAmountText) == nil
+                )
+                .accessibilityHint("Place bid at the amount entered")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(BrandTheme.gold.opacity(0.25))
+                .frame(height: 1)
+        }
+    }
+
     @ViewBuilder
     private func detailContent(_ listing: ListingDetail) -> some View {
         List {
@@ -461,6 +526,11 @@ struct ListingDetailView: View {
             }
         }
         .brandListBackground()
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showStickyBidDock(for: listing) {
+                stickyBidDock(for: listing)
+            }
+        }
         .navigationDestination(for: ListingSummary.self) { similar in
             ListingDetailView(listingID: similar.id, preview: similar)
         }

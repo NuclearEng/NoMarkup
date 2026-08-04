@@ -15,7 +15,7 @@ claim the bar is already met**.
 
 | Metric | Target | Current reality |
 |--------|--------|-----------------|
-| LCP P75 field | < 1.5s | **No RUM / web-vitals pipeline yet** |
+| LCP P75 field | < 1.5s | **Measure path shipped** — `WebVitalsReporter` → Sentry `metrics.distribution('web_vital.{lcp,inp,cls,fcp,ttfb}')` with rating attrs when `SENTRY_DSN` is set. **No product gate / dashboard SLA yet** (not North Star enforcer) |
 | LCP lab (key routes) | — | **Multi-second** in prior lab checks (~3–4s class); not under North Star |
 | Stretch "edge HTML < 300ms" | aspirational | **Impossible while CSP script nonce forces dynamic HTML** |
 | INP | < 100ms | Not field-gated |

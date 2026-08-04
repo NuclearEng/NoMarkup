@@ -622,34 +622,38 @@ func New(
 					r.Get("/me/credit-limit", workingCapitalHandler.GetCreditLimit)
 				})
 
-				// Expenses
-				r.Route("/me/expenses", func(r chi.Router) {
-					r.Post("/", expenseHandler.CreateExpense)
-					r.Get("/", expenseHandler.ListExpenses)
-					r.Delete("/{id}", expenseHandler.DeleteExpense)
-				})
+				// Provider Business OS — expenses, tax forms, estimate, quote templates.
+				// Gated by provider_business_os so flag-off is API-off (UI already hides).
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireFlag(dbPool, cacheClient, "provider_business_os"))
+					r.Route("/me/expenses", func(r chi.Router) {
+						r.Post("/", expenseHandler.CreateExpense)
+						r.Get("/", expenseHandler.ListExpenses)
+						r.Delete("/{id}", expenseHandler.DeleteExpense)
+					})
 
-				// Tax Forms (1099-NEC)
-				r.Route("/me/tax-forms", func(r chi.Router) {
-					r.Get("/", taxHandler.ListTaxForms)
-					r.Get("/{year}", taxHandler.GetTaxForm)
-					r.Post("/{year}/generate", taxHandler.GenerateTaxForm)
-					r.Get("/{year}/download", taxHandler.DownloadTaxForm)
-				})
+					// Tax Forms (1099-NEC)
+					r.Route("/me/tax-forms", func(r chi.Router) {
+						r.Get("/", taxHandler.ListTaxForms)
+						r.Get("/{year}", taxHandler.GetTaxForm)
+						r.Post("/{year}/generate", taxHandler.GenerateTaxForm)
+						r.Get("/{year}/download", taxHandler.DownloadTaxForm)
+					})
 
-				// Authoritative server-side tax estimate (SE + federal + state),
-				// owner-scoped via the JWT subject inside the handler.
-				r.Get("/me/tax-estimate", taxHandler.GetTaxEstimate)
+					// Authoritative server-side tax estimate (SE + federal + state),
+					// owner-scoped via the JWT subject inside the handler.
+					r.Get("/me/tax-estimate", taxHandler.GetTaxEstimate)
 
-				// Reusable quote templates (Wave 5 audit Section H). Owner-bound
-				// inside the handler — every endpoint scopes to the caller's
-				// user_id so a provider can never see another's templates.
-				r.Route("/me/quote-templates", func(r chi.Router) {
-					r.Get("/", quoteTemplatesHandler.List)
-					r.Post("/", quoteTemplatesHandler.Create)
-					r.Patch("/{id}", quoteTemplatesHandler.Update)
-					r.Delete("/{id}", quoteTemplatesHandler.Delete)
-					r.Post("/{id}/use", quoteTemplatesHandler.IncrementUse)
+					// Reusable quote templates (Wave 5 audit Section H). Owner-bound
+					// inside the handler — every endpoint scopes to the caller's
+					// user_id so a provider can never see another's templates.
+					r.Route("/me/quote-templates", func(r chi.Router) {
+						r.Get("/", quoteTemplatesHandler.List)
+						r.Post("/", quoteTemplatesHandler.Create)
+						r.Patch("/{id}", quoteTemplatesHandler.Update)
+						r.Delete("/{id}", quoteTemplatesHandler.Delete)
+						r.Post("/{id}/use", quoteTemplatesHandler.IncrementUse)
+					})
 				})
 			})
 		})
@@ -862,10 +866,14 @@ func New(
 		// listing_orders row in pending_payment (mirrors buy-now). See
 		// handler/offers.go for the state machine. PATCH (incl. accept)
 		// requires Idempotency-Key (MON-06/22).
-		r.Post("/listings/{id}/offers", offersHandler.CreateOffer)
-		r.Get("/listings/{id}/offers", offersHandler.ListOffersForListing)
-		r.With(middleware.RequireIdempotencyKey(cacheClient)).
-			Patch("/offers/{id}", offersHandler.UpdateOffer)
+		// RequireFlag marketplace_offers so UI-off is API-off (money-adjacent).
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireFlag(dbPool, cacheClient, "marketplace_offers"))
+			r.Post("/listings/{id}/offers", offersHandler.CreateOffer)
+			r.Get("/listings/{id}/offers", offersHandler.ListOffersForListing)
+			r.With(middleware.RequireIdempotencyKey(cacheClient)).
+				Patch("/offers/{id}", offersHandler.UpdateOffer)
+		})
 
 		// ── Watchlist + saved searches (retention loop) ─────────────────
 		// Buyers can favorite a listing without bidding ("watch") and

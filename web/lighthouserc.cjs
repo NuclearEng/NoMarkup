@@ -10,6 +10,10 @@
  *   - **CI regression floors** below are deliberately loose. Lab LCP on these
  *     routes is multi-second in measured baselines (docs/performance.md). The
  *     gate exists so we notice catastrophic regressions, not North Star wins.
+ *   - **Ratchet rule (2026-08-04):** do not raise floors in this file until
+ *     nightly `lighthouse-budget` medians stay green for ≥7 consecutive runs
+ *     at the new bar. Field P75 still comes from Sentry web_vital.* (see
+ *     WebVitalsReporter) — not LHCI.
  *   - **Stretch / North Star** (CLAUDE.md §14 / docs/performance.md) are
  *     documented here but NOT asserted until lab is under the bar:
  *       Performance score ≥ 0.90
