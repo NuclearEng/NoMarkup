@@ -6,12 +6,14 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMemo } from 'react';
 
+import { AnimatedPrice } from '@/components/bids/AnimatedPrice';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { GradientMesh } from '@/components/landing/GradientMesh';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { MonoPrice } from '@/components/ui/mono-price';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkline } from '@/components/ui/sparkline';
 import { useListing, useListingBids } from '@/hooks/useListings';
@@ -189,12 +191,17 @@ export default function ListingSpectatePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-mono text-6xl font-bold text-emerald-400 tabular-nums sm:text-7xl">
-              {formatCents(displayBidCents ?? listing.current_bid_cents)}
-            </p>
+            <AnimatedPrice
+              cents={displayBidCents ?? listing.current_bid_cents}
+              className="text-6xl font-bold text-emerald-400 sm:text-7xl"
+            />
             <p className="mt-2 text-xs tracking-wider text-white/50 uppercase">
-              Started at {formatCents(listing.starting_price_cents)} ·{' '}
-              {String(listing.bidder_count)} bidders · {String(listing.bid_count)} bids
+              Started at{' '}
+              <MonoPrice
+                cents={listing.starting_price_cents}
+                className="text-white/70"
+              />{' '}
+              · {String(listing.bidder_count)} bidders · {String(listing.bid_count)} bids
               {lastBid && isConnected ? ' · live feed' : ''}
             </p>
             <Sparkline

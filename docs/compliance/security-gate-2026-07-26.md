@@ -16,7 +16,7 @@
 | 3. Regulated rails server-flag gated (`iOSHardOffKeys` empty) | **PASS** (matches code + matrix policy) |
 | 4. Amounts are `Int64` cents in API bodies | **PASS** (iOS encode + gateway decode) |
 | 5. confirm-pickup / seller-confirm exist + auth-gated | **PASS** |
-| Residual money races (MON-14–18 etc.) | **Open** — tracked; not closed by this gate |
+| Residual money races (MON-14–18 etc.) | **Closed 2026-07-27** — code + tests; ADR money residual **SUPERSEDED** |
 | Idempotency Redis cache policy | **PASS** — 2xx-only replay (5xx/4xx retriable with same key) |
 | Goods take rate vs fee config | **PASS** — R6.1 wires mint+charge to `platform_fee_config` |
 | Guarantee approve → CreateRefund | **PASS** — ReviewGuaranteeClaim refunds before resolve; stamp `guarantee_paid_at`; fail-closed without refundable payment |
@@ -24,7 +24,7 @@
 | Job PlaceBid sticky retry UX | **PASS** — migration 110 `bids.idempotency_key` + pre-lookup replay; AlreadyExists + same amount soft-replay; stamp key after place |
 | Guarantee multi-payment payout | **PASS** — oldest-first allocation; underfunded fail-closed |
 
-**Gate overall:** **PASS WITH GAPS** — middleware Idempotency-Key gaps closed same day; production money races (MON-14–18) and regulated-rail **server-flag / license** enablement remain separate.
+**Gate overall:** **PASS WITH GAPS** — middleware Idempotency-Key gaps closed; **MON-14–18 closed 2026-07-27**. Remaining for real money: regulated-rail licenses, live Stripe dogfood, deploy provision, mesh mTLS arming (ops).
 
 ---
 
@@ -420,7 +420,7 @@ UI: `ios/NoMarkup/Features/MyOrdersView.swift` (`confirmPickup` / `sellerConfirm
 | ID | Gap | Evidence | Exit |
 |----|-----|----------|------|
 | **SEC-GATE-01** | **Web listing bid omits `Idempotency-Key` while gateway requires it** | `useListings.ts:312–313` vs `router.go:751–752` | Pass `idempotencyHeader(...)` on place-listing-bid (and clear on success); E2E place bid 200 |
-| **SEC-GATE-02** | **Open money races MON-14–18** (capture/process, BNPL, advances, dispute transfer stamp, auto-release vs dispute) | `adversarial-action-tracker.md` MON-14…18 **Open**; ADR accepts residual for *web* remediation only | Close each MON row with concurrency tests before live money / enabling regulated **server flags** |
+| **SEC-GATE-02** | ~~Open money races MON-14–18~~ | **Done 2026-07-27** — CAS/locks/BNPL charge-first/dispute transfer stamp; ADR **SUPERSEDED** | Live Stripe dogfood + regulated flag licenses still ops |
 | **SEC-GATE-03** | **Feature flags fail-closed only for routes that call `RequireFlag`** | Project rule §6 — 7/13 flags UI-only | Either wire enforcement or document “UI-only” per flag before claiming flag-off is API-off |
 
 ### P1

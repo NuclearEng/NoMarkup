@@ -87,6 +87,7 @@ export const COMMON_NAV_ITEMS: NavItem[] = [
   { href: '/orders' as Route, label: 'Orders', icon: Package },
   { href: '/sell/new' as Route, label: 'Sell an Item', icon: Tag },
   // Discovery & saved
+  { href: '/me/positions' as Route, label: 'Positions', icon: Gavel },
   { href: '/me/watchlist' as Route, label: 'Watchlist', icon: Heart },
   { href: '/me/wishlist' as Route, label: 'Wishlist', icon: Sparkles },
   { href: '/me/saved-searches' as Route, label: 'Saved Searches', icon: Bookmark },

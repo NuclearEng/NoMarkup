@@ -95,6 +95,15 @@ const COMMANDS: readonly CommandItem[] = [
     auth: true,
   },
   {
+    id: 'positions',
+    label: 'Active positions',
+    hint: 'My bids + watchlist',
+    href: '/me/positions' as Route,
+    icon: Gavel,
+    keywords: ['blotter', 'watch', 'active', 'desk'],
+    auth: true,
+  },
+  {
     id: 'my-jobs',
     label: 'My jobs',
     href: '/jobs/mine' as Route,
@@ -168,11 +177,14 @@ function matchesQuery(item: CommandItem, q: string): boolean {
   return hay.includes(q);
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /**
  * Bloomberg/Linear-style global jump palette.
  *
- * Bound to ⌘K / Ctrl+K app-wide. Auth-aware command list only — no free-text
- * API search in v1 (keeps the palette instant and offline-safe).
+ * Bound to ⌘K / Ctrl+K app-wide. Static routes + UUID jump + live job/listing
+ * search (debounced public catalog). Offline-safe when API is down (static only).
  */
 export function CommandPalette() {
   const router = useRouter();
@@ -184,8 +196,9 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [liveHits, setLiveHits] = useState<CommandItem[]>([]);
 
-  const items = useMemo(() => {
+  const staticItems = useMemo(() => {
     const q = query.trim().toLowerCase();
     return COMMANDS.filter((item) => {
       if (item.auth && !isAuthenticated) return false;
@@ -195,6 +208,94 @@ export function CommandPalette() {
       return matchesQuery(item, q);
     });
   }, [query, isAuthenticated, isProvider]);
+
+  // Debounced market search + UUID deep-links.
+  useEffect(() => {
+    if (!open) {
+      setLiveHits([]);
+      return;
+    }
+    const raw = query.trim();
+    if (raw.length < 2) {
+      setLiveHits([]);
+      return;
+    }
+    if (UUID_RE.test(raw)) {
+      setLiveHits([
+        {
+          id: `uuid-job-${raw}`,
+          label: `Open job ${raw.slice(0, 8)}…`,
+          hint: 'UUID → /jobs/{id}',
+          href: `/jobs/${raw}` as Route,
+          icon: Briefcase,
+          keywords: ['uuid', 'job'],
+        },
+        {
+          id: `uuid-listing-${raw}`,
+          label: `Open listing ${raw.slice(0, 8)}…`,
+          hint: 'UUID → /marketplace/{id}',
+          href: `/marketplace/${raw}` as Route,
+          icon: Gavel,
+          keywords: ['uuid', 'listing'],
+        },
+      ]);
+      return;
+    }
+
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const { api } = await import('@/lib/api');
+          const qEnc = encodeURIComponent(raw);
+          const [jobsRes, listingsRes] = await Promise.all([
+            api
+              .getPublic<{ jobs?: Array<{ id: string; title: string }> }>(
+                `/api/v1/jobs?q=${qEnc}&page_size=5`,
+              )
+              .catch(() => ({ jobs: [] as Array<{ id: string; title: string }> })),
+            api
+              .getPublic<{ listings?: Array<{ id: string; title: string }> }>(
+                `/api/v1/listings?q=${qEnc}&page_size=5`,
+              )
+              .catch(() => ({ listings: [] as Array<{ id: string; title: string }> })),
+          ]);
+          if (cancelled) return;
+          const hits: CommandItem[] = [];
+          for (const j of jobsRes.jobs ?? []) {
+            hits.push({
+              id: `job-${j.id}`,
+              label: j.title || 'Job',
+              hint: 'Job auction',
+              href: `/jobs/${j.id}` as Route,
+              icon: Briefcase,
+            });
+          }
+          for (const l of listingsRes.listings ?? []) {
+            hits.push({
+              id: `listing-${l.id}`,
+              label: l.title || 'Listing',
+              hint: 'Goods auction',
+              href: `/marketplace/${l.id}` as Route,
+              icon: Gavel,
+            });
+          }
+          setLiveHits(hits);
+        } catch {
+          if (!cancelled) setLiveHits([]);
+        }
+      })();
+    }, 220);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [query, open]);
+
+  const items = useMemo(
+    () => [...liveHits, ...staticItems],
+    [liveHits, staticItems],
+  );
 
   // Reset selection when the filtered list changes.
   useEffect(() => {

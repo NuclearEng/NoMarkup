@@ -607,46 +607,77 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
       {/* Similar items rail — Meilisearch-ranked, hidden when none match. */}
       <SimilarListings listingId={listingId} />
 
-      {/* Robinhood-style sticky bid dock (mobile only) — desktop sidebar already
-          keeps the bid panel in view. Respects tab bar + safe-area. */}
+      {/* Robinhood sticky dock — places bids in-bar (not scroll theater). lg:hidden
+          because the sidebar panel is already primary on desktop. */}
       {!auctionExpired && !isOwnListing ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] bg-background/95 px-4 py-3 backdrop-blur-md supports-[padding:max(0px)]:pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden">
-          <div className="mx-auto flex max-w-6xl items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">
-                Current bid
-              </p>
-              <AnimatedPrice
-                cents={listing.current_bid_cents}
-                className="text-lg font-bold text-brand-gold"
-              />
-            </div>
-            {listing.auction_ends_at ? (
-              <div className="shrink-0">
-                <AuctionTimer auctionEndsAt={listing.auction_ends_at} compact />
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] bg-background/95 px-3 py-2 backdrop-blur-md supports-[padding:max(0px)]:pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:hidden">
+          <div className="mx-auto max-w-6xl space-y-2">
+            <div className="flex items-center justify-between gap-2 px-1">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">
+                  Current bid
+                </p>
+                <AnimatedPrice
+                  cents={listing.current_bid_cents}
+                  className="text-base font-bold text-brand-gold"
+                />
               </div>
-            ) : null}
-            {isAuthenticated ? (
-              <Button
-                type="button"
-                className="min-h-[44px] shrink-0 bg-bid-winning font-semibold text-white hover:bg-bid-winning/90"
-                onClick={() => {
-                  document
-                    .getElementById('listing-bid-panel')
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
-              >
-                Place bid
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                className="min-h-[44px] shrink-0 bg-bid-winning font-semibold text-white hover:bg-bid-winning/90"
-                asChild
-              >
-                <Link href={'/login' as Route}>Sign in to bid</Link>
-              </Button>
-            )}
+              {listing.auction_ends_at ? (
+                <AuctionTimer auctionEndsAt={listing.auction_ends_at} compact />
+              ) : null}
+            </div>
+            <ListingBidPanel
+              variant="dock"
+              className="border-0 bg-transparent p-0"
+              currentBidCents={listing.current_bid_cents}
+              minIncrementCents={listing.min_increment_cents}
+              isAuthenticated={isAuthenticated}
+              isOwnListing={isOwnListing}
+              isUserWinning={listing.is_user_winning}
+              isAuctionExpired={auctionExpired}
+              isSubmitting={placeBid.isPending}
+              lastLiveBidTimestamp={lastBid?.timestamp ?? null}
+              lastLiveBidExtended={lastBid?.snipe_extension ?? false}
+              listingId={listingId}
+              bidBondRequirement={bidBondReq}
+              onBidBondAuthorized={() => {
+                if (pendingBid) {
+                  placeBid.mutate({
+                    listingId,
+                    input: {
+                      amount_cents: pendingBid.amount,
+                      ...(pendingBid.max ? { max_bid_cents: pendingBid.max } : {}),
+                    },
+                  });
+                }
+                setBidBondReq(null);
+                setPendingBid(null);
+              }}
+              onPlaceBid={(amountCents, maxBidCents) => {
+                setPendingBid({ amount: amountCents, max: maxBidCents });
+                placeBid.mutate(
+                  {
+                    listingId,
+                    input: {
+                      amount_cents: amountCents,
+                      ...(maxBidCents ? { max_bid_cents: maxBidCents } : {}),
+                    },
+                  },
+                  {
+                    onSuccess: () => {
+                      setBidBondReq(null);
+                      setPendingBid(null);
+                    },
+                    onError: (err) => {
+                      const req = extractBidBondRequirement(err);
+                      if (req) {
+                        setBidBondReq({ bond_amount_cents: req.bond_amount_cents });
+                      }
+                    },
+                  },
+                );
+              }}
+            />
           </div>
         </div>
       ) : null}

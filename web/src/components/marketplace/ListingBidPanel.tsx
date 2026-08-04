@@ -63,6 +63,11 @@ interface ListingBidPanelProps {
   isRetracting?: boolean;
   onRetractBid?: () => void;
   className?: string;
+  /**
+   * `dock` — compact sticky bar (mobile): amount + optional max + one primary CTA.
+   * Hides bond chrome extras when not required; still shows bond prompt if needed.
+   */
+  variant?: 'default' | 'dock';
 }
 
 /** Window during which a fresh live bid pulses + extension banner shows (ms). */
@@ -89,7 +94,9 @@ export function ListingBidPanel({
   isRetracting = false,
   onRetractBid,
   className,
+  variant = 'default',
 }: ListingBidPanelProps) {
+  const isDock = variant === 'dock';
   const minBidCents = useMemo(
     () => currentBidCents + Math.max(100, minIncrementCents),
     [currentBidCents, minIncrementCents],
@@ -321,7 +328,7 @@ export function ListingBidPanel({
         </div>
       ) : null}
 
-      {canRetract ? (
+      {!isDock && canRetract ? (
         <Button
           type="button"
           variant="outline"
@@ -347,89 +354,172 @@ export function ListingBidPanel({
         </Button>
       ) : null}
 
-      <div className="space-y-2">
-        <Label htmlFor="listing-bid-amount" className="text-xs text-zinc-400">
-          Bid amount (min {formatCents(minBidCents)})
-        </Label>
-        <Input
-          id="listing-bid-amount"
-          type="number"
-          min={minBidCents / 100}
-          step="0.01"
-          variant="glass"
-          inputMode="decimal"
-          value={Number.isFinite(bidDollars) ? bidDollars : ''}
-          aria-invalid={error !== null}
-          aria-describedby={error ? 'listing-bid-error' : undefined}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            setBidDollars(Number.isFinite(v) ? v : 0);
-            if (error) setError(null);
-          }}
-        />
-      </div>
+      {isDock ? (
+        <div className="flex flex-col gap-2" data-testid="listing-bid-dock">
+          <div className="flex items-end gap-2">
+            <div className="min-w-0 flex-1 space-y-1">
+              <Label htmlFor="listing-bid-amount-dock" className="text-[10px] text-zinc-500">
+                Bid (min {formatCents(minBidCents)})
+              </Label>
+              <Input
+                id="listing-bid-amount-dock"
+                type="number"
+                min={minBidCents / 100}
+                step="0.01"
+                variant="glass"
+                inputMode="decimal"
+                className="min-h-[44px] font-mono tabular-nums"
+                value={Number.isFinite(bidDollars) ? bidDollars : ''}
+                aria-invalid={error !== null}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setBidDollars(Number.isFinite(v) ? v : 0);
+                  if (error) setError(null);
+                }}
+              />
+            </div>
+            <div className="min-w-0 flex-1 space-y-1">
+              <Label htmlFor="listing-max-bid-dock" className="text-[10px] text-zinc-500">
+                Max (opt)
+              </Label>
+              <Input
+                id="listing-max-bid-dock"
+                type="number"
+                min={Math.max(minBidCents, Math.round(bidDollars * 100)) / 100}
+                step="0.01"
+                variant="glass"
+                inputMode="decimal"
+                className="min-h-[44px] font-mono tabular-nums"
+                value={Number.isFinite(maxDollars) ? maxDollars : ''}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setMaxDollars(Number.isFinite(v) ? v : 0);
+                  if (error) setError(null);
+                }}
+              />
+            </div>
+            <Button
+              type="button"
+              className="min-h-[44px] shrink-0 bg-bid-winning font-semibold text-white hover:bg-bid-winning/90"
+              disabled={isSubmitting}
+              onClick={submit}
+            >
+              {isSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <>Bid {formatCents(Math.max(minBidCents, Math.round(bidDollars * 100)))}</>
+              )}
+            </Button>
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto">
+            {QUICK_INCREMENTS.map((cents) => (
+              <Button
+                key={cents}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="min-h-[36px] shrink-0 border-white/10 font-mono text-xs"
+                onClick={() => {
+                  applyIncrement(cents);
+                }}
+              >
+                +${(cents / 100).toFixed(0)}
+              </Button>
+            ))}
+          </div>
+          {error ? (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="listing-bid-amount" className="text-xs text-zinc-400">
+              Bid amount (min {formatCents(minBidCents)})
+            </Label>
+            <Input
+              id="listing-bid-amount"
+              type="number"
+              min={minBidCents / 100}
+              step="0.01"
+              variant="glass"
+              inputMode="decimal"
+              value={Number.isFinite(bidDollars) ? bidDollars : ''}
+              aria-invalid={error !== null}
+              aria-describedby={error ? 'listing-bid-error' : undefined}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setBidDollars(Number.isFinite(v) ? v : 0);
+                if (error) setError(null);
+              }}
+            />
+          </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="listing-max-bid" className="text-xs text-zinc-400">
-          Set max bid (optional)
-        </Label>
-        <Input
-          id="listing-max-bid"
-          type="number"
-          min={Math.max(minBidCents, Math.round(bidDollars * 100)) / 100}
-          step="0.01"
-          variant="glass"
-          inputMode="decimal"
-          value={Number.isFinite(maxDollars) ? maxDollars : ''}
-          aria-describedby="listing-max-bid-help"
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            setMaxDollars(Number.isFinite(v) ? v : 0);
-            if (error) setError(null);
-          }}
-        />
-        <p id="listing-max-bid-help" className="text-[11px] text-zinc-500">
-          We&rsquo;ll auto-bid for you up to this amount, only as much as needed to keep you on top.
-        </p>
-      </div>
+          <div className="space-y-2">
+            <Label htmlFor="listing-max-bid" className="text-xs text-zinc-400">
+              Set max bid (optional)
+            </Label>
+            <Input
+              id="listing-max-bid"
+              type="number"
+              min={Math.max(minBidCents, Math.round(bidDollars * 100)) / 100}
+              step="0.01"
+              variant="glass"
+              inputMode="decimal"
+              value={Number.isFinite(maxDollars) ? maxDollars : ''}
+              aria-describedby="listing-max-bid-help"
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setMaxDollars(Number.isFinite(v) ? v : 0);
+                if (error) setError(null);
+              }}
+            />
+            <p id="listing-max-bid-help" className="text-[11px] text-zinc-500">
+              We&rsquo;ll auto-bid for you up to this amount, only as much as needed to keep you on top.
+            </p>
+          </div>
 
-      <div className="grid grid-cols-4 gap-2">
-        {QUICK_INCREMENTS.map((cents) => (
+          <div className="grid grid-cols-4 gap-2">
+            {QUICK_INCREMENTS.map((cents) => (
+              <Button
+                key={cents}
+                type="button"
+                variant="outline"
+                className="min-h-[44px] border-[var(--brand-gold)]/30 bg-white/[0.04] text-zinc-100 hover:bg-[var(--brand-gold)]/15"
+                onClick={() => {
+                  applyIncrement(cents);
+                }}
+              >
+                +${(cents / 100).toFixed(0)}
+              </Button>
+            ))}
+          </div>
+
+          {error ? (
+            <p id="listing-bid-error" className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+
           <Button
-            key={cents}
             type="button"
-            variant="outline"
-            className="min-h-[44px] border-[var(--brand-gold)]/30 bg-white/[0.04] text-zinc-100 hover:bg-[var(--brand-gold)]/15"
-            onClick={() => {
-              applyIncrement(cents);
-            }}
+            className="min-h-[48px] w-full bg-[var(--brand-gold)] text-black hover:bg-[var(--brand-gold)]/90"
+            disabled={isSubmitting}
+            onClick={submit}
           >
-            +${(cents / 100).toFixed(0)}
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                Placing bid...
+              </>
+            ) : (
+              <>Bid {formatCents(Math.max(minBidCents, Math.round(bidDollars * 100)))}</>
+            )}
           </Button>
-        ))}
-      </div>
-
-      {error ? (
-        <p id="listing-bid-error" className="text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      <Button
-        type="button"
-        className="min-h-[48px] w-full bg-[var(--brand-gold)] text-black hover:bg-[var(--brand-gold)]/90"
-        disabled={isSubmitting}
-        onClick={submit}
-      >
-        {isSubmitting ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-            Placing bid...
-          </>
-        ) : (
-          <>Bid {formatCents(Math.max(minBidCents, Math.round(bidDollars * 100)))}</>
-        )}
-      </Button>
+        </>
+      )}
     </div>
   );
 }

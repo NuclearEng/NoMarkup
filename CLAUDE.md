@@ -420,7 +420,10 @@ insecure or a dead end is not done.
   input validated server-side. Parameterized SQL only. No secrets in code.
 - Money/PII paths get extra scrutiny: idempotency keys, Stripe webhook signature verification, escrow
   invariants, secretbox PII fields at rest. **Fail closed** on money engines/authz; feature flags
-  currently fail open on missing rows (financial fail-closed is the target — SEC-01).
+  **fail closed in production** (SEC-01 shipped: missing/error/nil DB → 503 when
+  `ENVIRONMENT=production`). Non-production still fails open on missing rows only.
+  **Caveat:** only routes that call `RequireFlag` are enforced — several UI-only
+  flags do not close the API when toggled (document per key; money keys are binary).
 - Treat the security audit as a **release gate**: run `/security-review` (or `/cso`) before shipping
   anything touching auth, payments, or a data boundary. A 500 is never an acceptable answer to a
   predictable condition — map it to the right 4xx with an intuitive message.

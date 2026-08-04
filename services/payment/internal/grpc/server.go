@@ -3,18 +3,54 @@ package grpc
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"time"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
+	"github.com/nomarkup/nomarkup/pkg/grpmtls"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 	"github.com/nomarkup/nomarkup/services/payment/internal/service"
 	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// requirePrivilegedMoneyPeer gates ActorIsAdmin / SystemInitiated on release & refund.
+//
+// Default (MESH_PRIVILEGED_MONEY_PEERS unset): trust private-network mesh (current
+// posture when mTLS is off). When set to a comma list (e.g. "gateway"), admin or
+// system money actors must present a mesh peer identity in that list — so a
+// random pod cannot forge admin release by dialing payment with body flags.
+// When the env is set and peer identity is missing (plaintext mesh), deny.
+func requirePrivilegedMoneyPeer(ctx context.Context, isAdmin, system bool) error {
+	if !isAdmin && !system {
+		return nil
+	}
+	raw := strings.TrimSpace(os.Getenv("MESH_PRIVILEGED_MONEY_PEERS"))
+	if raw == "" {
+		return nil
+	}
+	allow := grpmtls.ParsePeerAllowlist(raw)
+	if len(allow) == 0 {
+		return nil
+	}
+	p, ok := peer.FromContext(ctx)
+	if !ok || p == nil {
+		return status.Error(codes.PermissionDenied, "privileged money actor requires mesh peer identity (set MESH_PRIVILEGED_MONEY_PEERS and arm mTLS)")
+	}
+	name := grpmtls.PeerServiceName(p)
+	if name == "" {
+		return status.Error(codes.PermissionDenied, "privileged money actor requires mesh peer identity")
+	}
+	if _, ok := allow[name]; !ok {
+		return status.Errorf(codes.PermissionDenied, "mesh peer %q not allowed for privileged money actor", name)
+	}
+	return nil
+}
 
 // Server implements the PaymentService gRPC server.
 //
@@ -260,6 +296,9 @@ func (s *Server) ProcessPayment(ctx context.Context, req *paymentv1.ProcessPayme
 }
 
 func (s *Server) ReleaseEscrow(ctx context.Context, req *paymentv1.ReleaseEscrowRequest) (*paymentv1.ReleaseEscrowResponse, error) {
+	if err := requirePrivilegedMoneyPeer(ctx, req.GetActorIsAdmin(), req.GetSystemInitiated()); err != nil {
+		return nil, err
+	}
 	payment, err := s.svc.ReleaseEscrow(ctx, req.GetPaymentId(), req.GetReason(), service.ReleaseActor{
 		UserID:  req.GetActorUserId(),
 		IsAdmin: req.GetActorIsAdmin(),
@@ -338,6 +377,9 @@ func (s *Server) ListPayments(ctx context.Context, req *paymentv1.ListPaymentsRe
 // --- Refunds ---
 
 func (s *Server) CreateRefund(ctx context.Context, req *paymentv1.CreateRefundRequest) (*paymentv1.CreateRefundResponse, error) {
+	if err := requirePrivilegedMoneyPeer(ctx, req.GetActorIsAdmin(), req.GetSystemInitiated()); err != nil {
+		return nil, err
+	}
 	payment, err := s.svc.CreateRefund(ctx, req.GetPaymentId(), req.GetAmountCents(), req.GetReason(), service.ReleaseActor{
 		UserID:  req.GetInitiatedBy(),
 		IsAdmin: req.GetActorIsAdmin(),

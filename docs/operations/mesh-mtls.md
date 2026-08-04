@@ -87,6 +87,11 @@ underwriting, pricing) use **HTTP** `GET /healthz` on the named `metrics` port
 (not `grpc:`). Go services already use HTTP. That probe switch is done in-repo —
 still verify on a live cluster before arming mTLS.
 
+**Privileged money peers (2026-08-04):** After mTLS is armed, set
+`MESH_PRIVILEGED_MONEY_PEERS=gateway` on the **payment** service so
+`ActorIsAdmin` / `SystemInitiated` release and refund RPCs only succeed from
+allowlisted mesh peers. Unset = private-network trust (dev default).
+
 Native gRPC liveness/readiness probes **cannot** present a client certificate.
 When mTLS is armed (`ClientAuth = RequireAndVerifyClientCert`), those probes
 fail and the pod restarts.

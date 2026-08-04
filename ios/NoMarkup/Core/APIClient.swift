@@ -825,12 +825,21 @@ actor APIClient {
     }
 
     /// POST `/api/v1/listings/{id}/bids` — auth required.
-    /// Body: `{ "amount_cents": N }` (optional `max_bid_cents` omitted for MVP).
-    /// Idempotency-Key sticky by `listing-bid:{listingId}:{amountCents}` (MON-06/22 + web parity).
+    /// Body: `{ "amount_cents": N, "max_bid_cents"?: N }` — eBay-style proxy ceiling optional.
+    /// Idempotency-Key sticky by `listing-bid:{listingId}:{amountCents}:{max}` (MON-06/22 + web parity).
     @discardableResult
-    func placeListingBid(listingId: String, amountCents: Int64) async throws -> Data {
-        let body = AmountCentsBody(amountCents: amountCents)
-        let opKey = "listing-bid:\(listingId):\(amountCents)"
+    func placeListingBid(
+        listingId: String,
+        amountCents: Int64,
+        maxBidCents: Int64? = nil
+    ) async throws -> Data {
+        let ceiling: Int64? = {
+            guard let maxBidCents, maxBidCents > amountCents else { return nil }
+            return maxBidCents
+        }()
+        let body = ListingBidBody(amountCents: amountCents, maxBidCents: ceiling)
+        let maxKey = ceiling.map(String.init) ?? "none"
+        let opKey = "listing-bid:\(listingId):\(amountCents):\(maxKey)"
         let headers = idempotencyHeader(for: opKey)
         do {
             let data = try await postData(
@@ -1998,6 +2007,13 @@ private struct ListingReportRequestBody: Encodable {
 
 struct AmountCentsBody: Encodable {
     let amountCents: Int64
+}
+
+/// Goods listing bid — amount required; optional confidential proxy ceiling.
+/// Encoded with `convertToSnakeCase` → `amount_cents` / `max_bid_cents`.
+struct ListingBidBody: Encodable {
+    let amountCents: Int64
+    let maxBidCents: Int64?
 }
 
 private struct RespondToTermsRequestBody: Encodable {

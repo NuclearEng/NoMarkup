@@ -37,6 +37,8 @@ struct ListingDetailView: View {
     @State private var lastLadderInvalidateAt = Date.distantPast
 
     @State private var bidAmountText = ""
+    /// Optional eBay-style proxy ceiling (dollars text). Empty = no max.
+    @State private var maxBidAmountText = ""
     @State private var isPlacingBid = false
     @State private var bidStatusMessage: String?
     @State private var bidStatusIsError = false
@@ -44,6 +46,7 @@ struct ListingDetailView: View {
     /// Place-bid 402 → user must post a one-time SetupIntent bond before retrying.
     @State private var showBidBondAlert = false
     @State private var pendingBidCents: Int64?
+    @State private var pendingMaxBidCents: Int64?
     @State private var bidBondAmountCents: Int64?
     @State private var isPostingBond = false
 
@@ -1141,6 +1144,12 @@ struct ListingDetailView: View {
                     accessibilityLabelText: "Your bid in dollars — forward auction, higher wins"
                 )
 
+                DollarAmountField(
+                    text: $maxBidAmountText,
+                    placeholder: "Max (optional)",
+                    accessibilityLabelText: "Maximum bid in dollars, optional proxy ceiling"
+                )
+
                 if let bidStatusMessage {
                     Text(bidStatusMessage)
                         .font(.footnote)
@@ -1220,7 +1229,7 @@ struct ListingDetailView: View {
         } header: {
             Text("Place a bid (dollars)").brandSectionHeader()
         } footer: {
-            Text("Goods are forward auctions — enter dollars (for example 95.00), not cents. Bid above the current high to take the lead. First-time bidders may need a refundable bid bond.")
+            Text("Goods are forward auctions — enter dollars (for example 95.00), not cents. Bid above the current high to take the lead. Set an optional max bid to auto-defend your lead (proxy bid). First-time bidders may need a refundable bid bond.")
                 .foregroundStyle(BrandTheme.textSecondary)
         }
     }
@@ -1851,23 +1860,52 @@ struct ListingDetailView: View {
             return
         }
 
-        await submitListingBid(amountCents: cents, clearBondGate: true)
+        var maxCents: Int64? = nil
+        let maxTrimmed = maxBidAmountText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !maxTrimmed.isEmpty {
+            guard let parsedMax = MoneyFormat.cents(fromDollarsText: maxTrimmed) else {
+                bidStatusIsError = true
+                bidStatusMessage = "Enter a valid max bid in dollars, or leave max blank."
+                return
+            }
+            if parsedMax < cents {
+                bidStatusIsError = true
+                bidStatusMessage = "Max bid must be at least your bid amount."
+                return
+            }
+            if parsedMax > cents {
+                maxCents = parsedMax
+            }
+        }
+
+        await submitListingBid(amountCents: cents, maxBidCents: maxCents, clearBondGate: true)
     }
 
     /// Shared place-bid path used by the form and post-bond retry.
     @MainActor
-    private func submitListingBid(amountCents: Int64, clearBondGate: Bool) async {
+    private func submitListingBid(
+        amountCents: Int64,
+        maxBidCents: Int64? = nil,
+        clearBondGate: Bool
+    ) async {
         isPlacingBid = true
         defer { isPlacingBid = false }
 
         do {
             _ = try await APIClient.shared.placeListingBid(
                 listingId: listingID,
-                amountCents: amountCents
+                amountCents: amountCents,
+                maxBidCents: maxBidCents
             )
             bidStatusIsError = false
-            bidStatusMessage = "Bid placed: \(MoneyFormat.usd(cents: amountCents))."
+            if let maxBidCents, maxBidCents > amountCents {
+                bidStatusMessage =
+                    "Bid placed: \(MoneyFormat.usd(cents: amountCents)) (max \(MoneyFormat.usd(cents: maxBidCents)))."
+            } else {
+                bidStatusMessage = "Bid placed: \(MoneyFormat.usd(cents: amountCents))."
+            }
             bidAmountText = ""
+            maxBidAmountText = ""
             clearBidBondUIState()
             // Value moment: invite push permission after first successful bid (NT.2).
             PushRegistration.shared.noteValueMoment()
@@ -1884,6 +1922,7 @@ struct ListingDetailView: View {
         } catch let error as APIClientError where error.isBidBondRequired {
             let bondCents = error.bidBondAmountCents ?? 0
             pendingBidCents = amountCents
+            pendingMaxBidCents = maxBidCents
             bidBondAmountCents = bondCents > 0 ? bondCents : nil
             bidStatusIsError = true
             if bondCents > 0 {
@@ -1972,7 +2011,11 @@ struct ListingDetailView: View {
             bidStatusMessage = "Bond authorized. Placing your bid…"
             // clearBondGate: false — avoid re-alerting mid-retry if gateway races;
             // success path still clears via clearBidBondUIState().
-            await submitListingBid(amountCents: intendedCents, clearBondGate: false)
+            await submitListingBid(
+                amountCents: intendedCents,
+                maxBidCents: pendingMaxBidCents,
+                clearBondGate: false
+            )
         } catch let error as RailACheckout.CheckoutError where error.isCanceled {
             bidStatusIsError = false
             bidStatusMessage = "Bond authorization canceled. Post the bond to place your bid."
@@ -2003,6 +2046,7 @@ struct ListingDetailView: View {
     @MainActor
     private func clearBidBondUIState() {
         pendingBidCents = nil
+        pendingMaxBidCents = nil
         bidBondAmountCents = nil
         showBidBondAlert = false
     }

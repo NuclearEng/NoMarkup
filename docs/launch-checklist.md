@@ -120,7 +120,10 @@ From code-complete to real users on production. Every item must be checked off o
 | `legal_services` | **off** | Preview only |
 | fair-price / spectator / guarantee flags | per product | Do not enable without data + ops |
 
-**Flag enforcement truth:** gateway `RequireFlag` → 503 when row exists and `enabled=false`; missing row / DB error currently **fail open**. Target financial fail-closed: SEC-01.
+**Flag enforcement truth:** gateway `RequireFlag` → 503 when row exists and `enabled=false`.
+**Production (`ENVIRONMENT=production`):** missing row / DB error / nil DB → **fail closed 503** (SEC-01 Done).
+**Non-production:** missing row / DB error fail-open so un-seeded stacks work. Money/regulated keys are binary-only.
+**Caveat:** only route groups that call `RequireFlag` are API-gated; UI-only flags do not close unguarded endpoints.
 
 ### Data Seeding
 - [ ] Launch-market categories and market pricing for Seattle metro ZIPs as needed
@@ -273,7 +276,7 @@ From code-complete to real users on production. Every item must be checked off o
 - [ ] Track open P0s in `docs/planning/adversarial-action-tracker.md` — **do not take real money** until money + fail-closed items close
 
 ### Claims demoted (docs done; code optional)
-- Feature flags fail-open on missing rows · mesh plaintext gRPC · secretbox not AES-GCM · coverage floors not 80% all stacks · no testcontainers · criterion not CI · k6 smoke optional only (not capacity proof) · no Husky · E2E CI backend-tolerant · North Star not achieved · SW kill-switch · RSC pilots not whole app · WCAG goal not axe-certified · insurance/legal flag-off · rank-estimate heuristic (not trained win-prob; FE-12 Done honesty) · GPS server geo-fence (FE-13 Done)
+- Feature flags: prod fail-closed / non-prod fail-open on missing · mesh plaintext gRPC until mTLS armed · secretbox not AES-GCM · coverage floors not 80% all stacks · no testcontainers · criterion not CI · k6 smoke optional only (not capacity proof) · no Husky · E2E CI backend-tolerant · North Star not achieved · SW kill-switch · RSC pilots not whole app · WCAG goal not axe-certified · insurance/legal flag-off · rank-estimate heuristic (not trained win-prob; FE-12 Done honesty) · GPS server geo-fence (FE-13 Done)
 
 ---
 
