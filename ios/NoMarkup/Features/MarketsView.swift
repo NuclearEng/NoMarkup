@@ -25,7 +25,7 @@ struct MarketsView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .searchable(text: $searchText, prompt: "Search cities or regions")
             .task { await load() }
             .refreshable { await load() }

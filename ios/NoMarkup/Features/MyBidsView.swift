@@ -102,7 +102,7 @@ struct MyBidsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .task(id: segment) { await load() }
         .refreshable { await load() }
         .sheet(item: $loweringBid) { bid in

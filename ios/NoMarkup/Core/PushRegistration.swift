@@ -113,15 +113,39 @@ final class PushRegistration: NSObject, ObservableObject {
         lastError = error.localizedDescription
     }
 
-    /// Clear app icon badge (NT.5) — call on become-active and mark-all-read.
-    func clearBadge() {
-        UNUserNotificationCenter.current().setBadgeCount(0) { error in
+    /// Set app icon badge count (NT.5 / IOS-SYS.NT.5). Best-effort; never crashes.
+    func setBadgeCount(_ count: Int) {
+        let value = max(0, count)
+        UNUserNotificationCenter.current().setBadgeCount(value) { error in
             if let error {
-                // Best-effort; badge clear must not crash.
+                // Best-effort; badge updates must not crash.
                 Task { @MainActor in
                     self.lastError = error.localizedDescription
                 }
             }
+        }
+    }
+
+    /// Clear app icon badge (NT.5) — mark-all-read, sign-out, or unauthenticated reconcile.
+    func clearBadge() {
+        setBadgeCount(0)
+    }
+
+    /// Reconcile icon badge from server unread-count (IOS-SYS.NT.5).
+    /// Authenticated: fetch unread and set. On failure leave as-is, except 401 → clear.
+    /// Unauthenticated: clear to 0.
+    func reconcileBadgeFromServer() async {
+        guard let access = try? KeychainTokenStore().read(.accessToken), !access.isEmpty else {
+            clearBadge()
+            return
+        }
+        do {
+            let count = try await APIClient.shared.fetchUnreadNotificationCount()
+            setBadgeCount(count)
+        } catch let error as APIClientError where error.isUnauthorized {
+            clearBadge()
+        } catch {
+            // Transient failure — leave badge as-is.
         }
     }
 
@@ -288,9 +312,9 @@ extension PushRegistration: UNUserNotificationCenterDelegate {
     /// Tap / action routing (NT.3) → deep link router.
     ///
     /// Branches on `response.actionIdentifier`: only the default tap and the
-    /// foreground VIEW action deep-link (and clear the badge on that open). The
-    /// destructive DISMISS action — and any other non-opening identifier — is an
-    /// acknowledgement: it must never navigate, and the badge stays (the server
+    /// foreground VIEW action deep-link (and reconcile badge from server unread).
+    /// The destructive DISMISS action — and any other non-opening identifier — is
+    /// an acknowledgement: it must never navigate, and the badge stays (the server
     /// computes it from the unread count, which dismissing does not change).
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -314,7 +338,8 @@ extension PushRegistration: UNUserNotificationCenterDelegate {
                     userInfo: ["action_url": actionURL]
                 )
             }
-            PushRegistration.shared.clearBadge()
+            // Server unread is source of truth — do not blindly zero.
+            await PushRegistration.shared.reconcileBadgeFromServer()
         }
         completionHandler()
     }
@@ -401,7 +426,8 @@ final class NoMarkupAppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         Task { @MainActor in
-            PushRegistration.shared.clearBadge()
+            // IOS-SYS.NT.5: reconcile from server unread, never blind-zero.
+            await PushRegistration.shared.reconcileBadgeFromServer()
             await PushRegistration.shared.refreshAuthorizationStatus()
         }
     }

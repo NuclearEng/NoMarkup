@@ -76,7 +76,7 @@ struct RegulatedRailsStatusView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .task { await flags.refresh() }
         .refreshable { await flags.refresh() }
     }

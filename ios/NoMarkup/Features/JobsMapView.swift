@@ -58,7 +58,7 @@ struct JobsMapView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {

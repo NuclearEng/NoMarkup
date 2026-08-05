@@ -85,7 +85,7 @@ struct EmployeesView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .toolbar {
             if auth.isAuthenticated, !auth.isScaffoldSession, hasProviderRole {
                 ToolbarItem(placement: .primaryAction) {

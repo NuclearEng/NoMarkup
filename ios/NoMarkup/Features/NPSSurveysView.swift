@@ -61,7 +61,7 @@ struct NPSSurveysView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .task { await load() }
         .refreshable { await load() }
         .sheet(item: $selectedSurvey) { survey in
@@ -221,7 +221,7 @@ struct NPSSurveysView: View {
                 .frame(minHeight: 44)
             }
         }
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .scrollDismissesKeyboard(.interactively)
     }
 

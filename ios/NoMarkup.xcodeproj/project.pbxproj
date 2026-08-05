@@ -64,6 +64,10 @@
 		A10000000000000000000026 /* MyBidsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000026 /* MyBidsView.swift */; };
 		A10000000000000000000027 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000027 /* NotificationsView.swift */; };
 		A10000000000000000000028 /* NoMarkupIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000028 /* NoMarkupIcon.swift */; };
+		A100000000000000000000E5 /* BrandHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000E5 /* BrandHaptics.swift */; };
+		A100000000000000000000E6 /* MarketTickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000E6 /* MarketTickerView.swift */; };
+		A100000000000000000000E7 /* ShowcaseAuctionChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000E7 /* ShowcaseAuctionChrome.swift */; };
+		A100000000000000000000E8 /* SpotlightIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000E8 /* SpotlightIndex.swift */; };
 		A10000000000000000000029 /* PostJobView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000029 /* PostJobView.swift */; };
 		A1000000000000000000002A /* CreateListingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002A /* CreateListingView.swift */; };
 		A1000000000000000000002B /* WatchlistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002B /* WatchlistView.swift */; };
@@ -211,6 +215,10 @@
 		B10000000000000000000026 /* MyBidsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBidsView.swift; sourceTree = "<group>"; };
 		B10000000000000000000027 /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
 		B10000000000000000000028 /* NoMarkupIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupIcon.swift; sourceTree = "<group>"; };
+		B100000000000000000000E5 /* BrandHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandHaptics.swift; sourceTree = "<group>"; };
+		B100000000000000000000E6 /* MarketTickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketTickerView.swift; sourceTree = "<group>"; };
+		B100000000000000000000E7 /* ShowcaseAuctionChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShowcaseAuctionChrome.swift; sourceTree = "<group>"; };
+		B100000000000000000000E8 /* SpotlightIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotlightIndex.swift; sourceTree = "<group>"; };
 		B10000000000000000000029 /* PostJobView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostJobView.swift; sourceTree = "<group>"; };
 		B1000000000000000000002A /* CreateListingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateListingView.swift; sourceTree = "<group>"; };
 		B1000000000000000000002B /* WatchlistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistView.swift; sourceTree = "<group>"; };
@@ -515,6 +523,10 @@
 				B10000000000000000000021 /* RailACheckout.swift */,
 				B10000000000000000000025 /* BrandTheme.swift */,
 				B10000000000000000000028 /* NoMarkupIcon.swift */,
+				B100000000000000000000E5 /* BrandHaptics.swift */,
+				B100000000000000000000E6 /* MarketTickerView.swift */,
+				B100000000000000000000E7 /* ShowcaseAuctionChrome.swift */,
+				B100000000000000000000E8 /* SpotlightIndex.swift */,
 				B10000000000000000000052 /* PushRegistration.swift */,
 				B10000000000000000000053 /* ImageUploader.swift */,
 				B100000000000000000000AD /* Models+RegulatedRails.swift */,
@@ -774,6 +786,7 @@
 			knownRegions = (
 				en,
 				Base,
+				es,
 			);
 			mainGroup = E10000000000000000000001;
 			packageReferences = (
@@ -848,6 +861,10 @@
 				A100000000000000000000C5 /* AuctionLiveActivityController.swift in Sources */,
 				A100000000000000000000C4 /* BiometricGate.swift in Sources */,
 				A10000000000000000000025 /* BrandTheme.swift in Sources */,
+				A100000000000000000000E5 /* BrandHaptics.swift in Sources */,
+				A100000000000000000000E6 /* MarketTickerView.swift in Sources */,
+				A100000000000000000000E7 /* ShowcaseAuctionChrome.swift in Sources */,
+				A100000000000000000000E8 /* SpotlightIndex.swift in Sources */,
 				A10000000000000000000003 /* KeychainTokenStore.swift in Sources */,
 				A10000000000000000000004 /* APIClient.swift in Sources */,
 				A10000000000000000000005 /* AuthViewModel.swift in Sources */,

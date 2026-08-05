@@ -215,7 +215,17 @@ impl BiddingEngine {
             ));
         }
 
-        let existing = self.get_bid(bid_id).await?;
+        // Lock the parent job FOR UPDATE and re-check auction open state — same
+        // fail-closed rules as place_bid. Without this, a provider could lower an
+        // still-`active` bid row after the opportunity closed (status change or
+        // auction_ends_at in the past) while place_bid correctly rejected.
+        let mut tx = self.pool.begin().await?;
+
+        let existing = sqlx::query_as::<_, Bid>("SELECT * FROM bids WHERE id = $1 FOR UPDATE")
+            .bind(bid_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(BidError::BidNotFound)?;
 
         if existing.provider_id != provider_id {
             return Err(BidError::NotBidOwner);
@@ -225,6 +235,24 @@ impl BiddingEngine {
         }
         if new_amount >= existing.amount_cents {
             return Err(BidError::BelowMinimum);
+        }
+
+        let job = sqlx::query_as::<_, JobRow>(
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
+             FROM jobs WHERE id = $1 FOR UPDATE",
+        )
+        .bind(existing.job_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(BidError::JobNotFound)?;
+
+        if job.status != "active" {
+            return Err(BidError::AuctionNotActive);
+        }
+        if let Some(ends_at) = job.auction_ends_at
+            && ends_at <= Utc::now()
+        {
+            return Err(BidError::AuctionClosed);
         }
 
         // Build the update entry for the JSONB array.
@@ -246,34 +274,26 @@ impl BiddingEngine {
         .bind(new_amount)
         .bind(update_json)
         .bind(bid_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await?;
 
-        // Live auction: record event and check anti-snipe
-        let auction_type: String = sqlx::query_scalar(
-            "SELECT auction_type FROM jobs WHERE id = (SELECT job_id FROM bids WHERE id = $1)",
-        )
-        .bind(bid_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(BidError::DatabaseError)?;
-
-        if auction_type == "live" {
+        // Live auction: record event and check anti-snipe (job row already locked).
+        if job.auction_type == "live" {
             sqlx::query(
                 "INSERT INTO auction_bid_events (job_id, amount_cents, event_type) VALUES ($1, $2, 'bid_updated')"
             )
             .bind(bid.job_id)
             .bind(new_amount)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(BidError::DatabaseError)?;
 
-            // Anti-snipe check
+            // Anti-snipe check — same window as place_bid.
             let snipe_window: bool = sqlx::query_scalar(
                 "SELECT auction_ends_at IS NOT NULL AND auction_ends_at - INTERVAL '5 minutes' <= now() AND snipe_extension_count < 3 FROM jobs WHERE id = $1"
             )
             .bind(bid.job_id)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *tx)
             .await
             .map_err(BidError::DatabaseError)?;
 
@@ -282,12 +302,16 @@ impl BiddingEngine {
                     "UPDATE jobs SET auction_ends_at = auction_ends_at + INTERVAL '5 minutes', snipe_extension_count = snipe_extension_count + 1, updated_at = now() WHERE id = $1"
                 )
                 .bind(bid.job_id)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(BidError::DatabaseError)?;
             }
+        }
 
-            // Publish to Redis
+        tx.commit().await?;
+
+        if job.auction_type == "live" {
+            // Publish to Redis after commit so subscribers never see a rolled-back amount.
             if let Some(ref mut redis_conn) = self.redis.clone() {
                 let event = serde_json::json!({
                     "type": "bid_updated",

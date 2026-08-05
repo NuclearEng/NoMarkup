@@ -478,15 +478,10 @@ func stringToProtoChannel(s string) notificationv1.NotificationChannel {
 	}
 }
 
-// protoPlatformToString converts a proto DevicePlatform to a string.
-//
-// LA.3: DevicePlatform has no Live Activity value — a client registering
-// platform "ios_live_activity" over the gateway REST route arrives here as
-// DEVICE_PLATFORM_UNSPECIFIED and is stored as "unknown" (FCM best-effort
-// fan-out, unchanged behavior). The dispatcher-side live-activity exclusion
-// (internal/service/push.go) therefore only engages for rows whose platform
-// column is literally "ios_live_activity"; carrying the string end-to-end
-// needs a v1-additive enum value on RegisterDeviceRequest.
+// protoPlatformToString converts a proto DevicePlatform to a string stored in
+// device_tokens.platform. IOS-SYS.LA.3: DEVICE_PLATFORM_IOS_LIVE_ACTIVITY
+// round-trips as "ios_live_activity" so alert fan-out can exclude LA tokens
+// and SendLiveActivityUpdate can target them.
 func protoPlatformToString(p notificationv1.DevicePlatform) string {
 	switch p {
 	case notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS:
@@ -495,6 +490,8 @@ func protoPlatformToString(p notificationv1.DevicePlatform) string {
 		return "android"
 	case notificationv1.DevicePlatform_DEVICE_PLATFORM_WEB:
 		return "web"
+	case notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS_LIVE_ACTIVITY:
+		return "ios_live_activity"
 	default:
 		return "unknown"
 	}

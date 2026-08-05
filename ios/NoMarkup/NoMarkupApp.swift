@@ -139,7 +139,8 @@ struct RootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                push.clearBadge()
+                // IOS-SYS.NT.5: server unread is source of truth — never blind-zero.
+                Task { await push.reconcileBadgeFromServer() }
             }
             guard auth.isAuthenticated, BiometricGate.requireForSensitiveActions else { return }
             if phase == .background {

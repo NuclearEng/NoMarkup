@@ -35,21 +35,22 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 32) {
+                VStack(alignment: .leading, spacing: 24) {
                     heroSection
+                    marketDeskStrip
                     if jobTotal != nil || listingTotal != nil {
                         statsStrip
                     }
                     // Featured open floor (auction_type=live) — not sealed reverse.
                     liveFloorFeatureSection
-                    howItWorksSection
                     liveAuctionsSection
                     marketplaceStrip
+                    howItWorksSection
                     gatewayFooter
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 4)
-                .padding(.bottom, 40)
+                .padding(.top, 8)
+                .padding(.bottom, 48)
                 // DES.12 / DES.20 — cap column width on iPad so hero + cards stay readable.
                 .brandReadableWidth()
             }
@@ -58,7 +59,7 @@ struct HomeView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .navigationDestination(for: JobSummary.self) { job in
                 JobDetailView(jobID: job.id, preview: job)
             }
@@ -102,34 +103,53 @@ struct HomeView: View {
 
     private var heroSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Brand tile — same champagne M↓ artwork as the SpringBoard App Icon.
+            // Brand tile — champagne M↓ = SpringBoard icon (icon gold / product navy desk).
             HStack(alignment: .center, spacing: 14) {
-                NoMarkupIcon(showWordmark: false, size: 64)
+                NoMarkupIcon(showWordmark: false, size: 56)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("REVERSE-AUCTION SERVICE MARKETPLACE")
-                        .font(.caption2.weight(.bold).monospaced())
-                        .tracking(1.2)
-                        .foregroundStyle(BrandTheme.gold)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 1, style: .continuous)
+                            .fill(BrandTheme.gold)
+                            .frame(width: 14, height: 1.5)
+                        Text("REVERSE AUCTION")
+                            .font(.caption2.weight(.heavy).monospaced())
+                            .tracking(1.4)
+                            .foregroundStyle(BrandTheme.gold)
+                            .lineLimit(1)
+                    }
                     (
                         Text("No")
                             .foregroundColor(BrandTheme.textPrimary)
                         + Text("Markup")
                             .foregroundColor(BrandTheme.goldBright)
                     )
-                    .font(.title2.weight(.heavy))
+                    .font(.title3.weight(.heavy))
                     .accessibilityLabel("NoMarkup")
                 }
 
                 Spacer(minLength: 0)
-            }
-            .padding(.bottom, 18)
 
-            // Showcase hero: "The Market Sets The Price. Not The Markup."
+                if let signedInLabel {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(auth.isScaffoldSession ? BrandTheme.warning : BrandTheme.success)
+                            .frame(width: 6, height: 6)
+                        Text(auth.isScaffoldSession ? "Offline" : "Live")
+                            .font(.caption2.weight(.semibold).monospaced())
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(BrandTheme.surfaceRaised))
+                    .accessibilityLabel(signedInLabel)
+                }
+            }
+            .padding(.bottom, 16)
+
+            // Showcase hero — serif energy via system rounded weight + italic gold line.
             (
                 Text("The Market Sets\nThe Price.\n")
                     .foregroundColor(BrandTheme.textPrimary)
@@ -137,37 +157,24 @@ struct HomeView: View {
                     .foregroundColor(BrandTheme.goldBright)
                     .italic()
             )
-            .font(.largeTitle.weight(.bold))
-            .lineSpacing(2)
+            .font(.system(.title, design: .serif).weight(.regular))
+            .lineSpacing(3)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
             .accessibilityLabel("The Market Sets The Price. Not The Markup.")
-            .padding(.bottom, 12)
+            .padding(.bottom, 10)
 
             Text(
-                "Customers post home-service jobs. Qualified providers compete in real-time reverse auctions. Prices drop to fair market rates. Everyone wins except the middleman."
+                "Providers compete in real-time reverse auctions. Prices fall to fair market rates — not the middleman."
             )
-            .font(.body)
+            .font(.subheadline)
             .foregroundStyle(BrandTheme.textSecondary)
             .lineSpacing(3)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.bottom, 20)
+            .padding(.bottom, 18)
 
-            if let signedInLabel {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(auth.isScaffoldSession ? BrandTheme.warning : BrandTheme.success)
-                        .frame(width: 7, height: 7)
-                    Text(signedInLabel)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .lineLimit(1)
-                }
-                .padding(.bottom, 22)
-            }
-
-            // Single primary + two quiet actions — no muddy button stack
-            VStack(spacing: 12) {
+            // CTA stack: one gold primary, one urgency ghost, two equal secondary.
+            VStack(spacing: 10) {
                 Button {
                     selectedRootTab?.wrappedValue = .jobs
                 } label: {
@@ -176,7 +183,6 @@ struct HomeView: View {
                 .brandPrimaryButton()
                 .accessibilityHint("Opens the Jobs tab")
 
-                // §13 Instant — emergency funnel (create job + instant-match).
                 Button {
                     postJobPreferInstant = true
                     showPostJob = true
@@ -185,16 +191,8 @@ struct HomeView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .brandGhostButton()
-                .accessibilityHint("Opens emergency Instant match: post a job and notify available providers")
-
-                Text(
-                    "Instant often prices about 1.5–2× a typical auction for the same work — you pay for speed and a provider who can start now."
-                )
-                .font(.caption)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel("Instant pricing note")
+                .accessibilityHint("Opens Instant match: post a job and notify available providers")
+                .accessibilityLabel("I need help now. Instant match often prices 1.5 to 2 times a typical auction.")
 
                 HStack(spacing: 10) {
                     Button {
@@ -214,26 +212,71 @@ struct HomeView: View {
                     .brandGhostButton()
                     .accessibilityHint("Opens the native post-a-job form")
                 }
-            }
 
-            // Tertiary text links — never a third filled CTA color
-            HStack(spacing: 20) {
                 Button {
                     showSellItem = true
                 } label: {
                     Text("Sell an item")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .underline(false)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(BrandTheme.goldBright.opacity(0.9))
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 40)
                 }
                 .buttonStyle(.plain)
-                .frame(minHeight: 44)
-
-                Spacer(minLength: 0)
             }
-            .padding(.top, 8)
         }
-        .brandCard(padding: 24, heroGradient: true, elevated: true)
+        .brandCard(padding: 20, heroGradient: true, elevated: true)
+    }
+
+    // MARK: - Market desk (Bloomberg ambient + Robinhood tick)
+
+    /// Institutional strip under hero — mono prices, green↓ savings energy.
+    private var marketDeskStrip: some View {
+        MarketTickerView(
+            openJobs: jobTotal,
+            liveListings: listingTotal,
+            samplePrices: tickerItems
+        )
+    }
+
+    /// Build ticker chips — short label + price + bid count. Skip noise locations.
+    private var tickerItems: [MarketTickerView.TickerItem] {
+        var items: [MarketTickerView.TickerItem] = []
+        for job in jobs.prefix(6) {
+            let cat = job.categoryName?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let label: String = {
+                if let cat, !cat.isEmpty { return cat }
+                return job.displayTitle
+            }()
+            let price = job.displayPrice ?? "—"
+            guard price != "—" || (job.bidCount ?? 0) > 0 else { continue }
+            items.append(
+                .init(
+                    id: "job-\(job.id)",
+                    label: label,
+                    location: nil,
+                    priceLabel: price,
+                    deltaPercent: nil,
+                    bidCount: job.bidCount
+                )
+            )
+        }
+        for listing in listings.prefix(3) {
+            let price = listing.displayPrice
+            guard !price.isEmpty, price != "—" else { continue }
+            items.append(
+                .init(
+                    id: "list-\(listing.id)",
+                    label: listing.displayTitle,
+                    location: nil,
+                    priceLabel: price,
+                    deltaPercent: nil,
+                    bidCount: listing.bidCount
+                )
+            )
+        }
+        return items
     }
 
     // MARK: - Stats
@@ -242,17 +285,17 @@ struct HomeView: View {
         HStack(spacing: 0) {
             statCell(
                 value: jobTotal.map { Self.compactCount($0) } ?? "—",
-                label: "Open jobs"
+                label: "OPEN JOBS"
             )
             divider
             statCell(
                 value: listingTotal.map { Self.compactCount($0) } ?? "—",
-                label: "Listings"
+                label: "GOODS LIVE"
             )
             divider
             statCell(
-                value: healthOK == true ? "Live" : (healthOK == false ? "Down" : "…"),
-                label: "API",
+                value: healthOK == true ? "LIVE" : (healthOK == false ? "DOWN" : "…"),
+                label: "GATEWAY",
                 valueColor: healthOK == true
                     ? BrandTheme.success
                     : (healthOK == false ? BrandTheme.destructive : BrandTheme.textSecondary)
@@ -269,13 +312,14 @@ struct HomeView: View {
     }
 
     private func statCell(value: String, label: String, valueColor: Color = BrandTheme.textPrimary) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 5) {
             Text(value)
-                .font(.title3.weight(.semibold))
+                .font(.title3.weight(.bold).monospacedDigit())
                 .foregroundStyle(valueColor)
-                .monospacedDigit()
+                .contentTransition(.numericText())
             Text(label)
-                .font(.caption.weight(.medium))
+                .font(.caption2.weight(.heavy).monospaced())
+                .tracking(0.8)
                 .foregroundStyle(BrandTheme.textSecondary)
         }
         .frame(maxWidth: .infinity)
@@ -286,30 +330,43 @@ struct HomeView: View {
     // MARK: - How it works
 
     private var howItWorksSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            sectionEyebrow("How it works")
+        VStack(alignment: .leading, spacing: 14) {
+            sectionEyebrow("How NoMarkup works")
 
-            VStack(spacing: 0) {
-                HowItWorksRow(
-                    index: 1,
-                    title: "Post a job",
-                    detail: "Describe the work and set a starting budget.",
-                    isLast: false
-                )
-                HowItWorksRow(
-                    index: 2,
-                    title: "Providers bid down",
-                    detail: "Licensed locals compete — the price falls.",
-                    isLast: false
-                )
-                HowItWorksRow(
-                    index: 3,
-                    title: "Award the best offer",
-                    detail: "Choose the lowest trusted bid and get it done.",
-                    isLast: true
-                )
+            Text("Three steps from posted to priced to scheduled.")
+                .font(.subheadline)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .padding(.top, -4)
+
+            // Showcase-style horizontal steps on wide; stacked timeline on narrow.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 10) {
+                    HowItWorksStepCard(index: 1, title: "Post", detail: "Category, scope, budget.")
+                    HowItWorksStepCard(index: 2, title: "Compete", detail: "Providers bid down.")
+                    HowItWorksStepCard(index: 3, title: "Award", detail: "Pick quality + price.")
+                }
+                VStack(spacing: 0) {
+                    HowItWorksRow(
+                        index: 1,
+                        title: "Post a job",
+                        detail: "Describe the work and set a starting budget.",
+                        isLast: false
+                    )
+                    HowItWorksRow(
+                        index: 2,
+                        title: "Providers bid down",
+                        detail: "Licensed locals compete — the price falls.",
+                        isLast: false
+                    )
+                    HowItWorksRow(
+                        index: 3,
+                        title: "Award the best offer",
+                        detail: "Choose the lowest trusted bid and get it done.",
+                        isLast: true
+                    )
+                }
+                .brandCard(padding: 4, elevated: false)
             }
-            .brandCard(padding: 4, elevated: false)
         }
     }
 
@@ -329,15 +386,12 @@ struct HomeView: View {
                 HStack(alignment: .firstTextBaseline) {
                     sectionEyebrow("Live open floor")
                     Spacer(minLength: 8)
-                    TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(BrandTheme.success)
-                                .frame(width: 8, height: 8)
-                            Text("LIVE")
-                                .font(.caption.weight(.black))
-                                .foregroundStyle(BrandTheme.success)
-                        }
+                    HStack(spacing: 6) {
+                        LivePulseDot()
+                        Text("LIVE")
+                            .font(.caption.weight(.black).monospaced())
+                            .tracking(0.6)
+                            .foregroundStyle(BrandTheme.success)
                     }
                     .accessibilityLabel("Live open-floor reverse auctions")
                 }
@@ -364,12 +418,14 @@ struct HomeView: View {
                 sectionEyebrow("Open reverse auctions")
                 Spacer(minLength: 8)
                 if let jobTotal, jobTotal > 0 {
-                    Text("\(jobTotal) open")
-                        .font(.caption.weight(.semibold))
+                    Text("\(Self.compactCount(jobTotal)) OPEN")
+                        .font(.caption2.weight(.heavy).monospacedDigit())
+                        .tracking(0.6)
                         .foregroundStyle(BrandTheme.goldBright)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 5)
                         .background(Capsule().fill(BrandTheme.gold.opacity(0.12)))
+                        .overlay(Capsule().strokeBorder(BrandTheme.gold.opacity(0.22), lineWidth: 1))
                 }
             }
 
@@ -520,40 +576,42 @@ struct HomeView: View {
                 ProgressView()
                     .controlSize(.mini)
                     .tint(BrandTheme.textSecondary)
-            } else if let healthOK {
+            } else {
                 Circle()
-                    .fill(healthOK ? BrandTheme.success : BrandTheme.destructive)
+                    .fill(
+                        healthOK == true
+                            ? BrandTheme.success
+                            : (healthOK == false ? BrandTheme.destructive : BrandTheme.textSecondary.opacity(0.4))
+                    )
                     .frame(width: 6, height: 6)
             }
 
-            Text(healthOK == true ? "Connected" : (healthOK == false ? "Offline" : "Checking…"))
-                .font(.caption.weight(.medium))
-                .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
-
-            Text("·")
-                .font(.caption)
-                .foregroundStyle(BrandTheme.textSecondary.opacity(0.4))
+            Text(healthOK == true ? "DESK LIVE" : (healthOK == false ? "DESK OFFLINE" : "…"))
+                .font(.caption2.weight(.heavy).monospaced())
+                .tracking(0.6)
+                .foregroundStyle(BrandTheme.textSecondary)
 
             Text(AppConfig.apiBaseHostDisplay)
-                .font(.caption2.weight(.medium).monospaced())
-                .foregroundStyle(BrandTheme.textSecondary.opacity(0.55))
+                .font(.caption2.monospaced())
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.5))
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             Button {
                 Task { await refreshHome() }
             } label: {
                 Text("Refresh")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
+                    .font(.caption2.weight(.semibold).monospaced())
+                    .foregroundStyle(BrandTheme.goldBright.opacity(0.85))
                     .frame(minHeight: 40)
             }
             .buttonStyle(.plain)
             .disabled(isChecking)
         }
         .padding(.horizontal, 4)
-        .padding(.top, 8)
+        .padding(.top, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(healthOK == true ? "Connected" : (healthOK == false ? "Offline" : "Checking")), API \(AppConfig.apiBaseHostDisplay)"
@@ -563,11 +621,19 @@ struct HomeView: View {
     // MARK: - Chrome helpers
 
     private func sectionEyebrow(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.caption.weight(.bold))
-            .tracking(1.2)
-            .foregroundStyle(BrandTheme.gold.opacity(0.75))
-            .accessibilityAddTraits(.isHeader)
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                .fill(BrandTheme.gold)
+                .frame(width: 16, height: 1.5)
+            Text(title.uppercased())
+                .font(.caption2.weight(.heavy).monospaced())
+                .tracking(1.4)
+                .foregroundStyle(BrandTheme.gold)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityLabel(title)
     }
 
     private static func compactCount(_ n: Int) -> String {
@@ -643,13 +709,11 @@ struct HomeView: View {
                 .sorted { Self.endsSooner(lhsDate: $0.auctionEndsAt, rhsDate: $1.auctionEndsAt) }
             jobs = Array(liveJobs.prefix(8))
             listings = Array(liveListings.prefix(3))
-            // Prefer live counts for the strip; fall back to page totals when API omits status filter.
-            jobTotal = liveJobs.isEmpty
-                ? (jobsResult.pagination?.resolvedTotal ?? jobsResult.jobs.count)
-                : liveJobs.count
-            listingTotal = liveListings.isEmpty
-                ? (listingsResult.pagination?.resolvedTotal ?? listingsResult.listings.count)
-                : liveListings.count
+            // Desk counts: prefer server page totals (institutional scale), not the 8-item slice.
+            jobTotal = jobsResult.pagination?.resolvedTotal
+                ?? (liveJobs.isEmpty ? jobsResult.jobs.count : liveJobs.count)
+            listingTotal = listingsResult.pagination?.resolvedTotal
+                ?? (liveListings.isEmpty ? listingsResult.listings.count : liveListings.count)
             catalogError = nil
         } catch {
             if jobs.isEmpty {
@@ -659,24 +723,62 @@ struct HomeView: View {
     }
 }
 
-// MARK: - How-it-works row (vertical timeline — not three cramped mini-cards)
+// MARK: - How-it-works (showcase 01 / 02 / 03 rings + compact stack)
+
+private struct HowItWorksStepCard: View {
+    let index: Int
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .strokeBorder(BrandTheme.gold.opacity(0.55), lineWidth: 1.5)
+                    .frame(width: 40, height: 40)
+                Text(String(format: "%02d", index))
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .foregroundStyle(BrandTheme.goldBright)
+            }
+            Text(title)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(BrandTheme.textPrimary)
+                .multilineTextAlignment(.center)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 8)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(BrandTheme.gradientCardFace)
+        }
+        .brandHairlineBorder(cornerRadius: 14)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Step \(index): \(title). \(detail)")
+    }
+}
 
 private struct HowItWorksRow: View {
     let index: Int
     let title: String
     let detail: String
     let isLast: Bool
-    @ScaledMetric(relativeTo: .body) private var stepSize: CGFloat = 28
+    @ScaledMetric(relativeTo: .body) private var stepSize: CGFloat = 32
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             VStack(spacing: 0) {
                 ZStack {
                     Circle()
-                        .fill(BrandTheme.gold.opacity(0.15))
+                        .strokeBorder(BrandTheme.gold.opacity(0.5), lineWidth: 1.5)
                         .frame(width: stepSize, height: stepSize)
-                    Text("\(index)")
-                        .font(.caption.weight(.bold))
+                    Text(String(format: "%02d", index))
+                        .font(.caption2.weight(.bold).monospacedDigit())
                         .foregroundStyle(BrandTheme.goldBright)
                 }
                 if !isLast {
@@ -724,17 +826,12 @@ private struct LiveFloorFeatureCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                TimelineView(.periodic(from: .now, by: 0.8)) { context in
-                    let pulse = Int(context.date.timeIntervalSince1970 * 2) % 2 == 0
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(BrandTheme.success.opacity(pulse ? 1 : 0.35))
-                            .frame(width: 9, height: 9)
-                        Text("LIVE · OPEN FLOOR")
-                            .font(.caption.weight(.black))
-                            .tracking(0.6)
-                            .foregroundStyle(BrandTheme.success)
-                    }
+                HStack(spacing: 6) {
+                    LivePulseDot()
+                    Text("LIVE · OPEN FLOOR")
+                        .font(.caption.weight(.black).monospaced())
+                        .tracking(0.6)
+                        .foregroundStyle(BrandTheme.success)
                 }
                 Spacer(minLength: 8)
                 if let ends = job.auctionEndsAt {
@@ -835,19 +932,27 @@ private struct HomeJobCard: View {
         return true
     }
 
-    /// Showcase badge copy — same labels as JobDetailView.reverseAuctionBadge.
-    private var auctionBadgeLabel: String {
+    /// Full a11y / detail label — never shown in the dense status chip (too long; truncates).
+    private var auctionBadgeAccessibilityLabel: String {
         let active = isAuctionActive
         if active, isLiveAuctionType {
-            return "LIVE · reverse auction"
+            return "Live reverse auction"
         }
         if active, isSealedAuction {
-            return "LIVE · sealed reverse"
+            return "Live sealed reverse auction"
         }
         if isSealedAuction {
             return "Sealed reverse auction"
         }
-        return active ? "LIVE · reverse auction" : "Reverse auction"
+        return active ? "Live reverse auction" : "Reverse auction"
+    }
+
+    /// Short on-chip label — section eyebrow already states reverse-auction format.
+    private var auctionBadgeChipLabel: String {
+        if isAuctionActive {
+            return isSealedAuction && !isLiveAuctionType ? "SEALED" : "LIVE"
+        }
+        return isSealedAuction ? "SEALED" : "CLOSED"
     }
 
     /// Starting bid is the reverse-auction budget ceiling when no offer is accepted yet.
@@ -894,15 +999,21 @@ private struct HomeJobCard: View {
                 .padding(.vertical, 4)
 
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        reverseAuctionBadge
+                // Status + timer on one chrome row so title never shares width with long pills.
+                HStack(alignment: .center, spacing: 8) {
+                    reverseAuctionBadge
+                    Spacer(minLength: 8)
+                    liveCountdownChip(iso: job.auctionEndsAt)
+                }
 
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(job.displayTitle)
                             .font(.body.weight(.semibold))
                             .foregroundStyle(BrandTheme.textPrimary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
 
                         HStack(spacing: 8) {
                             Text("Reverse · bid down")
@@ -923,8 +1034,8 @@ private struct HomeJobCard: View {
                         VStack(alignment: .trailing, spacing: 2) {
                             Text(price)
                                 .font(.headline.weight(.bold).monospacedDigit())
-                                .minimumScaleFactor(0.7)
-                                .lineLimit(2)
+                                .minimumScaleFactor(0.75)
+                                .lineLimit(1)
                                 .foregroundStyle(BrandTheme.goldBright)
                             Text(budgetCaption.uppercased())
                                 .font(.caption2.weight(.bold))
@@ -945,7 +1056,7 @@ private struct HomeJobCard: View {
                         .accessibilityLabel(marketBandCaption)
                 }
 
-                // Intelligence row: location · bids · live countdown
+                // Meta only — no timer chip (lives on chrome row above).
                 HStack(spacing: 10) {
                     if let location = job.locationLabel {
                         Label(location, systemImage: "mappin")
@@ -956,12 +1067,12 @@ private struct HomeJobCard: View {
                     }
 
                     if bidCountValue > 0 {
-                        bidCountChip(count: bidCountValue)
+                        Text(String(localized: "\(bidCountValue) bids"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.goldBright)
                     }
 
                     Spacer(minLength: 0)
-
-                    liveCountdownChip(iso: job.auctionEndsAt)
                 }
             }
             .padding(.leading, 14)
@@ -969,81 +1080,43 @@ private struct HomeJobCard: View {
             .padding(.trailing, 16)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(BrandTheme.gradientCardFace)
-        }
-        .brandHairlineBorder(cornerRadius: 16)
+        .background { BrandGlassCardBackground(cornerRadius: 16) }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
     }
 
     private var reverseAuctionBadge: some View {
-        HStack(spacing: 6) {
-            if isAuctionActive {
-                Circle()
-                    .fill(BrandTheme.success)
-                    .frame(width: 7, height: 7)
-                    .accessibilityHidden(true)
-            }
-            Text(auctionBadgeLabel)
-                .font(.caption2.weight(.bold))
-                .tracking(0.4)
-                .foregroundStyle(BrandTheme.goldBright)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .overlay(
-            Capsule()
-                .strokeBorder(BrandTheme.gold, lineWidth: 1.5)
+        BrandGlassStatusChip(
+            title: auctionBadgeChipLabel,
+            kind: isAuctionActive
+                ? (isLiveAuctionType ? .live : .gold)
+                : .muted,
+            showPulse: isAuctionActive && isLiveAuctionType
         )
-        .accessibilityLabel(auctionBadgeLabel)
-    }
-
-    @ViewBuilder
-    private func bidCountChip(count: Int) -> some View {
-        Label(String(localized: "\(count) bids"), systemImage: "arrow.down.circle")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(BrandTheme.textPrimary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(BrandTheme.navyElevated, in: Capsule())
-            .overlay(
-                Capsule()
-                    .strokeBorder(BrandTheme.gold.opacity(0.25), lineWidth: 1)
-            )
-            .accessibilityLabel("\(count) bids")
+        .accessibilityLabel(auctionBadgeAccessibilityLabel)
     }
 
     @ViewBuilder
     private func liveCountdownChip(iso: String?) -> some View {
-        if let iso, !iso.isEmpty, CatalogDateFormat.parseISO(iso) != nil {
+        if let iso, !iso.isEmpty, let ends = CatalogDateFormat.parseISO(iso) {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                let label = CatalogDateFormat.countdownLabel(iso: iso, now: context.date) ?? "—"
-                Text(label)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(
-                        label == "Ended" ? BrandTheme.textSecondary : BrandTheme.navy
-                    )
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule().fill(
-                            label == "Ended"
-                                ? BrandTheme.surfaceRaised
-                                : BrandTheme.goldBright
-                        )
-                    )
-                    .accessibilityLabel("Auction \(label)")
+                let label = CatalogDateFormat.countdownChipLabel(until: ends, now: context.date)
+                let ended = label == "Ended"
+                let urgent = CatalogDateFormat.isCountdownUrgent(until: ends, now: context.date)
+                BrandGlassStatusChip(
+                    title: label,
+                    kind: ended ? .muted : (urgent ? .urgent : .gold)
+                )
+                .accessibilityLabel(
+                    "Auction ends in \(CatalogDateFormat.countdownLabel(until: ends, now: context.date))"
+                )
             }
         }
     }
 
     private var accessibilitySummary: String {
-        var parts: [String] = [auctionBadgeLabel, job.displayTitle]
+        var parts: [String] = [auctionBadgeAccessibilityLabel, job.displayTitle]
         if let price = budgetAmount {
             parts.append("\(budgetCaption) \(price)")
         }
@@ -1087,22 +1160,42 @@ private struct HomeListingCard: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(BrandTheme.surfaceRaised)
+            // Thumb — warm glass well, gold bag (no cool gray/purple cast).
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(BrandTheme.gold.opacity(0.08))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(BrandTheme.gold.opacity(0.16), lineWidth: 1)
+                }
                 .frame(width: thumbSize, height: thumbSize)
                 .overlay {
                     Image(systemName: "bag.fill")
                         .font(.body.weight(.medium))
-                        .foregroundStyle(BrandTheme.gold.opacity(0.7))
+                        .foregroundStyle(BrandTheme.gold)
+                        .symbolRenderingMode(.hierarchical)
                 }
 
-            VStack(alignment: .leading, spacing: 6) {
-                forwardAuctionBadge
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .center, spacing: 6) {
+                    BrandGlassStatusChip(
+                        title: isAuctionLive ? "LIVE" : "GOODS",
+                        kind: isAuctionLive ? .live : .muted,
+                        showPulse: isAuctionLive
+                    )
+                    .accessibilityLabel(isAuctionLive ? "Live forward auction" : "Forward auction, goods")
+                    listingCountdownChip
+                    Spacer(minLength: 0)
+                }
 
                 Text(listing.displayTitle)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(BrandTheme.textPrimary)
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 8) {
                     if let location = listing.locationLabel {
@@ -1113,11 +1206,8 @@ private struct HomeListingCard: View {
                     }
                     if bidCountValue > 0 {
                         Text(String(localized: "\(bidCountValue) bids"))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(BrandTheme.goldBright)
-                    }
-                    if listing.auctionEndsAt != nil {
-                        listingCountdownChip
+                            .font(.caption.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.gold)
                     }
                 }
             }
@@ -1127,73 +1217,39 @@ private struct HomeListingCard: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(listing.displayPrice)
                     .font(.headline.weight(.bold).monospacedDigit())
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+                    .lineLimit(1)
                     .foregroundStyle(BrandTheme.goldBright)
                 Text(listing.priceCaption.uppercased())
-                    .font(.caption2.weight(.bold))
+                    .font(.caption2.weight(.bold).monospaced())
                     .tracking(0.6)
                     .foregroundStyle(BrandTheme.textSecondary.opacity(0.9))
             }
 
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(BrandTheme.textSecondary.opacity(0.45))
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.4))
         }
         .padding(14)
-        .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(BrandTheme.gradientCardFace)
-        }
-        .brandHairlineBorder(cornerRadius: 16)
+        .background { BrandGlassCardBackground(cornerRadius: 16) }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-    }
-
-    private var forwardAuctionBadge: some View {
-        HStack(spacing: 6) {
-            if isAuctionLive {
-                Circle()
-                    .fill(BrandTheme.success)
-                    .frame(width: 7, height: 7)
-                    .accessibilityHidden(true)
-            }
-            Text(isAuctionLive ? "LIVE · forward auction" : "Forward auction · goods")
-                .font(.caption2.weight(.bold))
-                .tracking(0.4)
-                .foregroundStyle(BrandTheme.goldBright)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .overlay(
-            Capsule()
-                .strokeBorder(BrandTheme.gold, lineWidth: 1.5)
-        )
-        .accessibilityLabel(isAuctionLive ? "Live forward auction" : "Forward auction, goods")
     }
 
     @ViewBuilder
     private var listingCountdownChip: some View {
         if let ends = listing.auctionEndsAt {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                let label = CatalogDateFormat.countdownLabel(until: ends, now: context.date)
-                Text(label)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(
-                        label == "Ended" ? BrandTheme.textSecondary : BrandTheme.navy
-                    )
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule().fill(
-                            label == "Ended"
-                                ? BrandTheme.surfaceRaised
-                                : BrandTheme.goldBright
-                        )
-                    )
-                    .accessibilityLabel("Auction \(label)")
+                let label = CatalogDateFormat.countdownChipLabel(until: ends, now: context.date)
+                let ended = label == "Ended"
+                let urgent = CatalogDateFormat.isCountdownUrgent(until: ends, now: context.date)
+                BrandGlassStatusChip(
+                    title: label,
+                    kind: ended ? .muted : (urgent ? .urgent : .gold)
+                )
+                .accessibilityLabel(
+                    "Auction \(CatalogDateFormat.countdownLabel(until: ends, now: context.date))"
+                )
             }
         }
     }

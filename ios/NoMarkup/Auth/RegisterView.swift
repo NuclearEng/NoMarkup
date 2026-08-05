@@ -43,7 +43,7 @@ struct RegisterView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.large)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .onChange(of: auth.isAuthenticated) { _, signedIn in
             if signedIn && !auth.isScaffoldSession {
                 dismiss()

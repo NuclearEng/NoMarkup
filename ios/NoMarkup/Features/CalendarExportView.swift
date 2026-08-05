@@ -38,7 +38,7 @@ struct CalendarExportView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         #if canImport(UIKit)
         .sheet(item: $shareItem, onDismiss: {
             cleanupTempFile()

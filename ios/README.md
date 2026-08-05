@@ -117,6 +117,16 @@ Program board:
 
 **Pending human device pass** — do not claim “device verified” from sim-only Pro Max runs.
 
+## Instruments culture (IOS-PERF.1)
+
+Pre-ship **Time Profiler** + **Allocations** on Release (optional SwiftUI/Hangs). Budgets, capture steps, and sign-off table:
+
+→ **[`docs/compliance/ios-instruments-culture.md`](../docs/compliance/ios-instruments-culture.md)**
+
+## Localization (IOS-L10N.3)
+
+v1 ships **English** as the source language with a **partial Spanish (`es`) scaffold** (tab labels + a few empty-state chrome strings in `NoMarkup/Localizable.xcstrings`). `knownRegions` includes `en`, `Base`, and `es`. Full Spanish UI is progressive — do not claim complete ES coverage.
+
 ## Capabilities
 
 | Capability | Status |

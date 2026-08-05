@@ -2,7 +2,7 @@
 
 **Program:** Stage C residual (B6 **ops** — human-gated; not an open engineering task)  
 **Updated:** 2026-07-27 (matrix expanded: SE, iPad 13", iOS 17 floor, AX5)  
-**Related:** [`launch-board.md`](./launch-board.md) · [`app-store-review-2026-07-26-launch.md`](./app-store-review-2026-07-26-launch.md) · [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) · [`apple-pay-domain.md`](./apple-pay-domain.md) · [`ios/README.md`](../../ios/README.md) · [`testflight-process.md`](./testflight-process.md)
+**Related:** [`launch-board.md`](./launch-board.md) · [`app-store-review-2026-07-26-launch.md`](./app-store-review-2026-07-26-launch.md) · [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) · [`apple-pay-domain.md`](./apple-pay-domain.md) · [`ios/README.md`](../../ios/README.md) · [`testflight-process.md`](./testflight-process.md) · [`ios-instruments-culture.md`](./ios-instruments-culture.md)
 
 Manual **Simulator and/or device** pass against a reachable gateway + seed.  
 Check **Pass** only after a human executes the step. Leave **Fail** notes specific enough to file a fix.
@@ -93,6 +93,18 @@ Also exercise: `name=iPad Pro 13-inch` (exact sim name varies by Xcode), and an 
 | **AX-VO** | VoiceOver on Login, Home, Marketplace list, Job detail, Listing detail, Account | Focus order sensible; labels present; money/controls announced | [ ] | [ ] | Required before ASC **VoiceOver** claim |
 | **AX5** | Largest Accessibility text size on SE (or small phone) | Primary CTAs reachable; **money labels reflow or scale** (no hard unreadable clip of leading bid / buy-now) | [ ] | [ ] | Required before **Larger Text** claim — expect fails until A11Y.2 complete |
 | **AX-RM** | Reduce Motion on | No jarring loops; app usable | [ ] | [ ] | Optional until A11Y.3 |
+
+---
+
+## Instruments (IOS-PERF.1)
+
+Full culture doc: **[`ios-instruments-culture.md`](./ios-instruments-culture.md)** (Release scheme, Time Profiler + Allocations).
+
+| # | Scenario | Expected | Pass | Fail | Notes |
+|---|----------|----------|:----:|:----:|-------|
+| **I1** | **Time Profiler** — cold launch | First interactive chrome **&lt; 2 s**; no multi-second main-thread stall | [ ] | [ ] | Profile **Release** |
+| **I2** | **Time Profiler** — Marketplace + Jobs scroll | Sustained **~60 fps**; no multi-frame freezes on seed data | [ ] | [ ] | |
+| **I3** | **Allocations** — browse + open/close detail | Memory **steady** after warm-up (no unbounded climb over 2–3 min) | [ ] | [ ] | Optional: SwiftUI/Hangs |
 
 ---
 

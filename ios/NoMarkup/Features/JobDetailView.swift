@@ -95,6 +95,9 @@ struct JobDetailView: View {
 
     /// Soft live-auction overlay (lowest bid / ends-at) from optional poll / WS.
     @State private var liveLowestBidCents: Int64?
+    /// Increments when leading bid amount changes — drives `brandMoneyFlash` + light haptic.
+    @State private var leadingFlashToken = 0
+    @State private var lastFlashedLeadingCents: Int64?
     /// True once `GET …/auction/state` succeeds (feature on + live job).
     @State private var liveAuctionStateAvailable = false
     /// Recent activity from WS frames and/or HTTP poll of `GET …/auction/events`.
@@ -423,7 +426,7 @@ struct JobDetailView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .task { await load() }
         .task(id: auctionPollIdentity) {
             await pollLiveAuctionStateLoop()
@@ -663,89 +666,115 @@ struct JobDetailView: View {
 
     // MARK: - Live open-floor reverse auction (unmissable)
 
-    /// Public reverse auction floor: pulse LIVE badge, leading bid, countdown, market strip.
+    /// Public reverse auction floor — showcase auction-widget chrome (header → meta → market → lead → footer).
     @ViewBuilder
     private func liveReverseAuctionArena(_ job: JobDetail) -> some View {
         Section {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 10) {
-                    TimelineView(.periodic(from: .now, by: 0.7)) { context in
-                        let on = Int(context.date.timeIntervalSince1970 * 2.5) % 2 == 0
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(BrandTheme.success.opacity(on ? 1 : 0.3))
-                                .frame(width: 10, height: 10)
-                            Text("LIVE · REVERSE AUCTION")
-                                .font(.caption.weight(.black))
-                                .tracking(0.8)
-                                .foregroundStyle(BrandTheme.success)
-                        }
+            ShowcaseAuctionCard {
+                ShowcaseAuctionHeader(endsAtISO: job.auctionEndsAt, liveLabel: "LIVE AUCTION")
+
+                ShowcaseAuctionJobMeta(
+                    categoryLine: job.categoryName,
+                    title: job.displayTitle,
+                    locationLine: job.locationLabel
+                )
+
+                if let range = marketRange ?? Self.fallbackRange(for: job) {
+                    ShowcaseMarketRangeStrip(
+                        sourceLabel: range.source.titleLabel,
+                        rangeCaption: range.rangeCaption,
+                        sampleNote: range.sampleCount > 0 ? "\(range.sampleCount) data pts" : nil
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(arenaLeadingLabel)
+                        .font(.caption2.weight(.heavy).monospaced())
+                        .tracking(1.0)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .textCase(.uppercase)
+                    Text(arenaLeadingAmount)
+                        .font(.largeTitle.weight(.bold).monospacedDigit())
+                        .foregroundStyle(BrandTheme.success)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                        .contentTransition(.numericText())
+                        .brandMoneyFlash(token: leadingFlashToken, isDown: true)
+                        .animation(.easeOut(duration: 0.2), value: arenaLeadingAmount)
+                    Text("Providers bid down · lowest trusted bid leads")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(arenaLeadingLabel) \(arenaLeadingAmount)")
+                .onChange(of: arenaLeadingCents) { _, newValue in
+                    guard let newValue, newValue > 0 else { return }
+                    if let prev = lastFlashedLeadingCents, prev != newValue {
+                        leadingFlashToken += 1
+                        BrandHaptics.light()
                     }
-                    Spacer(minLength: 8)
+                    lastFlashedLeadingCents = newValue
+                }
+
+                HStack(spacing: 10) {
+                    bidCountChip(job: job)
+                    if liveAuctionStateAvailable {
+                        Text("Live feed on")
+                            .font(.caption2.weight(.bold).monospaced())
+                            .foregroundStyle(BrandTheme.success)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(BrandTheme.success.opacity(0.12)))
+                    }
                     if let status = job.status, !status.isEmpty {
                         StatusChipView(
                             label: StatusChipStyle.displayLabel(status),
                             style: StatusChipStyle.forStatus(status)
                         )
                     }
+                    Spacer(minLength: 0)
                 }
 
-                Text(job.displayTitle)
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(arenaLeadingLabel)
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .textCase(.uppercase)
-                    Text(arenaLeadingAmount)
-                        .font(.largeTitle.weight(.bold).monospacedDigit())
-                        .foregroundStyle(BrandTheme.goldBright)
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Providers bid down · lowest trusted bid leads")
-                        .font(.subheadline)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(arenaLeadingLabel) \(arenaLeadingAmount)")
-
-                if let start = job.startingBidCents, start > 0,
-                   let leading = arenaLeadingCents, leading > 0, leading < start {
-                    let saved = start - leading
-                    let pct = Int((Double(saved) / Double(start) * 100.0).rounded())
-                    Text("Saved \(MoneyFormat.usd(cents: saved)) vs starting (\(pct)%)")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(BrandTheme.success)
-                }
-
-                marketIntelligenceStrip(job)
-
-                HStack(spacing: 12) {
-                    if job.auctionEndsAt != nil {
-                        liveCountdownChip(iso: job.auctionEndsAt)
-                    }
-                    bidCountChip(job: job)
-                    if liveAuctionStateAvailable {
-                        Text("Live feed on")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(BrandTheme.success)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(BrandTheme.success.opacity(0.12)))
-                    }
+                if let footer = arenaSavingsFooter(job: job) {
+                    ShowcaseSavingsFooter(
+                        savingsLabel: footer.label,
+                        savingsAmount: footer.amount
+                    )
                 }
             }
-            .padding(.vertical, 8)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
         } header: {
             Text("Auction floor").brandSectionHeader()
         } footer: {
-            Text("Open floor — bid amounts are public. Feed refreshes every few seconds while open.")
+            Text("Open floor — bid amounts are public. Ladder and live feed continue below.")
                 .foregroundStyle(BrandTheme.textSecondary)
         }
+    }
+
+    /// Honest savings footer: prefer market median when FPI usable, else vs starting.
+    private func arenaSavingsFooter(job: JobDetail) -> (label: String, amount: String)? {
+        if let market = savingsVsMarketMedianLabel() {
+            return ("Your estimated savings vs. market median", "\(market) saved")
+        }
+        if let start = savingsVsStartingLabel(job: job) {
+            return ("Your estimated savings vs. starting bid", "\(start) saved")
+        }
+        return nil
+    }
+
+    /// Showcase “−N% vs market” under the leading ladder row (honest baseline).
+    private func industrySavingsLine(for entry: JobBidEntry) -> String? {
+        guard let amount = entry.bid?.amountCents, amount > 0 else { return nil }
+        if let fair = fairPrice, fair.isUsable, let median = fair.priceCents, median > amount {
+            let pct = Int((Double(median - amount) / Double(median) * 100.0).rounded())
+            return "−\(pct)% vs market"
+        }
+        if let start = detail?.startingBidCents, start > amount {
+            let pct = Int((Double(start - amount) / Double(start) * 100.0).rounded())
+            return "−\(pct)% vs start"
+        }
+        return nil
     }
 
     private var arenaLeadingCents: Int64? {
@@ -1550,73 +1579,46 @@ struct JobDetailView: View {
         let showLower = showWithdraw
 
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 12) {
-                Text("#\(rank)")
-                    .font(.caption.weight(.bold).monospacedDigit())
-                    .foregroundStyle(isLeading ? BrandTheme.success : BrandTheme.textSecondary)
-                    .frame(width: 28, alignment: .leading)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.displayName)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(BrandTheme.textPrimary)
-                        .lineLimit(1)
-                    if isOwnBid(entry) {
-                        Text("Your bid")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(BrandTheme.bidActive)
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(entry.displayAmount)
-                        .font(.body.weight(.bold).monospacedDigit())
-                        .foregroundStyle(BrandTheme.goldBright)
-                    if alreadyAwarded {
-                        Text("Awarded")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(BrandTheme.success)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(BrandTheme.success.opacity(0.15), in: Capsule())
-                            .accessibilityLabel("Awarded bid")
-                    } else if bidStatus == "withdrawn" {
-                        Text("Withdrawn")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(BrandTheme.textSecondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(BrandTheme.textSecondary.opacity(0.15), in: Capsule())
-                            .accessibilityLabel("Withdrawn bid")
-                    } else if isLeading {
-                        Text("Leading")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(BrandTheme.success)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(BrandTheme.success.opacity(0.15), in: Capsule())
-                            .accessibilityLabel("Leading bid")
-                    }
-                }
-            }
+            ShowcaseBidRowChrome(
+                displayName: entry.displayName,
+                amountText: entry.displayAmount,
+                isLeading: isLeading && !alreadyAwarded && bidStatus != "withdrawn",
+                trustText: entry.displayTrust == "—" ? nil : entry.displayTrust,
+                rating: entry.averageRating,
+                badges: entry.verifiedBadges.map(\.displayShortLabel).filter { !$0.isEmpty },
+                industrySavingsLine: isLeading ? industrySavingsLine(for: entry) : nil
+            )
             .accessibilityElement(children: .combine)
             .accessibilityLabel(
                 isLeading
                     ? "Rank \(rank), leading, \(entry.displayName), \(entry.displayAmount)"
                     : "Rank \(rank), \(entry.displayName), \(entry.displayAmount)"
             )
+            .overlay(alignment: .topLeading) {
+                Text("#\(rank)")
+                    .font(.caption2.weight(.bold).monospacedDigit())
+                    .foregroundStyle(isLeading ? BrandTheme.success : BrandTheme.textSecondary)
+                    .padding(6)
+            }
+
+            if isOwnBid(entry) {
+                Text("Your bid")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(BrandTheme.bidActive)
+            }
+
+            if alreadyAwarded {
+                Text("Awarded")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(BrandTheme.success)
+            } else if bidStatus == "withdrawn" {
+                Text("Withdrawn")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
 
             // Outside combined a11y group so VoiceOver can focus the trust breakdown link.
             trustChip(for: entry)
-                .padding(.leading, 40)
-
-            // FR-4.5 — small verification chips when gateway projects badges.
-            if !entry.verifiedBadges.isEmpty {
-                verificationBadgeRow(entry.verifiedBadges)
-                    .padding(.leading, 40)
-            }
 
             if showWithdraw {
                 Button(role: .destructive) {
@@ -1751,7 +1753,12 @@ struct JobDetailView: View {
     private func placeBidSection(_ job: JobDetail) -> some View {
         let isUpdate = hasOwnActiveBid
         Section {
-            if !auth.isAuthenticated {
+            if !isAuctionActiveForPolling {
+                Text("This opportunity is closed. You can’t place or lower a bid.")
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !auth.isAuthenticated {
                 Text("Sign in as a provider to place a bid on this job.")
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
@@ -1834,7 +1841,7 @@ struct JobDetailView: View {
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .glassProminentBrandCTA()
                 .tint(BrandTheme.accent)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isPlacingBid || MoneyFormat.cents(fromDollarsText: bidAmountText) == nil)
@@ -2006,6 +2013,12 @@ struct JobDetailView: View {
         bidStatusMessage = nil
         bidStatusIsError = false
 
+        guard isAuctionActiveForPolling else {
+            bidStatusIsError = true
+            bidStatusMessage = "This opportunity is closed. You can’t place or lower a bid."
+            return
+        }
+
         guard !auth.isScaffoldSession else {
             bidStatusIsError = true
             bidStatusMessage =
@@ -2032,7 +2045,9 @@ struct JobDetailView: View {
             isPlacingBid = true
             defer { isPlacingBid = false }
             do {
+                BrandHaptics.medium()
                 _ = try await APIClient.shared.updateJobBid(id: bidId, newAmountCents: cents)
+                BrandHaptics.success()
                 bidStatusIsError = false
                 bidStatusMessage = "Bid lowered to \(MoneyFormat.usd(cents: cents))."
                 bidAmountText = ""
@@ -2041,9 +2056,11 @@ struct JobDetailView: View {
                 }
                 await load()
             } catch let error as APIClientError where error.isUnauthorized {
+                BrandHaptics.error()
                 bidStatusIsError = true
                 bidStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
             } catch {
+                BrandHaptics.error()
                 bidStatusIsError = true
                 bidStatusMessage = error.localizedDescription
             }
@@ -2051,6 +2068,7 @@ struct JobDetailView: View {
         }
 
         if let leading = leadingBidCents, cents >= leading {
+            BrandHaptics.warning()
             bidStatusIsError = true
             bidStatusMessage =
                 "Reverse auction: bid below the leading \(MoneyFormat.usd(cents: leading)) to take the lead."
@@ -2061,7 +2079,9 @@ struct JobDetailView: View {
         defer { isPlacingBid = false }
 
         do {
+            BrandHaptics.medium()
             _ = try await APIClient.shared.placeJobBid(jobId: jobID, amountCents: cents)
+            BrandHaptics.success()
             bidStatusIsError = false
             bidStatusMessage = "Bid placed: \(MoneyFormat.usd(cents: cents))."
             bidAmountText = ""
@@ -2379,6 +2399,10 @@ struct JobDetailView: View {
         } catch {
             if detail == nil {
                 errorMessage = error.localizedDescription
+            }
+            // IOS-INT.2: drop Spotlight donation when the job is gone.
+            if let apiError = error as? APIClientError, apiError.isNotFound {
+                await SpotlightIndex.delete(identifiers: [jobID])
             }
         }
 

@@ -28,28 +28,28 @@ struct RootTabView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             HomeView()
-                .tabItem { Label("Home", systemImage: "house.fill") }
+                .tabItem { Label(String(localized: "Home"), systemImage: "house.fill") }
                 .tag(Tab.home)
                 .accessibilityIdentifier("tab.home")
 
             MarketplaceView()
-                .tabItem { Label("Marketplace", systemImage: "bag.fill") }
+                .tabItem { Label(String(localized: "Marketplace"), systemImage: "bag.fill") }
                 .tag(Tab.marketplace)
                 .accessibilityIdentifier("tab.marketplace")
 
             JobsView()
-                .tabItem { Label("Jobs", systemImage: "wrench.and.screwdriver.fill") }
+                .tabItem { Label(String(localized: "Jobs"), systemImage: "wrench.and.screwdriver.fill") }
                 .tag(Tab.jobs)
                 .accessibilityIdentifier("tab.jobs")
 
             MessagesView()
-                .tabItem { Label("Messages", systemImage: "bubble.left.and.bubble.right.fill") }
+                .tabItem { Label(String(localized: "Messages"), systemImage: "bubble.left.and.bubble.right.fill") }
                 .tag(Tab.messages)
                 .badge(messagesUnread > 0 ? messagesUnread : 0)
                 .accessibilityIdentifier("tab.messages")
 
             AccountView()
-                .tabItem { Label("Account", systemImage: "person.crop.circle.fill") }
+                .tabItem { Label(String(localized: "Account"), systemImage: "person.crop.circle.fill") }
                 .tag(Tab.account)
                 .badge(notificationsUnread > 0 ? notificationsUnread : 0)
                 .accessibilityIdentifier("tab.account")
@@ -201,11 +201,13 @@ struct RootTabView: View {
     }
 
     /// FR-8.10 / FR-17.1 — poll inbox + notification unread for tab badges.
+    /// IOS-SYS.NT.5: keep app icon badge aligned with notification unread.
     @MainActor
     private func refreshUnreadBadges() async {
         guard auth.isAuthenticated, !auth.isScaffoldSession else {
             messagesUnread = 0
             notificationsUnread = 0
+            PushRegistration.shared.clearBadge()
             return
         }
         async let channelsTask = APIClient.shared.fetchChatChannels(page: 1, pageSize: 40)
@@ -221,6 +223,7 @@ struct RootTabView: View {
         }
         do {
             notificationsUnread = try await notifTask
+            PushRegistration.shared.setBadgeCount(notificationsUnread)
         } catch {
             // Keep last known count.
         }

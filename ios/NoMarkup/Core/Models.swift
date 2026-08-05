@@ -22,6 +22,7 @@ enum CatalogDateFormat {
     }
 
     /// Short auction countdown: "Ends in 2h", "Ends in 45m", "Ended", or absolute if far out.
+    /// Prefer `countdownChipLabel` on dense list cards where "Ends in …" truncates.
     static func countdownLabel(until date: Date, now: Date = Date()) -> String {
         let remaining = date.timeIntervalSince(now)
         if remaining <= 0 {
@@ -49,6 +50,43 @@ enum CatalogDateFormat {
     static func countdownLabel(iso: String, now: Date = Date()) -> String? {
         guard let date = parseISO(iso) else { return nil }
         return countdownLabel(until: date, now: now)
+    }
+
+    /// Compact chip copy for list cards — no "Ends in" prefix so capsules stay short.
+    /// Examples: "45m", "2h", "2h 30m", "3d", "Ended", or a short absolute date if far out.
+    static func countdownChipLabel(until date: Date, now: Date = Date()) -> String {
+        let remaining = date.timeIntervalSince(now)
+        if remaining <= 0 {
+            return "Ended"
+        }
+        let minutes = Int(remaining / 60)
+        if minutes < 60 {
+            return "\(max(1, minutes))m"
+        }
+        let hours = minutes / 60
+        if hours < 48 {
+            let remMin = minutes % 60
+            if remMin == 0 {
+                return "\(hours)h"
+            }
+            return "\(hours)h \(remMin)m"
+        }
+        let days = hours / 24
+        if days < 14 {
+            return "\(days)d"
+        }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    static func countdownChipLabel(iso: String, now: Date = Date()) -> String? {
+        guard let date = parseISO(iso) else { return nil }
+        return countdownChipLabel(until: date, now: now)
+    }
+
+    /// True when remaining time is under one hour (urgency styling for chips).
+    static func isCountdownUrgent(until date: Date, now: Date = Date()) -> Bool {
+        let remaining = date.timeIntervalSince(now)
+        return remaining > 0 && remaining < 3600
     }
 }
 

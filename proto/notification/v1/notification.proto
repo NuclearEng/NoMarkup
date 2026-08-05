@@ -213,6 +213,8 @@ enum DevicePlatform {
   DEVICE_PLATFORM_IOS = 1;
   DEVICE_PLATFORM_ANDROID = 2;
   DEVICE_PLATFORM_WEB = 3;
+  // ActivityKit per-activity update token (not an alert device token).
+  DEVICE_PLATFORM_IOS_LIVE_ACTIVITY = 4;
 }
 
 message RegisterDeviceRequest {

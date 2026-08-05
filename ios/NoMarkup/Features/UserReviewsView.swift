@@ -65,7 +65,7 @@ struct UserReviewsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .task {
             resolveCurrentUser()
             await load()
@@ -413,7 +413,7 @@ private struct RespondToReviewSheet: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
@@ -548,7 +548,7 @@ private struct FlagReviewSheet: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }

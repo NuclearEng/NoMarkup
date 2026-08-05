@@ -195,7 +195,7 @@ struct ListingDetailView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if auth.isAuthenticated && !auth.isScaffoldSession {
@@ -1285,7 +1285,7 @@ struct ListingDetailView: View {
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                 }
-                .modifier(GlassProminentBidCTAStyle())
+                .glassProminentBrandCTA()
                 .tint(BrandTheme.accent)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(
@@ -1777,12 +1777,12 @@ struct ListingDetailView: View {
             }
 
             if minted.isDevSetupSecret {
-                // Dev / no-Stripe: confirm still required; gateway short-circuits only in development.
-                let confirmed = try await APIClient.shared.confirmListingPromotion(
-                    listingId: listingID,
-                    chargeId: minted.chargeId
-                )
-                applyPromotionSuccess(confirmed)
+                // Fail closed: never claim "promoted" without a real charge. Gateway
+                // also refuses dev secrets unless ALLOW_DEV_PROMOTE_WITHOUT_PAYMENT=true.
+                promoteStatusIsError = true
+                promoteStatusMessage =
+                    "Promotion requires a real card payment. Stripe is not configured on this environment — nothing was charged and the listing was not promoted."
+                return
             } else if minted.isStripeSetupSecret {
                 try await RailACheckout.presentSetupIntent(
                     clientSecret: minted.stripeClientSecret
@@ -2175,6 +2175,10 @@ struct ListingDetailView: View {
         } catch {
             if detail == nil {
                 errorMessage = error.localizedDescription
+            }
+            // IOS-INT.2: drop Spotlight donation when the listing is gone.
+            if let apiError = error as? APIClientError, apiError.isNotFound {
+                await SpotlightIndex.delete(identifiers: [listingID])
             }
         }
 
@@ -2698,7 +2702,7 @@ private struct ListingReportSheet: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDone() }
@@ -2775,22 +2779,4 @@ private struct ListingReportSheet: View {
     }
 }
 
-// MARK: - DES.4 Liquid Glass bid CTA
 
-/// IOS-DES.4: the primary bid CTA adopts Liquid Glass on iOS 26+.
-///
-/// `buttonStyle(.glassProminent)` is verified present in the installed
-/// iOS 26.5 SDK SwiftUI swiftinterface (`GlassProminentButtonStyle`,
-/// `@available(iOS 26.0, *)`); the `glassEffect` view modifier is NOT in that
-/// interface, so it is deliberately not used. Pre-26 falls back to the
-/// existing borderedProminent brand CTA. `.tint(BrandTheme.accent)` at the
-/// call site colors the glass gold on both paths.
-private struct GlassProminentBidCTAStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.buttonStyle(.glassProminent)
-        } else {
-            content.buttonStyle(.borderedProminent)
-        }
-    }
-}

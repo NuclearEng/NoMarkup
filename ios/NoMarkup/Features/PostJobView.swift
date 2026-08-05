@@ -87,7 +87,7 @@ struct PostJobView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .tint(BrandTheme.accent)
         .onChange(of: categoryId) { _, newValue in
             Task { await refreshMarketRange(categoryId: newValue) }
@@ -425,7 +425,7 @@ struct PostJobView: View {
                     }
                     .frame(minHeight: 48)
                 }
-                .buttonStyle(.borderedProminent)
+                .glassProminentBrandCTA()
                 .tint(BrandTheme.accent)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(!canSubmit || isSubmitting)

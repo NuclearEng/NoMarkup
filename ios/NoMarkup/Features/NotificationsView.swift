@@ -118,7 +118,7 @@ struct NotificationsView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if auth.isAuthenticated, !auth.isScaffoldSession, localUnreadCount > 0 || unreadCount > 0 {
@@ -256,12 +256,15 @@ struct NotificationsView: View {
             } else {
                 unreadCount = items.filter(\.unread).count
             }
+            // IOS-SYS.NT.5: align app icon badge with known unread.
+            PushRegistration.shared.setBadgeCount(unreadCount)
         } catch let error as APIClientError where error.isUnauthorized {
             if showLoading {
                 items = []
                 unreadCount = 0
             }
             needsSignIn = true
+            PushRegistration.shared.clearBadge()
         } catch {
             if items.isEmpty {
                 errorMessage = error.localizedDescription
@@ -286,6 +289,8 @@ struct NotificationsView: View {
 
         do {
             try await APIClient.shared.markNotificationRead(id: note.id)
+            // IOS-SYS.NT.5: decrement icon badge with local count after mark-one.
+            PushRegistration.shared.setBadgeCount(unreadCount)
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
             // Revert optimistic update on auth failure.

@@ -52,7 +52,7 @@ type DeviceToken struct {
 	ID        string
 	UserID    string
 	Token     string
-	Platform  string // "ios", "android", "web"
+	Platform  string // "ios", "android", "web", "ios_live_activity"
 	DeviceID  string // unique device identifier
 	CreatedAt time.Time
 }

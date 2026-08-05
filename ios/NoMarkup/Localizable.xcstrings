@@ -859,7 +859,22 @@
     "Accepted" : {},
     "Accepted at" : {},
     "Accepting records the current version against your account. You can re-read the full document any time." : {},
-    "Account" : {},
+    "Account" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuenta"
+          }
+        }
+      }
+    },
     "Actions" : {},
     "Active" : {},
     "Active auctions from sellers you follow" : {},
@@ -1365,7 +1380,22 @@
     "Held in escrow" : {},
     "Hide change order form" : {},
     "High" : {},
-    "Home" : {},
+    "Home" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio"
+          }
+        }
+      }
+    },
     "Home, Office…" : {},
     "How likely to recommend?" : {},
     "How provider trust scores and ladder requirements work" : {},
@@ -1404,7 +1434,22 @@
     "Job description" : {},
     "Job drafts" : {},
     "Job title" : {},
-    "Jobs" : {},
+    "Jobs" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jobs"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trabajos"
+          }
+        }
+      }
+    },
     "Jobs & listings" : {},
     "Jobs and goods create flows include photo library and camera capture in-app." : {},
     "Jobs and local goods use Apple Pay / Stripe escrow (not App Store IAP). The market sets the price — not a platform markup." : {},
@@ -1547,7 +1592,22 @@
     "Mark visit complete" : {},
     "Marked complete" : {},
     "Market range" : {},
-    "Marketplace" : {},
+    "Marketplace" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marketplace"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mercado"
+          }
+        }
+      }
+    },
     "Marketplace listing" : {},
     "Marketplace listings" : {},
     "Markets" : {},
@@ -1560,7 +1620,22 @@
     "Member since" : {},
     "Message" : {},
     "Message (optional)" : {},
-    "Messages" : {},
+    "Messages" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Messages"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mensajes"
+          }
+        }
+      }
+    },
     "Messages arrive in real time while this thread is open" : {},
     "Messages refresh automatically while this thread is open" : {},
     "Milestones" : {},
@@ -1603,13 +1678,93 @@
     "No bids yet — be first to bid" : {},
     "No bids yet — be first to compete" : {},
     "No change orders yet." : {},
+    "No conversations yet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No conversations yet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay conversaciones"
+          }
+        }
+      }
+    },
     "No expenses yet." : {},
     "No held escrow payment found for this contract yet. When a payment is in escrow, you can release it here after work is approved." : {},
     "No held escrow payment found for this contract yet. When funds are held, only the customer can release them to you." : {},
     "No jobs linked to this property yet. Post a reverse-auction job and pick this address." : {},
+    "No jobs yet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No jobs yet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay trabajos"
+          }
+        }
+      }
+    },
+    "No listings nearby" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No listings nearby"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay anuncios cerca"
+          }
+        }
+      }
+    },
+    "No messages yet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No messages yet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay mensajes"
+          }
+        }
+      }
+    },
     "No occurrences yet. The first instance is created when both parties accept a recurring job." : {},
     "No offers yet." : {},
     "No open jobs right now" : {},
+    "No open reverse auctions" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No open reverse auctions"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay subastas inversas abiertas"
+          }
+        }
+      }
+    },
     "No pending offers right now" : {},
     "No professional licenses on file." : {},
     "No recent bid activity on the live stream yet" : {},
@@ -1623,6 +1778,22 @@
     "No successful referrals yet. Share your code to start earning credit." : {},
     "No tax forms generated yet." : {},
     "No unread" : {},
+    "No watched listings" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No watched listings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay anuncios en seguimiento"
+          }
+        }
+      }
+    },
     "No win streaks yet. Streaks build when you win reverse-auction jobs." : {},
     "No wishlist items yet." : {},
     "No-show" : {},
@@ -2297,7 +2468,22 @@
     "Trust score" : {},
     "Trust tiers" : {},
     "Trust · %@" : {},
-    "Try again" : {},
+    "Try again" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intentar de nuevo"
+          }
+        }
+      }
+    },
     "Turn Available now on to receive Instant jobs. Open the inbox to accept or decline live offers." : {},
     "Turns email on or off for all notification types below" : {},
     "Turns push on or off for all notification types below" : {},

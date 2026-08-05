@@ -653,6 +653,117 @@ private struct BrandAdaptiveBorderModifier: ViewModifier {
     }
 }
 
+// MARK: - Apple Glass chips (iOS 26 liquid-glass language)
+
+/// Semantic glass chip for LIVE / timer / status — frosted material, tinted ink + hairline.
+/// Avoids solid traffic-light green / amber fills that fight the champagne brand on light mode.
+struct BrandGlassStatusChip: View {
+    enum Kind {
+        case live
+        case neutral
+        case gold
+        case urgent
+        case muted
+    }
+
+    let title: String
+    var kind: Kind = .neutral
+    var showPulse: Bool = false
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if showPulse {
+                LivePulseDot()
+            }
+            Text(title)
+                .font(.caption2.weight(.heavy).monospaced())
+                .tracking(0.6)
+                .foregroundStyle(ink)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background { chipBackground }
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(stroke, lineWidth: 1)
+        }
+    }
+
+    private var ink: Color {
+        switch kind {
+        case .live:
+            // Adaptive green text (not white-on-solid) — works on glass in light + dark.
+            return BrandTheme.success
+        case .gold:
+            return BrandTheme.goldBright
+        case .urgent:
+            return BrandTheme.warning
+        case .neutral, .muted:
+            return BrandTheme.textSecondary
+        }
+    }
+
+    private var stroke: Color {
+        switch kind {
+        case .live:
+            return BrandTheme.success.opacity(colorScheme == .dark ? 0.40 : 0.28)
+        case .gold:
+            return BrandTheme.gold.opacity(colorScheme == .dark ? 0.40 : 0.30)
+        case .urgent:
+            return BrandTheme.warning.opacity(0.35)
+        case .neutral, .muted:
+            return reduceTransparency ? BrandTheme.hairlineOpaque : BrandTheme.hairline
+        }
+    }
+
+    @ViewBuilder
+    private var chipBackground: some View {
+        if reduceTransparency {
+            Capsule(style: .continuous)
+                .fill(BrandTheme.surfaceRaised)
+        } else {
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    // Warm champagne wash — kills cool purple cast on light glass.
+                    Capsule(style: .continuous)
+                        .fill(BrandTheme.gold.opacity(colorScheme == .dark ? 0.06 : 0.10))
+                }
+        }
+    }
+}
+
+/// Glass card face for list rows — material + warm gold specular, not flat white/purple.
+struct BrandGlassCardBackground: View {
+    var cornerRadius: CGFloat = 16
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(reduceTransparency ? AnyShapeStyle(BrandTheme.gradientCardFace) : AnyShapeStyle(.regularMaterial))
+            .overlay {
+                if !reduceTransparency {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(BrandTheme.gold.opacity(colorScheme == .dark ? 0.04 : 0.07))
+                }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        reduceTransparency
+                            ? BrandTheme.hairlineOpaque
+                            : BrandTheme.gold.opacity(colorScheme == .dark ? 0.22 : 0.18),
+                        lineWidth: 1
+                    )
+            }
+    }
+}
+
 /// Floating loading-chip backdrop: `.ultraThinMaterial` capsule normally, a
 /// solid `surfaceRaised` capsule when Reduce Transparency is on (A11Y.3).
 private struct BrandOverlayChipModifier: ViewModifier {
@@ -765,6 +876,23 @@ struct BrandPrimaryButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - DES.4 Liquid Glass primary CTA
+
+/// IOS-DES.4: primary bid / place CTAs adopt Liquid Glass on iOS 26+.
+///
+/// `buttonStyle(.glassProminent)` is verified present in the iOS 26 SDK
+/// (`GlassProminentButtonStyle`, `@available(iOS 26.0, *)`). Pre-26 falls back
+/// to borderedProminent. Pair with `.tint(BrandTheme.accent)` at the call site.
+private struct GlassProminentBrandCTAStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.buttonStyle(.glassProminent)
+        } else {
+            content.buttonStyle(.borderedProminent)
+        }
+    }
+}
+
 extension View {
     /// Brand grouped-list chrome: hides system gray scroll backdrop, adaptive brand backdrop.
     func brandListBackground() -> some View {
@@ -775,6 +903,25 @@ extension View {
     /// Respects system color scheme (no forced dark environment).
     func brandScreenBackground() -> some View {
         modifier(BrandScreenBackgroundModifier())
+    }
+
+    /// DES.4 / DES.9 — navigation bar chrome that yields to Liquid Glass on iOS 26+.
+    /// Pre-26 keeps opaque brand navy so large titles don't flash system gray.
+    /// On iOS 26+ uses automatic (no solid fill) so scroll-edge glass works with
+    /// `applyGlobalChrome()`'s system default `scrollEdgeAppearance`.
+    @ViewBuilder
+    func brandNavigationBarChrome() -> some View {
+        if #available(iOS 26.0, *) {
+            self.toolbarBackground(.automatic, for: .navigationBar)
+        } else {
+            self.toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        }
+    }
+
+    /// DES.4 — primary CTA with Liquid Glass on iOS 26+, borderedProminent pre-26.
+    /// Prefer on bid / place / submit gold CTAs; call-site `.tint(BrandTheme.accent)`.
+    func glassProminentBrandCTA() -> some View {
+        modifier(GlassProminentBrandCTAStyle())
     }
 
     /// Elevated card surface with subtle gold edge (empty states, hero blocks).

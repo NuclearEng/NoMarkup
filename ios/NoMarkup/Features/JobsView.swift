@@ -131,7 +131,7 @@ struct JobsView: View {
                     }
                 }
             }
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .safeAreaInset(edge: .top, spacing: 0) {
                 if segment == .browse, showBrowseFilters {
                     browseFiltersBar

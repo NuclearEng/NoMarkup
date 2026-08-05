@@ -97,7 +97,7 @@ struct CategoryPickerView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .tint(BrandTheme.accent)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
@@ -274,7 +274,7 @@ private struct CategorySubtreeView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .tint(BrandTheme.accent)
     }
 }

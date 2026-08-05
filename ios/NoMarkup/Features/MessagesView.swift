@@ -118,7 +118,7 @@ struct MessagesView: View {
     private var listRoot: some View {
         content
             .navigationTitle("Messages")
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .searchable(text: $inboxSearchText, prompt: "Search inbox")
             .onChange(of: inboxSearchText) { _, _ in
                 scheduleInboxSearch()
@@ -620,7 +620,7 @@ struct ChatThreadView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .searchable(text: $searchText, prompt: "Search this conversation")
         .onSubmit(of: .search) {
             Task { await runServerSearch(immediate: true) }
@@ -1873,7 +1873,7 @@ private struct ChatReportUserSheet: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDone() }

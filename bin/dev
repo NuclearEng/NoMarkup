@@ -58,6 +58,16 @@ UNDERWRITING_PORT=${UNDERWRITING_PORT:-50060}
 PRICING_PORT=${PRICING_PORT:-50061}
 WEB_PORT=${WEB_PORT:-3000}
 
+# ── Object storage (MinIO) ────────────────────────────────────────
+# Host used in *presigned* PUT URLs and public image URLs returned to clients.
+# Default localhost is fine for Simulator / web on the same machine. Physical
+# device dogfood must use a LAN-reachable host (set DEV_PUBLIC_HOST or put
+# S3_ENDPOINT / S3_PUBLIC_URL in .env.local — e.g. http://192.168.1.101:9000).
+DEV_PUBLIC_HOST=${DEV_PUBLIC_HOST:-localhost}
+S3_BUCKET=${S3_BUCKET:-nomarkup-dev}
+S3_ENDPOINT=${S3_ENDPOINT:-http://$DEV_PUBLIC_HOST:$MINIO_PORT}
+S3_PUBLIC_URL=${S3_PUBLIC_URL:-http://$DEV_PUBLIC_HOST:$MINIO_PORT/$S3_BUCKET}
+
 # ── Database ─────────────────────────────────────────────────────
 PG_USER=nomarkup
 PG_DB=nomarkup
@@ -703,12 +713,12 @@ start_engines() {
 
     start_rust_engine imaging nomarkup-imaging-engine "$IMAGING_PORT" \
         "IMAGING_SERVICE_PORT=$IMAGING_PORT" \
-        "S3_BUCKET=nomarkup-dev" \
-        "S3_ENDPOINT=http://localhost:$MINIO_PORT" \
-        "S3_PUBLIC_URL=http://localhost:$MINIO_PORT/nomarkup-dev" \
-        "AWS_ACCESS_KEY_ID=minioadmin" \
-        "AWS_SECRET_ACCESS_KEY=minioadmin" \
-        "AWS_REGION=us-east-1"
+        "S3_BUCKET=$S3_BUCKET" \
+        "S3_ENDPOINT=$S3_ENDPOINT" \
+        "S3_PUBLIC_URL=$S3_PUBLIC_URL" \
+        "AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-minioadmin}" \
+        "AWS_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-minioadmin}" \
+        "AWS_REGION=${S3_REGION:-us-east-1}"
 
     start_rust_engine underwriting nomarkup-underwriting-engine "$UNDERWRITING_PORT" \
         "UNDERWRITING_ENGINE_PORT=$UNDERWRITING_PORT"
@@ -834,12 +844,12 @@ cmd_up() {
         imaging)
             start_rust_engine imaging nomarkup-imaging-engine "$IMAGING_PORT" \
                 "IMAGING_SERVICE_PORT=$IMAGING_PORT" \
-                "S3_BUCKET=nomarkup-dev" \
-                "S3_ENDPOINT=http://localhost:$MINIO_PORT" \
-                "S3_PUBLIC_URL=http://localhost:$MINIO_PORT/nomarkup-dev" \
-                "AWS_ACCESS_KEY_ID=minioadmin" \
-                "AWS_SECRET_ACCESS_KEY=minioadmin" \
-                "AWS_REGION=us-east-1"
+                "S3_BUCKET=$S3_BUCKET" \
+                "S3_ENDPOINT=$S3_ENDPOINT" \
+                "S3_PUBLIC_URL=$S3_PUBLIC_URL" \
+                "AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-minioadmin}" \
+                "AWS_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-minioadmin}" \
+                "AWS_REGION=${S3_REGION:-us-east-1}"
             ;;
         *)
             err "Unknown target: $target"

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nomarkup/nomarkup/services/notification/internal/domain"
@@ -124,7 +126,7 @@ func (s *Service) SendNotification(ctx context.Context, userID, notifType, title
 			}
 			deliveries = append(deliveries, delivery)
 		case "push":
-			delivery := s.dispatchPush(ctx, userID, notifType, title, body, actionURL, entityType, entityID)
+			delivery := s.dispatchPush(ctx, userID, notifType, title, body, actionURL, entityType, entityID, data)
 			if delivery.Delivered {
 				notif.PushSent = true
 			}
@@ -188,7 +190,7 @@ func (s *Service) dispatchEmail(ctx context.Context, userID, notifType, title, b
 // pushes / user / 24h total; everything else shares a generous 20 pushes /
 // user / hour anti-storm cap. A blocked push is skipped — the in-app row
 // still delivers — and counted on notification_push_cooldown_skips_total.
-func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, body, actionURL, entityType, entityID string) ChannelDelivery {
+func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, body, actionURL, entityType, entityID string, data map[string]string) ChannelDelivery {
 	if verdict := s.pushCooldownVerdict(ctx, userID, notifType); !verdict.allowed {
 		pushCooldownSkipsTotal.WithLabelValues(verdict.class, verdict.limit).Inc()
 		slog.InfoContext(ctx, "push dispatch skipped: cooldown",
@@ -237,6 +239,12 @@ func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, bo
 		// Unregistered / 400 BadDeviceToken) — delete the rows so the next
 		// notification stops pushing at dead devices.
 		s.pruneStaleDeviceTokens(ctx, userID, stale)
+
+		// IOS-SYS.LA.3: fan out ActivityKit content-state to matching LA tokens
+		// (device_id = liveactivity:<auctionID>). Best-effort; does not affect
+		// alert delivery accounting.
+		laSent := s.dispatchLiveActivityForAuction(ctx, tokens, notifType, entityType, entityID, data, title, body)
+		totalSent += laSent
 	}
 
 	// W3C Web Push path. Skipped silently when the dispatcher is nil
@@ -276,6 +284,177 @@ func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, bo
 	}
 
 	return ChannelDelivery{Channel: "push", Delivered: true}
+}
+
+// auctionEntityTypes are entity_type values that can own a Live Activity.
+var auctionEntityTypes = map[string]struct{}{
+	"job": {}, "listing": {}, "auction": {},
+}
+
+// liveActivityNotifTypes trigger an LA content-state push when a matching
+// ios_live_activity token is registered for the auction entity.
+var liveActivityNotifTypes = map[string]struct{}{
+	"new_bid":              {},
+	"bid_outbid":           {},
+	"auction_closing_soon": {},
+	"auction_closed":       {},
+	"bid_awarded":          {},
+	"bid_not_selected":     {},
+}
+
+// dispatchLiveActivityForAuction sends ActivityKit liveactivity pushes to
+// tokens whose device_id is liveactivity:<entityID> (IOS-SYS.LA.3 fan-out).
+// Returns the number of successful LA sends (best-effort; errors only logged).
+func (s *Service) dispatchLiveActivityForAuction(
+	ctx context.Context,
+	tokens []domain.DeviceToken,
+	notifType, entityType, entityID string,
+	data map[string]string,
+	title, body string,
+) int {
+	if s.push == nil {
+		return 0
+	}
+	if _, ok := liveActivityNotifTypes[notifType]; !ok {
+		return 0
+	}
+	auctionID := strings.TrimSpace(entityID)
+	if auctionID == "" && data != nil {
+		if v := strings.TrimSpace(data["auction_id"]); v != "" {
+			auctionID = v
+		} else if v := strings.TrimSpace(data["entity_id"]); v != "" {
+			auctionID = v
+		}
+	}
+	if auctionID == "" {
+		return 0
+	}
+	if et := strings.ToLower(strings.TrimSpace(entityType)); et != "" {
+		if _, ok := auctionEntityTypes[et]; !ok {
+			// Still allow when entity_type empty but auction_id present.
+			if strings.TrimSpace(entityType) != "" {
+				return 0
+			}
+		}
+	}
+
+	isEnd := notifType == "auction_closed" || notifType == "bid_awarded" || notifType == "bid_not_selected"
+	contentState, ok := buildLiveActivityContentState(data, notifType, isEnd)
+	if !ok {
+		// Without leading/ends fields we can still end the activity.
+		if !isEnd {
+			return 0
+		}
+		contentState = map[string]any{}
+		if outcome := liveActivityOutcome(notifType, data); outcome != "" {
+			contentState["outcome"] = outcome
+		}
+	}
+
+	event := "update"
+	if isEnd {
+		event = "end"
+	}
+
+	sent := 0
+	for _, dt := range tokens {
+		if !strings.EqualFold(strings.TrimSpace(dt.Platform), platformIOSLiveActivity) {
+			continue
+		}
+		id, ok := ParseLiveActivityAuctionID(dt.DeviceID)
+		if !ok || !strings.EqualFold(id, auctionID) {
+			continue
+		}
+		upd := LiveActivityUpdate{
+			DeviceToken:  dt.Token,
+			Event:        event,
+			ContentState: contentState,
+			AlertTitle:   title,
+			AlertBody:    body,
+		}
+		if isEnd {
+			dismissal := time.Now().Add(15 * time.Minute).Unix()
+			upd.DismissalDate = &dismissal
+		}
+		if err := s.push.SendLiveActivityUpdate(ctx, upd); err != nil {
+			slog.WarnContext(ctx, "liveactivity dispatch failed",
+				"auction_id", auctionID,
+				"notif_type", notifType,
+				"error", err,
+			)
+			continue
+		}
+		sent++
+	}
+	return sent
+}
+
+// buildLiveActivityContentState maps notification data into the iOS
+// AuctionActivityAttributes.ContentState keys (leadingBidCents, endsAt, outcome).
+// Returns ok=false when required fields for an update are missing.
+func buildLiveActivityContentState(data map[string]string, notifType string, isEnd bool) (map[string]any, bool) {
+	cs := map[string]any{}
+	hasLead := false
+	hasEnds := false
+	if data != nil {
+		for _, key := range []string{"leading_bid_cents", "leadingBidCents", "amount_cents", "bid_cents"} {
+			if v := strings.TrimSpace(data[key]); v != "" {
+				if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+					cs["leadingBidCents"] = n
+					hasLead = true
+					break
+				}
+			}
+		}
+		for _, key := range []string{"ends_at", "endsAt", "auction_ends_at"} {
+			if v := strings.TrimSpace(data[key]); v != "" {
+				if unix, ok := parseEndsAtUnix(v); ok {
+					cs["endsAt"] = unix
+					hasEnds = true
+					break
+				}
+			}
+		}
+	}
+	if outcome := liveActivityOutcome(notifType, data); outcome != "" {
+		cs["outcome"] = outcome
+	}
+	if isEnd {
+		return cs, true
+	}
+	return cs, hasLead && hasEnds
+}
+
+func liveActivityOutcome(notifType string, data map[string]string) string {
+	if data != nil {
+		if v := strings.TrimSpace(data["outcome"]); v != "" {
+			return v
+		}
+	}
+	switch notifType {
+	case "bid_awarded":
+		return "won"
+	case "bid_not_selected":
+		return "lost"
+	case "auction_closed":
+		return "ended"
+	default:
+		return ""
+	}
+}
+
+func parseEndsAtUnix(v string) (int64, bool) {
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+		// Heuristic: values < year 2100 in seconds stay as-is; ms → seconds.
+		if n > 1_000_000_000_000 {
+			return n / 1000, true
+		}
+		return n, true
+	}
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t.Unix(), true
+	}
+	return 0, false
 }
 
 // cooldownVerdict is the outcome of a push cooldown check.

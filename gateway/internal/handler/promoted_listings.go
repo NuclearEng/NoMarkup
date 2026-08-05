@@ -33,6 +33,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -42,6 +44,17 @@ import (
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
+
+// isTruthyEnv is true for 1/true/yes/on (case-insensitive). Used for explicit
+// dogfood escape hatches that must default OFF (fail closed on money paths).
+func isTruthyEnv(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
 
 // PromotedListingsHandler is the seller-facing paid-promotion handler.
 type PromotedListingsHandler struct {
@@ -296,19 +309,40 @@ func (h *PromotedListingsHandler) ConfirmPromotion(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Collect the fee. Fail closed: outside development, no payment client
-	// means we cannot charge, and an uncharged promotion must not activate.
+	// Collect the fee. Fail closed: never flip is_promoted without a real charge
+	// unless ALLOW_DEV_PROMOTE_WITHOUT_PAYMENT=true (explicit dogfood escape hatch).
+	// Placeholder Stripe / DevMode secrets (dev_seti_*, dev_promote_*) auto-succeed
+	// in the payment service and previously activated promotions unpaid — that
+	// is the bug dogfood hit ("promoted for $5 but never paid").
+	allowDevUnpaid := isTruthyEnv("ALLOW_DEV_PROMOTE_WITHOUT_PAYMENT")
+	isDevSecret := strings.HasPrefix(clientSecret, "dev_") || strings.HasPrefix(clientSecret, "seti_dev_")
+
 	if h.paymentClient == nil {
-		if !isDevelopmentEnv() {
-			slog.Error("promote confirm: payment service unavailable, refusing to activate promotion",
+		if !(isDevelopmentEnv() && allowDevUnpaid) {
+			slog.Error("promote confirm: payment service unavailable or unpaid-dev not allowed, refusing to activate promotion",
 				"charge_id", body.ChargeID,
+				"allow_dev_unpaid", allowDevUnpaid,
 			)
-			writeError(w, http.StatusServiceUnavailable, "payments are temporarily unavailable, please try again shortly")
+			writeError(w, http.StatusPaymentRequired, "promotion requires payment — Stripe is not configured for real charges on this environment")
 			return
 		}
-		slog.Warn("promote confirm: development short-circuit, no charge collected",
+		slog.Warn("promote confirm: ALLOW_DEV_PROMOTE_WITHOUT_PAYMENT short-circuit, no charge collected",
 			"charge_id", body.ChargeID,
 		)
+	} else if isDevSecret && !allowDevUnpaid {
+		// Payment client is in DevMode and returned a fake SetupIntent — do not
+		// treat auto-succeeded charge as paid.
+		slog.Error("promote confirm: refusing dev/placeholder payment secret without ALLOW_DEV_PROMOTE_WITHOUT_PAYMENT",
+			"charge_id", body.ChargeID,
+		)
+		if _, uerr := h.db.Exec(r.Context(),
+			`UPDATE promotion_charges SET status = 'failed' WHERE id = $1 AND status = 'pending'`,
+			body.ChargeID,
+		); uerr != nil {
+			slog.Error("promote confirm: failed to mark charge failed", "error", uerr, "charge_id", body.ChargeID)
+		}
+		writeError(w, http.StatusPaymentRequired, "promotion requires a real card payment — Stripe is in dev/placeholder mode on this environment")
+		return
 	} else {
 		resp, cerr := h.paymentClient.ChargePromotion(r.Context(), &paymentv1.ChargePromotionRequest{
 			CustomerId:     claims.UserID,

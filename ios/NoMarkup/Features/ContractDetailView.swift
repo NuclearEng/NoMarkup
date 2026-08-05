@@ -133,7 +133,7 @@ struct ContractDetailView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .task { await load() }
             .refreshable { await load() }
             .modifier(ContractSheetsModifier(
@@ -1958,11 +1958,41 @@ struct ContractDetailView: View {
                     .padding(.vertical, 4)
                     .listRowBackground(BrandTheme.navyElevated)
                 } else if isCustomer && status == "completed" {
-                    Text("The NoMarkup Guarantee covers eligible completed jobs when work is not as agreed.")
-                        .font(.footnote)
+                    // Showcase guarantee-card voice — policy only (no invented fund size).
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "link")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(BrandTheme.goldBright)
+                                .accessibilityHidden(true)
+                            Text("The NoMarkup Guarantee")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(BrandTheme.goldBright)
+                        }
+                        Text(
+                            "If the work isn’t completed as agreed, NoMarkup will make it right — up to the full contract value."
+                        )
+                        .font(.subheadline.italic())
+                        .foregroundStyle(BrandTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "The Guarantee only applies to on-platform transactions. Off-platform, you’re on your own — that’s why customers stay and providers build reputation here."
+                        )
+                        .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .listRowBackground(BrandTheme.navyElevated)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(BrandTheme.gold.opacity(0.08))
+                    }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(BrandTheme.gold.opacity(0.35), lineWidth: 1)
+                    )
+                    .listRowBackground(Color.clear)
 
                     actionButton(
                         title: "File guarantee claim",
@@ -1977,7 +2007,7 @@ struct ContractDetailView: View {
             } header: {
                 Text("NoMarkup Guarantee").brandSectionHeader()
             } footer: {
-                Text("Claims are reviewed by support. When support approves a payout, the platform refunds the contract payment server-side (no client money math). Evidence uploads are available on the web dashboard.")
+                Text("Claims are reviewed by support. When support approves a payout, the platform refunds the contract payment server-side (no client money math). Fund size is never invented client-side.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
             .listRowBackground(BrandTheme.navyElevated)
@@ -3173,7 +3203,7 @@ private struct OpenDisputeSheet: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
@@ -3371,7 +3401,7 @@ private struct LeaveReviewSheet: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
@@ -3553,7 +3583,7 @@ private struct GuaranteeClaimSheet: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }

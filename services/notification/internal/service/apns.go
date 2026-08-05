@@ -82,7 +82,7 @@ func LoadAPNsConfigFromEnv() *APNsConfig {
 	}
 }
 
-// apnsProvider sends alert pushes via APNs HTTP/2 token authentication.
+// apnsProvider sends alert and Live Activity pushes via APNs HTTP/2 token authentication.
 type apnsProvider struct {
 	keyID    string
 	teamID   string
@@ -188,6 +188,115 @@ func (a *apnsProvider) send(ctx context.Context, msg pushMessage) error {
 		Reason:     parseAPNsReason(body),
 		Body:       strings.TrimSpace(string(body)),
 	}
+}
+
+// liveActivityMessage is an ActivityKit remote update/end (IOS-SYS.LA.3).
+// ContentState keys must match AuctionActivityAttributes.ContentState on iOS
+// (leadingBidCents, endsAt, optional outcome).
+type liveActivityMessage struct {
+	DeviceToken  string
+	// Event is "update" or "end" (Apple Live Activity push events).
+	Event string
+	// ContentState is the ActivityKit content-state dictionary.
+	ContentState map[string]any
+	// Timestamp is unix seconds; 0 means now.
+	Timestamp int64
+	// Optional lock-screen alert accompanying the content-state change.
+	AlertTitle string
+	AlertBody  string
+	// DismissalDate is unix seconds for event=end; nil omits the field.
+	DismissalDate *int64
+}
+
+// sendLiveActivity POSTs an APNs liveactivity push. Topic is
+// "<bundle-id>.push-type.liveactivity" and push-type is "liveactivity".
+func (a *apnsProvider) sendLiveActivity(ctx context.Context, msg liveActivityMessage) error {
+	token := strings.TrimSpace(msg.DeviceToken)
+	if token == "" {
+		return fmt.Errorf("apns liveactivity: empty device token")
+	}
+	token = strings.ReplaceAll(token, " ", "")
+	token = strings.Trim(token, "<>")
+
+	payload, err := buildLiveActivityPayload(msg)
+	if err != nil {
+		return fmt.Errorf("apns liveactivity: marshal payload: %w", err)
+	}
+
+	bearer, err := a.bearerJWT()
+	if err != nil {
+		return fmt.Errorf("apns liveactivity: jwt: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/3/device/%s", a.host, token)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("apns liveactivity: create request: %w", err)
+	}
+	// Live Activity topic is the app bundle id + Apple's fixed suffix.
+	// Bundle ID comes from APNS_BUNDLE_ID (com.nomarkup.app in this project).
+	req.Header.Set("authorization", "bearer "+bearer)
+	req.Header.Set("apns-topic", a.bundleID+".push-type.liveactivity")
+	req.Header.Set("apns-push-type", "liveactivity")
+	req.Header.Set("apns-priority", "10")
+	req.Header.Set("content-type", "application/json")
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("apns liveactivity: send: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode == http.StatusOK {
+		slog.Info("apns liveactivity push sent",
+			"device_token", truncateToken(token),
+			"event", msg.Event,
+		)
+		return nil
+	}
+
+	return &apnsSendError{
+		StatusCode: resp.StatusCode,
+		Reason:     parseAPNsReason(body),
+		Body:       strings.TrimSpace(string(body)),
+	}
+}
+
+// buildLiveActivityPayload builds the APNs Live Activity JSON body.
+// See https://developer.apple.com/documentation/activitykit/updating-and-ending-your-live-activity-with-activitykit-push-notifications
+func buildLiveActivityPayload(msg liveActivityMessage) ([]byte, error) {
+	event := strings.ToLower(strings.TrimSpace(msg.Event))
+	if event == "" {
+		event = "update"
+	}
+	ts := msg.Timestamp
+	if ts == 0 {
+		ts = time.Now().Unix()
+	}
+
+	aps := map[string]any{
+		"timestamp": ts,
+		"event":     event,
+	}
+	if len(msg.ContentState) > 0 {
+		aps["content-state"] = msg.ContentState
+	}
+	if msg.AlertTitle != "" || msg.AlertBody != "" {
+		alert := map[string]string{}
+		if msg.AlertTitle != "" {
+			alert["title"] = msg.AlertTitle
+		}
+		if msg.AlertBody != "" {
+			alert["body"] = msg.AlertBody
+		}
+		aps["alert"] = alert
+	}
+	if msg.DismissalDate != nil {
+		aps["dismissal-date"] = *msg.DismissalDate
+	}
+
+	return json.Marshal(map[string]any{"aps": aps})
 }
 
 // apnsSendError is a non-200 APNs response. Reason carries the APNs `reason`

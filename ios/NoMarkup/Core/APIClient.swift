@@ -2162,6 +2162,12 @@ enum APIClientError: Error, LocalizedError {
         return false
     }
 
+    /// 404 Not Found — e.g. job/listing removed; used to drop Spotlight donations.
+    var isNotFound: Bool {
+        if case .httpStatus(let code, _) = self, code == 404 { return true }
+        return false
+    }
+
     /// 409 Conflict — e.g. OAuth unlink would leave no sign-in method, offer already actioned.
     var isConflict: Bool {
         if case .httpStatus(let code, _) = self, code == 409 { return true }

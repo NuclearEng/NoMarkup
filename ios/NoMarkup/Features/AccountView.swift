@@ -56,6 +56,45 @@ struct AccountView: View {
                     }
                 }
 
+                // Institutional desk — wiring status (API + Rail A Stripe/Apple Pay).
+                Section {
+                    LabeledContent("API desk") {
+                        Text(AppConfig.apiBaseHostDisplay)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(BrandTheme.goldBright)
+                            .textSelection(.enabled)
+                    }
+                    LabeledContent("Stripe (Rail A)") {
+                        Text(AppConfig.stripePublishableKey.isEmpty ? "Not configured" : "Configured")
+                            .font(.caption.weight(.semibold).monospaced())
+                            .foregroundStyle(
+                                AppConfig.stripePublishableKey.isEmpty
+                                    ? BrandTheme.warning
+                                    : BrandTheme.success
+                            )
+                    }
+                    LabeledContent("Apple Pay merchant") {
+                        Text(AppConfig.applePayMerchantId.isEmpty ? "—" : AppConfig.applePayMerchantId)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    if AppConfig.stripePublishableKey.isEmpty {
+                        Text(
+                            "Payments & Apple Pay need a real pk_test key via NOMARKUP_STRIPE_PUBLISHABLE_KEY (Debug scheme) and matching sk_test on the payment service. Placeholder Stripe stays DevMode — promote/pay fail closed without a real charge."
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                } header: {
+                    Text("Market wiring").brandSectionHeader()
+                } footer: {
+                    Text("Champagne M↓ icon · navy institutional desk · mono prices. Fail closed on money.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+
                 Section {
                     if auth.isScaffoldSession {
                         Label("Browse-only session", systemImage: "hammer.fill")
@@ -608,7 +647,7 @@ struct AccountView: View {
             }
             .brandListBackground()
             .navigationTitle("Account")
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .task {
                 await refreshSessionHints()
                 await refreshUnreadCount()

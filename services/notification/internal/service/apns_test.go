@@ -353,6 +353,207 @@ func TestSendMultipleSkipsLiveActivityTokens(t *testing.T) {
 	}
 }
 
+// TestBuildLiveActivityPayload covers the IOS-SYS.LA.3 content-state body.
+func TestBuildLiveActivityPayload(t *testing.T) {
+	t.Parallel()
+
+	raw, err := buildLiveActivityPayload(liveActivityMessage{
+		Event:     "update",
+		Timestamp: 1_700_000_000,
+		ContentState: map[string]any{
+			"leadingBidCents": int64(2500),
+			"endsAt":          1_700_003_600,
+		},
+		AlertTitle: "Outbid",
+		AlertBody:  "New leading bid",
+	})
+	if err != nil {
+		t.Fatalf("buildLiveActivityPayload: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	aps, ok := payload["aps"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing aps: %v", payload)
+	}
+	if aps["event"] != "update" {
+		t.Errorf("event = %v, want update", aps["event"])
+	}
+	if int64(aps["timestamp"].(float64)) != 1_700_000_000 {
+		t.Errorf("timestamp = %v", aps["timestamp"])
+	}
+	cs, ok := aps["content-state"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing content-state: %v", aps)
+	}
+	if int64(cs["leadingBidCents"].(float64)) != 2500 {
+		t.Errorf("leadingBidCents = %v", cs["leadingBidCents"])
+	}
+	alert, ok := aps["alert"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing alert: %v", aps)
+	}
+	if alert["title"] != "Outbid" || alert["body"] != "New leading bid" {
+		t.Errorf("alert = %v", alert)
+	}
+}
+
+func TestBuildLiveActivityPayloadEndWithDismissal(t *testing.T) {
+	t.Parallel()
+	dismissal := int64(1_700_010_000)
+	raw, err := buildLiveActivityPayload(liveActivityMessage{
+		Event:         "end",
+		Timestamp:     1_700_000_000,
+		ContentState:  map[string]any{"leadingBidCents": 100, "outcome": "won"},
+		DismissalDate: &dismissal,
+	})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	aps := payload["aps"].(map[string]any)
+	if aps["event"] != "end" {
+		t.Errorf("event = %v", aps["event"])
+	}
+	if int64(aps["dismissal-date"].(float64)) != dismissal {
+		t.Errorf("dismissal-date = %v", aps["dismissal-date"])
+	}
+}
+
+// TestSendLiveActivityUpdateHeaders asserts apns-push-type / apns-topic for LA.
+func TestSendLiveActivityUpdateHeaders(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu      sync.Mutex
+		got     http.Header
+		gotBody map[string]any
+	)
+	d := newAPNsTestDispatcher(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = r.Header.Clone()
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	err := d.SendLiveActivityUpdate(context.Background(), LiveActivityUpdate{
+		DeviceToken: "deadbeef",
+		Event:       "update",
+		Timestamp:   1_700_000_000,
+		ContentState: map[string]any{
+			"leadingBidCents": 4200,
+			"endsAt":          1_700_003_600,
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendLiveActivityUpdate: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if pt := got.Get("apns-push-type"); pt != "liveactivity" {
+		t.Errorf("apns-push-type = %q, want liveactivity", pt)
+	}
+	wantTopic := "com.nomarkup.app.push-type.liveactivity"
+	if topic := got.Get("apns-topic"); topic != wantTopic {
+		t.Errorf("apns-topic = %q, want %q", topic, wantTopic)
+	}
+	if p := got.Get("apns-priority"); p != "10" {
+		t.Errorf("apns-priority = %q, want 10", p)
+	}
+	// Alert path must still use plain bundle topic — regression check is in
+	// TestAPNsPriorityAndPushTypeHeaders; here only LA headers are asserted.
+	aps, _ := gotBody["aps"].(map[string]any)
+	if aps == nil || aps["event"] != "update" {
+		t.Errorf("body aps = %v", gotBody)
+	}
+}
+
+func TestSendLiveActivityUpdateDevMode(t *testing.T) {
+	t.Parallel()
+	d := NewPushDispatcher("", "", nil)
+	if err := d.SendLiveActivityUpdate(t.Context(), LiveActivityUpdate{
+		DeviceToken: "tok",
+		Event:       "update",
+		ContentState: map[string]any{"leadingBidCents": 1},
+	}); err != nil {
+		t.Fatalf("dev mode send: %v", err)
+	}
+}
+
+func TestSendLiveActivityUpdateValidation(t *testing.T) {
+	t.Parallel()
+	d := NewPushDispatcher("", "", nil)
+	if err := d.SendLiveActivityUpdate(t.Context(), LiveActivityUpdate{}); err == nil {
+		t.Fatal("expected error for empty token")
+	}
+	if err := d.SendLiveActivityUpdate(t.Context(), LiveActivityUpdate{
+		DeviceToken: "tok",
+		Event:       "start",
+	}); err == nil {
+		t.Fatal("expected error for invalid event")
+	}
+}
+
+func TestParseLiveActivityAuctionID(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in      string
+		wantID  string
+		wantOK  bool
+	}{
+		{"liveactivity:auction-1", "auction-1", true},
+		{"liveactivity:", "", false},
+		{"ios", "", false},
+		{"", "", false},
+		{"LIVEACTIVITY:ABC", "ABC", true},
+		{"liveactivity:uuid-with-dashes", "uuid-with-dashes", true},
+	}
+	for _, tc := range cases {
+		got, ok := ParseLiveActivityAuctionID(tc.in)
+		if ok != tc.wantOK || got != tc.wantID {
+			t.Errorf("ParseLiveActivityAuctionID(%q) = (%q, %v), want (%q, %v)",
+				tc.in, got, ok, tc.wantID, tc.wantOK)
+		}
+	}
+}
+
+// TestAlertSendStillUsesAlertPushType ensures LA plumbing did not change alert headers.
+func TestAlertSendStillUsesAlertPushType(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	var got http.Header
+	d := newAPNsTestDispatcher(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got = r.Header.Clone()
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	if err := d.Send(context.Background(), pushMessage{
+		DeviceToken: "aabbcc",
+		Platform:    "ios",
+		Title:       "t",
+		Body:        "b",
+		NotifType:   "bid_outbid",
+	}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got.Get("apns-push-type") != "alert" {
+		t.Errorf("push-type = %q", got.Get("apns-push-type"))
+	}
+	if got.Get("apns-topic") != "com.nomarkup.app" {
+		t.Errorf("topic = %q (must not gain .push-type.liveactivity)", got.Get("apns-topic"))
+	}
+}
+
 func TestPushDispatcherDevModeRouting(t *testing.T) {
 	t.Parallel()
 	d := NewPushDispatcher("", "", nil)

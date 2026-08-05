@@ -24,6 +24,8 @@ const platformIOSLiveActivity = "ios_live_activity"
 //
 // Routing:
 //   - platform "ios" → APNs HTTP/2 token auth (when configured), else log-only
+//   - platform "ios_live_activity" → skipped by alert Send/SendMultiple; use
+//     SendLiveActivityUpdate for ActivityKit content-state pushes
 //   - platform "android" / "web" / unknown → FCM legacy HTTP (when configured), else log-only
 //
 // iOS registers raw APNs device token hex (no Firebase SDK). Android may still
@@ -76,10 +78,8 @@ func (p *PushDispatcher) Send(ctx context.Context, msg pushMessage) error {
 	case "ios":
 		return p.sendAPNs(ctx, msg)
 	case platformIOSLiveActivity:
-		// LA.3: never send an alert push to a Live Activity token (see the
-		// fan-out exclusion in SendMultiple). Guarded here too so a direct
-		// caller cannot fall through to the FCM branch with an APNs
-		// ActivityKit token.
+		// Never send an alert push to a Live Activity token (see SendMultiple
+		// exclusion). Content-state updates go through SendLiveActivityUpdate.
 		slog.Info("push dispatcher: skipping alert push to live-activity token",
 			"device_token", truncateToken(msg.DeviceToken),
 			"type", msg.NotifType,
@@ -103,25 +103,12 @@ func (p *PushDispatcher) SendMultiple(
 ) (sent int, staleTokens []string, errs []error) {
 	for _, dt := range tokens {
 		if strings.EqualFold(strings.TrimSpace(dt.Platform), platformIOSLiveActivity) {
-			// LA.3 (safe half): Live Activity push tokens are ActivityKit
-			// per-activity tokens — an `apns-push-type: alert` POST at one is
-			// malformed, and the FCM default branch would be worse. They are
-			// excluded from alert fan-out; the stored rows remain valid for
-			// every existing query and for unregister-by-token.
-			//
-			// LA.3: the real `liveactivity` dispatch branch (apns-push-type:
-			// liveactivity, apns-topic "<bundle-id>.push-type.liveactivity",
-			// content-state payload) is NOT implementable on current
-			// plumbing: (a) RegisterDeviceRequest.platform is a closed v1
-			// proto enum with no live-activity value, so this platform string
-			// cannot round-trip the RPC — the gateway maps unknown strings to
-			// DEVICE_PLATFORM_UNSPECIFIED, which this service stores as
-			// "unknown"; (b) device_tokens carries no auction_id ↔ token
-			// association, so an auction event cannot be routed to the one
-			// activity it belongs to; (c) the alert dispatch payload carries
-			// no structured auction content-state. Shipping it needs a
-			// v1-additive registration shape (activity token + auction id)
-			// plus an auction-event source with bid state.
+			// IOS-SYS.LA.3: Live Activity tokens are ActivityKit per-activity
+			// update tokens — never alert-fan-out (apns-push-type: alert would
+			// be malformed). Use SendLiveActivityUpdate for content-state.
+			// Residual: auction-event → token fan-out still needs a caller that
+			// resolves tokens by device_id "liveactivity:<auctionID>" (see
+			// ParseLiveActivityAuctionID).
 			continue
 		}
 
@@ -234,6 +221,81 @@ func (p *PushDispatcher) sendFCM(ctx context.Context, msg pushMessage) error {
 		"title", msg.Title,
 	)
 	return nil
+}
+
+// liveActivityDeviceIDPrefix is the device_id convention the iOS client uses
+// when registering an ActivityKit push token (AuctionLiveActivityController):
+// "liveactivity:<auctionID>". Residual auction-event fan-out parses this.
+const liveActivityDeviceIDPrefix = "liveactivity:"
+
+// ParseLiveActivityAuctionID extracts the auction id from a device_id of the
+// form "liveactivity:<auctionID>". Returns ("", false) when the prefix is absent
+// or the id is empty.
+func ParseLiveActivityAuctionID(deviceID string) (string, bool) {
+	deviceID = strings.TrimSpace(deviceID)
+	const prefix = liveActivityDeviceIDPrefix
+	if len(deviceID) <= len(prefix) {
+		return "", false
+	}
+	if !strings.EqualFold(deviceID[:len(prefix)], prefix) {
+		return "", false
+	}
+	id := deviceID[len(prefix):]
+	if id == "" {
+		return "", false
+	}
+	return id, true
+}
+
+// LiveActivityUpdate is a remote ActivityKit content-state push (IOS-SYS.LA.3).
+// Callers supply ContentState keys matching AuctionActivityAttributes.ContentState
+// on iOS (leadingBidCents, endsAt as unix seconds, optional outcome).
+type LiveActivityUpdate struct {
+	DeviceToken   string
+	Event         string // "update" (default) or "end"
+	ContentState  map[string]any
+	Timestamp     int64 // unix seconds; 0 = now
+	AlertTitle    string
+	AlertBody     string
+	DismissalDate *int64 // unix seconds; for event=end
+}
+
+// SendLiveActivityUpdate dispatches one APNs liveactivity push. Unlike Send /
+// SendMultiple it does not route alert payloads — only ActivityKit headers and
+// content-state. No-ops (log only) when APNs is in dev/log mode.
+//
+// Callers: Service.dispatchLiveActivityForAuction matches tokens by
+// platform=ios_live_activity and device_id=liveactivity:<auctionID>.
+func (p *PushDispatcher) SendLiveActivityUpdate(ctx context.Context, update LiveActivityUpdate) error {
+	if strings.TrimSpace(update.DeviceToken) == "" {
+		return fmt.Errorf("liveactivity: device_token is required")
+	}
+	event := strings.ToLower(strings.TrimSpace(update.Event))
+	if event == "" {
+		event = "update"
+	}
+	if event != "update" && event != "end" {
+		return fmt.Errorf("liveactivity: event must be update or end, got %q", update.Event)
+	}
+
+	msg := liveActivityMessage{
+		DeviceToken:   update.DeviceToken,
+		Event:         event,
+		ContentState:  update.ContentState,
+		Timestamp:     update.Timestamp,
+		AlertTitle:    update.AlertTitle,
+		AlertBody:     update.AlertBody,
+		DismissalDate: update.DismissalDate,
+	}
+
+	if p.apnsDevMode || p.apns == nil {
+		slog.Info("push dispatcher (apns dev mode): would send liveactivity push",
+			"device_token", truncateToken(update.DeviceToken),
+			"event", event,
+		)
+		return nil
+	}
+	return p.apns.sendLiveActivity(ctx, msg)
 }
 
 // --- FCM request/response types ---

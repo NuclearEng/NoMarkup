@@ -60,7 +60,7 @@ struct LoginView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .navigationDestination(for: AuthRoute.self) { route in
                 switch route {
                 case .register:

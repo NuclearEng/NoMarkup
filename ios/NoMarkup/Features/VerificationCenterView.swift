@@ -167,7 +167,7 @@ struct VerificationCenterView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .task {
             if emailForResend.isEmpty {
                 let e = auth.email.trimmingCharacters(in: .whitespacesAndNewlines)

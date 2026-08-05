@@ -67,7 +67,7 @@ enum AuctionLiveActivityController {
         let content = ActivityContent(state: state, staleDate: endsAt)
         do {
             // IOS-SYS.LA.3: request a per-activity push token so the backend can
-            // drive updates over APNs (`liveactivity` push type) once its branch ships.
+            // drive updates over APNs (`liveactivity` push type / SendLiveActivityUpdate).
             let activity = try Activity.request(
                 attributes: attributes,
                 content: content,
@@ -243,20 +243,11 @@ enum AuctionLiveActivityController {
     /// Stream the per-activity push token to the backend via the existing
     /// device-registration endpoint. Best-effort — never disturbs the bid path.
     ///
-    /// LA.3: client half only. The registration body is
+    /// LA.3: registration body is
     /// `{ device_token: <token hex>, platform: "ios_live_activity",
-    ///    device_id: "liveactivity:<auctionID>" }` — the gateway tolerates it
-    /// (free-form strings; only empty values 400), but pushes cannot flow until
-    /// the server side lands:
-    ///   1. gateway `stringToDevicePlatform` (notification.go) maps unknown
-    ///      platforms to DEVICE_PLATFORM_UNSPECIFIED — it must forward
-    ///      "ios_live_activity" (new enum value or raw passthrough) so the
-    ///      notification-service branch keyed on that platform can see it;
-    ///   2. the registration body has no auction field, so the association
-    ///      rides in `device_id` with the "liveactivity:" prefix — the server
-    ///      must parse it (or the contract must grow an `auction_id` field);
-    ///   3. APNs sends must use push type `liveactivity` (apns.go hardcodes
-    ///      `alert` today) with the auction's bid/close events as payload.
+    ///    device_id: "liveactivity:<auctionID>" }`.
+    /// Server plumbing (proto enum + APNs liveactivity send helper) is in place;
+    /// residual is auction-event → token fan-out (lookup by device_id prefix).
     private static func observePushToken(activityID: String, auctionID: String) {
         Task { @MainActor in
             let matches = Activity<AuctionActivityAttributes>.activities.filter { $0.id == activityID }

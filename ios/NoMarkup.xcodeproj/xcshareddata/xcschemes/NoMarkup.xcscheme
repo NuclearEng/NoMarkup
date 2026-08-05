@@ -73,10 +73,17 @@
             ReferencedContainer = "container:NoMarkup.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <EnvironmentVariables>
+         <EnvironmentVariable
+            key = "NOMARKUP_API_BASE_URL"
+            value = "http://192.168.1.101:8081"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
-      shouldUseLaunchSchemeArgsEnv = "YES"
+      shouldUseLaunchSchemeArgsEnv = "NO"
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
@@ -102,7 +109,7 @@
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
                title = "Archive lint (IOS-DIST.1)"
-               scriptText = "# IOS-DIST.1 release hygiene gate — output in /tmp/nomarkup-archive-lint.log.&#10;# Xcode ignores pre-action exit codes; `make ios-archive` is the fail-closed path.&#10;set -o pipefail&#10;&quot;${PROJECT_DIR}/../scripts/ios-archive-lint.sh&quot; 2&gt;&amp;1 | tee /tmp/nomarkup-archive-lint.log&#10;">
+               scriptText = "# IOS-DIST.1 release hygiene gate &#x2014; output in /tmp/nomarkup-archive-lint.log.&#10;# Xcode ignores pre-action exit codes; `make ios-archive` is the fail-closed path.&#10;set -o pipefail&#10;&quot;${PROJECT_DIR}/../scripts/ios-archive-lint.sh&quot; 2&gt;&amp;1 | tee /tmp/nomarkup-archive-lint.log&#10;">
                <EnvironmentBuildable>
                   <BuildableReference
                      BuildableIdentifier = "primary"

@@ -18,6 +18,20 @@ final class DateFormattingTests: XCTestCase {
         XCTAssertEqual(CatalogDateFormat.countdownLabel(until: in2h30, now: now), "Ends in 2h 30m")
     }
 
+    func testCountdownChipLabelCompact() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let past = now.addingTimeInterval(-60)
+        XCTAssertEqual(CatalogDateFormat.countdownChipLabel(until: past, now: now), "Ended")
+        let in45m = now.addingTimeInterval(45 * 60)
+        XCTAssertEqual(CatalogDateFormat.countdownChipLabel(until: in45m, now: now), "45m")
+        let in2h = now.addingTimeInterval(2 * 3600)
+        XCTAssertEqual(CatalogDateFormat.countdownChipLabel(until: in2h, now: now), "2h")
+        let in2h30 = now.addingTimeInterval(2 * 3600 + 30 * 60)
+        XCTAssertEqual(CatalogDateFormat.countdownChipLabel(until: in2h30, now: now), "2h 30m")
+        XCTAssertTrue(CatalogDateFormat.isCountdownUrgent(until: in45m, now: now))
+        XCTAssertFalse(CatalogDateFormat.isCountdownUrgent(until: in2h, now: now))
+    }
+
     func testParseISO() {
         XCTAssertNotNil(CatalogDateFormat.parseISO("2026-07-27T12:00:00Z"))
         XCTAssertNotNil(CatalogDateFormat.parseISO("2026-07-27T12:00:00.123Z"))

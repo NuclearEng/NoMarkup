@@ -628,13 +628,16 @@ func notificationChannelToString(ch notificationv1.NotificationChannel) string {
 }
 
 func stringToDevicePlatform(s string) notificationv1.DevicePlatform {
-	switch s {
+	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "ios":
 		return notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS
 	case "android":
 		return notificationv1.DevicePlatform_DEVICE_PLATFORM_ANDROID
 	case "web":
 		return notificationv1.DevicePlatform_DEVICE_PLATFORM_WEB
+	case "ios_live_activity":
+		// IOS-SYS.LA.3: ActivityKit per-activity update token (not alert push).
+		return notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS_LIVE_ACTIVITY
 	default:
 		return notificationv1.DevicePlatform_DEVICE_PLATFORM_UNSPECIFIED
 	}

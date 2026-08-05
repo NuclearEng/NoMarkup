@@ -56,10 +56,11 @@
 	  API base URL override. Leave empty so AppConfig defaults to production HTTPS
 	  (https://api.no-markup.com). Never commit a cleartext LAN URL.
 
-	  Debug / LAN dogfood: set Xcode scheme environment variable
-	  NOMARKUP_API_BASE_URL (e.g. https://staging… or a tunnel). Simulator DEBUG
-	  uses http://127.0.0.1:8081 automatically when this key is empty.
-	  Release builds reject non-https overrides (see AppConfig.apiBaseURL).
+	  Debug / LAN dogfood: scheme env only — Xcode scheme LaunchAction sets
+	  NOMARKUP_API_BASE_URL (e.g. http://LAN:8081 or https://staging… / tunnel).
+	  Simulator DEBUG uses http://127.0.0.1:8081 automatically when this key is empty
+	  and no env override is set (see AppConfig.apiBaseURL).
+	  Release builds reject non-https overrides. Do not put dogfood URLs here.
 	-->
 	<key>APIBaseURL</key>
 	<string></string>
@@ -114,13 +115,6 @@
 			</array>
 		</dict>
 	</array>
-	<!--
-	  ATS: no NSAllowsLocalNetworking — Release fails closed (HTTPS only).
-	  Simulator DEBUG → AppConfig uses 127.0.0.1 (local loopback).
-	  Device Debug dogfood: prefer HTTPS staging or an HTTPS tunnel via
-	  NOMARKUP_API_BASE_URL (scheme env). Do not re-add cleartext ATS exceptions
-	  for production archives.
-	-->
 	<!-- Export compliance: only exempt encryption (HTTPS / OS crypto). -->
 	<!--
 	  StoreKit / Rail B digital subscriptions (FR-12). Default OFF for App Store 3.1.1

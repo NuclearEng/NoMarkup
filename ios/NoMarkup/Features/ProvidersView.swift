@@ -14,7 +14,7 @@ struct ProvidersView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+            .brandNavigationBarChrome()
             .searchable(text: $searchText, prompt: "Search providers")
             .onSubmit(of: .search) {
                 Task { await load() }

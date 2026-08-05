@@ -54,7 +54,7 @@ struct FeedView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .toolbarBackground(BrandTheme.navy, for: .navigationBar)
+        .brandNavigationBarChrome()
         .task { await load(reset: true) }
         .refreshable { await load(reset: true) }
         .navigationDestination(for: ListingSummary.self) { listing in

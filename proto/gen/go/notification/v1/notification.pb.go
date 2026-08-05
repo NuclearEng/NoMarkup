@@ -280,6 +280,8 @@ const (
 	DevicePlatform_DEVICE_PLATFORM_IOS         DevicePlatform = 1
 	DevicePlatform_DEVICE_PLATFORM_ANDROID     DevicePlatform = 2
 	DevicePlatform_DEVICE_PLATFORM_WEB         DevicePlatform = 3
+	// ActivityKit per-activity update token (not an alert device token).
+	DevicePlatform_DEVICE_PLATFORM_IOS_LIVE_ACTIVITY DevicePlatform = 4
 )
 
 // Enum value maps for DevicePlatform.
@@ -289,12 +291,14 @@ var (
 		1: "DEVICE_PLATFORM_IOS",
 		2: "DEVICE_PLATFORM_ANDROID",
 		3: "DEVICE_PLATFORM_WEB",
+		4: "DEVICE_PLATFORM_IOS_LIVE_ACTIVITY",
 	}
 	DevicePlatform_value = map[string]int32{
-		"DEVICE_PLATFORM_UNSPECIFIED": 0,
-		"DEVICE_PLATFORM_IOS":         1,
-		"DEVICE_PLATFORM_ANDROID":     2,
-		"DEVICE_PLATFORM_WEB":         3,
+		"DEVICE_PLATFORM_UNSPECIFIED":       0,
+		"DEVICE_PLATFORM_IOS":               1,
+		"DEVICE_PLATFORM_ANDROID":           2,
+		"DEVICE_PLATFORM_WEB":               3,
+		"DEVICE_PLATFORM_IOS_LIVE_ACTIVITY": 4,
 	}
 )
 
@@ -1936,12 +1940,13 @@ const file_notification_v1_notification_proto_rawDesc = "" +
 	"\x1cNOTIFICATION_TYPE_BID_OUTBID\x10*\x12$\n" +
 	" NOTIFICATION_TYPE_OFFER_RECEIVED\x10+\x12%\n" +
 	"!NOTIFICATION_TYPE_OFFER_COUNTERED\x10,\x125\n" +
-	"1NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED\x10-*\x80\x01\n" +
+	"1NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED\x10-*\xa7\x01\n" +
 	"\x0eDevicePlatform\x12\x1f\n" +
 	"\x1bDEVICE_PLATFORM_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13DEVICE_PLATFORM_IOS\x10\x01\x12\x1b\n" +
 	"\x17DEVICE_PLATFORM_ANDROID\x10\x02\x12\x17\n" +
-	"\x13DEVICE_PLATFORM_WEB\x10\x032\xb5\n" +
+	"\x13DEVICE_PLATFORM_WEB\x10\x03\x12%\n" +
+	"!DEVICE_PLATFORM_IOS_LIVE_ACTIVITY\x10\x042\xb5\n" +
 	"\n" +
 	"\x13NotificationService\x12y\n" +
 	"\x10SendNotification\x121.nomarkup.notification.v1.SendNotificationRequest\x1a2.nomarkup.notification.v1.SendNotificationResponse\x12\x85\x01\n" +

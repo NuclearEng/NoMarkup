@@ -409,6 +409,9 @@ final class AuthViewModel: ObservableObject {
         // OBS-3: widgets must not keep rendering auction data after sign-out.
         WidgetSharedStore.clear()
 
+        // IOS-INT.2: purge Spotlight so donated jobs/listings do not outlive the session.
+        Task { await SpotlightIndex.deleteAll() }
+
         if shouldCallServer {
             Task {
                 // Unregister APNs device while the access token is still in the
