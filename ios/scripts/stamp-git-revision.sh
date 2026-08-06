@@ -7,10 +7,11 @@ OUT="$IOS_ROOT/NoMarkup/Core/GitRevision.swift"
 cd "$REPO_ROOT"
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-# Dirty if any changes exist outside the stamp file itself.
 DIRTY=""
+# Only tracked changes count as dirty (untracked agent/docs noise ignored).
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  if git status --porcelain | grep -v 'GitRevision.swift' | grep -q .; then
+  if ! git diff --quiet -- . ':(exclude)ios/NoMarkup/Core/GitRevision.swift' 2>/dev/null \
+     || ! git diff --cached --quiet -- . ':(exclude)ios/NoMarkup/Core/GitRevision.swift' 2>/dev/null; then
     DIRTY="-dirty"
   fi
 fi
@@ -20,7 +21,7 @@ cat >"$OUT" <<EOF
 // Regenerated on each device/sim build so Home footer shows the real revision.
 
 enum GitRevision {
-    /// Short git SHA (appends \`-dirty\` when the working tree has uncommitted changes).
+    /// Short git SHA (appends \`-dirty\` when tracked sources differ from HEAD).
     static let short: String = "${SHA}"
     /// Branch name at stamp time.
     static let branch: String = "${BRANCH}"

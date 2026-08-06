@@ -2,8 +2,8 @@
 // Regenerated on each device/sim build so Home footer shows the real revision.
 
 enum GitRevision {
-    /// Short git SHA (appends `-dirty` when the working tree has uncommitted changes).
-    static let short: String = "cd5ccfb9-dirty"
+    /// Short git SHA (appends `-dirty` when tracked sources differ from HEAD).
+    static let short: String = "1a4b0f04-dirty"
     /// Branch name at stamp time.
     static let branch: String = "fix/security-audit-2026-04-23"
 }
