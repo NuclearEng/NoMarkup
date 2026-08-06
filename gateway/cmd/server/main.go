@@ -311,9 +311,10 @@ func main() {
 	secureCookie := os.Getenv("SECURE_COOKIES") != "false"
 
 	// Rate limiter (Redis-backed if cache available, in-memory fallback).
-	// In development (ENVIRONMENT != "production"), auth rate limits are 10x
-	// more permissive to allow multi-profile testing. RATE_LIMIT_AUTH env var
-	// can override the auth limit in any environment.
+	// Non-production multiplies standard/strict/public-read by 10×; auth stays
+	// at 5 attempts / 15 min (CLAUDE.md §6) unless RATE_LIMIT_AUTH overrides.
+	// For multi-persona local dogfood, set RATE_LIMIT_AUTH=200 in .env.local
+	// (then restart the gateway) or flush nomarkup:rl:auth:* in Redis.
 	authLimitOverride, _ := strconv.Atoi(os.Getenv("RATE_LIMIT_AUTH"))
 	rateLimiter := middleware.NewRateLimiter(cacheClient, cfg.IsProduction(), authLimitOverride)
 

@@ -120,6 +120,13 @@ function CurrentAccountCard({ account }: { account: PlatformBankAccount }) {
           className="min-h-[44px]"
           disabled={deleteAccount.isPending}
           onClick={() => {
+            if (
+              !window.confirm(
+                'Remove this platform bank account? Payouts and fee deposits may fail until a new account is added.',
+              )
+            ) {
+              return;
+            }
             deleteAccount.mutate(account.id);
           }}
         >

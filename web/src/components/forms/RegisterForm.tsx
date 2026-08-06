@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { Briefcase, Wrench } from 'lucide-react';
@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { OAuthButtons, OAuthDivider } from '@/components/auth/oauth-buttons';
 import { useEnableRole } from '@/hooks/useProfile';
 import { api, getApiErrorMessage } from '@/lib/api';
+import { messageForOAuthError } from '@/lib/oauth-errors';
 import { cn } from '@/lib/utils';
 import { registerSchema } from '@/lib/validations';
 import { useAuthStore } from '@/stores/auth-store';
@@ -38,10 +39,20 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const register = useAuthStore((s) => s.register);
   const enableRole = useEnableRole();
   const [formError, setFormError] = useState<string | null>(null);
   const [intent, setIntent] = useState<'customer' | 'provider'>('customer');
+
+  // OAuth failures redirect to /login by default; if a caller lands on register
+  // with the same ?error= codes, show them here too.
+  useEffect(() => {
+    const message = messageForOAuthError(searchParams.get('error'));
+    if (message) {
+      setFormError(message);
+    }
+  }, [searchParams]);
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),

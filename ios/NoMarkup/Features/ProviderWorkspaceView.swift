@@ -34,6 +34,12 @@ struct ProviderWorkspaceView: View {
     @State private var isSavingPortfolio = false
     @State private var isSavingSchedule = false
 
+    /// License submit form (POST `/providers/me/licenses`).
+    @State private var licenseType = "bar"
+    @State private var licenseNumber = ""
+    @State private var licenseJurisdiction = ""
+    @State private var isSubmittingLicense = false
+
     @State private var isLoading = false
     @State private var isSaving = false
     @State private var isTogglingInstant = false
@@ -262,19 +268,42 @@ struct ProviderWorkspaceView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
-            if let cats = profile?.serviceCategories, !cats.isEmpty {
-                Section {
+            Section {
+                if let cats = profile?.serviceCategories, !cats.isEmpty {
                     ForEach(cats, id: \.idValue) { cat in
                         Text(cat.displayName)
                             .foregroundStyle(BrandTheme.textPrimary)
                             .frame(minHeight: 44)
                     }
-                } header: {
-                    Text("Categories").brandSectionHeader()
-                } footer: {
-                    Text("Category membership is managed here as read-only. Full taxonomy edit remains on web for now.")
+                } else {
+                    Text("No service categories selected yet.")
+                        .font(.footnote)
                         .foregroundStyle(BrandTheme.textSecondary)
+                        .frame(minHeight: 44)
                 }
+                NavigationLink {
+                    ProviderCategoriesEditView(
+                        initialCategoryIDs: (profile?.serviceCategories ?? []).compactMap { cat in
+                            let id = (cat.id ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                            return id.isEmpty ? nil : id
+                        }
+                    ) { updated in
+                        if var p = profile {
+                            p.serviceCategories = updated
+                            profile = p
+                        }
+                        statusMessage = "Service categories saved."
+                    }
+                } label: {
+                    Label("Edit categories", systemImage: "square.grid.2x2")
+                }
+                .frame(minHeight: 44)
+                .accessibilityHint("Choose which service categories you offer")
+            } header: {
+                Text("Categories").brandSectionHeader()
+            } footer: {
+                Text("PUT /providers/me/categories replaces your membership. Customers match jobs by these categories.")
+                    .foregroundStyle(BrandTheme.textSecondary)
             }
 
             Section {
@@ -346,10 +375,50 @@ struct ProviderWorkspaceView: View {
                         .accessibilityElement(children: .combine)
                     }
                 }
+
+                Picker("License type", selection: $licenseType) {
+                    Text("Bar (attorney)").tag("bar")
+                    Text("Trade license").tag("trade")
+                    Text("Business license").tag("business")
+                }
+                .frame(minHeight: 44)
+                .accessibilityLabel("License type")
+
+                TextField("License number", text: $licenseNumber)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("License number")
+
+                TextField("Jurisdiction (2-letter state)", text: $licenseJurisdiction)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Jurisdiction state code")
+                    .accessibilityHint("Two letter US state or jurisdiction code")
+
+                Button {
+                    Task { await submitLicense() }
+                } label: {
+                    HStack {
+                        if isSubmittingLicense {
+                            ProgressView()
+                                .tint(BrandTheme.ctaLabelOnGold)
+                        }
+                        Text(isSubmittingLicense ? "Submitting…" : "Submit license for review")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .frame(minHeight: 48)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                .disabled(isSubmittingLicense || !canSubmitLicense)
+                .accessibilityHint("Posts the license for platform review")
             } header: {
                 Text("Licenses").brandSectionHeader()
             } footer: {
-                Text("Licenses are reviewed by the platform. Submit new credentials from the web legal vertical when available.")
+                Text("POST /providers/me/licenses submits credentials for review. Bar licenses use a 2-letter jurisdiction (e.g. CA). Status updates after admin verification.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -387,6 +456,14 @@ struct ProviderWorkspaceView: View {
                 .accessibilityHint("View status and upload insurance, license, or ID documents")
 
                 NavigationLink {
+                    SellerPayoutsView()
+                } label: {
+                    Label("Stripe Connect payouts", systemImage: "banknote")
+                }
+                .frame(minHeight: 44)
+                .accessibilityHint("Create or finish Stripe Connect onboarding to receive escrow payouts")
+
+                NavigationLink {
                     CalendarExportView()
                 } label: {
                     Label("Calendar export", systemImage: "calendar")
@@ -404,7 +481,7 @@ struct ProviderWorkspaceView: View {
             } header: {
                 Text("Tools").brandSectionHeader()
             } footer: {
-                Text("Exports and templates help run your provider practice without the full web Business OS.")
+                Text("Exports, verification docs, and Stripe Connect complete provider setup without the full web Business OS.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -580,7 +657,15 @@ struct ProviderWorkspaceView: View {
         guard name.count <= 120, body.count <= 2000 else { return false }
         let originalName = profile?.businessName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let originalBio = profile?.bio?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name != originalName || body != originalBio
+        let originalRadius = profile?.serviceRadiusKm ?? 25
+        let radiusChanged = abs(serviceRadiusKm - originalRadius) >= 0.5
+        return name != originalName || body != originalBio || radiusChanged
+    }
+
+    private var canSubmitLicense: Bool {
+        let number = licenseNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let juris = licenseJurisdiction.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !number.isEmpty && number.count <= 100 && juris.count == 2
     }
 
     private func statusColor(_ style: StatusChipStyle) -> Color {
@@ -685,6 +770,49 @@ struct ProviderWorkspaceView: View {
         // hydrate when the key was present so local editor state is not wiped.
         if let schedule = p.schedule {
             scheduleDays = ProviderScheduleDayDraft.apply(windows: schedule)
+        }
+    }
+
+    @MainActor
+    private func submitLicense() async {
+        errorMessage = nil
+        statusMessage = nil
+        let number = licenseNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let juris = licenseJurisdiction.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !number.isEmpty, number.count <= 100 else {
+            errorMessage = "Enter a license number (max 100 characters)."
+            BrandHaptics.warning()
+            return
+        }
+        guard juris.count == 2 else {
+            errorMessage = "Jurisdiction must be a 2-letter state code (e.g. CA)."
+            BrandHaptics.warning()
+            return
+        }
+
+        isSubmittingLicense = true
+        defer { isSubmittingLicense = false }
+
+        do {
+            let created = try await APIClient.shared.submitMyProviderLicense(
+                licenseType: licenseType,
+                licenseNumber: number,
+                jurisdiction: juris
+            )
+            licenses.insert(created, at: 0)
+            licenseNumber = ""
+            licenseJurisdiction = ""
+            statusMessage = "License submitted for review."
+            BrandHaptics.success()
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch let error as APIClientError where error.isForbidden {
+            hasProviderRole = false
+            errorMessage = "Provider role required. Enable it in Profile settings."
+            BrandHaptics.error()
+        } catch {
+            errorMessage = error.localizedDescription
+            BrandHaptics.error()
         }
     }
 
@@ -887,6 +1015,194 @@ struct ProviderWorkspaceView: View {
             )
         }
         return windows
+    }
+}
+
+// MARK: - Categories multi-select (write)
+
+/// Multi-select service categories → `PUT /api/v1/providers/me/categories`.
+/// Mirrors web onboarding Categories step (cheap write path).
+struct ProviderCategoriesEditView: View {
+    let initialCategoryIDs: [String]
+    var onSaved: ([ProviderCategorySummary]) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var auth: AuthViewModel
+
+    @State private var catalog: [ServiceCategorySummary] = []
+    @State private var selectedIDs: Set<String> = []
+    @State private var isLoading = false
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        Group {
+            if isLoading && catalog.isEmpty {
+                BrandLoadingScreen(kind: .catalog, rows: 8, accessibilityLabel: "Loading categories…")
+            } else if let errorMessage, catalog.isEmpty {
+                BrandEmptyState(
+                    title: "Couldn’t load categories",
+                    systemImage: "square.grid.2x2",
+                    message: errorMessage,
+                    actionTitle: "Try again"
+                ) {
+                    Task { await load() }
+                }
+            } else if catalog.isEmpty {
+                BrandEmptyState(
+                    title: "No categories",
+                    systemImage: "tray",
+                    message: "The service taxonomy is empty. Pull to refresh or try again later."
+                )
+            } else {
+                List {
+                    Section {
+                        Text("Select every category you serve. Saving replaces your full membership set.")
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
+
+                    Section {
+                        ForEach(catalog) { cat in
+                            Button {
+                                toggle(cat.id)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: selectedIDs.contains(cat.id)
+                                          ? "checkmark.circle.fill"
+                                          : "circle")
+                                        .foregroundStyle(
+                                            selectedIDs.contains(cat.id)
+                                                ? BrandTheme.goldBright
+                                                : BrandTheme.textSecondary
+                                        )
+                                        .accessibilityHidden(true)
+                                    Text(cat.displayName)
+                                        .foregroundStyle(BrandTheme.textPrimary)
+                                    Spacer(minLength: 0)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityAddTraits(selectedIDs.contains(cat.id) ? [.isSelected] : [])
+                            .accessibilityLabel(cat.displayName)
+                            .accessibilityHint(
+                                selectedIDs.contains(cat.id)
+                                    ? "Selected. Double tap to remove."
+                                    : "Not selected. Double tap to add."
+                            )
+                        }
+                    } header: {
+                        Text("Service categories").brandSectionHeader()
+                    } footer: {
+                        Text("\(selectedIDs.count) selected")
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+
+                    Section {
+                        Button {
+                            Task { await save() }
+                        } label: {
+                            if isSaving {
+                                ProgressView()
+                                    .tint(BrandTheme.ctaLabelOnGold)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            } else {
+                                Text("Save categories")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(BrandTheme.gold)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                        .disabled(isSaving)
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityHint("Uploads your category selection to the server")
+                    }
+
+                    if let errorMessage {
+                        Section {
+                            Text(errorMessage)
+                                .font(.footnote)
+                                .foregroundStyle(BrandTheme.destructive)
+                                .listRowBackground(BrandTheme.navyElevated)
+                        }
+                    }
+                }
+                .brandListBackground()
+                .refreshable { await load() }
+            }
+        }
+        .navigationTitle("Categories")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .brandNavigationBarChrome()
+        .task {
+            selectedIDs = Set(initialCategoryIDs.filter { !$0.isEmpty })
+            await load()
+        }
+    }
+
+    private func toggle(_ id: String) {
+        if selectedIDs.contains(id) {
+            selectedIDs.remove(id)
+        } else {
+            selectedIDs.insert(id)
+        }
+        BrandHaptics.selection()
+    }
+
+    @MainActor
+    private func load() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
+        isLoading = catalog.isEmpty
+        defer { isLoading = false }
+        do {
+            // Level-1 roots match web CategorySelector primary list.
+            catalog = try await APIClient.shared.fetchServiceCategories(level: 1)
+                .filter { $0.active != false && !$0.id.isEmpty }
+            errorMessage = nil
+        } catch {
+            if catalog.isEmpty {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    @MainActor
+    private func save() async {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            let ids = Array(selectedIDs).sorted()
+            let response = try await APIClient.shared.updateMyProviderCategories(categoryIDs: ids)
+            let updated: [ProviderCategorySummary]
+            if let fromServer = response.categories, !fromServer.isEmpty {
+                updated = fromServer
+            } else {
+                updated = catalog
+                    .filter { selectedIDs.contains($0.id) }
+                    .map { cat in
+                        ProviderCategorySummary(
+                            id: cat.id,
+                            name: cat.name,
+                            slug: cat.slug,
+                            level: cat.level,
+                            parentName: nil
+                        )
+                    }
+            }
+            onSaved(updated)
+            BrandHaptics.success()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
     }
 }
 

@@ -85,9 +85,14 @@ function PaymentTabContent({ tab }: { tab: PaymentTab }) {
         <CreditCard className="text-white/50 h-12 w-12" aria-hidden="true" />
         <p className="mt-4 text-lg font-medium">No payments</p>
         <p className="text-zinc-300 mt-1 text-sm">{emptyMessages[tab]}</p>
-        <Button asChild className="mt-4 min-h-[44px]">
-          <Link href="/jobs">Browse Jobs</Link>
-        </Button>
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          <Button asChild className="min-h-[44px]">
+            <Link href="/jobs/new">Post a Job</Link>
+          </Button>
+          <Button asChild variant="outline" className="min-h-[44px]">
+            <Link href="/settings/payment-methods">Payment methods</Link>
+          </Button>
+        </div>
       </div>
     );
   }
@@ -132,11 +137,16 @@ export default function PaymentsPage() {
   return (
     <PageTransition>
     <div className="space-y-6">
-      <div>
-        <h1 className="gold-text text-2xl font-bold tracking-tight">Payments</h1>
-        <p className="mt-1 text-zinc-300">
-          Track your payments, view fee breakdowns, and manage payment methods.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Payments</h1>
+          <p className="mt-1 text-zinc-300">
+            Track payments, fee breakdowns, and escrow. Manage saved cards under payment methods.
+          </p>
+        </div>
+        <Button asChild variant="outline" className="min-h-[44px] shrink-0">
+          <Link href="/settings/payment-methods">Manage payment methods</Link>
+        </Button>
       </div>
 
       <Tabs defaultValue="all">

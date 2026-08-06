@@ -193,31 +193,7 @@ struct ListingDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if auth.isAuthenticated && !auth.isScaffoldSession {
-                    Button {
-                        Task { await toggleWatch() }
-                    } label: {
-                        if isTogglingWatch {
-                            ProgressView()
-                                .tint(BrandTheme.accent)
-                        } else {
-                            Image(systemName: isWatching ? "heart.fill" : "heart")
-                                .foregroundStyle(isWatching ? BrandTheme.accent : BrandTheme.goldBright)
-                        }
-                    }
-                    .disabled(isTogglingWatch)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .accessibilityLabel(isWatching ? "Remove from watchlist" : "Add to watchlist")
-                    .accessibilityHint(
-                        isWatching
-                            ? "Stops watching this listing"
-                            : "Saves this listing to your watchlist"
-                    )
-                }
-            }
-        }
+        .toolbar { listingDetailToolbar }
         .task { await load() }
         .task(id: marketplaceSpectatorIdentity) {
             await runMarketplaceSpectatorLifecycle()
@@ -382,6 +358,7 @@ struct ListingDetailView: View {
         List {
             // Auction arena first: hero → place bid (dollars) → live ladder → soft feed.
             auctionHeroSection(listing)
+            spectateTerminalSection(listing)
             placeBidSection(listing)
             bidLadderSection(listing)
             liveFeedSection
@@ -640,6 +617,143 @@ struct ListingDetailView: View {
             return "You own this listing. Promote floats it higher on the marketplace scoreboard for a fixed fee charged to your card."
         }
         return "You own this listing. Cancel only works for draft/active auctions with no active bids."
+    }
+
+    // MARK: - Spectate terminal entry
+
+    private var spectateTerminalTarget: SpectateTerminalView.Target {
+        .listing(
+            id: listingID,
+            title: detail?.displayTitle ?? preview?.title ?? "Listing",
+            leadingCents: leadingBidCents
+                ?? detail?.currentBidCents
+                ?? detail?.startingPriceCents
+                ?? preview?.currentBidCents
+                ?? preview?.startingPriceCents,
+            endsAt: detail?.auctionEndsAt ?? preview?.auctionEndsAt
+        )
+    }
+
+    private var auctionReplayTarget: AuctionReplayView.Target {
+        .listing(
+            id: listingID,
+            title: detail?.displayTitle ?? preview?.title
+        )
+    }
+
+    @ToolbarContentBuilder
+    private var listingDetailToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            HStack(spacing: 4) {
+                NavigationLink {
+                    SpectateTerminalView(target: spectateTerminalTarget)
+                } label: {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel("Spectate terminal")
+                .accessibilityIdentifier("listingDetail.spectate")
+                .accessibilityHint("Opens the live spectator desk for this forward auction")
+
+                NavigationLink {
+                    AuctionReplayView(target: auctionReplayTarget)
+                } label: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel("Auction replay")
+                .accessibilityIdentifier("listingDetail.replay")
+                .accessibilityHint("Opens a static bid-ladder replay for this forward auction")
+
+                if auth.isAuthenticated && !auth.isScaffoldSession {
+                    Button {
+                        Task { await toggleWatch() }
+                    } label: {
+                        if isTogglingWatch {
+                            ProgressView()
+                                .tint(BrandTheme.accent)
+                        } else {
+                            Image(systemName: isWatching ? "heart.fill" : "heart")
+                                .foregroundStyle(isWatching ? BrandTheme.accent : BrandTheme.goldBright)
+                        }
+                    }
+                    .disabled(isTogglingWatch)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel(isWatching ? "Remove from watchlist" : "Add to watchlist")
+                    .accessibilityHint(
+                        isWatching
+                            ? "Stops watching this listing"
+                            : "Saves this listing to your watchlist"
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func spectateTerminalSection(_ listing: ListingDetail) -> some View {
+        Section {
+            NavigationLink {
+                SpectateTerminalView(
+                    target: .listing(
+                        id: listingID,
+                        title: listing.displayTitle,
+                        leadingCents: leadingBidCents
+                            ?? listing.currentBidCents
+                            ?? listing.startingPriceCents,
+                        endsAt: listing.auctionEndsAt
+                    )
+                )
+            } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Spectate terminal")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textPrimary)
+                        Text("Live leading price · delayed public feed")
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } icon: {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .foregroundStyle(BrandTheme.accent)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("listingDetail.spectateSection")
+            .accessibilityHint("Opens a focused live spectator desk for this auction")
+
+            NavigationLink {
+                AuctionReplayView(
+                    target: .listing(id: listingID, title: listing.displayTitle)
+                )
+            } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Auction replay")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textPrimary)
+                        Text("Static bid ladder · amount · time")
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } icon: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .foregroundStyle(BrandTheme.accent)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("listingDetail.replaySection")
+            .accessibilityHint("Opens a static bid-ladder replay for this forward auction")
+        } header: {
+            Text("Watch live").brandSectionHeader()
+        }
     }
 
     // MARK: - Auction hero (forward auction)

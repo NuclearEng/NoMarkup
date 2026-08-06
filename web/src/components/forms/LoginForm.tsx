@@ -1,8 +1,8 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
@@ -27,6 +27,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { OAuthButtons, OAuthDivider } from '@/components/auth/oauth-buttons';
 import { getApiErrorMessage } from '@/lib/api';
+import { messageForOAuthError } from '@/lib/oauth-errors';
 import { loginSchema } from '@/lib/validations';
 import { useAuthStore, MFARequiredError } from '@/stores/auth-store';
 
@@ -34,6 +35,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const login = useAuthStore((s) => s.login);
   const completeMFALogin = useAuthStore((s) => s.completeMFALogin);
   const [formError, setFormError] = useState<string | null>(null);
@@ -42,6 +44,14 @@ export function LoginForm() {
   const [totpCode, setTotpCode] = useState('');
   const [mfaSubmitting, setMfaSubmitting] = useState(false);
   const totpInputRef = useRef<HTMLInputElement>(null);
+
+  // Gateway OAuth init/callback redirects land here with ?error=<code>.
+  useEffect(() => {
+    const message = messageForOAuthError(searchParams.get('error'));
+    if (message) {
+      setFormError(message);
+    }
+  }, [searchParams]);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),

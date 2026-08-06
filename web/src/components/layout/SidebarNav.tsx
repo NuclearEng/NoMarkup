@@ -2,15 +2,20 @@
 
 import {
   Banknote,
+  BarChart3,
   Bookmark,
   Briefcase,
   Building2,
+  Calendar,
   CreditCard,
   FileText,
   Gavel,
+  Gift,
   Heart,
   Home,
+  House,
   LayoutDashboard,
+  ListOrdered,
   MessageSquare,
   Package,
   PlusCircle,
@@ -79,6 +84,7 @@ export const COMMON_NAV_ITEMS: NavItem[] = [
   { href: '/jobs/new' as Route, label: 'Post Job', icon: PlusCircle },
   { href: '/jobs' as Route, label: 'Browse Jobs', icon: Search },
   { href: '/jobs/mine' as Route, label: 'My Jobs', icon: Briefcase },
+  { href: '/jobs/recurring' as Route, label: 'Recurring Jobs', icon: Calendar },
   { href: '/contracts' as Route, label: 'Contracts', icon: FileText },
   { href: '/messages' as Route, label: 'Messages', icon: MessageSquare },
   { href: '/payments' as Route, label: 'Payments', icon: CreditCard },
@@ -86,12 +92,16 @@ export const COMMON_NAV_ITEMS: NavItem[] = [
   { href: '/marketplace' as Route, label: 'Marketplace', icon: Gavel },
   { href: '/orders' as Route, label: 'Orders', icon: Package },
   { href: '/sell/new' as Route, label: 'Sell an Item', icon: Tag },
-  // Discovery & saved
+  { href: '/sell/mine' as Route, label: 'My Listings', icon: ListOrdered },
+  // Home / properties + discovery
+  { href: '/properties' as Route, label: 'Properties', icon: House },
   { href: '/me/positions' as Route, label: 'Positions', icon: Gavel },
   { href: '/me/watchlist' as Route, label: 'Watchlist', icon: Heart },
   { href: '/me/wishlist' as Route, label: 'Wishlist', icon: Sparkles },
   { href: '/me/saved-searches' as Route, label: 'Saved Searches', icon: Bookmark },
   { href: '/me/feed' as Route, label: 'My Feed', icon: Rss },
+  { href: '/me/referrals' as Route, label: 'Referrals', icon: Gift },
+  { href: '/analytics' as Route, label: 'Analytics', icon: BarChart3 },
   // Account
   { href: '/settings/security' as Route, label: 'Settings', icon: Settings },
 ];

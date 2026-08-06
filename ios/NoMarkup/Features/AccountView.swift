@@ -275,6 +275,16 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.contracts")
 
                     NavigationLink {
+                        RecurringJobsView()
+                    } label: {
+                        Label("Recurring jobs", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Manage recurring service schedules — frequency, next visit, pause, resume, cancel")
+                    .accessibilityIdentifier("account.row.recurringJobs")
+
+                    NavigationLink {
                         MyBidsView()
                     } label: {
                         Label("My bids", systemImage: "hammer")
@@ -348,6 +358,16 @@ struct AccountView: View {
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("BNPL, insurance, advances, instant payout, expenses, and tax — full web parity")
                     .accessibilityIdentifier("account.row.businessFinance")
+
+                    NavigationLink {
+                        InsuranceQuoteFlowView()
+                    } label: {
+                        Label("Insurance quote", systemImage: "shield.lefthalf.filled")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Request a per-job insurance quote for a contract")
+                    .accessibilityIdentifier("account.row.insuranceQuote")
 
                     NavigationLink {
                         SalesExportView()

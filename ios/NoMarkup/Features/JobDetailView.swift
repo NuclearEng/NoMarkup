@@ -420,6 +420,7 @@ struct JobDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .toolbar { jobSpectateToolbar }
         .task { await load() }
         .task(id: auctionPollIdentity) {
             await pollLiveAuctionStateLoop()
@@ -430,7 +431,7 @@ struct JobDetailView: View {
         .task(id: spectatorSocketIdentity) {
             await runSpectatorSocketLifecycle()
         }
-        .task(id: "\(jobID)|ladder|\(scenePhase == .active)") {
+        .task(id: ladderPollIdentity) {
             await pollBidLadderLoop()
         }
         .onChange(of: scenePhase) { _, phase in
@@ -616,6 +617,7 @@ struct JobDetailView: View {
             } else {
                 auctionHeroSection(job)
             }
+            spectateTerminalSection(job)
             askQuestionSection
             placeBidSection(job)
             acceptOfferSection(job)
@@ -655,6 +657,78 @@ struct JobDetailView: View {
             }
         }
         .brandListBackground()
+    }
+
+    // MARK: - Spectate terminal entry
+
+    @ViewBuilder
+    private func spectateTerminalSection(_ job: JobDetail) -> some View {
+        Section {
+            NavigationLink {
+                SpectateTerminalView(
+                    target: .job(
+                        id: jobID,
+                        title: job.displayTitle,
+                        leadingCents: leadingBidCents ?? job.startingBidCents,
+                        endsAtISO: job.auctionEndsAt
+                    )
+                )
+            } label: {
+                spectateTerminalRowLabel
+            }
+            .accessibilityIdentifier("jobDetail.spectateSection")
+            .accessibilityHint("Opens a focused live spectator desk for this auction")
+
+            NavigationLink {
+                AuctionReplayView(
+                    target: .job(id: jobID, title: job.displayTitle)
+                )
+            } label: {
+                auctionReplayRowLabel
+            }
+            .accessibilityIdentifier("jobDetail.replaySection")
+            .accessibilityHint("Opens chronological auction events for this reverse auction")
+        } header: {
+            Text("Watch live").brandSectionHeader()
+        }
+    }
+
+    private var spectateTerminalRowLabel: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Spectate terminal")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                Text("Live leading price · delayed public feed")
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } icon: {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .foregroundStyle(BrandTheme.accent)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private var auctionReplayRowLabel: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Auction replay")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                Text("Chronological events · amount · type · time")
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } icon: {
+            Image(systemName: "clock.arrow.circlepath")
+                .foregroundStyle(BrandTheme.accent)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Live open-floor reverse auction (unmissable)
@@ -1216,6 +1290,55 @@ struct JobDetailView: View {
     /// Spectator path: unauth / non-participant; restarts when participant feed dies permanently.
     private var spectatorSocketIdentity: String {
         "\(jobID)|\(auth.isAuthenticated)|\(auth.isScaffoldSession)|\(auctionSocket.isPermanentlyStopped)|\(isAuctionActiveForPolling)|\(isLiveAuctionType)|\(liveAuctionStateAvailable)|\(scenePhase == .active)"
+    }
+
+    private var ladderPollIdentity: String {
+        "\(jobID)|ladder|\(scenePhase == .active)"
+    }
+
+    private var spectateTerminalTarget: SpectateTerminalView.Target {
+        .job(
+            id: jobID,
+            title: detail?.displayTitle ?? preview?.title ?? "Reverse auction",
+            leadingCents: leadingBidCents ?? detail?.startingBidCents ?? preview?.startingBidCents,
+            endsAtISO: detail?.auctionEndsAt ?? preview?.auctionEndsAt
+        )
+    }
+
+    private var auctionReplayTarget: AuctionReplayView.Target {
+        .job(
+            id: jobID,
+            title: detail?.displayTitle ?? preview?.title
+        )
+    }
+
+    @ToolbarContentBuilder
+    private var jobSpectateToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            HStack(spacing: 4) {
+                NavigationLink {
+                    SpectateTerminalView(target: spectateTerminalTarget)
+                } label: {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel("Spectate terminal")
+                .accessibilityIdentifier("jobDetail.spectate")
+                .accessibilityHint("Opens the live spectator desk for this reverse auction")
+
+                NavigationLink {
+                    AuctionReplayView(target: auctionReplayTarget)
+                } label: {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel("Auction replay")
+                .accessibilityIdentifier("jobDetail.replay")
+                .accessibilityHint("Opens chronological auction events for this reverse auction")
+            }
+        }
     }
 
     // MARK: - Bid ladder

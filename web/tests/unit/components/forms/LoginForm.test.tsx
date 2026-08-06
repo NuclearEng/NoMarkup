@@ -6,6 +6,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const pushMock = vi.fn();
 const loginMock = vi.fn();
 const completeMFAMock = vi.fn();
+let searchParamsMock = new URLSearchParams();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -14,6 +15,7 @@ vi.mock('next/navigation', () => ({
     back: vi.fn(),
     prefetch: vi.fn(),
   }),
+  useSearchParams: () => searchParamsMock,
 }));
 
 vi.mock('@/stores/auth-store', async () => {
@@ -41,6 +43,7 @@ const { MFARequiredError } = await import('@/stores/auth-store');
 describe('LoginForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    searchParamsMock = new URLSearchParams();
   });
 
   it('renders email, password and submit', () => {
@@ -48,6 +51,14 @@ describe('LoginForm', () => {
     expect(screen.getByLabelText(/Email/)).toBeDefined();
     expect(screen.getByLabelText(/Password/)).toBeDefined();
     expect(screen.getByRole('button', { name: /Sign in/ })).toBeDefined();
+  });
+
+  it('surfaces gateway OAuth error query params', async () => {
+    searchParamsMock = new URLSearchParams('error=google_not_configured');
+    render(createElement(LoginForm));
+    expect(
+      await screen.findByText(/Google sign-in is not configured/i),
+    ).toBeDefined();
   });
 
   it('shows validation errors for an invalid email', async () => {

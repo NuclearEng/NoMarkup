@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// Native create flow for goods marketplace listings (`POST /api/v1/listings`).
+/// Multi-step wizard mirrors `PostJobView` + `BrandWizardStepChrome`.
 struct CreateListingView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.dismiss) private var dismiss
@@ -22,6 +23,28 @@ struct CreateListingView: View {
     @State private var createdListing: ListingDetail?
     @State private var photoURLs: [String] = []
     @State private var isUploadingPhotos = false
+
+    /// Multi-step wizard — progressive disclosure (unicorn funnel parity with PostJob).
+    private enum WizardStep: Int, CaseIterable, Identifiable {
+        case basics = 0
+        case pricing = 1
+        case photos = 2
+        case review = 3
+        var id: Int { rawValue }
+
+        var title: String {
+            switch self {
+            case .basics: return "Basics"
+            case .pricing: return "Pricing"
+            case .photos: return "Photos"
+            case .review: return "Review"
+            }
+        }
+
+        static var labels: [String] { allCases.map(\.title) }
+    }
+
+    @State private var wizardStep: WizardStep = .basics
 
     /// Gateway CHECK: 24h, 48h, or 7d only.
     private let durationOptions = [24, 48, 168]
@@ -59,188 +82,402 @@ struct CreateListingView: View {
         .onChange(of: categoryId) { _, newValue in
             Task { await refreshFairPriceHint(categoryId: newValue) }
         }
+        .onChange(of: pickupZip) { _, _ in
+            Task { await refreshFairPriceHint(categoryId: categoryId) }
+        }
     }
 
-    // MARK: - Form
+    // MARK: - Form (4-step wizard)
 
     private var formContent: some View {
-        Form {
-            Section {
-                Text(
-                    "Local pickup only (≈25 mi). Buyers bid up in a forward auction. Escrow holds payment until pickup — no platform markup on the winning bid."
-                )
-                .font(.subheadline)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            } header: {
-                Text("How it works").brandSectionHeader()
+        VStack(spacing: 0) {
+            BrandWizardStepChrome(steps: WizardStep.labels, currentIndex: wizardStep.rawValue)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
+                .background(BrandTheme.navy)
+                .accessibilityIdentifier("createListing.wizardChrome")
+
+            Form {
+                switch wizardStep {
+                case .basics:
+                    basicsStepSections
+                case .pricing:
+                    pricingStepSections
+                case .photos:
+                    photosStepSections
+                case .review:
+                    reviewStepSections
+                }
+
+                if let errorMessage {
+                    Section {
+                        Label {
+                            Text(errorMessage)
+                                .font(.footnote)
+                                .foregroundStyle(BrandTheme.destructive)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(BrandTheme.destructive)
+                                .accessibilityHidden(true)
+                        }
+                        .accessibilityElement(children: .combine)
+                    } header: {
+                        Text("Fix to continue").brandSectionHeader()
+                    }
+                }
+
+                Section {
+                    wizardNavigationButtons
+                }
             }
+            .brandListBackground()
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .background(BrandTheme.navy.ignoresSafeArea())
+    }
 
-            Section {
-                TextField("Title", text: $title, prompt: Text("e.g. Mid-century oak dresser"))
-                    .textInputAutocapitalization(.sentences)
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Listing title")
+    // MARK: Step 1 — Basics
 
-                TextField(
-                    "Description",
-                    text: $description,
-                    prompt: Text("Condition details, dimensions, pickup notes…"),
-                    axis: .vertical
-                )
-                .lineLimit(4 ... 12)
+    @ViewBuilder
+    private var basicsStepSections: some View {
+        Section {
+            Text(
+                "Local pickup only (≈25 mi). Buyers bid up in a forward auction. Escrow holds payment until pickup — no platform markup on the winning bid."
+            )
+            .font(.subheadline)
+            .foregroundStyle(BrandTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        } header: {
+            Text("How it works").brandSectionHeader()
+        }
+
+        Section {
+            TextField("Title", text: $title, prompt: Text("e.g. Mid-century oak dresser"))
+                .textInputAutocapitalization(.sentences)
                 .foregroundStyle(BrandTheme.textPrimary)
-                .frame(minHeight: 88)
-                .accessibilityLabel("Listing description")
-            } header: {
-                Text("Item").brandSectionHeader()
-            } footer: {
-                Text("Title max 120 characters · description max 5000.")
-                    .foregroundStyle(BrandTheme.textSecondary)
-            }
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("createListing.title")
+                .accessibilityLabel("Listing title")
 
-            PhotoPickSection(
-                context: .listing,
-                maxCount: ImageUploader.maxPhotosPerForm,
-                photoURLs: $photoURLs,
-                isUploading: $isUploadingPhotos,
-                errorMessage: $errorMessage
+            TextField(
+                "Description",
+                text: $description,
+                prompt: Text("Condition details, dimensions, pickup notes…"),
+                axis: .vertical
+            )
+            .lineLimit(4 ... 12)
+            .foregroundStyle(BrandTheme.textPrimary)
+            .frame(minHeight: 88)
+            .accessibilityIdentifier("createListing.description")
+            .accessibilityLabel("Listing description")
+        } header: {
+            Text("Item").brandSectionHeader()
+        } footer: {
+            Text("Title max 120 characters · description max 5000.")
+                .foregroundStyle(BrandTheme.textSecondary)
+        }
+
+        Section {
+            Picker("Condition", selection: $condition) {
+                ForEach(ListingConditionOption.allCases) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("createListing.condition")
+
+            NavigationLink {
+                CategoryPickerView(selectedId: $categoryId, selectedName: $categoryName)
+            } label: {
+                HStack {
+                    Text("Category")
+                        .foregroundStyle(BrandTheme.textPrimary)
+                    Spacer(minLength: 8)
+                    Text(categoryName.isEmpty ? "Select…" : categoryName)
+                        .foregroundStyle(
+                            categoryName.isEmpty ? BrandTheme.textSecondary : BrandTheme.goldBright
+                        )
+                        .lineLimit(1)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("createListing.category")
+            .accessibilityLabel("Listing category")
+            .accessibilityValue(categoryName.isEmpty ? "Not selected" : categoryName)
+            .accessibilityHint("Opens the category tree picker")
+        } header: {
+            Text("Classification").brandSectionHeader()
+        } footer: {
+            Text("Pick a real category from the taxonomy tree so buyers can find the item.")
+                .foregroundStyle(BrandTheme.textSecondary)
+        }
+    }
+
+    // MARK: Step 2 — Pricing
+
+    @ViewBuilder
+    private var pricingStepSections: some View {
+        Section {
+            DollarAmountField(
+                text: $startingPriceText,
+                placeholder: "50.00",
+                accessibilityLabelText: "Starting price in dollars — forward auction floor"
             )
 
-            Section {
-                DollarAmountField(
-                    text: $startingPriceText,
-                    placeholder: "50.00",
-                    accessibilityLabelText: "Starting price in dollars — forward auction floor"
-                )
+            DollarAmountField(
+                text: $buyNowText,
+                placeholder: "Optional buy now",
+                accessibilityLabelText: "Optional buy now price in dollars"
+            )
 
-                DollarAmountField(
-                    text: $buyNowText,
-                    placeholder: "Optional buy now",
-                    accessibilityLabelText: "Optional buy now price in dollars"
-                )
-
-                TextField("Pickup ZIP", text: $pickupZip, prompt: Text("98101"))
-                    .keyboardType(.numberPad)
-                    .textContentType(.postalCode)
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Pickup ZIP code")
-                    .accessibilityHint("Required so buyers can search by distance. Must be a ZIP we cover to publish.")
-            } header: {
-                Text("Price & pickup").brandSectionHeader()
-            } footer: {
-                Text(
-                    "Starting price is the bid floor — buyers bid up. A valid covered ZIP is required to publish so the listing appears in local radius search."
-                )
-                .foregroundStyle(BrandTheme.textSecondary)
-            }
-
-            Section {
-                Picker("Condition", selection: $condition) {
-                    ForEach(ListingConditionOption.allCases) { option in
-                        Text(option.displayName).tag(option)
-                    }
-                }
+            TextField("Pickup ZIP", text: $pickupZip, prompt: Text("98101"))
+                .keyboardType(.numberPad)
+                .textContentType(.postalCode)
+                .foregroundStyle(BrandTheme.textPrimary)
                 .frame(minHeight: 44)
+                .accessibilityIdentifier("createListing.pickupZip")
+                .accessibilityLabel("Pickup ZIP code")
+                .accessibilityHint("Required so buyers can search by distance. Must be a ZIP we cover to publish.")
 
-                Picker("Auction length", selection: $durationHours) {
-                    ForEach(durationOptions, id: \.self) { hours in
-                        Text(durationLabel(hours)).tag(hours)
-                    }
+            Picker("Auction length", selection: $durationHours) {
+                ForEach(durationOptions, id: \.self) { hours in
+                    Text(durationLabel(hours)).tag(hours)
                 }
+            }
+            .frame(minHeight: 44)
+            .accessibilityLabel("Auction duration")
+
+            Toggle("Publish immediately", isOn: $publish)
                 .frame(minHeight: 44)
-
-                NavigationLink {
-                    CategoryPickerView(selectedId: $categoryId, selectedName: $categoryName)
-                } label: {
-                    HStack {
-                        Text("Category")
-                            .foregroundStyle(BrandTheme.textPrimary)
-                        Spacer(minLength: 8)
-                        Text(categoryName.isEmpty ? "Select…" : categoryName)
-                            .foregroundStyle(
-                                categoryName.isEmpty ? BrandTheme.textSecondary : BrandTheme.goldBright
-                            )
-                            .lineLimit(1)
-                    }
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Listing category")
-                .accessibilityValue(categoryName.isEmpty ? "Not selected" : categoryName)
-                .accessibilityHint("Opens the category tree picker")
-
-                Toggle("Publish immediately", isOn: $publish)
-                    .frame(minHeight: 44)
-                    .tint(BrandTheme.accent)
-            } header: {
-                Text("Listing options").brandSectionHeader()
-            } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Duration must be 24 hours, 48 hours, or 7 days. Pick a real category from the taxonomy tree.")
-                    if let fairPriceHint {
-                        Text(fairPriceHint)
-                            .foregroundStyle(BrandTheme.goldBright)
-                    }
-                }
-                .foregroundStyle(BrandTheme.textSecondary)
-            }
-
-            if let errorMessage {
-                Section {
-                    Label {
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(BrandTheme.destructive)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(BrandTheme.destructive)
-                            .accessibilityHidden(true)
-                    }
-                    .accessibilityElement(children: .combine)
-                } header: {
-                    Text("Fix to continue").brandSectionHeader()
-                }
-            }
-
-            Section {
-                Button {
-                    BrandHaptics.medium()
-                    Task { await submit() }
-                } label: {
-                    HStack(spacing: 10) {
-                        if isSubmitting {
-                            ProgressView()
-                                .tint(BrandTheme.ctaLabelOnGold)
-                                .accessibilityLabel("Listing…")
-                        }
-                        Text(isSubmitting ? "Listing…" : (publish ? "List item" : "Save draft"))
-                            .frame(maxWidth: .infinity)
-                    }
-                    .frame(minHeight: 48)
-                }
-                .glassProminentBrandCTA()
                 .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.ctaLabelOnGold)
-                .disabled(!canSubmit || isSubmitting)
-                .accessibilityHint("Creates the goods listing on the server")
-
-                Button {
-                    openWebSell()
-                } label: {
-                    Text("Open full form on web")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                .accessibilityIdentifier("createListing.publish")
+        } header: {
+            Text("Price & pickup").brandSectionHeader()
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(
+                    "Starting price is the bid floor — buyers bid up. Duration must be 24 hours, 48 hours, or 7 days. A valid covered ZIP is required to publish so the listing appears in local radius search."
+                )
+                if let fairPriceHint {
+                    Text(fairPriceHint)
+                        .foregroundStyle(BrandTheme.goldBright)
                 }
-                .buttonStyle(.plain)
             }
+            .foregroundStyle(BrandTheme.textSecondary)
         }
-        .brandListBackground()
-        .scrollDismissesKeyboard(.interactively)
+    }
+
+    // MARK: Step 3 — Photos
+
+    @ViewBuilder
+    private var photosStepSections: some View {
+        Section {
+            Text(
+                "Clear photos sell faster. First image is the cover — show condition, scale, and any wear honestly."
+            )
+            .font(.subheadline)
+            .foregroundStyle(BrandTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        } header: {
+            Text("Photos").brandSectionHeader()
+        }
+
+        PhotoPickSection(
+            context: .listing,
+            maxCount: ImageUploader.maxPhotosPerForm,
+            photoURLs: $photoURLs,
+            isUploading: $isUploadingPhotos,
+            errorMessage: $errorMessage
+        )
+    }
+
+    // MARK: Step 4 — Review
+
+    @ViewBuilder
+    private var reviewStepSections: some View {
+        Section {
+            reviewRow(label: "Title", value: title.trimmingCharacters(in: .whitespacesAndNewlines))
+            reviewRow(
+                label: "Description",
+                value: description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? "—"
+                    : String(description.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
+                        + (description.count > 120 ? "…" : "")
+            )
+            reviewRow(label: "Condition", value: condition.displayName)
+            reviewRow(label: "Category", value: categoryName.isEmpty ? "—" : categoryName)
+            if let cents = MoneyFormat.cents(fromDollarsText: startingPriceText) {
+                HStack {
+                    Text("Starting price")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                    Spacer()
+                    Text(MoneyFormat.usd(cents: cents))
+                        .font(.body.weight(.bold).monospacedDigit())
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
+                .frame(minHeight: 44)
+            }
+            if let buy = MoneyFormat.cents(fromDollarsText: buyNowText), buy > 0 {
+                HStack {
+                    Text("Buy now")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                    Spacer()
+                    Text(MoneyFormat.usd(cents: buy))
+                        .font(.body.weight(.bold).monospacedDigit())
+                        .foregroundStyle(BrandTheme.success)
+                }
+                .frame(minHeight: 44)
+            }
+            reviewRow(label: "Pickup ZIP", value: pickupZip.trimmingCharacters(in: .whitespacesAndNewlines))
+            reviewRow(label: "Duration", value: durationLabel(durationHours))
+            reviewRow(label: "Publish", value: publish ? "Immediately" : "Save as draft")
+            if !photoURLs.isEmpty {
+                reviewRow(label: "Photos", value: "\(photoURLs.count) attached")
+            } else {
+                reviewRow(label: "Photos", value: "None")
+            }
+        } header: {
+            Text("Review").brandSectionHeader()
+        } footer: {
+            Text(
+                "Buyers bid up from your start price. Escrow holds payment until local pickup — no platform markup on the winning bid."
+            )
+            .foregroundStyle(BrandTheme.textSecondary)
+        }
+    }
+
+    private func reviewRow(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .foregroundStyle(BrandTheme.textSecondary)
+            Spacer(minLength: 12)
+            Text(value.isEmpty ? "—" : value)
+                .foregroundStyle(BrandTheme.textPrimary)
+                .multilineTextAlignment(.trailing)
+        }
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Wizard nav
+
+    @ViewBuilder
+    private var wizardNavigationButtons: some View {
+        if wizardStep != .basics {
+            Button {
+                BrandHaptics.selection()
+                errorMessage = nil
+                withAnimation(.easeOut(duration: 0.2)) {
+                    wizardStep = WizardStep(rawValue: max(0, wizardStep.rawValue - 1)) ?? .basics
+                }
+            } label: {
+                Text("Back")
+                    .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .brandGhostButton()
+            .disabled(isSubmitting)
+            .accessibilityIdentifier("createListing.back")
+        }
+
+        if wizardStep != .review {
+            Button {
+                advanceWizard()
+            } label: {
+                Text("Continue")
+                    .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .brandPrimaryButton()
+            .disabled(isUploadingPhotos)
+            .accessibilityIdentifier("createListing.continue")
+            .accessibilityHint("Validates this step and continues")
+        } else {
+            Button {
+                BrandHaptics.medium()
+                Task { await submit() }
+            } label: {
+                HStack(spacing: 10) {
+                    if isSubmitting {
+                        ProgressView()
+                            .tint(BrandTheme.ctaLabelOnGold)
+                            .accessibilityLabel("Listing…")
+                    }
+                    Text(isSubmitting ? "Listing…" : (publish ? "List item" : "Save draft"))
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(minHeight: 48)
+            }
+            .glassProminentBrandCTA()
+            .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
+            .disabled(!canSubmit || isSubmitting)
+            .accessibilityIdentifier("createListing.submit")
+            .accessibilityHint("Creates the goods listing on the server")
+        }
+
+        Button {
+            openWebSell()
+        } label: {
+            Text("Open full form on web")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(BrandTheme.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func advanceWizard() {
+        errorMessage = nil
+        if let message = validationMessage(for: wizardStep) {
+            BrandHaptics.warning()
+            errorMessage = message
+            return
+        }
+        BrandHaptics.selection()
+        let next = min(WizardStep.allCases.count - 1, wizardStep.rawValue + 1)
+        withAnimation(.easeOut(duration: 0.2)) {
+            wizardStep = WizardStep(rawValue: next) ?? .review
+        }
+    }
+
+    /// Per-step gates before Continue (final submit still re-validates fully).
+    private func validationMessage(for step: WizardStep) -> String? {
+        switch step {
+        case .basics:
+            let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cat = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.isEmpty { return "Enter a title for the listing." }
+            if t.count > 120 { return "Title must be at most 120 characters." }
+            if description.count > 5000 { return "Description must be at most 5000 characters." }
+            if cat.isEmpty { return "Choose a category from the taxonomy." }
+            return nil
+        case .pricing:
+            guard MoneyFormat.cents(fromDollarsText: startingPriceText) != nil else {
+                return "Enter a valid starting price in dollars (for example 50.00)."
+            }
+            let buyNowTrimmed = buyNowText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !buyNowTrimmed.isEmpty {
+                guard let buy = MoneyFormat.cents(fromDollarsText: buyNowTrimmed) else {
+                    return "Buy now must be a valid dollar amount, or left blank."
+                }
+                if let start = MoneyFormat.cents(fromDollarsText: startingPriceText), buy < start {
+                    return "Buy now must be at least the starting price."
+                }
+            }
+            let zip = pickupZip.trimmingCharacters(in: .whitespacesAndNewlines)
+            if zip.isEmpty { return "Enter a pickup ZIP code." }
+            if !durationOptions.contains(durationHours) {
+                return "Auction duration must be 24, 48, or 168 hours."
+            }
+            return nil
+        case .photos:
+            if isUploadingPhotos { return "Wait for photo uploads to finish." }
+            return nil
+        case .review:
+            return nil
+        }
     }
 
     // MARK: - Success

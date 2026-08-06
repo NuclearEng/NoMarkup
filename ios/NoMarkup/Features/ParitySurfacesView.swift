@@ -778,8 +778,8 @@ struct MarketplaceMapView: View {
 
 // MARK: - Admin console (web `/admin/*`)
 
-/// Read-only admin desk: flags, disputes, users, reports, fraud.
-/// Requires admin role server-side; non-admins get an empty/403 state.
+/// Admin desk: flags (toggle + rollout), disputes (resolve), users, reports, fraud (review).
+/// Requires admin role server-side; non-admins get an empty/403 state (never crashes).
 struct AdminConsoleView: View {
     private enum SectionTab: String, CaseIterable, Identifiable {
         case flags = "Flags"
@@ -792,7 +792,42 @@ struct AdminConsoleView: View {
         var id: String { rawValue }
     }
 
+    private enum FraudReviewAction: String, Identifiable {
+        case legitimate = "resolved_legitimate"
+        case fraud = "resolved_fraud"
+        case dismiss = "dismissed"
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .legitimate: return "Legitimate"
+            case .fraud: return "Confirm fraud"
+            case .dismiss: return "Dismiss"
+            }
+        }
+    }
+
+    private enum DisputeResolveAction: String, Identifiable {
+        case favorCustomer = "favor_customer"
+        case favorProvider = "favor_provider"
+        case split = "split"
+        case dismissed = "dismissed"
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .favorCustomer: return "Favor customer"
+            case .favorProvider: return "Favor provider"
+            case .split: return "Split"
+            case .dismissed: return "Dismiss"
+            }
+        }
+    }
+
     @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.openURL) private var openURL
     @State private var tab: SectionTab = .flags
     @State private var flags: [AdminFeatureFlag] = []
     @State private var disputes: [AdminDisputeRow] = []
@@ -802,7 +837,22 @@ struct AdminConsoleView: View {
     @State private var fraudAlerts: [AdminFraudAlert] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var actionMessage: String?
     @State private var forbidden = false
+    /// Flag keys currently being mutated (toggle or rollout save).
+    @State private var busyFlagKeys: Set<String> = []
+    /// Draft rollout % keyed by flag key (string so TextField stays editable).
+    @State private var rolloutDrafts: [String: String] = [:]
+    @State private var busyFraudIDs: Set<String> = []
+    @State private var fraudReviewTarget: AdminFraudAlert?
+    @State private var fraudReviewNotes = ""
+    @State private var fraudReviewAction: FraudReviewAction = .legitimate
+    @State private var showFraudReviewSheet = false
+    @State private var busyDisputeIDs: Set<String> = []
+    @State private var disputeResolveTarget: AdminDisputeRow?
+    @State private var disputeResolveNotes = ""
+    @State private var disputeResolveAction: DisputeResolveAction = .favorCustomer
+    @State private var showDisputeResolveSheet = false
 
     var body: some View {
         Group {
@@ -831,51 +881,20 @@ struct AdminConsoleView: View {
                 }
             } else {
                 List {
-                    switch tab {
-                    case .flags:
-                        ForEach(flags) { flag in
-                            HStack(alignment: .top, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(flag.displayTitle)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(BrandTheme.textPrimary)
-                                    Text(flag.key)
-                                        .font(.caption2.monospaced())
-                                        .foregroundStyle(BrandTheme.textSecondary)
-                                    if let pct = flag.rolloutPercent {
-                                        Text("Rollout \(pct)%")
-                                            .font(.caption)
-                                            .foregroundStyle(BrandTheme.textSecondary)
-                                    }
-                                }
-                                Spacer()
-                                Text(flag.isOn ? "ON" : "OFF")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(flag.isOn ? BrandTheme.success : BrandTheme.textSecondary)
-                            }
-                            .listRowBackground(BrandTheme.navyElevated)
-                            .frame(minHeight: 44)
-                        }
-                    case .disputes:
-                        if disputes.isEmpty {
-                            Text("No open disputes.")
+                    if let actionMessage {
+                        Section {
+                            Text(actionMessage)
+                                .font(.caption)
                                 .foregroundStyle(BrandTheme.textSecondary)
                                 .listRowBackground(BrandTheme.navyElevated)
-                        } else {
-                            ForEach(disputes) { d in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(d.status ?? "unknown")
-                                        .font(.subheadline.weight(.semibold))
-                                    if let t = d.disputeType {
-                                        Text(t).font(.caption).foregroundStyle(BrandTheme.textSecondary)
-                                    }
-                                    Text(String(d.id.prefix(8)) + "…")
-                                        .font(.caption2.monospaced())
-                                        .foregroundStyle(BrandTheme.textSecondary)
-                                }
-                                .listRowBackground(BrandTheme.navyElevated)
-                            }
+                                .accessibilityIdentifier("admin.console.actionMessage")
                         }
+                    }
+                    switch tab {
+                    case .flags:
+                        flagRows
+                    case .disputes:
+                        disputeRows
                     case .users:
                         ForEach(users) { u in
                             VStack(alignment: .leading, spacing: 4) {
@@ -895,24 +914,7 @@ struct AdminConsoleView: View {
                     case .userReports:
                         reportRows(userReports)
                     case .fraud:
-                        if fraudAlerts.isEmpty {
-                            Text("No fraud alerts.")
-                                .foregroundStyle(BrandTheme.textSecondary)
-                                .listRowBackground(BrandTheme.navyElevated)
-                        } else {
-                            ForEach(fraudAlerts) { a in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(a.severity ?? a.status ?? "alert")
-                                        .font(.subheadline.weight(.semibold))
-                                    if let s = a.summary {
-                                        Text(s)
-                                            .font(.caption)
-                                            .foregroundStyle(BrandTheme.textSecondary)
-                                    }
-                                }
-                                .listRowBackground(BrandTheme.navyElevated)
-                            }
-                        }
+                        fraudRows
                     }
                 }
                 .brandListBackground()
@@ -954,9 +956,292 @@ struct AdminConsoleView: View {
                 .accessibilityIdentifier("admin.console.tabs")
             }
         }
+        .sheet(isPresented: $showFraudReviewSheet) {
+            fraudReviewSheet
+        }
+        .sheet(isPresented: $showDisputeResolveSheet) {
+            disputeResolveSheet
+        }
         .task(id: tab) { await load() }
         .refreshable { await load() }
         .accessibilityIdentifier("admin.console.root")
+    }
+
+    // MARK: - Flag rows
+
+    @ViewBuilder
+    private var flagRows: some View {
+        if flags.isEmpty {
+            Text("No feature flags.")
+                .foregroundStyle(BrandTheme.textSecondary)
+                .listRowBackground(BrandTheme.navyElevated)
+        } else {
+            ForEach(flags) { flag in
+                let busy = busyFlagKeys.contains(flag.key)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(flag.displayTitle)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                            Text(flag.key)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(BrandTheme.textSecondary)
+                            if flag.isBinaryOnly {
+                                Text("Binary only (money/regulated)")
+                                    .font(.caption2)
+                                    .foregroundStyle(BrandTheme.warning)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        Toggle(
+                            "",
+                            isOn: Binding(
+                                get: { flag.isOn },
+                                set: { newValue in
+                                    Task { await toggleFlag(flag, enabled: newValue) }
+                                }
+                            )
+                        )
+                        .labelsHidden()
+                        .disabled(busy)
+                        .accessibilityLabel("Enable \(flag.key)")
+                        .accessibilityIdentifier("admin.flag.toggle.\(flag.key)")
+                    }
+                    if !flag.isBinaryOnly {
+                        HStack(spacing: 8) {
+                            Text("Rollout %")
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                            TextField(
+                                "0–100",
+                                text: Binding(
+                                    get: {
+                                        rolloutDrafts[flag.key]
+                                            ?? String(flag.rolloutPercent ?? 100)
+                                    },
+                                    set: { rolloutDrafts[flag.key] = $0 }
+                                )
+                            )
+                            #if os(iOS)
+                            .keyboardType(.numberPad)
+                            #endif
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 72)
+                            .disabled(busy)
+                            .accessibilityIdentifier("admin.flag.rollout.\(flag.key)")
+                            Button("Save") {
+                                Task { await saveFlagRollout(flag) }
+                            }
+                            .font(.caption.weight(.semibold))
+                            .disabled(busy || !rolloutDraftChanged(flag))
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("admin.flag.saveRollout.\(flag.key)")
+                            if busy {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                        }
+                    } else if busy {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+                .frame(minHeight: 44)
+            }
+        }
+    }
+
+    // MARK: - Dispute rows
+
+    @ViewBuilder
+    private var disputeRows: some View {
+        if disputes.isEmpty {
+            Text("No open disputes.")
+                .foregroundStyle(BrandTheme.textSecondary)
+                .listRowBackground(BrandTheme.navyElevated)
+        } else {
+            ForEach(disputes) { d in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(d.status ?? "unknown")
+                                .font(.subheadline.weight(.semibold))
+                            if let t = d.disputeType {
+                                Text(t).font(.caption).foregroundStyle(BrandTheme.textSecondary)
+                            }
+                            Text(String(d.id.prefix(8)) + "…")
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                        Spacer(minLength: 8)
+                        if d.isOpenForResolution {
+                            Button("Resolve") {
+                                disputeResolveTarget = d
+                                disputeResolveNotes = ""
+                                disputeResolveAction = .favorCustomer
+                                showDisputeResolveSheet = true
+                            }
+                            .font(.caption.weight(.semibold))
+                            .disabled(busyDisputeIDs.contains(d.id))
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("admin.dispute.resolve.\(d.id)")
+                        }
+                    }
+                    Button {
+                        openDisputeOnWeb(d.id)
+                    } label: {
+                        Label("Open on web", systemImage: "safari")
+                            .font(.caption)
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("admin.dispute.web.\(d.id)")
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+            }
+        }
+    }
+
+    // MARK: - Fraud rows
+
+    @ViewBuilder
+    private var fraudRows: some View {
+        if fraudAlerts.isEmpty {
+            Text("No fraud alerts.")
+                .foregroundStyle(BrandTheme.textSecondary)
+                .listRowBackground(BrandTheme.navyElevated)
+        } else {
+            ForEach(fraudAlerts) { a in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(a.displayRisk.uppercased())
+                                .font(.subheadline.weight(.semibold))
+                            Text(a.status ?? "open")
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                            if let uid = a.userId, !uid.isEmpty {
+                                Text("User \(String(uid.prefix(8)))…")
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                            if let s = a.summary, !s.isEmpty {
+                                Text(s)
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        if !a.isResolved {
+                            Button("Review") {
+                                fraudReviewTarget = a
+                                fraudReviewNotes = ""
+                                fraudReviewAction = .legitimate
+                                showFraudReviewSheet = true
+                            }
+                            .font(.caption.weight(.semibold))
+                            .disabled(busyFraudIDs.contains(a.id))
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("admin.fraud.review.\(a.id)")
+                        }
+                    }
+                    if busyFraudIDs.contains(a.id) {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+            }
+        }
+    }
+
+    // MARK: - Sheets
+
+    private var fraudReviewSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Outcome", selection: $fraudReviewAction) {
+                        ForEach([FraudReviewAction.legitimate, .fraud, .dismiss]) { action in
+                            Text(action.label).tag(action)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    TextField("Resolution notes", text: $fraudReviewNotes, axis: .vertical)
+                        .lineLimit(3 ... 6)
+                        .accessibilityIdentifier("admin.fraud.notes")
+                } footer: {
+                    Text("Maps to POST /admin/fraud/alerts/{id}/review. Does not ban the user from this sheet.")
+                }
+            }
+            .navigationTitle("Review alert")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showFraudReviewSheet = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Submit") {
+                        Task { await submitFraudReview() }
+                    }
+                    .disabled(fraudReviewTarget == nil || busyFraudIDs.contains(fraudReviewTarget?.id ?? ""))
+                    .accessibilityIdentifier("admin.fraud.submit")
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private var disputeResolveSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Resolution", selection: $disputeResolveAction) {
+                        ForEach([
+                            DisputeResolveAction.favorCustomer,
+                            .favorProvider,
+                            .split,
+                            .dismissed,
+                        ]) { action in
+                            Text(action.label).tag(action)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    TextField("Resolution notes", text: $disputeResolveNotes, axis: .vertical)
+                        .lineLimit(3 ... 6)
+                        .accessibilityIdentifier("admin.dispute.notes")
+                } footer: {
+                    Text("POST /admin/disputes/{id}/resolve. Refund amount is not set here — use web for refund cents / guarantee payouts.")
+                }
+            }
+            .navigationTitle("Resolve dispute")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showDisputeResolveSheet = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Resolve") {
+                        Task { await submitDisputeResolve() }
+                    }
+                    .disabled(
+                        disputeResolveTarget == nil
+                            || busyDisputeIDs.contains(disputeResolveTarget?.id ?? "")
+                    )
+                    .accessibilityIdentifier("admin.dispute.submit")
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     private var isEmpty: Bool {
@@ -992,6 +1277,153 @@ struct AdminConsoleView: View {
         }
     }
 
+    // MARK: - Mutations
+
+    private func rolloutDraftChanged(_ flag: AdminFeatureFlag) -> Bool {
+        let draft = (rolloutDrafts[flag.key] ?? String(flag.rolloutPercent ?? 100))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Int(draft) else { return false }
+        return value != (flag.rolloutPercent ?? 100)
+    }
+
+    @MainActor
+    private func toggleFlag(_ flag: AdminFeatureFlag, enabled: Bool) async {
+        guard !busyFlagKeys.contains(flag.key) else { return }
+        busyFlagKeys.insert(flag.key)
+        defer { busyFlagKeys.remove(flag.key) }
+        do {
+            let updated = try await APIClient.shared.updateAdminFlag(
+                key: flag.key,
+                enabled: enabled
+            )
+            if let idx = flags.firstIndex(where: { $0.key == flag.key }) {
+                flags[idx].enabled = updated.enabled ?? enabled
+                if let pct = updated.rolloutPercent {
+                    flags[idx].rolloutPercent = pct
+                    rolloutDrafts[flag.key] = String(pct)
+                }
+                if let binary = updated.binaryOnly {
+                    flags[idx].binaryOnly = binary
+                }
+            }
+            actionMessage = "Flag \(flag.key) \(enabled ? "enabled" : "disabled")."
+            BrandHaptics.success()
+        } catch let error as APIClientError where error.isForbidden {
+            forbidden = true
+            BrandHaptics.error()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+            // Reload so Toggle snaps back to server truth.
+            await load()
+        }
+    }
+
+    @MainActor
+    private func saveFlagRollout(_ flag: AdminFeatureFlag) async {
+        guard !busyFlagKeys.contains(flag.key) else { return }
+        let draft = (rolloutDrafts[flag.key] ?? String(flag.rolloutPercent ?? 100))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let pct = Int(draft), pct >= 0, pct <= 100 else {
+            actionMessage = "Rollout percent must be an integer 0–100."
+            BrandHaptics.warning()
+            return
+        }
+        if flag.isBinaryOnly, pct != 0, pct != 100 {
+            actionMessage = "Money/regulated flags require rollout 0 or 100."
+            BrandHaptics.warning()
+            return
+        }
+        busyFlagKeys.insert(flag.key)
+        defer { busyFlagKeys.remove(flag.key) }
+        do {
+            let updated = try await APIClient.shared.updateAdminFlag(
+                key: flag.key,
+                enabled: flag.isOn,
+                rolloutPercent: pct
+            )
+            if let idx = flags.firstIndex(where: { $0.key == flag.key }) {
+                flags[idx].enabled = updated.enabled ?? flag.isOn
+                flags[idx].rolloutPercent = updated.rolloutPercent ?? pct
+                rolloutDrafts[flag.key] = String(flags[idx].rolloutPercent ?? pct)
+            }
+            actionMessage = "Rollout for \(flag.key) set to \(pct)%."
+            BrandHaptics.success()
+        } catch let error as APIClientError where error.isForbidden {
+            forbidden = true
+            BrandHaptics.error()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
+    }
+
+    @MainActor
+    private func submitFraudReview() async {
+        guard let target = fraudReviewTarget else { return }
+        guard !busyFraudIDs.contains(target.id) else { return }
+        busyFraudIDs.insert(target.id)
+        defer { busyFraudIDs.remove(target.id) }
+        do {
+            let updated = try await APIClient.shared.reviewAdminFraudAlert(
+                id: target.id,
+                status: fraudReviewAction.rawValue,
+                resolutionNotes: fraudReviewNotes
+            )
+            if let idx = fraudAlerts.firstIndex(where: { $0.id == target.id }) {
+                fraudAlerts[idx] = updated
+            }
+            showFraudReviewSheet = false
+            fraudReviewTarget = nil
+            actionMessage = "Fraud alert reviewed (\(fraudReviewAction.label.lowercased()))."
+            BrandHaptics.success()
+        } catch let error as APIClientError where error.isForbidden {
+            showFraudReviewSheet = false
+            forbidden = true
+            BrandHaptics.error()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
+    }
+
+    @MainActor
+    private func submitDisputeResolve() async {
+        guard let target = disputeResolveTarget else { return }
+        guard !busyDisputeIDs.contains(target.id) else { return }
+        busyDisputeIDs.insert(target.id)
+        defer { busyDisputeIDs.remove(target.id) }
+        do {
+            let updated = try await APIClient.shared.resolveAdminDispute(
+                id: target.id,
+                resolutionType: disputeResolveAction.rawValue,
+                resolutionNotes: disputeResolveNotes
+            )
+            if let idx = disputes.firstIndex(where: { $0.id == target.id }) {
+                disputes[idx] = updated
+            }
+            showDisputeResolveSheet = false
+            disputeResolveTarget = nil
+            actionMessage = "Dispute resolved (\(disputeResolveAction.label.lowercased()))."
+            BrandHaptics.success()
+        } catch let error as APIClientError where error.isForbidden {
+            showDisputeResolveSheet = false
+            forbidden = true
+            BrandHaptics.error()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
+    }
+
+    private func openDisputeOnWeb(_ id: String) {
+        let url = AppConfig.publicWebBaseURL
+            .appending(path: "admin")
+            .appending(path: "disputes")
+            .appending(path: id)
+        openURL(url)
+    }
+
     @MainActor
     private func load() async {
         guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
@@ -1000,7 +1432,11 @@ struct AdminConsoleView: View {
         do {
             switch tab {
             case .flags:
-                flags = try await APIClient.shared.fetchAdminFlags()
+                let loaded = try await APIClient.shared.fetchAdminFlags()
+                flags = loaded
+                for flag in loaded where rolloutDrafts[flag.key] == nil {
+                    rolloutDrafts[flag.key] = String(flag.rolloutPercent ?? 100)
+                }
             case .disputes:
                 disputes = try await APIClient.shared.fetchAdminDisputes().disputes
             case .users:

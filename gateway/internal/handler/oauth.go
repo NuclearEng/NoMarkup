@@ -93,7 +93,15 @@ func generateOAuthState() (string, error) {
 }
 
 // InitGoogleOAuth redirects the user to Google's OAuth consent page.
+// When GOOGLE_CLIENT_ID is unset we redirect to /login?error=google_not_configured
+// rather than sending the browser to Google with an empty client_id (which
+// surfaces Google's "Missing required parameter: client_id" 400 page).
 func (h *OAuthHandler) InitGoogleOAuth(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID")) == "" {
+		http.Redirect(w, r, h.frontendURL+"/login?error=google_not_configured", http.StatusTemporaryRedirect)
+		return
+	}
+
 	state, err := generateOAuthState()
 	if err != nil {
 		slog.Error("failed to generate oauth state", "error", err)
@@ -238,7 +246,14 @@ func (h *OAuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Reques
 }
 
 // InitAppleOAuth redirects the user to Apple's OAuth consent page.
+// When APPLE_CLIENT_ID is unset we redirect to /login?error=apple_not_configured
+// rather than sending the browser to Apple with an empty client_id.
 func (h *OAuthHandler) InitAppleOAuth(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(os.Getenv("APPLE_CLIENT_ID")) == "" {
+		http.Redirect(w, r, h.frontendURL+"/login?error=apple_not_configured", http.StatusTemporaryRedirect)
+		return
+	}
+
 	state, err := generateOAuthState()
 	if err != nil {
 		slog.Error("failed to generate oauth state", "error", err)

@@ -119,8 +119,8 @@ export default function PositionsPage() {
             <Gavel className="h-4 w-4 text-brand-gold" aria-hidden="true" />
             My goods bids
           </h2>
-          <Button variant="outline" size="sm" className="min-h-[36px]" asChild>
-            <Link href={'/bids' as Route}>Goods bids</Link>
+          <Button variant="outline" size="sm" className="min-h-[44px]" asChild>
+            <Link href={'/marketplace' as Route}>Marketplace</Link>
           </Button>
         </div>
         {myListingBids.isLoading ? (

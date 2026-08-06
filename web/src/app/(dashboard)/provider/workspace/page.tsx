@@ -371,7 +371,7 @@ export default function ProviderWorkspacePage() {
                 <div key={group.dateKey} className="space-y-3">
                   <h3 className="text-sm font-semibold text-zinc-400">{group.label}</h3>
                   {group.items.map((contract) => (
-                    <JobCard key={contract.id} contract={contract} showWorkSession={false} />
+                    <JobCard key={contract.id} contract={contract} showWorkSession />
                   ))}
                 </div>
               ))}

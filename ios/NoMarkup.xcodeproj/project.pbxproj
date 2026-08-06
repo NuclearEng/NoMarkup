@@ -23,11 +23,15 @@
 		A100000000000000000000BD2 /* EmployeesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD2 /* EmployeesView.swift */; };
 		A100000000000000000000BD3 /* ChallengesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD3 /* ChallengesView.swift */; };
 		A100000000000000000000BD4 /* LegalServicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD4 /* LegalServicesView.swift */; };
+		A100000000000000000000BD5 /* SpectateTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD5 /* SpectateTerminalView.swift */; };
+		A100000000000000000000BD6 /* AuctionReplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD6 /* AuctionReplayView.swift */; };
+		A100000000000000000000BD7 /* ProviderInvoicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD7 /* ProviderInvoicesView.swift */; };
 		A100000000000000000000B2 /* PropertyDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B2 /* PropertyDetailView.swift */; };
 		A100000000000000000000B3 /* OnboardingWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B3 /* OnboardingWizardView.swift */; };
 		A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AE /* BusinessFeaturesHubView.swift */; };
 		A100000000000000000000E9 /* ParitySurfacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000E9 /* ParitySurfacesView.swift */; };
 		A100000000000000000000EA /* APIClient+Admin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000EA /* APIClient+Admin.swift */; };
+		A100000000000000000000EB /* RecurringJobsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000EB /* RecurringJobsView.swift */; };
 		A100000000000000000000AD /* Models+RegulatedRails.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AD /* Models+RegulatedRails.swift */; };
 		A100000000000000000000AC /* APIClient+RegulatedRails.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AC /* APIClient+RegulatedRails.swift */; };
 		A100000000000000000000AB /* CameraImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AB /* CameraImagePicker.swift */; };
@@ -177,9 +181,13 @@
 		B100000000000000000000BD2 /* EmployeesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmployeesView.swift; sourceTree = "<group>"; };
 		B100000000000000000000BD3 /* ChallengesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengesView.swift; sourceTree = "<group>"; };
 		B100000000000000000000BD4 /* LegalServicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalServicesView.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD5 /* SpectateTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectateTerminalView.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD6 /* AuctionReplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuctionReplayView.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD7 /* ProviderInvoicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderInvoicesView.swift; sourceTree = "<group>"; };
 		B100000000000000000000AE /* BusinessFeaturesHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessFeaturesHubView.swift; sourceTree = "<group>"; };
 		B100000000000000000000E9 /* ParitySurfacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParitySurfacesView.swift; sourceTree = "<group>"; };
 		B100000000000000000000EA /* APIClient+Admin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Admin.swift"; sourceTree = "<group>"; };
+		B100000000000000000000EB /* RecurringJobsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringJobsView.swift; sourceTree = "<group>"; };
 		B100000000000000000000AD /* Models+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+RegulatedRails.swift"; sourceTree = "<group>"; };
 		B100000000000000000000AC /* APIClient+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+RegulatedRails.swift"; sourceTree = "<group>"; };
 		B100000000000000000000AB /* CameraImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraImagePicker.swift; sourceTree = "<group>"; };
@@ -594,6 +602,7 @@
 				B10000000000000000000064 /* SellerPayoutsView.swift */,
 				B10000000000000000000022 /* MyOrdersView.swift */,
 				B10000000000000000000032 /* ContractsView.swift */,
+				B100000000000000000000EB /* RecurringJobsView.swift */,
 				B10000000000000000000033 /* ContractDetailView.swift */,
 				B10000000000000000000026 /* MyBidsView.swift */,
 				B10000000000000000000043 /* MyListingsView.swift */,
@@ -615,6 +624,7 @@
 				B100000000000000000000A3 /* PlanLimitsView.swift */,
 				B100000000000000000000AA /* RegulatedRailsStatusView.swift */,
 				B100000000000000000000AE /* BusinessFeaturesHubView.swift */,
+				B100000000000000000000BD7 /* ProviderInvoicesView.swift */,
 				B100000000000000000000E9 /* ParitySurfacesView.swift */,
 				B100000000000000000000A4 /* TermsAcceptanceView.swift */,
 				B10000000000000000000027 /* NotificationsView.swift */,
@@ -627,6 +637,8 @@
 				B100000000000000000000BD2 /* EmployeesView.swift */,
 				B100000000000000000000BD3 /* ChallengesView.swift */,
 				B100000000000000000000BD4 /* LegalServicesView.swift */,
+				B100000000000000000000BD5 /* SpectateTerminalView.swift */,
+				B100000000000000000000BD6 /* AuctionReplayView.swift */,
 				B100000000000000000000A8 /* VerificationDocumentsView.swift */,
 				B1000000000000000000000E /* LegalWebView.swift */,
 				B1000000000000000000000F /* AccountDeletionView.swift */,
@@ -884,6 +896,8 @@
 				A100000000000000000000BD2 /* EmployeesView.swift in Sources */,
 				A100000000000000000000BD3 /* ChallengesView.swift in Sources */,
 				A100000000000000000000BD4 /* LegalServicesView.swift in Sources */,
+				A100000000000000000000BD5 /* SpectateTerminalView.swift in Sources */,
+				A100000000000000000000BD6 /* AuctionReplayView.swift in Sources */,
 				A10000000000000000000008 /* RootTabView.swift in Sources */,
 				A10000000000000000000009 /* HomeView.swift in Sources */,
 				A1000000000000000000000A /* MarketplaceView.swift in Sources */,
@@ -916,6 +930,7 @@
 				A10000000000000000000030 /* Models+Contracts.swift in Sources */,
 				A10000000000000000000031 /* APIClient+Contracts.swift in Sources */,
 				A10000000000000000000032 /* ContractsView.swift in Sources */,
+				A100000000000000000000EB /* RecurringJobsView.swift in Sources */,
 				A10000000000000000000033 /* ContractDetailView.swift in Sources */,
 				A10000000000000000000050 /* APIClient+Platform.swift in Sources */,
 				A10000000000000000000058 /* APIClient+Jobs.swift in Sources */,
@@ -944,6 +959,7 @@
 				A100000000000000000000A3 /* PlanLimitsView.swift in Sources */,
 				A100000000000000000000AA /* RegulatedRailsStatusView.swift in Sources */,
 				A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */,
+				A100000000000000000000BD7 /* ProviderInvoicesView.swift in Sources */,
 				A100000000000000000000E9 /* ParitySurfacesView.swift in Sources */,
 				A100000000000000000000EA /* APIClient+Admin.swift in Sources */,
 				A100000000000000000000AF /* DirectionsHelper.swift in Sources */,

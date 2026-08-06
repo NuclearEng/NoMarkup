@@ -130,6 +130,10 @@ struct OnboardingWizardView: View {
     private var wizardContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                BrandWizardStepChrome(
+                    steps: Step.allCases.filter { $0 != .done }.map(\.title),
+                    currentIndex: min(step.rawValue, Step.provider.rawValue)
+                )
                 progressHeader
                 stepBody
                 if let statusMessage {
@@ -382,38 +386,80 @@ struct OnboardingWizardView: View {
     }
 
     private var doneStep: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Setup complete", systemImage: "checkmark.circle.fill")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(BrandTheme.success)
-            if let name = profile?.displayName, !name.isEmpty {
-                Text("Signed in as \(name)")
-                    .font(.subheadline)
-                    .foregroundStyle(BrandTheme.textPrimary)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Setup complete", systemImage: "checkmark.circle.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(BrandTheme.success)
+                if let name = profile?.displayName, !name.isEmpty {
+                    Text("Signed in as \(name)")
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textPrimary)
+                }
+                if let phoneValue = profile?.phone, !phoneValue.isEmpty {
+                    Text("Phone on file: \(phoneValue)")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                if profile?.hasProviderRole == true {
+                    Text("Provider role: enabled")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                if let nickname = propertySavedNickname {
+                    Text("Service address: \(nickname)")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
             }
-            if let phoneValue = profile?.phone, !phoneValue.isEmpty {
-                Text("Phone on file: \(phoneValue)")
-                    .font(.caption)
-                    .foregroundStyle(BrandTheme.textSecondary)
-            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(BrandTheme.navyElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(BrandTheme.success.opacity(0.35), lineWidth: 1)
+            )
+
+            // Provider-deep setup shortcuts (web onboarding parity lite).
             if profile?.hasProviderRole == true {
-                Text("Provider role: enabled")
-                    .font(.caption)
-                    .foregroundStyle(BrandTheme.textSecondary)
-            }
-            if let nickname = propertySavedNickname {
-                Text("Service address: \(nickname)")
-                    .font(.caption)
-                    .foregroundStyle(BrandTheme.textSecondary)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Finish provider setup")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(BrandTheme.sectionHeader)
+
+                    NavigationLink {
+                        ProviderWorkspaceView()
+                    } label: {
+                        Label("Provider workspace", systemImage: "hammer.fill")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(minHeight: 44)
+                    }
+                    .accessibilityHint("Categories, license, bio, Instant availability, and portfolio")
+
+                    NavigationLink {
+                        VerificationDocumentsView()
+                    } label: {
+                        Label("Verification documents", systemImage: "checkmark.shield")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(minHeight: 44)
+                    }
+                    .accessibilityHint("Upload ID, insurance, or trade license photos")
+
+                    NavigationLink {
+                        SellerPayoutsView()
+                    } label: {
+                        Label("Stripe Connect payouts", systemImage: "banknote")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(minHeight: 44)
+                    }
+                    .accessibilityHint("Connect Stripe so escrow can pay out to your bank")
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(BrandTheme.navyElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .brandHairlineBorder(cornerRadius: 16)
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(BrandTheme.navyElevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(BrandTheme.success.opacity(0.35), lineWidth: 1)
-        )
     }
 
     @ViewBuilder

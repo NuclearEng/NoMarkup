@@ -105,6 +105,15 @@ function ResolveForm({ dispute }: ResolveFormProps) {
       }
     }
 
+    const label = RESOLUTION_LABELS[resolution];
+    if (
+      !window.confirm(
+        `Resolve this goods dispute with “${label}”? This can move money and cannot be undone from this screen.`,
+      )
+    ) {
+      return;
+    }
+
     resolve.mutate(
       {
         disputeId: dispute.id,

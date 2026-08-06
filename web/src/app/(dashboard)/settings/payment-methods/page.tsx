@@ -4,12 +4,12 @@ import { CreditCard, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { AddPaymentMethodForm } from '@/components/payments/AddPaymentMethodForm';
+import { StripeOnboarding } from '@/components/payments/StripeOnboarding';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  useCreateStripeAccount,
   useDeletePaymentMethod,
   usePaymentMethods,
   useStripeAccountStatus,
@@ -29,7 +29,6 @@ export default function PaymentMethodsPage() {
   const { data: methodsData, isLoading, isError } = usePaymentMethods();
   const deleteMethod = useDeletePaymentMethod();
   const stripeStatus = useStripeAccountStatus({ enabled: isProvider });
-  const createStripeAccount = useCreateStripeAccount();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
 
@@ -176,68 +175,22 @@ export default function PaymentMethodsPage() {
           have a payout account, so the section is hidden for them entirely and
           the provider-only status endpoint is never called (no 403). */}
       {isProvider ? (
-      <>
-      <div className="glass-divider" role="separator" />
-
-      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
-        <CardHeader>
-          <CardTitle className="gold-text text-lg">Provider Payouts</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {stripeStatus.isLoading ? (
-            <Skeleton className="h-16 w-full rounded-lg" />
-          ) : stripeStatus.isError ? (
+        <>
+          <div className="glass-divider" role="separator" />
+          <div className="space-y-2">
+            <h2 className="gold-text text-lg font-semibold">Provider Payouts</h2>
             <p className="text-sm text-zinc-300">
-              Payout settings are only available for provider accounts.
+              Connect or resume Stripe Connect so you can receive payouts for completed jobs.
             </p>
-          ) : stripeStatus.data ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">Account Status:</span>
-                <Badge
-                  variant={
-                    stripeStatus.data.charges_enabled
-                      ? 'default'
-                      : 'secondary'
-                  }
-                >
-                  {stripeStatus.data.charges_enabled
-                    ? 'Active'
-                    : 'Setup Required'}
-                </Badge>
-              </div>
-              {!stripeStatus.data.charges_enabled ? (
-                <p className="text-sm text-zinc-300">
-                  Complete your Stripe account setup to receive payouts for
-                  completed jobs.
-                </p>
-              ) : (
-                <p className="text-sm text-zinc-300">
-                  Your Stripe account is connected and ready to receive payouts.
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-sm text-zinc-300">
-                Connect a Stripe account to receive payouts for completed jobs.
+            {/* Full onboarding surface (create + embedded resume) — not create-only. */}
+            <StripeOnboarding />
+            {stripeStatus.isError ? (
+              <p className="text-sm text-zinc-400">
+                Could not load Connect status. Try again from the card above.
               </p>
-              <Button
-                className="min-h-[44px]"
-                onClick={() => {
-                  void createStripeAccount.mutateAsync();
-                }}
-                disabled={createStripeAccount.isPending}
-              >
-                {createStripeAccount.isPending
-                  ? 'Setting up...'
-                  : 'Set Up Payouts'}
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      </>
+            ) : null}
+          </div>
+        </>
       ) : null}
     </div>
   );

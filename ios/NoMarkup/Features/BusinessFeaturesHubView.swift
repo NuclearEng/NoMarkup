@@ -56,6 +56,15 @@ struct BusinessFeaturesHubView: View {
                 .frame(minHeight: 44)
 
                 NavigationLink {
+                    ProviderInvoicesView()
+                } label: {
+                    Label("Invoices", systemImage: "doc.plaintext")
+                }
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("business.row.invoices")
+                .accessibilityHint("View and share invoices for completed contracts")
+
+                NavigationLink {
                     TaxCenterView()
                 } label: {
                     Label("Tax center", systemImage: "doc.richtext")
@@ -66,6 +75,16 @@ struct BusinessFeaturesHubView: View {
             }
 
             Section {
+                NavigationLink {
+                    InsuranceQuoteFlowView()
+                } label: {
+                    Label("Insurance quote", systemImage: "shield.lefthalf.filled")
+                }
+                .frame(minHeight: 44)
+                .disabled(!flags.isEnabled("per_job_insurance") && !flags.isEnabled("insurance_competition"))
+                .accessibilityIdentifier("business.row.insuranceQuote")
+                .accessibilityHint("Request a per-job insurance quote for a contract")
+
                 NavigationLink {
                     InsuranceProductsBrowseView()
                 } label: {
@@ -278,6 +297,355 @@ struct InsuranceProductsBrowseView: View {
             isLoading = true
             defer { isLoading = false }
             products = (try? await APIClient.shared.fetchInsuranceProducts()) ?? []
+        }
+    }
+}
+
+// MARK: - Insurance quote flow (web `/insurance/quotes` lite)
+
+/// Contract + product → `POST /api/v1/insurance/quote` (+ optional purchase).
+/// Account + Business hub entry. Server-gated by `per_job_insurance` / `insurance_competition`.
+struct InsuranceQuoteFlowView: View {
+    @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var flags: FeatureFlags
+
+    @State private var contractIdText = ""
+    @State private var products: [InsuranceProduct] = []
+    @State private var selectedProductId: String?
+    @State private var paymentMethods: [PaymentMethodRow] = []
+    @State private var selectedPaymentMethodId: String?
+    @State private var quote: InsuranceQuote?
+    @State private var isLoadingCatalog = false
+    @State private var isQuoting = false
+    @State private var isPurchasing = false
+    @State private var statusMessage: String?
+    @State private var statusIsError = false
+    @State private var loadError: String?
+
+    private var insuranceEnabled: Bool {
+        flags.isEnabled("per_job_insurance") || flags.isEnabled("insurance_competition")
+    }
+
+    private var selectedProduct: InsuranceProduct? {
+        guard let selectedProductId else { return nil }
+        return products.first(where: { $0.id == selectedProductId })
+    }
+
+    var body: some View {
+        Group {
+            if auth.isScaffoldSession || !auth.isAuthenticated {
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "shield.lefthalf.filled",
+                    message: "Sign in to request a per-job insurance quote for a contract."
+                )
+            } else if !insuranceEnabled {
+                BrandEmptyState(
+                    title: "Insurance unavailable",
+                    systemImage: "shield.slash",
+                    message: "per_job_insurance and insurance_competition flags are off. Enable one on the server to quote coverage."
+                )
+            } else if isLoadingCatalog && products.isEmpty && loadError == nil {
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading insurance products…")
+            } else if let loadError, products.isEmpty {
+                BrandEmptyState(
+                    title: "Couldn’t load products",
+                    systemImage: "exclamationmark.triangle",
+                    message: loadError,
+                    actionTitle: "Try again"
+                ) {
+                    Task { await loadCatalog() }
+                }
+            } else {
+                quoteForm
+            }
+        }
+        .navigationTitle("Insurance quote")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .brandNavigationBarChrome()
+        .task {
+            await flags.refresh()
+            await loadCatalog()
+        }
+        .accessibilityIdentifier("insurance.quote.flow")
+    }
+
+    private var quoteForm: some View {
+        Form {
+            Section {
+                TextField("Contract ID", text: $contractIdText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.body.monospaced())
+                    .frame(minHeight: 44)
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityLabel("Contract identifier")
+                    .accessibilityIdentifier("insurance.quote.contractId")
+            } header: {
+                Text("Contract").brandSectionHeader()
+            } footer: {
+                Text("Use the contract UUID from a completed or in-progress reverse-auction job.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            Section {
+                if products.isEmpty {
+                    Text("No insurance products returned. Check the catalog flag or admin product seed.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
+                } else {
+                    ForEach(products) { product in
+                        Button {
+                            selectedProductId = product.id
+                            quote = nil
+                            statusMessage = nil
+                            BrandHaptics.selection()
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: selectedProductId == product.id
+                                      ? "checkmark.circle.fill"
+                                      : "circle")
+                                    .foregroundStyle(
+                                        selectedProductId == product.id
+                                            ? BrandTheme.goldBright
+                                            : BrandTheme.textSecondary
+                                    )
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(product.displayName)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(BrandTheme.textPrimary)
+                                    if let description = product.description, !description.isEmpty {
+                                        Text(description)
+                                            .font(.caption)
+                                            .foregroundStyle(BrandTheme.textSecondary)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    Text("From \(product.displayPremium)")
+                                        .font(.caption.weight(.semibold).monospacedDigit())
+                                        .foregroundStyle(BrandTheme.goldBright)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityAddTraits(selectedProductId == product.id ? [.isSelected] : [])
+                        .accessibilityHint("Selects this product for quoting")
+                    }
+                }
+            } header: {
+                Text("Product").brandSectionHeader()
+            }
+
+            Section {
+                Button {
+                    Task { await requestQuote() }
+                } label: {
+                    if isQuoting {
+                        ProgressView()
+                            .tint(BrandTheme.ctaLabelOnGold)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Text("Get quote")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.gold)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                .disabled(isQuoting || selectedProductId == nil)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityIdentifier("insurance.quote.submit")
+            }
+
+            if let quote {
+                Section {
+                    LabeledContent("Premium") {
+                        Text(quote.displayPremium)
+                            .font(.body.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.goldBright)
+                    }
+                    if let coverage = quote.coverageCents, coverage > 0 {
+                        LabeledContent("Coverage") {
+                            Text(MoneyFormat.usd(cents: coverage))
+                                .font(.body.monospacedDigit())
+                        }
+                    }
+                    if let productId = quote.productId ?? selectedProductId, !productId.isEmpty {
+                        LabeledContent("Product") {
+                            Text(String(productId.prefix(8)) + "…")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                    }
+                    if let quoteId = quote.quoteId, !quoteId.isEmpty {
+                        LabeledContent("Quote ID") {
+                            Text(String(quoteId.prefix(8)) + "…")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                    }
+                } header: {
+                    Text("Quote").brandSectionHeader()
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+            }
+
+            if quote != nil {
+                Section {
+                    if paymentMethods.isEmpty {
+                        Text("Add a payment method under Account → Payment methods to purchase coverage.")
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    } else {
+                        Picker("Payment method", selection: $selectedPaymentMethodId) {
+                            Text("Select card").tag(String?.none)
+                            ForEach(paymentMethods) { method in
+                                Text(method.displayLabel).tag(Optional(method.id))
+                            }
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityIdentifier("insurance.quote.paymentMethod")
+
+                        Button {
+                            Task { await purchase() }
+                        } label: {
+                            if isPurchasing {
+                                ProgressView()
+                                    .tint(BrandTheme.ctaLabelOnGold)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            } else {
+                                Text("Purchase coverage")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(BrandTheme.gold)
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                        .disabled(isPurchasing || selectedPaymentMethodId == nil)
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityIdentifier("insurance.quote.purchase")
+                    }
+                } header: {
+                    Text("Purchase").brandSectionHeader()
+                } footer: {
+                    Text("Purchase posts to the insurance rail with a sticky Idempotency-Key. Fail closed when the flag is off.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+            }
+
+            if let statusMessage {
+                Section {
+                    Text(statusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(statusIsError ? BrandTheme.destructive : BrandTheme.success)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityIdentifier("insurance.quote.status")
+                }
+            }
+        }
+        .brandListBackground()
+    }
+
+    @MainActor
+    private func loadCatalog() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
+        isLoadingCatalog = true
+        defer { isLoadingCatalog = false }
+        do {
+            async let productList = APIClient.shared.fetchInsuranceProducts()
+            async let methods = APIClient.shared.fetchPaymentMethods()
+            products = try await productList
+            paymentMethods = (try? await methods)?.methods ?? []
+            if selectedProductId == nil {
+                selectedProductId = products.first?.id
+            }
+            if selectedPaymentMethodId == nil {
+                selectedPaymentMethodId = paymentMethods.first(where: { $0.isDefault == true })?.id
+                    ?? paymentMethods.first?.id
+            }
+            loadError = nil
+        } catch {
+            if products.isEmpty {
+                loadError = error.localizedDescription
+            }
+        }
+    }
+
+    @MainActor
+    private func requestQuote() async {
+        let contractId = contractIdText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !contractId.isEmpty else {
+            statusMessage = "Enter a contract id."
+            statusIsError = true
+            BrandHaptics.warning()
+            return
+        }
+        guard let productId = selectedProductId, !productId.isEmpty else {
+            statusMessage = "Select an insurance product."
+            statusIsError = true
+            BrandHaptics.warning()
+            return
+        }
+        isQuoting = true
+        defer { isQuoting = false }
+        do {
+            quote = try await APIClient.shared.quoteInsurance(
+                contractId: contractId,
+                productId: productId
+            )
+            statusMessage = "Quote ready — review premium before purchase."
+            statusIsError = false
+            BrandHaptics.success()
+        } catch {
+            quote = nil
+            statusMessage = error.localizedDescription
+            statusIsError = true
+            BrandHaptics.error()
+        }
+    }
+
+    @MainActor
+    private func purchase() async {
+        let contractId = contractIdText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !contractId.isEmpty else {
+            statusMessage = "Enter a contract id."
+            statusIsError = true
+            return
+        }
+        guard let productId = selectedProductId ?? quote?.productId, !productId.isEmpty else {
+            statusMessage = "Select an insurance product."
+            statusIsError = true
+            return
+        }
+        guard let paymentMethodId = selectedPaymentMethodId, !paymentMethodId.isEmpty else {
+            statusMessage = "Select a payment method."
+            statusIsError = true
+            return
+        }
+        isPurchasing = true
+        defer { isPurchasing = false }
+        do {
+            let policy = try await APIClient.shared.purchaseInsurance(
+                contractId: contractId,
+                productId: productId,
+                paymentMethodId: paymentMethodId
+            )
+            statusMessage = "Coverage purchased · \(policy.displayStatus) · \(MoneyFormat.usd(cents: policy.premiumCents ?? 0))"
+            statusIsError = false
+            BrandHaptics.success()
+        } catch {
+            statusMessage = error.localizedDescription
+            statusIsError = true
+            BrandHaptics.error()
         }
     }
 }

@@ -65,16 +65,111 @@ extension APIClient {
         )
     }
 
-    /// GET `/api/v1/admin/fraud` (or fraud alerts path)
+    /// GET `/api/v1/admin/fraud/alerts`
     func fetchAdminFraudAlerts(page: Int = 1, pageSize: Int = 40) async throws -> AdminFraudResponse {
         try await getJSON(
-            pathComponents: ["api", "v1", "admin", "fraud"],
+            pathComponents: ["api", "v1", "admin", "fraud", "alerts"],
             query: [
                 URLQueryItem(name: "page", value: String(max(1, page))),
                 URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
             ],
             authorized: true
         )
+    }
+
+    // MARK: Write operations
+
+    /// PUT `/api/v1/admin/flags/{key}` — toggle `enabled` and optionally set sticky `rollout_percent`.
+    /// Omit `rolloutPercent` to leave the cohort unchanged. Money/regulated keys reject 1–99.
+    @discardableResult
+    func updateAdminFlag(
+        key: String,
+        enabled: Bool,
+        rolloutPercent: Int? = nil
+    ) async throws -> AdminFeatureFlagUpdateResponse {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Flag key is required.")
+        }
+        if let p = rolloutPercent, p < 0 || p > 100 {
+            throw APIClientError.httpStatus(400, detail: "Rollout percent must be between 0 and 100.")
+        }
+        let body = UpdateAdminFlagBody(enabled: enabled, rolloutPercent: rolloutPercent)
+        return try await putJSON(
+            pathComponents: ["api", "v1", "admin", "flags", trimmed],
+            body: body,
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/admin/fraud/alerts/{id}/review`
+    /// Status: `open` | `investigating` | `resolved_fraud` | `resolved_legitimate` | `dismissed`.
+    @discardableResult
+    func reviewAdminFraudAlert(
+        id: String,
+        status: String,
+        resolutionNotes: String = "",
+        restrictUser: Bool = false,
+        banUser: Bool = false
+    ) async throws -> AdminFraudAlert {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Alert id is required.")
+        }
+        let statusTrimmed = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !statusTrimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Status is required.")
+        }
+        let body = ReviewAdminFraudAlertBody(
+            status: statusTrimmed,
+            resolutionNotes: resolutionNotes.trimmingCharacters(in: .whitespacesAndNewlines),
+            restrictUser: restrictUser,
+            banUser: banUser
+        )
+        let response: AdminFraudReviewResponse = try await postJSON(
+            pathComponents: ["api", "v1", "admin", "fraud", "alerts", trimmed, "review"],
+            body: body,
+            authorized: .required
+        )
+        guard let alert = response.alert else {
+            throw APIClientError.decoding("Fraud review response missing alert.")
+        }
+        return alert
+    }
+
+    /// POST `/api/v1/admin/disputes/{id}/resolve`
+    /// Resolution types: `favor_customer` | `favor_provider` | `split` | `dismissed` (web parity).
+    @discardableResult
+    func resolveAdminDispute(
+        id: String,
+        resolutionType: String,
+        resolutionNotes: String = "",
+        refundAmountCents: Int64? = nil,
+        guaranteeOutcome: String? = nil
+    ) async throws -> AdminDisputeRow {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Dispute id is required.")
+        }
+        let typeTrimmed = resolutionType.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typeTrimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Resolution type is required.")
+        }
+        let body = ResolveAdminDisputeBody(
+            resolutionType: typeTrimmed,
+            resolutionNotes: resolutionNotes.trimmingCharacters(in: .whitespacesAndNewlines),
+            refundAmountCents: refundAmountCents,
+            guaranteeOutcome: guaranteeOutcome
+        )
+        let response: AdminDisputeResolveResponse = try await postJSON(
+            pathComponents: ["api", "v1", "admin", "disputes", trimmed, "resolve"],
+            body: body,
+            authorized: .required
+        )
+        guard let dispute = response.dispute else {
+            throw APIClientError.decoding("Dispute resolve response missing dispute.")
+        }
+        return dispute
     }
 }
 
@@ -92,6 +187,34 @@ struct AdminFeatureFlag: Decodable, Sendable, Hashable, Identifiable {
 
     var displayTitle: String { key.replacingOccurrences(of: "_", with: " ") }
     var isOn: Bool { enabled == true }
+    var isBinaryOnly: Bool { binaryOnly == true }
+}
+
+struct AdminFeatureFlagUpdateResponse: Decodable, Sendable {
+    var key: String?
+    var enabled: Bool?
+    var rolloutPercent: Int?
+    var binaryOnly: Bool?
+}
+
+/// PUT body for `/api/v1/admin/flags/{key}`.
+private struct UpdateAdminFlagBody: Encodable {
+    var enabled: Bool
+    var rolloutPercent: Int?
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(enabled, forKey: .enabled)
+        // Omit rollout when nil so the server leaves the column unchanged.
+        if let rolloutPercent {
+            try c.encode(rolloutPercent, forKey: .rolloutPercent)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case rolloutPercent
+    }
 }
 
 struct AdminFlagsResponse: Decodable, Sendable {
@@ -118,6 +241,13 @@ struct AdminDisputeRow: Decodable, Sendable, Hashable, Identifiable {
     var openedBy: String?
     var createdAt: String?
     var isGuaranteeClaim: Bool?
+    var resolutionType: String?
+    var resolutionNotes: String?
+
+    var isOpenForResolution: Bool {
+        let s = (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return s.isEmpty || s == "open" || s == "under_review" || s == "escalated"
+    }
 }
 
 struct AdminDisputesResponse: Decodable, Sendable {
@@ -129,6 +259,37 @@ struct AdminDisputesResponse: Decodable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey { case disputes }
+}
+
+struct AdminDisputeResolveResponse: Decodable, Sendable {
+    var dispute: AdminDisputeRow?
+}
+
+/// POST body for `/api/v1/admin/disputes/{id}/resolve`.
+private struct ResolveAdminDisputeBody: Encodable {
+    var resolutionType: String
+    var resolutionNotes: String
+    var refundAmountCents: Int64?
+    var guaranteeOutcome: String?
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(resolutionType, forKey: .resolutionType)
+        try c.encode(resolutionNotes, forKey: .resolutionNotes)
+        if let refundAmountCents {
+            try c.encode(refundAmountCents, forKey: .refundAmountCents)
+        }
+        if let guaranteeOutcome {
+            try c.encode(guaranteeOutcome, forKey: .guaranteeOutcome)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case resolutionType
+        case resolutionNotes
+        case refundAmountCents
+        case guaranteeOutcome
+    }
 }
 
 struct AdminUserRow: Decodable, Sendable, Hashable, Identifiable {
@@ -195,10 +356,22 @@ struct AdminReportsResponse: Decodable, Sendable {
 struct AdminFraudAlert: Decodable, Sendable, Hashable, Identifiable {
     var id: String
     var severity: String?
+    var aggregateRiskLevel: String?
     var status: String?
     var summary: String?
+    var resolutionNotes: String?
     var createdAt: String?
     var userId: String?
+
+    var displayRisk: String {
+        let raw = (aggregateRiskLevel ?? severity ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return raw.isEmpty ? "alert" : raw
+    }
+
+    var isResolved: Bool {
+        let s = (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return s == "resolved_fraud" || s == "resolved_legitimate" || s == "dismissed"
+    }
 }
 
 struct AdminFraudResponse: Decodable, Sendable {
@@ -216,4 +389,16 @@ struct AdminFraudResponse: Decodable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey { case alerts, items }
+}
+
+struct AdminFraudReviewResponse: Decodable, Sendable {
+    var alert: AdminFraudAlert?
+}
+
+/// POST body for `/api/v1/admin/fraud/alerts/{id}/review`.
+private struct ReviewAdminFraudAlertBody: Encodable {
+    var status: String
+    var resolutionNotes: String
+    var restrictUser: Bool
+    var banUser: Bool
 }

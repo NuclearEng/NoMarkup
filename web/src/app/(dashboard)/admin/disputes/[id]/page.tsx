@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { Route } from 'next';
 import { useParams, useRouter } from 'next/navigation';
 
+import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/ui/breadcrumb';
@@ -70,6 +71,7 @@ export default function AdminDisputeDetailPage() {
   const [notes, setNotes] = useState('');
   const [refundCents, setRefundCents] = useState('');
   const [guaranteeClaim, setGuaranteeClaim] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const dispute = data?.dispute;
   const isResolved = dispute?.status === DISPUTE_STATUS.RESOLVED;
@@ -84,6 +86,7 @@ export default function AdminDisputeDetailPage() {
       refund_amount_cents: parsedRefund,
       guarantee_claim: guaranteeClaim,
     });
+    setConfirmOpen(false);
     router.push('/admin/disputes' as Route);
   }
 
@@ -300,7 +303,7 @@ export default function AdminDisputeDetailPage() {
               className="min-h-[44px]"
               disabled={!resolutionType || resolveMutation.isPending}
               onClick={() => {
-                void handleResolve();
+                setConfirmOpen(true);
               }}
             >
               {resolveMutation.isPending ? 'Resolving...' : 'Resolve Dispute'}
@@ -314,6 +317,26 @@ export default function AdminDisputeDetailPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <ActionConfirmDialog
+        open={confirmOpen}
+        onClose={() => {
+          if (!resolveMutation.isPending) setConfirmOpen(false);
+        }}
+        onConfirm={() => {
+          void handleResolve();
+        }}
+        title="Resolve this dispute?"
+        description={
+          refundCents
+            ? `This will apply resolution “${resolutionType}” with a refund of $${refundCents}. Money movement cannot be undone from this screen.`
+            : `This will apply resolution “${resolutionType || '—'}”. Money and guarantee actions cannot be undone from this screen.`
+        }
+        confirmLabel="Resolve dispute"
+        destructive
+        loading={resolveMutation.isPending}
+        confirmDisabled={!resolutionType}
+      />
     </div>
     </PageTransition>
   );

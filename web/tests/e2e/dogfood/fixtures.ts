@@ -41,16 +41,40 @@ export async function loginAs(page: Page, persona: Persona) {
   const email = EMAILS[persona];
   const password = getSeedPassword();
 
-  await page.goto('/login');
-  await page.waitForLoadState('domcontentloaded');
+  // UI login with 429 backoff (auth rate limit is per-IP and trips during dense e2e).
+  // Prefer input[type=...] over getByLabel — OAuth chrome has multiple "email" strings.
+  for (let attempt = 0; attempt < 6; attempt++) {
+    await page.goto('/login');
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForTimeout(300);
 
-  await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
-  await page.getByRole('button', { name: /sign in/i }).click();
+    const emailInput = page.locator('input[type="email"], input[name="email"]').first();
+    const passwordInput = page.locator('input[type="password"]').first();
+    await emailInput.waitFor({ state: 'visible', timeout: 15_000 });
+    await emailInput.fill('');
+    await emailInput.fill(email);
+    await passwordInput.fill('');
+    await passwordInput.fill(password);
+    await page.getByRole('button', { name: /sign in/i }).click();
 
-  // Wait for redirect to dashboard (auth success).
-  await page.waitForURL(/\/dashboard/, { timeout: 15_000 });
-  await page.waitForLoadState('networkidle');
+    try {
+      await page.waitForURL(/\/dashboard/, { timeout: 25_000 });
+      await page.waitForLoadState('domcontentloaded');
+      return;
+    } catch {
+      const body = (await page.locator('body').innerText().catch(() => '')) ?? '';
+      if (/rate limit/i.test(body) && attempt < 5) {
+        // Gateway Retry-After is often ~2 min; sleep with progressive backoff.
+        const waitMs = Math.min(30_000 + attempt * 20_000, 150_000);
+        await page.waitForTimeout(waitMs);
+        continue;
+      }
+      if (attempt === 5) {
+        throw new Error(`loginAs(${persona}) failed after retries: ${body.slice(0, 240)}`);
+      }
+      await page.waitForTimeout(2_000 * (attempt + 1));
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ */
