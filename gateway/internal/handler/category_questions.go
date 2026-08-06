@@ -13,8 +13,9 @@ package handler
 // Routes (registered in router.go):
 //
 //   GET  /api/v1/categories/{id}/questions          (public)
+//   GET  /api/v1/admin/category-questions           (admin; ?category_id=)
 //   POST /api/v1/admin/category-questions           (admin)
-//   PATCH/DELETE/GET                                (admin) — full CRUD
+//   PATCH/DELETE /api/v1/admin/category-questions/{id} (admin)
 //   POST /api/v1/jobs/{id}/answers                  (auth: customer)
 //   GET  /api/v1/jobs/{id}/answers                  (auth: customer +
 //                                                    bidding providers)
@@ -171,6 +172,75 @@ func (h *CategoryQuestionsHandler) ListByCategory(w http.ResponseWriter, r *http
 	// Pre-quote questions are admin-managed per category and near-static →
 	// long edge TTL (5m CDN + 1h SWR). Public, no per-user data.
 	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"questions": out}, 300, 3600)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/v1/admin/category-questions — admin only
+// ─────────────────────────────────────────────────────────────────────────
+
+// AdminList returns pre-quote questions for admin curation. Optional
+// ?category_id= UUID filters to one category; omit to list all (ordered by
+// category then display_order). Admin-gated upstream by RequireAdmin.
+// Unlike ListByCategory this is not edge-cached (authed admin surface).
+func (h *CategoryQuestionsHandler) AdminList(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+
+	categoryID := r.URL.Query().Get("category_id")
+	if categoryID != "" && !isValidUUID(categoryID) {
+		writeError(w, http.StatusBadRequest, "invalid category_id")
+		return
+	}
+
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if categoryID != "" {
+		rows, err = h.db.Query(r.Context(), `
+			SELECT id, category_id, question, question_type,
+			       COALESCE(options, 'null'::jsonb), required, display_order, created_at
+			  FROM category_questions
+			 WHERE category_id = $1
+			 ORDER BY display_order ASC, created_at ASC`,
+			categoryID)
+	} else {
+		rows, err = h.db.Query(r.Context(), `
+			SELECT id, category_id, question, question_type,
+			       COALESCE(options, 'null'::jsonb), required, display_order, created_at
+			  FROM category_questions
+			 ORDER BY category_id ASC, display_order ASC, created_at ASC`)
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "admin list category questions failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to load questions")
+		return
+	}
+	defer rows.Close()
+
+	out := make([]categoryQuestionJSON, 0)
+	for rows.Next() {
+		var q categoryQuestionJSON
+		var opts []byte
+		if err := rows.Scan(&q.ID, &q.CategoryID, &q.Question, &q.QuestionType,
+			&opts, &q.Required, &q.DisplayOrder, &q.CreatedAt); err != nil {
+			slog.ErrorContext(r.Context(), "admin scan category question failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "scan error")
+			return
+		}
+		if string(opts) != "null" {
+			q.Options = opts
+		}
+		out = append(out, q)
+	}
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(r.Context(), "admin list category questions rows error", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to load questions")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"questions": out})
 }
 
 // ─────────────────────────────────────────────────────────────────────────

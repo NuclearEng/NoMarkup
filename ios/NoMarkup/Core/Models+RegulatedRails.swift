@@ -192,22 +192,49 @@ struct InsuranceClaim: Decodable, Sendable, Hashable, Identifiable {
     let id: String
     var policyId: String?
     var status: String?
+    /// Legacy alias; prefer `claimedAmountCents` (gateway `claimed_amount_cents`).
     var amountCents: Int64?
+    var claimedAmountCents: Int64?
+    var approvedAmountCents: Int64?
+    var claimType: String?
+    var description: String?
+    var denialReason: String?
+    var assessorNotes: String?
+    var claimNumber: String?
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
         policyId = try c.decodeIfPresent(String.self, forKey: .policyId)
         status = try c.decodeIfPresent(String.self, forKey: .status)
-        if let v = try? c.decodeIfPresent(Int64.self, forKey: .amountCents) {
-            amountCents = v
-        } else if let v = try? c.decodeIfPresent(Int.self, forKey: .amountCents) {
-            amountCents = Int64(v)
-        } else {
-            amountCents = nil
-        }
+        claimedAmountCents = Self.i64(c, .claimedAmountCents)
+        approvedAmountCents = Self.i64(c, .approvedAmountCents)
+        amountCents = Self.i64(c, .amountCents) ?? claimedAmountCents
+        claimType = try c.decodeIfPresent(String.self, forKey: .claimType)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        denialReason = try c.decodeIfPresent(String.self, forKey: .denialReason)
+        assessorNotes = try c.decodeIfPresent(String.self, forKey: .assessorNotes)
+        claimNumber = try c.decodeIfPresent(String.self, forKey: .claimNumber)
     }
-    enum CodingKeys: String, CodingKey { case id, policyId, status, amountCents }
+
+    enum CodingKeys: String, CodingKey {
+        case id, policyId, status, amountCents, claimedAmountCents, approvedAmountCents
+        case claimType, description, denialReason, assessorNotes, claimNumber
+    }
+
+    private static func i64(_ c: KeyedDecodingContainer<CodingKeys>, _ k: CodingKeys) -> Int64? {
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: k) { return v }
+        if let v = try? c.decodeIfPresent(Int.self, forKey: k) { return Int64(v) }
+        return nil
+    }
+
+    var displayClaimed: String { MoneyFormat.usd(cents: claimedAmountCents ?? amountCents ?? 0) }
+    var displayStatus: String { StatusChipStyle.displayLabel(status ?? "unknown") }
+
+    var isOpenForReview: Bool {
+        let s = (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return s.isEmpty || s == "filed" || s == "pending" || s == "under_review" || s == "open"
+    }
 }
 
 // MARK: - Advances

@@ -778,19 +778,49 @@ struct MarketplaceMapView: View {
 
 // MARK: - Admin console (web `/admin/*`)
 
-/// Admin desk: flags, disputes, users (suspend/ban/reactivate), goods/user reports,
-/// fraud, working-capital advances. Requires admin role; soft 403, never crashes.
+/// Admin desk: flags, disputes, users (suspend/ban/reactivate/finalize-deletion),
+/// goods/user reports, fraud, advances, jobs, listings, goods disputes, markets,
+/// taxonomy questions, insurers, challenges (+ other AdminOpsViews panels).
+/// Requires admin role; soft 403, never crashes.
 struct AdminConsoleView: View {
     private enum SectionTab: String, CaseIterable, Identifiable {
         case flags = "Flags"
+        case jobs = "Jobs"
+        case listings = "Listings"
         case disputes = "Disputes"
+        case goodsDisputes = "Goods disputes"
+        case guarantee = "Guarantee"
+        case verification = "Verify"
+        case licenses = "Licenses"
+        case insurance = "Insurance"
+        case reviews = "Reviews"
         case users = "Users"
         case goodsReports = "Goods"
         case userReports = "Users reports"
         case fraud = "Fraud"
         case advances = "Advances"
+        case fees = "Fees"
+        case banking = "Banking"
+        case platform = "Platform"
+        case markets = "Markets"
+        case taxonomy = "Taxonomy"
+        case insurers = "Insurers"
+        case challenges = "Challenges"
 
         var id: String { rawValue }
+
+        /// Tabs hosted by standalone AdminOpsViews panels (own List + load).
+        var isOpsPanel: Bool {
+            switch self {
+            case .jobs, .listings, .goodsDisputes,
+                 .guarantee, .verification, .licenses, .insurance, .reviews,
+                 .fees, .banking, .platform,
+                 .markets, .taxonomy, .insurers, .challenges:
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     private enum ReportKind {
@@ -868,14 +898,19 @@ struct AdminConsoleView: View {
     @State private var fraudReviewTarget: AdminFraudAlert?
     @State private var fraudReviewNotes = ""
     @State private var fraudReviewAction: FraudReviewAction = .legitimate
+    @State private var fraudRestrictUser = false
+    @State private var fraudBanUser = false
     @State private var showFraudReviewSheet = false
     @State private var busyDisputeIDs: Set<String> = []
     @State private var disputeResolveTarget: AdminDisputeRow?
     @State private var disputeResolveNotes = ""
     @State private var disputeResolveAction: DisputeResolveAction = .favorCustomer
+    @State private var disputeRefundText = ""
+    @State private var disputeGuaranteeOutcome = ""
     @State private var showDisputeResolveSheet = false
     @State private var busyReportIDs: Set<String> = []
     @State private var busyUserIDs: Set<String> = []
+    @State private var pendingFinalizeUser: AdminUserRow?
     @State private var busyAdvanceIDs: Set<String> = []
     @State private var userActionTarget: AdminUserRow?
     @State private var userActionKind: UserModerationAction = .suspend
@@ -907,6 +942,65 @@ struct AdminConsoleView: View {
                 ) {
                     Task { await load() }
                 }
+            } else if tab.isOpsPanel {
+                VStack(spacing: 0) {
+                    if let actionMessage {
+                        Text(actionMessage)
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(BrandTheme.navyElevated)
+                            .accessibilityIdentifier("admin.console.actionMessage")
+                    }
+                    switch tab {
+                    case .jobs:
+                        AdminJobsOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    case .listings:
+                        AdminListingsOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    case .goodsDisputes:
+                        AdminGoodsDisputesOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    case .guarantee:
+                        AdminGuaranteeOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    case .verification:
+                        AdminVerificationOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    case .licenses:
+                        AdminLicensesOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    case .insurance:
+                        AdminInsuranceOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    case .reviews:
+                        AdminFlaggedReviewsOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    case .fees:
+                        AdminFeesView(
+                            embedded: true,
+                            forbidden: $forbidden,
+                            actionMessage: $actionMessage
+                        )
+                    case .banking:
+                        AdminBankingView(
+                            embedded: true,
+                            forbidden: $forbidden,
+                            actionMessage: $actionMessage
+                        )
+                    case .platform:
+                        AdminPlatformMetricsView(
+                            embedded: true,
+                            forbidden: $forbidden,
+                            actionMessage: $actionMessage
+                        )
+                    case .markets:
+                        AdminMarketsOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    case .taxonomy:
+                        AdminTaxonomyOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    case .insurers:
+                        AdminInsurersOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    case .challenges:
+                        AdminChallengesOpsView(forbidden: $forbidden, actionMessage: $actionMessage)
+                    default:
+                        EmptyView()
+                    }
+                }
             } else {
                 List {
                     if let actionMessage {
@@ -921,6 +1015,11 @@ struct AdminConsoleView: View {
                     switch tab {
                     case .flags:
                         flagRows
+                    case .jobs, .listings, .goodsDisputes,
+                         .guarantee, .verification, .licenses, .insurance, .reviews,
+                         .fees, .banking, .platform,
+                         .markets, .taxonomy, .insurers, .challenges:
+                        EmptyView()
                     case .disputes:
                         disputeRows
                     case .users:
@@ -982,6 +1081,27 @@ struct AdminConsoleView: View {
         }
         .sheet(isPresented: $showUserActionSheet) {
             userActionSheet
+        }
+        .confirmationDialog(
+            "Finalize account deletion?",
+            isPresented: Binding(
+                get: { pendingFinalizeUser != nil },
+                set: { if !$0 { pendingFinalizeUser = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Finalize deletion", role: .destructive) {
+                guard let user = pendingFinalizeUser else { return }
+                pendingFinalizeUser = nil
+                Task { await finalizeUserDeletion(user) }
+            }
+            Button("Cancel", role: .cancel) { pendingFinalizeUser = nil }
+        } message: {
+            if let user = pendingFinalizeUser {
+                Text("Permanently erase \(user.displayLabel) now, bypassing the 30-day grace. This cannot be undone.")
+            } else {
+                Text("Permanently erase this account now, bypassing the 30-day grace. This cannot be undone.")
+            }
         }
         .task(id: tab) { await load() }
         .refreshable { await load() }
@@ -1102,6 +1222,8 @@ struct AdminConsoleView: View {
                                 disputeResolveTarget = d
                                 disputeResolveNotes = ""
                                 disputeResolveAction = .favorCustomer
+                                disputeRefundText = ""
+                                disputeGuaranteeOutcome = ""
                                 showDisputeResolveSheet = true
                             }
                             .font(.caption.weight(.semibold))
@@ -1159,6 +1281,8 @@ struct AdminConsoleView: View {
                                 fraudReviewTarget = a
                                 fraudReviewNotes = ""
                                 fraudReviewAction = .legitimate
+                                fraudRestrictUser = false
+                                fraudBanUser = false
                                 showFraudReviewSheet = true
                             }
                             .font(.caption.weight(.semibold))
@@ -1192,8 +1316,15 @@ struct AdminConsoleView: View {
                     TextField("Resolution notes", text: $fraudReviewNotes, axis: .vertical)
                         .lineLimit(3 ... 6)
                         .accessibilityIdentifier("admin.fraud.notes")
+                    Toggle("Restrict user", isOn: $fraudRestrictUser)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("admin.fraud.restrict")
+                    Toggle("Ban user", isOn: $fraudBanUser)
+                        .frame(minHeight: 44)
+                        .tint(BrandTheme.destructive)
+                        .accessibilityIdentifier("admin.fraud.ban")
                 } footer: {
-                    Text("Maps to POST /admin/fraud/alerts/{id}/review. Does not ban the user from this sheet.")
+                    Text("POST /admin/fraud/alerts/{id}/review. Restrict/ban are applied when the alert is confirmed as fraud.")
                 }
             }
             .navigationTitle("Review alert")
@@ -1236,8 +1367,16 @@ struct AdminConsoleView: View {
                     TextField("Resolution notes", text: $disputeResolveNotes, axis: .vertical)
                         .lineLimit(3 ... 6)
                         .accessibilityIdentifier("admin.dispute.notes")
+                    DollarAmountField(
+                        text: $disputeRefundText,
+                        placeholder: "0.00",
+                        accessibilityLabelText: "Optional refund amount in dollars"
+                    )
+                    .accessibilityIdentifier("admin.dispute.refund")
+                    TextField("Guarantee outcome (optional)", text: $disputeGuaranteeOutcome)
+                        .accessibilityIdentifier("admin.dispute.guaranteeOutcome")
                 } footer: {
-                    Text("POST /admin/disputes/{id}/resolve. Refund amount is not set here — use web for refund cents / guarantee payouts.")
+                    Text("POST /admin/disputes/{id}/resolve. Refund is sent as integer cents. Leave blank for no refund.")
                 }
             }
             .navigationTitle("Resolve dispute")
@@ -1312,6 +1451,10 @@ struct AdminConsoleView: View {
     private var isEmpty: Bool {
         switch tab {
         case .flags: return flags.isEmpty
+        case .jobs, .listings, .goodsDisputes, .fees, .banking, .platform,
+             .guarantee, .verification, .licenses, .insurance, .reviews,
+             .markets, .taxonomy, .insurers, .challenges:
+            return false // hosted panels own load state
         case .disputes: return disputes.isEmpty
         case .users: return users.isEmpty
         case .goodsReports: return goodsReports.isEmpty
@@ -1387,6 +1530,13 @@ struct AdminConsoleView: View {
                             .frame(minHeight: 44)
                             .accessibilityIdentifier("admin.user.reactivate.\(u.id)")
                         }
+                        Button("Finalize deletion", role: .destructive) {
+                            pendingFinalizeUser = u
+                        }
+                        .font(.caption.weight(.semibold))
+                        .disabled(busy)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("admin.user.finalize.\(u.id)")
                     }
                 }
                 .listRowBackground(BrandTheme.navyElevated)
@@ -1451,6 +1601,14 @@ struct AdminConsoleView: View {
                             .frame(minHeight: 44)
                             .accessibilityIdentifier("admin.advance.reject.\(advance.id)")
                         }
+                    } else if status == "approved" {
+                        Button("Disburse") {
+                            Task { await disburseAdvance(advance) }
+                        }
+                        .font(.caption.weight(.semibold))
+                        .disabled(busy)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("admin.advance.disburse.\(advance.id)")
                     }
                 }
                 .listRowBackground(BrandTheme.navyElevated)
@@ -1602,7 +1760,9 @@ struct AdminConsoleView: View {
             let updated = try await APIClient.shared.reviewAdminFraudAlert(
                 id: target.id,
                 status: fraudReviewAction.rawValue,
-                resolutionNotes: fraudReviewNotes
+                resolutionNotes: fraudReviewNotes,
+                restrictUser: fraudRestrictUser,
+                banUser: fraudBanUser
             )
             if let idx = fraudAlerts.firstIndex(where: { $0.id == target.id }) {
                 fraudAlerts[idx] = updated
@@ -1628,10 +1788,14 @@ struct AdminConsoleView: View {
         busyDisputeIDs.insert(target.id)
         defer { busyDisputeIDs.remove(target.id) }
         do {
+            let refundCents = MoneyFormat.cents(fromDollarsText: disputeRefundText)
+            let guarantee = disputeGuaranteeOutcome.trimmingCharacters(in: .whitespacesAndNewlines)
             let updated = try await APIClient.shared.resolveAdminDispute(
                 id: target.id,
                 resolutionType: disputeResolveAction.rawValue,
-                resolutionNotes: disputeResolveNotes
+                resolutionNotes: disputeResolveNotes,
+                refundAmountCents: refundCents,
+                guaranteeOutcome: guarantee.isEmpty ? nil : guarantee
             )
             if let idx = disputes.firstIndex(where: { $0.id == target.id }) {
                 disputes[idx] = updated
@@ -1648,6 +1812,200 @@ struct AdminConsoleView: View {
             actionMessage = error.localizedDescription
             BrandHaptics.error()
         }
+    }
+
+    @MainActor
+    private func resolveReport(_ report: AdminReportRow, kind: ReportKind, action: String) async {
+        guard !busyReportIDs.contains(report.id) else { return }
+        busyReportIDs.insert(report.id)
+        defer { busyReportIDs.remove(report.id) }
+        do {
+            let result: AdminReportResolveResponse
+            switch kind {
+            case .goods:
+                result = try await APIClient.shared.resolveAdminGoodsReport(
+                    id: report.id,
+                    action: action
+                )
+            case .user:
+                result = try await APIClient.shared.resolveAdminUserReport(
+                    id: report.id,
+                    action: action
+                )
+            }
+            let newStatus = result.status ?? (action == "dismiss" ? "dismissed" : action)
+            switch kind {
+            case .goods:
+                if let idx = goodsReports.firstIndex(where: { $0.id == report.id }) {
+                    goodsReports[idx].status = newStatus
+                }
+            case .user:
+                if let idx = userReports.firstIndex(where: { $0.id == report.id }) {
+                    userReports[idx].status = newStatus
+                }
+            }
+            actionMessage = "Report \(action == "dismiss" ? "dismissed" : "actioned")."
+            BrandHaptics.success()
+            await load()
+        } catch let error as APIClientError where error.isForbidden {
+            forbidden = true
+            BrandHaptics.error()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
+    }
+
+    @MainActor
+    private func submitUserAction() async {
+        guard let target = userActionTarget else { return }
+        guard !busyUserIDs.contains(target.id) else { return }
+        let reason = userActionReason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reason.isEmpty else {
+            actionMessage = "Reason is required."
+            BrandHaptics.warning()
+            return
+        }
+        busyUserIDs.insert(target.id)
+        defer { busyUserIDs.remove(target.id) }
+        do {
+            let updated: AdminUserRow
+            switch userActionKind {
+            case .suspend:
+                updated = try await APIClient.shared.suspendAdminUser(id: target.id, reason: reason)
+            case .ban:
+                updated = try await APIClient.shared.banAdminUser(id: target.id, reason: reason)
+            }
+            if let idx = users.firstIndex(where: { $0.id == target.id }) {
+                users[idx] = updated
+            }
+            showUserActionSheet = false
+            userActionTarget = nil
+            userActionReason = ""
+            actionMessage = userActionKind == .suspend ? "User suspended." : "User banned."
+            BrandHaptics.success()
+            await load()
+        } catch let error as APIClientError where error.isForbidden {
+            showUserActionSheet = false
+            forbidden = true
+            BrandHaptics.error()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
+    }
+
+    @MainActor
+    private func reactivateUser(_ user: AdminUserRow) async {
+        guard !busyUserIDs.contains(user.id) else { return }
+        busyUserIDs.insert(user.id)
+        defer { busyUserIDs.remove(user.id) }
+        do {
+            let updated = try await APIClient.shared.reactivateAdminUser(id: user.id)
+            if let idx = users.firstIndex(where: { $0.id == user.id }) {
+                users[idx] = updated
+            }
+            actionMessage = "User reactivated."
+            BrandHaptics.success()
+            await load()
+        } catch let error as APIClientError where error.isForbidden {
+            forbidden = true
+            BrandHaptics.error()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
+    }
+
+    @MainActor
+    private func finalizeUserDeletion(_ user: AdminUserRow) async {
+        guard !busyUserIDs.contains(user.id) else { return }
+        busyUserIDs.insert(user.id)
+        defer { busyUserIDs.remove(user.id) }
+        do {
+            let result = try await APIClient.shared.finalizeAdminUserDeletion(id: user.id)
+            let when = result.finalizedAt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if when.isEmpty {
+                actionMessage = "Finalized deletion for \(user.displayLabel)."
+            } else {
+                actionMessage = "Finalized deletion for \(user.displayLabel) at \(when)."
+            }
+            users.removeAll { $0.id == user.id }
+            BrandHaptics.success()
+            await load()
+        } catch let error as APIClientError where error.isForbidden {
+            forbidden = true
+            BrandHaptics.error()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
+    }
+
+    @MainActor
+    private func reviewAdvance(
+        _ advance: WorkingCapitalAdvance,
+        action: String,
+        reason: String = ""
+    ) async {
+        guard !busyAdvanceIDs.contains(advance.id) else { return }
+        busyAdvanceIDs.insert(advance.id)
+        defer { busyAdvanceIDs.remove(advance.id) }
+        do {
+            let updated = try await APIClient.shared.reviewAdminAdvance(
+                id: advance.id,
+                action: action,
+                reason: reason
+            )
+            if let idx = advances.firstIndex(where: { $0.id == advance.id }) {
+                advances[idx] = updated
+            }
+            actionMessage = action == "approve" ? "Advance approved." : "Advance rejected."
+            BrandHaptics.success()
+            await load()
+        } catch let error as APIClientError where error.isForbidden {
+            forbidden = true
+            BrandHaptics.error()
+        } catch let error as APIClientError where error.isServiceUnavailable {
+            actionMessage = softAdvanceFlagMessage(error.localizedDescription)
+            BrandHaptics.warning()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
+    }
+
+    @MainActor
+    private func disburseAdvance(_ advance: WorkingCapitalAdvance) async {
+        guard !busyAdvanceIDs.contains(advance.id) else { return }
+        busyAdvanceIDs.insert(advance.id)
+        defer { busyAdvanceIDs.remove(advance.id) }
+        do {
+            let updated = try await APIClient.shared.disburseAdminAdvance(id: advance.id)
+            if let idx = advances.firstIndex(where: { $0.id == advance.id }) {
+                advances[idx] = updated
+            }
+            actionMessage = "Advance disbursed."
+            BrandHaptics.success()
+            await load()
+        } catch let error as APIClientError where error.isForbidden {
+            forbidden = true
+            BrandHaptics.error()
+        } catch let error as APIClientError where error.isServiceUnavailable {
+            actionMessage = softAdvanceFlagMessage(error.localizedDescription)
+            BrandHaptics.warning()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
+    }
+
+    private func softAdvanceFlagMessage(_ detail: String) -> String {
+        let cleaned = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleaned.isEmpty, cleaned.lowercased() != "service temporarily unavailable" {
+            return "\(cleaned) (flag: working_capital)."
+        }
+        return "The working_capital feature flag is off or the rail is unavailable (HTTP 503)."
     }
 
     private func openDisputeOnWeb(_ id: String) {
@@ -1671,6 +2029,12 @@ struct AdminConsoleView: View {
                 for flag in loaded where rolloutDrafts[flag.key] == nil {
                     rolloutDrafts[flag.key] = String(flag.rolloutPercent ?? 100)
                 }
+            case .jobs, .listings, .goodsDisputes,
+                 .guarantee, .verification, .licenses, .insurance, .reviews,
+                 .fees, .banking, .platform,
+                 .markets, .taxonomy, .insurers, .challenges:
+                // AdminOpsViews panels load their own data.
+                break
             case .disputes:
                 disputes = try await APIClient.shared.fetchAdminDisputes().disputes
             case .users:
@@ -1681,6 +2045,8 @@ struct AdminConsoleView: View {
                 userReports = try await APIClient.shared.fetchAdminUserReports().reports
             case .fraud:
                 fraudAlerts = try await APIClient.shared.fetchAdminFraudAlerts().alerts
+            case .advances:
+                advances = try await APIClient.shared.fetchAdminAdvances().advances
             }
             forbidden = false
             errorMessage = nil
@@ -1688,6 +2054,11 @@ struct AdminConsoleView: View {
             if error.isForbidden {
                 forbidden = true
                 errorMessage = nil
+            } else if error.isServiceUnavailable, tab == .advances {
+                advances = []
+                errorMessage = nil
+                actionMessage = softAdvanceFlagMessage(error.localizedDescription)
+                BrandHaptics.warning()
             } else if isEmpty {
                 errorMessage = error.localizedDescription
             }

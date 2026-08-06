@@ -2162,6 +2162,12 @@ enum APIClientError: Error, LocalizedError {
         return false
     }
 
+    /// 503 Service Unavailable — feature-flag gate / dependency down (soft UI, never crash).
+    var isServiceUnavailable: Bool {
+        if case .httpStatus(let code, _) = self, code == 503 { return true }
+        return false
+    }
+
     /// 404 Not Found — e.g. job/listing removed; used to drop Spotlight donations.
     var isNotFound: Bool {
         if case .httpStatus(let code, _) = self, code == 404 { return true }

@@ -1190,9 +1190,11 @@ func New(
 
 			// Pre-quote category questions CRUD (Wave 5 audit Section H).
 			// Public read at /api/v1/categories/{id}/questions; admin
-			// writes here. Cascade DELETE on category_questions cleans up
-			// every job_question_answers row that referenced the question.
+			// list + writes here. Cascade DELETE on category_questions
+			// cleans up every job_question_answers row that referenced
+			// the question. GET supports optional ?category_id= filter.
 			r.Route("/category-questions", func(r chi.Router) {
+				r.Get("/", categoryQuestionsHandler.AdminList)
 				r.Post("/", categoryQuestionsHandler.AdminCreate)
 				r.Patch("/{id}", categoryQuestionsHandler.AdminUpdate)
 				r.Delete("/{id}", categoryQuestionsHandler.AdminDelete)
