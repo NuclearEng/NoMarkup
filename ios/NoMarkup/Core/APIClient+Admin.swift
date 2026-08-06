@@ -171,6 +171,168 @@ extension APIClient {
         }
         return dispute
     }
+
+    /// POST `/api/v1/admin/goods-reports/{id}/resolve`
+    /// Actions: `dismiss` | `actioned` | `review`.
+    @discardableResult
+    func resolveAdminGoodsReport(
+        id: String,
+        action: String,
+        notes: String = ""
+    ) async throws -> AdminReportResolveResponse {
+        try await resolveAdminReport(
+            pathSegment: "goods-reports",
+            id: id,
+            action: action,
+            notes: notes
+        )
+    }
+
+    /// POST `/api/v1/admin/user-reports/{id}/resolve`
+    /// Actions: `dismiss` | `actioned` | `review`.
+    @discardableResult
+    func resolveAdminUserReport(
+        id: String,
+        action: String,
+        notes: String = ""
+    ) async throws -> AdminReportResolveResponse {
+        try await resolveAdminReport(
+            pathSegment: "user-reports",
+            id: id,
+            action: action,
+            notes: notes
+        )
+    }
+
+    private func resolveAdminReport(
+        pathSegment: String,
+        id: String,
+        action: String,
+        notes: String
+    ) async throws -> AdminReportResolveResponse {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Report id is required.")
+        }
+        let actionTrimmed = action.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard actionTrimmed == "dismiss" || actionTrimmed == "actioned" || actionTrimmed == "review" else {
+            throw APIClientError.httpStatus(400, detail: "Action must be dismiss, actioned, or review.")
+        }
+        let body = ResolveAdminReportBody(
+            action: actionTrimmed,
+            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        return try await postJSON(
+            pathComponents: ["api", "v1", "admin", pathSegment, trimmed, "resolve"],
+            body: body,
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/admin/users/{id}/suspend` — body `{ reason }`.
+    @discardableResult
+    func suspendAdminUser(id: String, reason: String) async throws -> AdminUserRow {
+        try await mutateAdminUser(id: id, pathAction: "suspend", reason: reason)
+    }
+
+    /// POST `/api/v1/admin/users/{id}/ban` — body `{ reason }`.
+    @discardableResult
+    func banAdminUser(id: String, reason: String) async throws -> AdminUserRow {
+        try await mutateAdminUser(id: id, pathAction: "ban", reason: reason)
+    }
+
+    /// POST `/api/v1/admin/users/{id}/reactivate` — optional body; empty payload is valid.
+    @discardableResult
+    func reactivateAdminUser(id: String) async throws -> AdminUserRow {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "User id is required.")
+        }
+        let response: AdminUserMutationResponse = try await postJSON(
+            pathComponents: ["api", "v1", "admin", "users", trimmed, "reactivate"],
+            body: EmptyBody(),
+            authorized: .required
+        )
+        guard let user = response.user else {
+            throw APIClientError.decoding("Reactivate response missing user.")
+        }
+        return user
+    }
+
+    private func mutateAdminUser(id: String, pathAction: String, reason: String) async throws -> AdminUserRow {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "User id is required.")
+        }
+        let reasonTrimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reasonTrimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Reason is required.")
+        }
+        let response: AdminUserMutationResponse = try await postJSON(
+            pathComponents: ["api", "v1", "admin", "users", trimmed, pathAction],
+            body: AdminUserReasonBody(reason: reasonTrimmed),
+            authorized: .required
+        )
+        guard let user = response.user else {
+            throw APIClientError.decoding("User \(pathAction) response missing user.")
+        }
+        return user
+    }
+
+    /// GET `/api/v1/admin/advances` — working capital queue (all providers).
+    func fetchAdminAdvances(
+        page: Int = 1,
+        pageSize: Int = 40,
+        status: String? = nil
+    ) async throws -> AdvancesResponse {
+        var query = [
+            URLQueryItem(name: "page", value: String(max(1, page))),
+            URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+        ]
+        if let status, !status.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            query.append(
+                URLQueryItem(
+                    name: "status",
+                    value: status.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            )
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "admin", "advances"],
+            query: query,
+            authorized: true
+        )
+    }
+
+    /// POST `/api/v1/admin/advances/{id}/review` — `action`: `approve` | `reject`.
+    @discardableResult
+    func reviewAdminAdvance(
+        id: String,
+        action: String,
+        reason: String = ""
+    ) async throws -> WorkingCapitalAdvance {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Advance id is required.")
+        }
+        let actionTrimmed = action.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard actionTrimmed == "approve" || actionTrimmed == "reject" else {
+            throw APIClientError.httpStatus(400, detail: "Action must be approve or reject.")
+        }
+        let body = ReviewAdminAdvanceBody(
+            action: actionTrimmed,
+            reason: reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        let response: AdvanceEnvelope = try await postJSON(
+            pathComponents: ["api", "v1", "admin", "advances", trimmed, "review"],
+            body: body,
+            authorized: .required
+        )
+        guard let advance = response.advance else {
+            throw APIClientError.decoding("Advance review response missing advance.")
+        }
+        return advance
+    }
 }
 
 // MARK: - Admin models
@@ -306,6 +468,23 @@ struct AdminUserRow: Decodable, Sendable, Hashable, Identifiable {
         let e = email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return e.isEmpty ? id : e
     }
+
+    var normalizedStatus: String {
+        (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    var isSuspended: Bool { normalizedStatus == "suspended" }
+    var isBanned: Bool { normalizedStatus == "banned" }
+    /// Mirrors web: Suspend disabled when already suspended (or banned).
+    var canSuspend: Bool { !isSuspended && !isBanned }
+    /// Ban disabled when already banned.
+    var canBan: Bool { !isBanned }
+    var canReactivate: Bool { isSuspended }
+
+    var displayStatus: String {
+        let s = normalizedStatus
+        return s.isEmpty ? "unknown" : s
+    }
 }
 
 struct AdminUsersResponse: Decodable, Sendable {
@@ -319,6 +498,15 @@ struct AdminUsersResponse: Decodable, Sendable {
     enum CodingKeys: String, CodingKey { case users }
 }
 
+struct AdminUserMutationResponse: Decodable, Sendable {
+    var user: AdminUserRow?
+}
+
+/// POST body for suspend/ban.
+private struct AdminUserReasonBody: Encodable {
+    var reason: String
+}
+
 struct AdminReportRow: Decodable, Sendable, Hashable, Identifiable {
     var id: String
     var status: String?
@@ -328,6 +516,13 @@ struct AdminReportRow: Decodable, Sendable, Hashable, Identifiable {
     var createdAt: String?
     var listingId: String?
     var userId: String?
+
+    /// Open or intermediate (`reviewed`) — not terminal `dismissed` / `actioned`.
+    var isOpenForResolution: Bool {
+        let s = (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if s.isEmpty || s == "open" || s == "pending" || s == "reviewed" { return true }
+        return s != "dismissed" && s != "actioned"
+    }
 }
 
 struct AdminReportsResponse: Decodable, Sendable {
@@ -401,4 +596,21 @@ private struct ReviewAdminFraudAlertBody: Encodable {
     var resolutionNotes: String
     var restrictUser: Bool
     var banUser: Bool
+}
+
+struct AdminReportResolveResponse: Decodable, Sendable {
+    var reportId: String?
+    var status: String?
+}
+
+/// POST body for goods/user report resolve.
+private struct ResolveAdminReportBody: Encodable {
+    var action: String
+    var notes: String
+}
+
+/// POST body for `/api/v1/admin/advances/{id}/review`.
+private struct ReviewAdminAdvanceBody: Encodable {
+    var action: String
+    var reason: String
 }

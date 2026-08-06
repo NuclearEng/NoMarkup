@@ -778,8 +778,8 @@ struct MarketplaceMapView: View {
 
 // MARK: - Admin console (web `/admin/*`)
 
-/// Admin desk: flags (toggle + rollout), disputes (resolve), users, reports, fraud (review).
-/// Requires admin role server-side; non-admins get an empty/403 state (never crashes).
+/// Admin desk: flags, disputes, users (suspend/ban/reactivate), goods/user reports,
+/// fraud, working-capital advances. Requires admin role; soft 403, never crashes.
 struct AdminConsoleView: View {
     private enum SectionTab: String, CaseIterable, Identifiable {
         case flags = "Flags"
@@ -788,8 +788,14 @@ struct AdminConsoleView: View {
         case goodsReports = "Goods"
         case userReports = "Users reports"
         case fraud = "Fraud"
+        case advances = "Advances"
 
         var id: String { rawValue }
+    }
+
+    private enum ReportKind {
+        case goods
+        case user
     }
 
     private enum FraudReviewAction: String, Identifiable {
@@ -826,6 +832,20 @@ struct AdminConsoleView: View {
         }
     }
 
+    private enum UserModerationAction: String, Identifiable {
+        case suspend
+        case ban
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .suspend: return "Suspend"
+            case .ban: return "Ban"
+            }
+        }
+    }
+
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.openURL) private var openURL
     @State private var tab: SectionTab = .flags
@@ -835,6 +855,7 @@ struct AdminConsoleView: View {
     @State private var goodsReports: [AdminReportRow] = []
     @State private var userReports: [AdminReportRow] = []
     @State private var fraudAlerts: [AdminFraudAlert] = []
+    @State private var advances: [WorkingCapitalAdvance] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var actionMessage: String?
@@ -853,6 +874,13 @@ struct AdminConsoleView: View {
     @State private var disputeResolveNotes = ""
     @State private var disputeResolveAction: DisputeResolveAction = .favorCustomer
     @State private var showDisputeResolveSheet = false
+    @State private var busyReportIDs: Set<String> = []
+    @State private var busyUserIDs: Set<String> = []
+    @State private var busyAdvanceIDs: Set<String> = []
+    @State private var userActionTarget: AdminUserRow?
+    @State private var userActionKind: UserModerationAction = .suspend
+    @State private var userActionReason = ""
+    @State private var showUserActionSheet = false
 
     var body: some View {
         Group {
@@ -896,25 +924,15 @@ struct AdminConsoleView: View {
                     case .disputes:
                         disputeRows
                     case .users:
-                        ForEach(users) { u in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(u.displayLabel)
-                                    .font(.subheadline.weight(.semibold))
-                                if let roles = u.roles, !roles.isEmpty {
-                                    Text(roles.joined(separator: ", "))
-                                        .font(.caption)
-                                        .foregroundStyle(BrandTheme.textSecondary)
-                                }
-                            }
-                            .listRowBackground(BrandTheme.navyElevated)
-                            .frame(minHeight: 44)
-                        }
+                        userRows
                     case .goodsReports:
-                        reportRows(goodsReports)
+                        reportRows(goodsReports, kind: .goods)
                     case .userReports:
-                        reportRows(userReports)
+                        reportRows(userReports, kind: .user)
                     case .fraud:
                         fraudRows
+                    case .advances:
+                        advanceRows
                     }
                 }
                 .brandListBackground()
@@ -961,6 +979,9 @@ struct AdminConsoleView: View {
         }
         .sheet(isPresented: $showDisputeResolveSheet) {
             disputeResolveSheet
+        }
+        .sheet(isPresented: $showUserActionSheet) {
+            userActionSheet
         }
         .task(id: tab) { await load() }
         .refreshable { await load() }
@@ -1244,6 +1265,50 @@ struct AdminConsoleView: View {
         .presentationDetents([.medium, .large])
     }
 
+    private var userActionSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    if let target = userActionTarget {
+                        Text(target.displayLabel)
+                            .font(.subheadline.weight(.semibold))
+                        Text(userActionKind.label)
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                    TextField("Reason (required)", text: $userActionReason, axis: .vertical)
+                        .lineLimit(3 ... 6)
+                        .accessibilityIdentifier("admin.user.reason")
+                } footer: {
+                    Text("POST /admin/users/{id}/\(userActionKind.rawValue). Reason is required server-side.")
+                }
+            }
+            .navigationTitle("\(userActionKind.label) user")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showUserActionSheet = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(userActionKind.label) {
+                        Task { await submitUserAction() }
+                    }
+                    .disabled(
+                        userActionTarget == nil
+                            || userActionReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || busyUserIDs.contains(userActionTarget?.id ?? "")
+                    )
+                    .accessibilityIdentifier("admin.user.submit")
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
     private var isEmpty: Bool {
         switch tab {
         case .flags: return flags.isEmpty
@@ -1252,24 +1317,193 @@ struct AdminConsoleView: View {
         case .goodsReports: return goodsReports.isEmpty
         case .userReports: return userReports.isEmpty
         case .fraud: return fraudAlerts.isEmpty
+        case .advances: return advances.isEmpty
+        }
+    }
+
+    // MARK: - User rows
+
+    @ViewBuilder
+    private var userRows: some View {
+        if users.isEmpty {
+            Text("No users.")
+                .foregroundStyle(BrandTheme.textSecondary)
+                .listRowBackground(BrandTheme.navyElevated)
+        } else {
+            ForEach(users) { u in
+                let busy = busyUserIDs.contains(u.id)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(u.displayLabel)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                            Text(u.displayStatus)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textSecondary)
+                            if let roles = u.roles, !roles.isEmpty {
+                                Text(roles.joined(separator: ", "))
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        if busy {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                    HStack(spacing: 8) {
+                        if u.canSuspend {
+                            Button("Suspend") {
+                                userActionTarget = u
+                                userActionKind = .suspend
+                                userActionReason = ""
+                                showUserActionSheet = true
+                            }
+                            .font(.caption.weight(.semibold))
+                            .disabled(busy)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("admin.user.suspend.\(u.id)")
+                        }
+                        if u.canBan {
+                            Button("Ban", role: .destructive) {
+                                userActionTarget = u
+                                userActionKind = .ban
+                                userActionReason = ""
+                                showUserActionSheet = true
+                            }
+                            .font(.caption.weight(.semibold))
+                            .disabled(busy)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("admin.user.ban.\(u.id)")
+                        }
+                        if u.canReactivate {
+                            Button("Reactivate") {
+                                Task { await reactivateUser(u) }
+                            }
+                            .font(.caption.weight(.semibold))
+                            .disabled(busy)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("admin.user.reactivate.\(u.id)")
+                        }
+                    }
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+                .frame(minHeight: 44)
+            }
+        }
+    }
+
+    // MARK: - Advance rows
+
+    @ViewBuilder
+    private var advanceRows: some View {
+        if advances.isEmpty {
+            Text("No working-capital advances.")
+                .foregroundStyle(BrandTheme.textSecondary)
+                .listRowBackground(BrandTheme.navyElevated)
+        } else {
+            ForEach(advances) { advance in
+                let busy = busyAdvanceIDs.contains(advance.id)
+                let status = (advance.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(advance.displayAmount)
+                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(BrandTheme.goldBright)
+                            Text(advance.displayStatus)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textSecondary)
+                            if let cid = advance.contractId, !cid.isEmpty {
+                                Text("Contract \(String(cid.prefix(8)))…")
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        if busy {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                    if status == "requested" {
+                        HStack(spacing: 8) {
+                            Button("Approve") {
+                                Task { await reviewAdvance(advance, action: "approve") }
+                            }
+                            .font(.caption.weight(.semibold))
+                            .disabled(busy)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("admin.advance.approve.\(advance.id)")
+                            Button("Reject", role: .destructive) {
+                                Task {
+                                    await reviewAdvance(
+                                        advance,
+                                        action: "reject",
+                                        reason: "Does not meet eligibility criteria"
+                                    )
+                                }
+                            }
+                            .font(.caption.weight(.semibold))
+                            .disabled(busy)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("admin.advance.reject.\(advance.id)")
+                        }
+                    }
+                }
+                .listRowBackground(BrandTheme.navyElevated)
+            }
         }
     }
 
     @ViewBuilder
-    private func reportRows(_ rows: [AdminReportRow]) -> some View {
+    private func reportRows(_ rows: [AdminReportRow], kind: ReportKind) -> some View {
         if rows.isEmpty {
             Text("No reports.")
                 .foregroundStyle(BrandTheme.textSecondary)
                 .listRowBackground(BrandTheme.navyElevated)
         } else {
             ForEach(rows) { r in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(r.status ?? "open")
-                        .font(.subheadline.weight(.semibold))
-                    if let reason = r.reason {
-                        Text(reason)
-                            .font(.caption)
-                            .foregroundStyle(BrandTheme.textSecondary)
+                let busy = busyReportIDs.contains(r.id)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(r.status ?? "open")
+                                .font(.subheadline.weight(.semibold))
+                            if let reason = r.reason {
+                                Text(reason)
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                            Text(String(r.id.prefix(8)) + "…")
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                        Spacer(minLength: 8)
+                        if busy {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                    if r.isOpenForResolution {
+                        HStack(spacing: 8) {
+                            Button("Dismiss") {
+                                Task { await resolveReport(r, kind: kind, action: "dismiss") }
+                            }
+                            .font(.caption.weight(.semibold))
+                            .disabled(busy)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("admin.report.dismiss.\(r.id)")
+                            Button("Actioned") {
+                                Task { await resolveReport(r, kind: kind, action: "actioned") }
+                            }
+                            .font(.caption.weight(.semibold))
+                            .disabled(busy)
+                            .frame(minHeight: 44)
+                            .accessibilityIdentifier("admin.report.actioned.\(r.id)")
+                        }
                     }
                 }
                 .listRowBackground(BrandTheme.navyElevated)
