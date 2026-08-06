@@ -1,6 +1,6 @@
 # NoMarkup — TODO Tracker
 
-> Last updated: 2026-04-25 (audit follow-up batch landed on `fix/security-audit-2026-04-23` through commit `4ea4d99`)
+> Last updated: 2026-08-05 (OAUTH-FULL-SETUP Founder-Action logged; OAuth init fail-closed + login error UX shipped)
 > Priority: P0 = do next, P1 = launch-blocking, P2 = post-launch, P3 = nice-to-have
 > Status: Done, In Progress, Not Started, Founder-Action
 > Phase: 1 = Foundation (Week 1-2), 2 = Expansion (Week 3-5), 3 = Hardening (Week 6-7), 4 = Launch Prep (Week 8)
@@ -323,8 +323,37 @@ Verified shipped end-to-end:
 ### Done — 18. Gateway payment idempotency keys (Phase 3)
 - Shipped on branch `fix/security-audit-2026-04-23` (commit `c89baff`). `RequireIdempotencyKey` middleware is now mounted on `/payments` and `/subscriptions` route groups with 24h Redis TTL.
 
-### Done — 19. Wire OAuth providers — Google + Apple (Phase 3)
-Apple JWKS verification landed in audit branch; Google JWKS verification landed in commit `68d5cbf` (see S4). Backend `FindOrCreateByOAuth` in user service, frontend `oauth-buttons.tsx` component all in place. Founder-Action remaining: provision Google Cloud Console + Apple Developer account credentials in production secrets.
+### Done (code) / Founder-Action (credentials) — 19. Wire OAuth providers — Google + Apple + Facebook (Phase 3)
+**Code path is complete** (JWKS verification, state cookies, Facebook Login, native iOS paths).  
+**2026-08-05:** Init handlers fail closed when client IDs are missing (`google_not_configured` / `facebook_not_configured` / `apple_not_configured`) instead of redirecting to the provider with an empty `client_id` (Google’s “Access blocked: Missing required parameter: client_id”). Login/register surface those codes via `web/src/lib/oauth-errors.ts`. Tests: `gateway/internal/handler/oauth_web_init_test.go`, `web/tests/unit/lib/oauth-errors.test.ts`.
+
+#### Open — OAUTH-FULL-SETUP (Founder-Action, P1 launch-blocking)
+Social login is **not fully set up** until real credentials exist in every environment and a human completes one successful sign-in per provider.
+
+| Env | Where to put secrets | Redirect base |
+|-----|----------------------|---------------|
+| Local | `.env.local` → restart gateway | `http://localhost:8081` (or your `GATEWAY_PORT`) |
+| Staging | `nomarkup-secrets` (not ConfigMap — OPS-08) | staging API host |
+| Production | `nomarkup-secrets` / `deploy/prod/.env` | `https://api.no-markup.com` |
+
+**Checklist (do all):**
+- [ ] **Google** — Cloud Console → OAuth 2.0 Web client  
+  - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`  
+  - Optional iOS: `GOOGLE_IOS_CLIENT_ID` (bundle `com.nomarkup.app`)  
+  - Authorized redirect URI: `{OAUTH_REDIRECT_BASE}/api/v1/auth/callback/google`
+- [ ] **Facebook** — Meta Developer app → Facebook Login  
+  - `FACEBOOK_CLIENT_ID` (App ID), `FACEBOOK_CLIENT_SECRET`  
+  - Valid OAuth Redirect URI: `{OAUTH_REDIRECT_BASE}/api/v1/auth/callback/facebook`
+- [ ] **Apple** — Developer → Sign in with Apple Services ID  
+  - `APPLE_CLIENT_ID`, `APPLE_CLIENT_SECRET` (and native audience if different)
+- [ ] Set `OAUTH_REDIRECT_BASE` + `FRONTEND_URL` to match the env
+- [ ] Restart gateway / roll pods so env is loaded
+- [ ] Dogfood: Continue with Google → consent → lands authenticated
+- [ ] Dogfood: Continue with Facebook → same
+- [ ] Dogfood: Continue with Apple (web and/or native iOS) → same
+- [ ] Confirm login error UX still works if a secret is intentionally blank (redirect + in-app message, not provider 400 page)
+
+**Refs:** `.env.example` OAuth block · `deploy/k8s/SECRETS.md` · `docs/operations/prod-launch-todo.md` Phase 2 · resume phrase: `resume OAuth full setup` or `OAUTH-FULL-SETUP`
 
 #### (original spec preserved below)
 - **Account setup:**
@@ -483,7 +512,7 @@ These are small (<1 hour) polish items that make users think "oh nice, they thou
 - **S7** Decide: git history rewrite (Option A: filter-repo + force-push, requires every dev to re-clone) vs accept history (Option B). Recommend B unless regulatory.
 - **#6** Provision SendGrid API key + `SENDGRID_FROM_EMAIL` in production secrets.
 - **#7** Provision Sentry DSN (Go services + frontend) in production secrets.
-- **#19** Provision real `GOOGLE_CLIENT_ID` (+ `GOOGLE_CLIENT_SECRET`) into `nomarkup-secrets` for staging and production (not ConfigMap — OPS-08).
+- **#19 / OAUTH-FULL-SETUP** Provision real Google + Facebook + Apple OAuth credentials for **local** (`.env.local`), **staging**, and **production** (`nomarkup-secrets` / `deploy/prod/.env` — not ConfigMap, OPS-08). Register redirect URIs, set `OAUTH_REDIRECT_BASE` + `FRONTEND_URL`, restart gateway, and dogfood each “Continue with …” button once. See §19 checklist above. Resume: `resume OAuth full setup`.
 
 **Shipped across audit branch + 2026-04-24/25 sweep (commits `68d5cbf`, `cb4b478`, `a97393b`, `f890143`, `0a9fd90`, `4ea4d99`):**
 - All 8 security audit follow-ups (S1-S8) closed code-side
