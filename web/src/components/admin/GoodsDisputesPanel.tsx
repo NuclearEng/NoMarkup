@@ -4,6 +4,7 @@ import { useState } from 'react';
 
 import { toast } from 'sonner';
 
+import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -84,8 +85,13 @@ function ResolveForm({ dispute }: ResolveFormProps) {
   const [refundDollars, setRefundDollars] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  // Snapshot of validated refund cents at confirm-open time so the dialog
+  // confirm path cannot race a mid-dialog field edit.
+  const [pendingRefundCents, setPendingRefundCents] = useState(0);
 
   const isPartial = resolution === RESOLUTION.REFUND_PARTIAL;
+  const resolutionLabel = RESOLUTION_LABELS[resolution];
 
   function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -105,20 +111,16 @@ function ResolveForm({ dispute }: ResolveFormProps) {
       }
     }
 
-    const label = RESOLUTION_LABELS[resolution];
-    if (
-      !window.confirm(
-        `Resolve this goods dispute with “${label}”? This can move money and cannot be undone from this screen.`,
-      )
-    ) {
-      return;
-    }
+    setPendingRefundCents(refundCents);
+    setConfirmOpen(true);
+  }
 
+  function handleConfirmResolve() {
     resolve.mutate(
       {
         disputeId: dispute.id,
         resolution,
-        refund_to_buyer_cents: refundCents,
+        refund_to_buyer_cents: pendingRefundCents,
         // Releasing to the seller transfers the full order amount; the gateway
         // also derives this, but sending it keeps the intent explicit.
         transfer_to_seller_cents:
@@ -128,8 +130,10 @@ function ResolveForm({ dispute }: ResolveFormProps) {
       {
         onSuccess: () => {
           toast.success('Dispute resolved');
+          setConfirmOpen(false);
           setNotes('');
           setRefundDollars('');
+          setPendingRefundCents(0);
         },
         onError: (err) => {
           // 409 → "dispute already resolved": surface the server's reason so the
@@ -140,83 +144,105 @@ function ResolveForm({ dispute }: ResolveFormProps) {
     );
   }
 
-  return (
-    <form onSubmit={handleSubmit} className="mt-3 space-y-3 border-t border-white/10 pt-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor={`resolution-${dispute.id}`}>Resolution</Label>
-          <Select
-            value={resolution}
-            onValueChange={(v) => {
-              setResolution(v as Resolution);
-              setError(null);
-            }}
-          >
-            <SelectTrigger
-              id={`resolution-${dispute.id}`}
-              className="min-h-[44px]"
-              aria-label="Select a resolution"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.values(RESOLUTION).map((value) => (
-                <SelectItem key={value} value={value}>
-                  {RESOLUTION_LABELS[value]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+  const confirmDescription =
+    resolution === RESOLUTION.REFUND_PARTIAL
+      ? `Apply “${resolutionLabel}” of ${formatCents(pendingRefundCents)} on order ${formatCents(dispute.amount_cents)}. This moves money and cannot be undone from this screen.`
+      : resolution === RESOLUTION.RELEASE_TO_SELLER
+        ? `Apply “${resolutionLabel}” for ${formatCents(dispute.amount_cents)}. This moves money and cannot be undone from this screen.`
+        : `Resolve this goods dispute with “${resolutionLabel}”? This can move money and cannot be undone from this screen.`;
 
-        {isPartial ? (
+  return (
+    <>
+      <form onSubmit={handleSubmit} className="mt-3 space-y-3 border-t border-white/10 pt-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor={`refund-${dispute.id}`}>Refund to buyer ($)</Label>
-            <Input
-              id={`refund-${dispute.id}`}
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="0.01"
-              className="min-h-[44px]"
-              value={refundDollars}
-              onChange={(e) => {
-                setRefundDollars(e.target.value);
+            <Label htmlFor={`resolution-${dispute.id}`}>Resolution</Label>
+            <Select
+              value={resolution}
+              onValueChange={(v) => {
+                setResolution(v as Resolution);
                 setError(null);
               }}
-              placeholder="0.00"
-              aria-describedby={error ? `resolve-error-${dispute.id}` : undefined}
-            />
+            >
+              <SelectTrigger
+                id={`resolution-${dispute.id}`}
+                className="min-h-[44px]"
+                aria-label="Select a resolution"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.values(RESOLUTION).map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {RESOLUTION_LABELS[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+
+          {isPartial ? (
+            <div className="space-y-1.5">
+              <Label htmlFor={`refund-${dispute.id}`}>Refund to buyer ($)</Label>
+              <Input
+                id={`refund-${dispute.id}`}
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                className="min-h-[44px]"
+                value={refundDollars}
+                onChange={(e) => {
+                  setRefundDollars(e.target.value);
+                  setError(null);
+                }}
+                placeholder="0.00"
+                aria-describedby={error ? `resolve-error-${dispute.id}` : undefined}
+              />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor={`notes-${dispute.id}`}>Resolution notes</Label>
+          <Input
+            id={`notes-${dispute.id}`}
+            type="text"
+            className="min-h-[44px]"
+            value={notes}
+            onChange={(e) => { setNotes(e.target.value); }}
+            placeholder="Reason / internal note"
+          />
+        </div>
+
+        {error ? (
+          <p
+            id={`resolve-error-${dispute.id}`}
+            role="alert"
+            className="text-sm text-destructive"
+          >
+            {error}
+          </p>
         ) : null}
-      </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor={`notes-${dispute.id}`}>Resolution notes</Label>
-        <Input
-          id={`notes-${dispute.id}`}
-          type="text"
-          className="min-h-[44px]"
-          value={notes}
-          onChange={(e) => { setNotes(e.target.value); }}
-          placeholder="Reason / internal note"
-        />
-      </div>
+        <Button type="submit" size="sm" className="min-h-[44px]" disabled={resolve.isPending}>
+          {resolve.isPending ? 'Resolving...' : 'Resolve dispute'}
+        </Button>
+      </form>
 
-      {error ? (
-        <p
-          id={`resolve-error-${dispute.id}`}
-          role="alert"
-          className="text-sm text-destructive"
-        >
-          {error}
-        </p>
-      ) : null}
-
-      <Button type="submit" size="sm" className="min-h-[44px]" disabled={resolve.isPending}>
-        {resolve.isPending ? 'Resolving...' : 'Resolve dispute'}
-      </Button>
-    </form>
+      <ActionConfirmDialog
+        open={confirmOpen}
+        onClose={() => {
+          if (!resolve.isPending) setConfirmOpen(false);
+        }}
+        onConfirm={handleConfirmResolve}
+        title="Resolve this goods dispute?"
+        description={confirmDescription}
+        confirmLabel="Confirm resolve"
+        destructive
+        loading={resolve.isPending}
+      />
+    </>
   );
 }
 

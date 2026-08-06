@@ -7,7 +7,18 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type ReactNode, createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+beforeAll(() => {
+  // jsdom does not implement HTMLDialogElement.showModal/close — stub them
+  // so ActionConfirmDialog can open in unit tests.
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+  };
+});
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -108,7 +119,7 @@ describe('GoodsDisputesPanel', () => {
     expect(screen.getByRole('button', { name: /Resolve dispute/i })).toBeInTheDocument();
   });
 
-  it('submits a full refund with the right payload', async () => {
+  it('submits a full refund with the right payload after confirm', async () => {
     useAdminGoodsDisputes.mockReturnValue({
       data: { disputes: [openDispute] },
       isLoading: false,
@@ -118,6 +129,10 @@ describe('GoodsDisputesPanel', () => {
     renderPanel();
 
     await user.click(screen.getByRole('button', { name: /Resolve dispute/i }));
+    // Money-moving path requires ActionConfirmDialog — not window.confirm.
+    expect(resolveMutate).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: /Resolve this goods dispute/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Confirm resolve/i }));
 
     expect(resolveMutate).toHaveBeenCalledTimes(1);
     const [payload] = resolveMutate.mock.calls[0] as [Record<string, unknown>];
@@ -142,6 +157,7 @@ describe('GoodsDisputesPanel', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Partial refund' }));
     await user.type(screen.getByLabelText('Refund to buyer ($)'), '40');
     await user.click(screen.getByRole('button', { name: /Resolve dispute/i }));
+    await user.click(screen.getByRole('button', { name: /Confirm resolve/i }));
 
     await waitFor(() => {
       expect(resolveMutate).toHaveBeenCalledTimes(1);
@@ -165,6 +181,7 @@ describe('GoodsDisputesPanel', () => {
     await user.click(screen.getByRole('button', { name: /Resolve dispute/i }));
 
     expect(resolveMutate).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /Confirm resolve/i })).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(/refund amount greater than \$0/i);
   });
 
@@ -185,6 +202,7 @@ describe('GoodsDisputesPanel', () => {
     renderPanel();
 
     await user.click(screen.getByRole('button', { name: /Resolve dispute/i }));
+    await user.click(screen.getByRole('button', { name: /Confirm resolve/i }));
 
     expect(toastError).toHaveBeenCalledWith('dispute already resolved');
   });
