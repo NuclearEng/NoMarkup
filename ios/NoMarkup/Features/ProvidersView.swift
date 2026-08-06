@@ -62,7 +62,11 @@ struct ProvidersView: View {
                 Section {
                     ForEach(providers) { provider in
                         NavigationLink {
-                            ProviderDetailView(providerID: provider.id, preview: provider)
+                            // Lazy: Account → Providers list can be long; avoid specializing
+                            // every ProviderDetailView at list build (stack / tab-shell pressure).
+                            LazyView {
+                                ProviderDetailView(providerID: provider.id, preview: provider)
+                            }
                         } label: {
                             providerRow(provider)
                         }

@@ -2,15 +2,19 @@ import Foundation
 
 /// Runtime configuration for the native client.
 ///
-/// API base URL resolution order:
-/// 1. Process environment `NOMARKUP_API_BASE_URL` (Debug scheme / CI dogfood only)
-/// 2. **DEBUG + Simulator:** `http://127.0.0.1:8081` (local `make dev` gateway)
-/// 3. Info.plist key `APIBaseURL` when non-empty (staging / custom host)
-/// 4. Production: `https://api.no-markup.com`
+/// API base URL resolution order (Debug):
+/// 1. Process environment `NOMARKUP_API_BASE_URL` (devicectl / scheme / CI)
+/// 2. Persisted dogfood base (UserDefaults) — survives cold launch after env install
+/// 3. **DEBUG + Simulator:** `http://127.0.0.1:8081`
+/// 4. **DEBUG + device:** stamped LAN base (`DevAPIBase.lanURLString`) when non-empty
+/// 5. Info.plist `APIBaseURL` when non-empty
+/// 6. Production: `https://api.no-markup.com`
 ///
 /// **Release never uses cleartext HTTP.** Env / plist `http://…` values fall through
-/// to production HTTPS. LAN dogfood: set scheme env `NOMARKUP_API_BASE_URL` in **Debug only**.
+/// to production HTTPS.
 enum AppConfig {
+    /// UserDefaults key for Debug dogfood API base (set when launched with env override).
+    static let dogfoodAPIBaseDefaultsKey = "nomarkup.debug.apiBaseURL"
     /// Production marketing / legal site (hyphenated zone).
     static let publicWebBaseURL = URL(string: "https://no-markup.com")!
 
@@ -102,15 +106,9 @@ enum AppConfig {
 
     /// Gateway HTTP base (no trailing slash).
     ///
-    /// Resolution:
-    /// 1. `NOMARKUP_API_BASE_URL` env (Debug scheme / CI) — **Release rejects non-https**
-    /// 2. **DEBUG + Simulator:** `http://127.0.0.1:8081` (local `make dev` gateway)
-    /// 3. Info.plist `APIBaseURL` when non-empty — **Release rejects non-https**
-    /// 4. `https://api.no-markup.com`
-    ///
-    /// Committed Info.plist `APIBaseURL` is empty so Release always hits production HTTPS
-    /// unless an explicit https override is supplied. Physical-device Debug dogfood: set
-    /// scheme env `NOMARKUP_API_BASE_URL` (prefer HTTPS staging / tunnel over cleartext).
+    /// See type docs for full resolution order. Physical-device Debug dogfood:
+    /// launch once with `NOMARKUP_API_BASE_URL` (persists) **or** rebuild with
+    /// `stamp-git-revision.sh` which also stamps the LAN default in `DevAPIBase`.
     static var apiBaseURL: URL {
         #if DEBUG && targetEnvironment(simulator)
         let debugSimDefault: URL? = URL(string: "http://127.0.0.1:8081")
@@ -118,18 +116,32 @@ enum AppConfig {
         let debugSimDefault: URL? = nil
         #endif
 
+        #if DEBUG && !targetEnvironment(simulator)
+        let debugDeviceDefault: URL? = {
+            let lan = DevAPIBase.lanURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !lan.isEmpty, let url = URL(string: lan) else { return nil }
+            return url
+        }()
+        #else
+        let debugDeviceDefault: URL? = nil
+        #endif
+
         #if DEBUG
         let allowCleartext = true
+        let dogfoodPersisted = UserDefaults.standard.string(forKey: dogfoodAPIBaseDefaultsKey)
         #else
         let allowCleartext = false
+        let dogfoodPersisted: String? = nil
         #endif
 
         let env = ProcessInfo.processInfo.environment["NOMARKUP_API_BASE_URL"]
         let plist = Bundle.main.object(forInfoDictionaryKey: "APIBaseURL") as? String
         let resolved = resolveAPIBaseURL(
             envValue: env,
+            dogfoodPersistedValue: dogfoodPersisted,
             plistValue: plist,
             debugSimulatorDefault: debugSimDefault,
+            debugDeviceDefault: debugDeviceDefault,
             allowCleartext: allowCleartext
         )
         #if !DEBUG
@@ -141,17 +153,32 @@ enum AppConfig {
         return resolved
     }
 
+    /// Persist a Debug dogfood API base from process env (devicectl / scheme launch).
+    /// Call once at app start so cold launches without env still hit the LAN gateway.
+    static func persistDogfoodAPIBaseFromEnvironmentIfNeeded() {
+        #if DEBUG
+        guard let env = ProcessInfo.processInfo.environment["NOMARKUP_API_BASE_URL"] else { return }
+        let trimmed = env.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, URL(string: trimmed) != nil else { return }
+        UserDefaults.standard.set(trimmed, forKey: dogfoodAPIBaseDefaultsKey)
+        #endif
+    }
+
     /// Pure resolver used by `apiBaseURL` and unit tests.
     ///
     /// - Parameters:
     ///   - envValue: Scheme / process env override.
+    ///   - dogfoodPersistedValue: UserDefaults dogfood base (Debug only).
     ///   - plistValue: Info.plist `APIBaseURL`.
-    ///   - debugSimulatorDefault: When non-nil (DEBUG simulator), used if env is empty.
+    ///   - debugSimulatorDefault: When non-nil (DEBUG simulator), used if higher tiers empty.
+    ///   - debugDeviceDefault: When non-nil (DEBUG physical device), stamped LAN base.
     ///   - allowCleartext: When false (Release), non-https env/plist values are skipped.
     static func resolveAPIBaseURL(
         envValue: String?,
+        dogfoodPersistedValue: String? = nil,
         plistValue: String?,
         debugSimulatorDefault: URL?,
+        debugDeviceDefault: URL? = nil,
         allowCleartext: Bool = true
     ) -> URL {
         if let envValue {
@@ -163,8 +190,21 @@ enum AppConfig {
             }
         }
 
+        if let dogfoodPersistedValue {
+            let trimmed = dogfoodPersistedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty, let url = URL(string: trimmed) {
+                if isHTTPSAPIBase(url) || allowCleartext {
+                    return url
+                }
+            }
+        }
+
         if let debugSimulatorDefault {
             return debugSimulatorDefault
+        }
+
+        if let debugDeviceDefault {
+            return debugDeviceDefault
         }
 
         if let plistValue {

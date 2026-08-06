@@ -7,6 +7,9 @@ struct NoMarkupApp: App {
     @StateObject private var featureFlags = FeatureFlags()
 
     init() {
+        // Debug dogfood: remember NOMARKUP_API_BASE_URL so Home desk stays LIVE after cold launch
+        // (devicectl env is not present when the user opens the app from the icon).
+        AppConfig.persistDogfoodAPIBaseFromEnvironmentIfNeeded()
         // Navy + gold chrome for TabView / NavigationStack / lists (matches web dark terminal).
         // DES.4/9: iOS 26+ scroll-edge stays system/Liquid Glass (see BrandTheme.applyGlobalChrome).
         BrandTheme.applyGlobalChrome()

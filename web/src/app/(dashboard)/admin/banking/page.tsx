@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Landmark, ShieldCheck } from 'lucide-react';
 import { z } from 'zod';
 
+import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -58,82 +59,97 @@ function formatDate(dateStr: string): string {
 
 function CurrentAccountCard({ account }: { account: PlatformBankAccount }) {
   const deleteAccount = useDeletePlatformBankAccount();
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   return (
-    <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
-      <CardHeader>
-        <CardTitle className="gold-text flex items-center gap-2 text-base">
-          <Landmark className="h-4 w-4" aria-hidden="true" />
-          Current Payout Account
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-zinc-400">Bank</dt>
-            <dd className="text-sm text-zinc-100">{account.bank_name || '—'}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-zinc-400">
-              Account holder
-            </dt>
-            <dd className="text-sm text-zinc-100">
-              {account.account_holder_name} ({account.account_holder_type})
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-zinc-400">
-              Account number
-            </dt>
-            <dd className="font-mono text-sm text-zinc-100">••••{account.last4}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-zinc-400">
-              Routing number
-            </dt>
-            <dd className="font-mono text-sm text-zinc-100">••••{account.routing_last4}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-zinc-400">
-              Currency / Country
-            </dt>
-            <dd className="text-sm text-zinc-100">
-              {account.currency.toUpperCase()} · {account.country.toUpperCase()}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-zinc-400">Status</dt>
-            <dd>
-              <Badge variant="outline" className="text-xs">
-                {account.status.replace(/_/g, ' ')}
-              </Badge>
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-zinc-400">Added</dt>
-            <dd className="text-sm text-zinc-100">{formatDate(account.created_at)}</dd>
-          </div>
-        </dl>
+    <>
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+        <CardHeader>
+          <CardTitle className="gold-text flex items-center gap-2 text-base">
+            <Landmark className="h-4 w-4" aria-hidden="true" />
+            Current Payout Account
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs uppercase tracking-wide text-zinc-400">Bank</dt>
+              <dd className="text-sm text-zinc-100">{account.bank_name || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-wide text-zinc-400">
+                Account holder
+              </dt>
+              <dd className="text-sm text-zinc-100">
+                {account.account_holder_name} ({account.account_holder_type})
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-wide text-zinc-400">
+                Account number
+              </dt>
+              <dd className="font-mono text-sm text-zinc-100">••••{account.last4}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-wide text-zinc-400">
+                Routing number
+              </dt>
+              <dd className="font-mono text-sm text-zinc-100">••••{account.routing_last4}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-wide text-zinc-400">
+                Currency / Country
+              </dt>
+              <dd className="text-sm text-zinc-100">
+                {account.currency.toUpperCase()} · {account.country.toUpperCase()}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-wide text-zinc-400">Status</dt>
+              <dd>
+                <Badge variant="outline" className="text-xs">
+                  {account.status.replace(/_/g, ' ')}
+                </Badge>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-wide text-zinc-400">Added</dt>
+              <dd className="text-sm text-zinc-100">{formatDate(account.created_at)}</dd>
+            </div>
+          </dl>
 
-        <Button
-          variant="destructive"
-          className="min-h-[44px]"
-          disabled={deleteAccount.isPending}
-          onClick={() => {
-            if (
-              !window.confirm(
-                'Remove this platform bank account? Payouts and fee deposits may fail until a new account is added.',
-              )
-            ) {
-              return;
-            }
-            deleteAccount.mutate(account.id);
-          }}
-        >
-          {deleteAccount.isPending ? 'Removing...' : 'Remove account'}
-        </Button>
-      </CardContent>
-    </Card>
+          <Button
+            variant="destructive"
+            className="min-h-[44px]"
+            disabled={deleteAccount.isPending}
+            onClick={() => {
+              setConfirmRemove(true);
+            }}
+          >
+            {deleteAccount.isPending ? 'Removing...' : 'Remove account'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <ActionConfirmDialog
+        open={confirmRemove}
+        onClose={() => {
+          if (!deleteAccount.isPending) setConfirmRemove(false);
+        }}
+        onConfirm={() => {
+          deleteAccount.mutate(account.id, {
+            onSettled: () => {
+              setConfirmRemove(false);
+            },
+          });
+        }}
+        title="Remove platform bank account?"
+        description="Payouts and fee deposits may fail until a new account is added. This cannot be undone from this screen."
+        confirmLabel="Remove account"
+        destructive
+        loading={deleteAccount.isPending}
+      />
+    </>
   );
 }
 

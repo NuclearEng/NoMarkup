@@ -889,6 +889,11 @@ func New(
 		r.Post("/me/saved-searches", watchlistHandler.CreateSavedSearch)
 		r.Get("/me/saved-searches", watchlistHandler.ListSavedSearches)
 		r.Delete("/me/saved-searches/{id}", watchlistHandler.DeleteSavedSearch)
+		// Aliases without the /me/ prefix — historical probes and some clients hit
+		// /api/v1/saved-searches; keep them wired to the same handlers (auth still required).
+		r.Post("/saved-searches", watchlistHandler.CreateSavedSearch)
+		r.Get("/saved-searches", watchlistHandler.ListSavedSearches)
+		r.Delete("/saved-searches/{id}", watchlistHandler.DeleteSavedSearch)
 
 		// Wishlist + price alerts — buyer's "dream item" loop. The alert
 		// fan-out is triggered from CreateListing (see listings_write.go),

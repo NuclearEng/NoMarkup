@@ -66,8 +66,13 @@ final class NoMarkupUITests: XCTestCase {
         app = XCUIApplication()
 
         // Defensive: dismiss system permission alerts without granting.
+        // Prefer "Open" for custom-scheme confirmation ("Open in NoMarkup?").
         addUIInterruptionMonitor(withDescription: "System dialog") { alert in
-            for title in ["Don’t Allow", "Don't Allow", "Not Now", "Cancel", "OK"] {
+            for title in ["Open", "Allow", "OK"] {
+                let button = alert.buttons[title]
+                if button.exists { button.tap(); return true }
+            }
+            for title in ["Don’t Allow", "Don't Allow", "Not Now", "Cancel"] {
                 let button = alert.buttons[title]
                 if button.exists { button.tap(); return true }
             }
@@ -118,27 +123,47 @@ final class NoMarkupUITests: XCTestCase {
         return app.staticTexts[label]
     }
 
+    /// Geometric on-screen check — avoids XCTest throwing on invalid activation points
+    /// (`Failed to determine hittability of … Button`).
+    private func isOnScreen(_ element: XCUIElement) -> Bool {
+        guard element.exists else { return false }
+        let f = element.frame
+        guard f.width > 1, f.height > 1 else { return false }
+        let bounds = app.frame
+        return f.midX > bounds.minX + 2
+            && f.midX < bounds.maxX - 2
+            && f.midY > bounds.minY + 2
+            && f.midY < bounds.maxY - 2
+    }
+
+    /// Coordinate tap when on-screen (never probes raw `isHittable`).
+    @discardableResult
+    private func safeTap(_ element: XCUIElement) -> Bool {
+        guard isOnScreen(element) else { return false }
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        return true
+    }
+
     /// Bidirectional lazy-List search.
     @discardableResult
     private func scrollTo(_ element: XCUIElement, maxSwipes: Int = 10) -> Bool {
-        if element.exists && element.isHittable { return true }
+        if isOnScreen(element) { return true }
         for _ in 0..<maxSwipes {
             app.swipeUp()
-            settle(0.25)
-            if element.exists && element.isHittable { return true }
+            settle(0.2)
+            if isOnScreen(element) { return true }
         }
         for _ in 0..<(maxSwipes * 2) {
             app.swipeDown()
-            settle(0.25)
-            if element.exists && element.isHittable { return true }
+            settle(0.2)
+            if isOnScreen(element) { return true }
         }
-        return element.exists && element.isHittable
+        return isOnScreen(element)
     }
 
     private func goBack() {
         let back = app.navigationBars.buttons.element(boundBy: 0)
-        if back.exists && back.isHittable {
-            back.tap()
+        if safeTap(back) {
             settle(0.5)
         }
     }
@@ -155,18 +180,18 @@ final class NoMarkupUITests: XCTestCase {
     private func openTab(_ label: String) {
         let barButton = app.tabBars.buttons[label]
         if barButton.waitForExistence(timeout: 4) {
-            if barButton.isHittable {
-                barButton.tap()
+            if safeTap(barButton) {
                 settle(0.4)
                 return
             }
             completeAgeGateIfPresent()
             dismissNotificationPrePrompt()
-            if barButton.isHittable {
-                barButton.tap()
-            } else {
-                barButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            if safeTap(barButton) {
+                settle(0.4)
+                return
             }
+            // Last resort: force mid-button coordinate without isHittable probe.
+            barButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             settle(0.4)
             return
         }
@@ -175,8 +200,7 @@ final class NoMarkupUITests: XCTestCase {
         let count = candidates.count
         for i in 0..<min(count, 6) {
             let el = candidates.element(boundBy: i)
-            if el.exists && el.isHittable && el.frame.height < 140 && el.frame.width < 300 {
-                el.tap()
+            if el.exists, el.frame.height < 140, el.frame.width < 300, safeTap(el) {
                 settle(0.4)
                 return
             }
@@ -280,8 +304,7 @@ final class NoMarkupUITests: XCTestCase {
         popToRoot("Account")
         settle(0.6)
         let signOut = app.buttons["Sign out"]
-        guard scrollTo(signOut, maxSwipes: 8) else { return }
-        signOut.tap()
+        guard scrollTo(signOut, maxSwipes: 8), safeTap(signOut) else { return }
         _ = byID("login.email").waitForExistence(timeout: 10)
         settle(0.4)
     }
@@ -295,12 +318,11 @@ final class NoMarkupUITests: XCTestCase {
         for index in 0..<count {
             let cell = cells.element(boundBy: index)
             guard cell.exists else { continue }
-            if !cell.isHittable {
+            if !isOnScreen(cell) {
                 app.swipeUp()
                 settle(0.3)
             }
-            guard cell.exists && cell.isHittable else { continue }
-            cell.tap()
+            guard safeTap(cell) else { continue }
             settle(1.4)
             if hasBackButton { return true }
         }
@@ -341,14 +363,7 @@ final class NoMarkupUITests: XCTestCase {
         // Prefer stable accessibility identifiers from AccountView (`account.row.*`).
         if let stableID = Self.accountRowIDs[label] {
             let byStable = byID(stableID)
-            if byStable.exists && byStable.isHittable {
-                byStable.tap()
-                settle(1.2)
-                return true
-            }
-            // May be off-screen — try scrolling the list for the id.
-            if scrollTo(byStable, maxSwipes: 12), byStable.isHittable {
-                byStable.tap()
+            if scrollTo(byStable, maxSwipes: 16), safeTap(byStable) {
                 settle(1.2)
                 return true
             }
@@ -359,27 +374,24 @@ final class NoMarkupUITests: XCTestCase {
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "&", with: "")
         let byAccessibility = byID(idCandidate)
-        if byAccessibility.exists && byAccessibility.isHittable {
-            byAccessibility.tap()
+        if scrollTo(byAccessibility, maxSwipes: 10), safeTap(byAccessibility) {
             settle(1.2)
             return true
         }
         // Known identifier for Finish setup banner.
         if label == "Finish setup" {
             let finish = byID("account.finishSetup")
-            if finish.waitForExistence(timeout: 2), finish.isHittable {
-                finish.tap()
+            if finish.waitForExistence(timeout: 2), safeTap(finish) {
                 settle(1.2)
                 return true
             }
         }
         // Label fallback — must keep working for UITests that key off visible text.
         let row = byLabel(label)
-        guard scrollTo(row, maxSwipes: 12) else {
+        guard scrollTo(row, maxSwipes: 16), safeTap(row) else {
             NSLog("UITest soft-skip: Account row '%@' not found/hittable", label)
             return false
         }
-        row.tap()
         settle(1.2)
         return true
     }
@@ -481,7 +493,7 @@ final class NoMarkupUITests: XCTestCase {
         XCTAssertTrue(heroReady, "Expected home hero surface (id or hero copy)")
 
         if browseJobs.exists {
-            XCTAssertTrue(browseJobs.isHittable || browseJobs.exists, "home.browseJobs should be present")
+            XCTAssertTrue(browseJobs.exists, "home.browseJobs should be present")
         }
         // Market desk is below the hero — may need a light scroll on small phones.
         let desk = byID("home.marketDesk")
@@ -565,8 +577,7 @@ final class NoMarkupUITests: XCTestCase {
         // Prefer identifier when present; otherwise label-based NavigationLinks.
         if byID("account.finishSetup").exists {
             let finish = byID("account.finishSetup")
-            if finish.isHittable {
-                finish.tap()
+            if safeTap(finish) {
                 settle(1.0)
                 // Dismiss wizard if it opened (Cancel / Close / back).
                 if app.buttons["Cancel"].exists {

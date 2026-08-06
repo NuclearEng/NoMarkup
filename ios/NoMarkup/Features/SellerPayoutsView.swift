@@ -177,7 +177,7 @@ struct SellerPayoutsView: View {
             } else {
                 Section {
                     NavigationLink {
-                        ProfileSettingsView()
+                        LazyView { ProfileSettingsView() }
                     } label: {
                         Label("Enable provider role in Profile", systemImage: "person.badge.shield.checkmark")
                     }

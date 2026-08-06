@@ -1044,33 +1044,54 @@ struct AdminConsoleView: View {
         .brandNavigationBarChrome()
         .safeAreaInset(edge: .top, spacing: 0) {
             if auth.isAuthenticated, !auth.isScaffoldSession, !forbidden {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(SectionTab.allCases) { t in
-                            Button {
-                                BrandHaptics.selection()
-                                tab = t
-                            } label: {
-                                Text(t.rawValue)
-                                    .font(.caption.weight(.semibold))
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        tab == t ? BrandTheme.gold : BrandTheme.navyElevated,
-                                        in: Capsule()
-                                    )
-                                    .foregroundStyle(
-                                        tab == t ? BrandTheme.ctaLabelOnGold : BrandTheme.textSecondary
-                                    )
+                // ScrollViewReader keeps the selected capsule fully on-screen so clipped
+                // off-edge buttons never report invalid AX activation points (UITest
+                // "Failed to determine hittability of … Button").
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(SectionTab.allCases) { t in
+                                Button {
+                                    BrandHaptics.selection()
+                                    tab = t
+                                } label: {
+                                    Text(t.rawValue)
+                                        .font(.caption.weight(.semibold))
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            tab == t ? BrandTheme.gold : BrandTheme.navyElevated,
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(
+                                            tab == t ? BrandTheme.ctaLabelOnGold : BrandTheme.textSecondary
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .contentShape(Capsule())
+                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(minHeight: 44)
+                                .id(t)
+                                // Stable ids for UITests (horizontal strip; label-only match can miss off-screen).
+                                .accessibilityIdentifier(
+                                    "admin.console.tab.\(t.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))"
+                                )
                             }
-                            .frame(minHeight: 44)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    }
+                    .background(BrandTheme.navy)
+                    .accessibilityIdentifier("admin.console.tabs")
+                    .onAppear {
+                        proxy.scrollTo(tab, anchor: .center)
+                    }
+                    .onChange(of: tab) { _, newTab in
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            proxy.scrollTo(newTab, anchor: .center)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
                 }
-                .background(BrandTheme.navy)
-                .accessibilityIdentifier("admin.console.tabs")
             }
         }
         .sheet(isPresented: $showFraudReviewSheet) {

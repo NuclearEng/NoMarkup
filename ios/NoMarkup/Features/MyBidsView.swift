@@ -279,7 +279,7 @@ struct MyBidsView: View {
                 Group {
                     if let listingId = entry.listingIdForAPI {
                         NavigationLink {
-                            ListingDetailView(listingID: listingId)
+                            LazyView { ListingDetailView(listingID: listingId) }
                         } label: {
                             Text(entry.displayTitle)
                                 .font(.body.weight(.medium))
@@ -376,7 +376,7 @@ struct MyBidsView: View {
                 Group {
                     if let jobId = bid.jobId, !jobId.isEmpty {
                         NavigationLink {
-                            JobDetailView(jobID: jobId)
+                            LazyView { JobDetailView(jobID: jobId) }
                         } label: {
                             Text(bid.displayTitle)
                                 .font(.body.weight(.medium))

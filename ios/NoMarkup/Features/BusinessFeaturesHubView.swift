@@ -19,27 +19,31 @@ struct BusinessFeaturesHubView: View {
                 featureLink(
                     flag: "customer_bnpl",
                     title: "Payment plans (BNPL)",
-                    systemImage: "calendar.badge.clock",
-                    destination: InstallmentsListView()
-                )
+                    systemImage: "calendar.badge.clock"
+                ) {
+                    InstallmentsListView()
+                }
                 featureLink(
                     flag: "per_job_insurance",
                     title: "Insurance policies",
-                    systemImage: "shield.checkered",
-                    destination: InsurancePoliciesView()
-                )
+                    systemImage: "shield.checkered"
+                ) {
+                    InsurancePoliciesView()
+                }
                 featureLink(
                     flag: "working_capital",
                     title: "Working capital advances",
-                    systemImage: "building.columns",
-                    destination: AdvancesView()
-                )
+                    systemImage: "building.columns"
+                ) {
+                    AdvancesView()
+                }
                 featureLink(
                     flag: "instant_payout",
                     title: "Instant payout",
-                    systemImage: "bolt.fill",
-                    destination: InstantPayoutView()
-                )
+                    systemImage: "bolt.fill"
+                ) {
+                    InstantPayoutView()
+                }
             } header: {
                 Text("Money rails").brandSectionHeader()
             } footer: {
@@ -49,14 +53,14 @@ struct BusinessFeaturesHubView: View {
 
             Section {
                 NavigationLink {
-                    ExpensesView()
+                    LazyView { ExpensesView() }
                 } label: {
                     Label("Business expenses", systemImage: "receipt")
                 }
                 .frame(minHeight: 44)
 
                 NavigationLink {
-                    ProviderInvoicesView()
+                    LazyView { ProviderInvoicesView() }
                 } label: {
                     Label("Invoices", systemImage: "doc.plaintext")
                 }
@@ -65,7 +69,7 @@ struct BusinessFeaturesHubView: View {
                 .accessibilityHint("View and share invoices for completed contracts")
 
                 NavigationLink {
-                    TaxCenterView()
+                    LazyView { TaxCenterView() }
                 } label: {
                     Label("Tax center", systemImage: "doc.richtext")
                 }
@@ -76,7 +80,7 @@ struct BusinessFeaturesHubView: View {
 
             Section {
                 NavigationLink {
-                    InsuranceQuoteFlowView()
+                    LazyView { InsuranceQuoteFlowView() }
                 } label: {
                     Label("Insurance quote", systemImage: "shield.lefthalf.filled")
                 }
@@ -86,7 +90,7 @@ struct BusinessFeaturesHubView: View {
                 .accessibilityHint("Request a per-job insurance quote for a contract")
 
                 NavigationLink {
-                    InsuranceProductsBrowseView()
+                    LazyView { InsuranceProductsBrowseView() }
                 } label: {
                     Label("Browse insurance products", systemImage: "cross.case")
                 }
@@ -102,6 +106,7 @@ struct BusinessFeaturesHubView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .accessibilityIdentifier("businessHub.root")
         .task { await flags.refresh() }
     }
 
@@ -110,11 +115,12 @@ struct BusinessFeaturesHubView: View {
         flag: String,
         title: String,
         systemImage: String,
-        destination: D
+        @ViewBuilder destination: @escaping () -> D
     ) -> some View {
         let on = flags.isEnabled(flag)
         NavigationLink {
-            destination
+            // Defer construction until open — hub is already nested under Account LazyView.
+            LazyView { destination() }
         } label: {
             HStack {
                 Label(title, systemImage: systemImage)
@@ -164,7 +170,9 @@ struct InstallmentsListView: View {
             } else {
                 List(plans) { plan in
                     NavigationLink {
-                        InstallmentPlanDetailView(planId: plan.id, preview: plan)
+                        LazyView {
+                            InstallmentPlanDetailView(planId: plan.id, preview: plan)
+                        }
                     } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(plan.displayTotal)

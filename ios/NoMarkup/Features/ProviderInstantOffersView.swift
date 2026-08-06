@@ -89,6 +89,7 @@ struct ProviderInstantOffersView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .accessibilityIdentifier("instantOffers.root")
         .task {
             await bootstrap()
         }

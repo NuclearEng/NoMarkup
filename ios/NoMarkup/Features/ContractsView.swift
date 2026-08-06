@@ -50,7 +50,9 @@ struct ContractsView: View {
                     Section {
                         ForEach(contracts) { contract in
                             NavigationLink {
-                                ContractDetailView(contractID: contract.id)
+                                LazyView {
+                                    ContractDetailView(contractID: contract.id)
+                                }
                             } label: {
                                 contractRow(contract)
                             }

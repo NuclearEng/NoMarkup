@@ -40,6 +40,8 @@
 		A10000000000000000000001 /* NoMarkupApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* NoMarkupApp.swift */; };
 		A10000000000000000000002 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* AppConfig.swift */; };
 A100000000000000000000EE /* GitRevision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000EE /* GitRevision.swift */; };
+A100000000000000000000EF /* DevAPIBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000EF /* DevAPIBase.swift */; };
+A100000000000000000000F0 /* LazyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F0 /* LazyView.swift */; };
 		A100000000000000000000D0 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000D0 /* StoreKitManager.swift */; };
 		A100000000000000000000D1 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B100000000000000000000D1 /* StoreKit.framework */; };
 		A10000000000000000000003 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* KeychainTokenStore.swift */; };
@@ -109,6 +111,7 @@ A100000000000000000000EE /* GitRevision.swift in Sources */ = {isa = PBXBuildFil
 		A10000000000000000000064 /* SellerPayoutsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000064 /* SellerPayoutsView.swift */; };
 		U10000000000000000000001 /* NoMarkupUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U10000000000000000000002 /* NoMarkupUITests.swift */; };
 		U20000000000000000000001 /* ScreenshotWalkUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U20000000000000000000002 /* ScreenshotWalkUITests.swift */; };
+		U30000000000000000000001 /* TabAuditUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U30000000000000000000002 /* TabAuditUITests.swift */; };
 		A10000000000000000000070 /* Models+Extras.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000070 /* Models+Extras.swift */; };
 		A10000000000000000000071 /* APIClient+Extras.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000071 /* APIClient+Extras.swift */; };
 		A10000000000000000000072 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000072 /* ProvidersView.swift */; };
@@ -199,6 +202,8 @@ A100000000000000000000EE /* GitRevision.swift in Sources */ = {isa = PBXBuildFil
 		B10000000000000000000001 /* NoMarkupApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupApp.swift; sourceTree = "<group>"; };
 		B10000000000000000000002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 B100000000000000000000EE /* GitRevision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitRevision.swift; sourceTree = "<group>"; };
+B100000000000000000000EF /* DevAPIBase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevAPIBase.swift; sourceTree = "<group>"; };
+B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LazyView.swift; sourceTree = "<group>"; };
 		B100000000000000000000D0 /* StoreKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitManager.swift; sourceTree = "<group>"; };
 		B100000000000000000000D1 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 		B10000000000000000000003 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
@@ -270,6 +275,7 @@ B100000000000000000000EE /* GitRevision.swift */ = {isa = PBXFileReference; last
 		B10000000000000000000064 /* SellerPayoutsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SellerPayoutsView.swift; sourceTree = "<group>"; };
 		U10000000000000000000002 /* NoMarkupUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupUITests.swift; sourceTree = "<group>"; };
 		U20000000000000000000002 /* ScreenshotWalkUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotWalkUITests.swift; sourceTree = "<group>"; };
+		U30000000000000000000002 /* TabAuditUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabAuditUITests.swift; sourceTree = "<group>"; };
 		U10000000000000000000003 /* NoMarkupUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000070 /* Models+Extras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+Extras.swift"; sourceTree = "<group>"; };
 		B10000000000000000000071 /* APIClient+Extras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Extras.swift"; sourceTree = "<group>"; };
@@ -498,6 +504,7 @@ B100000000000000000000EE /* GitRevision.swift */ = {isa = PBXFileReference; last
 			children = (
 				U10000000000000000000002 /* NoMarkupUITests.swift */,
 				U20000000000000000000002 /* ScreenshotWalkUITests.swift */,
+				U30000000000000000000002 /* TabAuditUITests.swift */,
 			);
 			path = NoMarkupUITests;
 			sourceTree = "<group>";
@@ -522,6 +529,8 @@ B100000000000000000000EE /* GitRevision.swift */ = {isa = PBXFileReference; last
 			children = (
 				B10000000000000000000002 /* AppConfig.swift */,
 				B100000000000000000000EE /* GitRevision.swift */,
+				B100000000000000000000EF /* DevAPIBase.swift */,
+				B100000000000000000000F0 /* LazyView.swift */,
 				B100000000000000000000D0 /* StoreKitManager.swift */,
 				B100000000000000000000C7 /* AuctionActivityAttributes.swift */,
 				B100000000000000000000C6 /* WidgetSharedStore.swift */,
@@ -876,6 +885,8 @@ B100000000000000000000EE /* GitRevision.swift */ = {isa = PBXFileReference; last
 				A10000000000000000000001 /* NoMarkupApp.swift in Sources */,
 				A10000000000000000000002 /* AppConfig.swift in Sources */,
 				A100000000000000000000EE /* GitRevision.swift in Sources */,
+				A100000000000000000000EF /* DevAPIBase.swift in Sources */,
+				A100000000000000000000F0 /* LazyView.swift in Sources */,
 				A100000000000000000000D0 /* StoreKitManager.swift in Sources */,
 				A100000000000000000000CC /* OpenPostJobIntent.swift in Sources */,
 				A100000000000000000000CB /* NoMarkupAppShortcuts.swift in Sources */,
@@ -1010,6 +1021,7 @@ B100000000000000000000EE /* GitRevision.swift */ = {isa = PBXFileReference; last
 			files = (
 				U10000000000000000000001 /* NoMarkupUITests.swift in Sources */,
 				U20000000000000000000001 /* ScreenshotWalkUITests.swift in Sources */,
+				U30000000000000000000001 /* TabAuditUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

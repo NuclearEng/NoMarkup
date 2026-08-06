@@ -600,9 +600,14 @@ struct HomeView: View {
 
             Text(AppConfig.apiBaseHostDisplay)
                 .font(.caption2.monospaced())
-                .foregroundStyle(BrandTheme.textSecondary.opacity(0.5))
+                .foregroundStyle(
+                    healthOK == false
+                        ? BrandTheme.destructive.opacity(0.85)
+                        : BrandTheme.textSecondary.opacity(0.5)
+                )
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .minimumScaleFactor(0.7)
+                .textSelection(.enabled)
 
             Spacer(minLength: 8)
 
@@ -616,12 +621,19 @@ struct HomeView: View {
             }
             .buttonStyle(.plain)
             .disabled(isChecking)
+            .accessibilityIdentifier("home.deskRefresh")
         }
         .padding(.horizontal, 4)
         .padding(.top, 4)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("home.deskStatus")
         .accessibilityLabel(
             "\(healthOK == true ? "Connected" : (healthOK == false ? "Offline" : "Checking")), API \(AppConfig.apiBaseHostDisplay)"
+        )
+        .accessibilityHint(
+            healthOK == false
+                ? "Gateway unreachable at \(AppConfig.apiBaseHostDisplay). Ensure the Mac gateway is running and the phone is on the same Wi‑Fi."
+                : "API host \(AppConfig.apiBaseHostDisplay)"
         )
     }
 

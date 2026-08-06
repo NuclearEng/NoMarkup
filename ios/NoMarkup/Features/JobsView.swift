@@ -58,7 +58,9 @@ struct JobsView: View {
                 } detail: {
                     NavigationStack {
                         if let selectedJob {
-                            JobDetailView(jobID: selectedJob.id, preview: selectedJob)
+                            LazyView {
+                                JobDetailView(jobID: selectedJob.id, preview: selectedJob)
+                            }
                         } else {
                             ContentUnavailableView(
                                 "Select a job",
@@ -74,7 +76,9 @@ struct JobsView: View {
                 NavigationStack {
                     listRoot
                         .navigationDestination(for: JobSummary.self) { job in
-                            JobDetailView(jobID: job.id, preview: job)
+                            LazyView {
+                                JobDetailView(jobID: job.id, preview: job)
+                            }
                         }
                 }
             }
@@ -125,7 +129,7 @@ struct JobsView: View {
                             .accessibilityIdentifier("jobs.filters")
                         }
                         NavigationLink {
-                            JobsMapView()
+                            LazyView { JobsMapView() }
                         } label: {
                             Label("Map", systemImage: "map")
                         }

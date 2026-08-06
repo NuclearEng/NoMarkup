@@ -21,6 +21,10 @@ struct AccountView: View {
     @State private var showOnboardingWizard = false
     /// From `UserProfile.roles` — gates Admin console row.
     @State private var hasAdminRole = false
+    /// Legal/support HTML opens as a sheet (`SFSafariViewController`), not a
+    /// NavigationLink push — Safari is modal chrome; pushing it via the nav stack
+    /// can hide the tab bar and leave Close/Back stuck after dismiss.
+    @State private var legalSheet: LegalSheetTarget?
 
     var body: some View {
         NavigationStack {
@@ -160,7 +164,9 @@ struct AccountView: View {
                     }
 
                     NavigationLink {
-                        ProfileSettingsView()
+                        LazyView {
+                            ProfileSettingsView()
+                        }
                     } label: {
                         Label("Profile settings", systemImage: "person.text.rectangle")
                     }
@@ -170,7 +176,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.profile")
 
                     NavigationLink {
-                        ProviderWorkspaceView()
+                        LazyView {
+                            ProviderWorkspaceView()
+                        }
                     } label: {
                         Label("Provider workspace", systemImage: "wrench.and.screwdriver")
                     }
@@ -180,7 +188,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.providerWorkspace")
 
                     NavigationLink {
-                        ProviderInstantOffersView()
+                        LazyView {
+                            ProviderInstantOffersView()
+                        }
                     } label: {
                         Label("Instant offers", systemImage: "bolt.badge.clock")
                     }
@@ -190,7 +200,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.instantOffers")
 
                     NavigationLink {
-                        SecuritySettingsView()
+                        LazyView {
+                            SecuritySettingsView()
+                        }
                     } label: {
                         Label("Security", systemImage: "lock.shield")
                     }
@@ -200,7 +212,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.security")
 
                     NavigationLink {
-                        VerificationCenterView()
+                        LazyView {
+                            VerificationCenterView()
+                        }
                     } label: {
                         Label("Verify email & phone", systemImage: "checkmark.shield")
                     }
@@ -221,7 +235,9 @@ struct AccountView: View {
 
                 Section {
                     NavigationLink {
-                        PostJobView()
+                        LazyView {
+                            PostJobView()
+                        }
                     } label: {
                         Label("Post a job", systemImage: "plus.circle")
                     }
@@ -230,7 +246,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.postJob")
 
                     NavigationLink {
-                        JobDraftsView()
+                        LazyView {
+                            JobDraftsView()
+                        }
                     } label: {
                         Label("Job drafts", systemImage: "doc.text")
                     }
@@ -240,7 +258,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.drafts")
 
                     NavigationLink {
-                        CreateListingView()
+                        LazyView {
+                            CreateListingView()
+                        }
                     } label: {
                         Label("Sell an item", systemImage: "tag")
                     }
@@ -257,7 +277,9 @@ struct AccountView: View {
 
                 Section {
                     NavigationLink {
-                        MyOrdersView()
+                        LazyView {
+                            MyOrdersView()
+                        }
                     } label: {
                         Label("Orders", systemImage: "bag")
                     }
@@ -266,7 +288,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.orders")
 
                     NavigationLink {
-                        ContractsView()
+                        LazyView {
+                            ContractsView()
+                        }
                     } label: {
                         Label("Contracts", systemImage: "doc.text")
                     }
@@ -275,7 +299,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.contracts")
 
                     NavigationLink {
-                        RecurringJobsView()
+                        LazyView {
+                            RecurringJobsView()
+                        }
                     } label: {
                         Label("Recurring jobs", systemImage: "arrow.triangle.2.circlepath")
                     }
@@ -285,7 +311,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.recurringJobs")
 
                     NavigationLink {
-                        MyBidsView()
+                        LazyView {
+                            MyBidsView()
+                        }
                     } label: {
                         Label("My bids", systemImage: "hammer")
                     }
@@ -294,7 +322,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.myBids")
 
                     NavigationLink {
-                        PositionsBlotterView()
+                        LazyView {
+                            PositionsBlotterView()
+                        }
                     } label: {
                         Label("Positions blotter", systemImage: "chart.bar.doc.horizontal")
                     }
@@ -304,7 +334,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.positions")
 
                     NavigationLink {
-                        MyListingsView()
+                        LazyView {
+                            MyListingsView()
+                        }
                     } label: {
                         Label("My listings", systemImage: "tag")
                     }
@@ -313,7 +345,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.myListings")
 
                     NavigationLink {
-                        WatchlistView()
+                        LazyView {
+                            WatchlistView()
+                        }
                     } label: {
                         Label("Watchlist", systemImage: "heart")
                     }
@@ -322,7 +356,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.watchlist")
 
                     NavigationLink {
-                        SavedSearchesView()
+                        LazyView {
+                            SavedSearchesView()
+                        }
                     } label: {
                         Label("Saved searches", systemImage: "bell.badge")
                     }
@@ -331,7 +367,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.savedSearches")
 
                     NavigationLink {
-                        SellerAnalyticsView()
+                        LazyView {
+                            SellerAnalyticsView()
+                        }
                     } label: {
                         Label("Seller analytics", systemImage: "chart.bar")
                     }
@@ -340,7 +378,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.sellerAnalytics")
 
                     NavigationLink {
-                        SellerPayoutsView()
+                        LazyView {
+                            SellerPayoutsView()
+                        }
                     } label: {
                         Label("Seller payouts", systemImage: "banknote")
                     }
@@ -350,7 +390,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.sellerPayouts")
 
                     NavigationLink {
-                        BusinessFeaturesHubView()
+                        LazyView {
+                            BusinessFeaturesHubView()
+                        }
                     } label: {
                         Label("Business & finance", systemImage: "building.2")
                     }
@@ -360,7 +402,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.businessFinance")
 
                     NavigationLink {
-                        InsuranceQuoteFlowView()
+                        LazyView {
+                            InsuranceQuoteFlowView()
+                        }
                     } label: {
                         Label("Insurance quote", systemImage: "shield.lefthalf.filled")
                     }
@@ -370,7 +414,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.insuranceQuote")
 
                     NavigationLink {
-                        SalesExportView()
+                        LazyView {
+                            SalesExportView()
+                        }
                     } label: {
                         Label("Sales export (CSV)", systemImage: "tablecells")
                     }
@@ -380,7 +426,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.salesExport")
 
                     NavigationLink {
-                        CalendarExportView()
+                        LazyView {
+                            CalendarExportView()
+                        }
                     } label: {
                         Label("Calendar export", systemImage: "calendar")
                     }
@@ -390,7 +438,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.calendarExport")
 
                     NavigationLink {
-                        EmployeesView()
+                        LazyView {
+                            EmployeesView()
+                        }
                     } label: {
                         Label("Team", systemImage: "person.3")
                     }
@@ -400,7 +450,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.team")
 
                     NavigationLink {
-                        ChallengesView()
+                        LazyView {
+                            ChallengesView()
+                        }
                     } label: {
                         Label("Challenges", systemImage: "flag.checkered")
                     }
@@ -411,7 +463,9 @@ struct AccountView: View {
 
                     if featureFlags.isEnabled("legal_services") {
                         NavigationLink {
-                            LegalServicesView()
+                            LazyView {
+                                LegalServicesView()
+                            }
                         } label: {
                             Label("Legal services", systemImage: "scalemass")
                         }
@@ -421,7 +475,9 @@ struct AccountView: View {
                     }
 
                     NavigationLink {
-                        QuoteTemplatesView()
+                        LazyView {
+                            QuoteTemplatesView()
+                        }
                     } label: {
                         Label("Quote templates", systemImage: "doc.text")
                     }
@@ -431,7 +487,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.quoteTemplates")
 
                     NavigationLink {
-                        VerificationDocumentsView()
+                        LazyView {
+                            VerificationDocumentsView()
+                        }
                     } label: {
                         Label("Verification documents", systemImage: "checkmark.shield")
                     }
@@ -441,7 +499,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.verificationDocuments")
 
                     NavigationLink {
-                        PaymentMethodsView()
+                        LazyView {
+                            PaymentMethodsView()
+                        }
                     } label: {
                         Label("Payment methods", systemImage: "creditcard")
                     }
@@ -451,7 +511,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.paymentMethods")
 
                     NavigationLink {
-                        PaymentsHistoryView()
+                        LazyView {
+                            PaymentsHistoryView()
+                        }
                     } label: {
                         Label("Payments history", systemImage: "list.bullet.rectangle")
                     }
@@ -461,7 +523,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.paymentsHistory")
 
                     NavigationLink {
-                        NotificationsView()
+                        LazyView {
+                            NotificationsView()
+                        }
                     } label: {
                         HStack {
                             Label("Notifications", systemImage: "bell")
@@ -482,7 +546,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.notifications")
 
                     NavigationLink {
-                        NotificationPreferencesView()
+                        LazyView {
+                            NotificationPreferencesView()
+                        }
                     } label: {
                         Label("Notification preferences", systemImage: "bell.badge")
                     }
@@ -500,7 +566,9 @@ struct AccountView: View {
 
                 Section {
                     NavigationLink {
-                        ProvidersView()
+                        LazyView {
+                            ProvidersView()
+                        }
                     } label: {
                         Label("Providers", systemImage: "wrench.and.screwdriver")
                     }
@@ -509,7 +577,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.providers")
 
                     NavigationLink {
-                        FollowingView()
+                        LazyView {
+                            FollowingView()
+                        }
                     } label: {
                         Label("Following", systemImage: "person.2")
                     }
@@ -519,7 +589,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.following")
 
                     NavigationLink {
-                        FeedView()
+                        LazyView {
+                            FeedView()
+                        }
                     } label: {
                         Label("Following feed", systemImage: "rectangle.stack")
                     }
@@ -529,7 +601,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.followingFeed")
 
                     NavigationLink {
-                        PropertiesView()
+                        LazyView {
+                            PropertiesView()
+                        }
                     } label: {
                         Label("Properties", systemImage: "house")
                     }
@@ -539,7 +613,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.properties")
 
                     NavigationLink {
-                        WishlistView()
+                        LazyView {
+                            WishlistView()
+                        }
                     } label: {
                         Label("Wishlist", systemImage: "star")
                     }
@@ -549,7 +625,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.wishlist")
 
                     NavigationLink {
-                        BlockedUsersView()
+                        LazyView {
+                            BlockedUsersView()
+                        }
                     } label: {
                         Label("Blocked users", systemImage: "hand.raised")
                     }
@@ -559,7 +637,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.blockedUsers")
 
                     NavigationLink {
-                        ReferralsView()
+                        LazyView {
+                            ReferralsView()
+                        }
                     } label: {
                         Label("Referrals", systemImage: "gift")
                     }
@@ -569,7 +649,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.referrals")
 
                     NavigationLink {
-                        NPSSurveysView()
+                        LazyView {
+                            NPSSurveysView()
+                        }
                     } label: {
                         Label("Feedback surveys", systemImage: "bubble.left.and.bubble.right")
                     }
@@ -579,7 +661,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.feedbackSurveys")
 
                     NavigationLink {
-                        SavingsView()
+                        LazyView {
+                            SavingsView()
+                        }
                     } label: {
                         Label("Savings", systemImage: "chart.line.uptrend.xyaxis")
                     }
@@ -589,7 +673,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.savings")
 
                     NavigationLink {
-                        MarketsView()
+                        LazyView {
+                            MarketsView()
+                        }
                     } label: {
                         Label("Markets", systemImage: "building.2")
                     }
@@ -598,7 +684,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.markets")
 
                     NavigationLink {
-                        FairPriceIndexView()
+                        LazyView {
+                            FairPriceIndexView()
+                        }
                     } label: {
                         Label("Fair price index", systemImage: "chart.line.uptrend.xyaxis")
                     }
@@ -607,7 +695,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.fairPrice")
 
                     NavigationLink {
-                        MarketplaceMapView()
+                        LazyView {
+                            MarketplaceMapView()
+                        }
                     } label: {
                         Label("Marketplace map", systemImage: "map")
                     }
@@ -616,7 +706,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.marketplaceMap")
 
                     NavigationLink {
-                        TrustTiersView()
+                        LazyView {
+                            TrustTiersView()
+                        }
                     } label: {
                         Label("Trust tiers", systemImage: "shield.lefthalf.filled")
                     }
@@ -628,22 +720,24 @@ struct AccountView: View {
                 }
 
                 Section {
-                    NavigationLink {
-                        LegalWebView(title: "Privacy Policy", url: AppConfig.privacyURL)
+                    Button {
+                        legalSheet = LegalSheetTarget(title: "Privacy Policy", url: AppConfig.privacyURL)
                     } label: {
                         Label("Privacy Policy", systemImage: "hand.raised")
                     }
                     .frame(minHeight: 44)
                     .accessibilityIdentifier("account.row.privacyPolicy")
-                    NavigationLink {
-                        LegalWebView(title: "Terms of Service", url: AppConfig.termsURL)
+                    Button {
+                        legalSheet = LegalSheetTarget(title: "Terms of Service", url: AppConfig.termsURL)
                     } label: {
                         Label("Terms of Service", systemImage: "doc.text")
                     }
                     .frame(minHeight: 44)
                     .accessibilityIdentifier("account.row.termsOfService")
                     NavigationLink {
-                        TermsAcceptanceView()
+                        LazyView {
+                            TermsAcceptanceView()
+                        }
                     } label: {
                         Label("Terms acceptance", systemImage: "checkmark.seal")
                     }
@@ -651,15 +745,18 @@ struct AccountView: View {
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Compare current Terms version with what you accepted")
                     .accessibilityIdentifier("account.row.termsAcceptance")
-                    NavigationLink {
-                        LegalWebView(title: "Community Guidelines", url: AppConfig.communityGuidelinesURL)
+                    Button {
+                        legalSheet = LegalSheetTarget(
+                            title: "Community Guidelines",
+                            url: AppConfig.communityGuidelinesURL
+                        )
                     } label: {
                         Label("Community Guidelines", systemImage: "person.3")
                     }
                     .frame(minHeight: 44)
                     .accessibilityIdentifier("account.row.communityGuidelines")
-                    NavigationLink {
-                        LegalWebView(title: "Support", url: AppConfig.supportURL)
+                    Button {
+                        legalSheet = LegalSheetTarget(title: "Support", url: AppConfig.supportURL)
                     } label: {
                         Label("Support", systemImage: "lifepreserver")
                     }
@@ -694,7 +791,9 @@ struct AccountView: View {
                     }
 
                     NavigationLink {
-                        AccountDeletionView()
+                        LazyView {
+                            AccountDeletionView()
+                        }
                     } label: {
                         Label("Delete Account", systemImage: "trash")
                             .foregroundStyle(BrandTheme.destructive)
@@ -707,7 +806,9 @@ struct AccountView: View {
 
                 Section {
                     NavigationLink {
-                        PlanLimitsView()
+                        LazyView {
+                            PlanLimitsView()
+                        }
                     } label: {
                         Label("Plan limits", systemImage: "list.bullet.rectangle")
                     }
@@ -718,7 +819,9 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.planLimits")
 
                     NavigationLink {
-                        RegulatedRailsStatusView()
+                        LazyView {
+                            RegulatedRailsStatusView()
+                        }
                     } label: {
                         Label("Feature flag status", systemImage: "flag")
                     }
@@ -728,7 +831,9 @@ struct AccountView: View {
 
                     if hasAdminRole {
                         NavigationLink {
-                            AdminConsoleView()
+                            LazyView {
+                                AdminConsoleView()
+                            }
                         } label: {
                             Label("Admin console", systemImage: "shield.checkered")
                         }
@@ -810,6 +915,10 @@ struct AccountView: View {
                 ActivityShareSheet(items: [item.url])
             }
             #endif
+            .sheet(item: $legalSheet) { target in
+                LegalWebView(title: target.title, url: target.url)
+                    .ignoresSafeArea()
+            }
         }
     }
 
@@ -918,6 +1027,13 @@ struct AccountView: View {
 /// Identifiable wrapper so export uses `sheet(item:)` and never presents an empty sheet.
 private struct ExportShareItem: Identifiable {
     let id = UUID()
+    let url: URL
+}
+
+/// Sheet target for Privacy / Terms / Guidelines / Support (`SFSafariViewController`).
+private struct LegalSheetTarget: Identifiable {
+    let id = UUID()
+    let title: String
     let url: URL
 }
 
