@@ -47,6 +47,7 @@ struct HomeView: View {
                     marketplaceStrip
                     howItWorksSection
                     gatewayFooter
+                    revisionFooter
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -622,6 +623,27 @@ struct HomeView: View {
         .accessibilityLabel(
             "\(healthOK == true ? "Connected" : (healthOK == false ? "Offline" : "Checking")), API \(AppConfig.apiBaseHostDisplay)"
         )
+    }
+
+    /// Build + git revision at the bottom of Home (operator dogfood: prove which binary is installed).
+    private var revisionFooter: some View {
+        VStack(spacing: 4) {
+            Text(AppConfig.revisionFooterLabel)
+                .font(.caption2.weight(.semibold).monospaced())
+                .foregroundStyle(BrandTheme.textSecondary)
+                .textSelection(.enabled)
+            Text(GitRevision.branch)
+                .font(.caption2.monospaced())
+                .foregroundStyle(BrandTheme.textSecondary.opacity(0.65))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("home.revision")
+        .accessibilityLabel("App version \(AppConfig.versionLabel), revision \(AppConfig.gitRevision), branch \(GitRevision.branch)")
     }
 
     // MARK: - Chrome helpers

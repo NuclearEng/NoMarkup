@@ -222,6 +222,27 @@ enum AppConfig {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
     }
 
+    /// Marketing version + build, e.g. `1.0.0 (3)`.
+    static var versionLabel: String {
+        "\(shortVersion) (\(buildNumber))"
+    }
+
+    /// Short git SHA from stamped `GitRevision` (fallback: Info.plist `GitCommit`).
+    static var gitRevision: String {
+        let stamped = GitRevision.short.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !stamped.isEmpty { return stamped }
+        if let plist = Bundle.main.object(forInfoDictionaryKey: "GitCommit") as? String {
+            let t = plist.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { return t }
+        }
+        return "unknown"
+    }
+
+    /// Home / About footer line: `1.0.0 (3) · 95f52bbf`.
+    static var revisionFooterLabel: String {
+        "\(versionLabel) · \(gitRevision)"
+    }
+
     // MARK: - Stripe / Apple Pay (Rail A — physical goods & services GMV)
 
     /// Stripe **publishable** key (pk_test_… / pk_live_…). Safe for the binary.
