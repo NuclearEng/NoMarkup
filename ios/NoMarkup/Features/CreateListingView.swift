@@ -66,10 +66,14 @@ struct CreateListingView: View {
     private var formContent: some View {
         Form {
             Section {
-                Text("Local pickup only (≈25 mi). Buyers bid up in a forward auction. Escrow holds payment until pickup — no platform markup on the bid.")
-                    .font(.subheadline)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    "Local pickup only (≈25 mi). Buyers bid up in a forward auction. Escrow holds payment until pickup — no platform markup on the winning bid."
+                )
+                .font(.subheadline)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("How it works").brandSectionHeader()
             }
 
             Section {
@@ -108,7 +112,7 @@ struct CreateListingView: View {
                 DollarAmountField(
                     text: $startingPriceText,
                     placeholder: "50.00",
-                    accessibilityLabelText: "Starting price in dollars"
+                    accessibilityLabelText: "Starting price in dollars — forward auction floor"
                 )
 
                 DollarAmountField(
@@ -127,8 +131,10 @@ struct CreateListingView: View {
             } header: {
                 Text("Price & pickup").brandSectionHeader()
             } footer: {
-                Text("A valid covered ZIP is required to publish so the listing appears in radius search.")
-                    .foregroundStyle(BrandTheme.textSecondary)
+                Text(
+                    "Starting price is the bid floor — buyers bid up. A valid covered ZIP is required to publish so the listing appears in local radius search."
+                )
+                .foregroundStyle(BrandTheme.textSecondary)
             }
 
             Section {
@@ -184,28 +190,39 @@ struct CreateListingView: View {
 
             if let errorMessage {
                 Section {
-                    Text(errorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(BrandTheme.destructive)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Label {
+                        Text(errorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.destructive)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(BrandTheme.destructive)
+                            .accessibilityHidden(true)
+                    }
+                    .accessibilityElement(children: .combine)
+                } header: {
+                    Text("Fix to continue").brandSectionHeader()
                 }
             }
 
             Section {
                 Button {
+                    BrandHaptics.medium()
                     Task { await submit() }
                 } label: {
-                    HStack {
+                    HStack(spacing: 10) {
                         if isSubmitting {
                             ProgressView()
                                 .tint(BrandTheme.ctaLabelOnGold)
+                                .accessibilityLabel("Listing…")
                         }
-                        Text(publish ? "List item" : "Save draft")
+                        Text(isSubmitting ? "Listing…" : (publish ? "List item" : "Save draft"))
                             .frame(maxWidth: .infinity)
                     }
                     .frame(minHeight: 48)
                 }
-                .buttonStyle(.borderedProminent)
+                .glassProminentBrandCTA()
                 .tint(BrandTheme.accent)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(!canSubmit || isSubmitting)
@@ -239,8 +256,9 @@ struct CreateListingView: View {
             Text(publish ? "Listing live" : "Draft saved")
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(BrandTheme.textPrimary)
+                .multilineTextAlignment(.center)
 
-            Text("“\(listing.displayTitle)” is ready. Local buyers can bid up or use Buy Now if you set a price.")
+            Text(successDetail(for: listing))
                 .font(.subheadline)
                 .foregroundStyle(BrandTheme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -253,9 +271,10 @@ struct CreateListingView: View {
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: 48)
             }
-            .buttonStyle(.borderedProminent)
+            .glassProminentBrandCTA()
             .tint(BrandTheme.accent)
             .foregroundStyle(BrandTheme.ctaLabelOnGold)
+            .accessibilityHint("Opens the listing you just created")
 
             Button("Done") { dismiss() }
                 .brandGhostButton()
@@ -265,6 +284,14 @@ struct CreateListingView: View {
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .brandScreenBackground()
+        .accessibilityElement(children: .contain)
+    }
+
+    private func successDetail(for listing: ListingDetail) -> String {
+        if publish {
+            return "“\(listing.displayTitle)” is live for local buyers (≈25 mi). They bid up from your start price; escrow holds payment until pickup."
+        }
+        return "“\(listing.displayTitle)” is saved as a draft. Publish when you’re ready for local buyers to bid up."
     }
 
     // MARK: - Validation / submit
@@ -297,6 +324,7 @@ struct CreateListingView: View {
         errorMessage = nil
 
         guard !auth.isScaffoldSession else {
+            BrandHaptics.error()
             errorMessage =
                 "Browse-only mode has no API credentials. Sign in against a live gateway to sell items."
             return
@@ -304,18 +332,22 @@ struct CreateListingView: View {
 
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else {
+            BrandHaptics.warning()
             errorMessage = "Enter a title for the listing."
             return
         }
         guard trimmedTitle.count <= 120 else {
+            BrandHaptics.warning()
             errorMessage = "Title must be at most 120 characters."
             return
         }
         guard description.count <= 5000 else {
+            BrandHaptics.warning()
             errorMessage = "Description must be at most 5000 characters."
             return
         }
         guard let startCents = MoneyFormat.cents(fromDollarsText: startingPriceText) else {
+            BrandHaptics.warning()
             errorMessage = "Enter a valid starting price in dollars (for example 50.00)."
             return
         }
@@ -324,10 +356,12 @@ struct CreateListingView: View {
         var buyNowCents: Int64?
         if !buyNowTrimmed.isEmpty {
             guard let cents = MoneyFormat.cents(fromDollarsText: buyNowTrimmed) else {
+                BrandHaptics.warning()
                 errorMessage = "Buy now must be a valid dollar amount, or left blank."
                 return
             }
             guard cents >= startCents else {
+                BrandHaptics.warning()
                 errorMessage = "Buy now must be at least the starting price."
                 return
             }
@@ -336,17 +370,20 @@ struct CreateListingView: View {
 
         let zip = pickupZip.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !zip.isEmpty else {
+            BrandHaptics.warning()
             errorMessage = "Enter a pickup ZIP code."
             return
         }
 
         let cat = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cat.isEmpty else {
+            BrandHaptics.warning()
             errorMessage = "Choose a category from the taxonomy."
             return
         }
 
         guard durationOptions.contains(durationHours) else {
+            BrandHaptics.warning()
             errorMessage = "Auction duration must be 24, 48, or 168 hours."
             return
         }
@@ -367,10 +404,13 @@ struct CreateListingView: View {
                 auctionDurationHours: durationHours,
                 publish: publish
             )
+            BrandHaptics.success()
             createdListing = listing
         } catch let error as APIClientError {
+            BrandHaptics.error()
             errorMessage = error.localizedDescription
         } catch {
+            BrandHaptics.error()
             errorMessage = error.localizedDescription
         }
     }

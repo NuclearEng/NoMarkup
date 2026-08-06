@@ -773,6 +773,19 @@ export interface StripeAccountStatus {
   details_submitted: boolean;
   // The gateway returns null (not []) when there are no pending requirements.
   requirements: string[] | null;
+  /** Separate charges + transfers readiness (Accounts v2 stripe_transfers). */
+  transfers_ready?: boolean;
+  stripe_transfers_status?: string;
+  /** express | full | none when known */
+  dashboard?: string;
+  /** "v2" | "v1" when inferred */
+  accounts_api?: string;
+}
+
+/** Connect embedded AccountSession (single-use client_secret). */
+export interface StripeAccountSession {
+  client_secret: string;
+  expires_at?: string;
 }
 
 export interface PaymentsResponse {

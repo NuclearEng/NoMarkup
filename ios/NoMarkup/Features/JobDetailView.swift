@@ -401,11 +401,7 @@ struct JobDetailView: View {
             if let detail {
                 detailContent(detail)
             } else if isLoading {
-                ProgressView("Loading…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .detail, accessibilityLabel: "Loading…")
             } else if let errorMessage {
                 BrandEmptyState(
                     title: "Couldn’t load job",
@@ -416,10 +412,7 @@ struct JobDetailView: View {
                     Task { await load() }
                 }
             } else {
-                ProgressView()
-                    .tint(BrandTheme.accent)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .detail, accessibilityLabel: "Loading reverse auction")
             }
         }
         .navigationTitle(detail?.displayTitle ?? "Reverse auction")

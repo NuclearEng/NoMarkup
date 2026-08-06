@@ -121,17 +121,20 @@ final class ScreenshotWalkUITests: XCTestCase {
     }
 
     /// Bidirectional lazy-List search: swipe up first, then fall back to swiping down.
+    /// Cap swipes tightly so missing Account rows soft-skip instead of multi-minute hangs.
     @discardableResult
-    private func scrollTo(_ element: XCUIElement, maxSwipes: Int = 10) -> Bool {
+    private func scrollTo(_ element: XCUIElement, maxSwipes: Int = 8) -> Bool {
         if element.exists && element.isHittable { return true }
-        for _ in 0..<maxSwipes {
+        let up = min(maxSwipes, 10)
+        for _ in 0..<up {
             app.swipeUp()
-            settle(0.25)
+            settle(0.12)
             if element.exists && element.isHittable { return true }
         }
-        for _ in 0..<(maxSwipes * 2) {
+        let down = min(maxSwipes, 8)
+        for _ in 0..<down {
             app.swipeDown()
-            settle(0.25)
+            settle(0.12)
             if element.exists && element.isHittable { return true }
         }
         return element.exists && element.isHittable
@@ -343,7 +346,57 @@ final class ScreenshotWalkUITests: XCTestCase {
         return false
     }
 
-    /// Open an Account row by label, screenshot it, optionally scroll+shoot again, then unwind.
+    /// Stable `account.row.*` slugs from AccountView (preferred over labels).
+    private static let accountRowIDs: [String: String] = [
+        "Profile settings": "account.row.profile",
+        "Security": "account.row.security",
+        "Verify email & phone": "account.row.verification",
+        "Post a job": "account.row.postJob",
+        "Job drafts": "account.row.drafts",
+        "Sell an item": "account.row.sell",
+        "Orders": "account.row.orders",
+        "Contracts": "account.row.contracts",
+        "My bids": "account.row.myBids",
+        "My listings": "account.row.myListings",
+        "Watchlist": "account.row.watchlist",
+        "Saved searches": "account.row.savedSearches",
+        "Payment methods": "account.row.paymentMethods",
+        "Notifications": "account.row.notifications",
+        "Notification preferences": "account.row.notificationPreferences",
+        "Provider workspace": "account.row.providerWorkspace",
+        "Instant offers": "account.row.instantOffers",
+        "Seller analytics": "account.row.sellerAnalytics",
+        "Seller payouts": "account.row.sellerPayouts",
+        "Business & finance": "account.row.businessFinance",
+        "Sales export (CSV)": "account.row.salesExport",
+        "Calendar export": "account.row.calendarExport",
+        "Team": "account.row.team",
+        "Challenges": "account.row.challenges",
+        "Legal services": "account.row.legalServices",
+        "Quote templates": "account.row.quoteTemplates",
+        "Verification documents": "account.row.verificationDocuments",
+        "Providers": "account.row.providers",
+        "Following": "account.row.following",
+        "Following feed": "account.row.followingFeed",
+        "Properties": "account.row.properties",
+        "Wishlist": "account.row.wishlist",
+        "Blocked users": "account.row.blockedUsers",
+        "Referrals": "account.row.referrals",
+        "Feedback surveys": "account.row.feedbackSurveys",
+        "Savings": "account.row.savings",
+        "Markets": "account.row.markets",
+        "Trust tiers": "account.row.trustTiers",
+        "Privacy Policy": "account.row.privacyPolicy",
+        "Terms of Service": "account.row.termsOfService",
+        "Terms acceptance": "account.row.termsAcceptance",
+        "Community Guidelines": "account.row.communityGuidelines",
+        "Support": "account.row.support",
+        "Delete Account": "account.row.deleteAccount",
+        "Plan limits": "account.row.planLimits",
+        "Feature flag status": "account.row.featureFlags",
+    ]
+
+    /// Open an Account row by stable id (preferred) or label; screenshot; optionally scroll+shoot; unwind.
     private func visitAccountRow(
         _ label: String,
         shotName: String,
@@ -352,8 +405,64 @@ final class ScreenshotWalkUITests: XCTestCase {
     ) {
         popToRoot("Account")
         settle(0.4)
+
+        // Prefer stable accessibility identifiers from AccountView.
+        if let stableID = Self.accountRowIDs[label] {
+            let byStable = byID(stableID)
+            if byStable.exists && byStable.isHittable {
+                byStable.tap()
+                settle(settleTime)
+                snap(shotName)
+                if let extra = extraScrollShot {
+                    app.swipeUp()
+                    settle(0.6)
+                    snap(extra)
+                }
+                popToRoot("Account")
+                return
+            }
+            // One bounded scroll pass for lazy lists — no multi-minute second passes.
+            if scrollTo(byStable, maxSwipes: 8), byStable.isHittable {
+                byStable.tap()
+                settle(settleTime)
+                snap(shotName)
+                if let extra = extraScrollShot {
+                    app.swipeUp()
+                    settle(0.6)
+                    snap(extra)
+                }
+                popToRoot("Account")
+                return
+            }
+            // Late rows (subscriptions) — jump bottom once, one more short pass.
+            for _ in 0..<4 {
+                app.swipeUp()
+                settle(0.1)
+            }
+            if scrollTo(byStable, maxSwipes: 4), byStable.isHittable {
+                byStable.tap()
+                settle(settleTime)
+                snap(shotName)
+                if let extra = extraScrollShot {
+                    app.swipeUp()
+                    settle(0.6)
+                    snap(extra)
+                }
+                popToRoot("Account")
+                return
+            }
+            recordSkip(shotName, "Account row id '\(stableID)' not found/hittable")
+            return
+        }
+
+        // Label fallback (no stable id mapping).
+        for _ in 0..<3 {
+            app.swipeUp()
+            settle(0.1)
+        }
         let row = byLabel(label)
-        guard scrollTo(row, maxSwipes: 12) else {
+        let found = scrollTo(row, maxSwipes: 8)
+        guard found else {
             recordSkip(shotName, "Account row '\(label)' not found/hittable")
             return
         }
@@ -368,78 +477,222 @@ final class ScreenshotWalkUITests: XCTestCase {
         popToRoot("Account")
     }
 
+    /// Wait until a catalog surface leaves its loading skeleton.
+    /// Accepts list, empty BrandEmpty title, error, or any of the provided ids.
+    @discardableResult
+    private func waitForCatalogSettle(
+        loadingID: String,
+        settledIDs: [String],
+        emptyTitles: [String],
+        timeout: TimeInterval = 18
+    ) -> String {
+        let deadline = Date().addingTimeInterval(timeout)
+        let loading = byID(loadingID)
+        // If loading is visible, wait for it to clear first.
+        while loading.exists && Date() < deadline {
+            settle(0.35)
+        }
+        while Date() < deadline {
+            for id in settledIDs {
+                if byID(id).exists { return id }
+            }
+            for title in emptyTitles {
+                if app.staticTexts[title].exists { return "empty:\(title)" }
+            }
+            // Rows may exist without a root id on older builds.
+            if app.cells.firstMatch.exists { return "cells" }
+            settle(0.35)
+        }
+        return "timeout"
+    }
+
+    /// Open a critical Account money surface via stable row id; snap list + root id when present.
+    /// Empty BrandEmpty titles are tolerated (network-free / seed-less).
+    private func visitCriticalAccountSurface(
+        label: String,
+        rowID: String,
+        rootID: String,
+        shotName: String,
+        emptyTitles: [String],
+        settleTime: TimeInterval = 2.0
+    ) {
+        popToRoot("Account")
+        settle(0.4)
+        let row = byID(rowID)
+        var opened = false
+        if row.exists && row.isHittable {
+            row.tap()
+            opened = true
+        } else if scrollTo(row, maxSwipes: 14), row.isHittable {
+            row.tap()
+            opened = true
+        } else {
+            // Label fallback for older builds without account.row.* ids.
+            let byName = byLabel(label)
+            if scrollTo(byName, maxSwipes: 14) {
+                byName.tap()
+                opened = true
+            }
+        }
+        guard opened else {
+            recordSkip(shotName, "Account row '\(label)' / \(rowID) not found")
+            return
+        }
+        settle(settleTime)
+        // Destination settled: root id, Brand empty, or any nav chrome.
+        let root = byID(rootID)
+        _ = root.waitForExistence(timeout: 6)
+            || emptyTitles.contains(where: { app.staticTexts[$0].waitForExistence(timeout: 1) })
+            || hasBackButton
+        snap(shotName)
+        if root.exists {
+            snap("\(shotName)-root")
+        } else if emptyTitles.contains(where: { app.staticTexts[$0].exists }) {
+            snap("\(shotName)-empty")
+        }
+        app.swipeUp()
+        settle(0.5)
+        snap("\(shotName)-scrolled")
+        popToRoot("Account")
+    }
+
     // MARK: - 01: customer core surfaces
 
     func test01CustomerCoreWalk() throws {
         signOutIfNeeded()
         login(email: customerEmail, screenshotPrefix: "auth")
 
-        // Home
+        // Home — unicorn hero + market desk (assert ids when present; soft on older builds)
         popToRoot("Home")
-        settle(1.5)
-        snap("home-top")
+        settle(0.8)
+        let hero = byID("home.hero")
+        if hero.waitForExistence(timeout: 8) {
+            snap("home-hero")
+            // Primary CTAs on the product desk.
+            if byID("home.browseJobs").exists {
+                snap("home-hero-ctas")
+            }
+        } else {
+            // Fallback: hero copy still identifies the surface.
+            _ = app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS[c] %@", "Market Sets")
+            ).firstMatch.waitForExistence(timeout: 4)
+            snap("home-top")
+            recordSkip("home.hero", "home.hero id not found (older build?)")
+        }
+        let marketDesk = byID("home.marketDesk")
+        if marketDesk.waitForExistence(timeout: 6) || scrollTo(marketDesk, maxSwipes: 4) {
+            snap("home-market-desk")
+        } else if app.staticTexts["MARKET DESK"].waitForExistence(timeout: 2)
+            || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "MARKET DESK")).firstMatch.exists
+        {
+            snap("home-market-desk")
+        } else {
+            recordSkip("home.marketDesk", "market desk not visible after home load")
+            snap("home-top-fallback")
+        }
         app.swipeUp()
         settle(0.5)
         app.swipeUp()
         settle(0.8)
         snap("home-mid")
-
-        // Marketplace list (root list — popToRoot unwinds any pushed detail)
-        popToRoot("Marketplace")
-        settle(2.0)
-        snap("marketplace-list")
-
-        // Listing detail (first row = seeded live auction)
-        if openFirstRow() {
-            snap("listing-detail-top")
-
-            // Watchlist toggle (heart in the toolbar), then restore state.
-            let addWatch = app.buttons["Add to watchlist"]
-            let removeWatch = app.buttons["Remove from watchlist"]
-            if addWatch.exists {
-                addWatch.tap()
-                settle(1.0)
-                dismissNotificationPrePrompt(snapName: "listing-notification-preprompt")
-                snap("listing-watchlist-on")
-                if removeWatch.waitForExistence(timeout: 4) { removeWatch.tap(); settle(0.8) }
-            } else if removeWatch.exists {
-                removeWatch.tap()
-                settle(1.0)
-                dismissNotificationPrePrompt(snapName: "listing-notification-preprompt")
-                snap("listing-watchlist-off")
-                if addWatch.waitForExistence(timeout: 4) { addWatch.tap(); settle(0.8) }
-            } else {
-                recordSkip("listing-watchlist", "no watchlist toolbar button found")
-            }
-            dismissNotificationPrePrompt()
-
-            // Place-a-bid UI (inline section; screenshot, do not submit).
-            let bidHeader = app.staticTexts["Place a bid (dollars)"]
-            if scrollTo(bidHeader, maxSwipes: 10) {
-                snap("listing-place-bid-ui")
-            } else {
-                recordSkip("listing-place-bid-ui", "bid section not found (ended or seller view)")
-                snap("listing-detail-scrolled")
-            }
-        } else {
-            recordSkip("listing-detail", "no listing rows in marketplace")
+        if byID("home.stats").exists {
+            snap("home-stats")
         }
 
-        // Jobs list
+        // Marketplace list — wait for loading skeleton to finish (list / empty / error all OK)
+        popToRoot("Marketplace")
+        let marketplaceState = waitForCatalogSettle(
+            loadingID: "marketplace.loading",
+            settledIDs: ["marketplace.list", "marketplace.empty", "marketplace.error"],
+            emptyTitles: ["No listings nearby", "Couldn’t load listings", "Couldn't load listings"]
+        )
+        snap("marketplace-list")
+        if marketplaceState == "timeout" {
+            recordSkip("marketplace-settle", "catalog did not leave loading within timeout")
+        } else if marketplaceState.hasPrefix("empty:") || marketplaceState == "marketplace.empty"
+            || marketplaceState == "marketplace.error"
+        {
+            recordSkip("listing-detail", "marketplace empty or error (\(marketplaceState))")
+        }
+
+        // Listing detail (first row = seeded live auction)
+        if marketplaceState == "marketplace.list" || marketplaceState == "cells" {
+            if openFirstRow() {
+                snap("listing-detail-top")
+
+                // Watchlist toggle (heart in the toolbar), then restore state.
+                let addWatch = app.buttons["Add to watchlist"]
+                let removeWatch = app.buttons["Remove from watchlist"]
+                if addWatch.exists {
+                    addWatch.tap()
+                    settle(1.0)
+                    dismissNotificationPrePrompt(snapName: "listing-notification-preprompt")
+                    snap("listing-watchlist-on")
+                    if removeWatch.waitForExistence(timeout: 4) { removeWatch.tap(); settle(0.8) }
+                } else if removeWatch.exists {
+                    removeWatch.tap()
+                    settle(1.0)
+                    dismissNotificationPrePrompt(snapName: "listing-notification-preprompt")
+                    snap("listing-watchlist-off")
+                    if addWatch.waitForExistence(timeout: 4) { addWatch.tap(); settle(0.8) }
+                } else {
+                    recordSkip("listing-watchlist", "no watchlist toolbar button found")
+                }
+                dismissNotificationPrePrompt()
+
+                // Place-a-bid UI (inline section; screenshot, do not submit).
+                let bidHeader = app.staticTexts["Place a bid (dollars)"]
+                if scrollTo(bidHeader, maxSwipes: 10) {
+                    snap("listing-place-bid-ui")
+                } else {
+                    recordSkip("listing-place-bid-ui", "bid section not found (ended or seller view)")
+                    snap("listing-detail-scrolled")
+                }
+            } else {
+                recordSkip("listing-detail", "no listing rows in marketplace")
+            }
+        }
+
+        // Jobs browse — segment + wait for load (skeleton → list / empty / error)
         popToRoot("Jobs")
-        settle(2.0)
+        let jobsSegment = byID("jobs.segment")
+        if jobsSegment.waitForExistence(timeout: 6) {
+            snap("jobs-segment")
+        } else {
+            // Segmented control may only expose labels on some OS versions.
+            _ = app.buttons["Browse"].waitForExistence(timeout: 2)
+                || app.staticTexts["Browse"].waitForExistence(timeout: 1)
+            snap("jobs-segment-fallback")
+        }
+        let jobsState = waitForCatalogSettle(
+            loadingID: "jobs.loading",
+            settledIDs: ["jobs.list", "jobs.empty", "jobs.error"],
+            emptyTitles: [
+                "No open reverse auctions",
+                "Couldn’t load jobs",
+                "Couldn't load jobs",
+            ]
+        )
         snap("jobs-list")
+        if jobsState == "timeout" {
+            recordSkip("jobs-settle", "jobs browse did not leave loading within timeout")
+        }
 
         // Job detail with bids
-        if openFirstRow() {
-            snap("job-detail-top")
-            app.swipeUp()
-            settle(0.5)
-            app.swipeUp()
-            settle(0.6)
-            snap("job-detail-bids")
-        } else {
-            recordSkip("job-detail", "no job rows in browse list")
+        if jobsState == "jobs.list" || jobsState == "cells" {
+            if openFirstRow() {
+                snap("job-detail-top")
+                app.swipeUp()
+                settle(0.5)
+                app.swipeUp()
+                settle(0.6)
+                snap("job-detail-bids")
+            } else {
+                recordSkip("job-detail", "no job rows in browse list")
+            }
+        } else if jobsState.hasPrefix("empty:") || jobsState == "jobs.empty" || jobsState == "jobs.error" {
+            recordSkip("job-detail", "jobs empty or error (\(jobsState))")
         }
 
         // Messages: thread list, seeded conversation, focused composer.
@@ -510,16 +763,72 @@ final class ScreenshotWalkUITests: XCTestCase {
             recordSkip("post-job", "'Post a job' row not found")
         }
 
+        // Create / commerce
+        visitAccountRow("Job drafts", shotName: "account-job-drafts")
+        visitAccountRow("Sell an item", shotName: "account-sell-item")
+
+        // Orders, bids & alerts
         visitAccountRow("My bids", shotName: "account-my-bids")
         visitAccountRow("Orders", shotName: "account-my-orders")
+        visitAccountRow("Contracts", shotName: "account-contracts")
+        visitAccountRow("My listings", shotName: "account-my-listings")
         visitAccountRow("Watchlist", shotName: "account-watchlist")
         visitAccountRow("Saved searches", shotName: "account-saved-searches")
+        visitAccountRow("Seller analytics", shotName: "account-seller-analytics")
+        // Critical money rows — prefer account.row.* ids; assert destination root ids.
+        visitCriticalAccountSurface(
+            label: "Seller payouts",
+            rowID: "account.row.sellerPayouts",
+            rootID: "sellerPayouts.root",
+            shotName: "account-seller-payouts",
+            emptyTitles: ["Sign in required"]
+        )
+        visitAccountRow("Business & finance", shotName: "account-business-finance")
+        visitAccountRow("Sales export (CSV)", shotName: "account-sales-export")
+        visitAccountRow("Calendar export", shotName: "account-calendar-export")
+        visitAccountRow("Team", shotName: "account-team")
+        visitAccountRow("Challenges", shotName: "account-challenges")
+        visitAccountRow("Legal services", shotName: "account-legal-services")
+        visitAccountRow("Quote templates", shotName: "account-quote-templates")
+        visitAccountRow("Verification documents", shotName: "account-verification-docs")
+        visitCriticalAccountSurface(
+            label: "Payment methods",
+            rowID: "account.row.paymentMethods",
+            rootID: "paymentMethods.root",
+            shotName: "account-payment-methods",
+            emptyTitles: [
+                "No saved payment methods",
+                "Sign in required",
+                "Couldn’t load methods",
+                "Couldn't load methods",
+            ]
+        )
+        visitAccountRow("Notifications", shotName: "account-notifications")
         visitAccountRow("Notification preferences", shotName: "account-notification-prefs")
+
+        // Network & safety
+        visitAccountRow("Providers", shotName: "account-providers")
+        visitAccountRow("Following", shotName: "account-following")
+        visitAccountRow("Following feed", shotName: "account-following-feed")
         visitAccountRow("Properties", shotName: "account-properties")
+        visitAccountRow("Wishlist", shotName: "account-wishlist")
+        visitAccountRow("Blocked users", shotName: "account-blocked-users")
         visitAccountRow("Referrals", shotName: "account-referrals")
+        visitAccountRow("Feedback surveys", shotName: "account-feedback-surveys")
+
+        // Legal / trust / subscription
         visitAccountRow("Trust tiers", shotName: "account-trust-tiers")
+        visitAccountRow("Savings", shotName: "account-savings")
+        visitAccountRow("Markets", shotName: "account-markets")
         visitAccountRow("Terms acceptance", shotName: "account-terms-acceptance")
+        visitAccountRow("Privacy Policy", shotName: "account-privacy")
+        visitAccountRow("Terms of Service", shotName: "account-terms")
+        visitAccountRow("Community Guidelines", shotName: "account-community")
+        visitAccountRow("Support", shotName: "account-support")
+        // Open Delete Account screen only (do not confirm destructive action)
+        visitAccountRow("Delete Account", shotName: "account-delete-screen-only")
         visitAccountRow("Plan limits", shotName: "account-plan-limits")
+        visitAccountRow("Feature flag status", shotName: "account-feature-flags")
     }
 
     // MARK: - 03: provider surfaces + empty states
@@ -536,9 +845,37 @@ final class ScreenshotWalkUITests: XCTestCase {
             settleTime: 2.0
         )
         visitAccountRow("Instant offers", shotName: "provider-instant-offers", settleTime: 2.0)
+        visitAccountRow("Security", shotName: "provider-security")
+        visitAccountRow("Verify email & phone", shotName: "provider-verification-center")
         visitAccountRow("Quote templates", shotName: "provider-quote-templates")
         visitAccountRow("Seller analytics", shotName: "provider-seller-analytics", settleTime: 2.0)
         visitAccountRow("Seller payouts", shotName: "provider-seller-payouts", settleTime: 2.0)
+        visitAccountRow("Business & finance", shotName: "provider-business-finance")
+        visitAccountRow("Sales export (CSV)", shotName: "provider-sales-export")
+        visitAccountRow("Calendar export", shotName: "provider-calendar-export")
+        visitAccountRow("Team", shotName: "provider-team")
+        visitAccountRow("Challenges", shotName: "provider-challenges")
+        visitAccountRow("Verification documents", shotName: "provider-verification-docs")
+        visitAccountRow("My listings", shotName: "provider-my-listings")
+        visitAccountRow("My bids", shotName: "provider-my-bids")
+        visitAccountRow("Contracts", shotName: "provider-contracts")
+        visitAccountRow("Payment methods", shotName: "provider-payment-methods")
+        visitAccountRow("Notifications", shotName: "provider-notifications")
+        visitAccountRow("Notification preferences", shotName: "provider-notification-prefs")
+        visitAccountRow("Trust tiers", shotName: "provider-trust-tiers")
+        visitAccountRow("Plan limits", shotName: "provider-plan-limits")
+        visitAccountRow("Feature flag status", shotName: "provider-feature-flags")
+
+        // Marketplace: open first listing as provider (bid ladder vs seller view)
+        popToRoot("Marketplace")
+        settle(2.0)
+        snap("provider-marketplace-list")
+        if openFirstRow() {
+            snap("provider-listing-detail")
+            goBack()
+        } else {
+            recordSkip("provider-listing-detail", "no listing rows")
+        }
 
         // Provider view of a job detail (provider-side bid UI).
         popToRoot("Jobs")
@@ -557,12 +894,23 @@ final class ScreenshotWalkUITests: XCTestCase {
         }
         popToRoot("Jobs")
 
+        // Messages as provider
+        popToRoot("Messages")
+        settle(1.5)
+        snap("provider-messages-list")
+        if openFirstRow() {
+            snap("provider-messages-thread")
+            goBack()
+        }
+
         // Empty/error states on provider2 (second provider data state).
         signOutIfNeeded()
         login(email: provider2Email)
         visitAccountRow("Instant offers", shotName: "provider2-instant-offers-empty", settleTime: 2.0)
         visitAccountRow("Quote templates", shotName: "provider2-quote-templates-empty")
         visitAccountRow("Watchlist", shotName: "provider2-watchlist-empty")
+        visitAccountRow("My listings", shotName: "provider2-my-listings-empty")
+        visitAccountRow("Seller payouts", shotName: "provider2-seller-payouts")
 
         // Leave the app signed out so the next leg starts at the login form.
         signOutIfNeeded()

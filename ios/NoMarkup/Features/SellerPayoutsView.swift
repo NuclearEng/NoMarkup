@@ -38,11 +38,7 @@ struct SellerPayoutsView: View {
                     action: { auth.signOut() }
                 )
             } else if isLoading && status == nil && errorMessage == nil {
-                ProgressView("Loading Stripe status…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading Stripe status…")
             } else {
                 formContent
             }
@@ -52,6 +48,7 @@ struct SellerPayoutsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .accessibilityIdentifier("sellerPayouts.root")
         .task { await load() }
         .refreshable { await load() }
         .sheet(isPresented: Binding(
@@ -130,7 +127,7 @@ struct SellerPayoutsView: View {
                         Text("Your Stripe account can charge and receive payouts.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     } else {
-                        Text("Complete Stripe onboarding so escrow can pay out to your bank.")
+                        Text("Complete Stripe setup so escrow can pay out to your bank.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
@@ -138,6 +135,7 @@ struct SellerPayoutsView: View {
                 Section {
                     if status == nil || status?.hasDetailsSubmitted != true {
                         Button {
+                            BrandHaptics.medium()
                             Task { await createAccountIfNeeded() }
                         } label: {
                             HStack {
@@ -150,14 +148,13 @@ struct SellerPayoutsView: View {
                             }
                             .frame(minHeight: 48)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(BrandTheme.accent)
-                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                        .brandPrimaryButton()
                         .disabled(isCreating || isOpeningOnboarding)
                         .accessibilityHint("Creates a Stripe Express account for payouts if you do not have one yet")
                     }
 
                     Button {
+                        BrandHaptics.selection()
                         Task { await openOnboarding() }
                     } label: {
                         HStack {
@@ -173,6 +170,7 @@ struct SellerPayoutsView: View {
                         }
                         .frame(minHeight: 48)
                     }
+                    .brandGhostButton()
                     .disabled(isCreating || isOpeningOnboarding)
                     .accessibilityHint("Opens Stripe Connect onboarding in Safari")
                 }
@@ -243,16 +241,13 @@ struct SellerPayoutsView: View {
             if hasProviderRole {
                 do {
                     status = try await APIClient.shared.fetchStripeAccountStatus()
-                } catch let error as APIClientError where error.isForbidden {
-                    // Provider role may lag; show empty status with create CTA.
-                    status = nil
-                    errorMessage = "Stripe status unavailable. Create or finish onboarding below."
                 } catch let error as APIClientError where error.isUnauthorized {
                     throw error
                 } catch {
-                    // Soft-fail status so create/onboard actions remain usable.
+                    // Missing / incomplete Connect account, 403/404/422/5xx soft-id, etc.
+                    // Keep create + onboarding CTAs usable — never a generic "something went wrong".
                     status = nil
-                    errorMessage = error.localizedDescription
+                    errorMessage = "Complete Stripe setup to receive payouts."
                 }
             } else {
                 status = nil

@@ -16,11 +16,7 @@ struct CategoryPickerView: View {
     var body: some View {
         Group {
             if isLoading && roots.isEmpty {
-                ProgressView("Loading categories…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 6, accessibilityLabel: "Loading categories…")
             } else if let errorMessage, roots.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load categories",

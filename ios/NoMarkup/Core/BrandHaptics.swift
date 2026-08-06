@@ -7,6 +7,9 @@ import UIKit
 ///
 /// Maps to the brand north star: **Bloomberg desk density + Robinhood number thrills**.
 /// Respects system haptics off (UIKit no-ops) and is a no-op on non-iOS.
+///
+/// All generators are UIKit MainActor APIs (iOS 26 isolation). Call from UI paths only.
+@MainActor
 enum BrandHaptics {
     /// Subtle tick — new bid on ladder, countdown urgency, ticker delta.
     static func light() {

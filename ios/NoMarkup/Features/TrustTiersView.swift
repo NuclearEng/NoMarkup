@@ -30,11 +30,7 @@ struct TrustTiersView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading && tiers.isEmpty {
-            ProgressView("Loading trust tiers…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading trust tiers…")
         } else if let errorMessage, tiers.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load tiers",

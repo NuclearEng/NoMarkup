@@ -27,6 +27,10 @@ struct ListingDetailView: View {
     @State private var ladderCurrentBidCents: Int64?
     @State private var ladderBidderCount: Int?
 
+    /// Increments when leading (high) bid amount changes — drives `brandMoneyFlash` + light haptic.
+    @State private var leadingFlashToken = 0
+    @State private var lastFlashedLeadingCents: Int64?
+
     /// Public delayed marketplace spectator stream (anonymous; no JWT).
     @StateObject private var marketplaceSpectator = MarketplaceSpectatorWebSocketClient()
     /// Soft activity rows from WS frames (amounts only — no bidder identity).
@@ -170,11 +174,7 @@ struct ListingDetailView: View {
             if let detail {
                 detailContent(detail)
             } else if isLoading {
-                ProgressView("Loading…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .detail, accessibilityLabel: "Loading…")
             } else if let errorMessage {
                 BrandEmptyState(
                     title: "Couldn’t load listing",
@@ -185,10 +185,7 @@ struct ListingDetailView: View {
                     Task { await load() }
                 }
             } else {
-                ProgressView()
-                    .tint(BrandTheme.accent)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .detail, accessibilityLabel: "Loading listing")
             }
         }
         .navigationTitle(detail?.displayTitle ?? "Listing")
@@ -332,8 +329,11 @@ struct ListingDetailView: View {
         VStack(spacing: 8) {
             if let leading = leadingBidCents {
                 Text("High \(MoneyFormat.usd(cents: leading))")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(BrandTheme.textSecondary)
+                    .contentTransition(.numericText())
+                    .brandMoneyFlash(token: leadingFlashToken, isDown: false)
+                    .animation(.easeOut(duration: 0.2), value: leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(spacing: 10) {
@@ -670,7 +670,19 @@ struct ListingDetailView: View {
                     .minimumScaleFactor(0.5)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.numericText())
+                    // Forward auction: bids climb — blue wash (`isDown: false`), not reverse green.
+                    .brandMoneyFlash(token: leadingFlashToken, isDown: false)
+                    .animation(.easeOut(duration: 0.2), value: heroPriceAmount(listing))
                     .accessibilityLabel("\(heroPriceCaption(listing)): \(heroPriceAmount(listing))")
+                    .onChange(of: leadingBidCents) { _, newValue in
+                        guard let newValue, newValue > 0 else { return }
+                        if let prev = lastFlashedLeadingCents, prev != newValue {
+                            leadingFlashToken += 1
+                            BrandHaptics.light()
+                        }
+                        lastFlashedLeadingCents = newValue
+                    }
 
                 Text(heroPriceCaption(listing))
                     .font(.caption.weight(.semibold))
@@ -912,6 +924,12 @@ struct ListingDetailView: View {
                     Text(row.displayAmount)
                         .font(.body.weight(.bold).monospacedDigit())
                         .foregroundStyle(BrandTheme.goldBright)
+                        .contentTransition(.numericText())
+                        .brandMoneyFlash(
+                            token: isWinning ? leadingFlashToken : 0,
+                            isDown: false
+                        )
+                        .animation(.easeOut(duration: 0.2), value: row.displayAmount)
                     if isWinning {
                         Text("Winning")
                             .font(.caption2.weight(.bold))
@@ -1271,6 +1289,7 @@ struct ListingDetailView: View {
                 }
 
                 Button {
+                    BrandHaptics.medium()
                     Task { await placeListingBid() }
                 } label: {
                     if isPlacingBid {
@@ -1910,6 +1929,7 @@ struct ListingDetailView: View {
         bidStatusIsError = false
 
         guard !auth.isScaffoldSession else {
+            BrandHaptics.error()
             bidStatusIsError = true
             bidStatusMessage =
                 "Browse-only mode has no API credentials. Sign in against a live gateway to place bids."
@@ -1917,6 +1937,7 @@ struct ListingDetailView: View {
         }
 
         guard let cents = MoneyFormat.cents(fromDollarsText: bidAmountText) else {
+            BrandHaptics.warning()
             bidStatusIsError = true
             bidStatusMessage =
                 "Enter a valid dollar amount (for example 25.00). Do not enter cents — $25 is 25, not 2500."
@@ -1924,6 +1945,7 @@ struct ListingDetailView: View {
         }
 
         if let leading = leadingBidCents, cents <= leading {
+            BrandHaptics.warning()
             bidStatusIsError = true
             bidStatusMessage =
                 "Forward auction: bid above the current high of \(MoneyFormat.usd(cents: leading))."
@@ -1967,6 +1989,7 @@ struct ListingDetailView: View {
                 amountCents: amountCents,
                 maxBidCents: maxBidCents
             )
+            BrandHaptics.success()
             bidStatusIsError = false
             if let maxBidCents, maxBidCents > amountCents {
                 bidStatusMessage =
@@ -1990,6 +2013,7 @@ struct ListingDetailView: View {
             )
             await load()
         } catch let error as APIClientError where error.isBidBondRequired {
+            BrandHaptics.warning()
             let bondCents = error.bidBondAmountCents ?? 0
             pendingBidCents = amountCents
             pendingMaxBidCents = maxBidCents
@@ -2006,9 +2030,11 @@ struct ListingDetailView: View {
                 showBidBondAlert = true
             }
         } catch let error as APIClientError where error.isUnauthorized {
+            BrandHaptics.error()
             bidStatusIsError = true
             bidStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
         } catch {
+            BrandHaptics.error()
             bidStatusIsError = true
             bidStatusMessage = error.localizedDescription
         }

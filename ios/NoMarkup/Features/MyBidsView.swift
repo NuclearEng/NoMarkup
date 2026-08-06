@@ -113,11 +113,7 @@ struct MyBidsView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading && currentListIsEmpty {
-            ProgressView("Loading bids…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .catalog, rows: 5, accessibilityLabel: "Loading bids…")
         } else if let errorMessage, currentListIsEmpty {
             BrandEmptyState(
                 title: "Couldn’t load bids",
@@ -300,8 +296,9 @@ struct MyBidsView: View {
                 }
                 Spacer(minLength: 8)
                 Text(entry.displayAmount)
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .font(.subheadline.weight(.bold).monospacedDigit())
                     .foregroundStyle(entry.isWinning ? BrandTheme.bidWinning : BrandTheme.goldBright)
+                    .contentTransition(.numericText())
             }
             HStack(spacing: 8) {
                 if entry.isWinning {
@@ -316,7 +313,17 @@ struct MyBidsView: View {
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(BrandTheme.bidActive)
                 }
-                if let status = entry.listing?.status, !status.isEmpty {
+                if Self.isLiveListingStatus(entry.listing?.status) {
+                    HStack(spacing: 4) {
+                        LivePulseDot()
+                        Text("LIVE")
+                            .font(.caption2.weight(.bold).monospaced())
+                            .tracking(0.4)
+                            .foregroundStyle(BrandTheme.success)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Live auction")
+                } else if let status = entry.listing?.status, !status.isEmpty {
                     Text(StatusChipStyle.displayLabel(status))
                         .font(.caption2)
                         .foregroundStyle(BrandTheme.textSecondary)
@@ -384,8 +391,9 @@ struct MyBidsView: View {
                 }
                 Spacer(minLength: 8)
                 Text(bid.displayAmount)
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .font(.subheadline.weight(.bold).monospacedDigit())
                     .foregroundStyle(BrandTheme.goldBright)
+                    .contentTransition(.numericText())
             }
             HStack(spacing: 8) {
                 Text(bid.displayStatus)
@@ -525,6 +533,16 @@ struct MyBidsView: View {
         case .warning: return BrandTheme.warning
         case .danger: return BrandTheme.destructive
         case .neutral: return BrandTheme.textSecondary
+        }
+    }
+
+    private static func isLiveListingStatus(_ raw: String?) -> Bool {
+        let status = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch status {
+        case "active", "open", "live", "bidding":
+            return true
+        default:
+            return false
         }
     }
 

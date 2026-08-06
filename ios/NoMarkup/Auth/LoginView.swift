@@ -82,7 +82,7 @@ struct LoginView: View {
                         Text("No")
                             .foregroundColor(BrandTheme.textPrimary)
                         + Text("Markup")
-                            .foregroundColor(BrandTheme.gold)
+                            .foregroundColor(BrandTheme.goldBright)
                     )
                     .font(.largeTitle.weight(.heavy))
                     .accessibilityLabel("NoMarkup")
@@ -98,10 +98,16 @@ struct LoginView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("The Market Sets The Price. Not The Markup.")
-                    .font(.system(.title3, design: .serif).weight(.semibold))
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
+                (
+                    Text("The Market Sets The Price.\n")
+                        .foregroundColor(BrandTheme.textPrimary)
+                    + Text("Not The Markup.")
+                        .foregroundColor(BrandTheme.goldBright)
+                        .italic()
+                )
+                .font(.system(.title3, design: .serif).weight(.regular))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel("The Market Sets The Price. Not The Markup.")
 
                 Text("Reverse-auction services. Local goods with escrow. Fair market rates — everyone wins except the middleman.")
                     .font(.subheadline)
@@ -189,6 +195,7 @@ struct LoginView: View {
 
             Button {
                 guard !auth.isBusy else { return }
+                BrandHaptics.medium()
                 Task { await auth.verifyMFA() }
             } label: {
                 Group {
@@ -197,15 +204,12 @@ struct LoginView: View {
                             .tint(BrandTheme.ctaLabelOnGold)
                     } else {
                         Text("Verify and sign in")
-                            .fontWeight(.semibold)
                     }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 48)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(BrandTheme.accent)
-            .foregroundStyle(BrandTheme.ctaLabelOnGold)
+            .brandPrimaryButton()
             .disabled(auth.isBusy)
             .accessibilityLabel("Verify authenticator code and sign in")
 
@@ -239,6 +243,7 @@ struct LoginView: View {
         VStack(spacing: 12) {
             Button {
                 guard !auth.isBusy else { return }
+                BrandHaptics.medium()
                 Task { await auth.login() }
             } label: {
                 Group {
@@ -248,15 +253,12 @@ struct LoginView: View {
                             .tint(BrandTheme.ctaLabelOnGold)
                     } else {
                         Text("Sign in")
-                            .fontWeight(.semibold)
                     }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 48)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(BrandTheme.accent)
-            .foregroundStyle(BrandTheme.ctaLabelOnGold)
+            .brandPrimaryButton()
             .disabled(auth.isBusy)
             .accessibilityIdentifier("login.submit")
             .accessibilityLabel("Sign in with email and password")

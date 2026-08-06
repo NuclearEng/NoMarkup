@@ -74,6 +74,20 @@ func TestSubscriptionService_ListInvoices(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, domain.ErrNoActiveSubscription)
 	})
+
+	t.Run("empty_stripe_subscription_id_returns_empty_list", func(t *testing.T) {
+		t.Parallel()
+		// Seed / admin-grant rows have status=active but no Stripe object.
+		repo := &mockSubRepo{
+			getSubscriptionFn: func(_ context.Context, _ string) (*domain.Subscription, error) {
+				return &domain.Subscription{ID: "sub-1", StripeSubscriptionID: ""}, nil
+			},
+		}
+		svc := newTestSubService(repo)
+		invoices, err := svc.ListInvoices(context.Background(), "user-1")
+		require.NoError(t, err)
+		assert.Empty(t, invoices)
+	})
 }
 
 // --- AdminListSubscriptions ---

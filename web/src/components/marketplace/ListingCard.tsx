@@ -179,7 +179,10 @@ export const ListingCard = memo(function ListingCard({
             </span>
           </div>
           <span className="text-xs text-zinc-500">
-            From {formatCents(listing.starting_price_cents)}
+            From{' '}
+            <span className="font-mono tabular-nums tracking-tight">
+              {formatCents(listing.starting_price_cents)}
+            </span>
           </span>
         </div>
 
@@ -187,7 +190,7 @@ export const ListingCard = memo(function ListingCard({
         <div className="flex items-baseline gap-1.5">
           <span className="text-xs font-medium text-zinc-500">Current bid:</span>
           <span
-            className="text-lg font-bold text-[var(--brand-gold)] tabular-nums"
+            className="font-mono text-lg font-bold text-[var(--brand-gold)] tabular-nums tracking-tight"
             style={{
               textShadow: '0 0 16px rgba(212,160,23,0.3), 0 0 32px rgba(212,160,23,0.1)',
             }}

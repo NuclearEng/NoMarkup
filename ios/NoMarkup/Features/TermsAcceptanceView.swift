@@ -45,11 +45,7 @@ struct TermsAcceptanceView: View {
                     action: { auth.signOut() }
                 )
             } else if isLoading && current == nil {
-                ProgressView("Loading terms…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading terms…")
             } else if let errorMessage, current == nil {
                 BrandEmptyState(
                     title: "Couldn’t load terms",

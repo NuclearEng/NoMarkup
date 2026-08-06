@@ -7,9 +7,9 @@ interface BrandMarkProps {
 }
 
 /**
- * Champagne-metal monogram — crystal **M** + down arrow (reverse auction / price down).
- * Matches SpringBoard App Icon master (`brand/app-icon-champagne-m.png` / ICON_DECISION.md).
- * Colors via currentColor / brand CSS vars only (no raw hex).
+ * Monochrome M↓ monogram (SVG, currentColor) for tight / tinted contexts.
+ * Primary chrome brand is the raster SpringBoard tile via `AppIcon` / `Logo`.
+ * Spec: `brand/ICON_DECISION.md` champagne metal M↓.
  */
 export function BrandMark({ className, title }: BrandMarkProps) {
   const decorative = title == null || title === '';

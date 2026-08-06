@@ -28,12 +28,32 @@ describe('Logo', () => {
   });
 
   it('applies the custom className', () => {
-    render(<Logo asLink={false} className="extra-logo" />);
-    expect(screen.getByText('No').className).toContain('extra-logo');
+    const { container } = render(<Logo asLink={false} className="extra-logo" />);
+    const root = container.firstElementChild;
+    expect(root?.className).toContain('extra-logo');
   });
 
   it('honors the size prop', () => {
-    render(<Logo asLink={false} size="lg" />);
-    expect(screen.getByText('No').className).toContain('text-3xl');
+    const { container } = render(<Logo asLink={false} size="lg" />);
+    const root = container.firstElementChild;
+    expect(root?.className).toContain('text-3xl');
+  });
+
+  it('renders the SpringBoard app-icon tile', () => {
+    const { container } = render(<Logo asLink={false} />);
+    const img = container.querySelector('img');
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute('src')).toBe('/icons/icon-192.png');
+  });
+
+  it('supports a custom href and aria label', () => {
+    render(<Logo href="/dashboard" ariaLabel="Go to Dashboard" />);
+    const link = screen.getByLabelText('Go to Dashboard');
+    expect(link.getAttribute('href')).toBe('/dashboard');
+  });
+
+  it('can hide the app-icon tile', () => {
+    const { container } = render(<Logo asLink={false} showMark={false} />);
+    expect(container.querySelector('img')).toBeNull();
   });
 });

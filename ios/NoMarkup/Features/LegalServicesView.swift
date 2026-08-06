@@ -90,8 +90,7 @@ struct LegalServicesView: View {
 
             Section {
                 if isLoadingJobs && jobs.isEmpty {
-                    ProgressView("Loading open cases…")
-                        .tint(BrandTheme.accent)
+                    BrandLoadingScreen(kind: .catalog, rows: 3, accessibilityLabel: "Loading open cases…")
                         .frame(maxWidth: .infinity, minHeight: 44)
                 } else if let jobsError, jobs.isEmpty {
                     Text(jobsError)

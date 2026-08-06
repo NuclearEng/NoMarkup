@@ -209,10 +209,12 @@ final class AuthViewModel: ObservableObject {
         statusMessage = nil
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !password.isEmpty else {
+            BrandHaptics.warning()
             errorMessage = "Enter email and password."
             return
         }
         guard trimmed.contains("@"), trimmed.contains(".") else {
+            BrandHaptics.warning()
             errorMessage = "Enter a valid email address."
             return
         }
@@ -225,6 +227,7 @@ final class AuthViewModel: ObservableObject {
             let result = try await api.loginWithMFAHandling(email: trimmed, password: password)
             switch result {
             case .signedIn:
+                BrandHaptics.success()
                 clearSensitiveInMemoryFields()
                 isScaffoldSession = false
                 isAuthenticated = true
@@ -233,6 +236,7 @@ final class AuthViewModel: ObservableObject {
             case .mfaRequired(let challengeToken, _):
                 // Hold challenge; do not mark authenticated until TOTP succeeds.
                 // Clear password once the challenge is open — only TOTP is needed next.
+                BrandHaptics.light()
                 password = ""
                 mfaChallengeToken = challengeToken
                 needsMFA = true
@@ -241,6 +245,7 @@ final class AuthViewModel: ObservableObject {
                 statusMessage = "Enter the code from your authenticator app."
             }
         } catch {
+            BrandHaptics.error()
             errorMessage = error.localizedDescription
         }
     }

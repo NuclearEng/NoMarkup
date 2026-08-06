@@ -23,7 +23,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       />
 
       <div className="animate-fade-in relative z-[2] mb-8">
-        <Logo size="lg" />
+        {/* Real SpringBoard tile (iOS AppIcon) — priority for auth LCP brand */}
+        <Logo size="lg" priority />
       </div>
       <div className="animate-auth-card-enter relative z-[2] w-full max-w-md">{children}</div>
     </div>

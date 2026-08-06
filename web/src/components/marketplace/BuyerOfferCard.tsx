@@ -185,7 +185,7 @@ export function BuyerOfferCard({ listingId, className }: BuyerOfferCardProps) {
       <CardContent className="space-y-3 pt-0">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-2xl font-bold tabular-nums">
+            <p className="font-mono text-2xl font-bold tabular-nums tracking-tight">
               {formatCents(liveOffer.amount_cents)}
             </p>
             <p className="text-muted-foreground text-xs">

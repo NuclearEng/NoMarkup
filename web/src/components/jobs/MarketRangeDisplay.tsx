@@ -104,7 +104,7 @@ export function MarketRangeDisplay({
         </div>
 
         {/* Price labels */}
-        <div className="flex items-center justify-between text-[10px]">
+        <div className="flex items-center justify-between font-mono text-[10px] tabular-nums tracking-tight">
           <span className="font-medium text-bid-winning">{formatCents(low_cents)}</span>
           <span className="text-zinc-500">{formatCents(median_cents)}</span>
           <span className="font-medium text-destructive">{formatCents(high_cents)}</span>
@@ -196,7 +196,7 @@ export function MarketRangeDisplay({
               style={{ left: `${String(bidPosition)}%` }}
             >
               <span
-                className={`text-[10px] font-bold ${isBelowMedian ? 'text-bid-winning' : isAboveMedian ? 'text-destructive' : 'text-zinc-900 dark:text-white'}`}
+                className={`font-mono text-[10px] font-bold tabular-nums tracking-tight ${isBelowMedian ? 'text-bid-winning' : isAboveMedian ? 'text-destructive' : 'text-zinc-900 dark:text-white'}`}
               >
                 {formatCents(currentBidCents)}
               </span>
@@ -260,14 +260,20 @@ export function MarketRangeDisplay({
         <div className="mt-2.5 flex items-center justify-between">
           <div className="text-left">
             <p className="text-[10px] font-medium tracking-wider text-zinc-400 dark:text-zinc-600 uppercase">Low</p>
-            <p className="text-sm font-bold text-bid-winning">{formatCents(low_cents)}</p>
+            <p className="font-mono text-sm font-bold text-bid-winning tabular-nums tracking-tight">
+              {formatCents(low_cents)}
+            </p>
           </div>
           <div className="text-center">
-            <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">{formatCents(median_cents)}</p>
+            <p className="font-mono text-sm font-bold text-zinc-700 tabular-nums tracking-tight dark:text-zinc-300">
+              {formatCents(median_cents)}
+            </p>
           </div>
           <div className="text-right">
             <p className="text-[10px] font-medium tracking-wider text-zinc-400 dark:text-zinc-600 uppercase">High</p>
-            <p className="text-sm font-bold text-destructive">{formatCents(high_cents)}</p>
+            <p className="font-mono text-sm font-bold text-destructive tabular-nums tracking-tight">
+              {formatCents(high_cents)}
+            </p>
           </div>
         </div>
       </div>

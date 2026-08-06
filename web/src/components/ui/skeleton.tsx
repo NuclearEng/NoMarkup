@@ -32,6 +32,12 @@ function Skeleton({
       : {}),
   };
 
+  // Champagne gold shimmer (showcase --gold #c9a84c) — terminal desk, not cold gray.
+  const shimmer =
+    variant === 'price'
+      ? 'linear-gradient(90deg, transparent 0%, rgba(201,168,76,0.22) 50%, transparent 100%)'
+      : 'linear-gradient(90deg, transparent 0%, rgba(201,168,76,0.14) 45%, rgba(255,255,255,0.06) 55%, transparent 100%)';
+
   return (
     <div
       className={cn(
@@ -40,14 +46,15 @@ function Skeleton({
         className,
       )}
       style={sizeStyle}
+      role="presentation"
+      aria-hidden="true"
       {...props}
     >
       <div
-        className="absolute inset-0"
+        className="absolute inset-0 motion-reduce:hidden"
         style={{
-          background:
-            'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 50%, transparent 100%)',
-          animation: 'shimmer-sweep 1.5s ease-in-out infinite',
+          background: shimmer,
+          animation: 'shimmer-sweep 1.35s ease-in-out infinite',
         }}
         aria-hidden="true"
       />

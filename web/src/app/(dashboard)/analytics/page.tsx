@@ -467,6 +467,14 @@ function CustomerAnalyticsView() {
 export default function AnalyticsPage() {
   const user = useAuthStore((state) => state.user);
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
+  const isCustomer = user?.roles.includes(USER_ROLE.CUSTOMER) ?? false;
+  // Dual-role: show both views (customer spend + provider earnings). Provider-only
+  // or customer-only keep a single view. Previously dual-role hid customer spend.
+  const showBoth = isProvider && isCustomer;
+  const showProvider = isProvider && !isCustomer;
+  const showCustomer = isCustomer && !isProvider;
+  // Edge: no roles yet (hydrate edge) → customer empty-safe default
+  const fallbackCustomer = !isProvider && !isCustomer;
 
   return (
     <PageTransition>
@@ -475,13 +483,32 @@ export default function AnalyticsPage() {
       <div>
         <h1 className="gold-text text-2xl font-bold tracking-tight">Analytics</h1>
         <p className="mt-1 text-zinc-300">
-          {isProvider
-            ? 'Track your performance, earnings, and growth.'
-            : 'Track your spending, job activity, and savings.'}
+          {showBoth
+            ? 'Track your spending as a customer and your earnings as a provider.'
+            : showProvider
+              ? 'Track your performance, earnings, and growth.'
+              : 'Track your spending, job activity, and savings.'}
         </p>
       </div>
 
-      {isProvider ? <ProviderAnalyticsView /> : <CustomerAnalyticsView />}
+      {showBoth ? (
+        <div className="space-y-10">
+          <section aria-labelledby="analytics-customer-heading" className="space-y-4">
+            <h2 id="analytics-customer-heading" className="text-lg font-semibold text-zinc-100">
+              Customer activity
+            </h2>
+            <CustomerAnalyticsView />
+          </section>
+          <section aria-labelledby="analytics-provider-heading" className="space-y-4">
+            <h2 id="analytics-provider-heading" className="text-lg font-semibold text-zinc-100">
+              Provider performance
+            </h2>
+            <ProviderAnalyticsView />
+          </section>
+        </div>
+      ) : null}
+      {showProvider ? <ProviderAnalyticsView /> : null}
+      {showCustomer || fallbackCustomer ? <CustomerAnalyticsView /> : null}
     </div>
     </PageTransition>
   );

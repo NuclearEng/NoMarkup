@@ -607,6 +607,8 @@ func New(
 				r.Post("/me/stripe/account", paymentHandler.CreateStripeAccount)
 				r.Get("/me/stripe/onboarding", paymentHandler.GetStripeOnboardingLink)
 				r.Get("/me/stripe/status", paymentHandler.GetStripeAccountStatus)
+				// Embedded Connect AccountSession (onboarding + notification banner).
+				r.Post("/me/stripe/account-session", paymentHandler.CreateStripeAccountSession)
 
 				// Working Capital advances + credit-limit quote — gated behind
 				// working_capital (SEC-GATE-03: credit-limit was previously

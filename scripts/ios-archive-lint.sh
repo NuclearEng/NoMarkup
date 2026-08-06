@@ -37,11 +37,13 @@ if [[ -n "$BASE" && "$BASE" != https://* ]]; then
 fi
 ok "APIBaseURL is release-safe (${BASE:-empty → AppConfig production HTTPS})"
 
-# --- No NSAllowsLocalNetworking in shipping plist ---
-if /usr/libexec/PlistBuddy -c 'Print :NSAppTransportSecurity:NSAllowsLocalNetworking' "$PLIST" &>/dev/null; then
-  fail "NSAllowsLocalNetworking must not ship in Release Info.plist (ATS fail-closed)"
+# --- ATS fail-closed: no exceptions in the shared shipping Info.plist ---
+# Dogfood cleartext is Debug scheme env only (NOMARKUP_API_BASE_URL); prefer HTTPS tunnel.
+# Do not reintroduce NSAllowsArbitraryLoads / NSAllowsLocalNetworking here.
+if /usr/libexec/PlistBuddy -c 'Print :NSAppTransportSecurity' "$PLIST" &>/dev/null; then
+  fail "NSAppTransportSecurity must be absent from shipping Info.plist (default ATS only; no ArbitraryLoads / LocalNetworking)"
 fi
-ok "ATS has no local-networking exception in Info.plist"
+ok "ATS has no exceptions in Info.plist (default HTTPS-only)"
 
 # --- Marketing version policy ---
 if ! grep -q 'MARKETING_VERSION = 1.0.0' "$PBX"; then

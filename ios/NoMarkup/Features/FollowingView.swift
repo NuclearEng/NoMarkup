@@ -46,11 +46,7 @@ struct FollowingView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading && follows.isEmpty {
-            ProgressView("Loading following…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading following…")
         } else if let errorMessage, follows.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load following",

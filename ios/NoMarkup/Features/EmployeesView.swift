@@ -48,11 +48,7 @@ struct EmployeesView: View {
                     action: { auth.signOut() }
                 )
             } else if isLoading && employees.isEmpty && loadError == nil {
-                ProgressView("Loading team…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading team…")
             } else if let loadError, employees.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load team",

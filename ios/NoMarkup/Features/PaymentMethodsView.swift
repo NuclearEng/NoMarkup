@@ -11,6 +11,8 @@ struct PaymentMethodsView: View {
     @State private var errorMessage: String?
     @State private var statusMessage: String?
     @State private var needsSignIn = false
+    /// True only when GET methods failed for a non-empty-list reason (not 422/404).
+    @State private var loadFailed = false
     @State private var pendingDelete: PaymentMethodRow?
 
     var body: some View {
@@ -32,18 +34,24 @@ struct PaymentMethodsView: View {
                     action: { auth.signOut() }
                 )
             } else if isLoading && methods.isEmpty {
-                ProgressView("Loading payment methods…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
-            } else if let errorMessage, methods.isEmpty {
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading payment methods…")
+            } else if loadFailed, methods.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load methods",
                     systemImage: "wifi.exclamationmark",
-                    message: errorMessage,
+                    message: errorMessage ?? "Check your connection and try again.",
                     actionTitle: "Try again",
                     action: { Task { await load() } }
+                )
+            } else if methods.isEmpty {
+                // Empty list is a success state (including soft 422/404) — not an error.
+                BrandEmptyState(
+                    title: "No saved payment methods",
+                    systemImage: "creditcard",
+                    message: errorMessage
+                        ?? "Save a card for faster checkout. Cards are stored with Stripe — NoMarkup never sees full card numbers.",
+                    actionTitle: isAddingCard ? "Opening…" : "Add card",
+                    action: { Task { await addCard() } }
                 )
             } else {
                 listContent
@@ -54,6 +62,7 @@ struct PaymentMethodsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .accessibilityIdentifier("paymentMethods.root")
         .toolbar {
             if auth.isAuthenticated, !auth.isScaffoldSession, !needsSignIn {
                 ToolbarItem(placement: .primaryAction) {
@@ -118,6 +127,7 @@ struct PaymentMethodsView: View {
 
             Section {
                 Button {
+                    BrandHaptics.medium()
                     Task { await addCard() }
                 } label: {
                     if isAddingCard {
@@ -138,24 +148,12 @@ struct PaymentMethodsView: View {
                 .accessibilityHint("Opens Stripe PaymentSheet to save a card without charging")
             }
 
-            if methods.isEmpty {
-                Section {
-                    Text("No saved payment methods")
-                        .font(.subheadline)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .listRowBackground(BrandTheme.navyElevated)
-                } header: {
-                    Text("Cards").brandSectionHeader()
+            Section {
+                ForEach(methods) { method in
+                    methodRow(method)
                 }
-            } else {
-                Section {
-                    ForEach(methods) { method in
-                        methodRow(method)
-                    }
-                } header: {
-                    Text("Cards").brandSectionHeader()
-                }
+            } header: {
+                Text("Cards").brandSectionHeader()
             }
 
             if let statusMessage {
@@ -234,15 +232,29 @@ struct PaymentMethodsView: View {
         guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
         isLoading = true
         errorMessage = nil
+        loadFailed = false
         needsSignIn = false
         defer { isLoading = false }
 
         do {
             methods = try await APIClient.shared.fetchPaymentMethods().methods
+            loadFailed = false
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
             methods = []
+            loadFailed = false
+        } catch let error as APIClientError {
+            // 422/404 often mean “no Stripe customer / no methods yet” — treat as empty, not failure.
+            if case .httpStatus(let code, _) = error, code == 422 || code == 404 {
+                methods = []
+                errorMessage = nil
+                loadFailed = false
+            } else {
+                loadFailed = true
+                errorMessage = error.localizedDescription
+            }
         } catch {
+            loadFailed = true
             errorMessage = error.localizedDescription
         }
     }
@@ -266,6 +278,7 @@ struct PaymentMethodsView: View {
             await APIClient.shared.clearPaymentSetupIntentIdempotencyKey()
             await load()
             statusMessage = "Card saved."
+            BrandHaptics.success()
         } catch let error as RailACheckout.CheckoutError {
             // Sheet canceled / misconfigured — mint a new SI next time.
             await APIClient.shared.clearPaymentSetupIntentIdempotencyKey()

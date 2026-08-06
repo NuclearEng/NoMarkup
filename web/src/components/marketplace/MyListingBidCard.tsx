@@ -104,7 +104,7 @@ export const MyListingBidCard = memo(function MyListingBidCard({ entry }: MyList
       <CardContent className="space-y-2 pt-2">
         <div className="flex items-center justify-between text-sm">
           <span className="text-zinc-400">Your bid</span>
-          <span className="font-semibold text-zinc-100 tabular-nums">
+          <span className="font-mono font-semibold text-zinc-100 tabular-nums tracking-tight">
             {formatCents(bid.amount_cents)}
           </span>
         </div>
@@ -113,8 +113,8 @@ export const MyListingBidCard = memo(function MyListingBidCard({ entry }: MyList
           <span
             className={
               isWinning
-                ? 'font-semibold text-bid-winning tabular-nums'
-                : 'font-semibold text-zinc-100 tabular-nums'
+                ? 'font-mono font-semibold text-bid-winning tabular-nums tracking-tight'
+                : 'font-mono font-semibold text-zinc-100 tabular-nums tracking-tight'
             }
           >
             {formatCents(listing.current_bid_cents)}

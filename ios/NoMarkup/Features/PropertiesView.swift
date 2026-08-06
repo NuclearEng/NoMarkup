@@ -46,11 +46,7 @@ struct PropertiesView: View {
                     message: "Browse-only mode has no API credentials. Sign in against a live gateway to manage properties."
                 )
             } else if isLoading && properties.isEmpty {
-                ProgressView("Loading properties…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading properties…")
             } else if let errorMessage, properties.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load properties",

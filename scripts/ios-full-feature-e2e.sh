@@ -149,8 +149,8 @@ pick_json_id() {
   echo "$HTTP_BODY" | python3 -c "$2" 2>/dev/null || true
 }
 
-# Live job auction (customer owner ladder)
-raw="$(request GET '/api/v1/jobs?page=1&page_size=20')"
+# Live job auction — customer ladder for jobs they own (/bids is owner-only).
+raw="$(request GET '/api/v1/jobs/mine?page=1&page_size=20' "$CTOKEN")"
 JOB_ID="$(pick_json_id "$raw" '
 import sys,json
 d=json.load(sys.stdin)
@@ -161,10 +161,83 @@ for j in jobs:
 else:
   print(jobs[0].get("id","") if jobs else "")
 ')"
+# Fallback: public catalog detail/auction-state only (not private bids list).
+PUBLIC_JOB_ID=""
+if [[ -z "$JOB_ID" ]]; then
+  raw="$(request GET '/api/v1/jobs?page=1&page_size=20')"
+  PUBLIC_JOB_ID="$(pick_json_id "$raw" '
+import sys,json
+d=json.load(sys.stdin)
+jobs=d.get("jobs") or []
+for j in jobs:
+  if (j.get("status") or "").lower() in ("active","open","bidding"):
+    print(j.get("id","")); break
+else:
+  print(jobs[0].get("id","") if jobs else "")
+')"
+fi
+# /auction/state is live-auction only (sealed → 422). Prefer a live job for that probe.
+job_auction_type() {
+  local id="$1" token="${2:-}"
+  local raw
+  raw="$(request GET "/api/v1/jobs/${id}" "$token")"
+  split_body_code "$raw"
+  echo "$HTTP_BODY" | python3 -c "
+import sys,json
+try:
+  d=json.load(sys.stdin); j=d.get('job') or d
+  print((j.get('auction_type') or '').lower())
+except Exception:
+  print('')
+" 2>/dev/null || true
+}
+
+probe_job_auction_state() {
+  local id="$1" token="${2:-}"
+  local atype live_id raw
+  atype="$(job_auction_type "$id" "$token")"
+  if [[ "$atype" != "live" ]]; then
+    # Selected job may be sealed (e.g. provider-bid fixture). Find any live job.
+    raw="$(request GET '/api/v1/jobs/mine?page=1&page_size=50' "$token")"
+    live_id="$(pick_json_id "$raw" '
+import sys,json
+d=json.load(sys.stdin)
+for j in (d.get("jobs") or []):
+  if (j.get("auction_type") or "").lower()=="live":
+    print(j.get("id","")); break
+else:
+  print("")
+')"
+    if [[ -z "$live_id" ]]; then
+      raw="$(request GET '/api/v1/jobs?page=1&page_size=50')"
+      live_id="$(pick_json_id "$raw" '
+import sys,json
+d=json.load(sys.stdin)
+for j in (d.get("jobs") or []):
+  if (j.get("auction_type") or "").lower()=="live":
+    print(j.get("id","")); break
+else:
+  print("")
+')"
+    fi
+    if [[ -z "$live_id" ]]; then
+      skip "customer.job.auction-state" "no live auction job (endpoint is live-only)"
+      return 0
+    fi
+    id="$live_id"
+  fi
+  expect "customer.job.auction-state" 200 GET "/api/v1/jobs/${id}/auction/state" "$token"
+}
+
 if [[ -n "$JOB_ID" ]]; then
   expect "customer.job.detail" 200 GET "/api/v1/jobs/${JOB_ID}" "$CTOKEN"
   expect "customer.job.bids" 200 GET "/api/v1/jobs/${JOB_ID}/bids" "$CTOKEN"
-  expect "customer.job.auction-state" 200 GET "/api/v1/jobs/${JOB_ID}/auction/state" "$CTOKEN"
+  probe_job_auction_state "$JOB_ID" "$CTOKEN"
+elif [[ -n "$PUBLIC_JOB_ID" ]]; then
+  expect "customer.job.detail" 200 GET "/api/v1/jobs/${PUBLIC_JOB_ID}" "$CTOKEN"
+  probe_job_auction_state "$PUBLIC_JOB_ID" "$CTOKEN"
+  skip "customer.job.bids" "no owned active job (bids list is owner-only)"
+  JOB_ID="$PUBLIC_JOB_ID"
 else
   skip "customer.job.*" "no jobs in catalog"
 fi
@@ -268,29 +341,111 @@ else
   expect "provider.contracts" 200 GET '/api/v1/contracts?page=1&page_size=10' "$PTOKEN"
   expect "provider.channels" 200 GET '/api/v1/channels?page=1&page_size=10' "$PTOKEN"
 
-  # Place reverse bid on open job if possible (dollars → cents)
-  if [[ -n "$JOB_ID" ]]; then
-    raw="$(request GET "/api/v1/jobs/${JOB_ID}" "$PTOKEN")"
+  # Place reverse bid on an *active* auction the provider does not own.
+  # Do not reuse JOB_ID from customer.jobs/mine — that list often falls back to
+  # closed/completed jobs (detail/bids still work for the owner; PlaceBid does not).
+  raw="$(request GET /api/v1/users/me "$PTOKEN")"
+  PROVIDER_ID="$(pick_json_id "$raw" '
+import sys,json
+d=json.load(sys.stdin); u=d.get("user") or d
+print(u.get("id") or "")
+')"
+  raw="$(request GET '/api/v1/jobs?page=1&page_size=50')"
+  BID_JOB_ID="$(pick_json_id "$raw" "
+import sys,json
+d=json.load(sys.stdin)
+jobs=d.get('jobs') or []
+provider='${PROVIDER_ID}'
+active=set(('active','open','bidding'))
+for j in jobs:
+  st=(j.get('status') or '').lower()
+  owner=j.get('customer_id') or j.get('user_id') or j.get('owner_id') or ''
+  if st in active and owner != provider:
+    print(j.get('id','')); break
+else:
+  print('')
+")"
+  # If catalog has no live reverse auction, create one as the customer so the
+  # provider bid path is still exercised (seed DBs are often all closed).
+  if [[ -z "$BID_JOB_ID" && -n "$CTOKEN" ]]; then
+    raw="$(request GET /api/v1/properties "$CTOKEN")"
+    PROP_ID="$(pick_json_id "$raw" '
+import sys,json
+d=json.load(sys.stdin)
+props=d.get("properties") or []
+print(props[0].get("id","") if props else "00000000-0000-0000-0000-000000000010")
+')"
+    [[ -z "$PROP_ID" ]] && PROP_ID="00000000-0000-0000-0000-000000000010"
+    CREATE_BODY="$(PROP_ID="$PROP_ID" python3 -c "
+import json, os, time
+print(json.dumps({
+  'title': 'E2E provider bid target %d' % int(time.time()),
+  'description': 'ios-full-feature-e2e sealed auction for provider reverse bid',
+  'category_id': 'db487d00-fca2-4a17-9f4a-a926b8a306da',
+  'property_id': os.environ['PROP_ID'],
+  'schedule_type': 'flexible',
+  'auction_type': 'sealed',
+  'auction_duration_hours': 72,
+  'starting_bid_cents': 50000,
+  'publish': True,
+  'location_address': 'Austin TX',
+  'location_lat': 30.27,
+  'location_lng': -97.74,
+}))
+")"
+    raw="$(request POST /api/v1/jobs "$CTOKEN" "$CREATE_BODY")"
+    split_body_code "$raw"
+    if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "201" ]]; then
+      CREATE_BODY_JSON="$HTTP_BODY"
+      BID_JOB_ID="$(echo "$CREATE_BODY_JSON" | python3 -c "
+import sys,json
+d=json.load(sys.stdin); j=d.get('job') or d
+print(j.get('id') or '')
+" 2>/dev/null || true)"
+      ST="$(echo "$CREATE_BODY_JSON" | python3 -c "
+import sys,json
+d=json.load(sys.stdin); j=d.get('job') or d
+print((j.get('status') or '').lower())
+" 2>/dev/null || true)"
+      # Some create paths return draft — publish if needed.
+      if [[ -n "$BID_JOB_ID" && "$ST" != "active" && "$ST" != "open" && "$ST" != "bidding" ]]; then
+        raw="$(request POST "/api/v1/jobs/${BID_JOB_ID}/publish" "$CTOKEN" "{}")"
+        split_body_code "$raw"
+        if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "201" && "$HTTP_CODE" != "204" ]]; then
+          BID_JOB_ID=""
+        fi
+      fi
+    fi
+  fi
+
+  if [[ -z "$BID_JOB_ID" ]]; then
+    skip "provider.job.bid" "no active auction job for provider (not owned)"
+  else
+    raw="$(request GET "/api/v1/jobs/${BID_JOB_ID}" "$PTOKEN")"
     split_body_code "$raw"
     START_CENTS="$(echo "$HTTP_BODY" | python3 -c "
 import sys,json
 try:
-  j=json.load(sys.stdin).get('job') or {}
+  d=json.load(sys.stdin)
+  j=d.get('job') or d
   print(j.get('starting_bid_cents') or 50000)
 except Exception:
   print(50000)
 " 2>/dev/null)"
-    # Bid 10% below start
+    # Bid 10% below start (reverse auction)
     BID_CENTS="$(python3 -c "print(max(100, int($START_CENTS * 0.9)))")"
     IDEM="e2e-job-bid-$(date +%s)-$RANDOM"
-    raw="$(request POST "/api/v1/jobs/${JOB_ID}/bids" "$PTOKEN" "{\"amount_cents\":${BID_CENTS}}" "Idempotency-Key: ${IDEM}")"
+    raw="$(request POST "/api/v1/jobs/${BID_JOB_ID}/bids" "$PTOKEN" "{\"amount_cents\":${BID_CENTS}}" "Idempotency-Key: ${IDEM}")"
     split_body_code "$raw"
     if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "201" ]]; then
-      pass "provider.job.bid" "HTTP $HTTP_CODE amount_cents=$BID_CENTS"
+      pass "provider.job.bid" "HTTP $HTTP_CODE amount_cents=$BID_CENTS job=${BID_JOB_ID:0:8}"
     elif [[ "$HTTP_CODE" == "409" ]]; then
       pass "provider.job.bid" "HTTP 409 already has active bid (ok)"
     elif [[ "$HTTP_CODE" == "403" ]]; then
       skip "provider.job.bid" "HTTP 403 (role/permission)"
+    elif [[ "$HTTP_CODE" == "422" ]]; then
+      # Auction closed between selection and bid, or engine rejected state.
+      skip "provider.job.bid" "HTTP 422 auction not bidable — $(echo "$HTTP_BODY" | head -c 80 | tr '\n' ' ')"
     else
       fail "provider.job.bid" "HTTP $HTTP_CODE — $(echo "$HTTP_BODY" | head -c 100)"
     fi

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { MarketTickerStrip } from '@/components/landing/MarketTickerStrip';
 import { GradientMesh } from '@/components/landing/GradientMesh';
 import type { TickerItem } from '@/components/landing/ticker-items';
@@ -33,10 +34,11 @@ const AuctionDemo = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div
+      <Skeleton
+        variant="card"
         aria-hidden="true"
-        className="w-full rounded-2xl bg-white/[0.02]"
-        style={{ aspectRatio: '1 / 1.05', minHeight: 320 }}
+        className="w-full min-h-[320px] rounded-2xl"
+        style={{ aspectRatio: '1 / 1.05' }}
       />
     ),
   },
@@ -107,7 +109,7 @@ function AnimatedCounter({
   }, [inView, end, duration]);
 
   return (
-    <span ref={ref}>
+    <span ref={ref} className="font-mono tabular-nums tracking-tight">
       {prefix}
       {count.toLocaleString()}
       {suffix}
@@ -364,7 +366,7 @@ export function LandingPageClient({ initialTickerItems }: LandingPageClientProps
                 style={{ transitionDelay: `${String(i * 120)}ms` }}
               >
                 <p
-                  className="relative z-[3] text-2xl font-black tracking-tight sm:text-5xl"
+                  className="relative z-[3] font-mono text-2xl font-black tracking-tight tabular-nums sm:text-5xl"
                   style={{ color: stat.color }}
                 >
                   {'display' in stat ? (
@@ -476,10 +478,11 @@ export function LandingPageClient({ initialTickerItems }: LandingPageClientProps
             </div>
             <blockquote className="relative z-[3]">
               <p className="text-foreground/70 text-lg leading-relaxed sm:text-xl">
-                I posted a bathroom remodel expecting to pay $8,000. Four providers competed and I
-                picked an incredible contractor for{' '}
-                <span className="gold-text font-bold">$5,400</span>. Same quality, 32% less.
-                NoMarkup changed how I hire.
+                I posted a bathroom remodel expecting to pay{' '}
+                <span className="font-mono tabular-nums">$8,000</span>. Four providers competed and
+                I picked an incredible contractor for{' '}
+                <span className="gold-text font-mono font-bold tabular-nums">$5,400</span>. Same
+                quality, 32% less. NoMarkup changed how I hire.
               </p>
               <footer className="mt-8">
                 <p className="text-lg font-bold">Sarah M.</p>

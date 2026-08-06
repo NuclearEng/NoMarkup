@@ -156,7 +156,7 @@ function TrendingCard({
         <div className="space-y-1 p-2">
           <p className="line-clamp-2 text-xs text-zinc-200">{listing.title}</p>
           <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-[var(--brand-gold)] tabular-nums">
+            <span className="font-mono text-sm font-bold text-[var(--brand-gold)] tabular-nums tracking-tight">
               {formatCents(listing.current_bid_cents)}
             </span>
             <span className="flex items-center gap-1 text-[10px] text-zinc-500">

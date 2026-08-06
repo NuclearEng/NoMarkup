@@ -71,11 +71,7 @@ struct JobDraftsView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading && drafts.isEmpty {
-            ProgressView("Loading drafts…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading drafts…")
         } else if let errorMessage, drafts.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load drafts",

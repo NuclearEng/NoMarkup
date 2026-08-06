@@ -41,11 +41,7 @@ struct SavingsView: View {
                     message: "Browse-only mode has no API credentials. Sign in against a live gateway to view savings."
                 )
             } else if isLoading && entries.isEmpty {
-                ProgressView("Loading savings…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading savings…")
             } else if let errorMessage, entries.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load savings",
@@ -77,13 +73,17 @@ struct SavingsView: View {
     private var listContent: some View {
         List {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
                     Text("Lifetime savings")
-                        .font(.subheadline)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(BrandTheme.textSecondary)
+                        .textCase(.uppercase)
+                        .tracking(0.4)
                     Text(MoneyFormat.usd(cents: lifetimeCents))
-                        .font(.largeTitle.weight(.semibold).monospacedDigit())
+                        .font(.system(.largeTitle, design: .rounded).weight(.bold).monospacedDigit())
                         .foregroundStyle(BrandTheme.savings)
+                        .contentTransition(.numericText())
+                        .animation(.easeOut(duration: 0.25), value: lifetimeCents)
                         .minimumScaleFactor(0.5)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -99,7 +99,7 @@ struct SavingsView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
                 .listRowBackground(BrandTheme.navyElevated)
             }
 
@@ -120,6 +120,7 @@ struct SavingsView: View {
 
     @ViewBuilder
     private func savingsRow(_ entry: SavingsEntry) -> some View {
+        let saved = (entry.savingsCents ?? 0) > 0
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(entry.shortJobID)
@@ -128,12 +129,17 @@ struct SavingsView: View {
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text(entry.displaySavings)
-                    .font(.body.weight(.semibold).monospacedDigit())
+                    .font(.body.weight(.bold).monospacedDigit())
                     .foregroundStyle(BrandTheme.savings)
+                    .contentTransition(.numericText())
             }
 
             HStack(spacing: 12) {
-                labeledMini(title: "Awarded", value: entry.displayAwarded)
+                labeledMini(
+                    title: "Awarded",
+                    value: entry.displayAwarded,
+                    emphasize: saved
+                )
                 labeledMini(title: "Median", value: entry.displayMarketMedian)
             }
 
@@ -143,7 +149,7 @@ struct SavingsView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
-            if (entry.savingsCents ?? 0) > 0 {
+            if saved {
                 shareLink(
                     for: ShareCardText.jobSavings(
                         savingsCents: entry.savingsCents ?? 0,
@@ -174,14 +180,15 @@ struct SavingsView: View {
         .accessibilityHint("Opens the system share sheet with savings text and a NoMarkup link")
     }
 
-    private func labeledMini(title: String, value: String) -> some View {
+    private func labeledMini(title: String, value: String, emphasize: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(BrandTheme.textSecondary)
             Text(value)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(BrandTheme.textPrimary)
+                .font(.caption.weight(emphasize ? .semibold : .regular).monospacedDigit())
+                .foregroundStyle(emphasize ? BrandTheme.savings : BrandTheme.textPrimary)
+                .contentTransition(.numericText())
         }
     }
 

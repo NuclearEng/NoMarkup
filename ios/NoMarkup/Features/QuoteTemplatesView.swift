@@ -42,11 +42,7 @@ struct QuoteTemplatesView: View {
                     action: { auth.signOut() }
                 )
             } else if isLoading && templates.isEmpty && loadError == nil {
-                ProgressView("Loading templates…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 3, accessibilityLabel: "Loading templates…")
             } else if let loadError, templates.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load templates",

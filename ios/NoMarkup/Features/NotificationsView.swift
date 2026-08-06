@@ -43,11 +43,7 @@ struct NotificationsView: View {
                     auth.signOut()
                 }
             } else if isLoading && items.isEmpty {
-                ProgressView("Loading notifications…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 6, accessibilityLabel: "Loading notifications…")
             } else if let errorMessage, items.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load notifications",
@@ -196,6 +192,13 @@ struct NotificationsView: View {
                 }
 
                 HStack(spacing: 8) {
+                    if note.unread {
+                        Text("NEW")
+                            .font(.caption2.weight(.bold).monospaced())
+                            .tracking(0.4)
+                            .foregroundStyle(BrandTheme.bidActive)
+                            .accessibilityLabel("Unread")
+                    }
                     if let type = note.typeLabel {
                         Text(type)
                             .font(.caption2)
@@ -203,7 +206,7 @@ struct NotificationsView: View {
                     }
                     if let created = note.createdAt, !created.isEmpty {
                         Text(CatalogDateFormat.friendlyDateTime(created))
-                            .font(.caption2)
+                            .font(.caption2.monospacedDigit())
                             .foregroundStyle(BrandTheme.textSecondary.opacity(0.85))
                     }
                     if markingID == note.id {

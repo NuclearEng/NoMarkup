@@ -37,11 +37,7 @@ struct ReferralsView: View {
                     message: "Browse-only mode has no API credentials. Sign in against a live gateway to use referrals."
                 )
             } else if isLoading && referral == nil {
-                ProgressView("Loading referral code…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading referral code…")
             } else if let errorMessage, referral == nil {
                 BrandEmptyState(
                     title: "Couldn’t load referral",

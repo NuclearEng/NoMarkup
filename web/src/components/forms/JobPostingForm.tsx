@@ -25,6 +25,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { MonoPrice } from '@/components/ui/mono-price';
 import { Progress } from '@/components/ui/progress';
 import {
   Select,
@@ -33,13 +34,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { useCategories } from '@/hooks/useCategories';
 import { useCreateJob } from '@/hooks/useJobs';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { api } from '@/lib/api';
-import { formatCents } from '@/lib/utils';
 import { jobPostingSchema, type JobPostingFormValues } from '@/lib/validations';
 import { AUCTION_TYPE, type CreateJobInput, type MarketRange, type SubmitAnswerInput } from '@/types';
 
@@ -346,8 +347,18 @@ export function JobPostingForm() {
                 />
               ) : null}
 
+              {form.formState.errors.root ? (
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-3 text-sm text-destructive"
+                >
+                  {form.formState.errors.root.message}
+                </div>
+              ) : null}
+
               {/* Navigation buttons */}
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 {step > 0 ? (
                   <Button type="button" variant="outline" onClick={goPrev} className="min-h-[44px]">
                     <ChevronLeft className="mr-1 h-4 w-4" aria-hidden="true" />
@@ -366,6 +377,7 @@ export function JobPostingForm() {
                   <>
                     <Button
                       type="button"
+                      variant="default"
                       onClick={() => void handlePublish()}
                       disabled={isPending}
                       className="min-h-[44px]"
@@ -650,13 +662,29 @@ function StepLocation({ form }: { form: FormType }) {
                 ? 'Looking up address...'
                 : 'Where should the service provider come? Leave blank for remote work.'}
             </FormDescription>
-            {geocodeError ? <p className="text-destructive text-sm">{geocodeError}</p> : null}
+            {geocodeError ? (
+              <div
+                role="alert"
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                {geocodeError}
+              </div>
+            ) : null}
             <FormMessage />
           </FormItem>
         )}
       />
 
-      {hasCoords ? (
+      {geocoding ? (
+        <div
+          className="space-y-2 rounded-md border p-3"
+          role="status"
+          aria-label="Looking up address"
+        >
+          <Skeleton className="h-[200px] w-full" variant="card" />
+          <Skeleton className="h-3 w-40" variant="text" />
+        </div>
+      ) : hasCoords ? (
         <div className="relative overflow-hidden rounded-md border">
           <img
             src={`https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/pin-l+d4a017(${String(lng)},${String(lat)})/${String(lng)},${String(lat)},14,0/600x300@2x?access_token=${mapboxToken}`}
@@ -664,7 +692,7 @@ function StepLocation({ form }: { form: FormType }) {
             className="h-[200px] w-full object-cover"
             loading="lazy"
           />
-          <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-zinc-900/80 px-2.5 py-1 text-xs text-zinc-200 backdrop-blur-sm">
+          <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-zinc-900/80 px-2.5 py-1 font-mono text-xs tabular-nums text-zinc-200 backdrop-blur-sm">
             <MapPin className="h-3 w-3 text-[var(--brand-gold)]" aria-hidden="true" />
             {lat.toFixed(4)}, {lng.toFixed(4)}
           </div>
@@ -1041,7 +1069,7 @@ function StepAuction({
                   const n = Number(v);
                   if (Number.isFinite(n)) onHourlyRateChange(n);
                 }}
-                className="min-h-[44px] pl-8"
+                className="min-h-[44px] pl-8 font-mono tabular-nums"
               />
             </div>
             <p className="text-muted-foreground mt-1 text-xs">
@@ -1105,7 +1133,7 @@ function StepAuction({
                     const val = e.target.value ? Number(e.target.value) : undefined;
                     field.onChange(val);
                   }}
-                  className="min-h-[44px] pl-8"
+                  className="min-h-[44px] pl-8 font-mono tabular-nums"
                 />
               </div>
             </FormControl>
@@ -1139,7 +1167,7 @@ function StepAuction({
                     const val = e.target.value ? Number(e.target.value) : undefined;
                     field.onChange(val);
                   }}
-                  className="min-h-[44px] pl-8"
+                  className="min-h-[44px] pl-8 font-mono tabular-nums"
                 />
               </div>
             </FormControl>
@@ -1268,7 +1296,16 @@ function StepReview({
             <h3 className="text-muted-foreground text-sm font-medium">Billing</h3>
             <p className="text-sm">
               Hourly
-              {hourlyRateDollars !== undefined ? ` — $${hourlyRateDollars.toFixed(2)}/hr` : ''}
+              {hourlyRateDollars !== undefined ? (
+                <>
+                  {' — '}
+                  <MonoPrice
+                    cents={Math.round(hourlyRateDollars * 100)}
+                    className="text-sm font-semibold"
+                  />
+                  /hr
+                </>
+              ) : null}
             </p>
           </div>
         ) : null}
@@ -1301,12 +1338,24 @@ function StepReview({
               {String(values.auctionDurationHours % 24)}h)
             </p>
             {values.startingBidDollars ? (
-              <p>Starting bid: {formatCents(Math.round(values.startingBidDollars * 100))}</p>
+              <p>
+                Starting bid:{' '}
+                <MonoPrice
+                  cents={Math.round(values.startingBidDollars * 100)}
+                  className="font-semibold"
+                />
+              </p>
             ) : (
               <p>Starting bid: Open</p>
             )}
             {values.offerAcceptedDollars ? (
-              <p>Instant accept: {formatCents(Math.round(values.offerAcceptedDollars * 100))}</p>
+              <p>
+                Instant accept:{' '}
+                <MonoPrice
+                  cents={Math.round(values.offerAcceptedDollars * 100)}
+                  className="font-semibold"
+                />
+              </p>
             ) : null}
           </div>
         </div>

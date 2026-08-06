@@ -34,11 +34,7 @@ struct ChallengesView: View {
                     action: { auth.signOut() }
                 )
             } else if isLoading && challenges.isEmpty && loadError == nil {
-                ProgressView("Loading challenges…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 3, accessibilityLabel: "Loading challenges…")
             } else if let loadError, challenges.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load challenges",

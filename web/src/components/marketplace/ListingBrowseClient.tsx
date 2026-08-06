@@ -253,11 +253,11 @@ export function ListingBrowseClient({
                   key={`scoreboard-skeleton-${String(i)}`}
                   className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-5"
                 >
-                  <Skeleton className="mb-3 aspect-[16/10] w-full rounded-lg" />
+                  <Skeleton className="mb-3 aspect-[16/10] w-full rounded-lg" variant="card" />
                   <Skeleton className="mb-2 h-5 w-3/4" />
                   <Skeleton className="mb-4 h-3 w-5/6" />
                   <div className="flex items-center justify-between">
-                    <Skeleton className="h-7 w-24" />
+                    <Skeleton className="h-7 w-24" variant="price" />
                     <Skeleton className="h-5 w-16" />
                   </div>
                 </div>

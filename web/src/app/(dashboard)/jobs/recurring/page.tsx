@@ -1,8 +1,8 @@
 'use client';
 
-import { Calendar, Pause, Play, X } from 'lucide-react';
+import { Calendar, X } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
@@ -68,35 +68,44 @@ function getNextOccurrence(job: Job): string {
 }
 
 function RecurringJobCard({ job }: { job: Job }) {
-  const [isPaused, setIsPaused] = useState(false);
   const updateJob = useUpdateJob();
   const cancelJob = useCancelJob();
 
-  const statusBadge = isPaused ? (
-    <Badge variant="secondary">Paused</Badge>
+  // Status is server-derived only — no local "paused" mirror. There is no
+  // job-level pause API; temporary pause lives on contract recurring schedules.
+  const isTerminal =
+    job.status === 'cancelled' || job.status === 'completed' || job.status === 'expired';
+  const statusBadge = isTerminal ? (
+    <Badge variant="secondary">{job.status}</Badge>
   ) : (
     <Badge
       variant="outline"
       className="border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
     >
-      Active
+      Recurring
     </Badge>
   );
 
-  function handleTogglePause() {
-    const newPaused = !isPaused;
-    setIsPaused(newPaused);
+  function handleEndRecurrence() {
+    if (
+      !window.confirm(
+        'End recurrence for this job? Future automatic re-posts will stop. The current job is kept.',
+      )
+    ) {
+      return;
+    }
     updateJob.mutate(
-      { id: job.id, input: { is_recurring: !newPaused } },
+      { id: job.id, input: { is_recurring: false } },
       {
-        onError: () => {
-          setIsPaused(!newPaused);
+        onSuccess: () => {
+          toast.success('Recurrence ended');
         },
       },
     );
   }
 
   function handleCancel() {
+    if (!window.confirm('Cancel this job entirely? This cannot be undone.')) return;
     cancelJob.mutate(job.id);
   }
 
@@ -128,23 +137,19 @@ function RecurringJobCard({ job }: { job: Job }) {
             </div>
           </div>
 
-          <div className="flex shrink-0 gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11"
-              onClick={handleTogglePause}
-              disabled={updateJob.isPending}
-              aria-label={isPaused ? 'Resume recurring job' : 'Pause recurring job'}
-              title={isPaused ? 'Resume' : 'Pause'}
-            >
-              {isPaused ? (
-                <Play className="h-4 w-4" aria-hidden="true" />
-              ) : (
-                <Pause className="h-4 w-4" aria-hidden="true" />
-              )}
-            </Button>
+          <div className="flex shrink-0 flex-col gap-1 sm:flex-row">
+            {!isTerminal ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="min-h-[44px]"
+                onClick={handleEndRecurrence}
+                disabled={updateJob.isPending}
+              >
+                End recurrence
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
@@ -153,7 +158,7 @@ function RecurringJobCard({ job }: { job: Job }) {
               onClick={handleCancel}
               disabled={cancelJob.isPending}
               aria-label="Cancel recurring job"
-              title="Cancel"
+              title="Cancel job"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </Button>
@@ -177,7 +182,7 @@ export default function RecurringJobsPage() {
         <div>
           <h1 className="gold-text text-2xl font-bold tracking-tight">Recurring Jobs</h1>
           <p className="mt-1 text-zinc-300">
-            Manage your recurring job schedules, pause, or cancel them.
+            Manage recurring job schedules — end recurrence or cancel a job.
           </p>
         </div>
         <Link href="/jobs/new">

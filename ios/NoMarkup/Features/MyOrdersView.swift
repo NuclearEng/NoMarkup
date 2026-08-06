@@ -46,11 +46,7 @@ struct MyOrdersView: View {
                     message: "Browse-only mode has no API credentials. Sign in against a live gateway to load orders and complete escrow payment."
                 )
             } else if isLoading && orders.isEmpty {
-                ProgressView("Loading orders…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 5, accessibilityLabel: "Loading orders…")
             } else if let errorMessage, orders.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load orders",
@@ -83,6 +79,9 @@ struct MyOrdersView: View {
                             orderRow(order)
                                 .listRowBackground(BrandTheme.navyElevated)
                         }
+                    } header: {
+                        Text(String(localized: "\(orders.count) orders"))
+                            .brandSectionHeader()
                     } footer: {
                         Text("Pay → hold in escrow → buyer confirm pickup + seller confirm. Escrow releases automatically on the server when both confirm (no separate release button on goods). Amounts shown are server-side only.")
                             .foregroundStyle(BrandTheme.textSecondary)
@@ -180,8 +179,9 @@ struct MyOrdersView: View {
 
             HStack {
                 Text(order.displayAmount)
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .font(.subheadline.weight(.bold).monospacedDigit())
                     .foregroundStyle(BrandTheme.goldBright)
+                    .contentTransition(.numericText())
                 Spacer()
                 Text(order.displayStatus)
                     .font(.caption.weight(.medium))
@@ -348,6 +348,7 @@ struct MyOrdersView: View {
                 return
             }
             try await RailACheckout.presentPaymentSheet(clientSecret: secret)
+            BrandHaptics.success()
             statusIsError = false
             statusMessage = "Payment complete — funds are held in escrow until pickup."
             await load()

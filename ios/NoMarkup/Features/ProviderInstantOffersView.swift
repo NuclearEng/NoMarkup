@@ -48,11 +48,7 @@ struct ProviderInstantOffersView: View {
                     action: { auth.signOut() }
                 )
             } else if isLoading && !roleChecked {
-                ProgressView("Loading Instant offers…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading Instant offers…")
             } else if roleChecked && !hasProviderRole {
                 BrandEmptyState(
                     title: "Provider role required",

@@ -60,11 +60,7 @@ struct NotificationPreferencesView: View {
                     action: { auth.signOut() }
                 )
             } else if isLoading && response == nil {
-                ProgressView("Loading preferences…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading preferences…")
             } else if let errorMessage, response == nil {
                 BrandEmptyState(
                     title: "Couldn’t load preferences",

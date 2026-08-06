@@ -628,7 +628,8 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 	if amountCents < required {
 		return bid, prevCents, 0, false, auctionEndsAt.Time, false, 0,
 			http.StatusBadRequest,
-			fmt.Sprintf("bid must be at least %d cents", required)
+			// User-facing: dollars, not raw integer cents (CLAUDE.md money UX).
+			fmt.Sprintf("bid must be at least %s", formatCentsUSD(required))
 	}
 	// Confidential max validation: if the buyer set a ceiling it must be
 	// strictly greater than the current top (otherwise it's pointless

@@ -50,9 +50,25 @@ export class ApiError extends Error {
  * - Error    → returns .message.
  * - anything → returns the fallback.
  */
+/**
+ * Rewrite legacy server strings that leak integer cents ("bid must be at least
+ * 17200 cents") into dollar amounts. Prefer fixing the gateway; this is a
+ * last-line safety net so toasts never show raw cents.
+ */
+function humanizeMoneyMessage(msg: string): string {
+  return msg.replace(/\b(\d+)\s*cents\b/gi, (_match, raw: string) => {
+    const cents = Number(raw);
+    if (!Number.isFinite(cents)) return _match;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(cents / 100);
+  });
+}
+
 export function getApiErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof ApiError) return err.userMessage(fallback);
-  if (err instanceof Error && err.message) return err.message;
+  if (err instanceof ApiError) return humanizeMoneyMessage(err.userMessage(fallback));
+  if (err instanceof Error && err.message) return humanizeMoneyMessage(err.message);
   return fallback;
 }
 

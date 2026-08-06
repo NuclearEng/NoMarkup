@@ -69,6 +69,8 @@ export const metadata: Metadata = {
     'no markup',
   ],
   alternates: { canonical: '/' },
+  // Favicon + apple-touch-icon come from App Router file conventions:
+  // web/src/app/icon.png + apple-icon.png (iOS AppIcon-1024 champagne M↓ tile).
   openGraph: {
     type: 'website',
     siteName: 'NoMarkup',
@@ -76,12 +78,21 @@ export const metadata: Metadata = {
     description:
       'Customers post home-service jobs. Qualified providers compete in real-time reverse auctions. Prices drop to fair market rates.',
     url: SITE_URL,
+    images: [
+      {
+        url: '/app-icon-1024.png',
+        width: 1024,
+        height: 1024,
+        alt: 'NoMarkup — champagne metal M↓ app icon',
+      },
+    ],
   },
   twitter: {
-    card: 'summary_large_image',
+    card: 'summary',
     title: 'NoMarkup — The Market Sets The Price',
     description:
       'Reverse auctions for home services. Fair market rates — everyone wins except the middleman.',
+    images: ['/app-icon-1024.png'],
   },
   appleWebApp: {
     capable: true,

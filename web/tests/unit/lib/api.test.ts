@@ -79,6 +79,14 @@ describe('getApiErrorMessage', () => {
   it('returns the fallback for an Error with an empty message', () => {
     expect(getApiErrorMessage(new Error(''), 'use this')).toBe('use this');
   });
+
+  it('rewrites raw integer-cents phrases into dollar amounts', () => {
+    const err = new ApiError(
+      400,
+      JSON.stringify({ error: 'bid must be at least 17200 cents' }),
+    );
+    expect(getApiErrorMessage(err, 'fallback')).toBe('bid must be at least $172.00');
+  });
 });
 
 describe('api request methods', () => {

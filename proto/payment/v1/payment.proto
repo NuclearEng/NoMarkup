@@ -17,6 +17,9 @@ service PaymentService {
   rpc GetStripeOnboardingLink(GetStripeOnboardingLinkRequest) returns (GetStripeOnboardingLinkResponse);
   rpc GetStripeAccountStatus(GetStripeAccountStatusRequest) returns (GetStripeAccountStatusResponse);
   rpc GetStripeDashboardLink(GetStripeDashboardLinkRequest) returns (GetStripeDashboardLinkResponse);
+  // Connect embedded components — AccountSession client_secret for
+  // account_onboarding / notification_banner / account_management / payouts.
+  rpc CreateStripeAccountSession(CreateStripeAccountSessionRequest) returns (CreateStripeAccountSessionResponse);
 
   // Customer payment methods
   rpc CreateSetupIntent(CreateSetupIntentRequest) returns (CreateSetupIntentResponse);
@@ -224,6 +227,13 @@ message GetStripeAccountStatusResponse {
   bool payouts_enabled = 2;
   bool details_submitted = 3;
   repeated string requirements = 4;
+  // Separate charges + transfers readiness (Accounts v2 stripe_transfers or legacy transfers).
+  bool transfers_ready = 5;
+  string stripe_transfers_status = 6;
+  // express | full | none when known
+  string dashboard = 7;
+  // "v2" | "v1" when inferred
+  string accounts_api = 8;
 }
 
 message GetStripeDashboardLinkRequest {
@@ -232,6 +242,15 @@ message GetStripeDashboardLinkRequest {
 
 message GetStripeDashboardLinkResponse {
   string dashboard_url = 1;
+}
+
+message CreateStripeAccountSessionRequest {
+  string user_id = 1;
+}
+
+message CreateStripeAccountSessionResponse {
+  string client_secret = 1;
+  google.protobuf.Timestamp expires_at = 2;
 }
 
 // ============================================================

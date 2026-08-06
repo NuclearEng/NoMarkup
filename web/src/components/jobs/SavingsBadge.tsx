@@ -32,7 +32,9 @@ export function SavingsBadge({ lowestBidCents, marketMedianCents, className }: S
     >
       <TrendingDown className="h-3 w-3 shrink-0" aria-hidden="true" />
       <span>
-        Saves you {formatCents(savingsCents)} vs. market avg
+        Saves you{' '}
+        <span className="font-mono tabular-nums tracking-tight">{formatCents(savingsCents)}</span>{' '}
+        vs. market avg
       </span>
     </div>
   );

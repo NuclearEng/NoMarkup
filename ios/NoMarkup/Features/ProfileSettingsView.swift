@@ -34,11 +34,7 @@ struct ProfileSettingsView: View {
                     action: { auth.signOut() }
                 )
             } else if isLoading && profile == nil {
-                ProgressView("Loading profile…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading profile…")
             } else if let errorMessage, profile == nil {
                 BrandEmptyState(
                     title: "Couldn’t load profile",

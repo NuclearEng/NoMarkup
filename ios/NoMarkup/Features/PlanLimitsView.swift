@@ -65,11 +65,7 @@ struct PlanLimitsView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading && tiers.isEmpty {
-            ProgressView("Loading plan limits…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading plan limits…")
         } else if let errorMessage, tiers.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load plans",
@@ -172,8 +168,7 @@ struct PlanLimitsView: View {
     private var storeKitSection: some View {
         Section {
             if store.isLoadingProducts && store.products.isEmpty {
-                ProgressView("Loading App Store products…")
-                    .tint(BrandTheme.accent)
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading App Store products…")
                     .listRowBackground(BrandTheme.navyElevated)
             }
 

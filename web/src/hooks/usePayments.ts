@@ -300,3 +300,20 @@ export function useStripeOnboardingLink(params: StripeOnboardingLinkParams) {
     enabled: false, // Only fetch when explicitly triggered via refetch
   });
 }
+
+/**
+ * Mint a Connect AccountSession client_secret for embedded onboarding /
+ * notification banner. Secrets are single-use and short-lived — call again
+ * when Connect.js needs a fresh one (fetchClientSecret pattern).
+ */
+export function useCreateStripeAccountSession() {
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ client_secret: string; expires_at?: string }>(
+        '/api/v1/providers/me/stripe/account-session',
+      ),
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to start embedded Stripe setup'));
+    },
+  });
+}

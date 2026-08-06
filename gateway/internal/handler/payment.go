@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -159,11 +160,41 @@ func (h *PaymentHandler) GetStripeAccountStatus(w http.ResponseWriter, r *http.R
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"charges_enabled":   resp.GetChargesEnabled(),
-		"payouts_enabled":   resp.GetPayoutsEnabled(),
-		"details_submitted": resp.GetDetailsSubmitted(),
-		"requirements":      resp.GetRequirements(),
+		"charges_enabled":         resp.GetChargesEnabled(),
+		"payouts_enabled":         resp.GetPayoutsEnabled(),
+		"details_submitted":       resp.GetDetailsSubmitted(),
+		"requirements":            resp.GetRequirements(),
+		"transfers_ready":         resp.GetTransfersReady(),
+		"stripe_transfers_status": resp.GetStripeTransfersStatus(),
+		"dashboard":               resp.GetDashboard(),
+		"accounts_api":            resp.GetAccountsApi(),
 	})
+}
+
+// CreateStripeAccountSession handles POST /api/v1/providers/me/stripe/account-session.
+// Returns a single-use client_secret for Connect embedded components.
+func (h *PaymentHandler) CreateStripeAccountSession(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	resp, err := h.paymentClient.CreateStripeAccountSession(r.Context(), &paymentv1.CreateStripeAccountSessionRequest{
+		UserId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	out := map[string]interface{}{
+		"client_secret": resp.GetClientSecret(),
+	}
+	if resp.GetExpiresAt() != nil {
+		out["expires_at"] = resp.GetExpiresAt().AsTime().UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // CreateSetupIntent handles POST /api/v1/payments/setup-intent.

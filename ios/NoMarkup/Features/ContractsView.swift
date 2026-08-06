@@ -29,11 +29,7 @@ struct ContractsView: View {
                     message: "Browse-only mode has no API credentials. Sign in against a live gateway to load contracts."
                 )
             } else if isLoading && contracts.isEmpty {
-                ProgressView("Loading contracts…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading contracts…")
             } else if let errorMessage, contracts.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load contracts",
@@ -95,12 +91,13 @@ struct ContractsView: View {
 
             HStack {
                 Text(contract.displayAmount)
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .font(.subheadline.weight(.bold).monospacedDigit())
                     .foregroundStyle(BrandTheme.goldBright)
+                    .contentTransition(.numericText())
                 Spacer()
                 if let created = contract.createdAt, !created.isEmpty {
                     Text(CatalogDateFormat.friendlyDateTime(created))
-                        .font(.caption2)
+                        .font(.caption2.monospacedDigit())
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
             }

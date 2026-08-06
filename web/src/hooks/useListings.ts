@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import type { UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { ApiError, api, clearIdempotencyKey, idempotencyHeader } from '@/lib/api';
+import { ApiError, api, clearIdempotencyKey, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import { saveDraft } from '@/lib/offline-drafts';
 import type {
   AutocompleteResponse,
@@ -61,7 +61,8 @@ function explainListingFailure(fallback: string): (err: unknown) => void {
         toast.error('A bid bond is required before bidding on this listing.');
         return;
       }
-      toast.error(err.userMessage(fallback));
+      // getApiErrorMessage also rewrites "N cents" → "$X.YY" for money UX.
+      toast.error(getApiErrorMessage(err, fallback));
       return;
     }
     toast.error(fallback);

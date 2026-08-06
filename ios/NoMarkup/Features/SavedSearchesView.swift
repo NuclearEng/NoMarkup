@@ -36,11 +36,7 @@ struct SavedSearchesView: View {
                     message: "Browse-only mode has no API credentials. Sign in against a live gateway to manage saved searches."
                 )
             } else if isLoading && searches.isEmpty {
-                ProgressView("Loading saved searches…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 3, accessibilityLabel: "Loading saved searches…")
             } else if let errorMessage, searches.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load saved searches",

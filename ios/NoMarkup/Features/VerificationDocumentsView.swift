@@ -62,11 +62,7 @@ struct VerificationDocumentsView: View {
                     action: { auth.signOut() }
                 )
             } else if isLoading && documents.isEmpty && loadError == nil {
-                ProgressView("Loading documents…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading documents…")
             } else if let loadError, documents.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load documents",

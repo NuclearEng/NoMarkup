@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -284,10 +285,18 @@ func (s *SubscriptionService) CheckFeatureAccess(ctx context.Context, userID, fe
 }
 
 // ListInvoices retrieves invoices from Stripe for a user's subscription.
+//
+// Admin-granted and seed subscriptions often have an empty StripeSubscriptionID
+// (no Stripe object was ever created). Calling Stripe with an empty subscription
+// param returns parameter_invalid_empty → Internal → HTTP 500. Treat that as
+// "no billable invoices yet" and return an empty list instead.
 func (s *SubscriptionService) ListInvoices(ctx context.Context, userID string) ([]*domain.Invoice, error) {
 	sub, err := s.repo.GetSubscription(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list invoices: %w", domain.ErrNoActiveSubscription)
+	}
+	if sub == nil || strings.TrimSpace(sub.StripeSubscriptionID) == "" {
+		return []*domain.Invoice{}, nil
 	}
 
 	return s.stripe.ListStripeInvoices(ctx, sub.StripeSubscriptionID)

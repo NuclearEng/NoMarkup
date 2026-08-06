@@ -297,8 +297,13 @@ func (h *DataExportHandler) exportProfile(ctx context.Context, userID string) (m
 // provider. EIN/TIN and insurance policy number are the subject's own PII so
 // they ARE included.
 func (h *DataExportHandler) exportProviderProfile(ctx context.Context, userID string) (interface{}, bool, error) {
+	// business_name, bio, service_address, ein_tin, insurance_* are all nullable
+	// TEXT (001 / 012). Scanning any of them into a plain string soft-fails the
+	// whole provider_profile section when the dual-role seed (or a partial
+	// onboarding row) leaves them NULL — residual from evening red-team 2026-08-05.
 	var (
-		id, businessName               string
+		id                             string
+		businessName                   *string
 		bio, serviceAddress            *string
 		einTin, insProvider, insPolicy *string
 		jobsCompleted                  int
@@ -322,7 +327,7 @@ func (h *DataExportHandler) exportProviderProfile(ctx context.Context, userID st
 	}
 	return map[string]interface{}{
 		"id":                      id,
-		"business_name":           businessName,
+		"business_name":           derefStr(businessName),
 		"bio":                     derefStr(bio),
 		"service_address":         h.decryptPII(serviceAddress),
 		"ein_tin":                 h.decryptPII(einTin),

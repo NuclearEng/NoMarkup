@@ -129,9 +129,7 @@ struct InstallmentsListView: View {
                     message: "The customer_bnpl feature flag is off. Enable it on the server to create payment plans."
                 )
             } else if isLoading && plans.isEmpty {
-                ProgressView("Loading plans…")
-                    .tint(BrandTheme.accent)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading plans…")
             } else if let errorMessage, plans.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load plans",
@@ -146,15 +144,21 @@ struct InstallmentsListView: View {
                 )
             } else {
                 List(plans) { plan in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(plan.displayTotal)
-                            .font(.headline)
-                            .foregroundStyle(BrandTheme.goldBright)
-                        Text("\(plan.installmentCount ?? 0) payments · \(plan.displayStatus)")
-                            .font(.caption)
-                            .foregroundStyle(BrandTheme.textSecondary)
+                    NavigationLink {
+                        InstallmentPlanDetailView(planId: plan.id, preview: plan)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(plan.displayTotal)
+                                .font(.headline.monospacedDigit())
+                                .foregroundStyle(BrandTheme.goldBright)
+                            Text("\(plan.installmentCount ?? 0) payments · \(plan.displayStatus)")
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
                     }
+                    .frame(minHeight: 44)
                     .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityHint("Opens installment schedule")
                 }
                 .brandListBackground()
             }
@@ -192,9 +196,7 @@ struct InsurancePoliciesView: View {
     var body: some View {
         Group {
             if isLoading && policies.isEmpty {
-                ProgressView("Loading policies…")
-                    .tint(BrandTheme.accent)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading policies…")
             } else if policies.isEmpty {
                 BrandEmptyState(
                     title: "No policies yet",
@@ -246,8 +248,7 @@ struct InsuranceProductsBrowseView: View {
     var body: some View {
         Group {
             if isLoading && products.isEmpty {
-                ProgressView("Loading products…")
-                    .tint(BrandTheme.accent)
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading products…")
             } else {
                 List(products) { product in
                     VStack(alignment: .leading, spacing: 4) {
@@ -292,6 +293,9 @@ struct AdvancesView: View {
     @State private var errorMessage: String?
     @State private var repayAmountText = ""
     @State private var repayingId: String?
+    @State private var requestContractId = ""
+    @State private var requestAmountText = ""
+    @State private var isRequesting = false
 
     var body: some View {
         List {
@@ -317,6 +321,39 @@ struct AdvancesView: View {
                 } header: {
                     Text("Credit limit").brandSectionHeader()
                 }
+            }
+            Section {
+                TextField("Contract ID", text: $requestContractId)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.body.monospaced())
+                    .frame(minHeight: 44)
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityLabel("Contract identifier for advance")
+                DollarAmountField(text: $requestAmountText, placeholder: "Advance amount $")
+                    .listRowBackground(BrandTheme.navyElevated)
+                Button {
+                    Task { await requestAdvance() }
+                } label: {
+                    if isRequesting {
+                        ProgressView()
+                            .tint(BrandTheme.ctaLabelOnGold)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Text("Request advance")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.gold)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                .disabled(isRequesting || !flags.isEnabled("working_capital"))
+                .listRowBackground(BrandTheme.navyElevated)
+            } header: {
+                Text("Request advance").brandSectionHeader()
+            } footer: {
+                Text("Against a funded service contract. Server enforces credit limit.")
+                    .foregroundStyle(BrandTheme.textSecondary)
             }
             Section {
                 if advances.isEmpty {
@@ -388,6 +425,33 @@ struct AdvancesView: View {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func requestAdvance() async {
+        let cid = requestContractId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cid.isEmpty else {
+            errorMessage = "Enter a contract id."
+            BrandHaptics.warning()
+            return
+        }
+        guard let cents = MoneyFormat.cents(fromDollarsText: requestAmountText), cents > 0 else {
+            errorMessage = "Enter a valid advance amount."
+            BrandHaptics.warning()
+            return
+        }
+        isRequesting = true
+        defer { isRequesting = false }
+        do {
+            _ = try await APIClient.shared.requestAdvance(contractId: cid, amountCents: cents)
+            requestAmountText = ""
+            errorMessage = nil
+            BrandHaptics.success()
+            await load()
+        } catch {
+            errorMessage = error.localizedDescription
+            BrandHaptics.error()
         }
     }
 

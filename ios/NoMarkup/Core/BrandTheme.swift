@@ -1000,6 +1000,428 @@ extension View {
 }
 
 // MARK: - Premium empty / loading helpers
+//
+// Unicorn bar: never show a naked gray spinner on a brand surface.
+// Prefer skeleton desks that match list density (Bloomberg) + gold shimmer
+// (champagne brand), reduce-motion safe, VoiceOver “Loading …”.
+
+/// Unicorn-grade skeleton pulse — gold-tinted, reduce-motion safe (static fill when reduced).
+struct BrandSkeletonBar: View {
+    var height: CGFloat = 14
+    var cornerRadius: CGFloat = 8
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase: CGFloat = -220
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(BrandTheme.surfaceRaised)
+            .overlay {
+                if !reduceMotion {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    BrandTheme.gold.opacity(0),
+                                    BrandTheme.gold.opacity(0.14),
+                                    BrandTheme.gold.opacity(0),
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .mask(
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        )
+                        .offset(x: phase)
+                }
+            }
+            .frame(height: height)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .onAppear {
+                guard !reduceMotion else { return }
+                phase = -220
+                withAnimation(.linear(duration: 1.15).repeatForever(autoreverses: false)) {
+                    phase = 280
+                }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Catalog card placeholder used while first page loads (Home / Marketplace / Jobs).
+struct BrandCatalogSkeleton: View {
+    var rows: Int = 4
+
+    var body: some View {
+        VStack(spacing: 14) {
+            ForEach(0..<rows, id: \.self) { index in
+                VStack(alignment: .leading, spacing: 10) {
+                    BrandSkeletonBar(height: 16)
+                        .frame(maxWidth: index % 2 == 0 ? 200 : 160)
+                    BrandSkeletonBar(height: 12)
+                    BrandSkeletonBar(height: 12)
+                        .frame(maxWidth: index % 3 == 0 ? 140 : 100)
+                    HStack {
+                        BrandSkeletonBar(height: 22, cornerRadius: 11)
+                            .frame(width: 78)
+                        Spacer()
+                        BrandSkeletonBar(height: 22, cornerRadius: 11)
+                            .frame(width: 64)
+                    }
+                }
+                .padding(16)
+                .brandCard(padding: 0)
+            }
+        }
+        .padding(.horizontal, 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading")
+    }
+}
+
+/// Detail-page skeleton — hero price block + body rows (Job / Listing / Contract).
+struct BrandDetailSkeleton: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Arena / price hero
+                VStack(alignment: .leading, spacing: 12) {
+                    BrandSkeletonBar(height: 12)
+                        .frame(maxWidth: 96)
+                    BrandSkeletonBar(height: 40, cornerRadius: 12)
+                        .frame(maxWidth: 200)
+                    BrandSkeletonBar(height: 12)
+                        .frame(maxWidth: 220)
+                    HStack(spacing: 10) {
+                        BrandSkeletonBar(height: 28, cornerRadius: 14)
+                            .frame(width: 72)
+                        BrandSkeletonBar(height: 28, cornerRadius: 14)
+                            .frame(width: 88)
+                        Spacer()
+                    }
+                }
+                .padding(20)
+                .brandCard(padding: 0, heroGradient: true, elevated: true)
+
+                // Meta rows
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(0..<5, id: \.self) { i in
+                        HStack {
+                            BrandSkeletonBar(height: 14)
+                                .frame(maxWidth: 90)
+                            Spacer()
+                            BrandSkeletonBar(height: 14)
+                                .frame(maxWidth: i == 2 ? 120 : 70)
+                        }
+                    }
+                }
+                .padding(16)
+                .brandCard(padding: 0)
+
+                // Ladder / bids block
+                VStack(alignment: .leading, spacing: 12) {
+                    BrandSkeletonBar(height: 14)
+                        .frame(maxWidth: 110)
+                    ForEach(0..<4, id: \.self) { _ in
+                        HStack {
+                            BrandSkeletonBar(height: 36, cornerRadius: 18)
+                                .frame(width: 36)
+                            VStack(alignment: .leading, spacing: 6) {
+                                BrandSkeletonBar(height: 12)
+                                    .frame(maxWidth: 140)
+                                BrandSkeletonBar(height: 10)
+                                    .frame(maxWidth: 80)
+                            }
+                            Spacer()
+                            BrandSkeletonBar(height: 18)
+                                .frame(width: 64)
+                        }
+                    }
+                }
+                .padding(16)
+                .brandCard(padding: 0)
+            }
+            .padding(16)
+            .brandReadableWidth()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .brandScreenBackground()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading details")
+    }
+}
+
+/// Inbox / message-list skeleton (dense rows, avatar + lines).
+struct BrandInboxSkeleton: View {
+    var rows: Int = 8
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<rows, id: \.self) { i in
+                HStack(spacing: 14) {
+                    Circle()
+                        .fill(BrandTheme.surfaceRaised)
+                        .frame(width: 48, height: 48)
+                        .overlay {
+                            BrandSkeletonBar(height: 48, cornerRadius: 24)
+                                .frame(width: 48)
+                        }
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            BrandSkeletonBar(height: 13)
+                                .frame(maxWidth: i % 2 == 0 ? 140 : 100)
+                            Spacer()
+                            BrandSkeletonBar(height: 11)
+                                .frame(width: 40)
+                        }
+                        BrandSkeletonBar(height: 11)
+                        BrandSkeletonBar(height: 11)
+                            .frame(maxWidth: 180)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                if i < rows - 1 {
+                    Divider()
+                        .overlay(BrandTheme.hairline)
+                        .padding(.leading, 78)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .brandScreenBackground()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading messages")
+    }
+}
+
+/// Settings / form skeleton (section cards with field rows).
+struct BrandFormSkeleton: View {
+    var sections: Int = 2
+    var rowsPerSection: Int = 4
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                ForEach(0..<sections, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 16) {
+                        BrandSkeletonBar(height: 12)
+                            .frame(maxWidth: 100)
+                        ForEach(0..<rowsPerSection, id: \.self) { _ in
+                            HStack {
+                                BrandSkeletonBar(height: 14)
+                                    .frame(maxWidth: 120)
+                                Spacer()
+                                BrandSkeletonBar(height: 14)
+                                    .frame(width: 48)
+                            }
+                        }
+                    }
+                    .padding(16)
+                    .brandCard(padding: 0)
+                }
+            }
+            .padding(16)
+            .brandReadableWidth()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .brandScreenBackground()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading")
+    }
+}
+
+// MARK: - Multi-step wizard chrome (Post job / sell funnels)
+
+/// Gold progress rail for multi-step forms — terminal desk, not pastel onboarding.
+struct BrandWizardStepChrome: View {
+    let steps: [String]
+    let currentIndex: Int
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 0) {
+                ForEach(Array(steps.enumerated()), id: \.offset) { index, _ in
+                    let done = index < currentIndex
+                    let active = index == currentIndex
+                    Circle()
+                        .fill(done || active ? BrandTheme.goldFill : BrandTheme.surfaceRaised)
+                        .frame(width: active ? 12 : 8, height: active ? 12 : 8)
+                        .overlay {
+                            Circle()
+                                .strokeBorder(
+                                    active ? BrandTheme.goldBrightFill : BrandTheme.hairline,
+                                    lineWidth: active ? 2 : 1
+                                )
+                        }
+                        .frame(width: 20, height: 20)
+                        .accessibilityHidden(true)
+
+                    if index < steps.count - 1 {
+                        Rectangle()
+                            .fill(
+                                index < currentIndex
+                                    ? BrandTheme.goldFill.opacity(0.85)
+                                    : BrandTheme.hairline
+                            )
+                            .frame(height: 2)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: currentIndex)
+
+            if steps.indices.contains(currentIndex) {
+                Text("Step \(currentIndex + 1) of \(steps.count) · \(steps[currentIndex])")
+                    .font(.caption.weight(.semibold).monospaced())
+                    .tracking(0.4)
+                    .foregroundStyle(BrandTheme.goldBright)
+                    .accessibilityAddTraits(.isHeader)
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            steps.indices.contains(currentIndex)
+                ? "Step \(currentIndex + 1) of \(steps.count), \(steps[currentIndex])"
+                : "Wizard progress"
+        )
+    }
+}
+
+/// Full-screen branded loading desk — drop-in replacement for naked `ProgressView("Loading…")`.
+struct BrandLoadingScreen: View {
+    enum Kind {
+        /// Auction / marketplace catalog cards
+        case catalog
+        /// Job / listing / contract detail
+        case detail
+        /// Chat inbox
+        case inbox
+        /// Settings / profile / forms
+        case form
+    }
+
+    var kind: Kind = .catalog
+    var rows: Int = 5
+    var accessibilityLabel: String = "Loading"
+
+    var body: some View {
+        Group {
+            switch kind {
+            case .catalog:
+                ScrollView {
+                    BrandCatalogSkeleton(rows: rows)
+                        .padding()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .brandScreenBackground()
+            case .detail:
+                BrandDetailSkeleton()
+            case .inbox:
+                BrandInboxSkeleton(rows: max(rows, 6))
+            case .form:
+                BrandFormSkeleton()
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+/// Institutional monospaced price — numeric text transition + optional flash.
+struct BrandPriceText: View {
+    let cents: Int64?
+    var font: Font = .title3.weight(.bold).monospacedDigit()
+    var color: Color = BrandTheme.textPrimary
+    var flashToken: Int = 0
+    var isDown: Bool = true
+    var placeholder: String = "—"
+
+    var body: some View {
+        Text(cents.map { MoneyFormat.usd(cents: $0) } ?? placeholder)
+            .font(font)
+            .foregroundStyle(color)
+            .contentTransition(.numericText())
+            .brandMoneyFlash(token: flashToken, isDown: isDown)
+            .animation(.easeOut(duration: 0.2), value: cents)
+            .accessibilityLabel(cents.map { MoneyFormat.usd(cents: $0) } ?? "Price unavailable")
+    }
+}
+
+/// Compact load-more footer with brand spinner (not full-screen).
+struct BrandLoadMoreFooter: View {
+    var isLoading: Bool
+    var error: String?
+    var onRetry: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            if isLoading {
+                ProgressView()
+                    .tint(BrandTheme.accent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .accessibilityLabel("Loading more")
+            } else if let error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.destructive)
+                    .multilineTextAlignment(.center)
+                if let onRetry {
+                    Button("Try again") {
+                        BrandHaptics.light()
+                        onRetry()
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(BrandTheme.goldBright)
+                    .frame(minHeight: 44)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .listRowBackground(BrandTheme.navyElevated)
+    }
+}
+
+/// Inline error card for embedded sections (Home strips) — not full-screen empty.
+struct BrandInlineErrorCard: View {
+    let message: String
+    var retryTitle: String = "Try again"
+    var onRetry: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label {
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "wifi.exclamationmark")
+                    .foregroundStyle(BrandTheme.warning)
+            }
+            if let onRetry {
+                Button {
+                    BrandHaptics.light()
+                    onRetry()
+                } label: {
+                    Text(retryTitle)
+                }
+                .brandGhostButton()
+                .frame(minHeight: 44)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .brandCard(padding: 0)
+        .accessibilityElement(children: .combine)
+    }
+}
 
 /// Marketplace-oriented empty state with gold seal energy (not system gray ContentUnavailable alone).
 struct BrandEmptyState: View {
@@ -1052,15 +1474,21 @@ struct BrandEmptyState: View {
             }
 
             if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .brandGoldProminentButton()
-                    .frame(minHeight: 44)
+                Button(actionTitle) {
+                    BrandHaptics.medium()
+                    action()
+                }
+                .brandGoldProminentButton()
+                .frame(minHeight: 44)
             }
             if let secondaryActionTitle, let secondaryAction {
-                Button(secondaryActionTitle, action: secondaryAction)
-                    .buttonStyle(.bordered)
-                    .tint(BrandTheme.accent)
-                    .frame(minHeight: 44)
+                Button(secondaryActionTitle) {
+                    BrandHaptics.selection()
+                    secondaryAction()
+                }
+                .buttonStyle(.bordered)
+                .tint(BrandTheme.accent)
+                .frame(minHeight: 44)
             }
         }
         .padding(28)
@@ -1126,6 +1554,8 @@ struct DollarAmountField: View {
                     Text("Will submit \(MoneyFormat.usd(cents: cents))")
                         .font(.caption.weight(.semibold).monospacedDigit())
                         .foregroundStyle(BrandTheme.success)
+                        .contentTransition(.numericText())
+                        .animation(.easeOut(duration: 0.15), value: cents)
                         .accessibilityLabel("Will submit \(MoneyFormat.usd(cents: cents))")
                 } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("Enter a dollar amount (example 125.00) — not cents")

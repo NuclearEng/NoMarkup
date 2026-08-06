@@ -29,6 +29,9 @@ var (
 	// admits both parties, so this distinction has to be made here.
 	ErrNotAuthorizedActor    = errors.New("actor not authorized for this operation")
 	ErrStripeAccountNotFound = errors.New("stripe account not found")
+	// ErrTransfersNotReady — connected account cannot receive platform transfers yet
+	// (Accounts v2 stripe_transfers inactive / onboarding incomplete).
+	ErrTransfersNotReady = errors.New("connected account not ready for transfers")
 	ErrPlatformBankAccountNotFound = errors.New("platform bank account not found")
 	// ErrTipAlreadyRecorded is returned when contracts.tip_amount_cents is already non-zero.
 	ErrTipAlreadyRecorded = errors.New("tip already recorded")
@@ -173,6 +176,15 @@ type StripeAccountStatus struct {
 	PayoutsEnabled   bool
 	DetailsSubmitted bool
 	Requirements     []string
+	// TransfersReady is true when the account can receive separate-charges
+	// transfers (v2 recipient stripe_transfers active, or legacy transfers cap).
+	TransfersReady bool
+	// StripeTransfersStatus is the raw capability status (active/pending/inactive/unrequested).
+	StripeTransfersStatus string
+	// Dashboard is the Connect dashboard type when known (express/full/none).
+	Dashboard string
+	// AccountsAPI is "v2" or "v1" when we can infer how the account was created.
+	AccountsAPI string
 }
 
 // CreatePaymentInput contains the data needed to create a new payment.

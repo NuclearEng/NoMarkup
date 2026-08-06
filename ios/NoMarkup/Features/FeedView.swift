@@ -65,11 +65,7 @@ struct FeedView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading && listings.isEmpty {
-            ProgressView("Loading feed…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .catalog, rows: 5, accessibilityLabel: "Loading feed…")
         } else if let errorMessage, listings.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load feed",
@@ -110,14 +106,7 @@ struct FeedView: View {
                     }
 
                     if isLoadingMore {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .tint(BrandTheme.accent)
-                            Spacer()
-                        }
-                        .listRowBackground(BrandTheme.navyElevated)
-                        .accessibilityLabel("Loading more listings")
+                        BrandLoadMoreFooter(isLoading: true)
                     }
                 } header: {
                     if let total = pagination?.resolvedTotal, total > 0 {
@@ -137,6 +126,7 @@ struct FeedView: View {
 
     @ViewBuilder
     private func feedRow(_ listing: ListingSummary) -> some View {
+        let live = Self.isLiveAuction(listing)
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 Text(listing.displayTitle)
@@ -145,12 +135,24 @@ struct FeedView: View {
                     .lineLimit(2)
                 Spacer(minLength: 8)
                 Text(listing.displayPrice)
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .font(.subheadline.weight(.bold).monospacedDigit())
                     .foregroundStyle(BrandTheme.goldBright)
+                    .contentTransition(.numericText())
             }
 
             HStack(spacing: 8) {
-                if let status = listing.status, !status.isEmpty {
+                if live {
+                    HStack(spacing: 4) {
+                        LivePulseDot()
+                        Text("LIVE")
+                            .font(.caption2.weight(.bold).monospaced())
+                            .tracking(0.4)
+                            .foregroundStyle(BrandTheme.success)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Live auction")
+                }
+                if let status = listing.status, !status.isEmpty, !live {
                     StatusChipView(
                         label: StatusChipStyle.displayLabel(status),
                         style: StatusChipStyle.forStatus(status)
@@ -169,13 +171,22 @@ struct FeedView: View {
 
             if let countdown = listing.auctionCountdown {
                 Label(countdown, systemImage: "clock")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(countdown == "Ended" ? BrandTheme.textSecondary : BrandTheme.goldBright)
             }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(listing.displayTitle), \(listing.displayPrice)")
+        .accessibilityLabel(
+            live
+                ? "Live auction, \(listing.displayTitle), \(listing.displayPrice)"
+                : "\(listing.displayTitle), \(listing.displayPrice)"
+        )
+    }
+
+    private static func isLiveAuction(_ listing: ListingSummary) -> Bool {
+        (listing.status ?? "").lowercased() == "active"
+            && (listing.auctionCountdown.map { $0 != "Ended" } ?? true)
     }
 
     @MainActor
@@ -212,6 +223,7 @@ struct FeedView: View {
     @MainActor
     private func loadMore() async {
         guard canLoadMore, !isLoadingMore, !isLoading else { return }
+        BrandHaptics.light()
         isLoadingMore = true
         defer { isLoadingMore = false }
 

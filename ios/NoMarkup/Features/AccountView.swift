@@ -19,6 +19,8 @@ struct AccountView: View {
     /// Profile missing display name and/or phone — show “Finish setup” (FR-1.5/1.6).
     @State private var profileNeedsSetup = false
     @State private var showOnboardingWizard = false
+    /// From `UserProfile.roles` — gates Admin console row.
+    @State private var hasAdminRole = false
 
     var body: some View {
         NavigationStack {
@@ -165,6 +167,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Edit display name and view account profile")
+                    .accessibilityIdentifier("account.row.profile")
 
                     NavigationLink {
                         ProviderWorkspaceView()
@@ -174,6 +177,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Edit provider bio, availability, streaks, and licenses")
+                    .accessibilityIdentifier("account.row.providerWorkspace")
 
                     NavigationLink {
                         ProviderInstantOffersView()
@@ -183,6 +187,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Provider inbox: accept or decline emergency Instant match jobs")
+                    .accessibilityIdentifier("account.row.instantOffers")
 
                     NavigationLink {
                         SecuritySettingsView()
@@ -192,6 +197,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Change password and view age verification status")
+                    .accessibilityIdentifier("account.row.security")
 
                     NavigationLink {
                         VerificationCenterView()
@@ -201,6 +207,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession)
                     .accessibilityHint("Resend email verification and complete phone OTP")
+                    .accessibilityIdentifier("account.row.verification")
 
                     Button("Sign out", role: .destructive) {
                         // Device unregister + widget wipe run inside signOut()
@@ -220,6 +227,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("Native form to post a reverse-auction service job")
+                    .accessibilityIdentifier("account.row.postJob")
 
                     NavigationLink {
                         JobDraftsView()
@@ -229,6 +237,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Review unpublished service job drafts and publish them")
+                    .accessibilityIdentifier("account.row.drafts")
 
                     NavigationLink {
                         CreateListingView()
@@ -237,6 +246,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("Native form to list a local goods item for auction")
+                    .accessibilityIdentifier("account.row.sell")
 
                     Text("Jobs and goods create flows include photo library and camera capture in-app.")
                         .font(.caption)
@@ -253,6 +263,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("View marketplace orders, pay pending ones, and confirm escrow pickup")
+                    .accessibilityIdentifier("account.row.orders")
 
                     NavigationLink {
                         ContractsView()
@@ -261,6 +272,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("View service contracts from awarded job bids, milestones, and completion")
+                    .accessibilityIdentifier("account.row.contracts")
 
                     NavigationLink {
                         MyBidsView()
@@ -269,6 +281,17 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("View goods and service bids you have placed")
+                    .accessibilityIdentifier("account.row.myBids")
+
+                    NavigationLink {
+                        PositionsBlotterView()
+                    } label: {
+                        Label("Positions blotter", systemImage: "chart.bar.doc.horizontal")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("Open market exposure — service bids, goods bids, and watchlist")
+                    .accessibilityIdentifier("account.row.positions")
 
                     NavigationLink {
                         MyListingsView()
@@ -277,6 +300,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("View goods listings you have posted as a seller")
+                    .accessibilityIdentifier("account.row.myListings")
 
                     NavigationLink {
                         WatchlistView()
@@ -285,6 +309,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("Listings you are watching for auction updates")
+                    .accessibilityIdentifier("account.row.watchlist")
 
                     NavigationLink {
                         SavedSearchesView()
@@ -293,6 +318,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("Manage marketplace search alerts")
+                    .accessibilityIdentifier("account.row.savedSearches")
 
                     NavigationLink {
                         SellerAnalyticsView()
@@ -301,6 +327,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("View sales revenue, sell-through, and top categories")
+                    .accessibilityIdentifier("account.row.sellerAnalytics")
 
                     NavigationLink {
                         SellerPayoutsView()
@@ -310,6 +337,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Connect Stripe and view payout readiness for providers")
+                    .accessibilityIdentifier("account.row.sellerPayouts")
 
                     NavigationLink {
                         BusinessFeaturesHubView()
@@ -319,6 +347,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("BNPL, insurance, advances, instant payout, expenses, and tax — full web parity")
+                    .accessibilityIdentifier("account.row.businessFinance")
 
                     NavigationLink {
                         SalesExportView()
@@ -328,6 +357,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Download completed sales as a CSV file and share it")
+                    .accessibilityIdentifier("account.row.salesExport")
 
                     NavigationLink {
                         CalendarExportView()
@@ -337,6 +367,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Download an iCal file of jobs, contracts, and pickups")
+                    .accessibilityIdentifier("account.row.calendarExport")
 
                     NavigationLink {
                         EmployeesView()
@@ -346,6 +377,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Manage provider employees")
+                    .accessibilityIdentifier("account.row.team")
 
                     NavigationLink {
                         ChallengesView()
@@ -355,6 +387,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Join provider challenges and track progress")
+                    .accessibilityIdentifier("account.row.challenges")
 
                     if featureFlags.isEnabled("legal_services") {
                         NavigationLink {
@@ -364,6 +397,7 @@ struct AccountView: View {
                         }
                         .frame(minHeight: 44)
                         .accessibilityHint("Attorney reverse-auction vertical")
+                        .accessibilityIdentifier("account.row.legalServices")
                     }
 
                     NavigationLink {
@@ -374,6 +408,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Create and manage reusable service bid quote templates")
+                    .accessibilityIdentifier("account.row.quoteTemplates")
 
                     NavigationLink {
                         VerificationDocumentsView()
@@ -383,6 +418,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("View status and upload provider verification documents")
+                    .accessibilityIdentifier("account.row.verificationDocuments")
 
                     NavigationLink {
                         PaymentMethodsView()
@@ -392,6 +428,17 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("View and remove saved cards used at checkout")
+                    .accessibilityIdentifier("account.row.paymentMethods")
+
+                    NavigationLink {
+                        PaymentsHistoryView()
+                    } label: {
+                        Label("Payments history", systemImage: "list.bullet.rectangle")
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                    .accessibilityHint("View escrow payments, releases, and refunds")
+                    .accessibilityIdentifier("account.row.paymentsHistory")
 
                     NavigationLink {
                         NotificationsView()
@@ -412,6 +459,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("View account notifications and mark them read")
+                    .accessibilityIdentifier("account.row.notifications")
 
                     NavigationLink {
                         NotificationPreferencesView()
@@ -421,6 +469,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Choose push, email, and in-app channels per notification type")
+                    .accessibilityIdentifier("account.row.notificationPreferences")
 
                     Text("Jobs and local goods use Apple Pay / Stripe escrow (not App Store IAP). The market sets the price — not a platform markup.")
                         .font(.caption)
@@ -437,6 +486,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("Browse and follow service providers")
+                    .accessibilityIdentifier("account.row.providers")
 
                     NavigationLink {
                         FollowingView()
@@ -446,6 +496,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Sellers you follow")
+                    .accessibilityIdentifier("account.row.following")
 
                     NavigationLink {
                         FeedView()
@@ -455,6 +506,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Active auctions from sellers you follow")
+                    .accessibilityIdentifier("account.row.followingFeed")
 
                     NavigationLink {
                         PropertiesView()
@@ -464,6 +516,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Manage saved service addresses for jobs")
+                    .accessibilityIdentifier("account.row.properties")
 
                     NavigationLink {
                         WishlistView()
@@ -473,6 +526,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Goods you are watching or wishlisted")
+                    .accessibilityIdentifier("account.row.wishlist")
 
                     NavigationLink {
                         BlockedUsersView()
@@ -482,6 +536,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Review accounts you have blocked")
+                    .accessibilityIdentifier("account.row.blockedUsers")
 
                     NavigationLink {
                         ReferralsView()
@@ -491,6 +546,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Invite friends and track referral rewards")
+                    .accessibilityIdentifier("account.row.referrals")
 
                     NavigationLink {
                         NPSSurveysView()
@@ -500,6 +556,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Answer pending Net Promoter Score surveys")
+                    .accessibilityIdentifier("account.row.feedbackSurveys")
 
                     NavigationLink {
                         SavingsView()
@@ -509,6 +566,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("View lifetime reverse-auction savings versus market median")
+                    .accessibilityIdentifier("account.row.savings")
 
                     NavigationLink {
                         MarketsView()
@@ -517,6 +575,25 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("Browse launched city markets for services and goods")
+                    .accessibilityIdentifier("account.row.markets")
+
+                    NavigationLink {
+                        FairPriceIndexView()
+                    } label: {
+                        Label("Fair price index", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Look up market median and p25–p75 bands by category")
+                    .accessibilityIdentifier("account.row.fairPrice")
+
+                    NavigationLink {
+                        MarketplaceMapView()
+                    } label: {
+                        Label("Marketplace map", systemImage: "map")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Browse local goods auctions on a map")
+                    .accessibilityIdentifier("account.row.marketplaceMap")
 
                     NavigationLink {
                         TrustTiersView()
@@ -525,6 +602,7 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("How provider trust scores and ladder requirements work")
+                    .accessibilityIdentifier("account.row.trustTiers")
                 } header: {
                     Text("Network & safety").brandSectionHeader()
                 }
@@ -536,12 +614,14 @@ struct AccountView: View {
                         Label("Privacy Policy", systemImage: "hand.raised")
                     }
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("account.row.privacyPolicy")
                     NavigationLink {
                         LegalWebView(title: "Terms of Service", url: AppConfig.termsURL)
                     } label: {
                         Label("Terms of Service", systemImage: "doc.text")
                     }
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("account.row.termsOfService")
                     NavigationLink {
                         TermsAcceptanceView()
                     } label: {
@@ -550,18 +630,21 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Compare current Terms version with what you accepted")
+                    .accessibilityIdentifier("account.row.termsAcceptance")
                     NavigationLink {
                         LegalWebView(title: "Community Guidelines", url: AppConfig.communityGuidelinesURL)
                     } label: {
                         Label("Community Guidelines", systemImage: "person.3")
                     }
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("account.row.communityGuidelines")
                     NavigationLink {
                         LegalWebView(title: "Support", url: AppConfig.supportURL)
                     } label: {
                         Label("Support", systemImage: "lifepreserver")
                     }
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("account.row.support")
                 } header: {
                     Text("Legal & support").brandSectionHeader()
                 }
@@ -582,6 +665,7 @@ struct AccountView: View {
                     }
                     .disabled(auth.isScaffoldSession || isExporting || !auth.isAuthenticated)
                     .accessibilityHint("Downloads your account data export and opens the system share sheet.")
+                    .accessibilityIdentifier("account.row.exportData")
 
                     if let exportMessage {
                         Text(exportMessage)
@@ -596,6 +680,7 @@ struct AccountView: View {
                             .foregroundStyle(BrandTheme.destructive)
                     }
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("account.row.deleteAccount")
                 } header: {
                     Text("Your data").brandSectionHeader()
                 }
@@ -610,6 +695,7 @@ struct AccountView: View {
                     .accessibilityHint(AppConfig.storeKitEnabled
                         ? "Compare plan limits and subscribe with In-App Purchase when products are available."
                         : "Compare free launch limits and read-only paid tiers. Digital plans are not sold in this app.")
+                    .accessibilityIdentifier("account.row.planLimits")
 
                     NavigationLink {
                         RegulatedRailsStatusView()
@@ -618,6 +704,19 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("Server feature flags for BNPL, insurance, advances, and related rails")
+                    .accessibilityIdentifier("account.row.featureFlags")
+
+                    if hasAdminRole {
+                        NavigationLink {
+                            AdminConsoleView()
+                        } label: {
+                            Label("Admin console", systemImage: "shield.checkered")
+                        }
+                        .frame(minHeight: 44)
+                        .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                        .accessibilityHint("Platform admin: flags, disputes, users, reports, fraud")
+                        .accessibilityIdentifier("account.row.admin")
+                    }
 
                     Text(AppConfig.storeKitEnabled
                         ? "Digital Pro / Business plans use App Store In-App Purchase when enabled. BNPL, insurance, advances, and instant payout use server flags — open Business & finance when enabled."
@@ -630,8 +729,16 @@ struct AccountView: View {
                 }
 
                 Section {
-                    LabeledContent("Version", value: "\(AppConfig.shortVersion) (\(AppConfig.buildNumber))")
-                    LabeledContent("API", value: AppConfig.apiBaseHostDisplay)
+                    LabeledContent("Version") {
+                        Text("\(AppConfig.shortVersion) (\(AppConfig.buildNumber))")
+                            .font(.body.monospacedDigit())
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                    LabeledContent("API") {
+                        Text(AppConfig.apiBaseHostDisplay)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(BrandTheme.goldBright)
+                    }
                     LabeledContent(
                         "Stripe key",
                         value: AppConfig.stripePublishableKey.isEmpty ? "not set" : "configured"
@@ -728,15 +835,18 @@ struct AccountView: View {
     }
 
     /// Show Account “Finish setup” when display name or phone is missing (FR-1.5/1.6).
+    /// Also refreshes admin-role gate for the Admin console row.
     @MainActor
     private func refreshOnboardingBanner() async {
         guard auth.isAuthenticated, !auth.isScaffoldSession else {
             profileNeedsSetup = false
+            hasAdminRole = false
             return
         }
         do {
             let me = try await APIClient.shared.fetchMe()
             profileNeedsSetup = me.isOnboardingIncomplete
+            hasAdminRole = me.hasAdminRole
             if let email = me.email, !email.isEmpty, auth.email.isEmpty {
                 auth.email = email
             }

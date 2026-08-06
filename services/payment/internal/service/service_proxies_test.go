@@ -149,6 +149,21 @@ func TestPaymentService_GetStripeOnboardingLink(t *testing.T) {
 		_, err := svc.GetStripeOnboardingLink(context.Background(), "user-1", "", "")
 		require.Error(t, err)
 	})
+
+	t.Run("synthetic_acct_dev_against_live_key_returns_not_found", func(t *testing.T) {
+		t.Parallel()
+		// Seeded provider_profiles.stripe_account_id = "acct_dev_" must not 500
+		// when the process has a real sk_test key (not pure devMode).
+		repo := &mockPaymentRepo{
+			getStripeAccountIDFn: func(_ context.Context, _ string) (string, error) {
+				return "acct_dev_", nil
+			},
+		}
+		svc := NewPaymentService(repo, &StripeService{devMode: false})
+		_, err := svc.GetStripeOnboardingLink(context.Background(), "user-1", "https://r", "https://f")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, domain.ErrStripeAccountNotFound)
+	})
 }
 
 func TestPaymentService_GetStripeAccountStatus(t *testing.T) {
@@ -184,6 +199,26 @@ func TestPaymentService_GetStripeAccountStatus(t *testing.T) {
 		assert.Equal(t, "acct_xyz", status.AccountID)
 		// Dev-mode Stripe stub returns charges/payouts/details all enabled.
 		assert.True(t, status.ChargesEnabled)
+	})
+
+	t.Run("synthetic_acct_dev_against_live_key_returns_not_started", func(t *testing.T) {
+		t.Parallel()
+		// Seeded provider_profiles.stripe_account_id = "acct_dev_" with a real
+		// sk_test key must NOT 500 — UI needs charges/payouts false + CTA.
+		repo := &mockPaymentRepo{
+			getStripeAccountIDFn: func(_ context.Context, _ string) (string, error) {
+				return "acct_dev_", nil
+			},
+		}
+		// Non-dev StripeService (no NewStripeService / no key wiring) still runs
+		// the soft-id branch in GetAccountStatus when devMode is false.
+		svc := NewPaymentService(repo, &StripeService{devMode: false})
+		status, err := svc.GetStripeAccountStatus(context.Background(), "user-1")
+		require.NoError(t, err)
+		assert.False(t, status.ChargesEnabled)
+		assert.False(t, status.PayoutsEnabled)
+		assert.False(t, status.DetailsSubmitted)
+		assert.False(t, status.TransfersReady)
 	})
 }
 

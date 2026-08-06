@@ -44,11 +44,7 @@ struct WishlistView: View {
                     message: "Browse-only mode has no API credentials. Sign in against a live gateway to manage your wishlist."
                 )
             } else if isLoading && items.isEmpty {
-                ProgressView("Loading wishlist…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading wishlist…")
             } else if let errorMessage, items.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load wishlist",
@@ -100,6 +96,7 @@ struct WishlistView: View {
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
 
                 Button {
+                    BrandHaptics.medium()
                     Task { await create() }
                 } label: {
                     if isCreating {
@@ -111,9 +108,7 @@ struct WishlistView: View {
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                .brandPrimaryButton()
                 .disabled(!canCreate)
             } header: {
                 Text("New alert").brandSectionHeader()
@@ -178,8 +173,9 @@ struct WishlistView: View {
                     .foregroundStyle(BrandTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Up to \(MoneyFormat.usd(cents: (item.maxPriceCents ?? 0)))")
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .font(.subheadline.weight(.bold).monospacedDigit())
                     .foregroundStyle(BrandTheme.goldBright)
+                    .contentTransition(.numericText())
                 if let category = item.categoryName?.trimmingCharacters(in: .whitespacesAndNewlines),
                    !category.isEmpty {
                     Text(category)

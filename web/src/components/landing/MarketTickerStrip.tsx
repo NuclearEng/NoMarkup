@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   usePricingOverview,
   type PricingOverviewCategory,
@@ -58,14 +59,14 @@ function TickerItemDisplay({ item }: { item: TickerItem }) {
       <span className="font-medium text-white/80">{item.location}</span>
       <span
         className={cn(
-          'text-base font-bold tabular-nums',
+          'font-mono text-base font-bold tabular-nums tracking-tight',
           isCompleted ? 'text-emerald-400' : isEndingSoon ? 'text-amber-300' : 'text-white',
         )}
       >
         {formatPrice(item.currentPrice)}
       </span>
       {item.originalPrice ? (
-        <span className="text-xs text-white/65 tabular-nums line-through">
+        <span className="font-mono text-xs text-white/65 tabular-nums tracking-tight line-through">
           {formatPrice(item.originalPrice)}
         </span>
       ) : null}
@@ -115,10 +116,10 @@ function TickerSkeleton({ className }: { className?: string }) {
     >
       <div className="flex items-center gap-6 py-2.5 px-5">
         {Array.from({ length: 8 }).map((_, i) => (
-          <span
+          <Skeleton
             key={`ticker-skel-${String(i)}`}
-            className="inline-block h-3 w-32 shrink-0 rounded-full bg-white/[0.06]"
-            aria-hidden="true"
+            variant="price"
+            className="h-3 w-32 shrink-0 rounded-full bg-white/[0.06]"
           />
         ))}
       </div>

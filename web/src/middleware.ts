@@ -252,7 +252,7 @@ export const config = {
   // Skip Next.js internals and static assets; everything else flows through.
   matcher: [
     {
-      source: '/((?!_next/static|_next/image|favicon.ico|icon|public/).*)',
+      source: '/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|app-icon|public/).*)',
       missing: [
         // Don't bother running middleware on prefetch requests — they don't
         // render HTML and would otherwise consume CSRNG budget unnecessarily.

@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { GoldAccentCard } from '@/components/ui/gold-accent-card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { MonoPrice } from '@/components/ui/mono-price';
 import { WinBadge } from '@/components/ui/win-badge';
 import { useAwardBid } from '@/hooks/useBids';
 import { cn, formatCents, formatRelativeTime } from '@/lib/utils';
@@ -436,12 +437,10 @@ export const BidCard = memo(function BidCard({
         {/* ── 2. Bid amount (prominent) + competitive position ── */}
         <div className="space-y-2">
           <div className="flex items-baseline justify-between">
-            <p
-              className="text-2xl font-bold text-bid-winning"
-              style={{ textShadow: '0 0 16px rgba(16,185,129,0.3), 0 0 32px rgba(16,185,129,0.1)' }}
-            >
-              {formatCents(bid.amount_cents)}
-            </p>
+            <MonoPrice
+              cents={bid.amount_cents}
+              className="text-2xl font-bold text-bid-winning [text-shadow:0_0_16px_hsl(var(--bid-winning)/0.3),0_0_32px_hsl(var(--bid-winning)/0.1)]"
+            />
             <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
               <Clock className="h-3 w-3" aria-hidden="true" />
               <span>{bidAge}</span>
@@ -618,7 +617,9 @@ export const BidCard = memo(function BidCard({
               <div className="mt-2 space-y-2 border-l-2 pl-4">
                 {bid.bid_history.map((update, index) => (
                   <div key={update.updated_at} className="text-sm">
-                    <span className="font-medium">{formatCents(update.amount_cents)}</span>
+                    <span className="font-mono font-medium tabular-nums tracking-tight">
+                      {formatCents(update.amount_cents)}
+                    </span>
                     <span className="text-muted-foreground ml-2">
                       {formatRelativeTime(new Date(update.updated_at))}
                     </span>
@@ -638,7 +639,9 @@ export const BidCard = memo(function BidCard({
             <div className="space-y-3 rounded-lg border p-3">
               <p className="text-sm">
                 Award this job to <span className="font-medium">{provider_display_name}</span> at{' '}
-                <span className="font-semibold">{formatCents(bid.amount_cents)}</span>?
+                <span className="font-mono font-semibold tabular-nums tracking-tight">
+                  {`${formatCents(bid.amount_cents)}?`}
+                </span>
               </p>
               <div className="flex gap-3">
                 <Button

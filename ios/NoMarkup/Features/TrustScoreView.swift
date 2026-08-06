@@ -37,11 +37,7 @@ struct TrustScoreView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading && score == nil {
-            ProgressView("Loading trust score…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading trust score…")
         } else if needsAuth, score == nil {
             BrandEmptyState(
                 title: "Sign in required",

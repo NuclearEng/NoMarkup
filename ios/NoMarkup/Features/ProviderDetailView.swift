@@ -38,11 +38,7 @@ struct ProviderDetailView: View {
     var body: some View {
         Group {
             if isLoading && profile == nil {
-                ProgressView("Loading provider…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .detail, accessibilityLabel: "Loading provider…")
             } else if let errorMessage, profile == nil {
                 BrandEmptyState(
                     title: "Couldn’t load provider",

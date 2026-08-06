@@ -50,6 +50,28 @@ struct PostJobView: View {
     @State private var rangeStart = Date().addingTimeInterval(86_400)
     @State private var rangeEnd = Date().addingTimeInterval(86_400 * 3)
 
+    /// Multi-step wizard (unicorn funnel) — keeps one Form surface, progressive disclosure.
+    private enum WizardStep: Int, CaseIterable, Identifiable {
+        case basics = 0
+        case pricing = 1
+        case location = 2
+        case review = 3
+        var id: Int { rawValue }
+
+        var title: String {
+            switch self {
+            case .basics: return "Basics"
+            case .pricing: return "Pricing"
+            case .location: return "Location"
+            case .review: return "Review"
+            }
+        }
+
+        static var labels: [String] { allCases.map(\.title) }
+    }
+
+    @State private var wizardStep: WizardStep = .basics
+
     /// Job service allows 0…168 hours; Instant MVP uses a short 2h window.
     private let durationOptions = [2, 12, 24, 48, 72, 168]
     private let recurrenceOptions = ["weekly", "biweekly", "monthly"]
@@ -143,311 +165,514 @@ struct PostJobView: View {
         }
     }
 
-    // MARK: - Form
+    // MARK: - Form (4-step wizard)
 
     private var formContent: some View {
-        Form {
-            Section {
+        VStack(spacing: 0) {
+            BrandWizardStepChrome(steps: WizardStep.labels, currentIndex: wizardStep.rawValue)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
+                .background(BrandTheme.navy)
+                .accessibilityIdentifier("postJob.wizardChrome")
+
+            Form {
+                switch wizardStep {
+                case .basics:
+                    basicsStepSections
+                case .pricing:
+                    pricingStepSections
+                case .location:
+                    locationStepSections
+                case .review:
+                    reviewStepSections
+                }
+
+                if let errorMessage {
+                    Section {
+                        Label {
+                            Text(errorMessage)
+                                .font(.footnote)
+                                .foregroundStyle(BrandTheme.destructive)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(BrandTheme.destructive)
+                                .accessibilityHidden(true)
+                        }
+                        .accessibilityElement(children: .combine)
+                    } header: {
+                        Text("Fix to continue").brandSectionHeader()
+                    }
+                }
+
+                Section {
+                    wizardNavigationButtons
+                }
+            }
+            .brandListBackground()
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .background(BrandTheme.navy.ignoresSafeArea())
+    }
+
+    // MARK: Step 1 — Basics
+
+    @ViewBuilder
+    private var basicsStepSections: some View {
+        Section {
+            Text(
+                useInstantMatch
+                    ? "Emergency intake: describe the issue, set an accept-now price on the next step, and we’ll notify available Instant providers. First to accept wins — no middleman markup."
+                    : "Describe the work. Providers will compete by bidding down in a reverse auction. The market sets the price — not the markup."
+            )
+            .font(.subheadline)
+            .foregroundStyle(BrandTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        } header: {
+            Text("How it works").brandSectionHeader()
+        }
+
+        Section {
+            Picker("Matching", selection: $useInstantMatch) {
+                Text("Run an auction").tag(false)
+                Text("I need help now").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("postJob.matching")
+            .accessibilityLabel("How to find a provider")
+            .accessibilityHint("Auction lets providers compete on price. Instant match notifies available providers immediately.")
+
+            if useInstantMatch {
                 Text(
-                    useInstantMatch
-                        ? "Emergency intake: describe the issue, set an accept-now price, and we’ll notify available Instant providers. First to accept wins at that price."
-                        : "Describe the work and set a starting budget. Providers bid down in a reverse auction — fair market rates, not lead-gen markup."
+                    "Instant jobs use a short window and require an accept-now price. Providers see that price; the first verified provider to accept is awarded."
                 )
-                .font(.subheadline)
+                .font(.caption)
                 .foregroundStyle(BrandTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section {
-                Picker("Matching", selection: $useInstantMatch) {
-                    Text("Run an auction").tag(false)
-                    Text("I need help now").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .frame(minHeight: 44)
-                .accessibilityLabel("How to find a provider")
-                .accessibilityHint("Auction lets providers compete on price. Instant match notifies available providers immediately.")
-
-                if useInstantMatch {
-                    Text(
-                        "Instant jobs use a short window and require an accept-now price. Providers see that price; the first verified provider to accept is awarded."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    Text(
-                        "Honest pricing: Instant often lands around 1.5–2× a typical reverse-auction result for similar work. Set an accept-now price you’re willing to pay for immediate help — not a hard formula, a common range."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(BrandTheme.goldBright)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Instant premium pricing transparency")
-                }
-            } header: {
-                Text("Speed").brandSectionHeader()
-            }
-
-            Section {
-                TextField("Title", text: $title, prompt: Text("e.g. Fix kitchen sink leak"))
-                    .textInputAutocapitalization(.sentences)
-                    .autocorrectionDisabled(false)
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Job title")
-
-                TextField(
-                    "Description",
-                    text: $description,
-                    prompt: Text("What needs doing, access notes, preferred timing…"),
-                    axis: .vertical
+                Text(
+                    "Honest pricing: Instant often lands around 1.5–2× a typical reverse-auction result for similar work. Set an accept-now price you’re willing to pay for immediate help — not a hard formula, a common range."
                 )
-                .lineLimit(4 ... 10)
+                .font(.caption)
+                .foregroundStyle(BrandTheme.goldBright)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel("Instant premium pricing transparency")
+            }
+        } header: {
+            Text("Speed").brandSectionHeader()
+        }
+
+        Section {
+            TextField("Title", text: $title, prompt: Text("e.g. Fix kitchen sink leak"))
+                .textInputAutocapitalization(.sentences)
+                .autocorrectionDisabled(false)
                 .foregroundStyle(BrandTheme.textPrimary)
-                .frame(minHeight: 88)
-                .accessibilityLabel("Job description")
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("postJob.title")
+                .accessibilityLabel("Job title")
 
-                NavigationLink {
-                    CategoryPickerView(selectedId: $categoryId, selectedName: $categoryName)
-                } label: {
-                    HStack {
-                        Text("Category")
-                            .foregroundStyle(BrandTheme.textPrimary)
-                        Spacer(minLength: 8)
-                        Text(categoryName.isEmpty ? "Select…" : categoryName)
-                            .foregroundStyle(
-                                categoryName.isEmpty ? BrandTheme.textSecondary : BrandTheme.goldBright
-                            )
-                            .lineLimit(1)
-                    }
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Service category")
-                .accessibilityValue(categoryName.isEmpty ? "Not selected" : categoryName)
-                .accessibilityHint("Opens the category tree picker")
+            TextField(
+                "Description",
+                text: $description,
+                prompt: Text("What needs doing, access notes, preferred timing…"),
+                axis: .vertical
+            )
+            .lineLimit(4 ... 10)
+            .foregroundStyle(BrandTheme.textPrimary)
+            .frame(minHeight: 88)
+            .accessibilityIdentifier("postJob.description")
+            .accessibilityLabel("Job description")
 
-                // FR-11.2 — market range bar immediately after category (hidden when no data).
-                if let marketRange, marketRange.isUsable {
-                    MarketRangeBar(
-                        range: marketRange,
-                        serviceLabel: categoryName.isEmpty ? nil : categoryName,
-                        audience: .customer,
-                        compact: true
-                    )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    .listRowBackground(Color.clear)
-                    .accessibilityHint("Fair market price range for the selected category")
+            NavigationLink {
+                CategoryPickerView(selectedId: $categoryId, selectedName: $categoryName)
+            } label: {
+                HStack {
+                    Text("Category")
+                        .foregroundStyle(BrandTheme.textPrimary)
+                    Spacer(minLength: 8)
+                    Text(categoryName.isEmpty ? "Select…" : categoryName)
+                        .foregroundStyle(
+                            categoryName.isEmpty ? BrandTheme.textSecondary : BrandTheme.goldBright
+                        )
+                        .lineLimit(1)
                 }
-            } header: {
-                Text("Details").brandSectionHeader()
-            } footer: {
-                Text("Title, description, and category are required. Title max 200 characters.")
-                    .foregroundStyle(BrandTheme.textSecondary)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
+            .accessibilityIdentifier("postJob.category")
+            .accessibilityLabel("Service category")
+            .accessibilityValue(categoryName.isEmpty ? "Not selected" : categoryName)
+            .accessibilityHint("Opens the category tree picker")
 
-            Section {
-                DollarAmountField(
-                    text: $startingBidText,
-                    placeholder: "100.00",
-                    accessibilityLabelText: useInstantMatch
-                        ? "Starting budget in dollars — upper bound for Instant pricing"
-                        : "Starting bid in dollars — reverse auction, providers bid lower"
+            if let marketRange, marketRange.isUsable {
+                MarketRangeBar(
+                    range: marketRange,
+                    serviceLabel: categoryName.isEmpty ? nil : categoryName,
+                    audience: .customer,
+                    compact: true
                 )
-
-                if !useInstantMatch {
-                    Picker("Auction length", selection: $durationHours) {
-                        ForEach(durationOptions.filter { $0 != 2 }, id: \.self) { hours in
-                            Text(durationLabel(hours)).tag(hours)
-                        }
-                    }
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Auction duration")
-
-                    Toggle("Publish immediately", isOn: $publish)
-                        .frame(minHeight: 44)
-                        .tint(BrandTheme.accent)
-                } else {
-                    LabeledContent("Window") {
-                        Text(durationLabel(durationHours))
-                            .foregroundStyle(BrandTheme.textSecondary)
-                    }
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Instant match window \(durationLabel(durationHours))")
-                }
-
-                DollarAmountField(
-                    text: $offerAcceptedText,
-                    placeholder: useInstantMatch ? "Required accept-now price" : "Optional",
-                    accessibilityLabelText: useInstantMatch
-                        ? "Accept-now price in dollars — required for Instant match"
-                        : "Offer accepted price in dollars — optional"
-                )
-
-                if !useInstantMatch {
-                    Toggle("Recurring job", isOn: $isRecurring)
-                        .frame(minHeight: 44)
-                        .tint(BrandTheme.accent)
-
-                    if isRecurring {
-                        Picker("Frequency", selection: $recurrenceFrequency) {
-                            ForEach(recurrenceOptions, id: \.self) { freq in
-                                Text(freq.capitalized).tag(freq)
-                            }
-                        }
-                        .frame(minHeight: 44)
-                    }
-
-                    // FR-3.1 — schedule preference (not hardcoded flexible).
-                    Picker("Schedule", selection: $scheduleType) {
-                        ForEach(scheduleTypeOptions, id: \.id) { opt in
-                            Text(opt.label).tag(opt.id)
-                        }
-                    }
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Preferred schedule type")
-                    .accessibilityHint("Flexible, a specific date, or a date range for the work")
-
-                    if scheduleType == "specific" {
-                        DatePicker(
-                            "Preferred date",
-                            selection: $preferredDate,
-                            in: Date()...,
-                            displayedComponents: [.date]
-                        )
-                        .frame(minHeight: 44)
-                        .accessibilityLabel("Preferred service date")
-                    } else if scheduleType == "range" {
-                        DatePicker(
-                            "Earliest",
-                            selection: $rangeStart,
-                            in: Date()...,
-                            displayedComponents: [.date]
-                        )
-                        .frame(minHeight: 44)
-                        DatePicker(
-                            "Latest",
-                            selection: $rangeEnd,
-                            in: rangeStart...,
-                            displayedComponents: [.date]
-                        )
-                        .frame(minHeight: 44)
-                    }
-                }
-            } header: {
-                Text(useInstantMatch ? "Instant price" : "Auction").brandSectionHeader()
-            } footer: {
-                Text(
-                    useInstantMatch
-                        ? "Accept-now price is what providers are awarded if they accept. Keep it at or below your starting budget. Instant match cannot run without it."
-                        : "Starting bid is the maximum you’re willing to open at. Providers compete by bidding lower. Optional offer-accepted price lets providers lock that amount without auto-award. Schedule preference helps providers plan around your timing."
-                )
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .listRowBackground(Color.clear)
+                .accessibilityHint("Fair market price range for the selected category")
+            }
+        } header: {
+            Text("Details").brandSectionHeader()
+        } footer: {
+            Text("Title, description, and category are required. Title max 200 characters.")
                 .foregroundStyle(BrandTheme.textSecondary)
-            }
+        }
+    }
 
-            Section {
-                if !properties.isEmpty {
-                    Picker("Property", selection: $selectedPropertyId) {
-                        Text("None").tag("")
-                        ForEach(properties) { prop in
-                            Text(prop.displayName).tag(prop.id)
-                        }
-                    }
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Property for this job")
-                    .accessibilityHint("Optional. Links the job to a saved property address.")
-                }
+    // MARK: Step 2 — Pricing
 
-                if selectedPropertyId.isEmpty {
-                    TextField(
-                        "Service address (optional)",
-                        text: $locationAddress,
-                        prompt: Text("Street, city, or neighborhood")
-                    )
-                    .textContentType(.fullStreetAddress)
-                    .foregroundStyle(BrandTheme.textPrimary)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Optional service address")
-                } else if let selected = selectedProperty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(selected.displayName)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(BrandTheme.textPrimary)
-                        ForEach(selected.addressLines, id: \.self) { line in
-                            Text(line)
-                                .font(.subheadline)
-                                .foregroundStyle(BrandTheme.textSecondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(minHeight: 44)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Selected property \(selected.displayName)")
-                }
-            } header: {
-                Text("Location").brandSectionHeader()
-            } footer: {
-                Text(
-                    properties.isEmpty
-                        ? "Address is optional. Add properties under Account → Properties to reuse site addresses."
-                        : "Choose a saved property or leave None and type an optional address. Exact address is only revealed to the awarded provider after award."
-                )
-                .foregroundStyle(BrandTheme.textSecondary)
-            }
-
-            PhotoPickSection(
-                context: .job,
-                maxCount: ImageUploader.maxPhotosPerForm,
-                photoURLs: $photoURLs,
-                isUploading: $isUploadingPhotos,
-                errorMessage: $errorMessage
+    @ViewBuilder
+    private var pricingStepSections: some View {
+        Section {
+            DollarAmountField(
+                text: $startingBidText,
+                placeholder: "100.00",
+                accessibilityLabelText: useInstantMatch
+                    ? "Starting budget in dollars — upper bound for Instant pricing"
+                    : "Starting bid in dollars — reverse auction, providers bid lower"
             )
 
-            if let errorMessage {
-                Section {
-                    Text(errorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(BrandTheme.destructive)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Section {
-                Button {
-                    Task { await submit() }
-                } label: {
-                    HStack {
-                        if isSubmitting {
-                            ProgressView()
-                                .tint(BrandTheme.ctaLabelOnGold)
-                        }
-                        Text(submitButtonTitle)
-                            .frame(maxWidth: .infinity)
+            if !useInstantMatch {
+                Picker("Auction length", selection: $durationHours) {
+                    ForEach(durationOptions.filter { $0 != 2 }, id: \.self) { hours in
+                        Text(durationLabel(hours)).tag(hours)
                     }
-                    .frame(minHeight: 48)
                 }
-                .glassProminentBrandCTA()
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.ctaLabelOnGold)
-                .disabled(!canSubmit || isSubmitting)
-                .accessibilityHint(
-                    useInstantMatch
-                        ? "Creates the job and requests Instant match from available providers"
-                        : "Creates the reverse-auction job on the server"
-                )
+                .frame(minHeight: 44)
+                .accessibilityLabel("Auction duration")
 
-                Button {
-                    openWebPostJob()
-                } label: {
-                    Text("Open full form on web")
-                        .font(.subheadline.weight(.medium))
+                Toggle("Publish immediately", isOn: $publish)
+                    .frame(minHeight: 44)
+                    .tint(BrandTheme.accent)
+            } else {
+                LabeledContent("Window") {
+                    Text(durationLabel(durationHours))
                         .foregroundStyle(BrandTheme.textSecondary)
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.plain)
+                .frame(minHeight: 44)
+                .accessibilityLabel("Instant match window \(durationLabel(durationHours))")
             }
+
+            DollarAmountField(
+                text: $offerAcceptedText,
+                placeholder: useInstantMatch ? "Required accept-now price" : "Optional",
+                accessibilityLabelText: useInstantMatch
+                    ? "Accept-now price in dollars — required for Instant match"
+                    : "Offer accepted price in dollars — optional"
+            )
+
+            if !useInstantMatch {
+                Toggle("Recurring job", isOn: $isRecurring)
+                    .frame(minHeight: 44)
+                    .tint(BrandTheme.accent)
+
+                if isRecurring {
+                    Picker("Frequency", selection: $recurrenceFrequency) {
+                        ForEach(recurrenceOptions, id: \.self) { freq in
+                            Text(freq.capitalized).tag(freq)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                }
+
+                Picker("Schedule", selection: $scheduleType) {
+                    ForEach(scheduleTypeOptions, id: \.id) { opt in
+                        Text(opt.label).tag(opt.id)
+                    }
+                }
+                .frame(minHeight: 44)
+                .accessibilityLabel("Preferred schedule type")
+                .accessibilityHint("Flexible, a specific date, or a date range for the work")
+
+                if scheduleType == "specific" {
+                    DatePicker(
+                        "Preferred date",
+                        selection: $preferredDate,
+                        in: Date()...,
+                        displayedComponents: [.date]
+                    )
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Preferred service date")
+                } else if scheduleType == "range" {
+                    DatePicker(
+                        "Earliest",
+                        selection: $rangeStart,
+                        in: Date()...,
+                        displayedComponents: [.date]
+                    )
+                    .frame(minHeight: 44)
+                    DatePicker(
+                        "Latest",
+                        selection: $rangeEnd,
+                        in: rangeStart...,
+                        displayedComponents: [.date]
+                    )
+                    .frame(minHeight: 44)
+                }
+            }
+        } header: {
+            Text(useInstantMatch ? "Instant price" : "Auction").brandSectionHeader()
+        } footer: {
+            Text(
+                useInstantMatch
+                    ? "Accept-now price is what providers are awarded if they accept. Keep it at or below your starting budget. Instant match cannot run without it."
+                    : "Starting bid is the maximum you’re willing to open at. Providers compete by bidding lower. Optional offer-accepted price lets providers lock that amount without auto-award."
+            )
+            .foregroundStyle(BrandTheme.textSecondary)
         }
-        .brandListBackground()
-        .scrollDismissesKeyboard(.interactively)
+    }
+
+    // MARK: Step 3 — Location + photos
+
+    @ViewBuilder
+    private var locationStepSections: some View {
+        Section {
+            if !properties.isEmpty {
+                Picker("Property", selection: $selectedPropertyId) {
+                    Text("None").tag("")
+                    ForEach(properties) { prop in
+                        Text(prop.displayName).tag(prop.id)
+                    }
+                }
+                .frame(minHeight: 44)
+                .accessibilityLabel("Property for this job")
+                .accessibilityHint("Optional. Links the job to a saved property address.")
+            }
+
+            if selectedPropertyId.isEmpty {
+                TextField(
+                    "Service address (optional)",
+                    text: $locationAddress,
+                    prompt: Text("Street, city, or neighborhood")
+                )
+                .textContentType(.fullStreetAddress)
+                .foregroundStyle(BrandTheme.textPrimary)
+                .frame(minHeight: 44)
+                .accessibilityLabel("Optional service address")
+            } else if let selected = selectedProperty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(selected.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(BrandTheme.textPrimary)
+                    ForEach(selected.addressLines, id: \.self) { line in
+                        Text(line)
+                            .font(.subheadline)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 44)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Selected property \(selected.displayName)")
+            }
+        } header: {
+            Text("Location").brandSectionHeader()
+        } footer: {
+            Text(
+                properties.isEmpty
+                    ? "Address is optional. Add properties under Account → Properties to reuse site addresses."
+                    : "Choose a saved property or leave None and type an optional address. Exact address is only revealed to the awarded provider after award."
+            )
+            .foregroundStyle(BrandTheme.textSecondary)
+        }
+
+        PhotoPickSection(
+            context: .job,
+            maxCount: ImageUploader.maxPhotosPerForm,
+            photoURLs: $photoURLs,
+            isUploading: $isUploadingPhotos,
+            errorMessage: $errorMessage
+        )
+    }
+
+    // MARK: Step 4 — Review
+
+    @ViewBuilder
+    private var reviewStepSections: some View {
+        Section {
+            reviewRow(label: "Mode", value: useInstantMatch ? "Instant match" : "Reverse auction")
+            reviewRow(label: "Title", value: title.trimmingCharacters(in: .whitespacesAndNewlines))
+            reviewRow(
+                label: "Category",
+                value: categoryName.isEmpty ? "—" : categoryName
+            )
+            if let cents = MoneyFormat.cents(fromDollarsText: startingBidText) {
+                HStack {
+                    Text("Starting budget")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                    Spacer()
+                    Text(MoneyFormat.usd(cents: cents))
+                        .font(.body.weight(.bold).monospacedDigit())
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
+                .frame(minHeight: 44)
+            }
+            if useInstantMatch, let oc = MoneyFormat.cents(fromDollarsText: offerAcceptedText) {
+                HStack {
+                    Text("Accept-now")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                    Spacer()
+                    Text(MoneyFormat.usd(cents: oc))
+                        .font(.body.weight(.bold).monospacedDigit())
+                        .foregroundStyle(BrandTheme.success)
+                }
+                .frame(minHeight: 44)
+            }
+            if !useInstantMatch {
+                reviewRow(label: "Duration", value: durationLabel(durationHours))
+                reviewRow(label: "Publish", value: publish ? "Immediately" : "Save as draft")
+            }
+            if !locationAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                reviewRow(label: "Address", value: locationAddress)
+            } else if let selected = selectedProperty {
+                reviewRow(label: "Property", value: selected.displayName)
+            }
+            if !photoURLs.isEmpty {
+                reviewRow(label: "Photos", value: "\(photoURLs.count) attached")
+            }
+        } header: {
+            Text("Review").brandSectionHeader()
+        } footer: {
+            Text(
+                useInstantMatch
+                    ? "Confirm your accept-now price. Available Instant providers will be notified."
+                    : "Providers will bid down from your starting budget. The market sets the price."
+            )
+            .foregroundStyle(BrandTheme.textSecondary)
+        }
+    }
+
+    private func reviewRow(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .foregroundStyle(BrandTheme.textSecondary)
+            Spacer(minLength: 12)
+            Text(value.isEmpty ? "—" : value)
+                .foregroundStyle(BrandTheme.textPrimary)
+                .multilineTextAlignment(.trailing)
+        }
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Wizard nav
+
+    @ViewBuilder
+    private var wizardNavigationButtons: some View {
+        if wizardStep != .basics {
+            Button {
+                BrandHaptics.selection()
+                errorMessage = nil
+                withAnimation(.easeOut(duration: 0.2)) {
+                    wizardStep = WizardStep(rawValue: max(0, wizardStep.rawValue - 1)) ?? .basics
+                }
+            } label: {
+                Text("Back")
+                    .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .brandGhostButton()
+            .disabled(isSubmitting)
+            .accessibilityIdentifier("postJob.back")
+        }
+
+        if wizardStep != .review {
+            Button {
+                advanceWizard()
+            } label: {
+                Text("Continue")
+                    .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .brandPrimaryButton()
+            .disabled(isUploadingPhotos)
+            .accessibilityIdentifier("postJob.continue")
+            .accessibilityHint("Validates this step and continues")
+        } else {
+            Button {
+                BrandHaptics.medium()
+                Task { await submit() }
+            } label: {
+                HStack(spacing: 10) {
+                    if isSubmitting {
+                        ProgressView()
+                            .tint(BrandTheme.ctaLabelOnGold)
+                            .accessibilityLabel("Posting…")
+                    }
+                    Text(isSubmitting ? "Posting…" : submitButtonTitle)
+                        .frame(maxWidth: .infinity)
+                }
+                .frame(minHeight: 48)
+            }
+            .glassProminentBrandCTA()
+            .tint(BrandTheme.accent)
+            .foregroundStyle(BrandTheme.ctaLabelOnGold)
+            .disabled(!canSubmit || isSubmitting)
+            .accessibilityIdentifier("postJob.submit")
+            .accessibilityHint(
+                useInstantMatch
+                    ? "Creates the job and requests Instant match from available providers"
+                    : "Creates the reverse-auction job on the server"
+            )
+        }
+
+        Button {
+            openWebPostJob()
+        } label: {
+            Text("Open full form on web")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(BrandTheme.textSecondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func advanceWizard() {
+        errorMessage = nil
+        if let message = validationMessage(for: wizardStep) {
+            BrandHaptics.warning()
+            errorMessage = message
+            return
+        }
+        BrandHaptics.selection()
+        let next = min(WizardStep.allCases.count - 1, wizardStep.rawValue + 1)
+        withAnimation(.easeOut(duration: 0.2)) {
+            wizardStep = WizardStep(rawValue: next) ?? .review
+        }
+    }
+
+    /// Per-step gates before Continue (final submit still re-validates fully).
+    private func validationMessage(for step: WizardStep) -> String? {
+        switch step {
+        case .basics:
+            let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let d = description.trimmingCharacters(in: .whitespacesAndNewlines)
+            let c = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.isEmpty { return "Enter a title for the job." }
+            if t.count > 200 { return "Title must be at most 200 characters." }
+            if d.isEmpty { return "Enter a description of the work." }
+            if d.count > 5000 { return "Description must be at most 5000 characters." }
+            if c.isEmpty { return "Choose a service category." }
+            return nil
+        case .pricing:
+            guard MoneyFormat.cents(fromDollarsText: startingBidText) != nil else {
+                return "Enter a valid starting bid in dollars (for example 100.00)."
+            }
+            if useInstantMatch {
+                guard MoneyFormat.cents(fromDollarsText: offerAcceptedText) != nil else {
+                    return "Enter an accept-now price for Instant match (for example 250.00)."
+                }
+            }
+            return nil
+        case .location:
+            if isUploadingPhotos { return "Wait for photo uploads to finish." }
+            return nil
+        case .review:
+            return nil
+        }
     }
 
     // MARK: - Success
@@ -463,6 +688,7 @@ struct PostJobView: View {
             Text(successHeadline)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(BrandTheme.textPrimary)
+                .multilineTextAlignment(.center)
 
             Text(successDetail(for: job))
                 .font(.subheadline)
@@ -493,9 +719,10 @@ struct PostJobView: View {
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: 48)
             }
-            .buttonStyle(.borderedProminent)
+            .glassProminentBrandCTA()
             .tint(BrandTheme.accent)
             .foregroundStyle(BrandTheme.ctaLabelOnGold)
+            .accessibilityHint("Opens the job you just posted")
 
             Button("Done") { dismiss() }
                 .brandGhostButton()
@@ -505,6 +732,7 @@ struct PostJobView: View {
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .brandScreenBackground()
+        .accessibilityElement(children: .contain)
     }
 
     private var successHeadline: String {
@@ -524,7 +752,10 @@ struct PostJobView: View {
             }
             return "“\(job.displayTitle)” was created as a reverse auction. Instant match could not be started — open the job or try again from web."
         }
-        return "“\(job.displayTitle)” is ready as a reverse auction. Providers can bid down from your starting budget."
+        if publish {
+            return "“\(job.displayTitle)” is live. Providers will bid down from your starting budget — the market sets the price, not a middleman."
+        }
+        return "“\(job.displayTitle)” is saved as a draft. Publish when you’re ready for providers to compete on price."
     }
 
     private var submitButtonTitle: String {
@@ -586,6 +817,7 @@ struct PostJobView: View {
         instantMatchSoftError = nil
 
         guard !auth.isScaffoldSession else {
+            BrandHaptics.error()
             errorMessage =
                 "Browse-only mode has no API credentials. Sign in against a live gateway to post jobs."
             return
@@ -593,28 +825,34 @@ struct PostJobView: View {
 
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else {
+            BrandHaptics.warning()
             errorMessage = "Enter a title for the job."
             return
         }
         guard trimmedTitle.count <= 200 else {
+            BrandHaptics.warning()
             errorMessage = "Title must be at most 200 characters."
             return
         }
         let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedDescription.isEmpty else {
+            BrandHaptics.warning()
             errorMessage = "Enter a description of the work."
             return
         }
         guard trimmedDescription.count <= 5000 else {
+            BrandHaptics.warning()
             errorMessage = "Description must be at most 5000 characters."
             return
         }
         let trimmedCategory = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCategory.isEmpty else {
+            BrandHaptics.warning()
             errorMessage = "Choose a service category."
             return
         }
         guard let cents = MoneyFormat.cents(fromDollarsText: startingBidText) else {
+            BrandHaptics.warning()
             errorMessage = "Enter a valid starting bid in dollars (for example 100.00)."
             return
         }
@@ -625,20 +863,24 @@ struct PostJobView: View {
             guard !offerTrimmed.isEmpty,
                   let oc = MoneyFormat.cents(fromDollarsText: offerAcceptedText)
             else {
+                BrandHaptics.warning()
                 errorMessage = "Enter an accept-now price for Instant match (for example 250.00)."
                 return
             }
             if let err = BidAmountRules.validateOfferAccepted(startingCents: cents, offerCents: oc) {
+                BrandHaptics.warning()
                 errorMessage = err
                 return
             }
             offerCents = oc
         } else if !offerTrimmed.isEmpty {
             guard let oc = MoneyFormat.cents(fromDollarsText: offerAcceptedText) else {
+                BrandHaptics.warning()
                 errorMessage = "Enter a valid offer-accepted amount in dollars, or leave it blank."
                 return
             }
             if let err = BidAmountRules.validateOfferAccepted(startingCents: cents, offerCents: oc) {
+                BrandHaptics.warning()
                 errorMessage = err
                 return
             }
@@ -692,10 +934,18 @@ struct PostJobView: View {
                 }
             }
 
+            // Primary create succeeded — success haptic even if Instant soft-failed (warning below).
+            if instantMatchSoftError != nil {
+                BrandHaptics.warning()
+            } else {
+                BrandHaptics.success()
+            }
             createdJob = job
         } catch let error as APIClientError {
+            BrandHaptics.error()
             errorMessage = error.localizedDescription
         } catch {
+            BrandHaptics.error()
             errorMessage = error.localizedDescription
         }
     }

@@ -13,9 +13,16 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE } from '@/types';
 
-/** Four primary destinations shown in the mobile bottom tab bar (plus "More"). */
-function getPrimaryTabItems(isProvider: boolean): NavItem[] {
-  if (isProvider) {
+/**
+ * Four primary destinations in the mobile bottom tab bar (plus "More").
+ *
+ * Dual-role users (customer + provider) keep the **customer** primary tabs so
+ * Jobs is never replaced by Bids. Provider-only users get Bids. Provider tools
+ * remain reachable via the More drawer for dual-role accounts.
+ */
+function getPrimaryTabItems(opts: { isProvider: boolean; isCustomer: boolean }): NavItem[] {
+  // Provider-primary only when the user has no customer role.
+  if (opts.isProvider && !opts.isCustomer) {
     return [
       { href: '/dashboard' as Route, label: 'Home', icon: Home },
       { href: '/bids' as Route, label: 'Bids', icon: Gavel },
@@ -48,6 +55,7 @@ export function MobileTabBar() {
   const isHydrating = useAuthStore((s) => s.isHydrating);
   const user = useAuthStore((s) => s.user);
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
+  const isCustomer = user?.roles.includes(USER_ROLE.CUSTOMER) ?? false;
   const allNavItems = useNavItems();
   const { data: chatUnread } = useChatUnreadCount();
   const messagesUnread = chatUnread?.total_unread ?? 0;
@@ -71,7 +79,7 @@ export function MobileTabBar() {
 
   if (isHydrating || !isAuthenticated) return null;
 
-  const primaryTabItems = getPrimaryTabItems(isProvider);
+  const primaryTabItems = getPrimaryTabItems({ isProvider, isCustomer });
   const activeSidebarHref = activeNavHref(
     pathname,
     allNavItems.map((i) => i.href),

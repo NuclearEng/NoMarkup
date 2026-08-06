@@ -63,11 +63,7 @@ struct ProviderWorkspaceView: View {
                     action: { auth.signOut() }
                 )
             } else if isLoading && !roleChecked {
-                ProgressView("Loading provider workspace…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading provider workspace…")
             } else if roleChecked && !hasProviderRole {
                 BrandEmptyState(
                     title: "Provider role required",

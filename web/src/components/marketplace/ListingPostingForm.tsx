@@ -22,6 +22,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { MonoPrice } from '@/components/ui/mono-price';
 import { PhotoCropper } from '@/components/ui/PhotoCropper';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -31,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { SortablePhotoGrid, type PhotoSlot } from '@/components/ui/SortablePhotoGrid';
 import { Textarea } from '@/components/ui/textarea';
 import { useImageUpload } from '@/hooks/useImageUpload';
@@ -38,7 +40,7 @@ import { useCreateListing } from '@/hooks/useListings';
 import { getApiErrorMessage } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import { scorePhotoQuality } from '@/lib/photo-quality';
-import { cn, formatCents } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import {
   listingPostingSchema,
   type ListingPostingFormValues,
@@ -535,6 +537,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                           {...field}
                           placeholder="IKEA dining table — solid oak, 6-seat"
                           maxLength={120}
+                          className="min-h-[44px]"
                         />
                       </FormControl>
                       <FormMessage />
@@ -610,13 +613,20 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                       <div
                         role="status"
                         aria-live="polite"
-                        className="mb-3 flex items-start gap-2 rounded-md border border-[var(--brand-gold)]/30 bg-[var(--brand-gold)]/5 p-3 text-sm text-zinc-200"
+                        className="mb-3 space-y-2 rounded-md border border-[var(--brand-gold)]/30 bg-[var(--brand-gold)]/5 p-3"
                       >
-                        <Sparkles
-                          className="mt-0.5 h-4 w-4 shrink-0 animate-pulse text-[var(--brand-gold)]"
-                          aria-hidden="true"
-                        />
-                        <span>Analyzing your photo to suggest a title, category, and price…</span>
+                        <div className="flex items-start gap-2 text-sm text-zinc-200">
+                          <Sparkles
+                            className="mt-0.5 h-4 w-4 shrink-0 animate-pulse text-[var(--brand-gold)]"
+                            aria-hidden="true"
+                          />
+                          <span>Analyzing your photo to suggest a title, category, and price…</span>
+                        </div>
+                        <div className="space-y-2 pl-6">
+                          <Skeleton className="h-3 w-3/4" variant="text" />
+                          <Skeleton className="h-3 w-1/2" variant="text" />
+                          <Skeleton className="h-5 w-24" variant="price" />
+                        </div>
                       </div>
                     ) : null}
                     {aiState === 'applied' && aiSummary ? (
@@ -630,8 +640,19 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                           aria-hidden="true"
                         />
                         <span>
-                          AI suggested a title, category, and starting price — edit anything before
-                          publishing.
+                          AI suggested a title, category, and starting price
+                          {aiSummary.suggestedStartingPriceCents > 0 ? (
+                            <>
+                              {' '}
+                              (
+                              <MonoPrice
+                                cents={aiSummary.suggestedStartingPriceCents}
+                                className="font-semibold text-zinc-100"
+                              />
+                              )
+                            </>
+                          ) : null}
+                          {' — '}edit anything before publishing.
                         </span>
                       </div>
                     ) : null}
@@ -705,13 +726,13 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                     />
 
                     {lowQualityCount > 0 ? (
-                      <p
+                      <div
                         role="alert"
-                        className="mt-2 text-sm text-trust-medium"
+                        className="mt-2 rounded-md border border-trust-medium/40 bg-trust-medium/10 px-3 py-2 text-sm text-trust-medium"
                       >
                         Replace {String(lowQualityCount)} low-quality photo
                         {lowQualityCount === 1 ? '' : 's'} before publishing.
-                      </p>
+                      </div>
                     ) : null}
 
                     <p className="mt-2 text-xs text-zinc-500">
@@ -738,6 +759,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                           inputMode="numeric"
                           maxLength={10}
                           placeholder="94110"
+                          className="min-h-[44px] font-mono tabular-nums"
                         />
                       </FormControl>
                       <FormDescription>
@@ -758,6 +780,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                           {...field}
                           placeholder="123 Main St"
                           maxLength={200}
+                          className="min-h-[44px]"
                         />
                       </FormControl>
                       <FormDescription>
@@ -780,18 +803,24 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                     <FormItem>
                       <FormLabel>Starting price (USD)</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
-                          min={1}
-                          step="0.01"
-                          inputMode="decimal"
-                          value={field.value === 0 ? '' : field.value}
-                          onChange={(e) => {
-                            const v = Number(e.target.value);
-                            field.onChange(Number.isFinite(v) ? v : 0);
-                          }}
-                          placeholder="50.00"
-                        />
+                        <div className="relative">
+                          <span className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2">
+                            $
+                          </span>
+                          <Input
+                            type="number"
+                            min={1}
+                            step="0.01"
+                            inputMode="decimal"
+                            value={field.value === 0 ? '' : field.value}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              field.onChange(Number.isFinite(v) ? v : 0);
+                            }}
+                            placeholder="50.00"
+                            className="min-h-[44px] pl-8 font-mono tabular-nums"
+                          />
+                        </div>
                       </FormControl>
                       <FormDescription>
                         Bids start here and go up. Set lower to attract more bidders.
@@ -852,18 +881,25 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                   {values.pickupAddress ? ` · ${values.pickupAddress}` : ''}
                 </ReviewRow>
                 <ReviewRow label="Starting price">
-                  {formatCents(Math.round(values.startingPriceDollars * 100))}
+                  <MonoPrice
+                    cents={Math.round(values.startingPriceDollars * 100)}
+                    className="text-base font-semibold text-zinc-100"
+                  />
                 </ReviewRow>
                 <ReviewRow label="Duration">
                   {DURATIONS.find((d) => d.value === values.auctionDurationHours)?.label ??
                     `${String(values.auctionDurationHours)}h`}
                 </ReviewRow>
+              </div>
+            ) : null}
 
-                {form.formState.errors.root ? (
-                  <p className="text-sm text-destructive" role="alert">
-                    {form.formState.errors.root.message}
-                  </p>
-                ) : null}
+            {form.formState.errors.root ? (
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-3 text-sm text-destructive"
+              >
+                {form.formState.errors.root.message}
               </div>
             ) : null}
           </CardContent>
@@ -885,6 +921,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
         {step < STEPS.length - 1 ? (
           <Button
             type="button"
+            variant="default"
             onClick={() => {
               void goNext();
             }}
@@ -896,11 +933,12 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
         ) : (
           <Button
             type="button"
+            variant="default"
             onClick={() => {
               void handlePublish();
             }}
             disabled={createListing.isPending || uploadingPhotos}
-            className="min-h-[44px] bg-[var(--brand-gold)] text-black hover:bg-[var(--brand-gold)]/90"
+            className="min-h-[44px]"
           >
             {uploadingPhotos
               ? 'Uploading photos…'

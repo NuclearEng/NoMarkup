@@ -92,6 +92,7 @@ struct JobsView: View {
             .refreshable { await load(reset: true) }
             .task(id: segment) { await load(reset: true) }
             .onChange(of: segment) { _, _ in
+                BrandHaptics.selection()
                 selectedJob = nil
             }
             .toolbar {
@@ -104,6 +105,7 @@ struct JobsView: View {
                     .pickerStyle(.segmented)
                     .frame(minWidth: 180)
                     .accessibilityLabel("Jobs section")
+                    .accessibilityIdentifier("jobs.segment")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
@@ -120,6 +122,7 @@ struct JobsView: View {
                             }
                             .frame(minHeight: 44)
                             .accessibilityHint("Filter browse by category, schedule, and minimum starting bid")
+                            .accessibilityIdentifier("jobs.filters")
                         }
                         NavigationLink {
                             JobsMapView()
@@ -128,6 +131,7 @@ struct JobsView: View {
                         }
                         .frame(minHeight: 44)
                         .accessibilityHint("Shows open jobs on a map")
+                        .accessibilityIdentifier("jobs.map")
                     }
                 }
             }
@@ -217,11 +221,8 @@ struct JobsView: View {
     @ViewBuilder
     private var browseContent: some View {
         if isLoading && jobs.isEmpty {
-            ProgressView("Loading jobs…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .catalog, rows: 5, accessibilityLabel: "Loading jobs…")
+                .accessibilityIdentifier("jobs.loading")
         } else if let errorMessage, jobs.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load jobs",
@@ -231,12 +232,14 @@ struct JobsView: View {
             ) {
                 Task { await load(reset: true) }
             }
+            .accessibilityIdentifier("jobs.error")
         } else if jobs.isEmpty {
             BrandEmptyState(
                 title: "No open reverse auctions",
                 systemImage: "wrench.and.screwdriver",
                 message: "When customers post work, qualified providers compete here on price. Pull to refresh or clear search."
             )
+            .accessibilityIdentifier("jobs.empty")
         } else {
             List {
                 Section {
@@ -283,6 +286,7 @@ struct JobsView: View {
                 }
             }
             .brandListBackground()
+            .accessibilityIdentifier("jobs.list")
         }
     }
 
@@ -309,11 +313,7 @@ struct JobsView: View {
                 auth.signOut()
             }
         } else if isLoading && myJobs.isEmpty {
-            ProgressView("Loading your jobs…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .catalog, rows: 5, accessibilityLabel: "Loading your jobs…")
         } else if let errorMessage, myJobs.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load your jobs",
@@ -404,7 +404,10 @@ struct JobsView: View {
                     .foregroundStyle(BrandTheme.destructive)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Button(action: action) {
+            Button {
+                BrandHaptics.light()
+                action()
+            } label: {
                 if isLoadingMore {
                     ProgressView()
                         .tint(BrandTheme.accent)
@@ -554,18 +557,18 @@ private struct JobRowView: View {
                 .accessibilityLabel("Draft, not published")
             } else if isLive {
                 HStack(spacing: 6) {
-                    Circle()
-                        .fill(BrandTheme.success)
-                        .frame(width: 6, height: 6)
+                    LivePulseDot()
                     Text("LIVE REVERSE AUCTION")
-                        .font(.caption2.weight(.bold))
+                        .font(.caption2.weight(.bold).monospaced())
+                        .tracking(0.4)
                         .foregroundStyle(BrandTheme.success)
                     if let countdown = job.auctionCountdown {
                         Text("· \(countdown)")
-                            .font(.caption2.weight(.semibold))
+                            .font(.caption2.weight(.semibold).monospacedDigit())
                             .foregroundStyle(BrandTheme.goldBright)
                     }
                 }
+                .accessibilityElement(children: .combine)
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -579,12 +582,14 @@ private struct JobRowView: View {
                         Text(price)
                             .font(.body.weight(.bold).monospacedDigit())
                             .foregroundStyle(BrandTheme.goldBright)
+                            .contentTransition(.numericText())
                         if let caption = job.priceCaption {
                             Text(caption)
                                 .font(.caption2)
                                 .foregroundStyle(BrandTheme.textSecondary)
                         }
                     }
+                    .accessibilityElement(children: .combine)
                 }
             }
 

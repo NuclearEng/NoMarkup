@@ -54,6 +54,7 @@ import UIKit
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.selectedRootTab) private var selectedRootTab
 
     @State private var channels: [ChatChannelSummary] = []
     @State private var pagination: PaginationMeta?
@@ -66,8 +67,13 @@ struct MessagesView: View {
     @State private var inboxSearchText = ""
     @State private var inboxSearchTask: Task<Void, Never>?
     @State private var isSearchingInbox = false
+    /// Debounce inbound/unread arrival haptics so poll/WS bursts don't spam.
+    @State private var lastInboxArrivalHapticAt: Date = .distantPast
+    /// Snapshot of per-channel unread used to detect *new* inbound while inbox is visible.
+    @State private var lastSeenUnreadByChannelID: [String: Int] = [:]
 
     private var usesSplitView: Bool { horizontalSizeClass == .regular }
+    private static let inboxArrivalHapticMinInterval: TimeInterval = 1.2
 
     /// Local filter over the loaded page; used always (instant) and as fail-soft
     /// when a server `q=` request is in flight or fails.
@@ -152,11 +158,7 @@ struct MessagesView: View {
                 auth.signOut()
             }
         } else if isLoading && channels.isEmpty {
-            ProgressView("Loading messages…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .inbox, rows: 8, accessibilityLabel: "Loading messages…")
         } else if let errorMessage, channels.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load messages",
@@ -170,7 +172,11 @@ struct MessagesView: View {
             BrandEmptyState(
                 title: "No conversations yet",
                 systemImage: "bubble.left.and.bubble.right.fill",
-                message: "Chat threads with providers and customers appear here after you bid or award a job. Pull to refresh anytime."
+                message: "Your threads open when you bid, award a job, or win a local listing. Start something worth talking about — pull to refresh anytime.",
+                actionTitle: "Browse jobs",
+                action: { selectedRootTab?.wrappedValue = .jobs },
+                secondaryActionTitle: "Browse marketplace",
+                secondaryAction: { selectedRootTab?.wrappedValue = .marketplace }
             )
         } else if displayedChannels.isEmpty {
             BrandEmptyState(
@@ -274,6 +280,21 @@ struct MessagesView: View {
             if searching, still != q {
                 return
             }
+            // Light haptic once when inbox shows a *new* unread bump (debounced).
+            // Skip cold first load so opening Messages doesn't buzz.
+            if !lastSeenUnreadByChannelID.isEmpty {
+                let hadNewInbound = response.channels.contains { ch in
+                    let now = max(0, ch.unreadCount ?? 0)
+                    let prev = lastSeenUnreadByChannelID[ch.id] ?? 0
+                    return now > prev
+                }
+                if hadNewInbound {
+                    notifyInboxArrivalHaptic()
+                }
+            }
+            lastSeenUnreadByChannelID = Dictionary(
+                uniqueKeysWithValues: response.channels.map { ($0.id, max(0, $0.unreadCount ?? 0)) }
+            )
             channels = response.channels
             pagination = response.pagination
         } catch let error as APIClientError where error.isUnauthorized {
@@ -286,6 +307,16 @@ struct MessagesView: View {
             }
             // Fail soft when searching: keep prior channels + local filter.
         }
+    }
+
+    @MainActor
+    private func notifyInboxArrivalHaptic() {
+        let now = Date()
+        guard now.timeIntervalSince(lastInboxArrivalHapticAt) >= Self.inboxArrivalHapticMinInterval else {
+            return
+        }
+        lastInboxArrivalHapticAt = now
+        BrandHaptics.light()
     }
 
     /// Debounced server inbox search when `q` non-empty; clear reloads full inbox.
@@ -430,6 +461,8 @@ struct ChatThreadView: View {
     @State private var cameraImage: UIImage?
     #endif
     @FocusState private var composerFocused: Bool
+    /// Debounce peer-arrival light haptics (WS + poll can both surface the same message).
+    @State private var lastInboundHapticAt: Date = .distantPast
 
     init(channel: ChatChannelSummary) {
         self.channel = channel
@@ -444,6 +477,8 @@ struct ChatThreadView: View {
     private static let typingSendMinInterval: TimeInterval = 0.35
     /// Clear typing indicator if no refresh arrives.
     private static let typingDisplayTTLNanoseconds: UInt64 = 3_000_000_000
+    /// Min gap between peer-message light haptics (avoids poll/WS double-fire spam).
+    private static let inboundHapticMinInterval: TimeInterval = 0.85
 
     private var webMessagesURL: URL {
         AppConfig.publicWebBaseURL.appending(path: "messages")
@@ -459,6 +494,17 @@ struct ChatThreadView: View {
             && !isUploadingPhoto
             && !isUploadingFile
             && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Gold send disc stays lit while the draft is armed *or* a send is in flight
+    /// (`canSend` flips false during `isSending`, so visual state is separate).
+    private var isSendControlLit: Bool {
+        isSending
+            || (
+                canCompose
+                    && !isUploadingAttachment
+                    && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            )
     }
 
     private var canAttachPhoto: Bool {
@@ -979,11 +1025,7 @@ struct ChatThreadView: View {
                 auth.signOut()
             }
         } else if isLoading && messages.isEmpty {
-            ProgressView("Loading messages…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .inbox, rows: 8, accessibilityLabel: "Loading messages…")
         } else if let errorMessage, messages.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load thread",
@@ -996,11 +1038,13 @@ struct ChatThreadView: View {
             )
         } else if messages.isEmpty {
             BrandEmptyState(
-                title: "No messages yet",
+                title: "Start the conversation",
                 systemImage: "text.bubble",
                 message: canCompose
-                    ? "Say hello below or attach a photo or PDF — your first message starts the thread. Messages are plain text, platform photos, or PDF files. Pull to refresh anytime."
-                    : "This channel has no messages yet."
+                    ? "Be the first to say hi — type below, or attach a photo or PDF. Your message starts the thread. Pull to refresh anytime."
+                    : "This channel has no messages yet.",
+                actionTitle: canCompose ? "Write a message" : nil,
+                action: canCompose ? { composerFocused = true } : nil
             )
         } else if displayedMessages.isEmpty {
             BrandEmptyState(
@@ -1191,24 +1235,48 @@ struct ChatThreadView: View {
                 Button {
                     Task { await sendText() }
                 } label: {
+                    // Gold filled send when armed; muted raised disc when empty/disabled.
+                    // Keep 44×44 target; ProgressView stays on the control (no full-screen spin).
                     Group {
                         if isSending {
                             ProgressView()
                                 .controlSize(.small)
-                                .tint(BrandTheme.accent)
+                                .tint(isSendControlLit ? BrandTheme.ctaLabelOnGold : BrandTheme.accent)
                         } else {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.largeTitle)
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(canSend ? BrandTheme.accent : BrandTheme.textSecondary.opacity(0.5))
+                            Image(systemName: "arrow.up")
+                                .font(.body.weight(.bold))
+                                .foregroundStyle(
+                                    isSendControlLit
+                                        ? BrandTheme.ctaLabelOnGold
+                                        : BrandTheme.textSecondary.opacity(0.45)
+                                )
                         }
                     }
                     .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                    .background {
+                        Circle()
+                            .fill(isSendControlLit ? BrandTheme.goldFill : BrandTheme.surfaceRaised)
+                    }
+                    .overlay {
+                        Circle()
+                            .strokeBorder(
+                                isSendControlLit
+                                    ? BrandTheme.goldBright.opacity(0.4)
+                                    : BrandTheme.gold.opacity(0.12),
+                                lineWidth: 1
+                            )
+                    }
+                    .contentShape(Circle())
+                    .opacity(canCompose ? 1 : 0.55)
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend)
                 .accessibilityLabel("Send message")
+                .accessibilityHint(
+                    canSend
+                        ? "Sends your message"
+                        : "Type a message to enable send"
+                )
             }
         }
         .padding(.horizontal, 12)
@@ -1221,6 +1289,15 @@ struct ChatThreadView: View {
             return false
         }
         return me == sender
+    }
+
+    /// True only when both party ids are known and the sender is not the caller.
+    /// Used for inbound arrival haptics — never fire on own sends or unknown ids.
+    private func isPeerMessage(_ message: ChatMessage) -> Bool {
+        let me = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let sender = message.senderId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !me.isEmpty, !sender.isEmpty else { return false }
+        return sender != me
     }
 
     @MainActor
@@ -1347,7 +1424,18 @@ struct ChatThreadView: View {
             }
             // Avoid clobbering optimistic sends with an older poll snapshot when possible.
             if sorted.map(\.id) != messages.map(\.id) {
+                // Light haptic once when a *peer* message arrives via poll/WS backfill.
+                // Debounced vs appendMessageIfNeeded so dual paths don't spam.
+                // Skip cold first load so opening a thread never buzzes for history.
+                let previousIDs = Set(messages.map(\.id))
+                let isColdLoad = messages.isEmpty
+                let sawNewPeer = !isColdLoad && sorted.contains { msg in
+                    !previousIDs.contains(msg.id) && isPeerMessage(msg)
+                }
                 messages = sorted
+                if sawNewPeer {
+                    notifyInboundArrivalHaptic()
+                }
             }
             if let refreshed = try? await channelTask {
                 channelMeta = refreshed
@@ -1377,6 +1465,7 @@ struct ChatThreadView: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
+        BrandHaptics.medium()
         isSending = true
         sendError = nil
         defer { isSending = false }
@@ -1390,14 +1479,17 @@ struct ChatThreadView: View {
             draft = ""
             composerFocused = false
             appendMessageIfNeeded(created)
+            BrandHaptics.success()
             if currentUserID == nil {
                 currentUserID = await APIClient.shared.currentUserID()
             }
             await markChannelReadBestEffort()
         } catch let error as APIClientError where error.isUnauthorized {
+            BrandHaptics.error()
             needsSignIn = true
             sendError = "Session expired. Sign in again to send."
         } catch {
+            BrandHaptics.error()
             sendError = error.localizedDescription
         }
     }
@@ -1410,6 +1502,7 @@ struct ChatThreadView: View {
             photoPickerItem = nil
             return
         }
+        BrandHaptics.medium()
         isUploadingPhoto = true
         sendError = nil
         defer {
@@ -1425,14 +1518,17 @@ struct ChatThreadView: View {
                 imageURL: url
             )
             appendMessageIfNeeded(created)
+            BrandHaptics.success()
             if currentUserID == nil {
                 currentUserID = await APIClient.shared.currentUserID()
             }
             await markChannelReadBestEffort()
         } catch let error as APIClientError where error.isUnauthorized {
+            BrandHaptics.error()
             needsSignIn = true
             sendError = "Session expired. Sign in again to send photos."
         } catch {
+            BrandHaptics.error()
             sendError = error.localizedDescription
         }
     }
@@ -1445,6 +1541,7 @@ struct ChatThreadView: View {
             cameraImage = nil
             return
         }
+        BrandHaptics.medium()
         isUploadingPhoto = true
         sendError = nil
         defer {
@@ -1459,14 +1556,17 @@ struct ChatThreadView: View {
                 imageURL: url
             )
             appendMessageIfNeeded(created)
+            BrandHaptics.success()
             if currentUserID == nil {
                 currentUserID = await APIClient.shared.currentUserID()
             }
             await markChannelReadBestEffort()
         } catch let error as APIClientError where error.isUnauthorized {
+            BrandHaptics.error()
             needsSignIn = true
             sendError = "Session expired. Sign in again to send photos."
         } catch {
+            BrandHaptics.error()
             sendError = error.localizedDescription
         }
     }
@@ -1479,6 +1579,7 @@ struct ChatThreadView: View {
             sendError = "Sign in with a real account to send files."
             return
         }
+        BrandHaptics.medium()
         isUploadingFile = true
         sendError = nil
         defer { isUploadingFile = false }
@@ -1500,24 +1601,42 @@ struct ChatThreadView: View {
                 fileURL: confirmed
             )
             appendMessageIfNeeded(created)
+            BrandHaptics.success()
             if currentUserID == nil {
                 currentUserID = await APIClient.shared.currentUserID()
             }
             await markChannelReadBestEffort()
         } catch let error as APIClientError where error.isUnauthorized {
+            BrandHaptics.error()
             needsSignIn = true
             sendError = "Session expired. Sign in again to send files."
         } catch {
+            BrandHaptics.error()
             sendError = error.localizedDescription
         }
     }
 
+    @MainActor
     private func appendMessageIfNeeded(_ created: ChatMessage) {
         if messages.contains(where: { $0.id == created.id }) {
             return
         }
         messages.append(created)
         messages.sort { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
+        // Peer inbound only — own optimistic/send path gets success haptic separately.
+        if isPeerMessage(created) {
+            notifyInboundArrivalHaptic()
+        }
+    }
+
+    @MainActor
+    private func notifyInboundArrivalHaptic() {
+        let now = Date()
+        guard now.timeIntervalSince(lastInboundHapticAt) >= Self.inboundHapticMinInterval else {
+            return
+        }
+        lastInboundHapticAt = now
+        BrandHaptics.light()
     }
 
     /// Customer may Accept/Reject the latest open proposed-terms card that is not theirs.

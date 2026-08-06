@@ -37,11 +37,7 @@ struct UserReviewsView: View {
     var body: some View {
         Group {
             if isLoading && reviews.isEmpty {
-                ProgressView("Loading reviews…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading reviews…")
             } else if let errorMessage, reviews.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load reviews",

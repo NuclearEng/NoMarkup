@@ -120,10 +120,14 @@ func (s *Server) GetStripeAccountStatus(ctx context.Context, req *paymentv1.GetS
 		return nil, mapDomainError(err)
 	}
 	return &paymentv1.GetStripeAccountStatusResponse{
-		ChargesEnabled:   acctStatus.ChargesEnabled,
-		PayoutsEnabled:   acctStatus.PayoutsEnabled,
-		DetailsSubmitted: acctStatus.DetailsSubmitted,
-		Requirements:     acctStatus.Requirements,
+		ChargesEnabled:        acctStatus.ChargesEnabled,
+		PayoutsEnabled:        acctStatus.PayoutsEnabled,
+		DetailsSubmitted:      acctStatus.DetailsSubmitted,
+		Requirements:          acctStatus.Requirements,
+		TransfersReady:        acctStatus.TransfersReady,
+		StripeTransfersStatus: acctStatus.StripeTransfersStatus,
+		Dashboard:             acctStatus.Dashboard,
+		AccountsApi:           acctStatus.AccountsAPI,
 	}, nil
 }
 
@@ -133,6 +137,18 @@ func (s *Server) GetStripeDashboardLink(ctx context.Context, req *paymentv1.GetS
 		return nil, mapDomainError(err)
 	}
 	return &paymentv1.GetStripeDashboardLinkResponse{DashboardUrl: url}, nil
+}
+
+func (s *Server) CreateStripeAccountSession(ctx context.Context, req *paymentv1.CreateStripeAccountSessionRequest) (*paymentv1.CreateStripeAccountSessionResponse, error) {
+	secret, expiresAt, err := s.svc.CreateStripeAccountSession(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	resp := &paymentv1.CreateStripeAccountSessionResponse{ClientSecret: secret}
+	if !expiresAt.IsZero() {
+		resp.ExpiresAt = timestamppb.New(expiresAt)
+	}
+	return resp, nil
 }
 
 // --- Customer Payment Methods ---
@@ -768,6 +784,8 @@ func mapDomainError(err error) error {
 		return status.Error(codes.NotFound, "fee configuration not found")
 	case errors.Is(err, domain.ErrStripeAccountNotFound):
 		return status.Error(codes.NotFound, "stripe account not found")
+	case errors.Is(err, domain.ErrTransfersNotReady):
+		return status.Error(codes.FailedPrecondition, "connected account is not ready to receive transfers — complete Stripe onboarding")
 	case errors.Is(err, domain.ErrPlatformBankAccountNotFound):
 		return status.Error(codes.NotFound, "platform bank account not found")
 	// Goods marketplace sentinels (listing_charge.go). Without these, every

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -219,18 +220,40 @@ func IsPlaceholderStripeKey(key string) bool {
 	return false
 }
 
-// CreateStripeAccount creates a Stripe Connect Express account.
+// CreateStripeAccount creates a Stripe Connect connected account for a
+// provider/seller. Prefer Accounts v2 marketplace recipient configuration
+// (dashboard=express, platform fees/losses, stripe_transfers). Falls back to
+// legacy Express v1 when STRIPE_ACCOUNTS_V2=false.
 func (s *StripeService) CreateStripeAccount(ctx context.Context, email, businessName string) (string, error) {
 	if s.devMode {
 		slog.Info("dev mode: stub CreateStripeAccount", "email", email)
 		return "acct_dev_" + email, nil
 	}
 
+	if accountsV2Enabled() {
+		id, err := s.createConnectedAccountV2(ctx, email, businessName)
+		if err != nil {
+			// Surface v2 errors clearly — do not silently degrade to v1, which
+			// would create a second controller model for the same platform.
+			return "", err
+		}
+		return id, nil
+	}
+
+	return s.createExpressAccountV1(ctx, email, businessName)
+}
+
+// createExpressAccountV1 is the legacy Connect Express path (pre-Accounts v2).
+// Kept for emergency rollback via STRIPE_ACCOUNTS_V2=false.
+func (s *StripeService) createExpressAccountV1(ctx context.Context, email, businessName string) (string, error) {
 	params := &stripe.AccountParams{
 		Type:         stripe.String(string(stripe.AccountTypeExpress)),
 		Email:        stripe.String(email),
 		BusinessType: stripe.String(string(stripe.AccountBusinessTypeIndividual)),
 		Capabilities: &stripe.AccountCapabilitiesParams{
+			// Legacy Express requested card_payments+transfers. Marketplace
+			// separate-charges only needs transfers; card_payments lengthens
+			// onboarding. Kept here for parity with historical accounts.
 			CardPayments: &stripe.AccountCapabilitiesCardPaymentsParams{
 				Requested: stripe.Bool(true),
 			},
@@ -288,14 +311,36 @@ func (s *StripeService) GetOnboardingLink(ctx context.Context, accountID, return
 }
 
 // GetAccountStatus retrieves the status of a Stripe Connect account.
+// Enriches with transfer-readiness for separate charges + transfers (v2
+// recipient stripe_transfers when available; else legacy transfers capability).
 func (s *StripeService) GetAccountStatus(ctx context.Context, accountID string) (*domain.StripeAccountStatus, error) {
 	if s.devMode {
 		slog.Info("dev mode: stub GetAccountStatus", "accountID", accountID)
 		return &domain.StripeAccountStatus{
-			AccountID:        accountID,
-			ChargesEnabled:   true,
-			PayoutsEnabled:   true,
-			DetailsSubmitted: true,
+			AccountID:             accountID,
+			ChargesEnabled:        true,
+			PayoutsEnabled:        true,
+			DetailsSubmitted:      true,
+			TransfersReady:        true,
+			StripeTransfersStatus: "active",
+			Dashboard:             "express",
+			AccountsAPI:           "v2",
+		}, nil
+	}
+
+	// Seeder / DevMode Connect IDs are not real acct_ objects on this key.
+	if isDevOrPlaceholderConnectAccount(accountID) {
+		slog.InfoContext(ctx, "get account status: ephemeral/dev Connect id; returning not-started",
+			"account_id", accountID)
+		return &domain.StripeAccountStatus{
+			AccountID:             accountID,
+			ChargesEnabled:        false,
+			PayoutsEnabled:        false,
+			DetailsSubmitted:      false,
+			TransfersReady:        false,
+			StripeTransfersStatus: "inactive",
+			Dashboard:             "express",
+			AccountsAPI:           "v1",
 		}, nil
 	}
 
@@ -305,6 +350,18 @@ func (s *StripeService) GetAccountStatus(ctx context.Context, accountID string) 
 		return account.GetByID(accountID, params)
 	})
 	if err != nil {
+		if stripeErrIsMissingResource(err) {
+			slog.WarnContext(ctx, "get account status: Connect account missing/inaccessible; returning not-started",
+				"account_id", accountID, "error", err)
+			return &domain.StripeAccountStatus{
+				AccountID:             accountID,
+				ChargesEnabled:        false,
+				PayoutsEnabled:        false,
+				DetailsSubmitted:      false,
+				TransfersReady:        false,
+				StripeTransfersStatus: "inactive",
+			}, nil
+		}
 		return nil, fmt.Errorf("get account status: %w", err)
 	}
 
@@ -313,13 +370,52 @@ func (s *StripeService) GetAccountStatus(ctx context.Context, accountID string) 
 		requirements = append(requirements, acct.Requirements.CurrentlyDue...)
 	}
 
-	return &domain.StripeAccountStatus{
+	out := &domain.StripeAccountStatus{
 		AccountID:        acct.ID,
 		ChargesEnabled:   acct.ChargesEnabled,
 		PayoutsEnabled:   acct.PayoutsEnabled,
 		DetailsSubmitted: acct.DetailsSubmitted,
 		Requirements:     requirements,
-	}, nil
+		AccountsAPI:      "v1",
+	}
+
+	// Legacy Express capability path.
+	if acct.Capabilities != nil {
+		if acct.Capabilities.Transfers == stripe.AccountCapabilityStatusActive {
+			out.TransfersReady = true
+			out.StripeTransfersStatus = string(stripe.AccountCapabilityStatusActive)
+		} else if acct.Capabilities.Transfers != "" {
+			out.StripeTransfersStatus = string(acct.Capabilities.Transfers)
+		}
+	}
+
+	// Prefer Accounts v2 recipient capability when available (new accounts).
+	if accountsV2Enabled() {
+		transfersStatus, payoutsStatus, v2err := s.getConnectedAccountV2Capabilities(ctx, accountID)
+		if v2err != nil {
+			// Not all accounts are v2 objects; leave v1-derived status.
+			slog.Debug("accounts v2 capability lookup skipped",
+				"account_id", accountID,
+				"error", v2err,
+			)
+		} else if transfersStatus != "" || payoutsStatus != "" {
+			out.AccountsAPI = "v2"
+			out.Dashboard = "express"
+			if transfersStatus != "" {
+				out.StripeTransfersStatus = transfersStatus
+				out.TransfersReady = transfersStatus == "active"
+			}
+			// Payouts to bank still gate "can cash out"; map to payouts_enabled.
+			if payoutsStatus == "active" {
+				out.PayoutsEnabled = true
+			}
+		}
+	}
+
+	// Platform is MoR for marketplace escrow — "charges_enabled" on the
+	// connected account is not required for separate charges. Surface
+	// TransfersReady as the operational readiness signal for payouts.
+	return out, nil
 }
 
 // GetDashboardLink generates a LoginLink for the Stripe Express dashboard.
@@ -543,9 +639,16 @@ func (s *StripeService) CreateSetupIntent(ctx context.Context, customerStripeID,
 	}
 
 	params := &stripe.SetupIntentParams{
-		Customer:           stripe.String(customerStripeID),
-		PaymentMethodTypes: stripe.StringSlice([]string{"card"}),
-		Usage:              stripe.String("off_session"),
+		Customer: stripe.String(customerStripeID),
+		// Dynamic payment methods — never hardcode payment_method_types.
+		// allow_redirects=never: SetupIntents are for off-session reuse (auctions,
+		// promote, bonds); redirect methods cannot complete a mandate without the
+		// customer present on every charge.
+		AutomaticPaymentMethods: &stripe.SetupIntentAutomaticPaymentMethodsParams{
+			Enabled:        stripe.Bool(true),
+			AllowRedirects: stripe.String(string(stripe.SetupIntentAutomaticPaymentMethodsAllowRedirectsNever)),
+		},
+		Usage: stripe.String("off_session"),
 	}
 	if platformUserID != "" {
 		params.AddMetadata("platform_customer_id", platformUserID)
@@ -658,10 +761,67 @@ func (s *StripeService) GetSetupIntentStatus(ctx context.Context, clientSecret, 
 	return out, nil
 }
 
+// isDevOrPlaceholderStripeCustomer is true for in-memory seeder IDs that were
+// written while Stripe ran in DevMode (cus_dev_*). Real Stripe rejects them
+// with resource_missing — listing must fail soft to an empty card list so the
+// billing UI stays usable after switching to real sk_test keys.
+func isDevOrPlaceholderStripeCustomer(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return true
+	}
+	return strings.HasPrefix(id, "cus_dev_") || strings.Contains(id, "...")
+}
+
+// isDevOrPlaceholderConnectAccount is true for seeder Connect IDs (acct_dev_*)
+// that cannot be retrieved with a real platform secret key.
+func isDevOrPlaceholderConnectAccount(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return true
+	}
+	return strings.HasPrefix(id, "acct_dev") || strings.Contains(id, "...")
+}
+
+// stripeErrIsMissingResource reports Stripe "no such X" / invalid account
+// conditions that mean the local ID is stale, not that the platform is down.
+func stripeErrIsMissingResource(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se *stripe.Error
+	if errors.As(err, &se) {
+		if se.Code == stripe.ErrorCodeResourceMissing {
+			return true
+		}
+		if se.Code == stripe.ErrorCodeAccountInvalid {
+			return true
+		}
+		// Some Connect misses surface as 403 account_invalid without code match.
+		if se.HTTPStatusCode == 403 || se.HTTPStatusCode == 404 {
+			msg := strings.ToLower(se.Msg)
+			if strings.Contains(msg, "no such") || strings.Contains(msg, "does not have access to account") {
+				return true
+			}
+		}
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such customer") ||
+		strings.Contains(msg, "no such account") ||
+		strings.Contains(msg, "does not have access to account") ||
+		strings.Contains(msg, "resource_missing") ||
+		strings.Contains(msg, "account_invalid")
+}
+
 // ListPaymentMethods lists a customer's payment methods.
 func (s *StripeService) ListPaymentMethods(ctx context.Context, customerStripeID string) ([]domain.PaymentMethod, error) {
 	if s.devMode {
 		return s.DevStore().ListPaymentMethods(customerStripeID), nil
+	}
+	if isDevOrPlaceholderStripeCustomer(customerStripeID) {
+		slog.InfoContext(ctx, "list payment methods: skipping ephemeral/dev Stripe customer id",
+			"customer_stripe_id", customerStripeID)
+		return []domain.PaymentMethod{}, nil
 	}
 
 	params := &stripe.PaymentMethodListParams{
@@ -697,6 +857,12 @@ func (s *StripeService) ListPaymentMethods(ctx context.Context, customerStripeID
 	}
 	if err := i.Err(); err != nil {
 		observability.EndStripeSpan(span, err)
+		// Stale cus_ from a prior DevMode seed against real keys → empty list.
+		if stripeErrIsMissingResource(err) {
+			slog.WarnContext(ctx, "list payment methods: Stripe customer missing; returning empty list",
+				"customer_stripe_id", customerStripeID, "error", err)
+			return []domain.PaymentMethod{}, nil
+		}
 		return nil, fmt.Errorf("list payment methods: %w", err)
 	}
 	observability.EndStripeSpan(span, nil)
@@ -757,6 +923,10 @@ func (s *StripeService) CreatePaymentIntent(ctx context.Context, amountCents int
 		Amount:        stripe.Int64(amountCents),
 		Currency:      stripe.String(currency),
 		CaptureMethod: stripe.String(string(stripe.PaymentIntentCaptureMethodManual)),
+		// Dynamic payment methods (omit payment_method_types).
+		AutomaticPaymentMethods: &stripe.PaymentIntentAutomaticPaymentMethodsParams{
+			Enabled: stripe.Bool(true),
+		},
 		// No TransferData / ApplicationFeeAmount: platform holds funds until
 		// ReleaseEscrow CreateTransfer. See comment above.
 	}
@@ -819,6 +989,11 @@ func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, c
 	if s.devMode {
 		slog.Info("dev mode: stub CreateTransfer", "amountCents", amountCents, "idem", idempotencyKey)
 		return s.DevStore().RecordTransfer(idempotencyKey, destinationAccountID, amountCents), nil
+	}
+
+	// Fail closed: never transfer to an onboarding-incomplete connected account.
+	if err := s.EnsureTransferDestinationReady(ctx, destinationAccountID); err != nil {
+		return "", err
 	}
 
 	sourceTxn := paymentIntentID
@@ -885,6 +1060,10 @@ func (s *StripeService) CreatePlatformTransfer(ctx context.Context, amountCents 
 	}
 	if s.devMode {
 		return s.DevStore().RecordAdvance(idempotencyKey, destinationAccountID, amountCents), nil
+	}
+
+	if err := s.EnsureTransferDestinationReady(ctx, destinationAccountID); err != nil {
+		return "", err
 	}
 
 	params := &stripe.TransferParams{
@@ -1150,6 +1329,9 @@ func (s *StripeService) CreateMarketplacePaymentIntent(
 		// Auto-capture: funds move to platform balance. Held in escrow by
 		// the marketplace state machine (escrow_status='held').
 		CaptureMethod: stripe.String(string(stripe.PaymentIntentCaptureMethodAutomatic)),
+		AutomaticPaymentMethods: &stripe.PaymentIntentAutomaticPaymentMethodsParams{
+			Enabled: stripe.Bool(true),
+		},
 	}
 	if buyerStripeCustomerID != "" {
 		params.Customer = stripe.String(buyerStripeCustomerID)
@@ -1293,6 +1475,10 @@ func (s *StripeService) CreateMarketplaceTransfer(
 			"idem", idempotencyKey,
 		)
 		return "tr_listing_dev_" + idempotencyKey, nil
+	}
+
+	if err := s.EnsureTransferDestinationReady(ctx, stripeAccountIDOrSellerID); err != nil {
+		return "", err
 	}
 
 	params := &stripe.TransferParams{

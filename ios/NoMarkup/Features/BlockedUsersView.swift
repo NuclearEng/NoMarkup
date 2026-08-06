@@ -29,11 +29,7 @@ struct BlockedUsersView: View {
                     message: "Browse-only mode has no API credentials. Sign in against a live gateway to manage blocks."
                 )
             } else if isLoading && blocks.isEmpty {
-                ProgressView("Loading blocked users…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading blocked users…")
             } else if let errorMessage, blocks.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load blocks",

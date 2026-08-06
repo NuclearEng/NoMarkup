@@ -271,11 +271,7 @@ struct ContractDetailView: View {
                 message: "Sign in with a real account to view this contract."
             )
         } else if isLoading && contract == nil {
-            ProgressView("Loading contract…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .detail, accessibilityLabel: "Loading contract…")
         } else if let errorMessage, contract == nil {
             BrandEmptyState(
                 title: "Couldn’t load contract",

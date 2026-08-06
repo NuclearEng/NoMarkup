@@ -229,6 +229,8 @@ struct ListingSummary: Codable, Sendable, Hashable, Identifiable {
     var pickupCity: String?
     var pickupState: String?
     var pickupAddress: String?
+    var pickupLat: Double?
+    var pickupLng: Double?
     var startingPriceCents: Int64?
     var currentBidCents: Int64?
     var minIncrementCents: Int64?

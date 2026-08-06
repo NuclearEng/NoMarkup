@@ -35,24 +35,32 @@ vi.mock('sonner', () => ({
   },
 }));
 
-vi.mock('@/lib/api', () => ({
-  api: {
-    get: vi.fn(),
-    getPublic: vi.fn(),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
-  },
-  // place-bid / money mutations attach these; return a stable header object
-  // so the mutationFn does not throw when the real helpers are mocked out.
-  idempotencyHeader: (key: string) => ({ 'Idempotency-Key': key }),
-  clearIdempotencyKey: vi.fn(),
-  ApiError: class ApiError extends Error {
+vi.mock('@/lib/api', () => {
+  class ApiError extends Error {
     userMessage(fallback: string) {
       return this.message || fallback;
     }
-  },
-}));
+  }
+  return {
+    api: {
+      get: vi.fn(),
+      getPublic: vi.fn(),
+      post: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+    },
+    // place-bid / money mutations attach these; return a stable header object
+    // so the mutationFn does not throw when the real helpers are mocked out.
+    idempotencyHeader: (key: string) => ({ 'Idempotency-Key': key }),
+    clearIdempotencyKey: vi.fn(),
+    ApiError,
+    getApiErrorMessage: (err: unknown, fallback: string) => {
+      if (err instanceof ApiError) return err.userMessage(fallback);
+      if (err instanceof Error && err.message) return err.message;
+      return fallback;
+    },
+  };
+});
 
 const { api, ApiError } = (await import('@/lib/api')) as unknown as {
   api: {

@@ -33,11 +33,7 @@ struct NPSSurveysView: View {
                     message: "Browse-only mode has no API credentials. Sign in against a live gateway to submit feedback."
                 )
             } else if isLoading && pending.isEmpty {
-                ProgressView("Loading surveys…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .catalog, rows: 3, accessibilityLabel: "Loading surveys…")
             } else if let errorMessage, pending.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load surveys",

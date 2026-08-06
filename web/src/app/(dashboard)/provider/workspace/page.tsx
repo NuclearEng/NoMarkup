@@ -1,6 +1,8 @@
 'use client';
 
-import { Briefcase, CalendarDays, CalendarPlus, Clock, MapPin, Wrench } from 'lucide-react';
+import { Briefcase, CalendarDays, CalendarPlus, Clock, ExternalLink, MapPin, Wrench } from 'lucide-react';
+import Link from 'next/link';
+import type { Route } from 'next';
 import { toast } from 'sonner';
 
 import { CheckInOut } from '@/components/providers/CheckInOut';
@@ -98,22 +100,37 @@ interface JobCardProps {
 }
 
 function JobCard({ contract, showWorkSession = false }: JobCardProps) {
+  const contractHref = `/contracts/${contract.id}` as Route;
+
   return (
     <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardContent className="space-y-4 p-4">
         {/* Header row */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-sm font-semibold text-zinc-100">
-              {contract.job_title}
-            </h3>
-            <p className="mt-0.5 text-xs text-zinc-400">
-              Contract #{contract.contract_number}
-            </p>
+            <Link
+              href={contractHref}
+              className="group block min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/60 rounded-md"
+            >
+              <h3 className="truncate text-sm font-semibold text-zinc-100 group-hover:text-brand-gold group-hover:underline">
+                {contract.job_title}
+              </h3>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                Contract #{contract.contract_number}
+              </p>
+            </Link>
           </div>
-          <Badge variant="outline" className="border-sky-500/40 text-sky-300">
-            In Progress
-          </Badge>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <Badge variant="outline" className="border-sky-500/40 text-sky-300">
+              In Progress
+            </Badge>
+            <Button asChild variant="outline" size="sm" className="min-h-[44px]">
+              <Link href={contractHref}>
+                Open contract
+                <ExternalLink className="ml-1.5 h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {/* Meta row */}
@@ -135,7 +152,7 @@ function JobCard({ contract, showWorkSession = false }: JobCardProps) {
           </span>
         </div>
 
-        {/* Workspace actions — only shown for today's jobs */}
+        {/* Field tools for every active contract (not only "today") */}
         {showWorkSession ? (
           <div className="space-y-3 border-t border-zinc-800 pt-3">
             <CheckInOut contractId={contract.id} />
@@ -327,7 +344,7 @@ export default function ProviderWorkspacePage() {
                 <div key={group.dateKey} className="space-y-3">
                   <h3 className="text-sm font-semibold text-zinc-400">{group.label}</h3>
                   {group.items.map((contract) => (
-                    <JobCard key={contract.id} contract={contract} showWorkSession={false} />
+                    <JobCard key={contract.id} contract={contract} showWorkSession />
                   ))}
                 </div>
               ))}

@@ -241,6 +241,57 @@ func TestDataExportLegacyPlaintextMixedCase(t *testing.T) {
 	}
 }
 
+// TestDataExportNullBusinessName is the dual-role residual: a provider_profiles
+// row with NULL business_name (and other optional TEXT columns) must still
+// export as 200 without a provider_profile _error section. Scanning into a
+// plain string used to soft-fail the section (evening red-team 2026-08-05).
+func TestDataExportNullBusinessName(t *testing.T) {
+	pool := testExportPool(t)
+	cipher, _ := newExportCipher(t)
+	ctx := context.Background()
+
+	var id string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash, display_name, roles, status)
+		VALUES ($1, 'x', 'Null Biz Export', ARRAY['customer','provider'], 'active')
+		RETURNING id::text`,
+		"exp-null-biz-"+randSuffix()+"@nomarkup.test",
+	).Scan(&id); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	// Minimal provider row: only user_id; business_name and optional TEXT stay NULL.
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO provider_profiles (user_id) VALUES ($1)`, id); err != nil {
+		t.Fatalf("seed bare provider_profile: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		_, _ = pool.Exec(ctx, `DELETE FROM provider_profiles WHERE user_id = $1`, id)
+		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
+	})
+
+	doc, _ := runExport(t, pool, cipher, id)
+	pp, ok := doc["provider_profile"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("provider_profile missing or wrong type: %T", doc["provider_profile"])
+	}
+	if _, hasErr := pp["_error"]; hasErr {
+		t.Fatalf("provider_profile soft-failed: %v", pp)
+	}
+	if pp["id"] == nil || pp["id"] == "" {
+		t.Errorf("provider_profile.id missing; got %#v", pp)
+	}
+	if pp["business_name"] != nil {
+		t.Errorf("business_name = %v, want null/nil for bare profile", pp["business_name"])
+	}
+	if pp["bio"] != nil {
+		t.Errorf("bio = %v, want null/nil", pp["bio"])
+	}
+	if pp["insurance_provider"] != nil {
+		t.Errorf("insurance_provider = %v, want null/nil", pp["insurance_provider"])
+	}
+}
+
 // TestDataExportWithdholdsUnopenableCiphertext: a value encrypted under a key
 // the gateway does not hold must be reported as unavailable — never dumped as
 // base64 and never allowed to 500 the whole export.

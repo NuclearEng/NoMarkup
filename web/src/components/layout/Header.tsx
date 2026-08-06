@@ -33,15 +33,11 @@ export function Header() {
   return (
     <header className="glass-nav sticky top-0 z-40 supports-[padding:max(0px)]:pt-[env(safe-area-inset-top,0px)]">
       <div className="mx-auto flex h-14 min-h-[44px] max-w-7xl items-center justify-between px-3 sm:h-16 sm:px-6 lg:px-8">
-        {/* Logo links to dashboard when authenticated, landing page otherwise */}
+        {/* SpringBoard app-icon tile + wordmark (iOS AppIcon-1024) */}
         {isAuthenticated ? (
-          <Link href={'/dashboard' as Route} className="inline-flex min-h-[44px] items-center text-foreground no-underline" aria-label="Go to Dashboard">
-            <span className="font-[var(--font-syne),var(--font-brand),sans-serif] text-xl font-extrabold -tracking-[0.02em]">
-              No<span className="gold-text">Markup</span>
-            </span>
-          </Link>
+          <Logo href={'/dashboard' as Route} ariaLabel="Go to Dashboard" priority />
         ) : (
-          <Logo />
+          <Logo priority />
         )}
 
         {/* Desktop nav.

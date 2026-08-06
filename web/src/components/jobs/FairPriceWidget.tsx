@@ -52,7 +52,7 @@ export function FairPriceWidget({ categoryId, currentLowestBidCents }: FairPrice
     >
       <div className="flex items-center justify-between">
         <span className="text-xs text-zinc-500">Fair market</span>
-        <span className={`text-xs font-semibold tabular-nums ${priceColor}`}>
+        <span className={`font-mono text-xs font-semibold tabular-nums tracking-tight ${priceColor}`}>
           {formatCents(low_cents)} – {formatCents(high_cents)}
         </span>
       </div>
@@ -74,7 +74,7 @@ export function FairPriceWidget({ categoryId, currentLowestBidCents }: FairPrice
 
       <p className="text-[10px] text-zinc-600">
         Based on {String(data_points)} local job{data_points !== 1 ? 's' : ''} · Median:{' '}
-        {formatCents(median_cents)}
+        <span className="font-mono tabular-nums tracking-tight">{formatCents(median_cents)}</span>
       </p>
     </div>
   );

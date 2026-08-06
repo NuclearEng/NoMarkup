@@ -59,11 +59,7 @@ struct MyListingsView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading && listings.isEmpty {
-            ProgressView("Loading listings…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .catalog, rows: 5, accessibilityLabel: "Loading listings…")
         } else if let errorMessage, listings.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load listings",
@@ -131,6 +127,7 @@ struct MyListingsView: View {
 
     @ViewBuilder
     private func listingRow(_ listing: ListingSummary) -> some View {
+        let live = Self.isLiveAuction(listing)
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 Text(listing.displayTitle)
@@ -139,12 +136,24 @@ struct MyListingsView: View {
                     .lineLimit(2)
                 Spacer(minLength: 8)
                 Text(listing.displayPrice)
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .font(.subheadline.weight(.bold).monospacedDigit())
                     .foregroundStyle(BrandTheme.goldBright)
+                    .contentTransition(.numericText())
             }
 
             HStack(spacing: 8) {
-                if let status = listing.status, !status.isEmpty {
+                if live {
+                    HStack(spacing: 4) {
+                        LivePulseDot()
+                        Text("LIVE")
+                            .font(.caption2.weight(.bold).monospaced())
+                            .tracking(0.4)
+                            .foregroundStyle(BrandTheme.success)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Live auction")
+                }
+                if let status = listing.status, !status.isEmpty, !live {
                     StatusChipView(
                         label: StatusChipStyle.displayLabel(status),
                         style: StatusChipStyle.forStatus(status)
@@ -158,7 +167,7 @@ struct MyListingsView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
                 if let bids = listing.bidCount {
                     Text(String(localized: "· \(bids) bids"))
-                        .font(.caption)
+                        .font(.caption.monospacedDigit())
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
                 if let location = listing.locationLabel {
@@ -171,13 +180,22 @@ struct MyListingsView: View {
 
             if let countdown = listing.auctionCountdown {
                 Label(countdown, systemImage: "clock")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(countdown == "Ended" ? BrandTheme.textSecondary : BrandTheme.goldBright)
             }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(listing.displayTitle), \(listing.displayPrice)")
+        .accessibilityLabel(
+            live
+                ? "Live auction, \(listing.displayTitle), \(listing.displayPrice)"
+                : "\(listing.displayTitle), \(listing.displayPrice)"
+        )
+    }
+
+    private static func isLiveAuction(_ listing: ListingSummary) -> Bool {
+        (listing.status ?? "").lowercased() == "active"
+            && (listing.auctionCountdown.map { $0 != "Ended" } ?? true)
     }
 
     @MainActor

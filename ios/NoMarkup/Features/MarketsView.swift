@@ -34,11 +34,7 @@ struct MarketsView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading && markets.isEmpty {
-            ProgressView("Loading markets…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading markets…")
         } else if let errorMessage, markets.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load markets",

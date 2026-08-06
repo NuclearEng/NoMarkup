@@ -1290,17 +1290,66 @@ func (s *PaymentService) CreateStripeAccount(ctx context.Context, userID, email,
 }
 
 // GetStripeOnboardingLink generates an onboarding link for the user's Stripe account.
+//
+// Seeded / leftover synthetic IDs (acct_dev_…) never exist on a real Stripe
+// platform. Calling AccountLink.Create with them yields resource_missing →
+// Internal → HTTP 500. Treat them like "no account" so the client gets a
+// FailedPrecondition (HTTP 422) and can POST /providers/me/stripe/account.
 func (s *PaymentService) GetStripeOnboardingLink(ctx context.Context, userID, returnURL, refreshURL string) (string, error) {
 	accountID, err := s.repo.GetStripeAccountID(ctx, userID)
 	if err != nil {
 		return "", err
 	}
+	if s.stripe != nil && !s.stripe.IsDevMode() && isSyntheticDevStripeAccountID(accountID) {
+		slog.Info("synthetic stripe account id without live account, refusing onboarding link",
+			"user_id", userID,
+			"account_id", accountID,
+		)
+		return "", domain.ErrStripeAccountNotFound
+	}
 
-	return s.stripe.GetOnboardingLink(ctx, accountID, returnURL, refreshURL)
+	url, err := s.stripe.GetOnboardingLink(ctx, accountID, returnURL, refreshURL)
+	if err != nil {
+		// Deleted / wrong-platform Connect account: surface the same CTA path.
+		if stripeErrIsMissingResource(err) {
+			slog.Info("stripe connect account unavailable for onboarding link",
+				"user_id", userID,
+				"account_id", accountID,
+				"error", err,
+			)
+			return "", domain.ErrStripeAccountNotFound
+		}
+		return "", err
+	}
+	return url, nil
+}
+
+// defaultStripeAccountStatusNotStarted is the status surface for a provider
+// who has not completed (or never started) Connect onboarding. Read paths must
+// return this instead of 500 so the UI can render the "connect Stripe" CTA.
+func defaultStripeAccountStatusNotStarted() *domain.StripeAccountStatus {
+	return &domain.StripeAccountStatus{
+		ChargesEnabled:        false,
+		PayoutsEnabled:        false,
+		DetailsSubmitted:      false,
+		TransfersReady:        false,
+		StripeTransfersStatus: "unrequested",
+	}
+}
+
+// isSyntheticDevStripeAccountID reports IDs minted by StripeService dev mode
+// (acct_dev_…) that never exist on a real Stripe platform. Seeded profiles and
+// leftover rows from a prior placeholder-key run leave these in the DB; calling
+// live Stripe with them always yields account_invalid → HTTP 500.
+func isSyntheticDevStripeAccountID(accountID string) bool {
+	return strings.HasPrefix(accountID, "acct_dev")
 }
 
 // GetStripeAccountStatus retrieves the Stripe account status for a user.
-// If no Stripe account exists, returns a default "not started" status instead of an error.
+// If no Stripe account exists — or the stored id is a synthetic/stale Connect
+// account that Stripe no longer (or never) recognizes — returns a default
+// "not started" status instead of an error so the client gets HTTP 200 with
+// charges_enabled/payouts_enabled false.
 func (s *PaymentService) GetStripeAccountStatus(ctx context.Context, userID string) (*domain.StripeAccountStatus, error) {
 	accountID, err := s.repo.GetStripeAccountID(ctx, userID)
 	if err != nil {
@@ -1309,14 +1358,37 @@ func (s *PaymentService) GetStripeAccountStatus(ctx context.Context, userID stri
 			"user_id", userID,
 			"error", err,
 		)
-		return &domain.StripeAccountStatus{
-			ChargesEnabled:   false,
-			PayoutsEnabled:   false,
-			DetailsSubmitted: false,
-		}, nil
+		return defaultStripeAccountStatusNotStarted(), nil
 	}
 
-	return s.stripe.GetAccountStatus(ctx, accountID)
+	// Dev-mode stub IDs against a live key: skip the Stripe round-trip and
+	// treat as not onboarded. In real Stripe dev mode GetAccountStatus already
+	// short-circuits to a stub, so leave those alone.
+	if s.stripe != nil && !s.stripe.IsDevMode() && isSyntheticDevStripeAccountID(accountID) {
+		slog.Info("synthetic stripe account id without live account, returning default status",
+			"user_id", userID,
+			"account_id", accountID,
+		)
+		return defaultStripeAccountStatusNotStarted(), nil
+	}
+
+	status, err := s.stripe.GetAccountStatus(ctx, accountID)
+	if err != nil {
+		// Account deleted, wrong Stripe platform, revoked access, etc. — the
+		// provider is effectively not onboarded; surface the CTA, not a 500.
+		// stripe.GetAccountStatus already soft-fails most of these; keep the
+		// check here as defense in depth if a future path re-surfaces the error.
+		if stripeErrIsMissingResource(err) {
+			slog.Info("stripe connect account unavailable, returning default status",
+				"user_id", userID,
+				"account_id", accountID,
+				"error", err,
+			)
+			return defaultStripeAccountStatusNotStarted(), nil
+		}
+		return nil, err
+	}
+	return status, nil
 }
 
 // GetStripeDashboardLink generates a dashboard link for the user's Stripe account.
@@ -1327,6 +1399,16 @@ func (s *PaymentService) GetStripeDashboardLink(ctx context.Context, userID stri
 	}
 
 	return s.stripe.GetDashboardLink(ctx, accountID)
+}
+
+// CreateStripeAccountSession mints a Connect embedded-components client_secret
+// for the user's connected account (onboarding, notification banner, payouts).
+func (s *PaymentService) CreateStripeAccountSession(ctx context.Context, userID string) (clientSecret string, expiresAt time.Time, err error) {
+	accountID, err := s.repo.GetStripeAccountID(ctx, userID)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return s.stripe.CreateAccountSession(ctx, accountID)
 }
 
 // CreateSetupIntent creates a SetupIntent for saving a user's payment method.
@@ -1642,6 +1724,19 @@ func (s *PaymentService) ListPaymentMethods(ctx context.Context, customerID stri
 
 	methods, err := s.stripe.ListPaymentMethods(ctx, stripeCustomerID)
 	if err != nil {
+		// Stale local pointer (e.g. cus_dev_* left from a prior dev-mode run,
+		// or a Customer deleted at Stripe) means there are no cards we can
+		// surface. Fail soft with an empty list so the billing page returns
+		// 200 instead of 500. Transport/auth/rate-limit errors still fail closed.
+		// stripe.ListPaymentMethods already soft-fails most of these; keep the
+		// check here as defense in depth if a future path re-surfaces the error.
+		if stripeErrIsMissingResource(err) {
+			slog.WarnContext(ctx, "stripe customer missing while listing payment methods; treating as empty",
+				"user_id", customerID,
+				"stripe_customer_id", stripeCustomerID,
+				"error", err)
+			return []domain.PaymentMethod{}, nil
+		}
 		return nil, err
 	}
 

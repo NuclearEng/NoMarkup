@@ -176,14 +176,17 @@ struct HomeView: View {
             // CTA stack: one gold primary, one urgency ghost, two equal secondary.
             VStack(spacing: 10) {
                 Button {
+                    BrandHaptics.medium()
                     selectedRootTab?.wrappedValue = .jobs
                 } label: {
                     Text("Browse open jobs")
                 }
                 .brandPrimaryButton()
                 .accessibilityHint("Opens the Jobs tab")
+                .accessibilityIdentifier("home.browseJobs")
 
                 Button {
+                    BrandHaptics.selection()
                     postJobPreferInstant = true
                     showPostJob = true
                 } label: {
@@ -193,17 +196,21 @@ struct HomeView: View {
                 .brandGhostButton()
                 .accessibilityHint("Opens Instant match: post a job and notify available providers")
                 .accessibilityLabel("I need help now. Instant match often prices 1.5 to 2 times a typical auction.")
+                .accessibilityIdentifier("home.instantMatch")
 
                 HStack(spacing: 10) {
                     Button {
+                        BrandHaptics.selection()
                         selectedRootTab?.wrappedValue = .marketplace
                     } label: {
                         Text("Shop goods")
                     }
                     .brandGhostButton()
                     .accessibilityHint("Opens the Marketplace tab")
+                    .accessibilityIdentifier("home.shopGoods")
 
                     Button {
+                        BrandHaptics.selection()
                         postJobPreferInstant = false
                         showPostJob = true
                     } label: {
@@ -211,9 +218,11 @@ struct HomeView: View {
                     }
                     .brandGhostButton()
                     .accessibilityHint("Opens the native post-a-job form")
+                    .accessibilityIdentifier("home.postJob")
                 }
 
                 Button {
+                    BrandHaptics.selection()
                     showSellItem = true
                 } label: {
                     Text("Sell an item")
@@ -223,9 +232,11 @@ struct HomeView: View {
                         .frame(minHeight: 40)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("home.sellItem")
             }
         }
         .brandCard(padding: 20, heroGradient: true, elevated: true)
+        .accessibilityIdentifier("home.hero")
     }
 
     // MARK: - Market desk (Bloomberg ambient + Robinhood tick)
@@ -237,6 +248,7 @@ struct HomeView: View {
             liveListings: listingTotal,
             samplePrices: tickerItems
         )
+        .accessibilityIdentifier("home.marketDesk")
     }
 
     /// Build ticker chips — short label + price + bid count. Skip noise locations.
@@ -302,6 +314,7 @@ struct HomeView: View {
             )
         }
         .brandCard(padding: 0, elevated: false)
+        .accessibilityIdentifier("home.stats")
     }
 
     private var divider: some View {
@@ -328,6 +341,7 @@ struct HomeView: View {
     }
 
     // MARK: - How it works
+
 
     private var howItWorksSection: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -430,39 +444,31 @@ struct HomeView: View {
             }
 
             if isLoadingCatalog && jobs.isEmpty {
-                ProgressView("Loading…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: 100)
-                    .brandCard(padding: 24)
+                BrandCatalogSkeleton(rows: 3)
+                    .accessibilityLabel("Loading open jobs")
             } else if let catalogError, jobs.isEmpty {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text(catalogError)
-                        .font(.subheadline)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                    Button("Try again") {
-                        Task { await refreshHome() }
-                    }
-                    .brandGhostButton()
+                BrandInlineErrorCard(message: catalogError) {
+                    Task { await refreshHome() }
                 }
-                .brandCard(padding: 20)
             } else if jobs.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("No open jobs right now")
                         .font(.headline)
                         .foregroundStyle(BrandTheme.textPrimary)
-                    Text("New reverse auctions appear here as customers list work.")
+                    Text("New reverse auctions appear here as customers list work. Post one and watch providers compete down.")
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     Button {
+                        BrandHaptics.selection()
                         showPostJob = true
                     } label: {
                         Text("Post a job")
                     }
                     .brandPrimaryButton()
                 }
-                .brandCard(padding: 20)
+                .padding(20)
+                .brandCard(padding: 0)
             } else {
                 VStack(spacing: 12) {
                     ForEach(jobs) { job in

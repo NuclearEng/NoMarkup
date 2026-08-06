@@ -196,16 +196,22 @@ export function LegalIntakeForm({ presetMatterCategoryId }: LegalIntakeFormProps
                   <FormItem>
                     <FormLabel>What type of legal help do you need?</FormLabel>
                     {treeLoading ? (
-                      <Skeleton
-                        className="h-11 w-full"
+                      <div
+                        className="space-y-2"
                         role="status"
                         aria-label="Loading legal matter types"
-                      />
+                      >
+                        <Skeleton className="h-11 w-full min-h-[44px]" variant="default" />
+                        <Skeleton className="h-3 w-2/3" variant="text" />
+                      </div>
                     ) : treeError || matterTypes.length === 0 ? (
                       <div className="space-y-2">
-                        <p className="text-destructive text-sm" role="alert">
+                        <div
+                          role="alert"
+                          className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-3 text-sm text-destructive"
+                        >
                           We couldn&apos;t load the legal matter types. Please retry.
-                        </p>
+                        </div>
                         <Button
                           type="button"
                           variant="outline"
@@ -359,7 +365,7 @@ export function LegalIntakeForm({ presetMatterCategoryId }: LegalIntakeFormProps
                             const v = e.target.value;
                             field.onChange(v === '' ? undefined : Number(v));
                           }}
-                          className="min-h-[44px] pl-8"
+                          className="min-h-[44px] pl-8 font-mono tabular-nums"
                         />
                       </div>
                     </FormControl>
@@ -397,13 +403,22 @@ export function LegalIntakeForm({ presetMatterCategoryId }: LegalIntakeFormProps
               />
 
               {rootError ? (
-                <p className="text-destructive text-sm" role="alert" aria-live="assertive">
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-3 text-sm text-destructive"
+                >
                   {rootError}
-                </p>
+                </div>
               ) : null}
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Button type="submit" disabled={isPending} className="min-h-[44px]">
+                <Button
+                  type="submit"
+                  variant="default"
+                  disabled={isPending}
+                  className="min-h-[44px]"
+                >
                   {isPending ? 'Posting…' : 'Post my legal job'}
                   {!isPending ? <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" /> : null}
                 </Button>

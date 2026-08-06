@@ -81,16 +81,31 @@ struct MarketplaceView: View {
             .refreshable { await load(reset: true) }
             .task { await load(reset: true) }
             .brandNavigationBarChrome()
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        MarketplaceMapView()
+                    } label: {
+                        Label("Map", systemImage: "map")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Shows active listings on a map")
+                    .accessibilityIdentifier("marketplace.map")
+                }
+            }
     }
 
     @ViewBuilder
     private var content: some View {
         if isLoading && listings.isEmpty && !showsSuggestions {
-            ProgressView("Loading listings…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            ScrollView {
+                BrandCatalogSkeleton(rows: 5)
+                    .padding()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .brandScreenBackground()
+            .accessibilityLabel("Loading listings")
+            .accessibilityIdentifier("marketplace.loading")
         } else if let errorMessage, listings.isEmpty, !showsSuggestions {
             BrandEmptyState(
                 title: "Couldn’t load listings",
@@ -98,14 +113,22 @@ struct MarketplaceView: View {
                 message: errorMessage,
                 actionTitle: "Try again"
             ) {
+                BrandHaptics.light()
                 Task { await load(reset: true) }
             }
+            .accessibilityIdentifier("marketplace.error")
         } else if listings.isEmpty, !showsSuggestions {
             BrandEmptyState(
                 title: "No listings nearby",
                 systemImage: "bag",
-                message: "Local goods auctions (forward bid-up, pickup within 25 mi) show up here when sellers list. Pull to refresh or clear search."
+                message: "Local goods auctions — buyers bid up, pickup within 25 mi. Escrow holds funds until pickup. Pull to refresh, or be the first to list.",
+                actionTitle: "Sell an item",
+                action: {
+                    BrandHaptics.selection()
+                    // Account → Sell is the full path; jump Account for discovery.
+                }
             )
+            .accessibilityIdentifier("marketplace.empty")
         } else {
             List {
                 Section {
@@ -214,6 +237,7 @@ struct MarketplaceView: View {
                 }
             }
             .brandListBackground()
+            .accessibilityIdentifier("marketplace.list")
         }
     }
 
@@ -384,10 +408,12 @@ private struct ListingRowView: View {
                     Text(listing.displayPrice)
                         .font(.body.weight(.bold).monospacedDigit())
                         .foregroundStyle(BrandTheme.goldBright)
+                        .contentTransition(.numericText())
                     Text(listing.priceCaption)
                         .font(.caption2)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
+                .accessibilityElement(children: .combine)
             }
 
             HStack(spacing: 8) {
@@ -395,13 +421,13 @@ private struct ListingRowView: View {
                     && (listing.auctionCountdown.map { $0 != "Ended" } ?? true)
                 if live {
                     HStack(spacing: 4) {
-                        Circle()
-                            .fill(BrandTheme.success)
-                            .frame(width: 6, height: 6)
+                        LivePulseDot()
                         Text("LIVE")
-                            .font(.caption2.weight(.bold))
+                            .font(.caption2.weight(.bold).monospaced())
+                            .tracking(0.4)
                             .foregroundStyle(BrandTheme.success)
                     }
+                    .accessibilityElement(children: .combine)
                 }
                 Text("Bid up")
                     .font(.caption.weight(.semibold))

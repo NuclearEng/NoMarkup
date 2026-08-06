@@ -133,8 +133,9 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
           role="status"
           aria-label="Loading listing"
         >
-          <Skeleton className="h-8 w-2/3" />
+          <Skeleton className="h-8 w-2/3" variant="text" />
           <Skeleton variant="card" className="aspect-[4/3] w-full" />
+          <Skeleton className="h-10 w-36" variant="price" />
         </div>
       </div>
     );
@@ -343,7 +344,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
                         ) : null}
                       </span>
                       <div className="flex items-center gap-3">
-                        <span className="font-semibold text-zinc-100 tabular-nums">
+                        <span className="font-mono font-semibold text-zinc-100 tabular-nums tracking-tight">
                           {formatCents(bid.amount_cents)}
                         </span>
                         <span className="text-xs text-zinc-500">

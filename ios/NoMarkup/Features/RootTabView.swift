@@ -60,6 +60,7 @@ struct RootTabView: View {
             await refreshUnreadBadges()
         }
         .onChange(of: selectedTab) { _, tab in
+            BrandHaptics.selection()
             // Refresh when leaving messages/account so badges stay honest after reads.
             if tab != .messages && tab != .account {
                 Task { await refreshUnreadBadges() }

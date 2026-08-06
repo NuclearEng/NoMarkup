@@ -171,17 +171,19 @@ func (h *CalendarExportHandler) ExportICS(w http.ResponseWriter, r *http.Request
 		Status     string
 	}
 
+	// listing_orders has no paid_at/status: use escrow_status + schedule columns
+	// (pickup_window_start / pickup_confirmed_at / created_at). See migrations 034/101.
 	pickups := make([]pickupEvent, 0)
 	pickupRows, err := h.db.Query(r.Context(), `
 		SELECT lo.id, lo.listing_id, COALESCE(l.title, ''),
 		       COALESCE(l.pickup_zip_code, ''),
-		       COALESCE(lo.paid_at, lo.created_at),
-		       lo.status
+		       COALESCE(lo.pickup_window_start, lo.pickup_confirmed_at, lo.created_at),
+		       lo.escrow_status
 		  FROM listing_orders lo
 		  JOIN listings l ON l.id = lo.listing_id
 		 WHERE (lo.buyer_id = $1 OR lo.seller_id = $1)
-		   AND lo.status IN ('paid', 'pending', 'picked_up')
-		 ORDER BY COALESCE(lo.paid_at, lo.created_at) ASC
+		   AND lo.escrow_status IN ('pending_payment', 'held', 'pickup_confirmed', 'released')
+		 ORDER BY COALESCE(lo.pickup_window_start, lo.pickup_confirmed_at, lo.created_at) ASC
 		 LIMIT 500`, userID)
 	if err == nil {
 		defer pickupRows.Close()

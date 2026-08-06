@@ -238,8 +238,7 @@ struct JobsMapView: View {
             }
 
             if isLoading && pins.isEmpty {
-                ProgressView("Loading map…")
-                    .tint(BrandTheme.accent)
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading map…")
                     .padding(16)
                     .background(BrandTheme.navyElevated.opacity(0.92), in: RoundedRectangle(cornerRadius: 12))
             }

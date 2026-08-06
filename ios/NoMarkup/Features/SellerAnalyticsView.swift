@@ -33,11 +33,7 @@ struct SellerAnalyticsView: View {
                     message: "Browse-only mode has no API credentials. Sign in against a live gateway for seller analytics."
                 )
             } else if isLoading && analytics == nil {
-                ProgressView("Loading analytics…")
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading analytics…")
             } else if let errorMessage, analytics == nil {
                 BrandEmptyState(
                     title: "Couldn’t load analytics",

@@ -98,14 +98,17 @@ export function BidList({ jobId, canAward, startingPriceCents, marketMedianCents
   if (isLoading) {
     return (
       <div className="space-y-4" aria-busy="true" aria-label="Loading bids">
-        <Skeleton className="h-6 w-32" />
+        <Skeleton className="h-6 w-32" variant="text" />
         {[1, 2, 3].map((i) => (
-          <Card key={i}>
+          <Card key={i} className="overflow-hidden">
             <CardContent className="pt-6">
               <div className="space-y-3">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-4 w-2/3" />
-                <Skeleton className="h-4 w-1/3" />
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-10 w-10" variant="circular" />
+                  <Skeleton className="h-4 w-1/3" variant="text" />
+                </div>
+                <Skeleton className="h-8 w-28" variant="price" />
+                <Skeleton className="h-4 w-2/3" variant="text" />
               </div>
             </CardContent>
           </Card>

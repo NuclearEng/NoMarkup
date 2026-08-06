@@ -32,11 +32,7 @@ struct ProvidersView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading && providers.isEmpty {
-            ProgressView("Loading providers…")
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.textSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .brandScreenBackground()
+            BrandLoadingScreen(kind: .catalog, rows: 5, accessibilityLabel: "Loading providers…")
         } else if let errorMessage, providers.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load providers",
@@ -93,12 +89,7 @@ struct ProvidersView: View {
                     .lineLimit(2)
                 Spacer(minLength: 8)
                 if provider.instantAvailable == true {
-                    Text("LIVE")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(BrandTheme.tealFill, in: Capsule())
+                    BrandGlassStatusChip(title: "LIVE", kind: .live, showPulse: true)
                         .accessibilityLabel("Instant available")
                 }
             }
@@ -119,7 +110,7 @@ struct ProvidersView: View {
                 }
                 if let rating = provider.averageRating, rating > 0 {
                     Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                        .font(.caption.weight(.semibold))
+                        .font(.caption.weight(.semibold).monospacedDigit())
                         .foregroundStyle(BrandTheme.goldBright)
                 }
                 if let distance = provider.distanceLabel {
