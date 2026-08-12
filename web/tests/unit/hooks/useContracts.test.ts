@@ -15,6 +15,9 @@ import {
   useApproveMilestone,
   useRequestRevision,
   useOpenDispute,
+  useReportAbandonment,
+  useReportNoShow,
+  resolvePartyDirectionsAddress,
 } from '@/hooks/useContracts';
 import type { Contract, ContractsResponse } from '@/types';
 
@@ -208,6 +211,20 @@ const lifecycleCases: LifecycleCase[] = [
     expectedPath: '/api/v1/contracts/c-1/cancel',
     invalidatedKeys: [['contracts'], ['contract', 'c-1']],
   },
+  {
+    name: 'useReportNoShow',
+    hook: useReportNoShow,
+    trigger: (m) => { m.mutate('c-1'); },
+    expectedPath: '/api/v1/contracts/c-1/report-noshow',
+    invalidatedKeys: [['contracts'], ['contract', 'c-1']],
+  },
+  {
+    name: 'useReportAbandonment',
+    hook: useReportAbandonment,
+    trigger: (m) => { m.mutate('c-1'); },
+    expectedPath: '/api/v1/contracts/c-1/report-abandonment',
+    invalidatedKeys: [['contracts'], ['contract', 'c-1']],
+  },
 ];
 
 describe.each(lifecycleCases)('contract lifecycle: $name', ({ hook, trigger, expectedPath, invalidatedKeys }) => {
@@ -375,6 +392,36 @@ describe('useOpenDispute', () => {
       '/api/v1/contracts/c-1/disputes',
       expect.objectContaining({ is_guarantee_claim: true }),
     );
+  });
+});
+
+describe('resolvePartyDirectionsAddress', () => {
+  it('prefers exact_address when street is present', () => {
+    expect(
+      resolvePartyDirectionsAddress({
+        exact_address: { street: '500 Oak Ave', city: 'Austin', state: 'TX', zip_code: '78701' },
+        location_address: 'Austin, TX',
+        location_lat: 30.2,
+        location_lng: -97.7,
+      }),
+    ).toBe('500 Oak Ave, Austin, TX, 78701');
+  });
+
+  it('falls back to location_address then lat/lng', () => {
+    expect(
+      resolvePartyDirectionsAddress({
+        location_address: 'Austin, TX',
+        location_lat: 30.2,
+        location_lng: -97.7,
+      }),
+    ).toBe('Austin, TX');
+    expect(
+      resolvePartyDirectionsAddress({
+        location_lat: 30.2672,
+        location_lng: -97.7431,
+      }),
+    ).toBe('30.2672,-97.7431');
+    expect(resolvePartyDirectionsAddress({})).toBeNull();
   });
 });
 

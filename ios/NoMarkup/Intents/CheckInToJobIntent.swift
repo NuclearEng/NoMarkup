@@ -1,5 +1,4 @@
 import AppIntents
-import CoreLocation
 import Foundation
 
 /// Job contract as an App Intents entity (INT.6b). The identifier is the contract
@@ -39,12 +38,13 @@ struct ContractEntityQuery: EntityQuery {
     }
 }
 
-/// Checks in at a job contract when possible (GPS + API), otherwise opens the app
-/// check-in surface (IOS-SYS.AI.1 / INT.7).
+/// Opens the in-app check-in surface (IOS-SYS.AI.1 / INT.7).
 ///
-/// With a contract:
-/// 1. Attempt one-shot GPS + `POST /contracts/{id}/checkin` (real API path).
-/// 2. Always deep-link into the contract so the workspace UI can confirm state.
+/// Production Siri/Shortcuts never POST check-in: location already authorized
+/// is not consent. The contract workspace UI confirms before
+/// `POST /contracts/{id}/checkin`. Tests inject `checkInAPI` to exercise the
+/// API path without a confirmation sheet.
+///
 /// Without a contract, opens Contracts so the user can pick a job.
 struct CheckInToJobIntent: AppIntent {
     static var title: LocalizedStringResource { "Check In to Job" }
@@ -66,7 +66,8 @@ struct CheckInToJobIntent: AppIntent {
     /// Session source — injectable for tests; never refreshes tokens in the guard (INT.1).
     var session: any IntentSessionProviding = KeychainTokenStore()
 
-    /// Optional injectables for tests (location + check-in). Defaults hit CoreLocation + API.
+    /// Optional injectables for tests. Production never POSTs; `checkInAPI` is the
+    /// only path that calls the check-in API (tests).
     var locationCoordinateProvider: (@Sendable () async throws -> (lat: Double, lng: Double))?
     var checkInAPI: (@Sendable (_ contractId: String, _ lat: Double, _ lng: Double) async throws -> Void)?
 
@@ -86,18 +87,9 @@ struct CheckInToJobIntent: AppIntent {
         var dialogMessage = "Opening contract check-in."
         var value = "opened"
 
-        // Only attempt the API path when GPS is already authorized (or a test injects
-        // coordinates). Never prompt for location from a headless Siri/Shortcuts run —
-        // that hangs tests and is a poor UX; the contract UI still does the full flow.
-        let canAttemptAPI: Bool
-        if locationCoordinateProvider != nil || checkInAPI != nil {
-            canAttemptAPI = true
-        } else {
-            let status = CLLocationManager().authorizationStatus
-            canAttemptAPI = (status == .authorizedWhenInUse || status == .authorizedAlways)
-        }
-
-        if canAttemptAPI {
+        // Production: deep-link only. In-app UI confirms before POST.
+        // Tests: `checkInAPI` injection keeps the GPS + POST path.
+        if let checkInAPI {
             do {
                 let coord: (lat: Double, lng: Double)
                 if let locationCoordinateProvider {
@@ -107,16 +99,7 @@ struct CheckInToJobIntent: AppIntent {
                     let c = try await provider.currentCoordinate(timeoutSeconds: 8)
                     coord = (c.latitude, c.longitude)
                 }
-
-                if let checkInAPI {
-                    try await checkInAPI(trimmed, coord.lat, coord.lng)
-                } else {
-                    _ = try await APIClient.shared.checkInToContract(
-                        id: trimmed,
-                        lat: coord.lat,
-                        lng: coord.lng
-                    )
-                }
+                try await checkInAPI(trimmed, coord.lat, coord.lng)
                 dialogMessage = "Checked in to the job site."
                 value = "checked_in"
             } catch {

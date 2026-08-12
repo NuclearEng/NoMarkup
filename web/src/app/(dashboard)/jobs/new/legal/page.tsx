@@ -16,20 +16,18 @@ export const metadata: Metadata = {
 };
 
 /**
- * Whether the `legal_services` flag is enabled. Fail-open: any error or missing
- * key is treated as ENABLED (mirrors the landing page + useFeatureFlag) — we
- * only hide the intake when the backend explicitly reports `false`. The gateway
- * independently enforces the flag on the job-create path, so an optimistic
- * `true` here cannot bypass an actually-disabled vertical.
+ * Whether the `legal_services` flag is enabled. Fail-closed (SEC-02): any
+ * error or missing key is treated as DISABLED — same as the legal landing
+ * page. Gateway still RequireFlag on job-create; this only hides the intake.
  */
 async function isLegalServicesEnabled(): Promise<boolean> {
   try {
     const res = await serverFetch(`${API_URL}/api/v1/flags`, { next: { revalidate: 60 } });
-    if (!res.ok) return true;
+    if (!res.ok) return false;
     const flags = (await res.json()) as Record<string, boolean | undefined>;
-    return flags['legal_services'] ?? true;
+    return flags['legal_services'] ?? false;
   } catch {
-    return true;
+    return false;
   }
 }
 

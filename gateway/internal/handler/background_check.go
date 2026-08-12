@@ -7,22 +7,32 @@ package handler
 //	GET  /api/v1/providers/me/background-check  → latest row or not_started
 //	POST /api/v1/providers/me/background-check  → start Checkr candidate (+ invitation/report)
 //
+// Public webhook (no JWT; HMAC required):
+//
+//	POST /api/v1/webhooks/checkr  → status updates after signature verify
+//
 // Fail-closed rules:
 //   - CHECKR_API_KEY unset on POST → 503 with a clear message (never invent PASS).
+//   - CHECKR_WEBHOOK_SECRET unset on webhook → 503 (never persist).
+//   - Webhook signature missing/invalid → 401 (never persist).
 //   - DB unavailable → 503.
 //   - Checkr HTTP errors → 502; row is not written as clear/pass.
 //
 // Env (documented in .env.example):
 //
-//	CHECKR_API_KEY       required for POST (secret key; Basic auth username)
-//	CHECKR_API_BASE_URL  default https://api.checkr.com/v1
-//	                     staging: https://api.checkr-staging.com/v1
-//	CHECKR_PACKAGE       package slug for invitation/report (required when key set)
-//	CHECKR_WORK_STATE    optional ISO state for invitation work_locations (default CA)
+//	CHECKR_API_KEY          required for POST (secret key; Basic auth username)
+//	CHECKR_API_BASE_URL     default https://api.checkr.com/v1
+//	                        staging: https://api.checkr-staging.com/v1
+//	CHECKR_PACKAGE          package slug for invitation/report (required when key set)
+//	CHECKR_WORK_STATE       optional ISO state for invitation work_locations (default CA)
+//	CHECKR_WEBHOOK_SECRET   required for POST /webhooks/checkr (HMAC-SHA256)
 
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,12 +51,15 @@ import (
 )
 
 const (
-	checkrAPIKeyMissingMsg  = "Background checks are not configured (CHECKR_API_KEY missing). Contact support or set the Checkr secret key."
-	checkrPackageMissingMsg = "Background checks are misconfigured (CHECKR_PACKAGE missing). Set the Checkr package slug."
-	checkrUnavailableMsg    = "Background check provider is temporarily unavailable. Please try again shortly."
-	checkrDefaultBaseURL    = "https://api.checkr.com/v1"
-	checkrDefaultWorkState  = "CA"
-	checkrHTTPTimeout       = 15 * time.Second
+	checkrAPIKeyMissingMsg        = "Background checks are not configured (CHECKR_API_KEY missing). Contact support or set the Checkr secret key."
+	checkrPackageMissingMsg       = "Background checks are misconfigured (CHECKR_PACKAGE missing). Set the Checkr package slug."
+	checkrWebhookSecretMissingMsg = "Checkr webhooks are not configured (CHECKR_WEBHOOK_SECRET missing)."
+	checkrWebhookSignatureInvalid = "invalid Checkr webhook signature"
+	checkrUnavailableMsg          = "Background check provider is temporarily unavailable. Please try again shortly."
+	checkrDefaultBaseURL          = "https://api.checkr.com/v1"
+	checkrDefaultWorkState        = "CA"
+	checkrHTTPTimeout             = 15 * time.Second
+	checkrWebhookSignatureHeader  = "X-Checkr-Signature"
 )
 
 // BackgroundCheckHandler owns provider_background_checks + outbound Checkr calls.
@@ -219,6 +232,171 @@ func (h *BackgroundCheckHandler) Create(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, row)
 }
 
+// HandleWebhook handles POST /api/v1/webhooks/checkr.
+// No JWT. Fail-closed without CHECKR_WEBHOOK_SECRET. Persists status
+// updates only after HMAC-SHA256 verification of X-Checkr-Signature.
+// Never invents PASS / clear from an unverified or unmapped payload.
+func (h *BackgroundCheckHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
+	secret := strings.TrimSpace(os.Getenv("CHECKR_WEBHOOK_SECRET"))
+	if secret == "" {
+		writeError(w, http.StatusServiceUnavailable, checkrWebhookSecretMissingMsg)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxJSONBodyBytes))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+	defer r.Body.Close()
+
+	sig := r.Header.Get(checkrWebhookSignatureHeader)
+	if !checkrWebhookSignatureValid(secret, body, sig) {
+		slog.WarnContext(r.Context(), "checkr webhook: signature rejected",
+			"signature_present", strings.TrimSpace(sig) != "",
+			"payload_bytes", len(body),
+		)
+		writeError(w, http.StatusUnauthorized, checkrWebhookSignatureInvalid)
+		return
+	}
+
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+
+	event, ids, reportURL, ok := parseCheckrWebhook(body)
+	if !ok {
+		// Verified but unusable — ack so Checkr does not retry; do not persist.
+		slog.InfoContext(r.Context(), "checkr webhook: ignored unusable payload",
+			"payload_bytes", len(body),
+		)
+		writeJSON(w, http.StatusOK, map[string]bool{"received": true})
+		return
+	}
+
+	status, mapped := mapCheckrWebhookStatus(event.Type, event.Data.Object.Status, event.Data.Object.Result)
+	if !mapped {
+		slog.InfoContext(r.Context(), "checkr webhook: no persist for unmapped status",
+			"type", event.Type,
+			"object_status", event.Data.Object.Status,
+			"result", event.Data.Object.Result,
+		)
+		writeJSON(w, http.StatusOK, map[string]bool{"received": true})
+		return
+	}
+
+	n, err := h.updateStatusByCheckrIDs(r.Context(), status, reportURL, ids)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "checkr webhook: persist failed",
+			"type", event.Type, "status", status, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to persist background check update")
+		return
+	}
+
+	slog.InfoContext(r.Context(), "checkr webhook: processed",
+		"type", event.Type,
+		"status", status,
+		"rows", n,
+	)
+	writeJSON(w, http.StatusOK, map[string]bool{"received": true})
+}
+
+type checkrWebhookEnvelope struct {
+	Type string `json:"type"`
+	Data struct {
+		Object struct {
+			ID            string `json:"id"`
+			Object        string `json:"object"`
+			Status        string `json:"status"`
+			Result        string `json:"result"`
+			CandidateID   string `json:"candidate_id"`
+			ReportID      string `json:"report_id"`
+			InvitationURL string `json:"invitation_url"`
+			DocumentURL   string `json:"document_url"`
+		} `json:"object"`
+	} `json:"data"`
+}
+
+func parseCheckrWebhook(body []byte) (checkrWebhookEnvelope, []string, string, bool) {
+	var event checkrWebhookEnvelope
+	if err := json.Unmarshal(body, &event); err != nil {
+		return checkrWebhookEnvelope{}, nil, "", false
+	}
+	obj := event.Data.Object
+	seen := map[string]struct{}{}
+	var ids []string
+	for _, id := range []string{obj.ID, obj.CandidateID, obj.ReportID} {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return event, nil, "", false
+	}
+	reportURL := strings.TrimSpace(obj.InvitationURL)
+	if reportURL == "" {
+		reportURL = strings.TrimSpace(obj.DocumentURL)
+	}
+	return event, ids, reportURL, true
+}
+
+// mapCheckrWebhookStatus maps a verified Checkr event to a row status.
+// Never maps vendor-unknown or invented synonyms (pass/passed/fail) to clear.
+func mapCheckrWebhookStatus(eventType, objectStatus, result string) (string, bool) {
+	result = strings.ToLower(strings.TrimSpace(result))
+	objectStatus = strings.ToLower(strings.TrimSpace(objectStatus))
+	eventType = strings.ToLower(strings.TrimSpace(eventType))
+
+	switch result {
+	case "clear":
+		return "clear", true
+	case "consider":
+		return "consider", true
+	case "pass", "passed", "fail", "failed", "success":
+		return "", false
+	}
+
+	switch objectStatus {
+	case "pending", "clear", "consider", "suspended", "dispute", "complete":
+		return objectStatus, true
+	case "canceled", "cancelled":
+		return "canceled", true
+	}
+
+	switch eventType {
+	case "report.completed":
+		// Completed without a vendor result is not a PASS.
+		return "complete", true
+	case "report.created", "invitation.created", "invitation.completed":
+		return "pending", true
+	}
+	return "", false
+}
+
+func checkrWebhookSignatureValid(secret string, body []byte, header string) bool {
+	header = strings.TrimSpace(header)
+	if secret == "" || header == "" {
+		return false
+	}
+	header = strings.TrimPrefix(header, "sha256=")
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	expected := mac.Sum(nil)
+
+	if got, err := hex.DecodeString(header); err == nil {
+		return hmac.Equal(expected, got)
+	}
+	return hmac.Equal([]byte(hex.EncodeToString(expected)), []byte(strings.ToLower(header)))
+}
+
 // ─── DB helpers ──────────────────────────────────────────────────────────────
 
 func (h *BackgroundCheckHandler) latest(ctx context.Context, userID string) (backgroundCheckJSON, error) {
@@ -286,6 +464,26 @@ func (h *BackgroundCheckHandler) insert(
 		CreatedAt: &ca,
 		UpdatedAt: &ua,
 	}, nil
+}
+
+func (h *BackgroundCheckHandler) updateStatusByCheckrIDs(
+	ctx context.Context,
+	status, reportURL string,
+	ids []string,
+) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	tag, err := h.db.Exec(ctx, `
+		UPDATE provider_background_checks
+		SET status = $1,
+		    report_url = COALESCE(NULLIF($2, ''), report_url)
+		WHERE checkr_id = ANY($3)
+	`, status, reportURL, ids)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (h *BackgroundCheckHandler) loadUserIdentity(ctx context.Context, userID string) (email, first, last string, err error) {

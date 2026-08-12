@@ -421,7 +421,7 @@ UI: `ios/NoMarkup/Features/MyOrdersView.swift` (`confirmPickup` / `sellerConfirm
 |----|-----|----------|------|
 | **SEC-GATE-01** | **Web listing bid omits `Idempotency-Key` while gateway requires it** | `useListings.ts:312–313` vs `router.go:751–752` | Pass `idempotencyHeader(...)` on place-listing-bid (and clear on success); E2E place bid 200 |
 | **SEC-GATE-02** | ~~Open money races MON-14–18~~ | **Done 2026-07-27** — CAS/locks/BNPL charge-first/dispute transfer stamp; ADR **SUPERSEDED** | Live Stripe dogfood + regulated flag licenses still ops |
-| **SEC-GATE-03** | **Feature flags fail-closed only for routes that call `RequireFlag`** | Project rule §6 — 7/13 flags UI-only | Either wire enforcement or document “UI-only” per flag before claiming flag-off is API-off |
+| **SEC-GATE-03** | **Feature flags fail-closed only for routes that call `RequireFlag`** | 16 DB keys, 13 `RequireFlag`; UI-only leftovers `fair_price_index` / `smart_matching` / `lead_gen` (`lead_gen` is fee-config dual-gated, not a charge-route `RequireFlag`) | Either wire enforcement or document “UI-only” per flag before claiming flag-off is API-off |
 
 ### P1
 

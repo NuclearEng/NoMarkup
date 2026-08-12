@@ -21,27 +21,40 @@ particular do not default `MARKETPLACE_OFFSESSION_CHARGE` or
 ## A. Blocked on a human decision — do these first, they gate other work
 
 ### A1. Off-session charging is defaulted OFF, and must stay off until the terms exist
-`services/payment/cmd/server/main.go` — `MARKETPLACE_OFFSESSION_CHARGE=false`.
+`services/payment/cmd/server/main.go` — `MARKETPLACE_OFFSESSION_CHARGE` defaults
+false. Enablement is the pair:
+
+- `MARKETPLACE_OFFSESSION_CHARGE=true`
+- `MARKETPLACE_OFFSESSION_TOS_VERSION=<shipped terms id or date>`
+
+Decision-ID **OFFSESSION-LEGAL** (ADR-0001 Enablement). Production refuses to
+start if the charge flag is true and the ToS version is empty; non-production
+force-disables and warns. Do not flip either without legal.
 
 Charging a saved card while the buyer is away requires the bidding terms to say
 that placing a bid authorizes it. `tos_versions` / `tos_acceptances` exist but no
 terms text in the tree states that authorization, and the content is
 admin-managed so it cannot be confirmed from the repo.
 
-**Done when:** legal confirms the terms shipped and someone flips the env var.
-Until then the marketplace collects via the "pay for your win" surface
+**Done when:** legal confirms the terms shipped, `MARKETPLACE_OFFSESSION_TOS_VERSION`
+is set to that version, and someone flips the charge flag. Until then the
+marketplace collects via the "pay for your win" surface
 (`POST /api/v1/orders/{id}/pay` — **now shipped**, see C3 closed). See ADR-0001.
 
 ### A2. Payment window (72h) and expiry arming
 `MARKETPLACE_PAYMENT_WINDOW`, `MARKETPLACE_PAYMENT_EXPIRY` (currently off).
+
+Expiry uses the **same** `MARKETPLACE_OFFSESSION_TOS_VERSION` pairing as A1
+(cancelling a win is the same legal/notification bar). Production refuses to
+start if expiry is true without a ToS version.
 
 72h is my number, reasoned in ADR-0001 (local pickup holds the seller's item off
 the market; eBay's 4 days is calibrated for shipped goods). Arming expiry
 cancels won auctions, so it must not be armed before failure notifications are
 confirmed to actually send.
 
-**Done when:** product ratifies the window, and someone confirms a real
-notification arrives before enabling expiry.
+**Done when:** product ratifies the window, someone confirms a real
+notification arrives, the ToS version env is set, and then expiry is enabled.
 
 ### A3. SCA-pending orders have no time bound
 An order awaiting 3DS stays alive indefinitely. Deliberate — cancelling a

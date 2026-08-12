@@ -51,15 +51,19 @@ vi.mock('@/stores/auth-store', () => ({
 vi.mock('@/hooks/usePayments', () => ({
   useCreateStripeAccount: vi.fn(),
   useDeletePaymentMethod: vi.fn(),
+  useSetDefaultPaymentMethod: vi.fn(),
   usePaymentMethods: vi.fn(),
   useStripeAccountStatus: vi.fn(),
+  useStripeOnboardingLink: vi.fn(),
 }));
 
 const {
   useCreateStripeAccount,
   useDeletePaymentMethod,
+  useSetDefaultPaymentMethod,
   usePaymentMethods,
   useStripeAccountStatus,
+  useStripeOnboardingLink,
 } = await import('@/hooks/usePayments');
 const { default: PaymentMethodsPage } = await import(
   '@/app/(dashboard)/settings/payment-methods/page'
@@ -75,6 +79,7 @@ function setHooks(opts: {
   createPending?: boolean;
   createMutateAsync?: () => Promise<unknown>;
   deleteMutateAsync?: (id: string) => Promise<unknown>;
+  setDefaultMutateAsync?: (id: string) => Promise<unknown>;
 }) {
   vi.mocked(usePaymentMethods).mockReturnValue({
     data: opts.methods ? { payment_methods: opts.methods } : undefined,
@@ -85,6 +90,10 @@ function setHooks(opts: {
     mutateAsync: opts.deleteMutateAsync ?? vi.fn().mockResolvedValue(undefined),
     isPending: false,
   } as unknown as ReturnType<typeof useDeletePaymentMethod>);
+  vi.mocked(useSetDefaultPaymentMethod).mockReturnValue({
+    mutateAsync: opts.setDefaultMutateAsync ?? vi.fn().mockResolvedValue(undefined),
+    isPending: false,
+  } as unknown as ReturnType<typeof useSetDefaultPaymentMethod>);
   vi.mocked(useCreateStripeAccount).mockReturnValue({
     mutateAsync: opts.createMutateAsync ?? vi.fn().mockResolvedValue(undefined),
     isPending: opts.createPending ?? false,
@@ -94,6 +103,12 @@ function setHooks(opts: {
     isLoading: opts.stripeLoading ?? false,
     isError: opts.stripeError ?? false,
   } as unknown as ReturnType<typeof useStripeAccountStatus>);
+  vi.mocked(useStripeOnboardingLink).mockReturnValue({
+    data: undefined,
+    refetch: vi.fn().mockResolvedValue({ data: undefined }),
+    isLoading: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useStripeOnboardingLink>);
 }
 
 describe('PaymentMethodsPage', () => {
@@ -282,6 +297,37 @@ describe('PaymentMethodsPage', () => {
 
   // --- Customer role: the provider payout (Stripe Connect) section is hidden
   // and the provider-only status query is gated off, so no 403 fires. ---
+
+  it('shows Set as default only for non-default methods and calls the hook', async () => {
+    const setDefault = vi.fn().mockResolvedValue(undefined);
+    setHooks({
+      methods: [
+        {
+          id: 'pm_default',
+          brand: 'visa',
+          last_four: '4242',
+          exp_month: 12,
+          exp_year: 2030,
+          is_default: true,
+        },
+        {
+          id: 'pm_other',
+          brand: 'mastercard',
+          last_four: '4444',
+          exp_month: 1,
+          exp_year: 2031,
+          is_default: false,
+        },
+      ],
+      setDefaultMutateAsync: setDefault,
+    });
+    render(withQueryClient(createElement(PaymentMethodsPage)));
+
+    expect(screen.queryByRole('button', { name: /Set card ending 4242 as default/ })).toBeNull();
+    const setBtn = screen.getByRole('button', { name: /Set card ending 4444 as default/ });
+    fireEvent.click(setBtn);
+    expect(setDefault).toHaveBeenCalledWith('pm_other');
+  });
 
   it('hides the provider payout section entirely for customers', () => {
     authState.user = { id: 'cust-1', roles: ['customer'] };

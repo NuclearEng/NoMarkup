@@ -16,6 +16,7 @@ import {
   useMyListingBids,
   useMyListings,
   usePlaceListingBid,
+  useReportOrderNoShow,
   useRetractListingBid,
   useUpdateListing,
 } from '@/hooks/useListings';
@@ -624,5 +625,24 @@ describe('useListingOrder / useConfirmPickup / useDisputeOrder', () => {
     expect(toastSuccess).toHaveBeenCalledWith(
       'Dispute opened — our team will review within 24h',
     );
+  });
+
+  it('useReportOrderNoShow posts the report-no-show endpoint', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      order_id: 'o-1',
+      reported_user_id: 's-1',
+      new_no_show_count: 1,
+      cooldown_until: '',
+      shadow_ban_triggered: false,
+    });
+    const { result } = renderHook(() => useReportOrderNoShow(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate('o-1');
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+    expect(api.post).toHaveBeenCalledWith('/api/v1/orders/o-1/report-no-show', {});
+    expect(toastSuccess).toHaveBeenCalledWith('No-show reported');
   });
 });

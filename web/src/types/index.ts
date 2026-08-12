@@ -110,6 +110,8 @@ export interface User {
   status: UserStatus;
   emailVerified: boolean;
   phoneVerified: boolean;
+  /** Present on GET /users/me for the caller (PII). Used to prefill phone OTP. */
+  phone?: string | null;
   mfaEnabled: boolean;
   createdAt: string;
 }
@@ -622,6 +624,13 @@ export interface ContractRecurringConfig {
   next_retry_at?: string;
   /** Pause threshold (usually 3). Present with retry count. */
   payment_retry_threshold?: number;
+}
+
+/** PATCH /api/v1/contracts/{id}/recurring — FR-18.3 / FR-18.4. */
+export interface UpdateRecurringConfigInput {
+  auto_approve?: boolean;
+  /** Future visit rate. Gateway field is proposed_rate_cents, not rate_cents. */
+  proposed_rate_cents?: number;
 }
 
 /** One occurrence from GET …/recurring/instances (FR-18.2). */

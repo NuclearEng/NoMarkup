@@ -236,15 +236,14 @@ func New(
 	// Edge-cached; the catalog is admin/ops-managed and near-static.
 	r.Get("/api/v1/markets", marketsHandler.List)
 
-	// iCal feed — auth via cookie OR ?token= so calendar-app subscriptions
-	// (Apple Calendar, Google, Outlook) work without forwarding cookies.
-	// The handler authorises internally; mounted outside the auth-required
-	// block so the optional-token branch is reachable.
-	// Wrap in optionalAuth so a cookie/Bearer caller actually gets claims
-	// populated (the handler checks GetClaims first); without this wrapper no
-	// middleware ran on the route, so the documented cookie/header path always
-	// fell through to 401 and only ?token= worked. The ?token= fallback still
-	// works when no auth header is present.
+	// iCal feed — auth via cookie/Bearer OR ?feed= (opaque 90-day secret).
+	// Calendar-app subscriptions hit this URL without cookies; the SPA mints
+	// the secret via POST /api/v1/me/calendar-feed (inside the auth block).
+	// Session JWTs in ?token= are rejected. optionalAuth populates claims when
+	// a cookie/Bearer is present; ?feed= is resolved inside the handler.
+	// Redis backs the feed hash — thread it here so main.go's constructor
+	// signature stays unchanged.
+	calendarExportHandler.WithCache(cacheClient)
 	r.Get("/api/v1/me/calendar.ics", optionalAuth(authMW, calendarExportHandler.ExportICS))
 
 	// Job routes (mix of @public reads and authenticated mutations).
@@ -314,10 +313,13 @@ func New(
 		r.Get("/tiers", trustHandler.GetTierRequirements)
 	})
 
-	// @public webhook routes (no JWT; verified by Stripe signature via stripe.webhooks.constructEvent)
+	// @public webhook routes (no JWT; verified by vendor signature)
 	r.Route("/api/v1/webhooks", func(r chi.Router) {
 		r.Post("/stripe", webhookHandler.HandleStripeWebhook)
 		r.Post("/subscription", webhookHandler.HandleSubscriptionWebhook)
+		// FR-2.9 Checkr — HMAC-SHA256 of raw body via X-Checkr-Signature.
+		// 503 without CHECKR_WEBHOOK_SECRET; 401 on bad signature; persist only after verify.
+		r.Post("/checkr", backgroundCheckHandler.HandleWebhook)
 	})
 
 	// @public subscription tier routes (no auth required)
@@ -503,6 +505,11 @@ func New(
 		r.Post("/me/push-subscriptions", pushSubscriptionsHandler.Subscribe)
 		r.Delete("/me/push-subscriptions/{id}", pushSubscriptionsHandler.Unsubscribe)
 
+		// STOREKIT-B2 — App Store JWS verify. Auth required. Fail-closed 503
+		// unless APP_STORE_IAP_VERIFY=true AND Apple-root crypto is implemented.
+		// Never returns {valid:true} without crypto (see handler/iap.go).
+		r.Post("/iap/app-store/verify", handler.NewIAPHandler().VerifyAppStore)
+
 		// ── Compliance (auth half) ─────────────────────────────────────
 		// ToS re-acceptance: the web client polls GET /api/v1/tos/current
 		// (public) and compares against the user's last-accepted version
@@ -516,6 +523,11 @@ func New(
 		r.Post("/me/tos-acceptance", complianceHandler.AcceptToS)
 		r.Put("/me/dob", complianceHandler.SetDOB)
 		r.Get("/me/age-status", complianceHandler.GetMyAgeStatus)
+
+		// Opaque 90-day ICS subscription URL. Returns {url} with ?feed=;
+		// never a session JWT. GET /me/calendar.ics is mounted above the
+		// auth block so calendar clients can poll without cookies.
+		r.Post("/me/calendar-feed", calendarExportHandler.MintFeed)
 
 		// ── Bid bond pre-auth (anti-fraud) ─────────────────────────────
 		// First-time bidders post a Stripe SetupIntent-based bond before
@@ -911,6 +923,7 @@ func New(
 			r.Get("/methods", paymentHandler.ListPaymentMethods)
 			r.Post("/dev/methods", paymentHandler.AddDevPaymentMethod)
 			r.Delete("/methods/{id}", paymentHandler.DeletePaymentMethod)
+			r.Put("/methods/{id}/default", paymentHandler.SetDefaultPaymentMethod)
 			r.Post("/calculate-fees", paymentHandler.CalculateFees)
 			// Instant payout is a provider-only capability (funds settle to the
 			// provider's Stripe Connect account). Gate on the provider role in

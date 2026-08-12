@@ -15,6 +15,7 @@ import {
   useRespondToTerms,
 } from '@/hooks/useChannels';
 import { getApiErrorMessage } from '@/lib/api';
+import { isAllowedChatMediaUrl } from '@/lib/chat-media';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { CHANNEL_STATUS, MESSAGE_TYPE } from '@/types';
@@ -372,7 +373,8 @@ function MessageBubble({
             onAccept={onAcceptTerms}
             onReject={onRejectTerms}
           />
-        ) : normalizedMessageType(message) === MESSAGE_TYPE.IMAGE ? (
+        ) : normalizedMessageType(message) === MESSAGE_TYPE.IMAGE
+          && isAllowedChatMediaUrl(message.content) ? (
           <div
             className={cn(
               'overflow-hidden rounded-lg',
@@ -381,13 +383,14 @@ function MessageBubble({
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- chat CDN URLs are dynamic */}
             <img
-              src={message.content}
+              src={message.content.trim()}
               alt="Shared image"
               className="max-h-64 max-w-full object-contain"
             />
           </div>
         ) : normalizedMessageType(message) === MESSAGE_TYPE.FILE
-          || normalizedMessageType(message) === MESSAGE_TYPE.CONTACT_SHARE ? (
+          || normalizedMessageType(message) === MESSAGE_TYPE.CONTACT_SHARE
+          || normalizedMessageType(message) === MESSAGE_TYPE.IMAGE ? (
           <div
             className={cn(
               'rounded-lg px-3 py-2 text-sm',
@@ -397,7 +400,7 @@ function MessageBubble({
             )}
           >
             {normalizedMessageType(message) === MESSAGE_TYPE.FILE
-              && /^https?:\/\//i.test(message.content.trim()) ? (
+              && isAllowedChatMediaUrl(message.content) ? (
               <a
                 href={message.content.trim()}
                 target="_blank"

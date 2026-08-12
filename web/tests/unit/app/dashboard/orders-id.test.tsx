@@ -1,7 +1,7 @@
 // Order detail page — pickup confirmation, dispute flow.
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
 import { LISTING_ORDER_STATUS } from '@/types';
@@ -17,6 +17,7 @@ const orderState: {
 const confirmPickup = { mutate: vi.fn(), isPending: false };
 const sellerConfirm = { mutate: vi.fn(), isPending: false };
 const disputeOrder = { mutate: vi.fn(), isPending: false };
+const reportNoShow = { mutate: vi.fn(), isPending: false };
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
@@ -37,7 +38,17 @@ vi.mock('@/hooks/useListings', () => ({
   useConfirmPickup: () => confirmPickup,
   useSellerConfirm: () => sellerConfirm,
   useDisputeOrder: () => disputeOrder,
+  useReportOrderNoShow: () => reportNoShow,
 }));
+
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+  };
+});
 
 // The page reads the current user to pick the buyer vs seller confirm action.
 // Default to the buyer (matches the mock order's buyer_id) so existing assertions
@@ -82,6 +93,8 @@ beforeEach(() => {
   confirmPickup.isPending = false;
   disputeOrder.mutate = vi.fn();
   disputeOrder.isPending = false;
+  reportNoShow.mutate = vi.fn();
+  reportNoShow.isPending = false;
 });
 
 afterEach(() => {
@@ -91,8 +104,8 @@ afterEach(() => {
 describe('OrderDetailPage', () => {
   it('renders the loading skeleton', () => {
     orderState.isLoading = true;
-    const { container } = render(withQueryClient(createElement(OrderDetailPage)));
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    render(withQueryClient(createElement(OrderDetailPage)));
+    expect(screen.getByLabelText(/Loading order/i)).toBeDefined();
   });
 
   it('renders the error state with Retry', () => {
@@ -208,5 +221,27 @@ describe('OrderDetailPage', () => {
       expect(screen.queryByTestId('order-payment-prompt')).toBeNull();
       expect(screen.getByText('Total paid')).toBeDefined();
     });
+  });
+
+  it('lets a party report no-show while escrow is held', () => {
+    orderState.data = { ...mockOrder, status: LISTING_ORDER_STATUS.PAID };
+    render(withQueryClient(createElement(OrderDetailPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Report no-show/i }));
+    expect(screen.getByText(/failed to appear for pickup/i)).toBeDefined();
+    const confirms = screen.getAllByRole('button', { name: /Report no-show/i });
+    fireEvent.click(confirms[confirms.length - 1] as HTMLElement);
+    expect(reportNoShow.mutate).toHaveBeenCalled();
+  });
+
+  it('disables report no-show once pickup has started', () => {
+    orderState.data = {
+      ...mockOrder,
+      status: LISTING_ORDER_STATUS.PICKED_UP,
+      picked_up_at: new Date().toISOString(),
+    };
+    render(withQueryClient(createElement(OrderDetailPage)));
+    const btn = screen.getByRole('button', { name: /Report no-show/i });
+    if (!(btn instanceof HTMLButtonElement)) throw new Error('expected button');
+    expect(btn.disabled).toBe(true);
   });
 });

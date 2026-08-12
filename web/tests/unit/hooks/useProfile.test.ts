@@ -3,7 +3,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type ReactNode, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useEnableRole, useProfile, useUpdateProfile } from '@/hooks/useProfile';
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
+import {
+  useEnableRole,
+  useProfile,
+  useSendPhoneOtp,
+  useUpdateProfile,
+  useVerifyPhone,
+} from '@/hooks/useProfile';
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -32,6 +42,7 @@ const mockApiUser = {
   roles: ['customer' as const],
   status: 'active' as const,
   email_verified: true,
+  phone: '+15551234567',
   phone_verified: false,
   mfa_enabled: false,
   created_at: '2026-01-01T00:00:00Z',
@@ -70,6 +81,7 @@ describe('useProfile', () => {
     expect(result.current.data?.displayName).toBe('Jane Doe');
     expect(result.current.data?.emailVerified).toBe(true);
     expect(result.current.data?.phoneVerified).toBe(false);
+    expect(result.current.data?.phone).toBe('+15551234567');
     expect(result.current.data?.mfaEnabled).toBe(false);
     expect(result.current.data?.avatarUrl).toBeNull();
   });
@@ -127,6 +139,54 @@ describe('useEnableRole', () => {
 
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/users/me/roles', { role: 'provider' });
     expect(result.current.data?.roles).toContain('provider');
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['profile'] });
+  });
+});
+
+describe('useSendPhoneOtp', () => {
+  let client: QueryClient;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    client = qc();
+  });
+  afterEach(() => {
+    client.clear();
+  });
+
+  it('posts { phone } to send-phone-otp', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ sent: true });
+    const { result } = renderHook(() => useSendPhoneOtp(), { wrapper: wrap(client) });
+    result.current.mutate('+15551234567');
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/auth/send-phone-otp', {
+      phone: '+15551234567',
+    });
+  });
+});
+
+describe('useVerifyPhone', () => {
+  let client: QueryClient;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    client = qc();
+  });
+  afterEach(() => {
+    client.clear();
+  });
+
+  it('posts { otp_code } and invalidates the profile cache', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ verified: true });
+    const spy = vi.spyOn(client, 'invalidateQueries');
+    const { result } = renderHook(() => useVerifyPhone(), { wrapper: wrap(client) });
+    result.current.mutate('123456');
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/auth/verify-phone', {
+      otp_code: '123456',
+    });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['profile'] });
   });
 });

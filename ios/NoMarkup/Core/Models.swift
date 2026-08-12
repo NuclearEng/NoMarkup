@@ -1230,33 +1230,108 @@ struct ChatMessage: Codable, Sendable, Hashable, Identifiable {
         }
     }
 
-    /// HTTPS (or local-dev HTTP) image URL when `message_type == image` and content is a plain absolute URL.
-    /// Never returns non-http(s) schemes (no `javascript:`, `data:`, HTML).
-    /// Prefer URLs from our imaging upload pipeline (`confirmed_url`); arbitrary http(s) may still
-    /// decode but the composer only attaches via `ImageUploader`.
+    /// HTTPS (or local-dev HTTP) image URL when `message_type == image` and content is a
+    /// plain allowlisted upload URL. Never returns `javascript:`, `data:`, HTML, or
+    /// arbitrary https hosts.
     var safeImageURL: URL? {
         guard isImageMessage else { return nil }
         return Self.safeHTTPURL(from: content)
     }
 
-    /// Absolute http(s) URL for `file` messages when content is a plain URL (no HTML).
+    /// Absolute allowlisted http(s) URL for `file` messages when content is a plain URL.
     var safeFileURL: URL? {
         guard isFileMessage else { return nil }
         return Self.safeHTTPURL(from: content)
     }
 
     /// Shared safe absolute http(s) parse for image/file message content.
-    private static func safeHTTPURL(from content: String?) -> URL? {
+    static func safeHTTPURL(from content: String?) -> URL? {
         let raw = content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !raw.isEmpty, raw.count <= 2000 else { return nil }
-        // Reject whitespace / angle brackets that would indicate HTML injection attempts.
-        guard !raw.contains(where: { $0.isWhitespace || $0 == "<" || $0 == ">" }) else { return nil }
-        guard let url = URL(string: raw),
+        guard isAllowedChatMediaURL(raw) else { return nil }
+        return URL(string: raw)
+    }
+
+    /// Mirrors gateway `AllowedChatMediaURL` — https (or http loopback / configured S3).
+    static func isAllowedChatMediaURL(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 2000 else { return false }
+        guard !trimmed.contains(where: { $0.isWhitespace || $0 == "<" || $0 == ">" }) else { return false }
+        guard let url = URL(string: trimmed),
               let scheme = url.scheme?.lowercased(),
-              scheme == "https" || scheme == "http",
-              let host = url.host, !host.isEmpty
+              let host = url.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")),
+              !host.isEmpty
+        else { return false }
+        if let user = url.user, !user.isEmpty { return false }
+        if let password = url.password, !password.isEmpty { return false }
+
+        guard isAllowedChatMediaHost(host) else { return false }
+
+        switch scheme {
+        case "https":
+            if isChatMediaLoopback(host) && !looksLikeObjectStoragePath(url.path) {
+                return false
+            }
+            return true
+        case "http":
+            if isChatMediaLoopback(host) {
+                return looksLikeObjectStoragePath(url.path)
+            }
+            return extraChatMediaHosts().contains(host)
+        default:
+            return false
+        }
+    }
+
+    private static func isChatMediaLoopback(_ host: String) -> Bool {
+        host == "localhost" || host == "127.0.0.1" || host == "::1"
+    }
+
+    private static func looksLikeObjectStoragePath(_ path: String) -> Bool {
+        let parts = path.split(separator: "/").filter { !$0.isEmpty }
+        guard parts.count >= 2, let bucket = parts.first else { return false }
+        let bucketChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._"))
+        return bucket.unicodeScalars.allSatisfy { bucketChars.contains($0) }
+    }
+
+    private static func isAllowedChatMediaHost(_ host: String) -> Bool {
+        if isChatMediaLoopback(host) { return true }
+        if host == "images.unsplash.com" || host == "picsum.photos" { return true }
+        return extraChatMediaHosts().contains(host)
+    }
+
+    /// Hosts from `NOMARKUP_CHAT_MEDIA_HOSTS`, `NOMARKUP_S3_PUBLIC_URL` / `S3_PUBLIC_URL`,
+    /// and Info.plist `S3PublicURL`.
+    private static func extraChatMediaHosts() -> Set<String> {
+        var hosts = Set<String>()
+        let env = ProcessInfo.processInfo.environment
+        if let raw = env["NOMARKUP_CHAT_MEDIA_HOSTS"] {
+            for part in raw.split(separator: ",") {
+                if let host = hostFromMaybeURL(String(part)) {
+                    hosts.insert(host)
+                }
+            }
+        }
+        for key in ["NOMARKUP_S3_PUBLIC_URL", "S3_PUBLIC_URL"] {
+            if let raw = env[key], let host = hostFromMaybeURL(raw) {
+                hosts.insert(host)
+            }
+        }
+        if let plist = Bundle.main.object(forInfoDictionaryKey: "S3PublicURL") as? String,
+           let host = hostFromMaybeURL(plist) {
+            hosts.insert(host)
+        }
+        return hosts
+    }
+
+    private static func hostFromMaybeURL(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard let url = URL(string: candidate),
+              let host = url.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")),
+              !host.isEmpty
         else { return nil }
-        return url
+        return host
     }
 
     /// Case-insensitive match for in-thread search (local filter on loaded messages).

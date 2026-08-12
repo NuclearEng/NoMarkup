@@ -521,6 +521,21 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Dedicated RPCs own system / terms_accepted / terms_rejected. A client
+	// must not mint those types on the generic send path.
+	if isClientReservedChatMessageType(req.MessageType) {
+		writeError(w, http.StatusBadRequest, "message type is reserved")
+		return
+	}
+
+	msgType := stringToProtoChatMessageType(req.MessageType)
+	if (msgType == chatv1.MessageType_MESSAGE_TYPE_IMAGE ||
+		msgType == chatv1.MessageType_MESSAGE_TYPE_FILE) &&
+		!AllowedChatMediaURL(req.Content) {
+		writeError(w, http.StatusBadRequest, "image and file content must be an allowed upload URL")
+		return
+	}
+
 	// Block check (Wave 5 / Agent P / ASR-1.2.c): if EITHER party of this
 	// channel has blocked the sender, refuse with 403 before forwarding to
 	// the chat service. Fail CLOSED on DB error (503) — App Store UGC safety
@@ -551,8 +566,6 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
-	msgType := stringToProtoChatMessageType(req.MessageType)
 
 	resp, err := h.chatClient.SendMessage(r.Context(), &chatv1.SendMessageRequest{
 		ChannelId:   channelID,
@@ -887,23 +900,10 @@ func (h *ChatHandler) GetUnreadCount(w http.ResponseWriter, r *http.Request) {
 }
 
 // WebSocket handles GET /ws/chat by upgrading the connection and proxying to the chat service.
-// Authentication is done via ?token= query parameter or Authorization header.
+// Auth order: Authorization Bearer, access_token cookie, Sec-WebSocket-Protocol,
+// then ?token= (non-production deprecated compat only).
 func (h *ChatHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
-	// Extract token from query param or Authorization header.
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		authHeader := r.Header.Get("Authorization")
-		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-			token = authHeader[7:]
-		}
-	}
-	if token == "" {
-		// Try reading from cookie.
-		if cookie, err := r.Cookie("access_token"); err == nil {
-			token = cookie.Value
-		}
-	}
-
+	token := extractWSToken(r)
 	if token == "" {
 		writeError(w, http.StatusUnauthorized, "missing authentication token")
 		return
@@ -920,9 +920,7 @@ func (h *ChatHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	// Accept the WebSocket upgrade from the client. OriginPatterns enforces
 	// the Same-Origin policy for WebSocket handshakes, preventing CSWSH
 	// (cross-site WebSocket hijacking) via cookie auth on a non-allowlisted origin.
-	clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: wsOriginPatterns(),
-	})
+	clientConn, err := websocket.Accept(w, r, wsAcceptOptions())
 	if err != nil {
 		slog.Error("failed to accept client websocket", "error", err)
 		return
@@ -1236,23 +1234,19 @@ func chatMessageTypeToString(mt chatv1.MessageType) string {
 }
 
 func stringToProtoChatMessageType(s string) chatv1.MessageType {
-	switch s {
+	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "text", "":
 		return chatv1.MessageType_MESSAGE_TYPE_TEXT
 	case "image":
 		return chatv1.MessageType_MESSAGE_TYPE_IMAGE
 	case "file":
 		return chatv1.MessageType_MESSAGE_TYPE_FILE
-	case "system":
-		return chatv1.MessageType_MESSAGE_TYPE_SYSTEM
 	case "contact_share":
 		return chatv1.MessageType_MESSAGE_TYPE_CONTACT_SHARE
 	case "proposed_terms":
 		return chatv1.MessageType_MESSAGE_TYPE_PROPOSED_TERMS
-	case "terms_accepted":
-		return chatv1.MessageType_MESSAGE_TYPE_TERMS_ACCEPTED
-	case "terms_rejected":
-		return chatv1.MessageType_MESSAGE_TYPE_TERMS_REJECTED
+	// system / terms_accepted / terms_rejected are server-owned; never map
+	// a client string onto those proto types from this generic helper.
 	default:
 		return chatv1.MessageType_MESSAGE_TYPE_TEXT
 	}

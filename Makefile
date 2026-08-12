@@ -1,6 +1,6 @@
 .PHONY: up down dev dev-full dev-infra dev-status dev-logs migrate-up migrate-down seed proto-gen proto-gen-go proto-gen-rust \
        verify-proto setup-tools test lint fmt build-gateway build-web build-engines build-services build build-all clean \
-       ios-archive-lint ios-archive
+       ios-archive-lint ios-archive founder-secrets-check encrypt-pii encrypt-pii-dry-run
 
 # ── Native Dev (bin/dev) ─────────────────────────────────────
 
@@ -77,6 +77,13 @@ encrypt-pii:
 
 encrypt-pii-dry-run:
 	cd database && go run ./cmd/encrypt-pii -dry-run
+
+# Founder-action secrets inventory. Reports present/missing/placeholder
+# only — never prints values. Exit 0 in development; fail-closed when
+# ENVIRONMENT=production or scripts/founder-secrets-check.sh --strict.
+# Does not close Founder-Action residuals. See docs/compliance/founder-action-board.md.
+founder-secrets-check:
+	./scripts/founder-secrets-check.sh
 
 # ── Toolchain Setup ───────────────────────────────────────────
 

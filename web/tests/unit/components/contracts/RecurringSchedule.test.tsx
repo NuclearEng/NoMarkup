@@ -9,9 +9,10 @@ import type { PaymentOutcome } from '@/lib/payment-outcome';
 // MOCKED: gateway api + PaymentConfirmation. PROVEN: customer-only pay CTAs,
 // provider complete, approve visit, payment_retry display, server amount labels.
 
-const { get, post } = vi.hoisted(() => ({
+const { get, post, patch } = vi.hoisted(() => ({
   get: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   post: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+  patch: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
 }));
 
 class FakeApiError extends Error {
@@ -27,8 +28,8 @@ class FakeApiError extends Error {
 }
 
 vi.mock('@/lib/api', () => ({
-  api: { get, post },
-  idempotencyHeader: () => ({ 'Idempotency-Key': 'test-key' }),
+  api: { get, post, patch },
+  idempotencyHeader: (op?: string) => ({ 'Idempotency-Key': op ?? 'test-key' }),
   clearIdempotencyKey: vi.fn(),
   getApiErrorMessage: (err: unknown, fb: string) =>
     err instanceof FakeApiError ? err.userMessage(fb) : fb,
@@ -123,8 +124,10 @@ function mockHappyPath(instances = [INSTANCE_SCHEDULED, INSTANCE_COMPLETED, INST
 beforeEach(() => {
   get.mockReset();
   post.mockReset();
+  patch.mockReset();
   capturedOnOutcome = null;
   mockHappyPath();
+  patch.mockResolvedValue({ config: { ...CONFIG, auto_approve: true } });
 });
 
 describe('RecurringSchedule', () => {
@@ -198,7 +201,7 @@ describe('RecurringSchedule', () => {
       { wrapper },
     );
     await waitFor(() => {
-      expect(screen.getByText(/Approve visit/i)).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Approve visit$/i })).toBeDefined();
     });
     // Auto-approved completed visit → Pay visit residual
     expect(screen.getByRole('button', { name: /Pay visit/i })).toBeDefined();
@@ -225,9 +228,9 @@ describe('RecurringSchedule', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/Approve visit/i)).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Approve visit$/i })).toBeDefined();
     });
-    await user.click(screen.getByRole('button', { name: /Approve visit/i }));
+    await user.click(screen.getByRole('button', { name: /^Approve visit$/i }));
 
     await waitFor(() => {
       expect(post).toHaveBeenCalledWith(
@@ -307,9 +310,9 @@ describe('RecurringSchedule', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/Approve visit/i)).toBeDefined();
+      expect(screen.getByRole('button', { name: /^Approve visit$/i })).toBeDefined();
     });
-    await user.click(screen.getByRole('button', { name: /Approve visit/i }));
+    await user.click(screen.getByRole('button', { name: /^Approve visit$/i }));
     await waitFor(() => {
       expect(capturedOnOutcome).not.toBeNull();
     });
@@ -406,6 +409,76 @@ describe('RecurringSchedule', () => {
       expect(screen.getByTestId('recurring-schedule')).toBeDefined();
     });
     expect(screen.queryByTestId('recurring-repost-cta')).toBeNull();
+  });
+
+  it('lets the customer toggle auto-approve via PATCH', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(RecurringSchedule, {
+        contractId: 'contract-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+        isCustomer: true,
+        isProvider: false,
+      }),
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Auto-approve visits/i)).toBeDefined();
+    });
+    await user.click(screen.getByLabelText(/Auto-approve visits/i));
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith(
+        '/api/v1/contracts/contract-1/recurring',
+        { auto_approve: true },
+        expect.objectContaining({ 'Idempotency-Key': expect.any(String) as string }),
+      );
+    });
+  });
+
+  it('lets the customer save a future rate in cents', async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(RecurringSchedule, {
+        contractId: 'contract-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+        isCustomer: true,
+        isProvider: false,
+      }),
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Future rate/i)).toBeDefined();
+    });
+    await user.type(screen.getByLabelText(/Future rate/i), '150.00');
+    await user.click(screen.getByRole('button', { name: /Save future rate/i }));
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith(
+        '/api/v1/contracts/contract-1/recurring',
+        { proposed_rate_cents: 15000 },
+        expect.objectContaining({ 'Idempotency-Key': expect.any(String) as string }),
+      );
+    });
+  });
+
+  it('shows auto-approve as read-only for the provider', async () => {
+    render(
+      createElement(RecurringSchedule, {
+        contractId: 'contract-1',
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+        isCustomer: false,
+        isProvider: true,
+      }),
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('recurring-schedule')).toBeDefined();
+    });
+    expect(screen.queryByLabelText(/Auto-approve visits/i)).toBeNull();
+    expect(screen.getByText('Auto-approve')).toBeDefined();
+    expect(screen.getByText('Off')).toBeDefined();
   });
 
 });

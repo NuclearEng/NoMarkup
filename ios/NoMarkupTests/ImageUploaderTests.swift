@@ -43,6 +43,14 @@ final class ImageUploaderTests: XCTestCase {
         XCTAssertNil(ImageUploader.sniffMime(Data(garbage)))
     }
 
+    func testImageUploadContextWireValues() {
+        XCTAssertEqual(ImageUploadContext.avatar.apiValue, "avatar")
+        XCTAssertEqual(ImageUploadContext.job.apiValue, "job_photo")
+        XCTAssertEqual(ImageUploadContext.listing.apiValue, "listing")
+        XCTAssertEqual(ImageUploadContext.document.apiValue, "document")
+        XCTAssertEqual(ImageUploadContext.chatAttachment.apiValue, "chat_attachment")
+    }
+
     func testNeedsDownsampleBoundary() {
         XCTAssertFalse(ImageUploader.needsDownsample(width: 1024, height: 768))
         XCTAssertFalse(ImageUploader.needsDownsample(width: 2048, height: 2048))

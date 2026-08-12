@@ -30,6 +30,7 @@ const (
 	PaymentService_ChargeContractTip_FullMethodName              = "/nomarkup.payment.v1.PaymentService/ChargeContractTip"
 	PaymentService_ListPaymentMethods_FullMethodName             = "/nomarkup.payment.v1.PaymentService/ListPaymentMethods"
 	PaymentService_DeletePaymentMethod_FullMethodName            = "/nomarkup.payment.v1.PaymentService/DeletePaymentMethod"
+	PaymentService_SetDefaultPaymentMethod_FullMethodName        = "/nomarkup.payment.v1.PaymentService/SetDefaultPaymentMethod"
 	PaymentService_AddDevPaymentMethod_FullMethodName            = "/nomarkup.payment.v1.PaymentService/AddDevPaymentMethod"
 	PaymentService_CreatePayment_FullMethodName                  = "/nomarkup.payment.v1.PaymentService/CreatePayment"
 	PaymentService_ProcessPayment_FullMethodName                 = "/nomarkup.payment.v1.PaymentService/ProcessPayment"
@@ -110,6 +111,7 @@ type PaymentServiceClient interface {
 	ChargeContractTip(ctx context.Context, in *ChargeContractTipRequest, opts ...grpc.CallOption) (*ChargeContractTipResponse, error)
 	ListPaymentMethods(ctx context.Context, in *ListPaymentMethodsRequest, opts ...grpc.CallOption) (*ListPaymentMethodsResponse, error)
 	DeletePaymentMethod(ctx context.Context, in *DeletePaymentMethodRequest, opts ...grpc.CallOption) (*DeletePaymentMethodResponse, error)
+	SetDefaultPaymentMethod(ctx context.Context, in *SetDefaultPaymentMethodRequest, opts ...grpc.CallOption) (*SetDefaultPaymentMethodResponse, error)
 	// AddDevPaymentMethod is dev-only — it bypasses Stripe Elements and
 	// inserts a card directly into the in-memory dev store. Gateway gates this
 	// behind a dev-mode check; production returns FailedPrecondition.
@@ -307,6 +309,16 @@ func (c *paymentServiceClient) DeletePaymentMethod(ctx context.Context, in *Dele
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeletePaymentMethodResponse)
 	err := c.cc.Invoke(ctx, PaymentService_DeletePaymentMethod_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) SetDefaultPaymentMethod(ctx context.Context, in *SetDefaultPaymentMethodRequest, opts ...grpc.CallOption) (*SetDefaultPaymentMethodResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetDefaultPaymentMethodResponse)
+	err := c.cc.Invoke(ctx, PaymentService_SetDefaultPaymentMethod_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -850,6 +862,7 @@ type PaymentServiceServer interface {
 	ChargeContractTip(context.Context, *ChargeContractTipRequest) (*ChargeContractTipResponse, error)
 	ListPaymentMethods(context.Context, *ListPaymentMethodsRequest) (*ListPaymentMethodsResponse, error)
 	DeletePaymentMethod(context.Context, *DeletePaymentMethodRequest) (*DeletePaymentMethodResponse, error)
+	SetDefaultPaymentMethod(context.Context, *SetDefaultPaymentMethodRequest) (*SetDefaultPaymentMethodResponse, error)
 	// AddDevPaymentMethod is dev-only — it bypasses Stripe Elements and
 	// inserts a card directly into the in-memory dev store. Gateway gates this
 	// behind a dev-mode check; production returns FailedPrecondition.
@@ -975,6 +988,9 @@ func (UnimplementedPaymentServiceServer) ListPaymentMethods(context.Context, *Li
 }
 func (UnimplementedPaymentServiceServer) DeletePaymentMethod(context.Context, *DeletePaymentMethodRequest) (*DeletePaymentMethodResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeletePaymentMethod not implemented")
+}
+func (UnimplementedPaymentServiceServer) SetDefaultPaymentMethod(context.Context, *SetDefaultPaymentMethodRequest) (*SetDefaultPaymentMethodResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetDefaultPaymentMethod not implemented")
 }
 func (UnimplementedPaymentServiceServer) AddDevPaymentMethod(context.Context, *AddDevPaymentMethodRequest) (*AddDevPaymentMethodResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AddDevPaymentMethod not implemented")
@@ -1344,6 +1360,24 @@ func _PaymentService_DeletePaymentMethod_Handler(srv interface{}, ctx context.Co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PaymentServiceServer).DeletePaymentMethod(ctx, req.(*DeletePaymentMethodRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_SetDefaultPaymentMethod_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetDefaultPaymentMethodRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).SetDefaultPaymentMethod(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_SetDefaultPaymentMethod_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).SetDefaultPaymentMethod(ctx, req.(*SetDefaultPaymentMethodRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2316,6 +2350,10 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeletePaymentMethod",
 			Handler:    _PaymentService_DeletePaymentMethod_Handler,
+		},
+		{
+			MethodName: "SetDefaultPaymentMethod",
+			Handler:    _PaymentService_SetDefaultPaymentMethod_Handler,
 		},
 		{
 			MethodName: "AddDevPaymentMethod",

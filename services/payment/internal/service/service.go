@@ -1806,6 +1806,57 @@ func (s *PaymentService) DeletePaymentMethod(ctx context.Context, customerID, pa
 	return nil
 }
 
+// SetDefaultPaymentMethod points the caller's saved card at Stripe and then
+// locally. Ownership is checked against the local directory first so a
+// non-owner cannot flip another user's default (or probe whether a pm_ id
+// exists). Stripe is updated before the local write so an off-session charge
+// that races the persist still hits the card the user just chose. Either
+// failure is returned — we do not treat a Stripe-only or local-only update
+// as success. Re-defaulting the card that is already default is a no-op.
+func (s *PaymentService) SetDefaultPaymentMethod(ctx context.Context, customerID, paymentMethodID string) error {
+	if customerID == "" || paymentMethodID == "" {
+		return domain.ErrPaymentNotFound
+	}
+	customers, err := s.requireCustomers()
+	if err != nil {
+		return fmt.Errorf("set default payment method: %w", err)
+	}
+
+	methods, err := customers.dir.ListUserPaymentMethods(ctx, customerID)
+	if err != nil {
+		return fmt.Errorf("set default payment method: load owner methods: %w", err)
+	}
+	var owned *domain.PaymentMethod
+	for i := range methods {
+		if methods[i].ID == paymentMethodID {
+			owned = &methods[i]
+			break
+		}
+	}
+	if owned == nil {
+		return domain.ErrPaymentNotFound
+	}
+	if owned.IsDefault {
+		return nil
+	}
+
+	stripeCustomerID, err := customers.Lookup(ctx, customerID)
+	if err != nil {
+		return fmt.Errorf("set default payment method: %w", err)
+	}
+	if stripeCustomerID == "" {
+		return fmt.Errorf("set default payment method: stripe customer not provisioned: %w", domain.ErrPaymentNotFound)
+	}
+
+	if err := s.stripe.SetCustomerDefaultPaymentMethod(ctx, stripeCustomerID, paymentMethodID); err != nil {
+		return fmt.Errorf("set default payment method: stripe: %w", err)
+	}
+	if err := customers.dir.SetDefaultUserPaymentMethod(ctx, customerID, paymentMethodID); err != nil {
+		return fmt.Errorf("set default payment method: %w", err)
+	}
+	return nil
+}
+
 // AdminListPayments lists payments with optional filters for admin use.
 func (s *PaymentService) AdminListPayments(ctx context.Context, userID string, statusFilter string, startTime, endTime *time.Time, page, pageSize int) ([]*domain.Payment, int, int64, int64, error) {
 	return s.repo.AdminListPayments(ctx, userID, statusFilter, startTime, endTime, page, pageSize)

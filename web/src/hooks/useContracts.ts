@@ -2,6 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
+import {
+  canOfferDirections,
+  formatExactAddress,
+  formatLatLng,
+  isDirectionsReady,
+  type ExactAddress,
+} from '@/components/maps/DirectionsButton';
 import { ApiError, api } from '@/lib/api';
 import { isAcceptanceExpired } from '@/lib/utils';
 import type { Contract, ContractDetail, ContractsResponse, Dispute, Milestone } from '@/types';
@@ -80,6 +87,41 @@ export function useContract(id: string) {
       };
     },
     enabled: !!id,
+  });
+}
+
+interface PartyJobPayload {
+  exact_address?: ExactAddress | null;
+  location_address?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
+}
+
+/**
+ * Authenticated GET /jobs/{id} so party-only exact_address is included.
+ * Falls back to location_address, then lat/lng. Soft-fails to null.
+ */
+export function resolvePartyDirectionsAddress(job: PartyJobPayload | null | undefined): string | null {
+  if (!job) return null;
+  if (isDirectionsReady(job.exact_address)) {
+    return formatExactAddress(job.exact_address);
+  }
+  const line = job.location_address?.trim() ?? '';
+  if (canOfferDirections(line)) return line;
+  return formatLatLng(job.location_lat, job.location_lng);
+}
+
+export function usePartyJobLocation(jobId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['jobs', jobId, 'party-location'],
+    queryFn: async () => {
+      const res = await api.get<{ job?: PartyJobPayload } & PartyJobPayload>(`/api/v1/jobs/${jobId}`);
+      const job = res.job ?? res;
+      return resolvePartyDirectionsAddress(job);
+    },
+    enabled: !!jobId && enabled,
+    staleTime: 60_000,
+    retry: false,
   });
 }
 
@@ -257,6 +299,34 @@ export function useRespondToChangeOrder() {
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
     },
     onError: explainFailure('Failed to respond to change order'),
+  });
+}
+
+export function useReportNoShow() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/report-noshow`),
+    onSuccess: (_data, id) => {
+      toast.success('Provider no-show reported');
+      void queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      void queryClient.invalidateQueries({ queryKey: ['contract', id] });
+    },
+    onError: explainFailure('Failed to report no-show'),
+  });
+}
+
+export function useReportAbandonment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/report-abandonment`),
+    onSuccess: (_data, id) => {
+      toast.success('Abandonment reported');
+      void queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      void queryClient.invalidateQueries({ queryKey: ['contract', id] });
+    },
+    onError: explainFailure('Failed to report abandonment'),
   });
 }
 

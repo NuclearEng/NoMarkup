@@ -63,3 +63,56 @@ func TestDeletePaymentMethod_IDOR(t *testing.T) {
 		}
 	}
 }
+
+// TestSetDefaultPaymentMethod_IDOR: a caller cannot promote another user's
+// saved card. Fail closed as not-found so the probe leaks neither existence
+// nor ownership. The owner's default is left untouched.
+func TestSetDefaultPaymentMethod_IDOR(t *testing.T) {
+	t.Parallel()
+
+	const userA = "00000000-0000-0000-0000-00000000000a"
+	const userB = "00000000-0000-0000-0000-00000000000b"
+
+	ss := &StripeService{devMode: true}
+	svc := NewPaymentService(&mockPaymentRepo{}, ss)
+	dir := newFakeCustomerDirectory()
+	dir.addUser(userA, "a@example.com", "User A")
+	dir.addUser(userB, "b@example.com", "User B")
+	svc.SetCustomerProvisioner(NewCustomerProvisioner(dir, ss))
+
+	ctx := context.Background()
+	if _, err := dir.ClaimUserStripeCustomerID(ctx, userA, "cus_a"); err != nil {
+		t.Fatalf("claim A: %v", err)
+	}
+	if _, err := dir.ClaimUserStripeCustomerID(ctx, userB, "cus_b"); err != nil {
+		t.Fatalf("claim B: %v", err)
+	}
+
+	pmA := domain.PaymentMethod{ID: "pm_a", Type: "card", Brand: "visa", LastFour: "4242"}
+	pmB := domain.PaymentMethod{ID: "pm_b", Type: "card", Brand: "visa", LastFour: "5555"}
+	if err := dir.UpsertUserPaymentMethod(ctx, userA, "cus_a", pmA); err != nil {
+		t.Fatalf("upsert A: %v", err)
+	}
+	if err := dir.UpsertUserPaymentMethod(ctx, userB, "cus_b", pmB); err != nil {
+		t.Fatalf("upsert B: %v", err)
+	}
+	if err := dir.SetDefaultUserPaymentMethod(ctx, userA, pmA.ID); err != nil {
+		t.Fatalf("default A: %v", err)
+	}
+	if err := dir.SetDefaultUserPaymentMethod(ctx, userB, pmB.ID); err != nil {
+		t.Fatalf("default B: %v", err)
+	}
+
+	if err := svc.SetDefaultPaymentMethod(ctx, userB, pmA.ID); !errors.Is(err, domain.ErrPaymentNotFound) {
+		t.Fatalf("B defaulting A's method: want ErrPaymentNotFound, got %v", err)
+	}
+
+	gotA, err := dir.GetDefaultUserPaymentMethod(ctx, userA)
+	if err != nil || gotA != pmA.ID {
+		t.Fatalf("A's default mutated by B: got (%q, %v)", gotA, err)
+	}
+	gotB, err := dir.GetDefaultUserPaymentMethod(ctx, userB)
+	if err != nil || gotB != pmB.ID {
+		t.Fatalf("B's default flipped to a foreign card: got (%q, %v)", gotB, err)
+	}
+}

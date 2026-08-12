@@ -40,20 +40,9 @@ func (h *AuctionWSHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract token from query param, Authorization header, or cookie.
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		authHeader := r.Header.Get("Authorization")
-		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-			token = authHeader[7:]
-		}
-	}
-	if token == "" {
-		if cookie, err := r.Cookie("access_token"); err == nil {
-			token = cookie.Value
-		}
-	}
-
+	// Auth order: Authorization Bearer, access_token cookie,
+	// Sec-WebSocket-Protocol, then ?token= (non-production deprecated compat only).
+	token := extractWSToken(r)
 	if token == "" {
 		writeError(w, http.StatusUnauthorized, "missing authentication token")
 		return
@@ -79,9 +68,7 @@ func (h *AuctionWSHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Accept client WebSocket. OriginPatterns enforces the Same-Origin policy
 	// on the handshake, preventing CSWSH (cross-site WebSocket hijacking).
-	clientConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: wsOriginPatterns(),
-	})
+	clientConn, err := websocket.Accept(w, r, wsAcceptOptions())
 	if err != nil {
 		slog.Error("auction ws accept failed", "error", err)
 		return

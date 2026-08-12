@@ -20,7 +20,10 @@ import { PaymentConfirmation } from '@/components/payments/PaymentConfirmation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { useJob } from '@/hooks/useJobs';
 import {
   clearVisitPaymentIdempotency,
@@ -40,6 +43,7 @@ import {
   useRecurringConfig,
   useRecurringInstances,
   useResumeRecurring,
+  useUpdateRecurring,
 } from '@/hooks/useRecurring';
 import {
   hasConfirmablePayment,
@@ -191,12 +195,14 @@ export function RecurringSchedule({
   const pauseRecurring = usePauseRecurring();
   const resumeRecurring = useResumeRecurring();
   const cancelRecurring = useCancelRecurring();
+  const updateRecurring = useUpdateRecurring();
   const completeInstance = useCompleteRecurringInstance();
   const approveInstance = useApproveRecurringInstance();
   const createVisitPayment = useCreateVisitPayment();
   const processVisitPayment = useProcessVisitPayment();
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [rateDollars, setRateDollars] = useState('');
   const [actingInstanceId, setActingInstanceId] = useState<string | null>(null);
   const [pendingPay, setPendingPay] = useState<PendingVisitPay | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -211,7 +217,10 @@ export function RecurringSchedule({
   );
 
   const configBusy =
-    pauseRecurring.isPending || resumeRecurring.isPending || cancelRecurring.isPending;
+    pauseRecurring.isPending ||
+    resumeRecurring.isPending ||
+    cancelRecurring.isPending ||
+    updateRecurring.isPending;
 
   const applyMoneyResult = useCallback(
     (result: RecurringInstanceActionResult, source: 'approve' | 'complete') => {
@@ -527,12 +536,93 @@ export function RecurringSchedule({
               </div>
             </>
           ) : null}
-          {resolved.auto_approve ? (
+          <div className="glass-divider" role="separator" />
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-zinc-300">
+              {isCustomer && !isCancelled ? (
+                <Label htmlFor="recurring-auto-approve" className="text-zinc-300">
+                  Auto-approve visits
+                </Label>
+              ) : (
+                'Auto-approve'
+              )}
+            </dt>
+            <dd className="font-medium">
+              {isCustomer && !isCancelled ? (
+                <Switch
+                  id="recurring-auto-approve"
+                  checked={resolved.auto_approve === true}
+                  disabled={configBusy}
+                  onCheckedChange={(checked) => {
+                    updateRecurring.mutate({
+                      contractId,
+                      auto_approve: checked,
+                    });
+                  }}
+                  aria-label="Auto-approve visits"
+                />
+              ) : (
+                resolved.auto_approve ? 'On' : 'Off'
+              )}
+            </dd>
+          </div>
+          {isCustomer && !isCancelled ? (
             <>
               <div className="glass-divider" role="separator" />
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-zinc-300">Auto-approve</dt>
-                <dd className="font-medium">On</dd>
+              <div className="space-y-2">
+                <Label htmlFor="recurring-future-rate">Future rate ($)</Label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    id="recurring-future-rate"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    inputMode="decimal"
+                    value={rateDollars}
+                    onChange={(e) => {
+                      setRateDollars(e.target.value);
+                    }}
+                    placeholder={(resolved.rate_cents ?? 0) > 0
+                      ? (String((resolved.rate_cents ?? 0) / 100))
+                      : 'e.g. 120.00'}
+                    className="min-h-[44px]"
+                    aria-describedby="recurring-future-rate-help"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="min-h-[44px] shrink-0"
+                    disabled={
+                      configBusy ||
+                      rateDollars.trim().length === 0 ||
+                      !Number.isFinite(Number.parseFloat(rateDollars)) ||
+                      Number.parseFloat(rateDollars) <= 0
+                    }
+                    onClick={() => {
+                      const dollars = Number.parseFloat(rateDollars);
+                      if (!Number.isFinite(dollars) || dollars <= 0) return;
+                      updateRecurring.mutate(
+                        {
+                          contractId,
+                          proposed_rate_cents: Math.round(dollars * 100),
+                        },
+                        {
+                          onSuccess: () => {
+                            setRateDollars('');
+                          },
+                        },
+                      );
+                    }}
+                  >
+                    {updateRecurring.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : null}
+                    Save future rate
+                  </Button>
+                </div>
+                <p id="recurring-future-rate-help" className="text-zinc-400 text-xs">
+                  Applies to future visits only. Enter dollars; saved as integer cents.
+                </p>
               </div>
             </>
           ) : null}

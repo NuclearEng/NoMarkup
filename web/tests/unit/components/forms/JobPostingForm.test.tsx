@@ -40,6 +40,7 @@ beforeAll(() => {
 });
 
 const pushMock = vi.fn();
+const searchParamsState = { current: new URLSearchParams() };
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
     push: pushMock,
@@ -48,7 +49,7 @@ vi.mock('next/navigation', () => ({
     prefetch: vi.fn(),
   }),
   usePathname: () => '/jobs/new',
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParamsState.current,
 }));
 
 const apiPostMock = vi.fn<(...args: unknown[]) => Promise<unknown>>();
@@ -81,6 +82,52 @@ vi.mock('@/hooks/useCategories', () => ({
     isLoading: false,
   }),
   useCategoryTree: () => ({ data: [], isLoading: false }),
+}));
+
+const SAMPLE_PROPERTY = {
+  id: 'prop-1',
+  nickname: 'Home',
+  address: {
+    street: '123 Main St',
+    city: 'Austin',
+    state: 'TX',
+    zip_code: '78701',
+    latitude: 30.2672,
+    longitude: -97.7431,
+  },
+  notes: null,
+  created_at: '2026-01-01T00:00:00Z',
+};
+
+const propertiesState: { data: typeof SAMPLE_PROPERTY[] | undefined; isLoading: boolean } = {
+  data: [SAMPLE_PROPERTY],
+  isLoading: false,
+};
+
+vi.mock('@/hooks/useProperties', () => ({
+  useProperties: () => propertiesState,
+}));
+
+const fairPriceState: {
+  data: {
+    has_data: boolean;
+    p25_cents?: number;
+    price_cents?: number;
+    p75_cents?: number;
+    n_eff?: number;
+  };
+  isLoading: boolean;
+  isError: boolean;
+} = {
+  data: { has_data: false },
+  isLoading: false,
+  isError: false,
+};
+
+const useFairPriceMock = vi.fn(() => fairPriceState);
+
+vi.mock('@/hooks/useAnalytics', () => ({
+  useFairPrice: (args: unknown) => useFairPriceMock(args),
 }));
 
 // Wave 5 services-polish — the post-job form now uses useCategoryQuestions
@@ -122,7 +169,7 @@ vi.mock('@/components/providers/CategorySelector', () => ({
 }));
 
 vi.mock('@/components/jobs/MarketRangeDisplay', () => ({
-  MarketRangeDisplay: () => null,
+  MarketRangeDisplay: () => createElement('div', { 'data-testid': 'market-range' }, 'Market range'),
 }));
 
 vi.mock('@/components/forms/ImageAnalysisButton', () => ({
@@ -217,6 +264,13 @@ describe('JobPostingForm', () => {
     createJobMutateAsyncMock.mockReset();
     apiPostMock.mockReset();
     pushMock.mockReset();
+    searchParamsState.current = new URLSearchParams();
+    propertiesState.data = [SAMPLE_PROPERTY];
+    propertiesState.isLoading = false;
+    fairPriceState.data = { has_data: false };
+    fairPriceState.isLoading = false;
+    fairPriceState.isError = false;
+    useFairPriceMock.mockImplementation(() => fairPriceState);
   });
 
   it('renders the first step (Category) and the navigation Next button', () => {
@@ -515,17 +569,17 @@ describe('JobPostingForm', () => {
     render(createElement(JobPostingForm));
 
     await advanceToStep(5, user);
-    // Two number inputs on the auction step: starting bid and instant accept.
     const numberInputs = screen.getAllByPlaceholderText('0.00');
     expect(numberInputs.length).toBeGreaterThanOrEqual(2);
-    fireEvent.change(numberInputs[0] as HTMLInputElement, { target: { value: '500' } });
-    fireEvent.change(numberInputs[1] as HTMLInputElement, { target: { value: '300' } });
+    await user.type(numberInputs[0] as HTMLInputElement, '500');
+    await user.type(numberInputs[1] as HTMLInputElement, '300');
     await user.click(screen.getByRole('button', { name: /Next/ }));
 
     await waitFor(() => {
-      expect(screen.getByText(/Starting bid: \$500\.00/)).toBeDefined();
+      expect(screen.getByText(/Step 7 of 7/)).toBeDefined();
     });
-    expect(screen.getByText(/Instant accept: \$300\.00/)).toBeDefined();
+    expect(screen.getByText('$500.00')).toBeDefined();
+    expect(screen.getByText('$300.00')).toBeDefined();
   });
 
   it('renders "Starting bid: Open" when the starting bid is left blank', async () => {
@@ -1646,15 +1700,125 @@ describe('JobPostingForm', () => {
     expect(stepButtons[0]?.hasAttribute('disabled')).toBe(false);
   });
 
-  it('shows market range display when sample_size > 0', async () => {
-    // The component hardcodes EXAMPLE_MARKET_RANGE.sample_size to 0 so this branch
-    // is unreachable from outside. Just assert the absent-render branch.
+  it('hides the market range when fair-price has no data', async () => {
+    fairPriceState.data = { has_data: false };
     const user = userEvent.setup();
     render(createElement(JobPostingForm));
     await advanceToStep(6, user);
-    // MarketRangeDisplay mocked to null — nothing to assert. Just ensure the
-    // review step rendered (sample_size > 0 false branch is hit).
+    expect(screen.queryByTestId('market-range')).toBeNull();
     expect(screen.getByText(/How would you like to find a provider/)).toBeDefined();
+  });
+
+  it('shows the market range when live fair-price has data', async () => {
+    fairPriceState.data = {
+      has_data: true,
+      p25_cents: 8000,
+      price_cents: 12000,
+      p75_cents: 18000,
+      n_eff: 12,
+    };
+    const user = userEvent.setup();
+    render(createElement(JobPostingForm));
+    await advanceToStep(6, user);
+    expect(screen.getByTestId('market-range')).toBeDefined();
+    expect(useFairPriceMock).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId: 'cat-1' }),
+    );
+  });
+
+  it('passes ZIP from the location address into useFairPrice', async () => {
+    const user = userEvent.setup();
+    render(createElement(JobPostingForm));
+    await advanceToStep(2, user);
+    await user.type(
+      screen.getByPlaceholderText(/123 Main St/),
+      '500 Congress Ave, Austin, TX 78701',
+    );
+    await user.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/Step 4 of 7/)).toBeDefined();
+    });
+    await user.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/Step 5 of 7/)).toBeDefined();
+    });
+    await user.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/Step 6 of 7/)).toBeDefined();
+    });
+    await user.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/Step 7 of 7/)).toBeDefined();
+    });
+    expect(useFairPriceMock).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId: 'cat-1', zip: '78701' }),
+    );
+  });
+
+  it('inherits address from a saved property and sends property_id on publish', async () => {
+    createJobMutateAsyncMock.mockResolvedValueOnce({ id: 'job-prop' });
+    const user = userEvent.setup();
+    render(createElement(JobPostingForm));
+    await advanceToStep(2, user);
+
+    const trigger = screen.getByRole('combobox', { name: /Saved property/i });
+    await user.click(trigger);
+    const homeOption = await screen.findByRole('option', { name: /Home/ });
+    await user.click(homeOption);
+
+    await waitFor(() => {
+      const address = screen.getByPlaceholderText(/123 Main St/) as HTMLInputElement;
+      expect(address.value).toContain('123 Main St');
+      expect(address.value).toContain('78701');
+    });
+
+    await user.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/Step 4 of 7/)).toBeDefined();
+    });
+    await user.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/Step 5 of 7/)).toBeDefined();
+    });
+    await user.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/Step 6 of 7/)).toBeDefined();
+    });
+    await user.click(screen.getByRole('button', { name: /Next/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/Step 7 of 7/)).toBeDefined();
+    });
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: /Publish Job/ }));
+    });
+    await waitFor(() => {
+      expect(createJobMutateAsyncMock).toHaveBeenCalled();
+    });
+    const call = createJobMutateAsyncMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call['property_id']).toBe('prop-1');
+    expect(call['location_address']).toMatch(/123 Main St/);
+  });
+
+  it('preselects ?property_id= and inherits the saved address', async () => {
+    searchParamsState.current = new URLSearchParams('property_id=prop-1');
+    const user = userEvent.setup();
+    render(createElement(JobPostingForm));
+    await advanceToStep(2, user);
+
+    await waitFor(() => {
+      const address = screen.getByPlaceholderText(/123 Main St/) as HTMLInputElement;
+      expect(address.value).toContain('123 Main St');
+    });
+    expect(screen.getByRole('combobox', { name: /Saved property/i })).toBeDefined();
+  });
+
+  it('hides the property picker when the customer has no saved properties', async () => {
+    propertiesState.data = [];
+    const user = userEvent.setup();
+    render(createElement(JobPostingForm));
+    await advanceToStep(2, user);
+    expect(screen.queryByRole('combobox', { name: /Saved property/i })).toBeNull();
   });
 
   it('toggles back to "Run an auction" radio after picking instant match', async () => {

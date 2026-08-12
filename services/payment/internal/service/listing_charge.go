@@ -123,20 +123,20 @@ type PendingListingOrder struct {
 
 // MarketplaceDispute is a row in marketplace_disputes.
 type MarketplaceDispute struct {
-	ID                     string
-	ListingOrderID         string
-	OpenedBy               string
-	Reason                 string
-	Description            string
-	Status                 string // open, under_review, resolved, closed
-	Resolution             string // refund_full, refund_partial, release_to_seller, no_action
-	RefundToBuyerCents     int64
-	TransferToSellerCents  int64
-	ResolutionNotes        string
-	ResolvedBy             *string
-	ResolvedAt             *time.Time
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
+	ID                    string
+	ListingOrderID        string
+	OpenedBy              string
+	Reason                string
+	Description           string
+	Status                string // open, under_review, resolved, closed
+	Resolution            string // refund_full, refund_partial, release_to_seller, no_action
+	RefundToBuyerCents    int64
+	TransferToSellerCents int64
+	ResolutionNotes       string
+	ResolvedBy            *string
+	ResolvedAt            *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 // MarketplaceRepository abstracts persistence for the goods escrow flow.
@@ -255,8 +255,8 @@ func (noopMarketplaceNotifier) NotifyDisputeResolved(_ context.Context, _, _, _,
 
 // MarketplaceConfig tunes the goods escrow behavior.
 type MarketplaceConfig struct {
-	AutoReleaseAfter      time.Duration // default 14d
-	DisputeWindowAfter    time.Duration // dispute allowed up to: pickup_confirmed_at + this duration (default 24h)
+	AutoReleaseAfter   time.Duration // default 14d
+	DisputeWindowAfter time.Duration // dispute allowed up to: pickup_confirmed_at + this duration (default 24h)
 	// MarketplaceFeeBps is a TEST/LEGACY override for the combined seller-side
 	// take in basis points. Production charge paths load rates from
 	// platform_fee_config (fee_percentage + guarantee_percentage) via
@@ -343,24 +343,21 @@ type MarketplaceService struct {
 	// offSessionCharge gates merchant-initiated collection on auction wins.
 	//
 	// This is the only place in the goods flow where the platform moves a
-	// buyer's money without the buyer present. It is legitimate — it is what the
-	// off_session SetupIntent mandate is FOR, and it is how every auction
-	// marketplace settles — but it depends on a product/legal prerequisite that
-	// lives outside this code: the bidding terms must state that placing a bid
-	// authorizes NoMarkup to charge the saved card if the bid wins. Wired ON by
-	// default because an auction that cannot collect is not an auction, with
-	// MARKETPLACE_OFFSESSION_CHARGE=false as the operator kill switch.
+	// buyer's money without the buyer present. Process startup (cmd/server)
+	// keeps it OFF unless MARKETPLACE_OFFSESSION_CHARGE=true AND
+	// MARKETPLACE_OFFSESSION_TOS_VERSION is a non-empty terms id/date
+	// (Decision-ID OFFSESSION-LEGAL). The constructor default below is ON so
+	// unit tests of the collect path do not have to arm the flag; production
+	// never uses that default — main always calls SetOffSessionCharge.
 	offSessionCharge bool
 
 	// expireUnfunded gates the ONLY irreversible half of the settlement sweeper:
 	// moving an unfunded order to the terminal 'payment_failed'. Default false.
 	//
 	// Off, the sweeper still finds and loudly logs every overdue unfunded order
-	// (so the failure is visible and actionable today) but changes no row. Whether
-	// an unpaid auction win should be cancelled — and what happens to the listing,
-	// the awarded bid and the bidder's bond when it is — is a product decision
-	// nobody has made yet, and it is not one a background worker should make by
-	// default. Set MARKETPLACE_PAYMENT_EXPIRY=true to arm it.
+	// (so the failure is visible and actionable today) but changes no row. Same
+	// OFFSESSION-LEGAL pairing as off-session charge: MARKETPLACE_PAYMENT_EXPIRY
+	// cannot stay true without MARKETPLACE_OFFSESSION_TOS_VERSION.
 	expireUnfunded bool
 }
 
@@ -386,6 +383,17 @@ func (s *MarketplaceService) SetCustomerProvisioner(p *CustomerProvisioner) {
 // wins. See MarketplaceService.offSessionCharge.
 func (s *MarketplaceService) SetOffSessionCharge(enabled bool) {
 	s.offSessionCharge = enabled
+}
+
+// OffSessionChargeEnabled reports whether merchant-initiated collection is armed.
+func (s *MarketplaceService) OffSessionChargeEnabled() bool {
+	return s.offSessionCharge
+}
+
+// ExpireUnfundedEnabled reports whether the sweeper may move overdue unfunded
+// orders to terminal payment_failed.
+func (s *MarketplaceService) ExpireUnfundedEnabled() bool {
+	return s.expireUnfunded
 }
 
 // lookupBuyerCustomer returns the buyer's Stripe Customer id, or "" when there
@@ -1126,18 +1134,18 @@ func (st *SettlementStats) countOutcome(o ChargeOutcome) {
 //
 // WHAT IT DOES AND DOES NOT DO. Two phases, both idempotent:
 //
-//	1. Charge. For an order with no PaymentIntent, call ChargeListingWinner.
-//	   That recomputes fee + tax from the order row, creates the PI under the
-//	   deterministic Stripe key "listing-charge:<orderID>", and stamps
-//	   payment_intent_id / tax_cents / fee_cents / auto_release_at. Re-entry is
-//	   safe twice over: ChargeListingWinner short-circuits when the order
-//	   already carries a PI, and the Stripe key dedupes at Stripe. The first
-//	   pass also stamps payment_due_at = now + PaymentWindow, and only the
-//	   first — RecordListingPaymentAttempt never overwrites a running deadline.
+//  1. Charge. For an order with no PaymentIntent, call ChargeListingWinner.
+//     That recomputes fee + tax from the order row, creates the PI under the
+//     deterministic Stripe key "listing-charge:<orderID>", and stamps
+//     payment_intent_id / tax_cents / fee_cents / auto_release_at. Re-entry is
+//     safe twice over: ChargeListingWinner short-circuits when the order
+//     already carries a PI, and the Stripe key dedupes at Stripe. The first
+//     pass also stamps payment_due_at = now + PaymentWindow, and only the
+//     first — RecordListingPaymentAttempt never overwrites a running deadline.
 //
-//	2. Expire. An order still unfunded past its deadline is counted, logged at
-//	   ERROR with the buyer, seller and amount, and — only when SetExpireUnfunded
-//	   is armed — moved to the terminal 'payment_failed' (migration 101).
+//  2. Expire. An order still unfunded past its deadline is counted, logged at
+//     ERROR with the buyer, seller and amount, and — only when SetExpireUnfunded
+//     is armed — moved to the terminal 'payment_failed' (migration 101).
 //
 // IT DOES NOT COLLECT MONEY, and cannot yet. CreateMarketplacePaymentIntent
 // builds a PaymentIntent with no Customer, no PaymentMethod and Confirm unset,

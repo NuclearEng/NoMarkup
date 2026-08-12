@@ -14,7 +14,7 @@ export function ShareSavingsCard({ savingsCents, jobTitle, category }: ShareSavi
   const [copied, setCopied] = useState(false);
 
   const shareText = `I just saved ${formatCents(savingsCents)} on ${category} with NoMarkup!`;
-  const shareUrl = 'https://nomarkup.com';
+  const shareUrl = 'https://no-markup.com';
 
   async function handleCopyLink() {
     try {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock auth so we control the token attached to the WebSocket URL.
+// Mock auth so we control the token offered as a WebSocket subprotocol.
 vi.mock('@/lib/auth', () => ({
   getAccessToken: vi.fn(),
 }));
@@ -40,6 +40,7 @@ class FakeWebSocket {
 
   readyState: number = FakeWebSocket.OPEN;
   url: string;
+  protocols: string[];
   onopen: AnyEventHandler = null;
   onmessage: MessageEventHandler = null;
   onclose: CloseEventHandler = null;
@@ -49,8 +50,9 @@ class FakeWebSocket {
     this.readyState = FakeWebSocket.CLOSED;
   });
 
-  constructor(url: string) {
+  constructor(url: string, protocols?: string | string[]) {
     this.url = url;
+    this.protocols = Array.isArray(protocols) ? protocols : protocols ? [protocols] : [];
     FakeWebSocket.instances.push(this);
   }
 
@@ -106,15 +108,15 @@ describe('wsManager (chat WebSocket client)', () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
 
-  it('builds the WebSocket URL with the URL-encoded access token', () => {
+  it('dials /ws/chat without a query token and offers bearer + jwt protocols', () => {
     vi.mocked(getAccessToken).mockReturnValue('tok with space&plus');
     wsManager.connect();
     vi.advanceTimersByTime(100);
 
     const ws = FakeWebSocket.last();
-    expect(ws.url).toContain('/ws/chat?token=');
-    // Token must be URL-encoded.
-    expect(ws.url).toContain('tok%20with%20space%26plus');
+    expect(ws.url).toContain('/ws/chat');
+    expect(ws.url).not.toContain('token=');
+    expect(ws.protocols).toEqual(['nomarkup.bearer.v1', 'tok with space&plus']);
   });
 
   it('does not open a socket if no access token is available', () => {
@@ -472,7 +474,9 @@ describe('wsManager — an explicit NEXT_PUBLIC_WS_URL overrides same-origin', (
     vi.advanceTimersByTime(100);
 
     const ws = FakeWebSocket.last();
-    expect(ws.url).toBe('wss://api.nomarkup.test/ws/chat?token=tok-zzz');
+    expect(ws.url).toBe('wss://api.nomarkup.test/ws/chat');
+    expect(ws.url).not.toContain('token=');
+    expect(ws.protocols).toEqual(['nomarkup.bearer.v1', 'tok-zzz']);
 
     mod.wsManager.disconnect();
   });

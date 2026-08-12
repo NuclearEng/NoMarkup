@@ -42,6 +42,10 @@ vi.mock('@/components/forms/ProfileForm', () => ({
     ),
 }));
 
+vi.mock('@/components/forms/PhoneOtpForm', () => ({
+  PhoneOtpForm: () => createElement('div', { 'data-testid': 'phone-otp-form' }, 'phone-otp'),
+}));
+
 vi.mock('@/hooks/useProfile', () => ({
   useEnableRole: () => ({
     mutateAsync: enableRoleMutate,
@@ -109,6 +113,7 @@ describe('ProfilePage', () => {
     expect(screen.getByText('tanner@example.com')).toBeDefined();
     expect(screen.getByText('Email Verified')).toBeDefined();
     expect(screen.getByText('Disabled')).toBeDefined();
+    expect(screen.getByTestId('phone-otp-form')).toBeDefined();
   });
 
   it('shows "Become a Provider" CTA for customer-only accounts', () => {

@@ -46,7 +46,7 @@ export function ProfileForm({ user, onCancel, onSuccess }: ProfileFormProps) {
     resolver: zodResolver(profileSchema),
     defaultValues: {
       displayName: user.displayName,
-      phone: '',
+      phone: user.phone ?? '',
       timezone: 'America/New_York',
       avatarUrl: user.avatarUrl ?? '',
     },

@@ -31,6 +31,12 @@ func TestRedactQuery(t *testing.T) {
 			mustKeep:   []string{"token"},
 		},
 		{
+			name:       "calendar ical feed secret",
+			raw:        "feed=aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+			mustRedact: []string{"aabbccddeeff00112233445566778899"},
+			mustKeep:   []string{"feed"},
+		},
+		{
 			name:       "oauth callback code and state",
 			raw:        "code=4%2F0AY0e-g7&state=csrf_nonce_value",
 			mustRedact: []string{"4/0AY0e-g7", "csrf_nonce_value"},

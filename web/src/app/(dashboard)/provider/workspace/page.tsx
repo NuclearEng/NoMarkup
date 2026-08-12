@@ -13,8 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useContracts } from '@/hooks/useContracts';
-import { getAccessToken } from '@/lib/auth';
-import { API_BASE_URL } from '@/lib/constants';
+import { api, getApiErrorMessage } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
 import { CONTRACT_STATUS } from '@/types';
 import type { Contract } from '@/types';
@@ -232,17 +231,22 @@ export default function ProviderWorkspacePage() {
   const upcomingGroups = groupByDate(upcomingContracts);
   const otherActiveGroups = groupByDate(otherActiveContracts);
 
-  // Build the gateway .ics subscription URL using the in-memory access token.
-  // The gateway serves GET /api/v1/me/calendar.ics?token=<accessToken>.
-  function handleSubscribeCalendar(): void {
-    const token = getAccessToken();
-    if (!token) {
-      toast.error('Please sign in again to subscribe to your calendar.');
-      return;
+  // Mint an opaque 90-day feed secret, then open the returned ICS URL.
+  // Never put the session JWT in the query string (history / proxy logs).
+  async function handleSubscribeCalendar(): Promise<void> {
+    try {
+      const { url } = await api.post<{ url: string }>('/api/v1/me/calendar-feed');
+      if (!url) {
+        toast.error('Could not create a calendar feed. Please try again.');
+        return;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+      toast.success('Opening your job calendar feed.');
+    } catch (err) {
+      toast.error(
+        getApiErrorMessage(err, 'Please sign in again to subscribe to your calendar.'),
+      );
     }
-    const url = `${API_BASE_URL}/api/v1/me/calendar.ics?token=${encodeURIComponent(token)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-    toast.success('Opening your job calendar feed.');
   }
 
   return (
@@ -344,7 +348,7 @@ export default function ProviderWorkspacePage() {
                 <div key={group.dateKey} className="space-y-3">
                   <h3 className="text-sm font-semibold text-zinc-400">{group.label}</h3>
                   {group.items.map((contract) => (
-                    <JobCard key={contract.id} contract={contract} showWorkSession />
+                    <JobCard key={contract.id} contract={contract} />
                   ))}
                 </div>
               ))}
@@ -371,7 +375,7 @@ export default function ProviderWorkspacePage() {
                 <div key={group.dateKey} className="space-y-3">
                   <h3 className="text-sm font-semibold text-zinc-400">{group.label}</h3>
                   {group.items.map((contract) => (
-                    <JobCard key={contract.id} contract={contract} showWorkSession />
+                    <JobCard key={contract.id} contract={contract} />
                   ))}
                 </div>
               ))}

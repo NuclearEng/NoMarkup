@@ -93,6 +93,27 @@ that fires without a warning email is a trap, not a policy.
 **Notifications: wired, and treated as part of the money path.** A buyer whose
 card fails must be told, or the 72h window is a countdown they cannot see.
 
+## Enablement
+
+**Decision-ID: OFFSESSION-LEGAL.** Off-session goods charging stays **off**
+unless an operator explicitly sets both `MARKETPLACE_OFFSESSION_CHARGE=true`
+**and** `MARKETPLACE_OFFSESSION_TOS_VERSION` to a non-empty terms id or date
+proving bid-authorization language shipped. The same ToS version env covers
+`MARKETPLACE_PAYMENT_EXPIRY` (expiry cancels wins; same legal/notification bar).
+
+Defaults stay off. Flip only after legal terms say placing a bid authorizes an
+off-session charge. This ADR does not contain that ToS text.
+
+Fail-closed pairing in `services/payment/cmd/server`:
+
+- Production (`ENVIRONMENT=production`): refuse to start if either flag is true
+  and the ToS version is empty.
+- Non-production: force both flags false and log a warning — do not silently
+  charge or expire.
+
+Enabling either flag without a ToS version is a configuration error, not a
+product default.
+
 ## What this does not fix
 
 Bid bonds persist a capturable PaymentMethod on authorize (migration

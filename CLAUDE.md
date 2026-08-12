@@ -236,8 +236,10 @@ These are non-negotiable. The hooks enforce many automatically.
   non-money flags and shows Binary-only for money keys. Handler-level `WithExperiment` is
   control/treatment only — intentional product backlog residual: multi-arm stats warehouse /
   per-user public flag map.
-- **Caveat:** only 6 route groups call `RequireFlag`. Of the 13 flags in the DB, 7 have no backend
-  enforcement at all and gate UI only — toggling those off does not close the API.
+- **Caveat:** 16 DB keys; 13 call `RequireFlag`. UI-only leftovers:
+  `fair_price_index`, `smart_matching`, `lead_gen` — toggling those off does not
+  close a dedicated API route group (`lead_gen` is fee-config dual-gated, not
+  `RequireFlag` on a charge path).
 
 ### Secrets Management
 - No secrets in code. Ever. Claude Code hooks detect many patterns. Dev: `.env.local` (gitignored).

@@ -221,7 +221,7 @@ describe('PriceHeatMap — no token branch', () => {
 
   it('renders placeholder content as a text element accessible via role=paragraph fallback', () => {
     render(<PriceHeatMap />);
-    const text = screen.getByText(/Price heat map is not available/i);
+    const text = screen.getByText(/Category price comparison is not available/i);
     expect(text.tagName.toLowerCase()).toBe('p');
   });
 });
@@ -237,7 +237,7 @@ describe('PriceHeatMap — token-set / map render branch', () => {
 
   it('renders the map container with role=application when token is set', () => {
     const { container } = render(<PriceHeatMap className="hot" />);
-    const region = container.querySelector('[aria-label="Neighborhood price heat map"]');
+    const region = container.querySelector('[aria-label="Illustrative category price comparison"]');
     expect(region).not.toBeNull();
     expect(region?.getAttribute('role')).toBe('application');
   });

@@ -384,7 +384,7 @@ describe('MessageInput', () => {
 
   it('renders the Enter/Shift+Enter help text', () => {
     render(<MessageInput channelId="chan-1" channelStatus={CHANNEL_STATUS.ACTIVE} />);
-    expect(screen.getByText(/Press Enter to send/)).toBeDefined();
+    expect(screen.getByText(/Enter to send/)).toBeDefined();
   });
 
   // ---- DEEPENING TESTS ----

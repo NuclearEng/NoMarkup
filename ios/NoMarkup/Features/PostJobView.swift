@@ -44,7 +44,7 @@ struct PostJobView: View {
     @State private var offerAcceptedText = ""
     @State private var isRecurring = false
     @State private var recurrenceFrequency = "monthly"
-    /// FR-3.1 schedule preference (wire: flexible | specific | range).
+    /// FR-3.1 schedule preference (wire: flexible | specific_date | date_range).
     @State private var scheduleType = "flexible"
     @State private var preferredDate = Date().addingTimeInterval(86_400)
     @State private var rangeStart = Date().addingTimeInterval(86_400)
@@ -77,8 +77,8 @@ struct PostJobView: View {
     private let recurrenceOptions = ["weekly", "biweekly", "monthly"]
     private let scheduleTypeOptions: [(id: String, label: String)] = [
         ("flexible", "Flexible"),
-        ("specific", "Specific date"),
-        ("range", "Date range"),
+        ("specific_date", "Specific date"),
+        ("date_range", "Date range"),
     ]
 
     var body: some View {
@@ -389,7 +389,7 @@ struct PostJobView: View {
                 .accessibilityLabel("Preferred schedule type")
                 .accessibilityHint("Flexible, a specific date, or a date range for the work")
 
-                if scheduleType == "specific" {
+                if scheduleType == "specific_date" {
                     DatePicker(
                         "Preferred date",
                         selection: $preferredDate,
@@ -398,7 +398,7 @@ struct PostJobView: View {
                     )
                     .frame(minHeight: 44)
                     .accessibilityLabel("Preferred service date")
-                } else if scheduleType == "range" {
+                } else if scheduleType == "date_range" {
                     DatePicker(
                         "Earliest",
                         selection: $rangeStart,
@@ -903,6 +903,7 @@ struct PostJobView: View {
         let auctionHours = useInstantMatch ? min(max(durationHours, 2), 2) : durationHours
 
         do {
+            let wireSchedule = useInstantMatch ? "flexible" : scheduleType
             let job = try await APIClient.shared.createJob(
                 title: trimmedTitle,
                 description: trimmedDescription,
@@ -913,7 +914,13 @@ struct PostJobView: View {
                 locationLat: nil,
                 locationLng: nil,
                 publish: shouldPublish,
-                scheduleType: useInstantMatch ? "flexible" : scheduleType,
+                scheduleType: wireSchedule,
+                scheduledDate: (!useInstantMatch && scheduleType == "specific_date")
+                    ? preferredDate : nil,
+                scheduleRangeStart: (!useInstantMatch && scheduleType == "date_range")
+                    ? rangeStart : nil,
+                scheduleRangeEnd: (!useInstantMatch && scheduleType == "date_range")
+                    ? rangeEnd : nil,
                 photoUrls: photoURLs,
                 propertyId: propertyId.isEmpty ? nil : propertyId,
                 offerAcceptedCents: offerCents,

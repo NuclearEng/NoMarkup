@@ -10,6 +10,7 @@ import {
   useProcessPayment,
   usePaymentMethods,
   useDeletePaymentMethod,
+  useSetDefaultPaymentMethod,
   useCreateSetupIntent,
   useAddDevPaymentMethod,
   useCalculateFees,
@@ -38,6 +39,7 @@ vi.mock('@/lib/api', () => ({
     get: vi.fn(),
     getPublic: vi.fn(),
     post: vi.fn(),
+    put: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
   },
@@ -264,6 +266,33 @@ describe('useDeletePaymentMethod', () => {
   });
 });
 
+describe('useSetDefaultPaymentMethod', () => {
+  let queryClient: QueryClient;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+  afterEach(() => { queryClient.clear(); });
+
+  it('PUTs the default path with an idempotency header', async () => {
+    vi.mocked(api.put).mockResolvedValueOnce({ is_default: true });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useSetDefaultPaymentMethod(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate('pm-1');
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.put)).toHaveBeenCalledWith(
+      '/api/v1/payments/methods/pm-1/default',
+      undefined,
+      { 'Idempotency-Key': 'test-idem-key' },
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['payment-methods'] });
+  });
+});
+
 describe('useCreateSetupIntent', () => {
   let queryClient: QueryClient;
   beforeEach(() => {
@@ -482,6 +511,18 @@ describe('error toasts on mutation failures', () => {
       wrapper: createWrapper(queryClient),
     });
     result.current.mutate({ paymentId: 'pmt-1', payment_method_id: 'pm-1' });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('nope');
+  });
+
+  it('useSetDefaultPaymentMethod fires the failure toast on error', async () => {
+    vi.mocked(api.put).mockRejectedValueOnce(new Error('nope'));
+
+    const { result } = renderHook(() => useSetDefaultPaymentMethod(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate('pm-1');
     await waitFor(() => { expect(result.current.isError).toBe(true); });
 
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith('nope');

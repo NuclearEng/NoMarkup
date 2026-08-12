@@ -300,41 +300,40 @@ func main() {
 	marketplaceCfg := service.DefaultMarketplaceConfig()
 	marketplaceCfg.PaymentWindow = envDurationOr("MARKETPLACE_PAYMENT_WINDOW", marketplaceCfg.PaymentWindow)
 	marketplaceSvc.SetConfig(marketplaceCfg)
-	// Terminal 'payment_failed' transition for unfunded orders. Default OFF:
-	// cancelling someone's won auction is a product decision, and until it is
-	// made the sweeper only reports the condition (loudly) rather than acting.
-	marketplaceExpiry := envBool("MARKETPLACE_PAYMENT_EXPIRY", false)
-	marketplaceSvc.SetExpireUnfunded(marketplaceExpiry)
-
-	// Merchant-initiated collection on auction wins. Default ON: an auction that
-	// cannot collect from the winner is not an auction, and the off_session
-	// SetupIntent mandate exists precisely to authorize this.
-	//
-	// DEFAULTS OFF, and the reason is legal rather than technical.
-	//
-	// Charging a saved card while the buyer is away requires that the bidding
-	// terms told them placing a bid authorizes it. Searched the tree: the
-	// tos_versions / tos_acceptances tables exist, but no terms text anywhere
-	// states that authorization, and the content is admin-managed so it cannot
-	// be confirmed from here. Charging without it is a chargeback problem and,
-	// under SCA, a mandate problem — both of which land on the platform.
-	//
-	// Defaulting ON would mean an unverified legal predicate silently becomes
-	// a live card charge the first time an auction closes. Defaulting OFF is
-	// not a degraded product: buyers pay through the "pay for your win"
-	// surface instead, which is how eBay operates, and the settlement sweeper
-	// still attaches the PaymentIntent and chases unfunded orders. The asymmetry
-	// settles it — enabling this later is a one-line env change, while
-	// un-charging a card is a refund, a chargeback and an apology.
-	//
-	// Set MARKETPLACE_OFFSESSION_CHARGE=true once the terms have shipped.
-	offSessionCharge := envBool("MARKETPLACE_OFFSESSION_CHARGE", false)
-	marketplaceSvc.SetOffSessionCharge(offSessionCharge)
+	// OFFSESSION-LEGAL: both flags default OFF. Flip only after legal terms
+	// say placing a bid authorizes an off-session charge AND
+	// MARKETPLACE_OFFSESSION_TOS_VERSION is set to the shipped terms id/date.
+	// Expiry cancels won auctions — same legal/notification bar, same ToS env.
+	// Production refuses to start if either flag is true without a ToS version.
+	// Non-production force-disables and warns rather than silently charging.
+	chargeRequested := envBool("MARKETPLACE_OFFSESSION_CHARGE", false)
+	expiryRequested := envBool("MARKETPLACE_PAYMENT_EXPIRY", false)
+	tosVersion := os.Getenv("MARKETPLACE_OFFSESSION_TOS_VERSION")
+	gates, err := resolveMarketplaceLegalGates(env, chargeRequested, expiryRequested, tosVersion)
+	if err != nil {
+		slog.Error("refusing to start: marketplace legal enablement failed",
+			"error", err,
+			"off_session_charge_requested", chargeRequested,
+			"expire_unfunded_requested", expiryRequested,
+			"decision_id", "OFFSESSION-LEGAL",
+		)
+		os.Exit(1)
+	}
+	if gates.ForcedOff {
+		slog.Warn("MARKETPLACE_OFFSESSION_CHARGE or MARKETPLACE_PAYMENT_EXPIRY requested without MARKETPLACE_OFFSESSION_TOS_VERSION; forcing both off",
+			"off_session_charge_requested", chargeRequested,
+			"expire_unfunded_requested", expiryRequested,
+			"decision_id", "OFFSESSION-LEGAL",
+		)
+	}
+	marketplaceSvc.SetOffSessionCharge(gates.OffSessionCharge)
+	marketplaceSvc.SetExpireUnfunded(gates.ExpireUnfunded)
 
 	slog.Info("goods settlement configured",
 		"payment_window", marketplaceCfg.PaymentWindow.String(),
-		"expire_unfunded_orders", marketplaceExpiry,
-		"off_session_charge", offSessionCharge,
+		"expire_unfunded_orders", gates.ExpireUnfunded,
+		"off_session_charge", gates.OffSessionCharge,
+		"offsession_tos_version", gates.TOSVersion,
 	)
 	paymentSvc.SetMarketplaceHandler(marketplaceSvc)
 	grpcServer.SetMarketplaceService(marketplaceSvc)

@@ -30,10 +30,12 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import {
   useConfirmPickup,
   useDisputeOrder,
   useListingOrder,
+  useReportOrderNoShow,
   useSellerConfirm,
 } from '@/hooks/useListings';
 import {
@@ -64,7 +66,9 @@ export default function OrderDetailPage() {
   const confirmPickup = useConfirmPickup();
   const sellerConfirm = useSellerConfirm();
   const disputeOrder = useDisputeOrder();
+  const reportNoShow = useReportOrderNoShow();
   const currentUserId = useAuthStore((s) => s.user?.id);
+  const [noShowOpen, setNoShowOpen] = useState(false);
 
   const orderCompleted = order?.status === LISTING_ORDER_STATUS.COMPLETED;
   const {
@@ -137,6 +141,9 @@ export default function OrderDetailPage() {
     order.status === LISTING_ORDER_STATUS.PICKED_UP &&
     order.dispute_window_ends_at !== null &&
     new Date(order.dispute_window_ends_at).getTime() > Date.now();
+  const canReportNoShow =
+    (isSeller || currentUserId === order.buyer_id) &&
+    order.status === LISTING_ORDER_STATUS.PAID;
 
   function handleConfirmPickup() {
     if (isSeller) {
@@ -306,6 +313,19 @@ export default function OrderDetailPage() {
                 Open dispute
               </Button>
 
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!canReportNoShow || reportNoShow.isPending}
+                onClick={() => {
+                  setNoShowOpen(true);
+                }}
+                className="min-h-[44px] w-full border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+              >
+                <AlertTriangle className="mr-2 h-4 w-4" aria-hidden="true" />
+                Report no-show
+              </Button>
+
               {!canDispute && order.dispute_window_ends_at ? (
                 <p className="text-xs text-zinc-500">
                   Dispute window closes{' '}
@@ -411,6 +431,25 @@ export default function OrderDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <ActionConfirmDialog
+        open={noShowOpen}
+        onClose={() => {
+          setNoShowOpen(false);
+        }}
+        onConfirm={() => {
+          reportNoShow.mutate(orderId, {
+            onSuccess: () => {
+              setNoShowOpen(false);
+            },
+          });
+        }}
+        title="Report no-show?"
+        description="Only use this if the other party failed to appear for pickup. This may start a cooldown for them."
+        confirmLabel="Report no-show"
+        destructive
+        loading={reportNoShow.isPending}
+      />
 
       {/* Dispute dialog */}
       <Dialog open={disputeOpen} onOpenChange={setDisputeOpen}>

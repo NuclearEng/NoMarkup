@@ -592,18 +592,38 @@ struct MyBidsView: View {
         }
     }
 
-    /// IOS-SYS.WD.3 (caller half) — push the authoritative active-bid count into the
-    /// shared widget snapshot so Home/Lock Screen widgets stop showing 0/stale counts.
-    /// Best-effort from whichever segments have loaded; never throws, no UI impact.
+    /// IOS-SYS.WD.3 (caller half) — merge the just-fetched rail into the widget
+    /// snapshot. Switching Goods/Services must not zero the other rail's count
+    /// or wipe its Next Closing rows.
     private func syncWidgetActiveBidCount() {
-        let activeGoods = listingBids.filter { entry in
-            let status = (entry.listing?.status ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .lowercased()
-            return status == "active" || status == "open"
-        }.count
-        let activeServices = jobBids.filter { $0.isWithdrawable }.count
-        WidgetSharedStore.setActiveBidCount(activeGoods + activeServices)
+        switch segment {
+        case .goods:
+            let activeGoods = listingBids.filter { entry in
+                let status = (entry.listing?.status ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+                return status == "active" || status == "open"
+            }.count
+            let auctions: [WidgetSharedStore.AuctionSnapshot] = listingBids.compactMap { entry in
+                guard let listingID = entry.listingIdForAPI,
+                      let endsISO = entry.listing?.auctionEndsAt,
+                      let endsAt = CatalogDateFormat.parseISO(endsISO),
+                      endsAt > Date()
+                else { return nil }
+                return WidgetSharedStore.AuctionSnapshot(
+                    id: listingID,
+                    title: entry.listing?.displayTitle ?? entry.displayTitle,
+                    endsAt: endsAt,
+                    amountCents: entry.listing?.currentBidCents ?? entry.bid?.amountCents ?? 0,
+                    kind: WidgetSharedStore.BidRail.goods.kind
+                )
+            }
+            WidgetSharedStore.replaceRail(.goods, activeCount: activeGoods, auctions: auctions)
+        case .services:
+            let activeServices = jobBids.filter { $0.isWithdrawable }.count
+            // `GET /bids/mine` has no auction_ends_at — keep existing job closings.
+            WidgetSharedStore.replaceRail(.services, activeCount: activeServices)
+        }
     }
 
     /// POST `/api/v1/listings/{id}/bids/{bidId}/retract` — 60s window, leading bid only.

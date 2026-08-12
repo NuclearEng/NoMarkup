@@ -332,6 +332,35 @@ func (h *PaymentHandler) DeletePaymentMethod(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// SetDefaultPaymentMethod handles PUT /api/v1/payments/methods/{id}/default.
+// customer_id is taken from the JWT, never the body.
+func (h *PaymentHandler) SetDefaultPaymentMethod(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	methodID := chi.URLParam(r, "id")
+	if methodID == "" {
+		writeError(w, http.StatusBadRequest, "payment method id required")
+		return
+	}
+
+	_, err := h.paymentClient.SetDefaultPaymentMethod(r.Context(), &paymentv1.SetDefaultPaymentMethodRequest{
+		PaymentMethodId: methodID,
+		CustomerId:      claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"is_default": true,
+	})
+}
+
 type createPaymentRequest struct {
 	ContractID          string `json:"contract_id"`
 	MilestoneID         string `json:"milestone_id"`

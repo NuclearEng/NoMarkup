@@ -77,6 +77,9 @@
 - [ ] Generate JWT keypair under `deploy/prod/keys/` (see `deploy/prod/README.md`)
 - [ ] `chmod 600 deploy/prod/.env` and restrict key files
 - [ ] Confirm **no secrets committed** to git
+- [ ] Run `make founder-secrets-check` (or `./scripts/founder-secrets-check.sh --strict` on the box) before go-live — fail-closed inventory of OAuth / SendGrid / Sentry / Stripe / `ENCRYPTION_KEY` / Checkr / Apple Pay association / `DEPLOY_PROVISIONED`. Does **not** provision secrets; Founder-Action residuals stay open until a human fills them.
+
+Process start is already fail-closed for JWT public-key load (gateway, every env), `STRIPE_SECRET_KEY` (payment, non-dev), `STRIPE_WEBHOOK_SECRET` (payment, every env), and `ENCRYPTION_KEY` (production PII cipher). Do **not** add OAuth / SendGrid / Sentry / Apple Pay to `bin/dev` startup — local dev stays advisory via this check.
 
 ---
 

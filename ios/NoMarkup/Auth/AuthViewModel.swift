@@ -1,6 +1,9 @@
 import AuthenticationServices
 import Foundation
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Auth state for email/password, MFA, register, password reset, SIWA, and Google (ASWebAuth + PKCE).
 @MainActor
@@ -405,38 +408,23 @@ final class AuthViewModel: ObservableObject {
     }
 
     func signOut() {
-        // Best-effort server logout (revokes refresh when present). Local token
-        // clear is sequenced after the device unregister so that call can still
-        // authenticate (IOS-SYS.NT.4 — this covers every signOut() path).
+        // Capture tokens first — Keychain must be empty before this returns so a
+        // force-quit cannot restore the session, and a fast re-login cannot be
+        // wiped by a deferred clearSession.
+        let accessForUnregister = (try? tokenStore.read(.accessToken))
+            .flatMap { $0.isEmpty ? nil : $0 }
         let refreshForLogout = try? tokenStore.read(.refreshToken)
         let shouldCallServer = !isScaffoldSession
+        let deviceKey = PushRegistration.shared.deviceTokenHex.flatMap { $0.isEmpty ? nil : $0 }
+
+        do {
+            try tokenStore.clearSession()
+        } catch {
+            // Still clear UI state even if Keychain delete partially failed.
+        }
 
         // OBS-3: widgets must not keep rendering auction data after sign-out.
         WidgetSharedStore.clear()
-
-        // IOS-INT.2: purge Spotlight so donated jobs/listings do not outlive the session.
-        Task { await SpotlightIndex.deleteAll() }
-
-        if shouldCallServer {
-            Task {
-                // Unregister APNs device while the access token is still in the
-                // Keychain; short cap so a dead network never stalls cleanup.
-                await Self.withTimeout(seconds: 3) {
-                    await PushRegistration.shared.unregisterAndReset()
-                }
-                // Skip the deferred wipe if a new session began while cleanup ran.
-                if !self.isAuthenticated {
-                    try? self.tokenStore.clearSession()
-                }
-                try? await self.api.logout(refreshToken: refreshForLogout)
-            }
-        } else {
-            do {
-                try tokenStore.clearSession()
-            } catch {
-                // Still clear UI state even if Keychain delete partially failed.
-            }
-        }
 
         isAuthenticated = false
         isScaffoldSession = false
@@ -444,6 +432,47 @@ final class AuthViewModel: ObservableObject {
         clearSensitiveInMemoryFields()
         errorMessage = nil
         statusMessage = nil
+
+        PushRegistration.shared.resetSessionState()
+
+        // IOS-INT.2: purge Spotlight so donated jobs/listings do not outlive the session.
+        Task { await SpotlightIndex.deleteAll() }
+
+        guard shouldCallServer else { return }
+        Task {
+            // Unregister with the captured access token — never re-read Keychain
+            // (a new login may already have written fresh tokens).
+            await Self.withTimeout(seconds: 3) {
+                await Self.unregisterPushDevice(
+                    deviceKey: deviceKey,
+                    accessToken: accessForUnregister
+                )
+            }
+            try? await self.api.logout(refreshToken: refreshForLogout)
+        }
+    }
+
+    /// Best-effort DELETE `/api/v1/notifications/devices/{token}` using a captured
+    /// Bearer. Does not touch Keychain — sign-out already wiped the session.
+    private static func unregisterPushDevice(deviceKey: String?, accessToken: String?) async {
+        guard let accessToken, !accessToken.isEmpty else { return }
+        #if canImport(UIKit)
+        let fallbackID = UIDevice.current.identifierForVendor?.uuidString
+        #else
+        let fallbackID: String? = nil
+        #endif
+        let key = deviceKey ?? fallbackID ?? ""
+        guard !key.isEmpty else { return }
+        var url = AppConfig.apiBaseURL
+        for component in ["api", "v1", "notifications", "devices", key] {
+            url = url.appending(path: component)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 8
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        _ = try? await URLSession.shared.data(for: request)
     }
 
     /// Run `operation`, giving up (and cancelling it) after `seconds`.

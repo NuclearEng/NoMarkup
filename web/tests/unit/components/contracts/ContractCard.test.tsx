@@ -12,6 +12,8 @@ vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn(), getPublic: vi.fn() },
   getApiErrorMessage: (_e: unknown, fallback: string) => fallback,
   ApiError: class ApiError extends Error {},
+  idempotencyHeader: (op?: string) => ({ 'Idempotency-Key': op ?? 'test-key' }),
+  clearIdempotencyKey: vi.fn(),
 }));
 
 vi.mock('sonner', () => ({
@@ -295,9 +297,11 @@ describe('TipWidget', () => {
     await user.click(screen.getByRole('button', { name: /15% — \$15\.00/ }));
 
     await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith('/api/v1/contracts/c-9/tip', {
-        amount_cents: 1500,
-      });
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/v1/contracts/c-9/tip',
+        { amount_cents: 1500 },
+        expect.objectContaining({ 'Idempotency-Key': expect.any(String) as string }),
+      );
     });
     expect(await screen.findByText(/your tip is on its way/i)).toBeDefined();
   });
@@ -314,9 +318,11 @@ describe('TipWidget', () => {
     await user.click(screen.getByRole('button', { name: /^Send$/ }));
 
     await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith('/api/v1/contracts/c-7/tip', {
-        amount_cents: 1200,
-      });
+      expect(api.post).toHaveBeenCalledWith(
+        '/api/v1/contracts/c-7/tip',
+        { amount_cents: 1200 },
+        expect.objectContaining({ 'Idempotency-Key': expect.any(String) as string }),
+      );
     });
   });
 

@@ -21,10 +21,9 @@ interface PriceHeatMapProps {
 /**
  * Build GeoJSON features from pricing overview data.
  *
- * In production, ZIP-level coordinates would come from the server.
- * For now, we distribute points around a central US position using
- * a deterministic hash of the category name so placement is stable
- * across renders.
+ * Overview rows have no ZIP lat/lng — do not invent neighborhood
+ * coordinates. Points are a stable, non-geographic layout of
+ * category medians for comparison only.
  */
 function buildGeoJSON(categories: PricingOverviewCategory[]): GeoJSON.FeatureCollection {
   return {
@@ -182,7 +181,7 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
         className={`bg-muted flex items-center justify-center rounded-lg border ${className ?? ''}`}
       >
         <p className="text-muted-foreground text-sm">
-          Price heat map is not available at this time.
+          Category price comparison is not available at this time.
         </p>
       </div>
     );
@@ -206,7 +205,7 @@ export function PriceHeatMap({ categorySlug, className }: PriceHeatMapProps) {
       <div
         ref={mapContainerRef}
         className={`h-full w-full rounded-lg ${!mapLoaded || isLoading ? 'invisible absolute inset-0' : ''}`}
-        aria-label="Neighborhood price heat map"
+        aria-label="Illustrative category price comparison"
         role="application"
       />
     </div>

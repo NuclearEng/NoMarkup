@@ -2,6 +2,9 @@ package handler
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -124,6 +127,118 @@ func TestCheckrCreateCandidate_HTTPSuccess(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "cand_123", id)
+}
+
+// TestCheckrWebhook_MissingSecret_503 never persists without CHECKR_WEBHOOK_SECRET.
+func TestCheckrWebhook_MissingSecret_503(t *testing.T) {
+	t.Setenv("CHECKR_WEBHOOK_SECRET", "")
+
+	h := &BackgroundCheckHandler{db: nil}
+	payload := `{"type":"report.completed","data":{"object":{"id":"rep_1","status":"complete","result":"clear"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/checkr", strings.NewReader(payload))
+	req.Header.Set("X-Checkr-Signature", "00")
+	rec := httptest.NewRecorder()
+
+	h.HandleWebhook(rec, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, "body=%s", rec.Body.String())
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Contains(t, body["error"], "CHECKR_WEBHOOK_SECRET")
+	lower := strings.ToLower(rec.Body.String())
+	assert.NotContains(t, lower, `"status":"clear"`)
+	assert.NotContains(t, lower, `"status":"pass"`)
+	assert.NotContains(t, lower, `"status":"passed"`)
+}
+
+// TestCheckrWebhook_BadSignature_401 does not persist on HMAC mismatch.
+func TestCheckrWebhook_BadSignature_401(t *testing.T) {
+	t.Setenv("CHECKR_WEBHOOK_SECRET", "whsec_test")
+
+	h := &BackgroundCheckHandler{db: nil}
+	payload := `{"type":"report.completed","data":{"object":{"id":"rep_1","status":"complete","result":"clear"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/checkr", strings.NewReader(payload))
+	req.Header.Set("X-Checkr-Signature", "deadbeef")
+	rec := httptest.NewRecorder()
+
+	h.HandleWebhook(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code, "body=%s", rec.Body.String())
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Contains(t, body["error"], "signature")
+	assert.NotContains(t, strings.ToLower(rec.Body.String()), `"status":"clear"`)
+}
+
+// TestCheckrWebhook_MissingSignature_401.
+func TestCheckrWebhook_MissingSignature_401(t *testing.T) {
+	t.Setenv("CHECKR_WEBHOOK_SECRET", "whsec_test")
+
+	h := &BackgroundCheckHandler{db: nil}
+	payload := `{"type":"report.completed","data":{"object":{"id":"rep_1","result":"clear"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/checkr", strings.NewReader(payload))
+	rec := httptest.NewRecorder()
+
+	h.HandleWebhook(rec, req)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code, "body=%s", rec.Body.String())
+}
+
+// TestCheckrWebhook_ValidSignature_NilDB_503 proves persist is after verify.
+func TestCheckrWebhook_ValidSignature_NilDB_503(t *testing.T) {
+	const secret = "whsec_test"
+	t.Setenv("CHECKR_WEBHOOK_SECRET", secret)
+
+	h := &BackgroundCheckHandler{db: nil}
+	payload := `{"type":"report.completed","data":{"object":{"id":"rep_1","candidate_id":"cand_1","status":"complete","result":"clear"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/checkr", strings.NewReader(payload))
+	req.Header.Set("X-Checkr-Signature", checkrTestHMAC(secret, payload))
+	rec := httptest.NewRecorder()
+
+	h.HandleWebhook(rec, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, "body=%s", rec.Body.String())
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Contains(t, body["error"], "database")
+	assert.NotContains(t, strings.ToLower(rec.Body.String()), `"status":"pass"`)
+}
+
+func TestMapCheckrWebhookStatus_NeverInventPass(t *testing.T) {
+	_, ok := mapCheckrWebhookStatus("report.completed", "complete", "pass")
+	assert.False(t, ok, "must not map invented PASS")
+
+	_, ok = mapCheckrWebhookStatus("report.completed", "complete", "passed")
+	assert.False(t, ok)
+
+	got, ok := mapCheckrWebhookStatus("report.completed", "complete", "clear")
+	assert.True(t, ok)
+	assert.Equal(t, "clear", got)
+
+	got, ok = mapCheckrWebhookStatus("report.completed", "complete", "consider")
+	assert.True(t, ok)
+	assert.Equal(t, "consider", got)
+
+	got, ok = mapCheckrWebhookStatus("invitation.completed", "completed", "")
+	assert.True(t, ok)
+	assert.Equal(t, "pending", got)
+}
+
+func TestCheckrWebhookSignatureValid(t *testing.T) {
+	const secret = "whsec_test"
+	body := []byte(`{"type":"report.updated"}`)
+	sig := checkrTestHMAC(secret, string(body))
+	assert.True(t, checkrWebhookSignatureValid(secret, body, sig))
+	assert.True(t, checkrWebhookSignatureValid(secret, body, "sha256="+sig))
+	assert.False(t, checkrWebhookSignatureValid(secret, body, "00"))
+	assert.False(t, checkrWebhookSignatureValid(secret, body, ""))
+	assert.False(t, checkrWebhookSignatureValid("", body, sig))
+}
+
+func checkrTestHMAC(secret, payload string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(payload))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // TestCheckrCreateInvitation_FallsBackToReport when invitation endpoint errors.

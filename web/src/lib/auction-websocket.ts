@@ -79,10 +79,12 @@ class AuctionWebSocketManager {
     }
 
     const wsBase = resolveWsBase();
-    const url = `${wsBase}/ws/auction/${jobId}?token=${encodeURIComponent(token)}`;
+    const url = `${wsBase}/ws/auction/${jobId}`;
 
     this.updateStatus('connecting');
-    this.ws = new WebSocket(url);
+    // JWT rides as a second subprotocol — browsers cannot set Authorization
+    // on WebSocket. URL must not contain ?token=.
+    this.ws = new WebSocket(url, ['nomarkup.bearer.v1', token]);
 
     this.ws.onopen = () => {
       // Do NOT reset the attempt counter here. The gateway accepts the

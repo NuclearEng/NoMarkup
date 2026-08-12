@@ -1,6 +1,7 @@
 // Tests for the provider workspace page — exercises loading skeletons,
 // today vs upcoming buckets, empty states, and grouping by date.
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -39,6 +40,24 @@ vi.mock('@/hooks/useContracts', () => ({
   useContracts: () => contractsState,
 }));
 
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock('@/lib/api', () => ({
+  api: {
+    post: vi.fn(),
+  },
+  getApiErrorMessage: (_err: unknown, fallback: string) => fallback,
+}));
+
+const { api } = (await import('@/lib/api')) as unknown as {
+  api: { post: ReturnType<typeof vi.fn> };
+};
+
 const { default: ProviderWorkspacePage } = await import(
   '@/app/(dashboard)/provider/workspace/page'
 );
@@ -69,6 +88,7 @@ beforeEach(() => {
   contractsState.data = undefined;
   contractsState.isLoading = false;
   contractsState.isError = false;
+  api.post.mockReset();
 });
 
 afterEach(() => {
@@ -127,8 +147,8 @@ describe('ProviderWorkspacePage', () => {
   });
 
   it('renders upcoming contracts grouped by date', () => {
-    // Use far-future date so it lands in upcoming, not today
-    const future = '2099-04-20T00:00:00Z';
+    // 3 days out: upcoming (next 7 days), not today, not the far-future catch-all
+    const future = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
     contractsState.data = {
       contracts: [
         makeContract({
@@ -225,5 +245,24 @@ describe('ProviderWorkspacePage', () => {
     // Output format is "Weekday, Mon DD" — e.g. "Sun, Apr 19" or "Mon, Apr 20"
     // depending on tz. Match the month string only.
     expect(screen.getAllByText(/Apr 1[9]|Apr 20/).length).toBeGreaterThan(0);
+  });
+
+  it('mints a calendar feed and opens the returned url, never a session JWT', async () => {
+    const user = userEvent.setup();
+    const feedURL = 'https://api.example.com/api/v1/me/calendar.ics?feed=abc123secret';
+    api.post.mockResolvedValue({ url: feedURL });
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+
+    render(withQueryClient(createElement(ProviderWorkspacePage)));
+    await user.click(screen.getByRole('button', { name: /add to calendar/i }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/api/v1/me/calendar-feed');
+    });
+    expect(open).toHaveBeenCalledWith(feedURL, '_blank', 'noopener,noreferrer');
+    const opened = String(open.mock.calls[0]?.[0] ?? '');
+    expect(opened).not.toContain('token=');
+    expect(opened).not.toContain('getAccessToken');
   });
 });

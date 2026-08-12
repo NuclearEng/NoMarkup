@@ -20,3 +20,6 @@ verification will fail. Ops checklist: `docs/compliance/apple-pay-domain.md`.
   association). Privacy copy should mention that card payments and Apple Pay
   / Google Pay are processed by Stripe; NoMarkup never stores raw card
   numbers.
+- Machine-check (does not close this residual): `make founder-secrets-check`
+  **FAIL**s the Apple Pay row while this file still contains PLACEHOLDER /
+  TODO / example.

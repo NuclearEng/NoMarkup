@@ -356,20 +356,25 @@ export function PricingPageContent() {
           className={`mb-12 transition-all duration-700 ${heatmapSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
         >
           {/* Section header */}
-          <div className="mb-5 flex items-center gap-3">
-            <div className="glass-pill inline-flex items-center gap-2 rounded-full px-3.5 py-1 text-xs font-medium text-white/60">
-              <span
-                className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400"
-                aria-hidden="true"
-              />
-              Live
+          <div className="mb-5 space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="glass-pill inline-flex items-center gap-2 rounded-full px-3.5 py-1 text-xs font-medium text-white/60">
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full bg-white/40"
+                  aria-hidden="true"
+                />
+                Illustrative
+              </div>
+              <h2
+                id="heatmap-heading"
+                className="text-lg font-bold text-white sm:text-xl"
+              >
+                Category price comparison
+              </h2>
             </div>
-            <h2
-              id="heatmap-heading"
-              className="text-lg font-bold text-white sm:text-xl"
-            >
-              Price heat map
-            </h2>
+            <p className="text-sm text-white/50">
+              Category-level market rates for comparison — not a live neighborhood map.
+            </p>
           </div>
 
           <div className="glass glass-highlight overflow-hidden rounded-2xl">

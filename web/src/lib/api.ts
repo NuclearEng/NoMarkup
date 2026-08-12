@@ -225,8 +225,10 @@ export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body?: unknown, extraHeaders?: Record<string, string>) =>
     request<T>('POST', path, body, false, extraHeaders),
-  put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
-  patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
+  put: <T>(path: string, body?: unknown, extraHeaders?: Record<string, string>) =>
+    request<T>('PUT', path, body, false, extraHeaders),
+  patch: <T>(path: string, body: unknown, extraHeaders?: Record<string, string>) =>
+    request<T>('PATCH', path, body, false, extraHeaders),
   delete: <T>(path: string, body?: unknown) => request<T>('DELETE', path, body),
   /** Post without attaching auth header (for login/register) */
   postUnauthed: <T>(path: string, body?: unknown) =>

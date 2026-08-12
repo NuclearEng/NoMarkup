@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement, type ReactNode } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -696,6 +696,100 @@ describe('AddPaymentMethodForm', () => {
       expect(screen.getByTestId('stripe-payment-request-button')).toBeDefined();
     });
     expect(stripeStub.paymentRequest).toHaveBeenCalled();
+  });
+
+  it('confirms the SetupIntent with the wallet PaymentMethod before completing success', async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    let paymentMethodHandler:
+      | ((event: { paymentMethod: { id: string }; complete: ReturnType<typeof vi.fn> }) => void)
+      | undefined;
+    stripeStub.paymentRequest.mockImplementation(() => ({
+      canMakePayment: vi.fn().mockResolvedValue({ applePay: true }),
+      on: vi.fn((event: string, handler: typeof paymentMethodHandler) => {
+        if (event === 'paymentmethod') paymentMethodHandler = handler;
+      }),
+    }));
+    stripeStub.confirmSetup.mockResolvedValue({ error: undefined });
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'seti_real_secret' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess,
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(screen.getByTestId('stripe-payment-request-button')).toBeDefined();
+    });
+    await waitFor(() => {
+      expect(paymentMethodHandler).toBeDefined();
+    });
+
+    const complete = vi.fn();
+    await act(async () => {
+      paymentMethodHandler?.({ paymentMethod: { id: 'pm_wallet_1' }, complete });
+    });
+
+    await waitFor(() => {
+      expect(stripeStub.confirmSetup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientSecret: 'seti_real_secret',
+          confirmParams: expect.objectContaining({
+            payment_method: 'pm_wallet_1',
+          }),
+        }),
+      );
+    });
+    expect(complete).toHaveBeenCalledWith('success');
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('completes the wallet sheet as fail when SetupIntent confirm errors', async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    let paymentMethodHandler:
+      | ((event: { paymentMethod: { id: string }; complete: ReturnType<typeof vi.fn> }) => void)
+      | undefined;
+    stripeStub.paymentRequest.mockImplementation(() => ({
+      canMakePayment: vi.fn().mockResolvedValue({ applePay: true }),
+      on: vi.fn((event: string, handler: typeof paymentMethodHandler) => {
+        if (event === 'paymentmethod') paymentMethodHandler = handler;
+      }),
+    }));
+    stripeStub.confirmSetup.mockResolvedValue({ error: { message: 'wallet declined' } });
+    useCreateSetupMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ client_secret: 'seti_real_secret' }),
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateSetupIntent>);
+
+    render(
+      createElement(AddPaymentMethodForm, {
+        onSuccess,
+        onCancel: vi.fn(),
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Enter Payment Details/ }));
+    await waitFor(() => {
+      expect(paymentMethodHandler).toBeDefined();
+    });
+
+    const complete = vi.fn();
+    await act(async () => {
+      paymentMethodHandler?.({ paymentMethod: { id: 'pm_wallet_2' }, complete });
+    });
+
+    await waitFor(() => {
+      expect(complete).toHaveBeenCalledWith('fail');
+    });
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(screen.getByText('wallet declined')).toBeDefined();
   });
 
   it('omits the wallet button when canMakePayment returns falsy', async () => {

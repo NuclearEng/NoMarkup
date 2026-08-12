@@ -44,8 +44,15 @@ vi.mock('@/hooks/useMFA', () => ({
   useDisableMFA: vi.fn(),
 }));
 
+vi.mock('qrcode', () => ({
+  default: {
+    toDataURL: vi.fn(() => Promise.resolve('data:image/png;base64,AAA')),
+  },
+}));
+
 const { useProfile } = await import('@/hooks/useProfile');
 const { useEnableMFA, useVerifyMFASetup, useDisableMFA } = await import('@/hooks/useMFA');
+const QRCode = (await import('qrcode')).default;
 const { default: SecuritySettingsPage } = await import(
   '@/app/(dashboard)/settings/security/page'
 );
@@ -266,7 +273,14 @@ describe('SecuritySettingsPage', () => {
     expect(screen.getByText('JBSWY3DPEHPK3PXP')).toBeDefined();
     expect(screen.getByText('code-1')).toBeDefined();
     expect(screen.getByText('code-2')).toBeDefined();
-    expect(screen.getByRole('img', { name: /Scan this QR code/i })).toBeDefined();
+    const qr = await screen.findByRole('img', { name: /Scan this QR code/i });
+    expect(qr.getAttribute('src')).toMatch(/^data:image\/png;base64,/);
+    expect(qr.getAttribute('src')).not.toMatch(/qrserver/i);
+    expect(document.documentElement.innerHTML).not.toMatch(/api\.qrserver\.com/i);
+    expect(QRCode.toDataURL).toHaveBeenCalledWith(
+      'otpauth://totp/test',
+      expect.objectContaining({ width: 200 }),
+    );
   });
 
   it('Copy all flips to Copied for two seconds', async () => {
@@ -359,8 +373,7 @@ describe('SecuritySettingsPage', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(await screen.findByRole('alert')).toBeDefined();
-    expect(screen.getByText('bad code')).toBeDefined();
+    expect(await screen.findByText('bad code')).toBeDefined();
   });
 
   it('successful disable clears the form and shows the success banner', async () => {
@@ -416,8 +429,7 @@ describe('SecuritySettingsPage', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(await screen.findByRole('alert')).toBeDefined();
-    expect(screen.getByText('bad totp')).toBeDefined();
+    expect(await screen.findByText('bad totp')).toBeDefined();
   });
 
   it('change-password form submits via api.post on click', async () => {
@@ -470,7 +482,6 @@ describe('SecuritySettingsPage', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(await screen.findByRole('alert')).toBeDefined();
-    expect(screen.getByText('wrong password')).toBeDefined();
+    expect(await screen.findByText('wrong password')).toBeDefined();
   });
 });

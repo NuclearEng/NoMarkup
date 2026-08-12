@@ -1,8 +1,8 @@
 # PRD + iOS parity backlog
 
-**Date:** 2026-07-26 (audit continued 2026-07-27; **code re-reconcile 2026-08-02**; **post-wave polish reconcile 2026-08-02**)  
+**Date:** 2026-07-26 (audit continued 2026-07-27; **code re-reconcile 2026-08-02**; **honesty sweep 2026-08-12**)  
 **Sources:** `PRD.md` v2.0 §8–16 · `ios/NoMarkup/` · gateway/services/engines · compliance docs under `docs/compliance/`  
-**Verdict:** **Consumer dual-rail (services + goods) eng depth is shipped** on iOS + web + backend. Full PRD (admin, StoreKit digital purchase, Instant AI/ETA Phase 2, Checkr) is **not** claimed. **App Store submit remains blocked by ops/founder work**, not by missing consumer auction/escrow UI. See `eng-completion-scorecard-2026-08-02.md`.
+**Verdict:** **Consumer dual-rail (services + goods) eng depth is shipped** on iOS + web + backend. Full PRD (StoreKit digital purchase, Instant AI/ETA Phase 2, Checkr) is **not** claimed. **Consumer admin desk now exists** (role-gated). **App Store submit remains blocked by ops/founder work**, not by missing consumer auction/escrow UI. See `eng-completion-scorecard-2026-08-02.md` (core shipped — **not 100**).
 
 ---
 
@@ -11,7 +11,7 @@
 | Scope | Result |
 |--------|--------|
 | **Backend (MVP core)** | Largely present: reverse auction, sealed bids, contracts, escrow, reviews/trust, fraud heuristics, chat (inquiry + share-contact), payments (incl. **InstantPayout gRPC**), maps APIs |
-| **iOS consumer app** | Core paths **live**; former thin FR residuals (bid filters, schedule picker, PDF chat/verify, FR-8.1/8.8, badges, distance, recurring edit, Facebook native, team/challenges/legal hub) **shipped** as of 2026-08-02 re-check |
+| **iOS consumer app** | Core paths **live**; former thin FR residuals (bid filters, PDF chat/verify, FR-8.1/8.8, badges, distance, recurring edit, Facebook native, team/challenges/legal hub) **shipped**. **FR-3.1 schedule picker is UI-only — prior “FIXED” was false** (wrong tokens, dates not sent; parallel fix). |
 | **PRD §1 scope** | MVP = web; native iOS = post-MVP sequencing — this backlog still measures **full PRD product coverage on iOS** |
 | **PRD §22 / expansion** | Intentionally roadmap: **Instant AI / live GPS ETA (Phase 2)**, enterprise, verticals |
 | **App Store binary** | **NOT READY** — **[~] ops**: signing, ASC media/labels, review backend, free-tier ASC narrative, human device smoke, Apple Pay domain / merchant env |
@@ -62,7 +62,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 | Regulated rails | Still blocked for true live; licenses + E2E + security exits open |
 | Security gate | PASS WITH GAPS historically; **MON-14–18 code closed** (ADR SUPERSEDED) — residual = licenses / flags / live dogfood |
 | Perf gate | Samples PASS; parent closed PASS from samples where marked |
-| iOS ↔ web matrix | Near-live core; **Google + Facebook native OAuth shipped** (Console IDs = ops dogfood); native WS shipped; **StoreKit + admin intentionally out of consumer binary** |
+| iOS ↔ web matrix | Near-live core; **Google + Facebook native OAuth shipped** (Console IDs = ops dogfood); native WS shipped; **StoreKit out of consumer binary**; **admin desk is in-app** (`AdminConsoleView`, role-gated) |
 | **FR-18 per-instance Stripe pay** | Config/instances/pause/resume/cancel + lazy roll-forward + approve/complete CreatePayment + one off-session attempt + FR-16.7 due-row gateway CreatePayment retry **shipped**; iOS shows `off_session_charged` + `payment_retry_count`/`next_retry_at` when gateway projects them + **auto-approve / future-rate PATCH**. Residual: live Stripe dogfood of retry ladder |
 
 ---
@@ -77,7 +77,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 |----------|-------------------------|
 | Contracts lifecycle, guarantee claim, notifications/prefs + **tab unread badges** + **FR-17.3 critical notif locks** | — |
 | Properties CRUD + **account + per-property spend** + **preferred-providers API** (account + property scope), referrals, FinServ hub (flagged) | — |
-| Trust scores / verification upload **PDF + photo** + **verification center** (web + iOS) | Checkr (FR-2.9) not built |
+| Trust scores / verification upload **PDF + photo** + **verification center** (web + iOS) | Checkr (FR-2.9) **scaffolded fail-closed** (POST without `CHECKR_API_KEY` → 503; webhook HMAC without `CHECKR_WEBHOOK_SECRET` → 503). Live vendor = Founder-Action. |
 | Dual-rail goods + services shell + **listing promote** (pay-then-promote) | **Instant AI / live GPS ETA = Phase 2 roadmap** (not eng polish) |
 | Leave review + document download + **PDF chat attach** + **web chat parity** (inquiry, share-contact, typing/Seen) | **StoreKit digital purchase (FR-12)** deferred; free-tier ASC lock; **FR-6.2 real provider→customer wire dims still residual** (persona labels ship; API remaps 4 shared fields) |
 | Instant payout ledger + **gRPC InstantPayout wire** + iOS hub UI | True-live still license/flag/ops gated (R6.x) |
@@ -86,7 +86,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 ### Solid on iOS today
 
 - Auth: email/password + SIWA + **Google native** + **Facebook native** + MFA + passkeys; Keychain JWT  
-- Jobs: browse/map (**category + min-price filters on list + JobsMapView FR-10.2**), post (**schedule flexible/specific/range**), drafts, bid/award/close/cancel, **ladder sort + trust/volume filters**, live auction WS + spectate  
+- Jobs: browse/map (**category + min-price filters on list + JobsMapView FR-10.2**), post (**schedule picker UI exists; encode still broken — see FR-3.1**), drafts, bid/award/close/cancel, **ladder sort + trust/volume filters**, live auction WS + spectate  
 - Goods: marketplace, sell, orders, Apple Pay Rail A (env-dependent); bid retract (detail + MyBids, 60s); **listing promote** (SetupIntent + confirm charge then `is_promoted`)  
 - Contracts: accept/start/complete/approve, milestones (**200-char revision + 3-cap UI**), change orders, tip, dispute, no-show, abandonment, documents + leave review (persona labels FR-6.2) + **local_terms card (FR-5.4)** + recurring auto-approve/rate edit  
 - Instant: customer emergency CTA + provider offers; provider weekly schedule (GET hydrate + PUT); geo/category/trust prefilter on notify/List/Accept  
@@ -100,12 +100,13 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 | Area | PRD | Gap |
 |------|-----|-----|
 | Instant | §13 Phase 2 | **Live GPS ETA + AI recommendation** — PRD Phase 2; geo/category/trust ranking + schedule already shipped |
-| Digital subs | FR-12 | **StoreKit** purchase path deferred; free-tier binary lock is intentional (`v1-ios-product-cut.md`) |
-| Admin / fraud UI | FR-7/13 | Correctly **web-only** (out of consumer iOS) |
-| Background checks | FR-2.9 | **Checkr** still open question / not built |
+| Digital subs | FR-12 | **STOREKIT-B2 scaffolded**: `StoreKitEnabled=false`; `POST /api/v1/iap/app-store/verify` fail-closed (503, never `{valid:true}` without Apple-root crypto). Live IAP = ASC + Founder-Action. |
+| Admin / fraud UI | FR-7/13 | **Consumer desk shipped** (Account → Admin console). Web admin still the deep surface. **ADMIN-IOS SUPERSEDED.** |
+| Background checks | FR-2.9 | **CHECKR-FR-2.9 scaffolded**: provider POST fail-closed without `CHECKR_API_KEY`; `POST /api/v1/webhooks/checkr` HMAC fail-closed without `CHECKR_WEBHOOK_SECRET` (401 bad sig; persist only after verify; never invent PASS). Live Checkr account/keys = Founder-Action. |
 | Ops / submit | — | ASC packaging, device smoke sign-off, PRE-05 review backend, Apple Pay domain + merchant/`pk_`, OAuth Console IDs for dogfood |
 | Money races MON-14–18 | Tracker **Done** | ADR **SUPERSEDED**; residual = live Stripe dogfood when enabling regulated rails |
 | FR-6.2 real dims | Thin eng residual | Persona UI labels ship; CreateReview still 4 shared wire fields (DB provider→customer columns unused) — see `fr-6-2-review-dimensions-residual.md` |
+| **FR-3.1 schedule** | **Open (parallel fix)** | Prior “FIXED” claim was **false**. `PostJobView` sends `specific`/`range` (API: `specific_date`/`date_range`); date pickers **not encoded** on `createJob`. Do not claim fixed. |
 
 ---
 
@@ -113,10 +114,11 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
 
 ### Engineering residual status (2026-07-27 waves 1–28 + **2026-08-02 re-reconcile + polish wave**)
 
-**Consumer dual-rail eng for in-scope PRD MVP depth is implemented** (`eng-completion-scorecard-2026-08-02.md` → **100/100** eng bar). Remaining unchecked items are:
+**Consumer dual-rail core is implemented** (`eng-completion-scorecard-2026-08-02.md` → **core shipped — not 100**). Remaining unchecked items are:
 1. **Human/ops-gated (`[~] ops`)** — ASC packaging, device smoke sign-off, always-on review API (PRE-05), Apple Pay domain file + merchant/`pk_`, Google/Facebook iOS client IDs in Console for dogfood, live Stripe dogfood of FR-16.7 ladder + regulated rails
-2. **OUT_OF_SCOPE / cut / licenses (not eng closable as pure ship tasks)** — R6.2–R6.6 licenses, **Checkr** (FR-2.9 OQ), mTLS arming / `DEPLOY_PROVISIONED`, **StoreKit B2**, **admin FR-13 web-only**, founder secrets, **Instant AI/ETA Phase 2**
+2. **OUT_OF_SCOPE / cut / licenses (not eng closable as pure ship tasks)** — R6.2–R6.6 licenses, **Checkr live vendor** (FR-2.9 keys/package — eng scaffold + fail-closed webhook shipped), mTLS arming / `DEPLOY_PROVISIONED`, **StoreKit live IAP** (B2 verify route fail-closed; ASC + Apple roots = Founder-Action), founder secrets, **Instant AI/ETA Phase 2**. **ADMIN-IOS SUPERSEDED** (desk shipped).
 3. **Thin eng residual (honest, not dual-rail blockers):**
+   - **FR-3.1 schedule encode** — prior “FIXED” was false; wrong tokens + dates not sent (parallel fix)
    - **FR-6.2 real dims** — persona labels ship; CreateReview API still fixed 4 customer-oriented wire fields; DB `payment_promptness` / `scope_accuracy` / `access` unused (`fr-6-2-review-dimensions-residual.md`)
    - **FR-8.6** server-side chat search (local filter over loaded messages only)
    - **FR-10.7 travel *time*** (distance labels yes; Maps ETA not a job-card field)
@@ -125,7 +127,7 @@ Do **not** claim “PRD fully implemented on iOS.” Claim **core reverse-auctio
    - **FR-16.7 / FR-18** — 3-strike, due-row CreatePayment, visit-pay web/iOS, approved_at, payment_funded, **auto-approve + future-rate `updateRecurringConfig`**
    - **Instant** — schedule consume + in-app `job_matched` fan-out + accept notify + honest `providers_notified` + geo/category/trust prefilter + **InstantPayout gRPC + gateway + iOS hub**
    - **Chat FR-8** — WS/typing/Seen/read_receipt + **PDF attach (FR-8.3)** + **pre-bid inquiry (FR-8.1)** + **Share contact (FR-8.8)** on **iOS + web**
-   - **Auction UX** — bid sort (price/trust/rating/volume) + **FR-4.7 filters**, post **schedule picker**, job browse + **map category/min-price filters**, **distance labels**, tab **unread badges**
+   - **Auction UX** — bid sort (price/trust/rating/volume) + **FR-4.7 filters**, post **schedule picker UI** (encode **not** fixed), job browse + **map category/min-price filters**, **distance labels**, tab **unread badges**
    - **FR-19.2** — account + **per-property spend** (`/analytics/customers/me/spending?property_id=`); **preferred-providers** `GET /me/preferred-providers` + `GET /properties/{id}/preferred-providers` (web + iOS)
    - **Promote** — `POST /listings/{id}/promote` + `/confirm` (pay-then-flip `is_promoted`); web + iOS
    - **Verification center** — iOS `VerificationCenterView` / `VerificationDocumentsView`; web `/provider/verification` + onboarding panel (FR-2.10 lockout)
@@ -162,7 +164,8 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 
 
 - [x] **FR-1.5–1.9 onboarding** — VerificationCenter + multi-step OnboardingWizardView (skip-friendly) shipped  
-- [x] **FR-3 job form + repost** — Full job form (recurrence, offer-accepted, **schedule flexible/specific/range**, property) + repost UX  
+- [~] **FR-3.1 schedule encode** — Picker UI exists; **not FIXED**. Tokens are `specific`/`range` (API: `specific_date`/`date_range`); `preferredDate` / range dates **not sent** on `createJob`. Parallel fix — do not claim done.  
+- [x] **FR-3 job form + repost** — Full job form (recurrence, offer-accepted, schedule picker UI, property) + repost UX  
 - [x] **FR-4 bid advanced** — Lower bid, accept-offer, **sort (price/trust/rating/volume) + FR-4.7 trust/volume filters** on iOS  
 - [x] **FR-9 services pay** — Services escrow PaymentSheet capture + fee breakdown (not goods-only)  
 - [x] **FR-10.4 directions** — Post-award Get Directions (Maps) + `property_id` on PostJob  
@@ -206,8 +209,8 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 ### P3 / explicit non-goals for consumer binary
 
 - [x] **FR-2.8 expiration UX** — 30d warning shipped  
-- [~] **FR-2.9 Checkr** — still open question / **not built** (roadmap / founder decision; not closable as pure eng without vendor)  
-- [x] **Keep out of consumer iOS** — **Admin FR-13** (web-only by design); enterprise API / white-label §14; §16 vertical expansion until planned; **StoreKit until B2 decision**  
+- [~] **FR-2.9 Checkr** — **eng scaffold shipped** (POST fail-closed; webhook HMAC fail-closed). Live vendor account / `CHECKR_*` = Founder-Action (do not invent PASS).  
+- [x] **Keep out of consumer iOS** — enterprise API / white-label §14; §16 vertical expansion until planned; **StoreKit until B2 decision**. **Admin FR-13 is no longer out of binary** — `AdminConsoleView` shipped, role-gated.  
 
 ---
 
@@ -241,7 +244,7 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | `device-smoke-checklist.md` | Manual Stage C smoke (unsigned) |
 | `v1-ios-product-cut.md` | Free-tier-only digital cut |
 | `apple-pay-domain.md` | Placeholder + ops steps for domain association |
-| `eng-completion-scorecard-2026-08-02.md` | Consumer dual-rail eng bar (100/100) + OUT_OF_SCOPE Decision-IDs |
+| `eng-completion-scorecard-2026-08-02.md` | Consumer dual-rail core shipped — not 100 + Decision-IDs |
 | `fr-6-2-review-dimensions-residual.md` | FR-6.2 persona labels vs real wire dims residual |
 
 ---
@@ -290,3 +293,5 @@ Status legend: `[ ]` open engineering · `[x]` done · `[~]` partial / accepted 
 | 2026-07-27 wave28 | MON-15 BNPL charge-first hardened (resolveCustomerStripeID fail-closed) + regression tests; tracker Done |
 | 2026-08-02 re-reconcile | Doc honesty vs code: InstantPayout gRPC+UI, FR-8.1 inquiry, FR-8.8 share-contact, PDF verify/chat, Facebook native, Team/Challenges/Legal, bid filters, schedule picker, recurring edit, tab badges, distance labels marked **[x]**; Instant AI/ETA Phase 2, StoreKit, admin OOS, Checkr, ops rows stay honest residual |
 | 2026-08-02 polish reconcile | Preferred-providers API + per-property spend; web chat parity; listing promote; verification center web; map filters FR-10.2; FR-17.3 notif locks; MON-14–18 ADR **SUPERSEDED** (tracker Done); FR-6.2 real dims still residual (labels only); scorecard `eng-completion-scorecard-2026-08-02.md` |
+| 2026-08-12 honesty | Retract FR-3.1 “FIXED” (wrong tokens + dates not sent). **ADMIN-IOS SUPERSEDED** — consumer `AdminConsoleView` shipped. Scorecards no longer 100/100. |
+| 2026-08-12 STOREKIT/CHECKR residuals | Fail-closed `POST /api/v1/iap/app-store/verify` (never `{valid:true}` without crypto). Checkr `POST /api/v1/webhooks/checkr` HMAC; persist only after verify. Live vendor still Founder-Action. |

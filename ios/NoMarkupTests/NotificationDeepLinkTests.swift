@@ -63,6 +63,49 @@ final class NotificationDeepLinkTests: XCTestCase {
         XCTAssertEqual(route, .contract(id: sampleUUID))
     }
 
+    func testJobsRootIsBrowseNotPost() {
+        XCTAssertEqual(DeepLinkRouter.route(fromActionString: "/jobs"), .jobsBrowse)
+        XCTAssertEqual(DeepLinkRouter.route(fromActionString: "jobs"), .jobsBrowse)
+        XCTAssertEqual(
+            DeepLinkRouter.route(from: URL(string: "nomarkup://jobs")!),
+            .jobsBrowse
+        )
+        XCTAssertEqual(
+            DeepLinkRouter.route(from: URL(string: "https://no-markup.com/jobs")!),
+            .jobsBrowse
+        )
+        XCTAssertNotEqual(DeepLinkRouter.route(fromActionString: "/jobs"), .postJob)
+        XCTAssertEqual(DeepLinkRouter.route(fromActionString: "/jobs")?.actionURLString, "/jobs")
+    }
+
+    func testJobsNewIsPostJob() {
+        XCTAssertEqual(DeepLinkRouter.route(fromActionString: "/jobs/new"), .postJob)
+        XCTAssertEqual(
+            DeepLinkRouter.route(from: URL(string: "nomarkup://jobs/new")!),
+            .postJob
+        )
+        XCTAssertEqual(
+            DeepLinkRouter.route(from: URL(string: "https://no-markup.com/jobs/new")!),
+            .postJob
+        )
+        XCTAssertEqual(DeepLinkRouter.route(fromActionString: "/jobs/new")?.actionURLString, "/jobs/new")
+    }
+
+    func testJobsUUIDIsJob() {
+        XCTAssertEqual(
+            DeepLinkRouter.route(fromActionString: "/jobs/\(sampleUUID)"),
+            .job(id: sampleUUID)
+        )
+        XCTAssertEqual(
+            DeepLinkRouter.route(from: URL(string: "nomarkup://jobs/\(sampleUUID)")!),
+            .job(id: sampleUUID)
+        )
+        XCTAssertEqual(
+            DeepLinkRouter.route(fromActionString: "/jobs/\(sampleUUID)")?.actionURLString,
+            "/jobs/\(sampleUUID)"
+        )
+    }
+
     func testNilEmptyUnknown() {
         XCTAssertNil(NotificationDeepLink.destination(from: nil))
         XCTAssertNil(NotificationDeepLink.destination(from: ""))
@@ -339,8 +382,11 @@ final class AppIntentsAuthGuardTests: XCTestCase {
         var intent = CheckInToJobIntent()
         intent.session = StubIntentSession(signedIn: true)
         intent.contract = ContractEntity(id: sampleUUID)
-        _ = try await intent.perform()
+        let result = try await intent.perform()
         XCTAssertEqual(DeepLinkRouter.shared.route, .checkIn(contractID: sampleUUID))
+        // Production path does not POST — in-app UI confirms.
+        let container = result as? IntentResultContainer<String, Never, Never, IntentDialog>
+        XCTAssertEqual(container?.value, "opened")
     }
 
     func testCheckInToJobIntentSignedInRoutesWithoutContract() async throws {
@@ -352,6 +398,70 @@ final class AppIntentsAuthGuardTests: XCTestCase {
         _ = try await intent.perform()
         XCTAssertEqual(DeepLinkRouter.shared.route, .checkIn(contractID: nil))
     }
+
+    func testCheckInToJobIntentInjectedAPIChecksIn() async throws {
+        DeepLinkRouter.shared.clear()
+        defer { DeepLinkRouter.shared.clear() }
+
+        let calls = CheckInCallBox()
+        var intent = CheckInToJobIntent()
+        intent.session = StubIntentSession(signedIn: true)
+        intent.contract = ContractEntity(id: sampleUUID)
+        intent.locationCoordinateProvider = { (37.7749, -122.4194) }
+        intent.checkInAPI = { contractId, lat, lng in
+            await calls.record(contractId: contractId, lat: lat, lng: lng)
+        }
+
+        let result = try await intent.perform()
+
+        XCTAssertEqual(DeepLinkRouter.shared.route, .checkIn(contractID: sampleUUID))
+        let recorded = await calls.snapshot()
+        XCTAssertEqual(recorded?.contractId, sampleUUID)
+        XCTAssertEqual(recorded?.lat ?? 0, 37.7749, accuracy: 0.0001)
+        XCTAssertEqual(recorded?.lng ?? 0, -122.4194, accuracy: 0.0001)
+        let container = result as? IntentResultContainer<String, Never, Never, IntentDialog>
+        XCTAssertEqual(container?.value, "checked_in")
+    }
+
+    func testCheckInToJobIntentInjectedAPIFailureStillDeepLinks() async throws {
+        DeepLinkRouter.shared.clear()
+        defer { DeepLinkRouter.shared.clear() }
+
+        var intent = CheckInToJobIntent()
+        intent.session = StubIntentSession(signedIn: true)
+        intent.contract = ContractEntity(id: sampleUUID)
+        intent.locationCoordinateProvider = { (1, 2) }
+        intent.checkInAPI = { _, _, _ in
+            throw CheckInTestError.failed
+        }
+
+        let result = try await intent.perform()
+
+        XCTAssertEqual(DeepLinkRouter.shared.route, .checkIn(contractID: sampleUUID))
+        let container = result as? IntentResultContainer<String, Never, Never, IntentDialog>
+        XCTAssertEqual(container?.value, "fallback")
+    }
+}
+
+private enum CheckInTestError: Error, LocalizedError {
+    case failed
+    var errorDescription: String? { "simulated check-in failure" }
+}
+
+private actor CheckInCallBox {
+    struct Call: Sendable {
+        let contractId: String
+        let lat: Double
+        let lng: Double
+    }
+
+    private var call: Call?
+
+    func record(contractId: String, lat: Double, lng: Double) {
+        call = Call(contractId: contractId, lat: lat, lng: lng)
+    }
+
+    func snapshot() -> Call? { call }
 }
 
 // MARK: - App Intents entities (IOS-INT.2 / INT.6b)

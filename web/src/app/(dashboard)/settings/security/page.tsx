@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { Shield, Smartphone, Copy, Check } from 'lucide-react';
+import QRCode from 'qrcode';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,6 +28,48 @@ import {
   useVerifyMFASetup,
   useDisableMFA,
 } from '@/hooks/useMFA';
+
+function LocalMfaQr({ otpauth }: { otpauth: string }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDataUrl(null);
+    setFailed(false);
+    void QRCode.toDataURL(otpauth, { width: 200, margin: 1, errorCorrectionLevel: 'M' })
+      .then((url) => {
+        if (!cancelled) setDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [otpauth]);
+
+  if (failed) {
+    return (
+      <p className="text-sm text-zinc-300">
+        Could not render the QR code. Use the manual entry key below.
+      </p>
+    );
+  }
+
+  if (!dataUrl) {
+    return <Skeleton className="h-[200px] w-[200px]" />;
+  }
+
+  return (
+    <img
+      src={dataUrl}
+      alt="Scan this QR code with your authenticator app"
+      width={200}
+      height={200}
+    />
+  );
+}
 
 function MFASection() {
   const { data: profile, isLoading } = useProfile();
@@ -147,15 +190,9 @@ function MFASection() {
               code below to confirm.
             </p>
 
-            {/* QR code via otpauth URI rendered as an image */}
+            {/* QR rendered locally so the otpauth secret never leaves the device. */}
             <div className="flex justify-center rounded-lg border bg-white p-4">
-              {/* QR code from external API — using img intentionally, not next/image */}
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(setupData.qr_code_url)}`}
-                alt="Scan this QR code with your authenticator app"
-                width={200}
-                height={200}
-              />
+              <LocalMfaQr otpauth={setupData.qr_code_url} />
             </div>
 
             <div className="space-y-1">

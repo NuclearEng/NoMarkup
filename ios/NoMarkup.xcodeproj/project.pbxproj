@@ -147,6 +147,9 @@ A100000000000000000000F0 /* LazyView.swift in Sources */ = {isa = PBXBuildFile; 
 		T10000000000000000000006 /* LocalizedPluralsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000016 /* LocalizedPluralsTests.swift */; };
 		T10000000000000000000007 /* APIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000017 /* APIClientTests.swift */; };
 		T10000000000000000000008 /* SoftTravelETATests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000018 /* SoftTravelETATests.swift */; };
+		T10000000000000000000009 /* CreateJobScheduleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000019 /* CreateJobScheduleTests.swift */; };
+		T1000000000000000000000A /* WidgetSharedStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001A /* WidgetSharedStoreTests.swift */; };
+		T1000000000000000000000B /* ChatMediaURLTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001B /* ChatMediaURLTests.swift */; };
 		A100000000000000000000C0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C0 /* PrivacyInfo.xcprivacy */; };
 		A100000000000000000000CD /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CD /* Localizable.xcstrings */; };
 		A100000000000000000000C3 /* PasskeyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C3 /* PasskeyAuth.swift */; };
@@ -323,6 +326,9 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 		T10000000000000000000016 /* LocalizedPluralsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizedPluralsTests.swift; sourceTree = "<group>"; };
 		T10000000000000000000017 /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTests.swift; sourceTree = "<group>"; };
 		T10000000000000000000018 /* SoftTravelETATests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftTravelETATests.swift; sourceTree = "<group>"; };
+		T10000000000000000000019 /* CreateJobScheduleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateJobScheduleTests.swift; sourceTree = "<group>"; };
+		T1000000000000000000001A /* WidgetSharedStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSharedStoreTests.swift; sourceTree = "<group>"; };
+		T1000000000000000000001B /* ChatMediaURLTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMediaURLTests.swift; sourceTree = "<group>"; };
 		T10000000000000000000020 /* NoMarkupTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B100000000000000000000C3 /* PasskeyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeyAuth.swift; sourceTree = "<group>"; };
 		B100000000000000000000C4 /* BiometricGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricGate.swift; sourceTree = "<group>"; };
@@ -520,6 +526,9 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				T10000000000000000000016 /* LocalizedPluralsTests.swift */,
 				T10000000000000000000017 /* APIClientTests.swift */,
 				T10000000000000000000018 /* SoftTravelETATests.swift */,
+				T10000000000000000000019 /* CreateJobScheduleTests.swift */,
+				T1000000000000000000001A /* WidgetSharedStoreTests.swift */,
+				T1000000000000000000001B /* ChatMediaURLTests.swift */,
 			);
 			path = NoMarkupTests;
 			sourceTree = "<group>";
@@ -1037,6 +1046,9 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				T10000000000000000000006 /* LocalizedPluralsTests.swift in Sources */,
 				T10000000000000000000007 /* APIClientTests.swift in Sources */,
 				T10000000000000000000008 /* SoftTravelETATests.swift in Sources */,
+				T10000000000000000000009 /* CreateJobScheduleTests.swift in Sources */,
+				T1000000000000000000000A /* WidgetSharedStoreTests.swift in Sources */,
+				T1000000000000000000000B /* ChatMediaURLTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

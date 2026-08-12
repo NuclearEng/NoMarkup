@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ChevronLeft, ChevronRight, ImagePlus, MapPin, Mic, MicOff, X, Zap } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { ImageAnalysisButton } from '@/components/forms/ImageAnalysisButton';
@@ -37,8 +37,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
+import { useFairPrice } from '@/hooks/useAnalytics';
 import { useCategories } from '@/hooks/useCategories';
 import { useCreateJob } from '@/hooks/useJobs';
+import { useProperties, type Property } from '@/hooks/useProperties';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { api } from '@/lib/api';
 import { jobPostingSchema, type JobPostingFormValues } from '@/lib/validations';
@@ -68,13 +70,41 @@ const STEP_FIELDS: Record<number, (keyof JobPostingFormValues)[]> = {
   6: [],
 };
 
-// Example market range for the review step (would come from API in production)
-const EXAMPLE_MARKET_RANGE: MarketRange = {
-  low_cents: 5000,
-  median_cents: 12500,
-  high_cents: 25000,
-  sample_size: 0,
-};
+const NONE_PROPERTY_VALUE = '__none__';
+
+function formatPropertyAddress(property: Property): string {
+  const { street, city, state, zip_code } = property.address;
+  return `${street}, ${city}, ${state} ${zip_code}`;
+}
+
+function extractZipFromAddress(address: string | undefined): string | undefined {
+  if (!address) return undefined;
+  const match = /\b(\d{5})(?:-\d{4})?\b/.exec(address);
+  return match?.[1];
+}
+
+function fairPriceToMarketRange(fairPrice: {
+  has_data: boolean;
+  p25_cents?: number;
+  price_cents?: number;
+  p75_cents?: number;
+  n_eff?: number;
+} | undefined): MarketRange | null {
+  if (!fairPrice?.has_data || !fairPrice.n_eff || fairPrice.n_eff <= 0) return null;
+  if (
+    fairPrice.p25_cents === undefined ||
+    fairPrice.price_cents === undefined ||
+    fairPrice.p75_cents === undefined
+  ) {
+    return null;
+  }
+  return {
+    low_cents: fairPrice.p25_cents,
+    median_cents: fairPrice.price_cents,
+    high_cents: fairPrice.p75_cents,
+    sample_size: fairPrice.n_eff,
+  };
+}
 
 export function JobPostingForm() {
   const [step, setStep] = useState(0);
@@ -110,6 +140,7 @@ export function JobPostingForm() {
       : undefined;
   // FR-18.7 deepen: optional property + starting bid from recurring cancel CTA.
   const presetPropertyId = (searchParams.get('property_id') ?? '').trim();
+  const [selectedPropertyId, setSelectedPropertyId] = useState(presetPropertyId);
   const rawStartingBidCents = (searchParams.get('starting_bid_cents') ?? '').trim();
   const parsedStartingBidCents = Number(rawStartingBidCents);
   const presetStartingBidDollars =
@@ -176,7 +207,7 @@ export function JobPostingForm() {
       location_address: values.locationAddress || undefined,
       location_lat: values.locationLat,
       location_lng: values.locationLng,
-      property_id: presetPropertyId || undefined,
+      property_id: selectedPropertyId || undefined,
       starting_bid_cents: values.startingBidDollars
         ? Math.round(values.startingBidDollars * 100)
         : undefined,
@@ -315,7 +346,13 @@ export function JobPostingForm() {
                   onQuestionAnswersChange={setQuestionAnswers}
                 />
               ) : null}
-              {step === 2 ? <StepLocation form={form} /> : null}
+              {step === 2 ? (
+                <StepLocation
+                  form={form}
+                  selectedPropertyId={selectedPropertyId}
+                  onPropertyChange={setSelectedPropertyId}
+                />
+              ) : null}
               {step === 3 ? (
                 <StepSchedule
                   form={form}
@@ -336,7 +373,6 @@ export function JobPostingForm() {
               {step === 6 ? (
                 <StepReview
                   form={form}
-                  marketRange={EXAMPLE_MARKET_RANGE}
                   photoCount={photos.length}
                   useInstantMatch={useInstantMatch}
                   onInstantMatchChange={setUseInstantMatch}
@@ -406,6 +442,19 @@ export function JobPostingForm() {
 
 // -- Step 1: Category --
 type FormType = ReturnType<typeof useForm<JobPostingFormValues>>;
+
+function applyPropertyToForm(form: FormType, property: Property): void {
+  form.setValue('locationAddress', formatPropertyAddress(property), {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+  if (property.address.latitude !== undefined) {
+    form.setValue('locationLat', property.address.latitude);
+  }
+  if (property.address.longitude !== undefined) {
+    form.setValue('locationLng', property.address.longitude);
+  }
+}
 
 function StepCategory({ form }: { form: FormType }) {
   const categoryId = form.watch('categoryId');
@@ -587,11 +636,20 @@ function StepDetails({ form, questionAnswers, onQuestionAnswersChange }: StepDet
 }
 
 // -- Step 3: Location --
-function StepLocation({ form }: { form: FormType }) {
+function StepLocation({
+  form,
+  selectedPropertyId,
+  onPropertyChange,
+}: {
+  form: FormType;
+  selectedPropertyId: string;
+  onPropertyChange: (propertyId: string) => void;
+}) {
   const [geocoding, setGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapboxToken = process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ?? '';
+  const { data: properties, isLoading: propertiesLoading } = useProperties();
 
   const lat = form.watch('locationLat');
   const lng = form.watch('locationLng');
@@ -638,8 +696,66 @@ function StepLocation({ form }: { form: FormType }) {
     [mapboxToken, form],
   );
 
+  // Inherit address when a property is preselected via ?property_id= and
+  // the list arrives (or when the field is still empty).
+  useEffect(() => {
+    if (!selectedPropertyId || !properties || properties.length === 0) return;
+    const property = properties.find((p) => p.id === selectedPropertyId);
+    if (!property) return;
+    if (form.getValues('locationAddress')) return;
+    applyPropertyToForm(form, property);
+    if (property.address.latitude === undefined || property.address.longitude === undefined) {
+      geocodeAddress(formatPropertyAddress(property));
+    }
+  }, [selectedPropertyId, properties, form, geocodeAddress]);
+
+  function handlePropertySelect(value: string) {
+    if (value === NONE_PROPERTY_VALUE) {
+      onPropertyChange('');
+      return;
+    }
+    onPropertyChange(value);
+    const property = properties?.find((p) => p.id === value);
+    if (!property) return;
+    applyPropertyToForm(form, property);
+    if (property.address.latitude === undefined || property.address.longitude === undefined) {
+      geocodeAddress(formatPropertyAddress(property));
+    }
+  }
+
+  const hasProperties = (properties?.length ?? 0) > 0;
+
   return (
     <div className="space-y-6">
+      {propertiesLoading ? (
+        <Skeleton className="h-11 w-full" />
+      ) : hasProperties ? (
+        <div className="space-y-2">
+          <label htmlFor="job-property" className="text-sm font-medium">
+            Saved property
+          </label>
+          <Select
+            value={selectedPropertyId || NONE_PROPERTY_VALUE}
+            onValueChange={handlePropertySelect}
+          >
+            <SelectTrigger id="job-property" className="min-h-[44px]" aria-label="Saved property">
+              <SelectValue placeholder="Use a saved property" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE_PROPERTY_VALUE}>Enter address manually</SelectItem>
+              {properties?.map((property) => (
+                <SelectItem key={property.id} value={property.id}>
+                  {property.nickname} — {property.address.street}, {property.address.city}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-sm">
+            Choosing a property fills the service address. You can still edit it.
+          </p>
+        </div>
+      ) : null}
+
       <FormField
         control={form.control}
         name="locationAddress"
@@ -1220,7 +1336,6 @@ function StepAuction({
 // -- Step 7: Review --
 function StepReview({
   form,
-  marketRange,
   photoCount,
   useInstantMatch,
   onInstantMatchChange,
@@ -1230,7 +1345,6 @@ function StepReview({
   questionAnswerCount,
 }: {
   form: FormType;
-  marketRange: MarketRange;
   photoCount: number;
   useInstantMatch: boolean;
   onInstantMatchChange: (value: boolean) => void;
@@ -1240,6 +1354,11 @@ function StepReview({
   questionAnswerCount: number;
 }) {
   const values = form.getValues();
+  const categoryId = form.watch('categoryId');
+  const locationAddress = form.watch('locationAddress');
+  const zip = extractZipFromAddress(locationAddress);
+  const { data: fairPrice } = useFairPrice({ categoryId, zip });
+  const marketRange = fairPriceToMarketRange(fairPrice);
 
   return (
     <div className="space-y-6">
@@ -1419,8 +1538,10 @@ function StepReview({
         </div>
       </div>
 
-      {/* Market range display */}
-      {marketRange.sample_size > 0 ? <MarketRangeDisplay marketRange={marketRange} /> : null}
+      {/* Live fair-price band — hidden when the cell has no data (FR-11.2). */}
+      {marketRange && marketRange.sample_size > 0 ? (
+        <MarketRangeDisplay marketRange={marketRange} />
+      ) : null}
     </div>
   );
 }

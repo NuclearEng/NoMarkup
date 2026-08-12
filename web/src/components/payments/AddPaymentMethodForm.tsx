@@ -6,6 +6,7 @@ import {
   useElements,
   useStripe,
 } from '@stripe/react-stripe-js';
+import type { PaymentRequestPaymentMethodEvent } from '@stripe/stripe-js';
 import { Loader2 } from 'lucide-react';
 import { type SyntheticEvent, useCallback, useState } from 'react';
 
@@ -23,7 +24,15 @@ import { getStripe, isStripeConfigured } from '@/lib/stripe';
 
 const CARD_BRANDS = ['visa', 'mastercard', 'amex', 'discover'] as const;
 
-function SetupForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
+function SetupForm({
+  clientSecret,
+  onSuccess,
+  onCancel,
+}: {
+  clientSecret: string;
+  onSuccess: () => void;
+  onCancel: () => void;
+}) {
   const stripe = useStripe();
   const elements = useElements();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -55,20 +64,39 @@ function SetupForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: (
     }
   }
 
-  // Apple Pay / Google Pay wallet success — Stripe returns a fully
-  // tokenized paymentMethod, so we can immediately treat this as a
-  // successfully attached method. We tell the wallet sheet the
-  // operation succeeded and propagate to the parent.
-  //
-  // In production this should also POST the paymentMethod.id to the
-  // gateway's setup-intent confirmation endpoint so the saved card list
-  // refreshes; for the demo, the parent `onSuccess` triggers a refetch.
+  // Apple Pay / Google Pay returns a tokenized PaymentMethod. Attach it
+  // to the existing SetupIntent before dismissing the wallet sheet —
+  // complete('success') without confirmSetup leaves the method unattached.
   const handleWalletPaymentMethod = useCallback(
-    (event: { complete: (status: 'success' | 'fail') => void }) => {
-      event.complete('success');
-      onSuccess();
+    (event: PaymentRequestPaymentMethodEvent) => {
+      void (async () => {
+        if (!stripe) {
+          event.complete('fail');
+          return;
+        }
+        try {
+          const { error } = await stripe.confirmSetup({
+            clientSecret,
+            confirmParams: {
+              payment_method: event.paymentMethod.id,
+              return_url: `${window.location.origin}/settings/payment-methods`,
+            },
+            redirect: 'if_required',
+          });
+          if (error) {
+            event.complete('fail');
+            setErrorMessage(error.message ?? 'An unexpected error occurred.');
+            return;
+          }
+          event.complete('success');
+          onSuccess();
+        } catch {
+          event.complete('fail');
+          setErrorMessage('An unexpected error occurred.');
+        }
+      })();
     },
-    [onSuccess],
+    [stripe, clientSecret, onSuccess],
   );
 
   // We render the wallet button at a token $1 amount for the "save
@@ -349,7 +377,7 @@ export function AddPaymentMethodForm({
         },
       }}
     >
-      <SetupForm onSuccess={onSuccess} onCancel={onCancel} />
+      <SetupForm clientSecret={clientSecret} onSuccess={onSuccess} onCancel={onCancel} />
     </Elements>
   );
 }

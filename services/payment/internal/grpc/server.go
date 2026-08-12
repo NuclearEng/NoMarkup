@@ -248,6 +248,21 @@ func (s *Server) DeletePaymentMethod(ctx context.Context, req *paymentv1.DeleteP
 	return &paymentv1.DeletePaymentMethodResponse{}, nil
 }
 
+func (s *Server) SetDefaultPaymentMethod(ctx context.Context, req *paymentv1.SetDefaultPaymentMethodRequest) (*paymentv1.SetDefaultPaymentMethodResponse, error) {
+	// customer_id is required so defaulting is scoped to the OWNER. The
+	// gateway always sends the verified JWT subject — never a client body field.
+	if req.GetCustomerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "customer_id is required")
+	}
+	if req.GetPaymentMethodId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "payment_method_id is required")
+	}
+	if err := s.svc.SetDefaultPaymentMethod(ctx, req.GetCustomerId(), req.GetPaymentMethodId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.SetDefaultPaymentMethodResponse{}, nil
+}
+
 func (s *Server) AddDevPaymentMethod(ctx context.Context, req *paymentv1.AddDevPaymentMethodRequest) (*paymentv1.AddDevPaymentMethodResponse, error) {
 	pm, err := s.svc.AddDevPaymentMethod(ctx, req.GetCustomerId(), req.GetBrand(), req.GetLastFour(), req.GetExpMonth(), req.GetExpYear())
 	if err != nil {

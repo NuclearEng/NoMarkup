@@ -26,6 +26,7 @@ class FakeWebSocket {
 
   readyState: number = FakeWebSocket.OPEN;
   url: string;
+  protocols: string[];
   onopen: AnyEventHandler = null;
   onmessage: MessageEventHandler = null;
   onclose: CloseEventHandler = null;
@@ -35,8 +36,9 @@ class FakeWebSocket {
     this.readyState = FakeWebSocket.CLOSED;
   });
 
-  constructor(url: string) {
+  constructor(url: string, protocols?: string | string[]) {
     this.url = url;
+    this.protocols = Array.isArray(protocols) ? protocols : protocols ? [protocols] : [];
     FakeWebSocket.instances.push(this);
   }
 
@@ -87,12 +89,13 @@ describe('auctionWsManager', () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
   });
 
-  it('builds the URL with /ws/auction/{jobId} and a URL-encoded token', () => {
+  it('dials /ws/auction/{jobId} without a query token and offers bearer + jwt protocols', () => {
     auctionWsManager.connect('job-abc', 'tok with space&plus');
     vi.advanceTimersByTime(100);
     const ws = FakeWebSocket.last();
-    expect(ws.url).toContain('/ws/auction/job-abc?token=');
-    expect(ws.url).toContain('tok%20with%20space%26plus');
+    expect(ws.url).toContain('/ws/auction/job-abc');
+    expect(ws.url).not.toContain('token=');
+    expect(ws.protocols).toEqual(['nomarkup.bearer.v1', 'tok with space&plus']);
   });
 
   it('emits status transitions: connecting → connected on open', () => {
@@ -275,7 +278,9 @@ describe('auctionWsManager', () => {
 
     vi.advanceTimersByTime(100);
     expect(FakeWebSocket.instances).toHaveLength(1);
-    expect(FakeWebSocket.last().url).toContain('/ws/auction/job-B?token=tokB');
+    expect(FakeWebSocket.last().url).toContain('/ws/auction/job-B');
+    expect(FakeWebSocket.last().url).not.toContain('token=');
+    expect(FakeWebSocket.last().protocols).toEqual(['nomarkup.bearer.v1', 'tokB']);
   });
 
   it('onerror handler does not throw (intentionally a no-op; close handles reconnect)', () => {

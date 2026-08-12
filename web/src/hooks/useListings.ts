@@ -16,6 +16,7 @@ import type {
   MyListingsResponse,
   PlaceListingBidInput,
   PlaceListingBidResponse,
+  ReportNoShowResponse,
   SearchListingsParams,
   SimilarListingsResponse,
   UpdateListingInput,
@@ -520,5 +521,20 @@ export function useDisputeOrder() {
       void qc.invalidateQueries({ queryKey: ['listingOrders', variables.orderId] });
     },
     onError: explainListingFailure('Failed to open dispute'),
+  });
+}
+
+/** POST /api/v1/orders/{id}/report-no-show — either party while escrow is held. */
+export function useReportOrderNoShow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) =>
+      api.post<ReportNoShowResponse>(`/api/v1/orders/${orderId}/report-no-show`, {}),
+    onSuccess: (_data, orderId) => {
+      toast.success('No-show reported');
+      void qc.invalidateQueries({ queryKey: ['listingOrders', orderId] });
+      void qc.invalidateQueries({ queryKey: ['listingOrders', 'mine'] });
+    },
+    onError: explainListingFailure('Failed to report no-show'),
   });
 }

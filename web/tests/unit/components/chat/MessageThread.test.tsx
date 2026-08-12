@@ -261,6 +261,70 @@ describe('MessageThread', () => {
     expect(screen.getByText('Provider joined')).toBeDefined();
   });
 
+  it('renders an allowlisted image URL as an img', () => {
+    setMessages({
+      messages: [
+        makeMsg({
+          id: 'img-ok',
+          message_type: MESSAGE_TYPE.IMAGE,
+          content: 'http://localhost:9000/nomarkup-dev/chat/obj.jpg',
+        }),
+      ],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    const img = screen.getByAltText('Shared image');
+    expect(img.getAttribute('src')).toBe('http://localhost:9000/nomarkup-dev/chat/obj.jpg');
+  });
+
+  it('renders an un-allowlisted image URL as plain text', () => {
+    setMessages({
+      messages: [
+        makeMsg({
+          id: 'img-evil',
+          message_type: MESSAGE_TYPE.IMAGE,
+          content: 'https://evil.example.com/tracker.png',
+        }),
+      ],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    expect(screen.queryByAltText('Shared image')).toBeNull();
+    expect(screen.getByText('https://evil.example.com/tracker.png')).toBeDefined();
+  });
+
+  it('renders an allowlisted file URL as a link', () => {
+    setMessages({
+      messages: [
+        makeMsg({
+          id: 'file-ok',
+          message_type: MESSAGE_TYPE.FILE,
+          content: 'http://localhost:9000/nomarkup-dev/chat/scope.pdf',
+        }),
+      ],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    const link = screen.getByRole('link', { name: 'Open attached file' });
+    expect(link.getAttribute('href')).toBe('http://localhost:9000/nomarkup-dev/chat/scope.pdf');
+  });
+
+  it('renders an un-allowlisted file URL as plain text', () => {
+    setMessages({
+      messages: [
+        makeMsg({
+          id: 'file-evil',
+          message_type: MESSAGE_TYPE.FILE,
+          content: 'https://evil.example.com/malware.pdf',
+        }),
+      ],
+      has_more: false,
+    });
+    render(<MessageThread channelId="chan-1" />);
+    expect(screen.queryByRole('link', { name: 'Open attached file' })).toBeNull();
+    expect(screen.getByText('https://evil.example.com/malware.pdf')).toBeDefined();
+  });
+
   it('renders a flagged-contact-info indicator', () => {
     setMessages({
       messages: [makeMsg({ id: 'f-1', flagged_contact_info: true })],

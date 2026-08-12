@@ -119,6 +119,9 @@ describe('PricingPage', () => {
     expect(screen.getByRole('heading', { level: 1 })).toBeDefined();
     expect(screen.getByLabelText(/filter by zip code/i)).toBeDefined();
     expect(screen.getByTestId('price-heatmap')).toBeDefined();
+    expect(screen.getByRole('heading', { name: /Category price comparison/i })).toBeDefined();
+    expect(screen.getByText('Illustrative')).toBeDefined();
+    expect(screen.getByText(/not a live neighborhood map/i)).toBeDefined();
   });
 
   it('renders loading skeletons in the overview while loading', () => {

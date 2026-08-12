@@ -100,3 +100,12 @@ DEPLOY_PROVISIONED = true
 
 Then a `v*` tag push runs the real deploy. Keep this doc updated as the steps
 become real automation.
+
+**Process-start fail-closed (already shipped — do not extend into `bin/dev`):**
+gateway exits on a missing JWT public key (every env) and on missing
+`DATABASE_URL` / `REDIS_URL` when `ENVIRONMENT=production`; payment exits on
+placeholder `STRIPE_SECRET_KEY` (non-dev) and missing `STRIPE_WEBHOOK_SECRET`
+(every env); PII cipher exits on missing `ENCRYPTION_KEY` in production.
+OAuth / SendGrid / Sentry / Apple Pay / `DEPLOY_PROVISIONED` stay
+Founder-Action — inventory them with `make founder-secrets-check` before
+flipping this flag. See `docs/compliance/founder-action-board.md`.

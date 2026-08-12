@@ -135,9 +135,13 @@ final class DeepLinkRouter: ObservableObject {
             return .checkIn(contractID: nil)
         case "jobs", "job":
             if parts.count >= 2 {
+                // `/jobs/new` is the create funnel; a bare `/jobs` is browse.
+                if parts[1].lowercased() == "new" {
+                    return .postJob
+                }
                 return .job(id: parts[1])
             }
-            return .postJob
+            return .jobsBrowse
         case "listings", "listing", "marketplace", "auctions", "auction":
             // /marketplace/listings/{id} or /auctions/{id} → listing
             if parts.count >= 3, parts[1].lowercased() == "listings" {
@@ -178,6 +182,8 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
     case notifications
     case watchlist
     case postJob
+    /// Jobs tab browse (`/jobs` / `nomarkup://jobs`) — not the create sheet.
+    case jobsBrowse
     case checkIn(contractID: String?)
     /// My Orders (IOS-SEC.9). `id` is the order UUID when the link carried one;
     /// the surface is the same either way (`MyOrdersView` has no detail init yet).
@@ -193,6 +199,7 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
         case .notifications: return "notifications"
         case .watchlist: return "watchlist"
         case .postJob: return "postJob"
+        case .jobsBrowse: return "jobsBrowse"
         case .checkIn(let id): return "checkIn:\(id ?? "")"
         case .orders(let id): return "orders:\(id ?? "")"
         }
@@ -209,6 +216,7 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
         case .notifications: return "/notifications"
         case .watchlist: return "/watchlist"
         case .postJob: return "/jobs/new"
+        case .jobsBrowse: return "/jobs"
         case .checkIn(let id):
             if let id, !id.isEmpty { return "/contracts/\(id)" }
             return "/contracts"

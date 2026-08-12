@@ -1,6 +1,6 @@
 # NoMarkup — TODO Tracker
 
-> Last updated: 2026-08-05 (OAUTH-FULL-SETUP Founder-Action logged; OAuth init fail-closed + login error UX shipped)
+> Last updated: 2026-08-12 (founder-secrets-check: machine-check only — residuals stay Founder-Action)
 > Priority: P0 = do next, P1 = launch-blocking, P2 = post-launch, P3 = nice-to-have
 > Status: Done, In Progress, Not Started, Founder-Action
 > Phase: 1 = Foundation (Week 1-2), 2 = Expansion (Week 3-5), 3 = Hardening (Week 6-7), 4 = Launch Prep (Week 8)
@@ -191,6 +191,7 @@ Already shipped:
 ### Founder-Action — 6. Wire email verification — SendGrid (Phase 1)
 **Code (Done):** `services/notification/internal/service/email.go` is fully wired to the SendGrid v3 API. When `apiKey == ""` it operates in dev-mode (logs the would-be email). Email verification token generation + handler are in place (P1 #12 below). The user-service call for "send verification email" delegates to the notification service.
 **Founder-Action:** create the SendGrid account → get API key → set `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` (e.g. `notifications@nomarkup.com`), and (optionally) a verification template ID in the production secrets store. Re-roll the notification pod and the dev-mode warning will switch off.
+**Machine-check (does not close this item):** `make founder-secrets-check` reports `SENDGRID_API_KEY` as present/missing/placeholder. Fail-closed with `--strict` or `ENVIRONMENT=production`. Never prints the key.
 
 #### (original spec preserved below)
 - **Account setup:** Create SendGrid account -> get API key -> create verification email template
@@ -206,6 +207,7 @@ Already shipped:
 ### Founder-Action — 7. Wire Sentry error tracking (Phase 1)
 **Code (Done):** Every Go service initializes Sentry when `SENTRY_DSN` is set (see `services/payment/cmd/server/main.go:58-71` for the canonical pattern; same block exists in user/job/chat/notification/gateway). Sets `Environment` from `ENVIRONMENT` env var, `Release` from `APP_VERSION`, `TracesSampleRate=0.1`, and flushes on graceful shutdown. Frontend uses `@sentry/nextjs` integration.
 **Founder-Action:** create the Sentry project → get DSN → set `SENTRY_DSN` (Go services) and `NEXT_PUBLIC_SENTRY_DSN` (frontend) in the secrets store.
+**Machine-check (does not close this item):** `make founder-secrets-check` reports `SENTRY_DSN` + `NEXT_PUBLIC_SENTRY_DSN` as present/missing/placeholder. Fail-closed with `--strict` or `ENVIRONMENT=production`. Never prints the DSN.
 
 #### (original spec preserved below)
 - **Account setup:** Create Sentry project (Next.js + Go) -> get DSN
@@ -214,8 +216,8 @@ Already shipped:
 - **Effort:** 1-2 days
 - **Depends on:** Sentry account
 
-### Done — 8. Build Playwright E2E test suite (Phase 1-2)
-All 12 critical user-flow specs shipped in `web/tests/e2e/`: admin, auth, bid, chat, contract, job, live-auction, payment, plus accessibility + journey + responsive layout, plus the new `provider-business.spec.ts` covering the four Business OS routes (expense tracking, working capital advances, tax forms, invoices) with both unauth-redirect smoke tests and auth-gated structural + WCAG touch-target checks (gated behind `E2E_DEV_PROVIDER_TOKEN` env var so it skips cleanly in environments without a seeded session).
+### Done (backendless smoke) — 8. Build Playwright E2E test suite (Phase 1-2)
+**Not a full 12-flow Done.** Specs exist under `web/tests/e2e/` (admin, auth, bid, chat, contract, job, live-auction, payment, marketplace, provider-business, axe). CI Playwright is **backendless smoke** (web-only; `playwright.config.ts` ignores `dogfood/**` when `SEED_PASSWORD` is unset). Dogfood of the 12-flow funnel is **optional** behind `SEED_PASSWORD` + a live stack — not the CI gate.
 
 #### (original spec preserved below)
 - 12 critical user flows:
@@ -353,7 +355,9 @@ Social login is **not fully set up** until real credentials exist in every envir
 - [ ] Dogfood: Continue with Apple (web and/or native iOS) → same
 - [ ] Confirm login error UX still works if a secret is intentionally blank (redirect + in-app message, not provider 400 page)
 
-**Refs:** `.env.example` OAuth block · `deploy/k8s/SECRETS.md` · `docs/operations/prod-launch-todo.md` Phase 2 · resume phrase: `resume OAuth full setup` or `OAUTH-FULL-SETUP`
+**Machine-check (does not close this item):** `make founder-secrets-check` reports `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FACEBOOK_CLIENT_ID`, `APPLE_CLIENT_ID` as present/missing/placeholder. Fail-closed with `--strict` or `ENVIRONMENT=production`. Never prints values.
+
+**Refs:** `.env.example` OAuth block · `deploy/k8s/SECRETS.md` · `docs/operations/prod-launch-todo.md` Phase 2 · `docs/compliance/founder-action-board.md` · `scripts/founder-secrets-check.sh` · resume phrase: `resume OAuth full setup` or `OAUTH-FULL-SETUP`
 
 #### (original spec preserved below)
 - **Account setup:**
@@ -363,6 +367,12 @@ Social login is **not fully set up** until real credentials exist in every envir
 - **Effort:** 3-5 days
 - **Depends on:** Google Cloud + Apple Developer accounts
 - **Progress (2026-04-23):** Apple ID token now verifies against Apple JWKS with iss/aud/exp checks (commit `c89baff`). Google still needs the same JWKS verification — tracked as S4 above.
+
+### Founder-Action — Apple Pay domain association
+**Code (Done):** placeholder file + README. PaymentSheet / Payment Request is code-ready when a real association file + merchant ID + `pk_` exist. **Do not invent association bytes.**
+**Founder-Action:** download the exact file from Stripe Dashboard → Settings → Payment methods → Apple Pay → Add domain (or Apple Developer) and replace `web/public/.well-known/apple-developer-merchantid-domain-association`. Verify `https://no-markup.com/.well-known/apple-developer-merchantid-domain-association` serves it. Status stays Founder-Action until that human step lands.
+**Machine-check (does not close this item):** `make founder-secrets-check` **FAIL**s the Apple Pay row while the file still contains `PLACEHOLDER` / `TODO` / `example`.
+**Refs:** `docs/compliance/apple-pay-domain.md` · `web/public/.well-known/README.md` · `docs/compliance/founder-action-board.md`
 
 ### Done — 20. Add MFA setup page (Phase 3)
 Verified shipped: migration 016_mfa added `mfa_secret` + `mfa_backup_codes` + `mfa_enabled` columns; user-service repo has `StoreMFASecret`, `GetMFASecret`, `EnableMFA`, `DisableMFA`, `IsMFAEnabled`; gateway routes `/api/v1/auth/mfa/{enable,verify-setup,disable,verify}`; frontend hook `useMFA.ts` + 514-LOC settings/security page with QR code, code verification, and backup codes grid.
@@ -463,30 +473,25 @@ Already shipped across migrations 018 + 020 (12 + 20 indexes respectively):
 
 These are small (<1 hour) polish items that make users think "oh nice, they thought of that."
 
-### Not Started — V1. "You saved $X" celebration moment
-- Confetti animation + large savings number after auction win
-- Like Robinhood's confetti on first trade
+### Done — V1. "You saved $X" celebration moment
+Shipped: `web/src/components/bids/SavingsCelebration.tsx` (demo auction + tests). Confetti + savings % after win.
 - **Effort:** 30 min
 
-### Not Started — V2. Smart bid suggestion for providers
-- "Similar jobs in this area typically close at $X-$Y" hint on bid form
-- Uses Fair Price Index materialized view
+### Done — V2. Smart bid suggestion for providers
+Shipped: `web/src/components/bids/BidSuggestion.tsx` on BidForm (non-dock, via `usePricingByCategory`). "Similar jobs in this area typically close at $X–$Y" from Fair Price Index p25–p75.
 - **Depends on:** Fair Price Index (#15)
 - **Effort:** 20 min
 
-### Not Started — V3. Provider response time badge
-- "Usually responds in <1 hour" on provider profile cards
-- Calculated from chat message response timestamps
+### Done — V3. Provider response time badge
+Shipped: gateway `response_time_label` (avg first chat reply, last 90 days) + web `ResponseTimeBadge` on providers list and profile.
 - **Effort:** 30 min
 
-### Not Started — V4. "Share your savings" social card
-- OG-image-ready card: "I saved $X,XXX on NoMarkup for my [service]"
-- One-click share to social media
+### Done — V4. "Share your savings" social card
+Shipped: `web/src/components/ui/ShareSavingsCard.tsx` on completed contract detail. Card + X/Facebook/copy. Share URL is `https://no-markup.com` (owned production zone).
 - **Effort:** 30 min
 
-### Not Started — V5. Neighborhood price heat map
-- Mapbox heatmap layer on Fair Price Index page
-- Color-coded pricing by area, zoomable
+### Partial — V5. Neighborhood price heat map
+UI exists (`web/src/components/maps/PriceHeatMap.tsx` on `/pricing`) but is **illustrative**: points are a deterministic hash offset around the US centroid, not ZIP geocodes. Mapbox heatmap layer + zoom ship; neighborhood accuracy does not.
 - **Depends on:** Fair Price Index (#15)
 - **Effort:** 1 hour
 
@@ -500,7 +505,7 @@ These are small (<1 hour) polish items that make users think "oh nice, they thou
 | P0 — Foundation | 9 | 7 | 0 | 2 (#6, #7) | 0 |
 | P1 — Launch-blocking | 11 | 11 | 0 | 0 | 0 |
 | P2 — Post-launch | 8 | 7 | 1 (#27) | 0 | 0 |
-| Vision — Delight | 5 | 0 | 0 | 0 | 5 |
+| Vision — Delight | 5 | 4 (V1–V4) | 1 Partial (V5) | 0 | 0 |
 
 **Engineering work remaining (no founder dependency):**
 - **#27** Repository + gRPC test coverage (testcontainers-go infrastructure required, needs Docker locally to develop the test scaffolding) — multi-day infra setup. Partial credit for service-layer push to 73.2% on payment service this session.
@@ -510,9 +515,10 @@ These are small (<1 hour) polish items that make users think "oh nice, they thou
 - **S1** Manually rotate any deployed account currently using `Password123!` in your secrets manager.
 - **S3** Run `make migrate-up` on staging + production DBs before payment pod rollout (delivers migration `025_stripe_events`).
 - **S7** Decide: git history rewrite (Option A: filter-repo + force-push, requires every dev to re-clone) vs accept history (Option B). Recommend B unless regulatory.
-- **#6** Provision SendGrid API key + `SENDGRID_FROM_EMAIL` in production secrets.
-- **#7** Provision Sentry DSN (Go services + frontend) in production secrets.
-- **#19 / OAUTH-FULL-SETUP** Provision real Google + Facebook + Apple OAuth credentials for **local** (`.env.local`), **staging**, and **production** (`nomarkup-secrets` / `deploy/prod/.env` — not ConfigMap, OPS-08). Register redirect URIs, set `OAUTH_REDIRECT_BASE` + `FRONTEND_URL`, restart gateway, and dogfood each “Continue with …” button once. See §19 checklist above. Resume: `resume OAuth full setup`.
+- **#6** Provision SendGrid API key + `SENDGRID_FROM_EMAIL` in production secrets. Check: `make founder-secrets-check`.
+- **#7** Provision Sentry DSN (Go services + frontend) in production secrets. Check: `make founder-secrets-check`.
+- **#19 / OAUTH-FULL-SETUP** Provision real Google + Facebook + Apple OAuth credentials for **local** (`.env.local`), **staging**, and **production** (`nomarkup-secrets` / `deploy/prod/.env` — not ConfigMap, OPS-08). Register redirect URIs, set `OAUTH_REDIRECT_BASE` + `FRONTEND_URL`, restart gateway, and dogfood each “Continue with …” button once. See §19 checklist above. Resume: `resume OAuth full setup`. Check: `make founder-secrets-check`.
+- **Apple Pay** Download the real Stripe/Apple association file (never invent bytes) and replace the PLACEHOLDER. Check: `make founder-secrets-check`.
 
 **Shipped across audit branch + 2026-04-24/25 sweep (commits `68d5cbf`, `cb4b478`, `a97393b`, `f890143`, `0a9fd90`, `4ea4d99`):**
 - All 8 security audit follow-ups (S1-S8) closed code-side
@@ -526,6 +532,6 @@ These are small (<1 hour) polish items that make users think "oh nice, they thou
 - Payment service test coverage: 16.5% → 73.2% (14 new test files)
 - Google OAuth JWKS signature verification matches Apple
 
-**What's left: launch readiness** is gated on the 6 Founder-Action items above + #26 + #27 (test coverage on repos). All shipped engineering work is on `fix/security-audit-2026-04-23` awaiting PR review.
+**What's left: launch readiness** is gated on the Founder-Action items above (S1/S3/S7, SendGrid, Sentry, OAUTH-FULL-SETUP, Apple Pay) + #26 + #27 (test coverage on repos). Inventory: `make founder-secrets-check` — it does not close them.
 
 **Next action:** Clear S1-S8 before merging the audit branch. Specifically S1 (rotate Password123!) + S2 (set required env vars) + S3 (apply migration 025) are deploy blockers.

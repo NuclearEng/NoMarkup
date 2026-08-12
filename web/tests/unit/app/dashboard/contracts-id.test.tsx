@@ -2,7 +2,7 @@
 // role conditional buttons, cancel-confirm flow, change orders, and review section.
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
 
@@ -20,6 +20,10 @@ const startWorkMutate = vi.fn();
 const markCompleteMutate = vi.fn();
 const approveCompletionMutate = vi.fn();
 const cancelContractMutate = vi.fn();
+const reportNoShowMutate = vi.fn();
+const reportAbandonmentMutate = vi.fn();
+const reportNoShowState = { isPending: false, isError: false };
+const reportAbandonmentState = { isPending: false, isError: false };
 
 const installmentsState: { installments: unknown[] } = { installments: [] };
 const contractPlanState: { plan: unknown; hasPlan: boolean; isLoading: boolean } = {
@@ -92,6 +96,9 @@ vi.mock('@/hooks/useContracts', () => ({
   useMarkComplete: () => ({ mutate: markCompleteMutate, ...markCompleteState }),
   useApproveCompletion: () => ({ mutate: approveCompletionMutate, ...approveCompletionState }),
   useCancelContract: () => ({ mutate: cancelContractMutate, ...cancelContractState }),
+  useReportNoShow: () => ({ mutate: reportNoShowMutate, ...reportNoShowState }),
+  useReportAbandonment: () => ({ mutate: reportAbandonmentMutate, ...reportAbandonmentState }),
+  usePartyJobLocation: () => ({ data: '123 Main St, Springfield, IL 62701' }),
   useProposeChangeOrder: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
   useRespondToChangeOrder: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
 }));
@@ -121,6 +128,15 @@ vi.mock('@/stores/auth-store', () => ({
 const { default: ContractDetailPage } = await import(
   '@/app/(dashboard)/contracts/[id]/page'
 );
+
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+  };
+});
 
 function makeContract(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -168,6 +184,8 @@ beforeEach(() => {
   markCompleteMutate.mockReset();
   approveCompletionMutate.mockReset();
   cancelContractMutate.mockReset();
+  reportNoShowMutate.mockReset();
+  reportAbandonmentMutate.mockReset();
 });
 
 afterEach(() => {
@@ -415,9 +433,8 @@ describe('ContractDetailPage', () => {
       contract: makeContract({ status: 'completed', completed_at: '2026-04-15T00:00:00Z' }),
       change_orders: [],
     };
-    const { container } = render(withQueryClient(createElement(ContractDetailPage)));
-    // Loader2 spinner renders inside the Review card during the loading branch.
-    expect(container.querySelector('.animate-spin')).not.toBeNull();
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByLabelText(/Loading reviews/i)).toBeDefined();
   });
 
   it('renders Leave a Review CTA when the contract is eligible and not yet reviewed', () => {
@@ -644,5 +661,45 @@ describe('ContractDetailPage', () => {
     };
     render(withQueryClient(createElement(ContractDetailPage)));
     expect(screen.getByText(/no payment-type or notes fields/i)).toBeDefined();
+  });
+
+  it('shows Get Directions for a contract party when a service address is available', () => {
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    const link = screen.getByRole('link', { name: /Get Directions/i });
+    expect(link.getAttribute('href')).toContain('123%20Main%20St');
+  });
+
+  it('shows customer no-show and abandonment reports on an active contract', () => {
+    authUser.user = { id: 'cust-1' };
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Report no-show/i }));
+    const confirms = screen.getAllByRole('button', { name: /Report no-show/i });
+    fireEvent.click(confirms[confirms.length - 1] as HTMLElement);
+    expect(reportNoShowMutate).toHaveBeenCalled();
+  });
+
+  it('confirms abandonment via ActionConfirmDialog, not window.confirm', () => {
+    authUser.user = { id: 'cust-1' };
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Report abandonment/i }));
+    expect(screen.getByText(/started work and then left/i)).toBeDefined();
+    const confirms = screen.getAllByRole('button', { name: /Report abandonment/i });
+    fireEvent.click(confirms[confirms.length - 1] as HTMLElement);
+    expect(reportAbandonmentMutate).toHaveBeenCalled();
+  });
+
+  it('hides report CTAs from the provider', () => {
+    authUser.user = { id: 'prov-1' };
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.queryByRole('button', { name: /Report no-show/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Report abandonment/i })).toBeNull();
   });
 });

@@ -41,6 +41,8 @@ describe('ShareSavingsCard', () => {
     expect(openSpy).toHaveBeenCalled();
     const callArgs = openSpy.mock.calls[0];
     expect(callArgs?.[0]).toMatch(/twitter.com\/intent\/tweet/);
+    expect(String(callArgs?.[0])).toContain(encodeURIComponent('https://no-markup.com'));
+    expect(String(callArgs?.[0])).not.toContain('nomarkup.com');
   });
 
   it('opens a Facebook share window when Share on Facebook is clicked', async () => {
@@ -50,6 +52,8 @@ describe('ShareSavingsCard', () => {
     expect(openSpy).toHaveBeenCalled();
     const callArgs = openSpy.mock.calls[0];
     expect(callArgs?.[0]).toMatch(/facebook.com\/sharer\/sharer\.php/);
+    expect(String(callArgs?.[0])).toContain(encodeURIComponent('https://no-markup.com'));
+    expect(String(callArgs?.[0])).not.toMatch(/nomarkup\.com/);
   });
 
   it('resets the Copy Link label after the 2s timeout', async () => {

@@ -110,6 +110,8 @@ const jobsState = {
   refetch: vi.fn(),
 };
 
+const defaultJobs = (jobsState.data as { jobs: unknown[] }).jobs;
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
   usePathname: () => '/properties/p1',
@@ -174,6 +176,7 @@ beforeEach(() => {
   jobsState.isLoading = false;
   jobsState.isError = false;
   jobsState.isSuccess = true;
+  jobsState.data = { jobs: defaultJobs };
 });
 
 afterEach(() => {
@@ -214,6 +217,14 @@ describe('PropertyDetailPage', () => {
     render(withQueryClient(createElement(PropertyDetailPage)));
     // Property-scoped section still renders the soft error card.
     expect(screen.getByText(/provider summary unavailable/i)).toBeDefined();
+  });
+
+  it('sends Post a job to /jobs/new with this property_id', () => {
+    jobsState.data = { jobs: [] };
+    jobsState.isSuccess = true;
+    render(withQueryClient(createElement(PropertyDetailPage)));
+    const link = screen.getByRole('link', { name: /post a job/i });
+    expect(link.getAttribute('href')).toBe('/jobs/new?property_id=p1');
   });
 
   it('retries jobs on error', () => {

@@ -26,18 +26,75 @@ enum WidgetSharedStore {
         var kind: String
     }
 
+    /// One marketplace rail — counts and Next Closing rows are merged independently
+    /// so switching Goods/Services cannot wipe the other rail.
+    enum BidRail: String, Sendable {
+        case goods = "listing"
+        case services = "job"
+
+        var kind: String { rawValue }
+    }
+
     struct Snapshot: Codable, Hashable, Sendable {
+        var goodsBidCount: Int
+        var servicesBidCount: Int
         var activeBidCount: Int
         var auctions: [AuctionSnapshot]
         var updatedAt: Date
 
-        static let empty = Snapshot(activeBidCount: 0, auctions: [], updatedAt: .distantPast)
+        static let empty = Snapshot(
+            goodsBidCount: 0,
+            servicesBidCount: 0,
+            activeBidCount: 0,
+            auctions: [],
+            updatedAt: .distantPast
+        )
 
         var nextClosing: AuctionSnapshot? {
             auctions
                 .filter { $0.endsAt > Date() }
                 .sorted { $0.endsAt < $1.endsAt }
                 .first
+        }
+
+        init(
+            goodsBidCount: Int = 0,
+            servicesBidCount: Int = 0,
+            activeBidCount: Int = 0,
+            auctions: [AuctionSnapshot],
+            updatedAt: Date
+        ) {
+            self.goodsBidCount = goodsBidCount
+            self.servicesBidCount = servicesBidCount
+            self.activeBidCount = activeBidCount
+            self.auctions = auctions
+            self.updatedAt = updatedAt
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let goods = try c.decodeIfPresent(Int.self, forKey: .goodsBidCount) ?? 0
+            let services = try c.decodeIfPresent(Int.self, forKey: .servicesBidCount) ?? 0
+            let stored = try c.decodeIfPresent(Int.self, forKey: .activeBidCount) ?? 0
+            goodsBidCount = goods
+            servicesBidCount = services
+            // Pre-rail snapshots only stored a combined count.
+            activeBidCount = (goods == 0 && services == 0) ? stored : goods + services
+            auctions = try c.decodeIfPresent([AuctionSnapshot].self, forKey: .auctions) ?? []
+            updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(goodsBidCount, forKey: .goodsBidCount)
+            try c.encode(servicesBidCount, forKey: .servicesBidCount)
+            try c.encode(activeBidCount, forKey: .activeBidCount)
+            try c.encode(auctions, forKey: .auctions)
+            try c.encode(updatedAt, forKey: .updatedAt)
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case goodsBidCount, servicesBidCount, activeBidCount, auctions, updatedAt
         }
     }
 
@@ -97,27 +154,78 @@ enum WidgetSharedStore {
             )
         )
         // Keep only future auctions, cap list size.
+        pruneAuctions(&snap)
+        if kind == BidRail.goods.kind {
+            snap.goodsBidCount = max(
+                snap.goodsBidCount,
+                snap.auctions.filter { $0.kind == BidRail.goods.kind }.count
+            )
+        } else {
+            snap.servicesBidCount = max(
+                snap.servicesBidCount,
+                snap.auctions.filter { $0.kind != BidRail.goods.kind }.count
+            )
+        }
+        snap.activeBidCount = snap.goodsBidCount + snap.servicesBidCount
+        save(snap)
+    }
+
+    static func removeAuction(id: String) {
+        var snap = load()
+        let removed = snap.auctions.filter { $0.id == id }
+        snap.auctions.removeAll { $0.id == id }
+        if removed.contains(where: { $0.kind == BidRail.goods.kind }) {
+            snap.goodsBidCount = max(0, snap.goodsBidCount - 1)
+        }
+        if removed.contains(where: { $0.kind != BidRail.goods.kind }) {
+            snap.servicesBidCount = max(0, snap.servicesBidCount - 1)
+        }
+        snap.activeBidCount = snap.goodsBidCount + snap.servicesBidCount
+        save(snap)
+    }
+
+    /// Combined services+goods active bid count. Prefer `replaceRail` when only
+    /// one list was fetched so the other rail is not zeroed.
+    static func setActiveBidCount(_ count: Int) {
+        var snap = load()
+        snap.activeBidCount = max(0, count)
+        save(snap)
+    }
+
+    /// Replace one rail's count (and optional Next Closing rows). The other rail
+    /// is left intact so switching Goods/Services cannot overwrite the Home Screen.
+    static func replaceRail(
+        _ rail: BidRail,
+        activeCount: Int,
+        auctions: [AuctionSnapshot]? = nil
+    ) {
+        var snap = load()
+        switch rail {
+        case .goods:
+            snap.goodsBidCount = max(0, activeCount)
+            if let auctions {
+                snap.auctions.removeAll { $0.kind == BidRail.goods.kind }
+                snap.auctions.append(contentsOf: auctions)
+            }
+        case .services:
+            snap.servicesBidCount = max(0, activeCount)
+            if let auctions {
+                snap.auctions.removeAll { $0.kind != BidRail.goods.kind }
+                snap.auctions.append(contentsOf: auctions)
+            }
+        }
+        pruneAuctions(&snap)
+        snap.activeBidCount = snap.goodsBidCount + snap.servicesBidCount
+        save(snap)
+    }
+
+    private static func pruneAuctions(_ snap: inout Snapshot) {
         snap.auctions = snap.auctions
             .filter { $0.endsAt > Date().addingTimeInterval(-60) }
             .sorted { $0.endsAt < $1.endsAt }
         if snap.auctions.count > 12 {
             snap.auctions = Array(snap.auctions.prefix(12))
         }
-        snap.activeBidCount = max(snap.activeBidCount, snap.auctions.count)
-        save(snap)
-    }
-
-    static func removeAuction(id: String) {
-        var snap = load()
-        snap.auctions.removeAll { $0.id == id }
-        snap.activeBidCount = snap.auctions.count
-        save(snap)
-    }
-
-    static func setActiveBidCount(_ count: Int) {
-        var snap = load()
-        snap.activeBidCount = max(0, count)
-        save(snap)
     }
 
     // MARK: - Timeline relevance (IOS-SYS.WD.3)

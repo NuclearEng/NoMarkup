@@ -1,6 +1,6 @@
 'use client';
 
-import { CreditCard, Plus, Trash2 } from 'lucide-react';
+import { CreditCard, Plus, Star, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { AddPaymentMethodForm } from '@/components/payments/AddPaymentMethodForm';
@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   useDeletePaymentMethod,
   usePaymentMethods,
+  useSetDefaultPaymentMethod,
   useStripeAccountStatus,
 } from '@/hooks/usePayments';
 import { useAuthStore } from '@/stores/auth-store';
@@ -28,6 +29,7 @@ export default function PaymentMethodsPage() {
   const isProvider = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
   const { data: methodsData, isLoading, isError } = usePaymentMethods();
   const deleteMethod = useDeletePaymentMethod();
+  const setDefaultMethod = useSetDefaultPaymentMethod();
   const stripeStatus = useStripeAccountStatus({ enabled: isProvider });
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -147,23 +149,40 @@ export default function PaymentMethodsPage() {
                       <Badge variant="secondary">Default</Badge>
                     ) : null}
                   </div>
-                  <Button
-                    variant={
-                      deletingId === method.id ? 'destructive' : 'ghost'
-                    }
-                    size="sm"
-                    className="min-h-[44px] min-w-[44px]"
-                    onClick={() => {
-                      handleDelete(method.id);
-                    }}
-                    aria-label={
-                      deletingId === method.id
-                        ? `Confirm delete card ending ${method.last_four}`
-                        : `Delete card ending ${method.last_four}`
-                    }
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {!method.is_default ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="min-h-[44px] min-w-[44px]"
+                        disabled={setDefaultMethod.isPending}
+                        onClick={() => {
+                          void setDefaultMethod.mutateAsync(method.id);
+                        }}
+                        aria-label={`Set card ending ${method.last_four} as default`}
+                      >
+                        <Star className="h-4 w-4" aria-hidden="true" />
+                        Set as default
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant={
+                        deletingId === method.id ? 'destructive' : 'ghost'
+                      }
+                      size="sm"
+                      className="min-h-[44px] min-w-[44px]"
+                      onClick={() => {
+                        handleDelete(method.id);
+                      }}
+                      aria-label={
+                        deletingId === method.id
+                          ? `Confirm delete card ending ${method.last_four}`
+                          : `Delete card ending ${method.last_four}`
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

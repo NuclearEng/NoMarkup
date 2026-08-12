@@ -36,6 +36,7 @@ service PaymentService {
   rpc ChargeContractTip(ChargeContractTipRequest) returns (ChargeContractTipResponse);
   rpc ListPaymentMethods(ListPaymentMethodsRequest) returns (ListPaymentMethodsResponse);
   rpc DeletePaymentMethod(DeletePaymentMethodRequest) returns (DeletePaymentMethodResponse);
+  rpc SetDefaultPaymentMethod(SetDefaultPaymentMethodRequest) returns (SetDefaultPaymentMethodResponse);
   // AddDevPaymentMethod is dev-only — it bypasses Stripe Elements and
   // inserts a card directly into the in-memory dev store. Gateway gates this
   // behind a dev-mode check; production returns FailedPrecondition.
@@ -342,6 +343,13 @@ message DeletePaymentMethodRequest {
 }
 
 message DeletePaymentMethodResponse {}
+
+message SetDefaultPaymentMethodRequest {
+  string customer_id = 1;
+  string payment_method_id = 2;
+}
+
+message SetDefaultPaymentMethodResponse {}
 
 message AddDevPaymentMethodRequest {
   string customer_id = 1;

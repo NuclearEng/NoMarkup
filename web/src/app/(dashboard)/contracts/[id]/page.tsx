@@ -11,16 +11,19 @@ import {
   Shield,
   ShieldCheck,
   Star,
+  UserX,
 } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
+import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import { CompletionFlow } from '@/components/contracts/CompletionFlow';
 import { ContractAcceptance } from '@/components/contracts/ContractAcceptance';
 import { GuaranteeCoverage } from '@/components/contracts/GuaranteeCoverage';
 import { RecurringSchedule } from '@/components/contracts/RecurringSchedule';
+import { DirectionsButton } from '@/components/maps/DirectionsButton';
 import { InsuranceSelector } from '@/components/insurance/InsuranceSelector';
 import { InstallmentPlanSelector } from '@/components/payments/InstallmentPlanSelector';
 import { InstallmentSchedule } from '@/components/payments/InstallmentSchedule';
@@ -48,7 +51,10 @@ import {
   useCancelContract,
   useContract,
   useMarkComplete,
+  usePartyJobLocation,
   useProposeChangeOrder,
+  useReportAbandonment,
+  useReportNoShow,
   useRespondToChangeOrder,
   useStartWork,
 } from '@/hooks/useContracts';
@@ -93,6 +99,8 @@ export default function ContractDetailPage() {
   const markComplete = useMarkComplete();
   const approveCompletion = useApproveCompletion();
   const cancelContract = useCancelContract();
+  const reportNoShow = useReportNoShow();
+  const reportAbandonment = useReportAbandonment();
   const proposeChangeOrder = useProposeChangeOrder();
   const respondToChangeOrder = useRespondToChangeOrder();
   const { installments } = useInstallmentSchedule(contractId);
@@ -100,8 +108,13 @@ export default function ContractDetailPage() {
   const { data: allSavings } = useSavings();
   const competitiveInsuranceEnabled = useFeatureFlag('insurance_competition');
   const bnplEnabled = useFeatureFlag('customer_bnpl');
+  const { data: directionsAddress } = usePartyJobLocation(
+    data?.contract.job_id ?? '',
+    !!data?.contract.job_id,
+  );
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [reportConfirm, setReportConfirm] = useState<'noshow' | 'abandonment' | null>(null);
   const [showChangeOrderForm, setShowChangeOrderForm] = useState(false);
   const [changeOrderDescription, setChangeOrderDescription] = useState('');
   const [changeOrderAmount, setChangeOrderAmount] = useState('');
@@ -212,6 +225,24 @@ export default function ContractDetailPage() {
     });
   }
 
+  function handleConfirmReport() {
+    if (reportConfirm === 'noshow') {
+      reportNoShow.mutate(contract.id, {
+        onSuccess: () => {
+          setReportConfirm(null);
+        },
+      });
+      return;
+    }
+    if (reportConfirm === 'abandonment') {
+      reportAbandonment.mutate(contract.id, {
+        onSuccess: () => {
+          setReportConfirm(null);
+        },
+      });
+    }
+  }
+
   function handleProposeChangeOrder() {
     // Parse the dollar amount to integer cents. The server re-validates the
     // delta (non-zero, within bounds, keeps the contract amount positive), so
@@ -273,6 +304,9 @@ export default function ContractDetailPage() {
           </div>
           <p className="mt-1 text-3xl font-bold">{formatCents(contract.amount_cents)}</p>
         </div>
+        {(isCustomer || isProvider) && directionsAddress ? (
+          <DirectionsButton address={directionsAddress} />
+        ) : null}
       </div>
 
       {/* Contract info cards */}
@@ -552,6 +586,44 @@ export default function ContractDetailPage() {
       ) : null}
 
       {/* Action buttons based on status and role */}
+      {isCustomer &&
+      (contract.status === CONTRACT_STATUS.ACTIVE ||
+        contract.status === CONTRACT_STATUS.PENDING_ACCEPTANCE) ? (
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+          <CardHeader>
+            <h3 className="gold-text text-sm font-medium">Reports</h3>
+            <p className="text-xs text-zinc-400">
+              Use these only when the provider did not appear or walked away mid-job. This may
+              suspend or cancel the contract per platform rules.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-[44px] w-full gap-2 text-amber-400 hover:bg-amber-500/10 border-amber-500/30"
+              onClick={() => {
+                setReportConfirm('noshow');
+              }}
+            >
+              <UserX className="h-4 w-4" aria-hidden="true" />
+              Report no-show
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="text-destructive hover:bg-destructive/10 min-h-[44px] w-full gap-2"
+              onClick={() => {
+                setReportConfirm('abandonment');
+              }}
+            >
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+              Report abandonment
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {contract.status === CONTRACT_STATUS.ACTIVE && (isCustomer || isProvider) ? (
         <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
           <CardHeader>
@@ -953,6 +1025,31 @@ export default function ContractDetailPage() {
           category={contract.job_title}
         />
       ) : null}
+
+      <ActionConfirmDialog
+        open={reportConfirm === 'noshow'}
+        onClose={() => {
+          setReportConfirm(null);
+        }}
+        onConfirm={handleConfirmReport}
+        title="Report provider no-show?"
+        description="Only use this if the provider failed to appear for scheduled work. This may cancel or suspend the contract."
+        confirmLabel="Report no-show"
+        destructive
+        loading={reportNoShow.isPending}
+      />
+      <ActionConfirmDialog
+        open={reportConfirm === 'abandonment'}
+        onClose={() => {
+          setReportConfirm(null);
+        }}
+        onConfirm={handleConfirmReport}
+        title="Report abandonment?"
+        description="Only use this if the provider started work and then left without finishing. Support may review."
+        confirmLabel="Report abandonment"
+        destructive
+        loading={reportAbandonment.isPending}
+      />
     </div>
     </PageTransition>
   );

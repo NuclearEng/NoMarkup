@@ -188,7 +188,9 @@ class WebSocketManager {
       (typeof window !== 'undefined'
         ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
         : '');
-    this.socket = new WebSocket(`${wsBase}/ws/chat?token=${encodeURIComponent(token)}`);
+    // JWT rides as a second subprotocol — browsers cannot set Authorization
+    // on WebSocket. URL must not contain ?token=.
+    this.socket = new WebSocket(`${wsBase}/ws/chat`, ['nomarkup.bearer.v1', token]);
 
     this.socket.onopen = () => {
       this.setStatus(CONNECTION_STATUS.CONNECTED);

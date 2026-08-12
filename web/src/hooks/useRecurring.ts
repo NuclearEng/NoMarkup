@@ -18,6 +18,7 @@ import type {
   ContractRecurringInstance,
   Payment,
   RecurringInstanceActionResult,
+  UpdateRecurringConfigInput,
 } from '@/types';
 
 function explainFailure(fallback: string): (err: unknown) => void {
@@ -120,6 +121,63 @@ export function useCancelRecurring() {
       invalidateRecurring(queryClient, contractId);
     },
     onError: explainFailure('Failed to cancel recurring schedule'),
+  });
+}
+
+function recurringConfigOpKey(
+  contractId: string,
+  input: UpdateRecurringConfigInput,
+): string {
+  const auto = input.auto_approve === undefined ? '' : String(input.auto_approve);
+  const rate =
+    input.proposed_rate_cents === undefined ? '' : String(input.proposed_rate_cents);
+  return `recurring-config:${contractId}:${auto}:${rate}`;
+}
+
+/** PATCH /api/v1/contracts/{id}/recurring — FR-18.3 auto-approve + FR-18.4 rate. */
+export function useUpdateRecurring() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (variables: { contractId: string } & UpdateRecurringConfigInput) => {
+      const input: UpdateRecurringConfigInput = {};
+      if (variables.auto_approve !== undefined) {
+        input.auto_approve = variables.auto_approve;
+      }
+      if (variables.proposed_rate_cents !== undefined) {
+        input.proposed_rate_cents = variables.proposed_rate_cents;
+      }
+      const opKey = recurringConfigOpKey(variables.contractId, input);
+      const res = await api.patch<{ config: ContractRecurringConfig }>(
+        `/api/v1/contracts/${variables.contractId}/recurring`,
+        input,
+        idempotencyHeader(opKey),
+      );
+      return res.config;
+    },
+    onSuccess: (config, variables) => {
+      const input: UpdateRecurringConfigInput = {};
+      if (variables.auto_approve !== undefined) {
+        input.auto_approve = variables.auto_approve;
+      }
+      if (variables.proposed_rate_cents !== undefined) {
+        input.proposed_rate_cents = variables.proposed_rate_cents;
+      }
+      clearIdempotencyKey(recurringConfigOpKey(variables.contractId, input));
+      if (variables.auto_approve !== undefined && variables.proposed_rate_cents === undefined) {
+        toast.success(
+          variables.auto_approve
+            ? 'Visits will auto-approve on complete'
+            : 'Auto-approve turned off — you’ll approve each visit',
+        );
+      } else if (variables.proposed_rate_cents !== undefined) {
+        toast.success('Proposed rate updated for future visits');
+      } else {
+        toast.success('Recurring schedule updated');
+      }
+      queryClient.setQueryData(recurringConfigKey(variables.contractId), config);
+      invalidateRecurring(queryClient, variables.contractId);
+    },
+    onError: explainFailure('Failed to update recurring schedule'),
   });
 }
 

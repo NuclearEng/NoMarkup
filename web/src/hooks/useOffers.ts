@@ -7,7 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { ApiError, api } from '@/lib/api';
+import { ApiError, api, clearIdempotencyKey, idempotencyHeader } from '@/lib/api';
 import type { PaymentIntentEnvelope } from '@/lib/payment-outcome';
 import type { Offer, OffersResponse } from '@/types';
 
@@ -158,16 +158,20 @@ export function useUpdateOffer(listingId: string) {
       action,
       counter_amount_cents,
       message,
-    }: UpdateOfferInput) =>
-      api.patch<UpdateOfferResponse>(
+    }: UpdateOfferInput) => {
+      const opKey = `offer-${action}:${offerId}`;
+      return api.patch<UpdateOfferResponse>(
         `/api/v1/offers/${offerId}`,
         {
           action,
           counter_amount_cents: counter_amount_cents ?? 0,
           message: message ?? '',
         },
-      ),
+        idempotencyHeader(opKey),
+      );
+    },
     onSuccess: (_data, variables) => {
+      clearIdempotencyKey(`offer-${variables.action}:${variables.offerId}`);
       switch (variables.action) {
         case 'accept':
           // Deliberately not "purchased"/"paid": accept only creates the

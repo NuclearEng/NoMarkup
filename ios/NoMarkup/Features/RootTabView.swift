@@ -185,6 +185,9 @@ struct RootTabView: View {
         case .messages:
             selectedTab = .messages
             deepLinks.clear()
+        case .jobsBrowse:
+            selectedTab = .jobs
+            deepLinks.clear()
         case .job, .listing, .contract, .bids, .watchlist, .notifications, .postJob, .checkIn, .orders:
             switch route {
             case .bids, .watchlist, .notifications, .checkIn, .orders:
@@ -247,6 +250,9 @@ struct RootTabView: View {
             NotificationsView()
         case .postJob:
             PostJobView()
+        case .jobsBrowse:
+            // Browse is tab selection only — this case is exhaustive, never a sheet.
+            JobsView()
         case .checkIn(let contractID):
             if let contractID, !contractID.isEmpty {
                 ContractDetailView(contractID: contractID, autoCheckInOnAppear: true)

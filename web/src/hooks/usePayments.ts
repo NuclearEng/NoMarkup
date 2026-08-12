@@ -140,6 +140,27 @@ export function useDeletePaymentMethod() {
   });
 }
 
+export function useSetDefaultPaymentMethod() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.put<{ is_default: boolean }>(
+        `/api/v1/payments/methods/${id}/default`,
+        undefined,
+        idempotencyHeader(`set-default-pm:${id}`),
+      ),
+    onSuccess: (_data, id) => {
+      clearIdempotencyKey(`set-default-pm:${id}`);
+      toast.success('Default payment method updated');
+      void queryClient.invalidateQueries({ queryKey: ['payment-methods'] });
+    },
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to set default payment method'));
+    },
+  });
+}
+
 export function useCreateSetupIntent() {
   return useMutation({
     mutationFn: () =>

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { PhoneOtpForm } from '@/components/forms/PhoneOtpForm';
 import { ProfileForm } from '@/components/forms/ProfileForm';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -109,6 +110,7 @@ export default function ProfilePage() {
                     </Badge>
                   ))}
                   {user.emailVerified ? <Badge variant="outline" className="glass-badge text-xs">Email Verified</Badge> : null}
+                  {user.phoneVerified ? <Badge variant="outline" className="glass-badge text-xs">Phone Verified</Badge> : null}
                 </div>
               </div>
             </div>
@@ -162,6 +164,15 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
       )}
+
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+        <CardHeader>
+          <CardTitle className="gold-text">Phone verification</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PhoneOtpForm initialPhone={user.phone} phoneVerified={user.phoneVerified} />
+        </CardContent>
+      </Card>
 
       {/* Provider business info */}
       {isProvider && providerProfile ? (

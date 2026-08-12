@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, Download, ShieldX, Undo2 } from 'lucide-react';
 
+import { PhoneOtpForm } from '@/components/forms/PhoneOtpForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useProfile } from '@/hooks/useProfile';
 import { api, ApiError, downloadAuthenticated, getApiErrorMessage } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -42,6 +44,7 @@ const REASON_OPTIONS = [
 export default function AccountSettingsPage() {
   const router = useRouter();
   const logout = useAuthStore((s) => s.logout);
+  const { data: profile } = useProfile();
 
   const [reason, setReason] = useState<string>('');
   const [confirmation, setConfirmation] = useState('');
@@ -199,6 +202,18 @@ export default function AccountSettingsPage() {
 
   return (
     <div className="space-y-6">
+      <Card className="glass border border-[var(--brand-gold)]/10">
+        <CardHeader>
+          <CardTitle className="text-lg text-zinc-100">Phone verification</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PhoneOtpForm
+            initialPhone={profile?.phone}
+            phoneVerified={profile?.phoneVerified ?? false}
+          />
+        </CardContent>
+      </Card>
+
       <Card className="glass border border-[var(--brand-gold)]/10">
         <CardHeader>
           <CardTitle className="text-lg text-zinc-100">Privacy &amp; legal</CardTitle>

@@ -1186,6 +1186,9 @@ actor APIClient {
         locationLng: Double? = nil,
         publish: Bool = true,
         scheduleType: String = "flexible",
+        scheduledDate: Date? = nil,
+        scheduleRangeStart: Date? = nil,
+        scheduleRangeEnd: Date? = nil,
         photoUrls: [String] = [],
         propertyId: String? = nil,
         offerAcceptedCents: Int64? = nil,
@@ -1202,6 +1205,7 @@ actor APIClient {
                 detail: "Offer-accepted price must be at or below the starting bid."
             )
         }
+        let wireSchedule = CreateJobRequestBody.normalizedScheduleType(scheduleType)
         let body = CreateJobRequestBody(
             title: trimmedTitle,
             description: description.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1220,7 +1224,13 @@ actor APIClient {
             locationLat: locationLat,
             locationLng: locationLng,
             publish: publish,
-            scheduleType: scheduleType,
+            scheduleType: wireSchedule,
+            scheduledDate: wireSchedule == "specific_date"
+                ? scheduledDate.map(CreateJobRequestBody.iso8601UTC) : nil,
+            scheduleRangeStart: wireSchedule == "date_range"
+                ? scheduleRangeStart.map(CreateJobRequestBody.iso8601UTC) : nil,
+            scheduleRangeEnd: wireSchedule == "date_range"
+                ? scheduleRangeEnd.map(CreateJobRequestBody.iso8601UTC) : nil,
             photoUrls: photoUrls,
             propertyId: propertyId.flatMap { t in
                 let s = t.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2033,7 +2043,8 @@ private struct SendMessageRequestBody: Encodable {
 }
 
 /// Body for `POST /api/v1/jobs` (snake_case via encoder).
-private struct CreateJobRequestBody: Encodable {
+/// Internal so schedule-encoding tests can assert gateway keys/values.
+struct CreateJobRequestBody: Encodable {
     let title: String
     let description: String
     let categoryId: String?
@@ -2045,11 +2056,34 @@ private struct CreateJobRequestBody: Encodable {
     let locationLng: Double?
     let publish: Bool
     let scheduleType: String
+    let scheduledDate: String?
+    let scheduleRangeStart: String?
+    let scheduleRangeEnd: String?
     let photoUrls: [String]
     let propertyId: String?
     let offerAcceptedCents: Int64?
     let isRecurring: Bool
     let recurrenceFrequency: String?
+
+    /// Gateway `stringToScheduleType` only accepts these three tokens.
+    static func normalizedScheduleType(_ raw: String) -> String {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "specific", "specific_date":
+            return "specific_date"
+        case "range", "date_range":
+            return "date_range"
+        default:
+            return "flexible"
+        }
+    }
+
+    /// RFC3339 / `2006-01-02T15:04:05Z` — one of the layouts `parseTimestamp` accepts.
+    static func iso8601UTC(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return formatter.string(from: date)
+    }
 }
 
 private extension String {

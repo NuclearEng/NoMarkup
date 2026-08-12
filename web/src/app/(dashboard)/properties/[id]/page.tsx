@@ -348,7 +348,7 @@ export default function PropertyDetailPage() {
             title="No jobs yet"
             description="No jobs linked to this property yet. Post a reverse-auction job and pick this address."
             action={
-              <Link href={'/jobs/new' as Route}>
+              <Link href={`/jobs/new?property_id=${property.id}` as Route}>
                 <Button className="min-h-[44px]">
                   <Briefcase className="mr-2 h-4 w-4" aria-hidden="true" />
                   Post a job

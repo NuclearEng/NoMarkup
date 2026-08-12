@@ -34,3 +34,5 @@ Apple will reject domain verification against the placeholder content. Until a r
 ## Honesty rule
 
 Engineering **must not** fabricate association file bytes, claim production Apple Pay before verification, or treat the placeholder as a submit-ready payment rail. Residual stays **`[~]` ops-gated** until a human completes the steps above.
+
+**Machine-check (does not close this residual):** `make founder-secrets-check` fails the `APPLE_PAY_DOMAIN_ASSOCIATION` row while the in-repo file still contains `PLACEHOLDER` / `TODO` / `example`.
