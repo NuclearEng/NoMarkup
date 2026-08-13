@@ -246,6 +246,7 @@ struct AccountView: View {
                         Label("Post a job", systemImage: "plus.circle")
                     }
                     .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Native form to post a reverse-auction service job")
                     .accessibilityIdentifier("account.row.postJob")
 
@@ -269,6 +270,7 @@ struct AccountView: View {
                         Label("Sell an item", systemImage: "tag")
                     }
                     .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Native form to list a local goods item for auction")
                     .accessibilityIdentifier("account.row.sell")
 
@@ -288,6 +290,7 @@ struct AccountView: View {
                         Label("Orders", systemImage: "bag")
                     }
                     .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("View marketplace orders, pay pending ones, and confirm escrow pickup")
                     .accessibilityIdentifier("account.row.orders")
 
@@ -299,6 +302,7 @@ struct AccountView: View {
                         Label("Contracts", systemImage: "doc.text")
                     }
                     .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("View service contracts from awarded job bids, milestones, and completion")
                     .accessibilityIdentifier("account.row.contracts")
 
@@ -322,6 +326,7 @@ struct AccountView: View {
                         Label("My bids", systemImage: "hammer")
                     }
                     .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("View goods and service bids you have placed")
                     .accessibilityIdentifier("account.row.myBids")
 
@@ -345,6 +350,7 @@ struct AccountView: View {
                         Label("My listings", systemImage: "tag")
                     }
                     .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("View goods listings you have posted as a seller")
                     .accessibilityIdentifier("account.row.myListings")
 
@@ -356,6 +362,7 @@ struct AccountView: View {
                         Label("Watchlist", systemImage: "heart")
                     }
                     .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Listings you are watching for auction updates")
                     .accessibilityIdentifier("account.row.watchlist")
 
@@ -367,6 +374,7 @@ struct AccountView: View {
                         Label("Saved searches", systemImage: "bell.badge")
                     }
                     .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("Manage marketplace search alerts")
                     .accessibilityIdentifier("account.row.savedSearches")
 
@@ -378,6 +386,7 @@ struct AccountView: View {
                         Label("Seller analytics", systemImage: "chart.bar")
                     }
                     .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("View sales revenue, sell-through, and top categories")
                     .accessibilityIdentifier("account.row.sellerAnalytics")
 
@@ -474,6 +483,7 @@ struct AccountView: View {
                             Label("Legal services", systemImage: "scalemass")
                         }
                         .frame(minHeight: 44)
+                        .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                         .accessibilityHint("Attorney reverse-auction vertical")
                         .accessibilityIdentifier("account.row.legalServices")
                     }
@@ -546,6 +556,7 @@ struct AccountView: View {
                         }
                     }
                     .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityHint("View account notifications and mark them read")
                     .accessibilityIdentifier("account.row.notifications")
 
@@ -803,6 +814,7 @@ struct AccountView: View {
                             .foregroundStyle(BrandTheme.destructive)
                     }
                     .frame(minHeight: 44)
+                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                     .accessibilityIdentifier("account.row.deleteAccount")
                 } header: {
                     Text("Your data").brandSectionHeader()

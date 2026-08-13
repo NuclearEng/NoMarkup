@@ -770,6 +770,11 @@ struct HomeView: View {
         async let healthTask: Void = checkHealth()
         async let catalogTask: Void = loadCatalog()
         _ = await (healthTask, catalogTask)
+        // WidgetKit snapshot: Home pull-to-refresh / first paint must write
+        // App Group bids so the timeline is not empty after a live bid.
+        if auth.isAuthenticated, !auth.isScaffoldSession {
+            await WidgetBidSnapshotSync.refreshFromAPI()
+        }
     }
 
     @MainActor

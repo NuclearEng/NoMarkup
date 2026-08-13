@@ -904,6 +904,17 @@ enum MarketRangeMath {
             source: .reverseAuctionBand
         )
     }
+
+    /// Reverse-auction honesty: a typical band the bidder cannot reach is hidden.
+    /// When `startingBidCents` is the ceiling, `high` must be ≤ that ceiling.
+    static func reachableInReverseAuction(
+        _ estimate: MarketRangeEstimate,
+        startingBidCents: Int64
+    ) -> MarketRangeEstimate? {
+        guard startingBidCents > 0 else { return estimate }
+        guard estimate.highCents <= startingBidCents else { return nil }
+        return estimate
+    }
 }
 
 // MARK: - Jobs (services reverse-auction)

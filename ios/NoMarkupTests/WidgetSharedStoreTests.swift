@@ -85,4 +85,41 @@ final class WidgetSharedStoreTests: XCTestCase {
         XCTAssertEqual(snap.goodsBidCount, 2)
         XCTAssertEqual(snap.servicesBidCount, 1)
     }
+
+    func testApplyGoodsWritesLiveClosingAndSkipsEnded() {
+        let future = ISO8601DateFormatter().string(from: Date().addingTimeInterval(3600))
+        let past = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
+        let live = MyListingBidEntry(
+            bid: ListingBidRow(id: "bid-live", amountCents: 24_000),
+            listing: MyListingBidListing(
+                id: "listing-live",
+                title: "Amp",
+                status: "active",
+                currentBidCents: 24_000,
+                auctionEndsAt: future
+            )
+        )
+        let ended = MyListingBidEntry(
+            bid: ListingBidRow(id: "bid-ended", amountCents: 10_000),
+            listing: MyListingBidListing(
+                id: "listing-ended",
+                title: "Closed lot",
+                status: "sold",
+                currentBidCents: 10_000,
+                auctionEndsAt: past
+            )
+        )
+        WidgetBidSnapshotSync.applyGoods([live, ended])
+        let snap = WidgetSharedStore.load()
+        XCTAssertEqual(snap.goodsBidCount, 1)
+        XCTAssertEqual(snap.auctions.map(\.id), ["listing-live"])
+        XCTAssertEqual(snap.nextClosing?.title, "Amp")
+    }
+
+    func testApplyServicesCountsWithdrawableOnly() {
+        let active = MyJobBidRow(id: "svc-1", status: "active")
+        let withdrawn = MyJobBidRow(id: "svc-2", status: "withdrawn")
+        WidgetBidSnapshotSync.applyServices([active, withdrawn])
+        XCTAssertEqual(WidgetSharedStore.load().servicesBidCount, 1)
+    }
 }

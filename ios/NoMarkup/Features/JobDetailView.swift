@@ -2250,6 +2250,12 @@ struct JobDetailView: View {
                 leadingBidCents: cents,
                 endsAt: endsAt
             )
+            #if DEBUG
+            if let note = AuctionLiveActivityController.debugUnavailableReason {
+                let placed = bidStatusMessage ?? "Bid placed."
+                bidStatusMessage = "\(placed) \(note)."
+            }
+            #endif
             await load()
         } catch let error as APIClientError where error.isUnauthorized {
             bidStatusIsError = true
@@ -2604,7 +2610,10 @@ struct JobDetailView: View {
     }
 
     /// Soft market-range for the intelligence strip + FR-11 bar. Never throws / never blocks hero.
-    /// Hierarchy: market/range → FPI p25–p75 → category starting-bid sample → reverse-auction 60–100% band.
+    /// Hierarchy: market/range → FPI p25–p75 → reachable category sample → reverse-auction 60–100% band.
+    /// Category sample is hidden when it sits above this job's starting bid (SIM-UI.P8) —
+    /// do not show a "typical" range the bidder cannot reach; fall through to
+    /// `MarketRangeMath.reverseAuctionBand` (same helper as the Home live-floor card).
     /// `apiMarketRange` only set for real index data (market/range or fair-price) so the bid bar
     /// can soft-hide when only heuristic estimates exist (FR-11.2).
     @MainActor
@@ -2651,9 +2660,15 @@ struct JobDetailView: View {
 
         // (c) Category sample: p25–p75 of recent public jobs' starting bids (max 20).
         // Heuristic only — do not set apiMarketRange (bar stays hidden).
+        // Skip when the sample band exceeds this job's starting-bid ceiling.
         if !categoryId.isEmpty {
-            if let sample = await loadCategorySampleRange(categoryId: categoryId) {
-                marketRange = sample
+            if let sample = await loadCategorySampleRange(categoryId: categoryId),
+               let reachable = MarketRangeMath.reachableInReverseAuction(
+                sample,
+                startingBidCents: starting
+               )
+            {
+                marketRange = reachable
                 return
             }
         }

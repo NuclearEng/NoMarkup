@@ -16,6 +16,17 @@ struct AccountDeletionView: View {
 
     var body: some View {
         Form {
+            if auth.isScaffoldSession || !auth.isAuthenticated {
+                Section {
+                    Text("Sign in required to request account deletion. Browse-only mode has no API credentials.")
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityIdentifier("accountDeletion.needsSignIn")
+                }
+            }
+
             Section {
                 Text("Requesting deletion schedules permanent removal of your NoMarkup account after a grace period (typically 30 days on the server). You can cancel during the grace window on web or a future app build.")
                     .font(.subheadline)
@@ -60,7 +71,7 @@ struct AccountDeletionView: View {
                     }
                     .frame(minHeight: 48)
                 }
-                .disabled(!canSubmit || isSubmitting)
+                .disabled(!canSubmit || isSubmitting || auth.isScaffoldSession || !auth.isAuthenticated)
             }
 
             if let resultMessage {

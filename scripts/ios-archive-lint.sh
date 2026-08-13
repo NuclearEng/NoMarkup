@@ -37,13 +37,45 @@ if [[ -n "$BASE" && "$BASE" != https://* ]]; then
 fi
 ok "APIBaseURL is release-safe (${BASE:-empty → AppConfig production HTTPS})"
 
-# --- ATS fail-closed: no exceptions in the shared shipping Info.plist ---
-# Dogfood cleartext is Debug scheme env only (NOMARKUP_API_BASE_URL); prefer HTTPS tunnel.
-# Do not reintroduce NSAllowsArbitraryLoads / NSAllowsLocalNetworking here.
+# --- ATS fail-closed: no exceptions in the Release/shipping Info.plist ---
+# Lint THIS file only. Do not grep ios/**/*.plist — Debug Info-Debug.plist is
+# allowed NSAllowsLocalNetworking for device LAN http://192.168.x.x:8081.
+# Release INFOPLIST_FILE must stay NoMarkup/Info.plist (default HTTPS-only).
 if /usr/libexec/PlistBuddy -c 'Print :NSAppTransportSecurity' "$PLIST" &>/dev/null; then
   fail "NSAppTransportSecurity must be absent from shipping Info.plist (default ATS only; no ArbitraryLoads / LocalNetworking)"
 fi
 ok "ATS has no exceptions in Info.plist (default HTTPS-only)"
+
+# App-target Debug vs Release INFOPLIST_FILE (F1000…0009 / F1000…000A).
+if ! grep -q 'F10000000000000000000009 /\* Debug \*/' "$PBX"; then
+  fail "expected app Debug XCBuildConfiguration F1000…0009"
+fi
+DEBUG_INFOPLIST="$(sed -n '/F10000000000000000000009 \/\* Debug \*\//,/name = Debug;/p' "$PBX" | sed -n 's/.*INFOPLIST_FILE = \(.*\);/\1/p' | tail -1 | tr -d ' "')"
+RELEASE_INFOPLIST="$(sed -n '/F1000000000000000000000A \/\* Release \*\//,/name = Release;/p' "$PBX" | sed -n 's/.*INFOPLIST_FILE = \(.*\);/\1/p' | tail -1 | tr -d ' "')"
+if [[ "$DEBUG_INFOPLIST" != "NoMarkup/Info-Debug.plist" ]]; then
+  fail "Debug INFOPLIST_FILE must be NoMarkup/Info-Debug.plist (got: ${DEBUG_INFOPLIST:-missing})"
+fi
+if [[ "$RELEASE_INFOPLIST" != "NoMarkup/Info.plist" ]]; then
+  fail "Release INFOPLIST_FILE must be NoMarkup/Info.plist (got: ${RELEASE_INFOPLIST:-missing})"
+fi
+ok "Debug uses Info-Debug.plist; Release uses shipping Info.plist"
+
+DEBUG_PLIST="$ROOT/ios/NoMarkup/Info-Debug.plist"
+if [[ ! -f "$DEBUG_PLIST" ]]; then
+  fail "missing $DEBUG_PLIST"
+fi
+DEBUG_BASE="$(/usr/libexec/PlistBuddy -c 'Print :APIBaseURL' "$DEBUG_PLIST" 2>/dev/null || echo "")"
+if [[ -n "$DEBUG_BASE" ]]; then
+  fail "Info-Debug.plist APIBaseURL must stay empty (got: $DEBUG_BASE)"
+fi
+LOCAL_NET="$(/usr/libexec/PlistBuddy -c 'Print :NSAppTransportSecurity:NSAllowsLocalNetworking' "$DEBUG_PLIST" 2>/dev/null || echo missing)"
+if [[ "$LOCAL_NET" != "true" ]]; then
+  fail "Info-Debug.plist must set NSAllowsLocalNetworking=true (got: $LOCAL_NET)"
+fi
+if /usr/libexec/PlistBuddy -c 'Print :NSAppTransportSecurity:NSAllowsArbitraryLoads' "$DEBUG_PLIST" &>/dev/null; then
+  fail "Info-Debug.plist must not set NSAllowsArbitraryLoads"
+fi
+ok "Info-Debug.plist allows local networking only (empty APIBaseURL)"
 
 # --- Marketing version policy ---
 if ! grep -q 'MARKETING_VERSION = 1.0.0' "$PBX"; then

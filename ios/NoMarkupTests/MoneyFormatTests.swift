@@ -39,6 +39,37 @@ final class MoneyFormatTests: XCTestCase {
         XCTAssertNotNil(BidAmountRules.validateOfferAccepted(startingCents: 5000, offerCents: 5001))
         XCTAssertNotNil(BidAmountRules.validateOfferAccepted(startingCents: 5000, offerCents: 0))
     }
+
+    func testReverseAuctionBandIsSixtyToHundredOfStart() {
+        let band = MarketRangeMath.reverseAuctionBand(startingBidCents: 25_000)
+        XCTAssertEqual(band?.lowCents, 15_000)
+        XCTAssertEqual(band?.highCents, 25_000)
+        XCTAssertEqual(band?.source, .reverseAuctionBand)
+        XCTAssertNil(MarketRangeMath.reverseAuctionBand(startingBidCents: 0))
+    }
+
+    func testCategorySampleAboveStartingBidIsHidden() {
+        // SIM-UI.P8: $287.50–$362.50 sample on a $250 start is unreachable.
+        let sample = MarketRangeEstimate(
+            lowCents: 28_750,
+            highCents: 36_250,
+            medianCents: 32_500,
+            sampleCount: 2,
+            source: .categorySample
+        )
+        XCTAssertNil(MarketRangeMath.reachableInReverseAuction(sample, startingBidCents: 25_000))
+        let reachable = MarketRangeEstimate(
+            lowCents: 15_000,
+            highCents: 25_000,
+            medianCents: 20_000,
+            sampleCount: 4,
+            source: .categorySample
+        )
+        XCTAssertEqual(
+            MarketRangeMath.reachableInReverseAuction(reachable, startingBidCents: 25_000),
+            reachable
+        )
+    }
 }
 
 // MARK: - Listing promotion pricebook / decode (Wave 5)

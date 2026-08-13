@@ -41,7 +41,8 @@ struct ActiveBidsEntry: TimelineEntry {
 
 struct ActiveBidsProvider: TimelineProvider {
     func placeholder(in context: Context) -> ActiveBidsEntry {
-        ActiveBidsEntry(date: Date(), count: 3, nextTitle: "Kitchen remodel", nextEndsAt: Date().addingTimeInterval(3600))
+        // Honest empty — never fake a bid count or sample auction title.
+        ActiveBidsEntry(date: Date(), count: 0, nextTitle: nil, nextEndsAt: nil)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (ActiveBidsEntry) -> Void) {
@@ -112,7 +113,7 @@ struct ActiveBidsWidgetView: View {
                                 .foregroundStyle(WidgetBrand.primaryText)
                                 .lineLimit(2)
                         } else {
-                            Text("No active auctions")
+                            Text("No active bids")
                                 .font(.subheadline)
                                 .foregroundStyle(WidgetBrand.secondaryText(for: contrast))
                         }
@@ -150,7 +151,7 @@ struct ActiveBidsWidgetView: View {
                 // the combined label above; kept so the block stays labeled if
                 // it is ever reused outside this view).
                 .accessibilityLabel(Text(String(localized: "\(entry.count) active bids")))
-            Text("Tap to open")
+            Text(entry.count == 0 ? "No active bids" : "Tap to open")
                 .font(.caption2)
                 .foregroundStyle(WidgetBrand.secondaryText(for: contrast))
         }
@@ -160,6 +161,9 @@ struct ActiveBidsWidgetView: View {
     /// Combined VoiceOver summary, e.g. "3 active bids, next auction Kitchen
     /// remodel ends in 42 minutes" (IOS-A11Y.1).
     private var accessibilitySummary: String {
+        if entry.count == 0 {
+            return "No active bids"
+        }
         let bids = String(localized: "\(entry.count) active bids")
         guard let ends = entry.nextEndsAt, ends > Date() else {
             return "\(bids), no auction closing soon"

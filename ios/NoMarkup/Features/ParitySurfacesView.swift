@@ -809,6 +809,11 @@ struct AdminConsoleView: View {
 
         var id: String { rawValue }
 
+        /// Menu + destination id slug (`admin.console.tab.<slug>`, `admin.<slug>.root`).
+        var slug: String {
+            rawValue.lowercased().replacingOccurrences(of: " ", with: "-")
+        }
+
         /// Tabs hosted by standalone AdminOpsViews panels (own List + load).
         var isOpsPanel: Bool {
             switch self {
@@ -986,9 +991,7 @@ struct AdminConsoleView: View {
                             Text(t.rawValue)
                         }
                     }
-                    .accessibilityIdentifier(
-                        "admin.console.tab.\(t.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))"
-                    )
+                    .accessibilityIdentifier("admin.console.tab.\(t.slug)")
                 }
             } label: {
                 HStack(spacing: 6) {
@@ -1145,11 +1148,12 @@ struct AdminConsoleView: View {
                     }
                 }
                 .brandListBackground()
-                .accessibilityIdentifier(
-                    "admin.\(tab.rawValue.lowercased().replacingOccurrences(of: " ", with: "-")).root"
-                )
             }
         }
+        // Always present so UITests can wait on `admin.<slug>.root` even while
+        // the inline list is still on BrandLoadingScreen (isLoading && isEmpty).
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("admin.\(tab.slug).root")
     }
 
     // MARK: - Flag rows

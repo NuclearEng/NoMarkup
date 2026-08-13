@@ -123,6 +123,14 @@ const (
 	awardedContractID   = "00000000-0000-0000-0000-000000000300"
 	completedContractID = "00000000-0000-0000-0000-000000000301"
 
+	// Awarded-job thread (customer@ ↔ provider@). Bidding / contracts do
+	// not auto-open chat; a clean seed used to leave Messages permanently
+	// empty. Idempotent on (job_id, customer_id, provider_id).
+	seedChatChannelID = "00000000-0000-0000-0000-000000000350"
+	seedChatMsg1ID    = "00000000-0000-0000-0000-000000000351"
+	seedChatMsg2ID    = "00000000-0000-0000-0000-000000000352"
+	seedChatMsg3ID    = "00000000-0000-0000-0000-000000000353"
+
 	milestone1ID = "00000000-0000-0000-0000-000000000400"
 	milestone2ID = "00000000-0000-0000-0000-000000000401"
 
@@ -601,6 +609,74 @@ func main() {
 		log.Fatalf("insert completed contract: %v", err)
 	}
 
+	// ── 7a. Chat thread (customer@ ↔ provider@ on the awarded job) ──
+	//
+	// Award + accepted contract do not create a channel in product code
+	// (FR-8.1 is an explicit open). Without this fixture, Messages is empty
+	// after wipe+seed even though two contracts exist. Attach to the
+	// awarded kitchen-sink job (active contract NM-2026-00001).
+	//
+	// Conflict arbiter is the natural unique key (job_id, customer_id,
+	// provider_id): a channel opened through the app (random id, same
+	// triple) must reuse that row instead of aborting the transaction.
+	var seedChannelID string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO chat_channels (id, job_id, customer_id, provider_id,
+			channel_type, status, last_message_at, message_count)
+		VALUES ($1, $2, $3, $4, 'contract', 'active', $5, 3)
+		ON CONFLICT (job_id, customer_id, provider_id) DO UPDATE SET
+			channel_type = 'contract',
+			status = 'active',
+			last_message_at = EXCLUDED.last_message_at,
+			updated_at = now()
+		RETURNING id`,
+		seedChatChannelID, awardedJobID, customerUserID, providerUserID,
+		pastAwarded.Add(2*time.Hour),
+	).Scan(&seedChannelID)
+	if err != nil {
+		log.Fatalf("insert seed chat channel: %v", err)
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO chat_messages (id, channel_id, sender_id, message_type, content, created_at)
+		VALUES
+			($1, $4, $5, 'text',
+			 'Hi Mike — the kitchen sink is still pooling overnight. When can you come diagnose the leak?',
+			 $7),
+			($2, $4, $6, 'text',
+			 'Thursday morning around 9 works. I''ll bring parts for a typical P-trap leak under the cabinet.',
+			 $8),
+			($3, $4, $5, 'text',
+			 'Thursday at 9 is perfect. I''ll leave the cabinet doors open.',
+			 $9)
+		ON CONFLICT (id) DO NOTHING`,
+		seedChatMsg1ID, seedChatMsg2ID, seedChatMsg3ID,
+		seedChannelID, customerUserID, providerUserID,
+		pastAwarded.Add(30*time.Minute),
+		pastAwarded.Add(90*time.Minute),
+		pastAwarded.Add(2*time.Hour),
+	)
+	if err != nil {
+		log.Fatalf("insert seed chat messages: %v", err)
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE chat_channels SET
+			message_count = (
+				SELECT COUNT(*) FROM chat_messages
+				WHERE channel_id = $1 AND is_deleted = false
+			),
+			last_message_at = (
+				SELECT MAX(created_at) FROM chat_messages
+				WHERE channel_id = $1 AND is_deleted = false
+			)
+		WHERE id = $1`,
+		seedChannelID,
+	)
+	if err != nil {
+		log.Fatalf("update seed chat channel counts: %v", err)
+	}
+
 	// ── 7b. Completed payments — cleared payout funds for the provider ──
 	// Instant-payout eligibility = sum of the provider's COMPLETED
 	// provider_payout_cents. Seed three completed payments on the completed
@@ -827,7 +903,8 @@ func main() {
 	log.Println("╚══════════════════════════════════════════════════════════════╝")
 	log.Println("")
 	log.Println("Seeded: 4 users, 1 property, 2 provider profiles, 5 jobs (3 home + 2 legal),")
-	log.Println("        2 provider licenses, 4 bids, 2 contracts, 2 milestones, 1 review,")
+	log.Println("        2 provider licenses, 4 bids, 2 contracts, 1 chat thread (3 messages),")
+	log.Println("        2 milestones, 1 review,")
 	log.Println("        1 trust score, 3 subscription tiers, 3 subscriptions,")
 	log.Println("        3 notification preferences, 1 market range")
 	log.Println("        Marketplace: 13 listings (8 active + 3 with bids + ")

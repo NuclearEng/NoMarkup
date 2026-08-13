@@ -146,12 +146,13 @@ struct PlanLimitsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .listRowBackground(BrandTheme.navyElevated)
             } else {
-                Text("Included free for launch. Digital feature unlocks in this app use the free tier only — no In-App Purchase and no web purchase path for digital plans.")
+                Text("In-App Purchase unavailable. Digital feature unlocks use the free tier only — no Subscribe button and no web purchase path for digital plans.")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(BrandTheme.warning)
                     .fixedSize(horizontal: false, vertical: true)
                     .listRowBackground(BrandTheme.navyElevated)
-                    .accessibilityLabel("Included free for launch. Digital plans are not sold in this app.")
+                    .accessibilityIdentifier("planLimits.iapUnavailable")
+                    .accessibilityLabel("In-App Purchase unavailable. Digital plans are not sold in this app.")
 
                 Text("This screen lists free limits and a read-only comparison of paid tiers. There is no upgrade button. Jobs and local goods still use Apple Pay / Stripe escrow for real-world payments.")
                     .font(.caption)

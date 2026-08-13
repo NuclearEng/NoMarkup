@@ -2166,6 +2166,12 @@ struct ListingDetailView: View {
                 leadingBidCents: amountCents,
                 endsAt: detail?.auctionEndsAt ?? preview?.auctionEndsAt
             )
+            #if DEBUG
+            if let note = AuctionLiveActivityController.debugUnavailableReason {
+                let placed = bidStatusMessage ?? "Bid placed."
+                bidStatusMessage = "\(placed) \(note)."
+            }
+            #endif
             await load()
         } catch let error as APIClientError where error.isBidBondRequired {
             BrandHaptics.warning()

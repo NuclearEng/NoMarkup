@@ -53,26 +53,23 @@
 	  Device register → POST /api/v1/notifications/devices still works without this mode.
 	-->
 	<!--
-	  API base URL override. Leave empty so AppConfig defaults to production HTTPS
-	  (https://api.no-markup.com). Never commit a cleartext LAN URL.
-
-	  Debug / LAN dogfood: scheme env only — Xcode scheme LaunchAction sets
-	  NOMARKUP_API_BASE_URL (e.g. http://LAN:8081 or https://staging… / tunnel).
-	  Simulator DEBUG uses http://127.0.0.1:8081 automatically when this key is empty
-	  and no env override is set (see AppConfig.apiBaseURL).
-	  Release builds reject non-https overrides. Do not put dogfood URLs here.
+	  API base URL override. Leave empty so AppConfig defaults apply
+	  (simulator loopback / stamped DevAPIBase LAN / production HTTPS).
+	  Never commit a cleartext LAN URL or secrets here. Device Debug LAN
+	  is AppConfig + NSAllowsLocalNetworking below, not this key.
 	-->
 	<key>APIBaseURL</key>
 	<string></string>
 	<!--
-	  ATS: no NSAllowsLocalNetworking / NSAllowsArbitraryLoads — this shipping
-	  (Release) plist is default HTTPS-only. scripts/ios-archive-lint.sh fails if
-	  NSAppTransportSecurity reappears HERE. GENERATE_INFOPLIST_FILE=NO.
-
-	  Debug target uses Info-Debug.plist (NSAllowsLocalNetworking only) so a
-	  physical device can hit http://192.168.x.x:8081. Simulator loopback is
-	  allowed by OS ATS regardless. Do not copy the Debug ATS dict into this file.
+	  DEBUG-ONLY plist (target INFOPLIST_FILE). Release ships Info.plist with
+	  default ATS (no NSAppTransportSecurity). Local-networking exception lets
+	  a physical device load http://192.168.x.x:8081. No ArbitraryLoads.
 	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<!-- Stripe publishable key (pk_test_… / pk_live_…). Override with NOMARKUP_STRIPE_PUBLISHABLE_KEY. -->
 	<key>StripePublishableKey</key>
 	<string></string>

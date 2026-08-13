@@ -4,6 +4,7 @@ import SwiftUI
 /// Server still enforces gates on post/bid/transact; this surfaces the flows.
 struct VerificationCenterView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var featureFlags: FeatureFlags
     @Environment(\.dismiss) private var dismiss
 
     @State private var emailForResend = ""
@@ -97,66 +98,86 @@ struct VerificationCenterView: View {
             }
 
             Section {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Background check")
+                if !featureFlags.isEnabled("background_checks") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Background checks unavailable")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(BrandTheme.textPrimary)
-                        Text(backgroundCheck?.displayStatus ?? (backgroundCheckLoading ? "Loading…" : "Not loaded"))
+                        Text("The background_checks flag is off. Checkr is not configured on this environment. The app never invents a PASS.")
                             .font(.subheadline)
                             .foregroundStyle(BrandTheme.textSecondary)
-                        if let err = backgroundCheckError {
-                            Text(err)
-                                .font(.caption)
-                                .foregroundStyle(BrandTheme.destructive)
-                                .fixedSize(horizontal: false, vertical: true)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Background checks unavailable. Checkr is off. Never invents a pass.")
+                    .accessibilityIdentifier("verification.backgroundCheck.unavailable")
+                } else {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Background check")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                            Text(backgroundCheck?.displayStatus ?? (backgroundCheckLoading ? "Loading…" : "Not loaded"))
+                                .font(.subheadline)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                            if let err = backgroundCheckError {
+                                Text(err)
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.destructive)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        if backgroundCheckLoading || backgroundCheckRequesting {
+                            ProgressView()
+                                .tint(BrandTheme.accent)
                         }
                     }
-                    Spacer(minLength: 8)
-                    if backgroundCheckLoading || backgroundCheckRequesting {
-                        ProgressView()
-                            .tint(BrandTheme.accent)
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Background check, \(backgroundCheck?.displayStatus ?? "status unknown")")
+
+                    Button {
+                        Task { await requestBackgroundCheck() }
+                    } label: {
+                        Text(backgroundCheck?.canRequest == false ? "Request unavailable" : "Request background check")
                     }
-                }
-                .listRowBackground(BrandTheme.navyElevated)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Background check, \(backgroundCheck?.displayStatus ?? "status unknown")")
+                    .disabled(
+                        isBusy
+                            || backgroundCheckLoading
+                            || backgroundCheckRequesting
+                            || !auth.isAuthenticated
+                            || (backgroundCheck?.canRequest == false)
+                    )
+                    .frame(minHeight: 44)
+                    .listRowBackground(BrandTheme.navyElevated)
 
-                Button {
-                    Task { await requestBackgroundCheck() }
-                } label: {
-                    Text(backgroundCheck?.canRequest == false ? "Request unavailable" : "Request background check")
-                }
-                .disabled(
-                    isBusy
-                        || backgroundCheckLoading
-                        || backgroundCheckRequesting
-                        || !auth.isAuthenticated
-                        || (backgroundCheck?.canRequest == false)
-                )
-                .frame(minHeight: 44)
-                .listRowBackground(BrandTheme.navyElevated)
+                    Button {
+                        Task { await loadBackgroundCheck() }
+                    } label: {
+                        Text("Refresh status")
+                    }
+                    .disabled(isBusy || backgroundCheckLoading || backgroundCheckRequesting || !auth.isAuthenticated)
+                    .frame(minHeight: 44)
+                    .listRowBackground(BrandTheme.navyElevated)
 
-                Button {
-                    Task { await loadBackgroundCheck() }
-                } label: {
-                    Text("Refresh status")
-                }
-                .disabled(isBusy || backgroundCheckLoading || backgroundCheckRequesting || !auth.isAuthenticated)
-                .frame(minHeight: 44)
-                .listRowBackground(BrandTheme.navyElevated)
-
-                if let inviteURL = backgroundCheck?.openableInvitationURL {
-                    Link("Open Checkr", destination: inviteURL)
-                        .frame(minHeight: 44)
-                        .listRowBackground(BrandTheme.navyElevated)
-                        .accessibilityHint("Opens the Checkr invitation in a browser")
+                    if let inviteURL = backgroundCheck?.openableInvitationURL {
+                        Link("Open Checkr", destination: inviteURL)
+                            .frame(minHeight: 44)
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityHint("Opens the Checkr invitation in a browser")
+                    }
                 }
             } header: {
                 Text("Background check").brandSectionHeader()
             } footer: {
-                Text("Status comes from Checkr when configured. The app never invents a PASS. Requires the background_checks flag and CHECKR_API_KEY on the server.")
-                    .foregroundStyle(BrandTheme.textSecondary)
+                Text(
+                    featureFlags.isEnabled("background_checks")
+                        ? "Status comes from Checkr when configured. The app never invents a PASS. Requires CHECKR_API_KEY on the server."
+                        : "Flag off — no Checkr request, no status badge. Never invents a PASS."
+                )
+                .foregroundStyle(BrandTheme.textSecondary)
             }
 
             if let statusMessage {
@@ -180,7 +201,7 @@ struct VerificationCenterView: View {
                 let e = auth.email.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !e.isEmpty { emailForResend = e }
             }
-            if auth.isAuthenticated {
+            if auth.isAuthenticated, featureFlags.isEnabled("background_checks") {
                 await loadBackgroundCheck()
             }
         }

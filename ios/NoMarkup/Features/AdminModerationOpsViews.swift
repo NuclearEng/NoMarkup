@@ -62,7 +62,7 @@ struct AdminGuaranteeOpsView: View {
         .sheet(isPresented: $showReviewSheet) { reviewSheet }
         .task { await load() }
         .refreshable { await load() }
-        .accessibilityIdentifier("admin.ops.guarantee.root")
+        .accessibilityIdentifier("admin.guarantee.root")
     }
 
     @ViewBuilder
@@ -280,7 +280,7 @@ struct AdminVerificationOpsView: View {
         .sheet(isPresented: $showRejectSheet) { rejectSheet }
         .task { await load() }
         .refreshable { await load() }
-        .accessibilityIdentifier("admin.ops.verification.root")
+        .accessibilityIdentifier("admin.verify.root")
     }
 
     @ViewBuilder
@@ -467,7 +467,7 @@ struct AdminLicensesOpsView: View {
         }
         .task { await load() }
         .refreshable { await load() }
-        .accessibilityIdentifier("admin.ops.licenses.root")
+        .accessibilityIdentifier("admin.licenses.root")
     }
 
     @ViewBuilder
@@ -623,7 +623,7 @@ struct AdminInsuranceOpsView: View {
         .sheet(isPresented: $showReviewSheet) { reviewSheet }
         .task { await load() }
         .refreshable { await load() }
-        .accessibilityIdentifier("admin.ops.insurance.root")
+        .accessibilityIdentifier("admin.insurance.root")
     }
 
     @ViewBuilder
@@ -841,7 +841,7 @@ struct AdminFlaggedReviewsOpsView: View {
         .sheet(isPresented: $showRemoveSheet) { removeSheet }
         .task { await load() }
         .refreshable { await load() }
-        .accessibilityIdentifier("admin.ops.reviews.root")
+        .accessibilityIdentifier("admin.reviews.root")
     }
 
     @ViewBuilder

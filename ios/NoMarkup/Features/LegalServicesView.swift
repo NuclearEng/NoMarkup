@@ -80,6 +80,7 @@ struct LegalServicesView: View {
                     Label("Post a legal job", systemImage: "plus.circle.fill")
                 }
                 .frame(minHeight: 44)
+                .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
                 .accessibilityHint("Opens the job form. Choose a Legal practice area in the category picker.")
             } header: {
                 Text("Get started").brandSectionHeader()

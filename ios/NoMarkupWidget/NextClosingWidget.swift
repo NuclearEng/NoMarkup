@@ -66,11 +66,12 @@ struct NextClosingEntry: TimelineEntry {
 
 struct NextClosingProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> NextClosingEntry {
+        // Honest empty — gallery / first paint must not look like a live auction.
         NextClosingEntry(
             date: Date(),
-            title: "Vintage amp — local pickup",
-            endsAt: Date().addingTimeInterval(2 * 3600),
-            amountLabel: "$240",
+            title: "No active bids",
+            endsAt: nil,
+            amountLabel: "—",
             deepLink: URL(string: "nomarkup://bids")
         )
     }
@@ -87,7 +88,7 @@ struct NextClosingProvider: AppIntentTimelineProvider {
             entries.append(
                 NextClosingEntry(
                     date: ends,
-                    title: "No closing auctions",
+                    title: "No active bids",
                     endsAt: nil,
                     amountLabel: "—",
                     deepLink: URL(string: "nomarkup://bids")
@@ -115,7 +116,7 @@ struct NextClosingProvider: AppIntentTimelineProvider {
         }
         return NextClosingEntry(
             date: Date(),
-            title: "No active auctions",
+            title: "No active bids",
             endsAt: nil,
             amountLabel: "—",
             deepLink: URL(string: "nomarkup://bids")

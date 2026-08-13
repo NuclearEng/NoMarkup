@@ -28,13 +28,29 @@ After wipe + re-seed + agent teams.
 
 `GET /jobs?status=open` → 3 active; `status=closed` → 0.
 
-## Still residual (not product FAIL)
+## Closed this residual pass
+
+| Residual | Close |
+|----------|--------|
+| 0 message threads after wipe | `make seed` creates customer↔provider contract channel; GET /channels **1** |
+| Empty inbox copy claimed bid opens a thread | Award / contract / explicit message only |
+| Device Debug LAN HTTP vs shipping ATS | Debug `Info-Debug.plist` + `NSAllowsLocalNetworking`; Release plist still clean |
+| Category sample above starting bid | Hide / fall back to reverse-auction band |
+| Widget placeholder fake inventory | “No active bids”; Home refresh writes `WidgetBidSnapshotSync` |
+| Live Activity silent on sim | DEBUG line only; `simctl` cannot enable LA |
+| Browse-without-sign-in Account rows looked live | Scaffold disables money/account mutations |
+| StoreKit / Checkr honesty | IAP banner “unavailable”; BGC flag-off never “Pass” |
+| Admin remaining 14 sections | Real destinations + `admin.<slug>.root` + live 200 GETs |
+| sim-tap missed AX screen | Prefers Simulator LCD AX frame |
+
+## Still residual (cannot close in this repo)
 
 | Item | Owner |
 |------|--------|
-| Widget / Live Activity not on SpringBoard | device |
-| SIWA / Face ID / Apple Pay / APNs | device / founder |
-| Checkr / StoreKit / off-session | flags / founder |
-| ATS: no LAN HTTP on physical device | use HTTPS tunnel |
-| Customer 0 message threads on this seed | empty-state PASS |
-| Not every admin section list opened | menu-reachable; Fees/Users/Banking/Fraud/Markets/Platform APIs 200 |
+| Widget not pinned on SpringBoard | device (user adds widget) |
+| Live Activity on Lock Screen | user toggle on a Dynamic Island sim |
+| SIWA / Face ID / Apple Pay sheet / real APNs | hardware + Apple / Stripe keys |
+| Checkr **live** invitations | `CHECKR_API_KEY` + `background_checks` flag |
+| StoreKit IAP on | `StoreKitEnabled` stays false (3.1.1 free-tier) |
+| Off-session goods charge | `MARKETPLACE_OFFSESSION_*` founder env |
+| Rotate `Password123!` git history | founder SEC-17 |

@@ -172,7 +172,7 @@ struct MessagesView: View {
             BrandEmptyState(
                 title: "No conversations yet",
                 systemImage: "bubble.left.and.bubble.right.fill",
-                message: "Your threads open when you bid, award a job, or win a local listing. Start something worth talking about — pull to refresh anytime.",
+                message: "A conversation starts when a job is awarded, a contract is accepted, or someone messages you. Bidding or winning a listing does not open a thread on its own — pull to refresh anytime.",
                 actionTitle: "Browse jobs",
                 action: { selectedRootTab?.wrappedValue = .jobs },
                 secondaryActionTitle: "Browse marketplace",

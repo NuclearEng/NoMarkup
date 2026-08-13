@@ -1307,11 +1307,19 @@ final class ScreenshotWalkUITests: XCTestCase {
         XCTAssertTrue(hasChrome, "Admin console destination must render chrome")
         snap("admin-console-root")
         // Section Menu (admin.console.tabs.menu) — not the retired capsule strip.
-        for tabLabel in ["Disputes", "Users", "Fraud", "Jobs", "Fees", "Banking", "Markets", "Platform"] {
+        // Residual sections get `admin.<slug>.root` so the walk can wait on dest chrome.
+        let adminSections = [
+            "Disputes", "Users", "Fraud", "Jobs", "Fees", "Banking", "Markets", "Platform",
+            "Advances", "Taxonomy", "Insurers", "Challenges",
+            "Verify", "Licenses", "Insurance", "Reviews",
+        ]
+        for tabLabel in adminSections {
             if tapAdminConsoleTab(tabLabel) {
-                settle(1.4)
+                let slug = tabLabel.lowercased().replacingOccurrences(of: " ", with: "-")
+                _ = byID("admin.\(slug).root").waitForExistence(timeout: 6)
+                settle(0.6)
                 XCTAssertTrue(app.state == .runningForeground, "crash on admin tab \(tabLabel)")
-                snap("admin-console-tab-\(tabLabel.lowercased())")
+                snap("admin-console-tab-\(slug)")
             } else {
                 recordSkip("admin-console-tab-\(tabLabel.lowercased())", "section menu row not found")
             }
@@ -1450,8 +1458,10 @@ final class ScreenshotWalkUITests: XCTestCase {
             // Section Menu (same path as test05).
             for tabLabel in ["Disputes", "Users", "Fraud", "Jobs"] {
                 if tapAdminConsoleTab(tabLabel) {
-                    settle(1.0)
-                    snap("admin-sweep-console-\(tabLabel.lowercased())")
+                    let slug = tabLabel.lowercased().replacingOccurrences(of: " ", with: "-")
+                    _ = byID("admin.\(slug).root").waitForExistence(timeout: 6)
+                    settle(0.5)
+                    snap("admin-sweep-console-\(slug)")
                 } else {
                     recordSkip(
                         "admin-sweep-console-\(tabLabel.lowercased())",

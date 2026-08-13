@@ -18,6 +18,11 @@ enum AuctionLiveActivityController {
         var wireValue: String { rawValue }
     }
 
+    #if DEBUG
+    /// One-line reason the last `startOrUpdate` no-op'd. Never includes tokens.
+    static private(set) var debugUnavailableReason: String?
+    #endif
+
     /// Begin (or update) a Live Activity for an auction the user just bid on.
     static func startOrUpdate(
         auctionID: String,
@@ -27,8 +32,14 @@ enum AuctionLiveActivityController {
         endsAt: Date?
     ) {
         #if canImport(ActivityKit)
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        guard let endsAt, endsAt > Date() else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            recordDebugUnavailable("Live Activity unavailable")
+            return
+        }
+        guard let endsAt, endsAt > Date() else {
+            recordDebugUnavailable("Live Activity unavailable")
+            return
+        }
 
         let attributes = AuctionActivityAttributes(
             auctionID: auctionID,
@@ -100,6 +111,8 @@ enum AuctionLiveActivityController {
                 )
             } catch {
                 // Live Activities are best-effort — never fail the bid path.
+                // Do not log the error: ActivityKit messages can include tokens.
+                recordDebugUnavailable("Live Activity unavailable")
             }
         }
         #else
@@ -108,6 +121,16 @@ enum AuctionLiveActivityController {
         _ = kind
         _ = leadingBidCents
         _ = endsAt
+        recordDebugUnavailable("Live Activity unavailable")
+        #endif
+    }
+
+    /// DEBUG-only one-liner for bid UI. Release builds keep the silent no-op.
+    private static func recordDebugUnavailable(_ reason: String) {
+        #if DEBUG
+        debugUnavailableReason = reason
+        #else
+        _ = reason
         #endif
     }
 
@@ -254,6 +277,7 @@ enum AuctionLiveActivityController {
             guard let live = matches.first else { return }
             let box = ActivityUpdateBox(activity: live)
             await box.awaitPushTokens { tokenData in
+                // Never log token bytes / hex — register and drop the local copy.
                 let tokenHex = tokenData.map { String(format: "%02x", $0) }.joined()
                 guard !tokenHex.isEmpty else { return }
                 _ = try? await APIClient.shared.registerPushDevice(

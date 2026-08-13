@@ -133,7 +133,7 @@ struct RootView: View {
             // IOS-SYS.WD.3: refresh the widget snapshot with the real active-bid count
             // once a session is established (cold launch or fresh sign-in). Best-effort.
             if auth.isAuthenticated, !auth.isScaffoldSession {
-                await refreshWidgetBidSnapshot()
+                await WidgetBidSnapshotSync.refreshFromAPI()
             }
         }
         .task {
@@ -212,43 +212,53 @@ struct RootView: View {
         isBiometricallyUnlocked = ok
     }
 
-    /// IOS-SYS.WD.3: cold-launch widget snapshot — merge both rails so the Home
-    /// Screen bid count is services+goods and Next Closing includes upcoming
-    /// listing closings. Failure-tolerant: a failed rail is left untouched.
-    private func refreshWidgetBidSnapshot() async {
-        if let goods = try? await APIClient.shared.fetchMyListingBids(page: 1, pageSize: 40) {
-            var goodsCount = 0
-            var auctions: [WidgetSharedStore.AuctionSnapshot] = []
-            for entry in goods.bids {
-                let status = (entry.listing?.status ?? "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .lowercased()
-                if status == "active" || status == "open" {
-                    goodsCount += 1
-                }
-                guard let listingID = entry.listingIdForAPI,
-                      let endsISO = entry.listing?.auctionEndsAt,
-                      let endsAt = CatalogDateFormat.parseISO(endsISO),
-                      endsAt > Date()
-                else { continue }
-                auctions.append(
-                    WidgetSharedStore.AuctionSnapshot(
-                        id: listingID,
-                        title: entry.listing?.displayTitle ?? entry.displayTitle,
-                        endsAt: endsAt,
-                        amountCents: entry.listing?.currentBidCents ?? entry.bid?.amountCents ?? 0,
-                        kind: WidgetSharedStore.BidRail.goods.kind
-                    )
-                )
-            }
-            WidgetSharedStore.replaceRail(.goods, activeCount: goodsCount, auctions: auctions)
-        }
+}
 
-        if let services = try? await APIClient.shared.fetchMyJobBids(page: 1, pageSize: 40) {
-            let servicesCount = services.bids.filter(\.isWithdrawable).count
-            // Job bid list has no close time; preserve existing job Next Closing rows.
-            WidgetSharedStore.replaceRail(.services, activeCount: servicesCount)
+/// Shared Home / My Bids / cold-launch writer for the App Group widget snapshot.
+/// Failure-tolerant: a failed rail is left untouched so the other rail's
+/// Next Closing rows are not wiped.
+enum WidgetBidSnapshotSync {
+    static func refreshFromAPI() async {
+        if let goods = try? await APIClient.shared.fetchMyListingBids(page: 1, pageSize: 40) {
+            applyGoods(goods.bids)
         }
+        if let services = try? await APIClient.shared.fetchMyJobBids(page: 1, pageSize: 40) {
+            applyServices(services.bids)
+        }
+    }
+
+    static func applyGoods(_ entries: [MyListingBidEntry], now: Date = Date()) {
+        var goodsCount = 0
+        var auctions: [WidgetSharedStore.AuctionSnapshot] = []
+        for entry in entries {
+            let status = (entry.listing?.status ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            if status == "active" || status == "open" {
+                goodsCount += 1
+            }
+            guard let listingID = entry.listingIdForAPI,
+                  let endsISO = entry.listing?.auctionEndsAt,
+                  let endsAt = CatalogDateFormat.parseISO(endsISO),
+                  endsAt > now
+            else { continue }
+            auctions.append(
+                WidgetSharedStore.AuctionSnapshot(
+                    id: listingID,
+                    title: entry.listing?.displayTitle ?? entry.displayTitle,
+                    endsAt: endsAt,
+                    amountCents: entry.listing?.currentBidCents ?? entry.bid?.amountCents ?? 0,
+                    kind: WidgetSharedStore.BidRail.goods.kind
+                )
+            )
+        }
+        WidgetSharedStore.replaceRail(.goods, activeCount: goodsCount, auctions: auctions)
+    }
+
+    static func applyServices(_ bids: [MyJobBidRow]) {
+        let servicesCount = bids.filter(\.isWithdrawable).count
+        // `GET /bids/mine` has no auction_ends_at — keep existing job closings.
+        WidgetSharedStore.replaceRail(.services, activeCount: servicesCount)
     }
 }
 
