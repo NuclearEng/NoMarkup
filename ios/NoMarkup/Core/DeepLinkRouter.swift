@@ -28,6 +28,10 @@ final class DeepLinkRouter: ObservableObject {
     func open(actionURL: String?) {
         let trimmed = actionURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return }
+        // Absolute URLs must be an allowed scheme (reject javascript: / file: / data:).
+        if let url = URL(string: trimmed), url.scheme != nil {
+            guard Self.isAllowedIncomingURL(url) else { return }
+        }
         // Prefer typed route when we can parse it (App Intents / known paths).
         if let parsed = Self.route(fromActionString: trimmed) {
             open(parsed)
@@ -51,8 +55,10 @@ final class DeepLinkRouter: ObservableObject {
     }
 
     /// Parse `nomarkup://…` custom scheme or https host paths into a route.
+    /// Rejects `javascript:`, `file:`, `data:`, and any other non-allowlisted scheme.
     @discardableResult
     func handle(url: URL) -> Bool {
+        guard Self.isAllowedIncomingURL(url) else { return false }
         if let route = Self.route(from: url) {
             open(route)
             return true
@@ -64,6 +70,19 @@ final class DeepLinkRouter: ObservableObject {
             return true
         }
         return false
+    }
+
+    /// Schemes the app will navigate from (`onOpenURL`, push `action_url`, widgets).
+    /// Path-only strings (no scheme) are handled separately by `open(actionURL:)`.
+    /// `nonisolated` so NotificationDeepLink (and unit tests) can reject
+    /// `javascript:` / `file:` / `data:` without hopping onto the main actor.
+    nonisolated static func isAllowedIncomingURL(_ url: URL) -> Bool {
+        switch (url.scheme ?? "").lowercased() {
+        case "nomarkup", "https", "http":
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Parsing
@@ -126,6 +145,8 @@ final class DeepLinkRouter: ObservableObject {
             return .messages
         case "notifications", "inbox":
             return .notifications
+        case "account", "me", "profile":
+            return .account
         case "post-job", "postjob", "jobs-new":
             return .postJob
         case "check-in", "checkin":
@@ -184,6 +205,8 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
     case postJob
     /// Jobs tab browse (`/jobs` / `nomarkup://jobs`) — not the create sheet.
     case jobsBrowse
+    /// Account tab (`/account` / `nomarkup://account`).
+    case account
     case checkIn(contractID: String?)
     /// My Orders (IOS-SEC.9). `id` is the order UUID when the link carried one;
     /// the surface is the same either way (`MyOrdersView` has no detail init yet).
@@ -200,6 +223,7 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
         case .watchlist: return "watchlist"
         case .postJob: return "postJob"
         case .jobsBrowse: return "jobsBrowse"
+        case .account: return "account"
         case .checkIn(let id): return "checkIn:\(id ?? "")"
         case .orders(let id): return "orders:\(id ?? "")"
         }
@@ -217,6 +241,7 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
         case .watchlist: return "/watchlist"
         case .postJob: return "/jobs/new"
         case .jobsBrowse: return "/jobs"
+        case .account: return "/account"
         case .checkIn(let id):
             if let id, !id.isEmpty { return "/contracts/\(id)" }
             return "/contracts"

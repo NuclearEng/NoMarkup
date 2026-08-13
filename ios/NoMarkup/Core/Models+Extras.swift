@@ -981,6 +981,12 @@ struct PaymentMethodsResponse: Codable, Sendable {
     }
 }
 
+/// Response from `PUT /api/v1/payments/methods/{id}/default`.
+/// Gateway writes `{ "is_default": true }` (snake_case via APIClient decoder).
+struct SetDefaultPaymentMethodResponse: Codable, Sendable, Hashable {
+    var isDefault: Bool?
+}
+
 /// Response from `POST /api/v1/payments/setup-intent` (FR-9.2).
 struct PaymentSetupIntentResponse: Codable, Sendable, Hashable {
     var clientSecret: String?

@@ -10,6 +10,9 @@ struct HomeView: View {
     @State private var healthOK: Bool?
     @State private var isChecking = false
     @State private var jobs: [JobSummary] = []
+    /// Unfiltered first-page jobs for the market-desk ticker (priced / bid chips).
+    /// `jobs` is live-status only so the open-floor sections stay honest.
+    @State private var deskJobs: [JobSummary] = []
     @State private var listings: [ListingSummary] = []
     @State private var jobTotal: Int?
     @State private var listingTotal: Int?
@@ -253,9 +256,11 @@ struct HomeView: View {
     }
 
     /// Build ticker chips — short label + price + bid count. Skip noise locations.
+    /// Source is `deskJobs` (unfiltered catalog slice) so a closed-first page
+    /// still prints last prices instead of "Waiting for open floor…".
     private var tickerItems: [MarketTickerView.TickerItem] {
         var items: [MarketTickerView.TickerItem] = []
-        for job in jobs.prefix(6) {
+        for job in deskJobs.prefix(6) {
             let cat = job.categoryName?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let label: String = {
@@ -298,7 +303,7 @@ struct HomeView: View {
         HStack(spacing: 0) {
             statCell(
                 value: jobTotal.map { Self.compactCount($0) } ?? "—",
-                label: "OPEN JOBS"
+                label: "JOBS"
             )
             divider
             statCell(
@@ -433,7 +438,7 @@ struct HomeView: View {
                 sectionEyebrow("Open reverse auctions")
                 Spacer(minLength: 8)
                 if let jobTotal, jobTotal > 0 {
-                    Text("\(Self.compactCount(jobTotal)) OPEN")
+                    Text(Self.compactCount(jobTotal))
                         .font(.caption2.weight(.heavy).monospacedDigit())
                         .tracking(0.6)
                         .foregroundStyle(BrandTheme.goldBright)
@@ -731,11 +736,24 @@ struct HomeView: View {
     @MainActor
     private func loadCatalog() async {
         do {
-            async let jobsResponse = APIClient.shared.fetchJobs(page: 1, pageSize: 8)
-            async let listingsResponse = APIClient.shared.fetchListings(page: 1, pageSize: 3)
+            async let jobsResponse = APIClient.shared.fetchJobs(
+                page: 1,
+                pageSize: 100,
+                sort: "created_at",
+                sortDir: "desc"
+            )
+            async let listingsResponse = APIClient.shared.fetchListings(page: 1, pageSize: 20)
             let jobsResult = try await jobsResponse
             let listingsResult = try await listingsResponse
-            // Open auctions only — pin auction_type=live first so the open floor is on top.
+            // Ticker: priced jobs from the unfiltered page (live first). Do not
+            // wait for live-status — closed rows still have last-print prices.
+            deskJobs = jobsResult.jobs.sorted { a, b in
+                let aLive = Self.isLiveAuctionStatus(a.status)
+                let bLive = Self.isLiveAuctionStatus(b.status)
+                if aLive != bLive { return aLive && !bLive }
+                return Self.endsSooner(lhs: a.auctionEndsAt, rhs: b.auctionEndsAt)
+            }
+            // Open-floor cards only — pin auction_type=live first.
             let liveJobs = jobsResult.jobs
                 .filter { Self.isLiveAuctionStatus($0.status) }
                 .sorted { a, b in
@@ -749,11 +767,9 @@ struct HomeView: View {
                 .sorted { Self.endsSooner(lhsDate: $0.auctionEndsAt, rhsDate: $1.auctionEndsAt) }
             jobs = Array(liveJobs.prefix(8))
             listings = Array(liveListings.prefix(3))
-            // Desk counts: prefer server page totals (institutional scale), not the 8-item slice.
-            jobTotal = jobsResult.pagination?.resolvedTotal
-                ?? (liveJobs.isEmpty ? jobsResult.jobs.count : liveJobs.count)
-            listingTotal = listingsResult.pagination?.resolvedTotal
-                ?? (liveListings.isEmpty ? listingsResult.listings.count : liveListings.count)
+            // OPEN JOBS / GOODS LIVE are live-status counts, not mixed Search totals.
+            jobTotal = liveJobs.count
+            listingTotal = liveListings.count
             catalogError = nil
         } catch {
             if jobs.isEmpty {

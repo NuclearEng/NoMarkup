@@ -3039,16 +3039,8 @@ struct ContractDetailView: View {
                 statusMessage = "Could not read the selected photo."
                 return
             }
-            #if canImport(UIKit)
-            let jpeg: Data
-            if let image = UIImage(data: data), let encoded = image.jpegData(compressionQuality: 0.85) {
-                jpeg = encoded
-            } else {
-                jpeg = data
-            }
-            #else
-            let jpeg = data
-            #endif
+            // ImageIO downsample off-main (≤2048px) — do not UIImage(data:) on MainActor.
+            let jpeg = try await ImageUploader.jpegDataDownsampled(from: data)
             try await uploadCompletionJPEG(jpeg, phase: phase)
         } catch {
             statusIsError = true
@@ -3066,12 +3058,8 @@ struct ContractDetailView: View {
             cameraImage = nil
             pendingPhotoPhase = nil
         }
-        guard let jpeg = image.jpegData(compressionQuality: 0.85) else {
-            statusIsError = true
-            statusMessage = "Could not encode the camera photo."
-            return
-        }
         do {
+            let jpeg = try await ImageUploader.jpegDataDownsampled(from: image)
             try await uploadCompletionJPEG(jpeg, phase: phase)
         } catch {
             statusIsError = true

@@ -65,14 +65,15 @@
 	<key>APIBaseURL</key>
 	<string></string>
 	<!--
-	  Local / LAN dogfood (DEBUG device). Allows cleartext to private network hosts
-	  so Home desk health can reach http://192.168.x.x:8081. Release still prefers HTTPS.
+	  ATS: no NSAllowsLocalNetworking / NSAllowsArbitraryLoads — shipping plist is
+	  default HTTPS-only (scripts/ios-archive-lint.sh fails if NSAppTransportSecurity
+	  reappears). GENERATE_INFOPLIST_FILE=NO so Debug+Release share this file.
+
+	  Simulator DEBUG → AppConfig uses 127.0.0.1 (OS ATS allows loopback).
+	  Device Debug dogfood: HTTPS staging or an HTTPS tunnel via
+	  NOMARKUP_API_BASE_URL (scheme env only). Do not re-add cleartext ATS
+	  exceptions here to make LAN HTTP greener.
 	-->
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
 	<!-- Stripe publishable key (pk_test_… / pk_live_…). Override with NOMARKUP_STRIPE_PUBLISHABLE_KEY. -->
 	<key>StripePublishableKey</key>
 	<string></string>

@@ -1,4 +1,6 @@
 import XCTest
+import ImageIO
+import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -57,6 +59,58 @@ final class ImageUploaderTests: XCTestCase {
         XCTAssertTrue(ImageUploader.needsDownsample(width: 2049, height: 100))
         XCTAssertTrue(ImageUploader.needsDownsample(width: 100, height: 4000))
         XCTAssertFalse(ImageUploader.needsDownsample(width: 3000, height: 3000, maxEdge: 4096))
+    }
+
+    func testJpegDataDownsampledCapsLongestEdge() async throws {
+        let width = 4000
+        let height = 2500
+        XCTAssertTrue(ImageUploader.needsDownsample(width: width, height: height))
+        let sourceJPEG = try XCTUnwrap(Self.solidJPEG(width: width, height: height))
+        let out = try await ImageUploader.jpegDataDownsampled(from: sourceJPEG)
+        XCTAssertLessThanOrEqual(out.count, ImageUploader.maxFileBytes)
+        XCTAssertGreaterThan(out.count, 0)
+
+        let src = try XCTUnwrap(CGImageSourceCreateWithData(out as CFData, [
+            kCGImageSourceShouldCache: false,
+        ] as CFDictionary))
+        let props = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any])
+        let outW = try XCTUnwrap(props[kCGImagePropertyPixelWidth] as? Int)
+        let outH = try XCTUnwrap(props[kCGImagePropertyPixelHeight] as? Int)
+        XCTAssertLessThanOrEqual(max(outW, outH), ImageUploader.maxPixelDimension)
+        XCTAssertGreaterThan(outW, 0)
+        XCTAssertGreaterThan(outH, 0)
+        // Aspect roughly preserved (4000:2500 = 1.6).
+        let ratio = Double(outW) / Double(outH)
+        XCTAssertEqual(ratio, 4000.0 / 2500.0, accuracy: 0.05)
+    }
+
+    private static func solidJPEG(width: Int, height: Int) -> Data? {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bytesPerPixel = 4
+        var pixels = [UInt8](repeating: 180, count: width * height * bytesPerPixel)
+        let image = pixels.withUnsafeMutableBytes { ptr -> CGImage? in
+            guard let ctx = CGContext(
+                data: ptr.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * bytesPerPixel,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return nil }
+            return ctx.makeImage()
+        }
+        guard let image else { return nil }
+        let mutable = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            mutable,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return mutable as Data
     }
 
     // MARK: - IOS-PERF.3 cache wiring

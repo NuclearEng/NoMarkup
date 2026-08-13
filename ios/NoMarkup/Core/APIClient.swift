@@ -393,7 +393,9 @@ actor APIClient {
         longitude: Double? = nil,
         radiusKm: Double? = nil,
         scheduleType: String? = nil,
-        minPriceCents: Int64? = nil
+        minPriceCents: Int64? = nil,
+        sort: String? = nil,
+        sortDir: String? = nil
     ) async throws -> JobsResponse {
         var items = [
             URLQueryItem(name: "page", value: String(max(1, page))),
@@ -428,6 +430,18 @@ actor APIClient {
         }
         if let minPriceCents, minPriceCents > 0 {
             items.append(URLQueryItem(name: "min_price_cents", value: String(minPriceCents)))
+        }
+        if let sort {
+            let trimmed = sort.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                items.append(URLQueryItem(name: "sort", value: trimmed))
+            }
+        }
+        if let sortDir {
+            let trimmed = sortDir.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if trimmed == "asc" || trimmed == "desc" {
+                items.append(URLQueryItem(name: "sort_dir", value: trimmed))
+            }
         }
         return try await getJSON(pathComponents: ["api", "v1", "jobs"], query: items)
     }

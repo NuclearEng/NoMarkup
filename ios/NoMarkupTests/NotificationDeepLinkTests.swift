@@ -113,6 +113,14 @@ final class NotificationDeepLinkTests: XCTestCase {
         XCTAssertNil(NotificationDeepLink.destination(from: "/unknown/path"))
         XCTAssertNil(NotificationDeepLink.destination(from: "/jobs/not-a-uuid"))
     }
+
+    func testDestinationRejectsDangerousSchemesEvenWhenPathLooksValid() {
+        XCTAssertNil(NotificationDeepLink.destination(from: "javascript:alert(1)"))
+        XCTAssertNil(NotificationDeepLink.destination(from: "javascript:/jobs/\(sampleUUID)"))
+        XCTAssertNil(NotificationDeepLink.destination(from: "file:///jobs/\(sampleUUID)"))
+        XCTAssertNil(NotificationDeepLink.destination(from: "data:text/html,<script>alert(1)</script>"))
+        XCTAssertNil(NotificationDeepLink.destination(from: "about:blank"))
+    }
 }
 
 // MARK: - Orders routing (IOS-SEC.9 route half)
@@ -440,6 +448,88 @@ final class AppIntentsAuthGuardTests: XCTestCase {
         XCTAssertEqual(DeepLinkRouter.shared.route, .checkIn(contractID: sampleUUID))
         let container = result as? IntentResultContainer<String, Never, Never, IntentDialog>
         XCTAssertEqual(container?.value, "fallback")
+    }
+}
+
+// MARK: - Incoming URL scheme gate (SIM-SEC.8)
+
+@MainActor
+final class DeepLinkIncomingSchemeTests: XCTestCase {
+    private let sampleUUID = "550e8400-e29b-41d4-a716-446655440000"
+
+    override func tearDown() {
+        DeepLinkRouter.shared.clear()
+        super.tearDown()
+    }
+
+    func testHandleRejectsJavaScriptAndFileSchemes() {
+        let router = DeepLinkRouter.shared
+        router.clear()
+
+        XCTAssertFalse(router.handle(url: URL(string: "javascript:alert(1)")!))
+        XCTAssertNil(router.route)
+        XCTAssertNil(router.pendingActionURL)
+
+        XCTAssertFalse(router.handle(url: URL(string: "javascript:/jobs/\(sampleUUID)")!))
+        XCTAssertNil(router.route)
+        XCTAssertNil(router.pendingActionURL)
+
+        XCTAssertFalse(router.handle(url: URL(string: "file:///jobs/\(sampleUUID)")!))
+        XCTAssertNil(router.route)
+        XCTAssertNil(router.pendingActionURL)
+
+        XCTAssertFalse(router.handle(url: URL(string: "data:text/html,hi")!))
+        XCTAssertNil(router.route)
+        XCTAssertNil(router.pendingActionURL)
+    }
+
+    func testOpenActionURLRejectsDangerousSchemes() {
+        let router = DeepLinkRouter.shared
+        router.clear()
+        router.open(actionURL: "javascript:/jobs/\(sampleUUID)")
+        XCTAssertNil(router.route)
+        XCTAssertNil(router.pendingActionURL)
+
+        router.open(actionURL: "file:///orders/\(sampleUUID)")
+        XCTAssertNil(router.route)
+        XCTAssertNil(router.pendingActionURL)
+    }
+
+    func testHandleStillAcceptsNomarkupAndHTTPS() {
+        let router = DeepLinkRouter.shared
+        router.clear()
+        XCTAssertTrue(router.handle(url: URL(string: "nomarkup://jobs/\(sampleUUID)")!))
+        XCTAssertEqual(router.route, .job(id: sampleUUID))
+
+        router.clear()
+        XCTAssertTrue(router.handle(url: URL(string: "https://no-markup.com/orders")!))
+        XCTAssertEqual(router.route, .orders(id: nil))
+    }
+
+    func testAllowedIncomingURLSchemes() {
+        XCTAssertTrue(DeepLinkRouter.isAllowedIncomingURL(URL(string: "nomarkup://bids")!))
+        XCTAssertTrue(DeepLinkRouter.isAllowedIncomingURL(URL(string: "https://no-markup.com/jobs")!))
+        XCTAssertTrue(DeepLinkRouter.isAllowedIncomingURL(URL(string: "http://127.0.0.1:8081/jobs")!))
+        XCTAssertFalse(DeepLinkRouter.isAllowedIncomingURL(URL(string: "javascript:alert(1)")!))
+        XCTAssertFalse(DeepLinkRouter.isAllowedIncomingURL(URL(string: "file:///tmp")!))
+        XCTAssertFalse(DeepLinkRouter.isAllowedIncomingURL(URL(string: "data:text/plain,x")!))
+    }
+}
+
+@MainActor
+final class WebSocketURLSecurityTests: XCTestCase {
+    func testChatAndAuctionWSURLsHaveNoQueryToken() {
+        let chat = ChatWebSocketClient.chatWebSocketURL()
+        XCTAssertNotNil(chat)
+        XCTAssertNil(chat?.query)
+        XCTAssertFalse(chat?.absoluteString.contains("token=") ?? true)
+        XCTAssertTrue(["ws", "wss"].contains(chat?.scheme ?? ""))
+
+        let auction = AuctionWebSocketClient.auctionWebSocketURL(jobID: "550e8400-e29b-41d4-a716-446655440000")
+        XCTAssertNotNil(auction)
+        XCTAssertNil(auction?.query)
+        XCTAssertFalse(auction?.absoluteString.contains("token=") ?? true)
+        XCTAssertTrue(auction?.path.contains("/ws/auction/") ?? false)
     }
 }
 

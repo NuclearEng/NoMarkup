@@ -23,12 +23,21 @@ struct MarketTickerView: View {
         let bidCount: Int?
     }
 
+    private var emptyFloorCopy: String {
+        let jobs = openJobs ?? 0
+        let goods = liveListings ?? 0
+        if jobs == 0 && goods == 0 {
+            return "No live auctions right now"
+        }
+        return "Waiting for priced lots…"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             headerRow
 
             if samplePrices.isEmpty {
-                Text("Waiting for open floor…")
+                Text(emptyFloorCopy)
                     .font(.caption.weight(.medium).monospaced())
                     .foregroundStyle(BrandTheme.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)

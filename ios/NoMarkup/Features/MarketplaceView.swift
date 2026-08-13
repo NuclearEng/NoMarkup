@@ -22,6 +22,9 @@ struct MarketplaceView: View {
     @State private var selectedListingRoute: ListingIDRoute?
     /// Split-view selection (regular width only).
     @State private var selectedListing: ListingSummary?
+    /// Empty-catalog CTA → native sell wizard (same sheet as Home / Account).
+    @State private var showCreateListing = false
+    @EnvironmentObject private var auth: AuthViewModel
 
     private var usesSplitView: Bool { horizontalSizeClass == .regular }
 
@@ -81,6 +84,19 @@ struct MarketplaceView: View {
             .refreshable { await load(reset: true) }
             .task { await load(reset: true) }
             .brandNavigationBarChrome()
+            .sheet(isPresented: $showCreateListing) {
+                NavigationStack {
+                    CreateListingView()
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close") { showCreateListing = false }
+                                    .frame(minHeight: 44)
+                            }
+                        }
+                }
+                .environmentObject(auth)
+                .tint(BrandTheme.accent)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
@@ -125,7 +141,7 @@ struct MarketplaceView: View {
                 actionTitle: "Sell an item",
                 action: {
                     BrandHaptics.selection()
-                    // Account → Sell is the full path; jump Account for discovery.
+                    showCreateListing = true
                 }
             )
             .accessibilityIdentifier("marketplace.empty")
@@ -530,6 +546,7 @@ private struct ListingIDRoute: Hashable, Identifiable {
 
 #Preview {
     MarketplaceView()
+        .environmentObject(AuthViewModel())
         .preferredColorScheme(.dark)
         .tint(BrandTheme.accent)
 }

@@ -79,11 +79,9 @@ final class AuthViewModel: ObservableObject {
             return false
         }
 
-        // Skip if already signed in with real tokens.
-        if isAuthenticated, !isScaffoldSession {
-            return true
-        }
-
+        // Always honor launch-test credentials. Optimistic Keychain restore can
+        // flip `isAuthenticated` before refresh fails ("session expired"), which
+        // used to skip argv/env login and leave XCUI / sim role launches signed out.
         self.email = email
         self.password = password
         await login()

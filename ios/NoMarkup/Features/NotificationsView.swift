@@ -421,8 +421,16 @@ enum NotificationDeepLink {
     private static func normalizedPath(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return "" }
-        if let url = URL(string: trimmed), let hostPath = url.path.nilIfEmptyOrSlash {
-            return hostPath
+        if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), !scheme.isEmpty {
+            // `file:///jobs/{uuid}` and `javascript:/jobs/{uuid}` have a matching
+            // path — reject by scheme so they cannot open a native destination.
+            // Local scheme check — do not hop onto DeepLinkRouter (@MainActor).
+            let scheme = (url.scheme ?? "").lowercased()
+            guard scheme == "nomarkup" || scheme == "https" || scheme == "http" else { return "" }
+            if let hostPath = url.path.nilIfEmptyOrSlash {
+                return hostPath
+            }
+            return ""
         }
         if trimmed.hasPrefix("/") { return trimmed }
         return "/" + trimmed

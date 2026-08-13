@@ -501,7 +501,7 @@ final class NoMarkupUITests: XCTestCase {
             _ = scrollTo(desk, maxSwipes: 4)
         }
         if desk.exists {
-            // Present is enough; empty ticker ("Waiting for open floor…") is valid offline.
+            // Present is enough; empty ticker ("No live auctions right now") is valid offline.
             XCTAssertTrue(desk.exists, "home.marketDesk should be identifiable")
         } else {
             // Soft: label fallback for MARKET DESK header.

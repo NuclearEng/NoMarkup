@@ -27,6 +27,8 @@ final class JobSiteLocationProvider: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var continuation: CheckedContinuation<CLLocationCoordinate2D, Error>?
     private var timeoutTask: Task<Void, Never>?
+    /// Held while the When-In-Use prompt is up so the GPS clock starts after Allow.
+    private var pendingTimeoutSeconds: TimeInterval?
 
     override init() {
         super.init()
@@ -43,16 +45,15 @@ final class JobSiteLocationProvider: NSObject, CLLocationManagerDelegate {
         return try await withCheckedThrowingContinuation { cont in
             continuation = cont
 
-            timeoutTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
-                guard let self, !Task.isCancelled else { return }
-                self.finish(.failure(LocationError.timedOut))
-            }
-
             switch manager.authorizationStatus {
             case .notDetermined:
+                // Do not start the GPS timeout until the user answers the
+                // system prompt — a 12s clock behind the permission sheet
+                // fails check-in before Allow is tappable (SIM-UI).
+                pendingTimeoutSeconds = timeoutSeconds
                 manager.requestWhenInUseAuthorization()
             case .authorizedAlways, .authorizedWhenInUse:
+                startFixTimeout(timeoutSeconds)
                 manager.requestLocation()
             case .denied, .restricted:
                 finish(.failure(LocationError.permissionDenied))
@@ -68,6 +69,9 @@ final class JobSiteLocationProvider: NSObject, CLLocationManagerDelegate {
             switch status {
             case .authorizedAlways, .authorizedWhenInUse:
                 if self.continuation != nil {
+                    let seconds = self.pendingTimeoutSeconds ?? 12
+                    self.pendingTimeoutSeconds = nil
+                    self.startFixTimeout(seconds)
                     self.manager.requestLocation()
                 }
             case .denied, .restricted:
@@ -97,9 +101,19 @@ final class JobSiteLocationProvider: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    private func startFixTimeout(_ timeoutSeconds: TimeInterval) {
+        timeoutTask?.cancel()
+        timeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.finish(.failure(LocationError.timedOut))
+        }
+    }
+
     private func finish(_ result: Result<CLLocationCoordinate2D, Error>) {
         timeoutTask?.cancel()
         timeoutTask = nil
+        pendingTimeoutSeconds = nil
         guard let cont = continuation else { return }
         continuation = nil
         cont.resume(with: result)

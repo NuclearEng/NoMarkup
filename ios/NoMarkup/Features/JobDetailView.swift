@@ -657,6 +657,11 @@ struct JobDetailView: View {
             }
         }
         .brandListBackground()
+        // Floating iOS 26 tab bar overlays the last List section when this
+        // view is pushed inside Jobs (sheet presentation already has Close).
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: 28)
+        }
     }
 
     // MARK: - Spectate terminal entry

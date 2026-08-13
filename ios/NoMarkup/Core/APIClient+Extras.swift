@@ -505,6 +505,30 @@ extension APIClient {
         )
     }
 
+    /// Sticky Idempotency-Key for PUT `/payments/methods/{id}/default` (money-adjacent).
+    static func paymentSetDefaultIdempotencyKey(methodID: String) -> String {
+        "set-default-pm:\(methodID)"
+    }
+
+    /// PUT `/api/v1/payments/methods/{id}/default` — JWT customer; empty body.
+    /// Requires Idempotency-Key (gateway `/payments` group).
+    @discardableResult
+    func setDefaultPaymentMethod(id: String) async throws -> SetDefaultPaymentMethodResponse {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Payment method id is required.")
+        }
+        let headers = idempotencyHeader(for: Self.paymentSetDefaultIdempotencyKey(methodID: trimmed))
+        let response: SetDefaultPaymentMethodResponse = try await putJSON(
+            pathComponents: ["api", "v1", "payments", "methods", trimmed, "default"],
+            body: EmptyJSONObject(),
+            authorized: .required,
+            headers: headers
+        )
+        clearIdempotencyKey(Self.paymentSetDefaultIdempotencyKey(methodID: trimmed))
+        return response
+    }
+
     // MARK: Stripe Connect (provider)
 
     /// GET `/api/v1/providers/me/stripe/status`

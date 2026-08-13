@@ -8,6 +8,7 @@ struct PaymentMethodsView: View {
     @State private var isLoading = false
     @State private var isAddingCard = false
     @State private var deletingID: String?
+    @State private var settingDefaultID: String?
     @State private var errorMessage: String?
     @State private var statusMessage: String?
     @State private var needsSignIn = false
@@ -210,6 +211,24 @@ struct PaymentMethodsView: View {
 
             Spacer(minLength: 8)
 
+            if method.isDefault != true {
+                Button {
+                    Task { await setDefault(method) }
+                } label: {
+                    if settingDefaultID == method.id {
+                        ProgressView()
+                            .tint(BrandTheme.accent)
+                            .frame(minWidth: 44, minHeight: 44)
+                    } else {
+                        Text("Set default")
+                            .font(.caption.weight(.semibold))
+                            .frame(minHeight: 44)
+                    }
+                }
+                .disabled(settingDefaultID != nil || deletingID != nil)
+                .accessibilityLabel("Set \(method.displayBrand) ending in \(method.displayLastFour) as default")
+            }
+
             if deletingID == method.id {
                 ProgressView()
                     .tint(BrandTheme.destructive)
@@ -220,6 +239,7 @@ struct PaymentMethodsView: View {
                     Image(systemName: "trash")
                         .frame(minWidth: 44, minHeight: 44)
                 }
+                .disabled(settingDefaultID != nil)
                 .accessibilityLabel("Remove \(method.displayBrand) ending in \(method.displayLastFour)")
             }
         }
@@ -290,6 +310,25 @@ struct PaymentMethodsView: View {
             needsSignIn = true
         } catch {
             // Keep sticky key on mint/network failure so retries dedupe.
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func setDefault(_ method: PaymentMethodRow) async {
+        errorMessage = nil
+        statusMessage = nil
+        settingDefaultID = method.id
+        defer { settingDefaultID = nil }
+
+        do {
+            _ = try await APIClient.shared.setDefaultPaymentMethod(id: method.id)
+            await load()
+            statusMessage = "Default payment method updated."
+            BrandHaptics.success()
+        } catch let error as APIClientError where error.isUnauthorized {
+            needsSignIn = true
+        } catch {
             errorMessage = error.localizedDescription
         }
     }

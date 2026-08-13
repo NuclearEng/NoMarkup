@@ -320,8 +320,15 @@ final class TabAuditUITests: XCTestCase {
     }
 
     private func noteAPIErrorIfPresent(context: String) {
+        // Never match the substring "500" — seed jobs show "$500.00" and
+        // would false-positive as HTTP 500.
         let err = app.staticTexts.matching(
-            NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@", "500", "server error")
+            NSPredicate(
+                format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS[c] %@",
+                "server error",
+                "HTTP 500",
+                "internal server"
+            )
         ).firstMatch
         if err.exists {
             findings.append("FAIL \(context) shows API error: \(err.label)")

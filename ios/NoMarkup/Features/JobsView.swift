@@ -473,9 +473,12 @@ struct JobsView: View {
                     latitude: AppConfig.browseLatitude,
                     longitude: AppConfig.browseLongitude,
                     scheduleType: schedule,
-                    minPriceCents: minStartingBidCents
+                    minPriceCents: minStartingBidCents,
+                    sort: "created_at",
+                    sortDir: "desc"
                 )
-                let loaded = response.jobs
+                // Browse is the open floor — closed/cancelled history belongs on Mine.
+                let loaded = response.jobs.filter { Self.isOpenBrowseStatus($0.status) }
                 if reset {
                     jobs = loaded
                 } else {
@@ -521,6 +524,16 @@ struct JobsView: View {
                     loadMoreError = error.localizedDescription
                 }
             }
+        }
+    }
+
+    /// Public browse is the open floor — closed/cancelled/draft rows stay on Mine.
+    private static func isOpenBrowseStatus(_ raw: String?) -> Bool {
+        switch (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "active", "open", "bidding", "live", "published":
+            return true
+        default:
+            return false
         }
     }
 }

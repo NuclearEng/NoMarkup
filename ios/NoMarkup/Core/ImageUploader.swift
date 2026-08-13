@@ -213,6 +213,20 @@ enum ImageUploader: Sendable {
         )
     }
 
+    /// Downsample + JPEG-encode source bytes off the main actor (≤`maxPixelDimension`).
+    /// Use for PUT paths that are not the imaging confirm pipeline (contract
+    /// completion photos). Never decode a full-resolution bitmap on MainActor.
+    static func jpegDataDownsampled(from data: Data) async throws -> Data {
+        try await prepareJPEG(from: data).data
+    }
+
+    #if canImport(UIKit)
+    /// Camera `UIImage` → downsampled JPEG bytes off the main actor.
+    static func jpegDataDownsampled(from image: UIImage) async throws -> Data {
+        try await prepareJPEG(from: image).data
+    }
+    #endif
+
     // MARK: - Prepare (background)
 
     private struct PreparedImage: Sendable {
