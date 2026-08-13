@@ -8,6 +8,8 @@ export interface LegalSection {
   id: string;
   title: string;
   content: ReactNode;
+  /** Optional machine-readable ToS id (e.g. bid-authorization version). */
+  dataTosVersion?: string;
 }
 
 export interface LegalDocumentProps {
@@ -96,6 +98,9 @@ export function LegalDocument({
                 id={section.id}
                 aria-labelledby={`${section.id}-heading`}
                 className="scroll-mt-[calc(5rem+env(safe-area-inset-top,0px))]"
+                {...(section.dataTosVersion
+                  ? { 'data-tos-version': section.dataTosVersion }
+                  : {})}
               >
                 <h2
                   id={`${section.id}-heading`}

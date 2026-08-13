@@ -53,3 +53,23 @@ export function usePricingByCategory(slug: string, zip?: string) {
     staleTime: 5 * 60 * 1000,
   });
 }
+
+export interface PricingHeatmapPoint {
+  zip_code: string;
+  lat: number;
+  lng: number;
+  median_price_cents: number;
+  completed_jobs: number;
+}
+
+export function usePricingHeatmap(categorySlug?: string) {
+  const path = categorySlug
+    ? `/api/v1/pricing/heatmap?category=${encodeURIComponent(categorySlug)}`
+    : '/api/v1/pricing/heatmap';
+
+  return useQuery<{ points: PricingHeatmapPoint[] }>({
+    queryKey: ['pricing', 'heatmap', categorySlug ?? ''],
+    queryFn: () => api.getPublic<{ points: PricingHeatmapPoint[] }>(path),
+    staleTime: 5 * 60 * 1000,
+  });
+}

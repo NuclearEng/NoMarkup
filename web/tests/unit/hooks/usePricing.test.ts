@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   usePricingByCategory,
+  usePricingHeatmap,
   usePricingOverview,
   type PricingData,
   type PricingOverviewCategory,
@@ -150,5 +151,43 @@ describe('usePricingByCategory', () => {
     });
     expect(result.current.fetchStatus).toBe('idle');
     expect(vi.mocked(api.getPublic)).not.toHaveBeenCalled();
+  });
+});
+
+describe('usePricingHeatmap', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('fetches the public heatmap with no category', async () => {
+    vi.mocked(api.getPublic).mockResolvedValueOnce({ points: [] });
+
+    const { result } = renderHook(() => usePricingHeatmap(), {
+      wrapper: createWrapper(queryClient),
+    });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(result.current.data?.points).toEqual([]);
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith('/api/v1/pricing/heatmap');
+  });
+
+  it('appends an encoded category query when provided', async () => {
+    vi.mocked(api.getPublic).mockResolvedValueOnce({ points: [] });
+
+    const { result } = renderHook(() => usePricingHeatmap('lawn care'), {
+      wrapper: createWrapper(queryClient),
+    });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith(
+      '/api/v1/pricing/heatmap?category=lawn%20care',
+    );
   });
 });

@@ -783,6 +783,8 @@ struct JobDetailView: View {
                     lastFlashedLeadingCents = newValue
                 }
 
+                ownerLiquidityLine(job)
+
                 HStack(spacing: 10) {
                     bidCountChip(job: job)
                     if liveAuctionStateAvailable {
@@ -1058,6 +1060,8 @@ struct JobDetailView: View {
                     }
                     bidCountChip(job: job)
                 }
+
+                ownerLiquidityLine(job)
             }
             .padding(.vertical, 6)
             .accessibilityElement(children: .combine)
@@ -1231,6 +1235,18 @@ struct JobDetailView: View {
                     )
                     .accessibilityLabel("Auction \(label)")
             }
+        }
+    }
+
+    @ViewBuilder
+    private func ownerLiquidityLine(_ job: JobDetail) -> some View {
+        if isJobOwner, let line = job.liquidity?.ownerLine {
+            Text(line)
+                .font(.caption)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("jobDetail.liquidity")
+                .accessibilityLabel(line)
         }
     }
 

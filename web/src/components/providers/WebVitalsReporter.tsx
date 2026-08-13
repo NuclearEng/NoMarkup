@@ -1,7 +1,7 @@
 'use client';
 
 // WebVitalsReporter — mounts once under QueryProvider and streams Core Web
-// Vitals to console (dev) + Sentry metrics (prod). See report-web-vitals.ts.
+// Vitals to console (dev) or POST /api/v1/rum + Sentry (prod). No cookies/PII.
 
 import { useEffect } from 'react';
 

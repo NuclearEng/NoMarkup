@@ -87,6 +87,8 @@ struct ContractDetailView: View {
 
     // Provider workspace (check-in / completion photos)
     @State private var workSession: ContractWorkSession?
+    /// Durable proof-of-work pack (GET /contracts/{id}/work-evidence). Gates release.
+    @State private var workEvidence: ContractWorkEvidence?
     @State private var isWorkspaceActing = false
     @State private var beforePhotoURL: String?
     @State private var afterPhotoURL: String?
@@ -404,6 +406,8 @@ struct ContractDetailView: View {
             actionsSection(contract)
 
             workspaceSection(contract)
+
+            workEvidenceSection(contract)
 
             recurringSection(contract)
 
@@ -1210,6 +1214,121 @@ struct ContractDetailView: View {
         } // showWorkspace
     }
 
+    // MARK: Proof of work (durable sessions + photos)
+
+    @ViewBuilder
+    private func workEvidenceSection(_ contract: ContractDetail) -> some View {
+        let isCustomer = contract.isCustomer(userId: currentUserID)
+        let isProvider = contract.isProvider(userId: currentUserID)
+        if isCustomer || isProvider {
+        Section {
+            if let evidence = workEvidence {
+                if evidence.sessions.isEmpty {
+                    Text("No check-in recorded yet.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
+                } else {
+                    ForEach(Array(evidence.sessions.enumerated()), id: \.offset) { _, session in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Checked in \(CatalogDateFormat.friendlyDateTime(session.checkedInAt))")
+                                .font(.subheadline)
+                                .foregroundStyle(BrandTheme.textPrimary)
+                            if let out = session.checkedOutAt, !out.isEmpty {
+                                Text("Checked out \(CatalogDateFormat.friendlyDateTime(out))")
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            } else {
+                                Text("Still on site")
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.textSecondary)
+                            }
+                            Text(session.displayDuration)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(BrandTheme.goldBright)
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+                    }
+                }
+
+                if evidence.photos.isEmpty {
+                    Text("No completion photos uploaded yet.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
+                } else {
+                    ForEach(Array(evidence.photos.enumerated()), id: \.offset) { _, photo in
+                        workEvidencePhotoRow(photo)
+                    }
+                }
+
+                if evidence.readyForRelease {
+                    Text("Check-in and after photo are on file.")
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.success)
+                        .listRowBackground(BrandTheme.navyElevated)
+                } else {
+                    Text(ProofOfWorkCopy.releaseBlockedMessage(missing: evidence.missing))
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+                    ForEach(evidence.missing, id: \.self) { token in
+                        Text("• \(ProofOfWorkCopy.listLabel(for: token))")
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
+                }
+            } else {
+                Text("Loading work evidence…")
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .listRowBackground(BrandTheme.navyElevated)
+            }
+        } header: {
+            Text("Proof of work").brandSectionHeader()
+        } footer: {
+            Text("Times and photos only — job-site coordinates are not shown. Funds cannot release until a check-in and an after photo are on file.")
+                .foregroundStyle(BrandTheme.textSecondary)
+        }
+        }
+    }
+
+    @ViewBuilder
+    private func workEvidencePhotoRow(_ photo: ContractWorkEvidencePhoto) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(photo.displayPhase)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary)
+            if let url = photo.safeImageURL {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: .infinity, maxHeight: 180)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    case .failure:
+                        Label("Photo unavailable", systemImage: "photo")
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    default:
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 80)
+                    }
+                }
+                .accessibilityLabel("\(photo.displayPhase) completion photo")
+            } else {
+                Text("\(photo.displayPhase) photo unavailable")
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+        }
+        .listRowBackground(BrandTheme.navyElevated)
+    }
+
     @ViewBuilder
     private func photoActionsRow(phase: CompletionPhotoPhase, title: String, systemImage: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1383,8 +1502,23 @@ struct ContractDetailView: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(BrandTheme.success)
-                            .disabled(isBusyForEscrowActions)
-                            .accessibilityHint("Calls POST /payments/{id}/release with Idempotency-Key; pays the provider from held escrow")
+                            .disabled(isBusyForEscrowActions || !isWorkEvidenceReady)
+                            .accessibilityHint(
+                                isWorkEvidenceReady
+                                    ? "Calls POST /payments/{id}/release with Idempotency-Key; pays the provider from held escrow"
+                                    : releaseBlockedCopy
+                            )
+                            if !isWorkEvidenceReady {
+                                Text(releaseBlockedCopy)
+                                    .font(.footnote)
+                                    .foregroundStyle(BrandTheme.warning)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                ForEach(workEvidenceMissing, id: \.self) { token in
+                                    Text("• \(ProofOfWorkCopy.listLabel(for: token))")
+                                        .font(.caption)
+                                        .foregroundStyle(BrandTheme.textSecondary)
+                                }
+                            }
                         } else if isProvider {
                             Text("Waiting for the customer to release escrow. You cannot release your own payout.")
                                 .font(.footnote)
@@ -1489,6 +1623,20 @@ struct ContractDetailView: View {
             || isPayingEscrow
             || actingActionTitle != nil
             || actingMilestoneID != nil
+    }
+
+    /// Fail closed: missing pack is not ready (do not enable release).
+    private var isWorkEvidenceReady: Bool {
+        workEvidence?.readyForRelease == true
+    }
+
+    private var workEvidenceMissing: [String] {
+        let tokens = workEvidence?.missing ?? []
+        return tokens.isEmpty ? [ProofOfWorkCopy.checkIn, ProofOfWorkCopy.afterPhoto] : tokens
+    }
+
+    private var releaseBlockedCopy: String {
+        ProofOfWorkCopy.releaseBlockedMessage(missing: workEvidence?.missing ?? [])
     }
 
     @ViewBuilder
@@ -2107,6 +2255,9 @@ struct ContractDetailView: View {
             recurringConfig = recurring.config
             recurringInstances = recurring.instances
 
+            if detail.isProvider(userId: currentUserID) || detail.isCustomer(userId: currentUserID) {
+                workEvidence = try? await APIClient.shared.fetchWorkEvidence(contractId: contractID)
+            }
             if detail.isProvider(userId: currentUserID) {
                 workSession = try? await APIClient.shared.fetchWorkSession(contractId: contractID)
                 if autoCheckInOnAppear, !didAttemptAutoCheckIn {
@@ -2190,6 +2341,10 @@ struct ContractDetailView: View {
         try? await APIClient.shared.fetchGuaranteeClaim(contractId: contractId)
     }
 
+    private static func loadWorkEvidence(contractId: String) async -> ContractWorkEvidence? {
+        try? await APIClient.shared.fetchWorkEvidence(contractId: contractId)
+    }
+
     /// Load pending + held + released payments for this contract. Fail-soft on list errors.
     private static func loadContractPayments(contractId: String) async -> [ContractPayment] {
         // Status filters so fund / release CTAs work without pulling full history.
@@ -2251,6 +2406,11 @@ struct ContractDetailView: View {
 
     @MainActor
     private func releaseEscrow(_ payment: ContractPayment) async {
+        if !isWorkEvidenceReady {
+            statusIsError = true
+            statusMessage = releaseBlockedCopy
+            return
+        }
         releasingPaymentID = payment.id
         statusMessage = nil
         statusIsError = false
@@ -2271,6 +2431,9 @@ struct ContractDetailView: View {
         } catch let error as APIClientError where error.isUnauthorized {
             statusIsError = true
             statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch let error as APIClientError where error.isConflict {
+            statusIsError = true
+            statusMessage = error.localizedDescription
         } catch {
             statusIsError = true
             statusMessage = error.localizedDescription
@@ -2377,6 +2540,7 @@ struct ContractDetailView: View {
         async let claim = Self.loadGuaranteeClaim(contractId: contractID)
         async let payments = Self.loadContractPayments(contractId: contractID)
         async let fees = Self.loadFeeBreakdown(amountCents: contract?.amountCents)
+        async let evidence = Self.loadWorkEvidence(contractId: contractID)
         async let recurring = Self.loadRecurringBundle(
             contractId: contractID,
             embedded: contract?.recurring ?? recurringConfig
@@ -2384,6 +2548,9 @@ struct ContractDetailView: View {
         changeOrders = await orders
         guaranteeClaim = await claim
         contractPayments = await payments
+        if let loaded = await evidence {
+            workEvidence = loaded
+        }
         if let fees = await fees {
             feeBreakdown = fees
         }
@@ -2813,6 +2980,7 @@ struct ContractDetailView: View {
                 lng: coord.longitude
             )
             workSession = try? await APIClient.shared.fetchWorkSession(contractId: contractID)
+            workEvidence = try? await APIClient.shared.fetchWorkEvidence(contractId: contractID)
             statusIsError = false
             if let at = response.checkedInAt, !at.isEmpty {
                 statusMessage = "Checked in at \(CatalogDateFormat.friendlyDateTime(at))."
@@ -2839,6 +3007,7 @@ struct ContractDetailView: View {
                 lng: coord.longitude
             )
             workSession = try? await APIClient.shared.fetchWorkSession(contractId: contractID)
+            workEvidence = try? await APIClient.shared.fetchWorkEvidence(contractId: contractID)
             statusIsError = false
             if let mins = response.durationMinutes {
                 let hours = mins / 60
@@ -2923,6 +3092,7 @@ struct ContractDetailView: View {
         } else {
             afterPhotoURL = response.url
         }
+        workEvidence = try? await APIClient.shared.fetchWorkEvidence(contractId: contractID)
         statusIsError = false
         statusMessage = phase == .before ? "Before photo uploaded." : "After photo uploaded."
     }

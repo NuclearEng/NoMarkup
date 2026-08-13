@@ -1051,6 +1051,8 @@ struct JobDetail: Codable, Sendable, Hashable, Identifiable {
     var awardedProviderId: String?
     var completedAt: String?
     var auctionClosedAt: String?
+    /// Owner-only time-to-first-bid. Absent for every other caller.
+    var liquidity: JobLiquidity?
 
     var displayTitle: String {
         let t = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1121,6 +1123,30 @@ struct JobDetail: Codable, Sendable, Hashable, Identifiable {
         awardedProviderId = nil
         completedAt = nil
         auctionClosedAt = nil
+        liquidity = nil
+    }
+}
+
+/// Owner-only GET-job liquidity (F2). Omitted unless the caller owns the job.
+struct JobLiquidity: Codable, Sendable, Hashable {
+    var notifiedCount: Int?
+    var firstBidAt: String?
+    var minutesToFirstBid: Int?
+    var bidCount: Int?
+
+    /// Hide when there is nothing real to show (no theater).
+    var shouldShow: Bool {
+        (notifiedCount ?? 0) > 0 || (bidCount ?? 0) > 0
+    }
+
+    var ownerLine: String? {
+        guard shouldShow else { return nil }
+        let n = notifiedCount ?? 0
+        let who = n == 1 ? "1 provider notified" : "\(n) providers notified"
+        if let minutes = minutesToFirstBid {
+            return "\(who) — first bid in \(minutes) min"
+        }
+        return "\(who) — waiting for the first bid"
     }
 }
 

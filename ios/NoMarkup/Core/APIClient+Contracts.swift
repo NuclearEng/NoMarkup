@@ -19,6 +19,7 @@ import Foundation
 //   GET  /api/v1/contracts/{id}/pdf
 //   POST /api/v1/contracts/{id}/checkin|checkout  body: { lat, lng }
 //   GET  /api/v1/contracts/{id}/work-session
+//   GET  /api/v1/contracts/{id}/work-evidence      proof-of-work pack (no lat/lng)
 //   POST /api/v1/contracts/{id}/completion-photos  multipart photo + phase
 //   GET|PATCH /api/v1/contracts/{id}/recurring (+ pause|resume|cancel, instances)
 //
@@ -838,6 +839,15 @@ extension APIClient {
     func fetchWorkSession(contractId: String) async throws -> ContractWorkSession {
         try await getJSON(
             pathComponents: ["api", "v1", "contracts", contractId, "work-session"],
+            authorized: true
+        )
+    }
+
+    /// GET `/api/v1/contracts/{id}/work-evidence` — durable check-in + photos.
+    /// No coordinates. Party-only (customer or provider).
+    func fetchWorkEvidence(contractId: String) async throws -> ContractWorkEvidence {
+        try await getJSON(
+            pathComponents: ["api", "v1", "contracts", contractId, "work-evidence"],
             authorized: true
         )
     }

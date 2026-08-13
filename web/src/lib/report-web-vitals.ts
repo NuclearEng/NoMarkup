@@ -7,7 +7,7 @@
  *
  * Sinks:
  *   - development: `console.info` with a `[web-vitals]` prefix
- *   - production: Sentry metrics via `@sentry/nextjs` when available (no-op safe)
+ *   - production: POST /api/v1/rum (no cookies / no PII) + Sentry metrics
  *
  * Call once from a client provider (see WebVitalsReporter).
  */
@@ -82,6 +82,100 @@ function sendToSentry(metric: WebVitalMetric): void {
   });
 }
 
+const rumPathMaxLen = 200;
+
+/** Public ingest URL. Empty NEXT_PUBLIC_API_URL → same-origin `/api/v1/rum`. */
+export function rumIngestURL(): string {
+  const base = (process.env['NEXT_PUBLIC_API_URL'] ?? '').replace(/\/$/, '');
+  return `${base}/api/v1/rum`;
+}
+
+/** Drop query/hash and cap at 200 chars. Empty → `/`. */
+export function sanitizeRumPath(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '/';
+  let path = trimmed;
+  try {
+    const u = new URL(trimmed, 'https://nomarkup.invalid');
+    path = u.pathname || '/';
+  } catch {
+    const cut = trimmed.search(/[?#]/);
+    path = cut >= 0 ? trimmed.slice(0, cut) : trimmed;
+  }
+  path = path.trim() || '/';
+  return path.length > rumPathMaxLen ? path.slice(0, rumPathMaxLen) : path;
+}
+
+function currentPath(): string {
+  if (typeof window === 'undefined') return '/';
+  return sanitizeRumPath(window.location.pathname || '/');
+}
+
+/**
+ * POST one anonymous sample. credentials:omit so cookies never travel.
+ * Fail-soft: network errors are swallowed.
+ */
+export function postFieldRum(metric: WebVitalMetric): void {
+  try {
+    const body = JSON.stringify({
+      name: metric.name,
+      value: metric.value,
+      rating: metric.rating,
+      path: currentPath(),
+    });
+    void fetch(rumIngestURL(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      credentials: 'omit',
+      keepalive: true,
+    }).catch(() => undefined);
+  } catch {
+    // fail-soft — reporting must never break the app
+  }
+}
+
+const queuedRum = new Map<WebVitalName, WebVitalMetric>();
+const rumTimerSent = new Set<WebVitalName>();
+let rumHideBound = false;
+
+function flushQueuedRum(): void {
+  for (const metric of queuedRum.values()) {
+    postFieldRum(metric);
+  }
+  queuedRum.clear();
+}
+
+function bindRumHideFlush(): void {
+  if (rumHideBound || typeof window === 'undefined' || typeof document === 'undefined') {
+    return;
+  }
+  rumHideBound = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushQueuedRum();
+  });
+  window.addEventListener('pagehide', flushQueuedRum);
+}
+
+/** FCP/TTFB send once immediately; LCP/INP/CLS keep latest and flush on hide + 4s. */
+export function queueFieldRum(metric: WebVitalMetric): void {
+  bindRumHideFlush();
+  if (metric.name === 'FCP' || metric.name === 'TTFB') {
+    postFieldRum(metric);
+    return;
+  }
+  queuedRum.set(metric.name, metric);
+  if (rumTimerSent.has(metric.name)) return;
+  rumTimerSent.add(metric.name);
+  setTimeout(() => {
+    const latest = queuedRum.get(metric.name);
+    if (latest) {
+      queuedRum.delete(metric.name);
+      postFieldRum(latest);
+    }
+  }, 4000);
+}
+
 function defaultSink(metric: WebVitalMetric): void {
   if (process.env.NODE_ENV !== 'production') {
     // Dev-only structured log — intentional sink for local CWV inspection.
@@ -89,9 +183,10 @@ function defaultSink(metric: WebVitalMetric): void {
     console.info(
       `[web-vitals] ${metric.name}=${metric.value.toFixed(metric.unit === 'score' ? 3 : 0)}${metric.unit === 'ms' ? 'ms' : ''} (${metric.rating})`,
     );
-  } else {
-    sendToSentry(metric);
+    return;
   }
+  sendToSentry(metric);
+  queueFieldRum(metric);
 }
 
 /**

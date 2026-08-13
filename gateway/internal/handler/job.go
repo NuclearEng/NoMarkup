@@ -14,12 +14,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	fraudv1 "github.com/nomarkup/nomarkup/proto/fraud/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/cache"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -705,7 +705,7 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -779,7 +779,71 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 		result["customer_jobs_posted"] = 0
 	}
 
+	// F2: owner-only liquidity. Non-owners never see the key.
+	if customerID := detail.GetJob().GetCustomerId(); isJobOwner(requestingUserID, customerID) {
+		if liq := h.loadJobLiquidity(r.Context(), jobID, detail.GetJob().GetCreatedAt()); liq != nil {
+			result["liquidity"] = liq
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{"job": result})
+}
+
+func isJobOwner(requestingUserID, customerID string) bool {
+	return requestingUserID != "" && customerID != "" && requestingUserID == customerID
+}
+
+type jobLiquidity struct {
+	NotifiedCount     int     `json:"notified_count"`
+	FirstBidAt        *string `json:"first_bid_at"`
+	MinutesToFirstBid *int    `json:"minutes_to_first_bid,omitempty"`
+	BidCount          int     `json:"bid_count"`
+}
+
+// loadJobLiquidity reads the match-notify ledger + first bid time.
+// Returns nil when the pool is unset or the query fails (fail-soft, omit key).
+func (h *JobHandler) loadJobLiquidity(ctx context.Context, jobID string, jobCreated *timestamppb.Timestamp) *jobLiquidity {
+	if h.db == nil {
+		return nil
+	}
+
+	var notified int
+	var firstBid *time.Time
+	var firstNotified *time.Time
+	var bidCount int
+	err := h.db.QueryRow(ctx, `
+		SELECT
+			(SELECT COUNT(*)::int FROM job_match_notifications WHERE job_id = $1),
+			(SELECT MIN(notified_at) FROM job_match_notifications WHERE job_id = $1),
+			(SELECT MIN(created_at) FROM bids WHERE job_id = $1),
+			(SELECT COUNT(*)::int FROM bids WHERE job_id = $1)`,
+		jobID,
+	).Scan(&notified, &firstNotified, &firstBid, &bidCount)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to load job liquidity", "job_id", jobID, "error", err)
+		return nil
+	}
+
+	liq := &jobLiquidity{
+		NotifiedCount: notified,
+		BidCount:      bidCount,
+	}
+	if firstBid != nil {
+		ts := firstBid.UTC().Format("2006-01-02T15:04:05Z")
+		liq.FirstBidAt = &ts
+		start := *firstBid
+		if firstNotified != nil {
+			start = *firstNotified
+		} else if jobCreated != nil && jobCreated.IsValid() {
+			start = jobCreated.AsTime()
+		}
+		mins := int(firstBid.Sub(start).Minutes())
+		if mins < 0 {
+			mins = 0
+		}
+		liq.MinutesToFirstBid = &mins
+	}
+	return liq
 }
 
 // ListMine handles GET /api/v1/jobs/mine.
@@ -867,7 +931,7 @@ func (h *JobHandler) ListMine(w http.ResponseWriter, r *http.Request) {
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),

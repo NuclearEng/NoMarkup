@@ -32,6 +32,7 @@ type mockJobRepo struct {
 	adminSuspendJobFn   func(ctx context.Context, jobID, reason string) error
 	adminRemoveJobFn    func(ctx context.Context, jobID, reason string) error
 	insertAuditLogFn    func(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error
+	recordMatchFn       func(jobID, providerID string) error
 }
 
 func (m *mockJobRepo) CreateJob(ctx context.Context, input domain.CreateJobInput) (*domain.Job, error) {
@@ -117,6 +118,12 @@ func (m *mockJobRepo) MarkReviewed(_ context.Context, jobID string) (*domain.Job
 }
 func (m *mockJobRepo) GetJobsOnMap(_ context.Context, _ domain.GetJobsOnMapInput) ([]domain.JobMapPin, error) {
 	return nil, nil
+}
+func (m *mockJobRepo) RecordJobMatchNotification(_ context.Context, jobID, providerID string) error {
+	if m.recordMatchFn != nil {
+		return m.recordMatchFn(jobID, providerID)
+	}
+	return nil
 }
 
 // --- helpers ---
@@ -695,15 +702,15 @@ func TestJobService_SearchJobs(t *testing.T) {
 	repo := &mockJobRepo{
 		searchJobsFn: func(_ context.Context, input domain.SearchJobsInput) ([]*domain.Job, *domain.Pagination, error) {
 			return []*domain.Job{
-				{ID: "j1", Title: "Fix Sink"},
-				{ID: "j2", Title: "Fix Toilet"},
-			}, &domain.Pagination{
-				TotalCount: 2,
-				Page:       1,
-				PageSize:   20,
-				TotalPages: 1,
-				HasNext:    false,
-			}, nil
+					{ID: "j1", Title: "Fix Sink"},
+					{ID: "j2", Title: "Fix Toilet"},
+				}, &domain.Pagination{
+					TotalCount: 2,
+					Page:       1,
+					PageSize:   20,
+					TotalPages: 1,
+					HasNext:    false,
+				}, nil
 		},
 	}
 	svc := newTestJobService(repo)

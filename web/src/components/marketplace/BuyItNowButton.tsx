@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useBuyNow } from '@/hooks/useBuyNow';
+import { GOODS_BID_AUTHORIZATION_DISCLOSURE } from '@/lib/constants';
 import { hasConfirmablePayment } from '@/lib/payment-outcome';
 import { cn, formatCents } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -129,6 +130,12 @@ export function BuyItNowButton({ listing, className }: BuyItNowButtonProps) {
               </span>
               .
             </p>
+            <p
+              className="mt-2 text-xs leading-snug text-zinc-500"
+              data-testid="bid-auth-disclosure"
+            >
+              {GOODS_BID_AUTHORIZATION_DISCLOSURE}
+            </p>
           </div>
         </div>
         <Button
@@ -156,7 +163,8 @@ export function BuyItNowButton({ listing, className }: BuyItNowButtonProps) {
             <DialogDescription>
               You will pay <strong>{buyNowDisplay}</strong> and the auction will
               close immediately. Funds are held in escrow until you confirm
-              pickup of the item.
+              pickup of the item.{' '}
+              {GOODS_BID_AUTHORIZATION_DISCLOSURE}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-2">

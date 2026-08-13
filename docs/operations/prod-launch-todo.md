@@ -117,6 +117,7 @@ Process start is already fail-closed for JWT public-key load (gateway, every env
 - [ ] `bash scripts/prod/deploy.sh` (or `docker compose -f deploy/prod/docker-compose.yml --env-file deploy/prod/.env up -d --build`)
 - [ ] Migrations completed (compose `migrate` service / job)
 - [ ] Lean services up: caddy, postgres, redis, meilisearch, user, job, payment, gateway, web
+- [ ] `make origin-check` (default allow-down; `ORIGIN_CHECK_STRICT=1 make origin-check` once DNS is live)
 - [ ] Smoke:
   ```bash
   BASE_URL=https://no-markup.com \

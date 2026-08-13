@@ -596,3 +596,8 @@ func TestTierForPath_authPaths(t *testing.T) {
 	// refresh stays standard (called on every navigation).
 	assert.Equal(t, TierStandard, tierForPath("/api/v1/auth/refresh"))
 }
+
+func TestTierForPath_rum(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, TierPublicRead, tierForPath("/api/v1/rum"))
+}

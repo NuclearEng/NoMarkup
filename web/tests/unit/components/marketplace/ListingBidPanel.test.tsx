@@ -179,6 +179,17 @@ describe('ListingBidPanel', () => {
     expect(screen.getByTestId('autobid-active-label').textContent).toMatch(/\$200/);
   });
 
+  it('shows bid-authorization disclosure before the submit button', () => {
+    render(<ListingBidPanel {...defaultProps()} />);
+    const disclosure = screen.getByTestId('bid-auth-disclosure');
+    expect(disclosure.textContent).toMatch(/authorizes NoMarkup to charge your saved payment method/i);
+    expect(disclosure.textContent).toMatch(/if the charge fails, you can pay from the order page/i);
+    const submit = screen.getByRole('button', { name: /Bid \$/ });
+    expect(
+      disclosure.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('does not show the auto-bidding badge when userMaxBidCents <= currentBidCents', () => {
     render(
       <ListingBidPanel

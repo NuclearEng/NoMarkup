@@ -1460,3 +1460,110 @@ enum CompletionPhotoPhase: String, Sendable {
     case before
     case after
 }
+
+// MARK: - Proof of work (GET /contracts/{id}/work-evidence)
+
+/// Customer/provider evidence pack. Never includes lat/lng.
+struct ContractWorkEvidence: Codable, Sendable, Hashable {
+    var readyForRelease: Bool
+    var missing: [String]
+    var sessions: [ContractWorkEvidenceSession]
+    var photos: [ContractWorkEvidencePhoto]
+
+    enum CodingKeys: String, CodingKey {
+        case readyForRelease
+        case missing
+        case sessions
+        case photos
+    }
+
+    init(
+        readyForRelease: Bool = false,
+        missing: [String] = [ProofOfWorkCopy.checkIn, ProofOfWorkCopy.afterPhoto],
+        sessions: [ContractWorkEvidenceSession] = [],
+        photos: [ContractWorkEvidencePhoto] = []
+    ) {
+        self.readyForRelease = readyForRelease
+        self.missing = missing
+        self.sessions = sessions
+        self.photos = photos
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        readyForRelease = try c.decodeIfPresent(Bool.self, forKey: .readyForRelease) ?? false
+        missing = try c.decodeIfPresent([String].self, forKey: .missing) ?? []
+        sessions = try c.decodeIfPresent([ContractWorkEvidenceSession].self, forKey: .sessions) ?? []
+        photos = try c.decodeIfPresent([ContractWorkEvidencePhoto].self, forKey: .photos) ?? []
+    }
+}
+
+struct ContractWorkEvidenceSession: Codable, Sendable, Hashable {
+    var checkedInAt: String
+    var checkedOutAt: String?
+    var durationMinutes: Int
+
+    var isOpen: Bool {
+        let out = checkedOutAt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return out.isEmpty
+    }
+
+    var displayDuration: String {
+        if isOpen { return "In progress" }
+        let hours = durationMinutes / 60
+        let mins = durationMinutes % 60
+        if hours > 0 { return "\(hours)h \(mins)m" }
+        return "\(max(0, durationMinutes)) min"
+    }
+}
+
+struct ContractWorkEvidencePhoto: Codable, Sendable, Hashable {
+    var phase: String
+    var url: String
+    var uploadedAt: String
+
+    var displayPhase: String {
+        switch phase.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "after": return "After"
+        case "before": return "Before"
+        default: return phase
+        }
+    }
+
+    var safeImageURL: URL? {
+        ChatMessage.safeHTTPURL(from: url)
+    }
+}
+
+/// F1 proof-of-work missing tokens + blocked-release copy.
+enum ProofOfWorkCopy {
+    static let checkIn = "check_in"
+    static let afterPhoto = "after_photo"
+
+    static func itemLabel(for token: String) -> String {
+        switch token {
+        case checkIn: return "check-in"
+        case afterPhoto: return "an after photo"
+        default: return token.replacingOccurrences(of: "_", with: " ")
+        }
+    }
+
+    static func listLabel(for token: String) -> String {
+        switch token {
+        case checkIn: return "Check-in at the job site"
+        case afterPhoto: return "After photo of completed work"
+        default: return token.replacingOccurrences(of: "_", with: " ")
+        }
+    }
+
+    static func releaseBlockedMessage(missing: [String]) -> String {
+        let tokens = missing.isEmpty ? [checkIn, afterPhoto] : missing
+        let labels = tokens.map(itemLabel(for:))
+        if labels.count == 1 {
+            return "Need \(labels[0]) before funds release"
+        }
+        let last = labels.last ?? "proof of work"
+        let head = labels.dropLast().joined(separator: ", ")
+        return "Need \(head) and \(last) before funds release"
+    }
+}

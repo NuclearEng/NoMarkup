@@ -319,6 +319,17 @@ func (h *WorkspaceHandler) CheckIn(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 
+	// Postgres is authority (Redis TTL is 24h and cannot gate release).
+	if err := h.persistCheckIn(r.Context(), contractID, claims.UserID, req.Lat, req.Lng, now); err != nil {
+		slog.ErrorContext(r.Context(), "workspace: persist check-in failed",
+			"contract_id", contractID,
+			"user_id", claims.UserID,
+			"error", err,
+		)
+		writeError(w, http.StatusServiceUnavailable, "failed to save check-in")
+		return
+	}
+
 	data := checkInData{
 		Lat:       req.Lat,
 		Lng:       req.Lng,
@@ -375,18 +386,39 @@ func (h *WorkspaceHandler) CheckOut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read the check-in record to compute duration.
+	// Resolve check-in from Redis, then Postgres (persist even if Redis miss).
 	checkinKey := fmt.Sprintf("contract:checkin:%s:%s", contractID, claims.UserID)
 	var checkin checkInData
-	if !h.cache.GetJSON(r.Context(), checkinKey, &checkin) {
-		writeError(w, http.StatusBadRequest, "no active check-in found for this contract")
-		return
+	hasCheckin := h.cache.GetJSON(r.Context(), checkinKey, &checkin)
+	if !hasCheckin {
+		at, found, err := h.openSessionCheckInAt(r.Context(), contractID, claims.UserID)
+		if err != nil {
+			slog.WarnContext(r.Context(), "workspace: open session lookup failed",
+				"contract_id", contractID,
+				"error", err,
+			)
+		}
+		if !found {
+			writeError(w, http.StatusBadRequest, "no active check-in found for this contract")
+			return
+		}
+		checkin.Timestamp = at
 	}
 
 	now := time.Now().UTC()
 	durationMinutes := int(math.Round(now.Sub(checkin.Timestamp).Minutes()))
 	if durationMinutes < 0 {
 		durationMinutes = 0
+	}
+
+	if err := h.persistCheckOut(r.Context(), contractID, claims.UserID, req.Lat, req.Lng, now, durationMinutes, checkin.Timestamp); err != nil {
+		slog.ErrorContext(r.Context(), "workspace: persist check-out failed",
+			"contract_id", contractID,
+			"user_id", claims.UserID,
+			"error", err,
+		)
+		writeError(w, http.StatusServiceUnavailable, "failed to save check-out")
+		return
 	}
 
 	data := checkOutData{
@@ -422,6 +454,28 @@ func (h *WorkspaceHandler) GetWorkSession(w http.ResponseWriter, r *http.Request
 	contractID := chi.URLParam(r, "id")
 	if contractID == "" {
 		writeError(w, http.StatusBadRequest, "contract id required")
+		return
+	}
+
+	// Postgres is authority when wired; Redis is a 24h cache for the live UI.
+	if sess, ok, err := h.latestWorkSession(r.Context(), contractID, claims.UserID); err != nil {
+		slog.WarnContext(r.Context(), "workspace: latest session lookup failed; falling back to cache",
+			"contract_id", contractID,
+			"error", err,
+		)
+	} else if ok {
+		result := map[string]interface{}{
+			"status":           "checked_in",
+			"checked_in_at":    sess.checkedInAt.UTC().Format(time.RFC3339),
+			"checked_out_at":   nil,
+			"duration_minutes": nil,
+		}
+		if sess.checkedOutAt != nil {
+			result["checked_out_at"] = sess.checkedOutAt.UTC().Format(time.RFC3339)
+			result["duration_minutes"] = sess.durationMinutes
+			result["status"] = "checked_out"
+		}
+		writeJSON(w, http.StatusOK, result)
 		return
 	}
 
@@ -522,9 +576,9 @@ func (h *WorkspaceHandler) UploadCompletionPhoto(w http.ResponseWriter, r *http.
 	}
 
 	uploadResp, err := h.imagingClient.GetUploadURL(r.Context(), &imagingv1.GetUploadURLRequest{
-		UserId:        claims.UserID,
-		Filename:      filename,
-		MimeType:      detectedMIME,
+		UserId:   claims.UserID,
+		Filename: filename,
+		MimeType: detectedMIME,
 		// Safe conversion: MaxBytesReader above caps the body at 10MB, so
 		// header.Size cannot exceed that and cannot overflow int32.
 		FileSizeBytes: int32(header.Size), //nolint:gosec // bounded by MaxBytesReader(maxUploadSize)
@@ -594,7 +648,18 @@ func (h *WorkspaceHandler) UploadCompletionPhoto(w http.ResponseWriter, r *http.
 		"url", confirmResp.GetSourceUrl(),
 	)
 
-	// Store photo metadata in Redis so the work session knows about it.
+	if err := h.persistCompletionPhoto(r.Context(), contractID, claims.UserID, phase, confirmResp.GetSourceUrl()); err != nil {
+		slog.ErrorContext(r.Context(), "workspace: persist completion photo failed",
+			"contract_id", contractID,
+			"user_id", claims.UserID,
+			"phase", phase,
+			"error", err,
+		)
+		writeError(w, http.StatusServiceUnavailable, "failed to save completion photo")
+		return
+	}
+
+	// Redis is a 24h cache; multiple after-photos live in Postgres.
 	photoKey := fmt.Sprintf("contract:photo:%s:%s:%s", contractID, claims.UserID, phase)
 	photoMeta := map[string]interface{}{
 		"url":         confirmResp.GetSourceUrl(),
@@ -607,4 +672,175 @@ func (h *WorkspaceHandler) UploadCompletionPhoto(w http.ResponseWriter, r *http.
 		"url":   confirmResp.GetSourceUrl(),
 		"phase": phase,
 	})
+}
+
+// persistCheckIn writes a durable session. If an open session exists for
+// (contract, provider), it is refreshed (new check-in time/coords, checkout
+// cleared). Otherwise a new row is inserted. Nil db is a no-op (dev Redis-only).
+func (h *WorkspaceHandler) persistCheckIn(ctx context.Context, contractID, providerID string, lat, lng float64, at time.Time) error {
+	if h.db == nil {
+		return nil
+	}
+
+	updated, err := h.updateOpenCheckIn(ctx, contractID, providerID, lat, lng, at)
+	if err != nil {
+		return fmt.Errorf("persist check-in: %w", err)
+	}
+	if updated {
+		return nil
+	}
+
+	_, err = h.db.Exec(ctx, `
+		INSERT INTO contract_work_sessions (
+			contract_id, provider_id, checked_in_at, check_in_lat, check_in_lng
+		) VALUES ($1, $2, $3, $4, $5)`,
+		contractID, providerID, at, lat, lng)
+	if err == nil {
+		return nil
+	}
+	// Concurrent check-in won the unique-open index — refresh that row.
+	if isUniqueViolation(err) {
+		updated, retryErr := h.updateOpenCheckIn(ctx, contractID, providerID, lat, lng, at)
+		if retryErr != nil {
+			return fmt.Errorf("persist check-in retry: %w", retryErr)
+		}
+		if updated {
+			return nil
+		}
+		return fmt.Errorf("persist check-in: open session vanished after unique conflict")
+	}
+	return fmt.Errorf("persist check-in insert: %w", err)
+}
+
+func (h *WorkspaceHandler) updateOpenCheckIn(ctx context.Context, contractID, providerID string, lat, lng float64, at time.Time) (bool, error) {
+	tag, err := h.db.Exec(ctx, `
+		UPDATE contract_work_sessions
+		   SET checked_in_at = $3,
+		       check_in_lat = $4,
+		       check_in_lng = $5,
+		       checked_out_at = NULL,
+		       check_out_lat = NULL,
+		       check_out_lng = NULL,
+		       duration_minutes = NULL
+		 WHERE contract_id = $1
+		   AND provider_id = $2
+		   AND checked_out_at IS NULL`,
+		contractID, providerID, at, lat, lng)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// persistCheckOut closes the open session. If none exists (Redis-only check-in
+// that never landed in Postgres), insert a closed session from the resolved
+// check-in time so release still has durable evidence.
+func (h *WorkspaceHandler) persistCheckOut(
+	ctx context.Context,
+	contractID, providerID string,
+	lat, lng float64,
+	at time.Time,
+	durationMinutes int,
+	checkedInAt time.Time,
+) error {
+	if h.db == nil {
+		return nil
+	}
+
+	tag, err := h.db.Exec(ctx, `
+		UPDATE contract_work_sessions
+		   SET checked_out_at = $3,
+		       check_out_lat = $4,
+		       check_out_lng = $5,
+		       duration_minutes = $6
+		 WHERE contract_id = $1
+		   AND provider_id = $2
+		   AND checked_out_at IS NULL`,
+		contractID, providerID, at, lat, lng, durationMinutes)
+	if err != nil {
+		return fmt.Errorf("persist check-out: %w", err)
+	}
+	if tag.RowsAffected() > 0 {
+		return nil
+	}
+
+	_, err = h.db.Exec(ctx, `
+		INSERT INTO contract_work_sessions (
+			contract_id, provider_id, checked_in_at,
+			checked_out_at, check_out_lat, check_out_lng, duration_minutes
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		contractID, providerID, checkedInAt, at, lat, lng, durationMinutes)
+	if err != nil {
+		return fmt.Errorf("persist check-out insert: %w", err)
+	}
+	return nil
+}
+
+func (h *WorkspaceHandler) persistCompletionPhoto(ctx context.Context, contractID, uploadedBy, phase, url string) error {
+	if h.db == nil {
+		return nil
+	}
+	_, err := h.db.Exec(ctx, `
+		INSERT INTO contract_completion_photos (contract_id, uploaded_by, phase, url)
+		VALUES ($1, $2, $3, $4)`,
+		contractID, uploadedBy, phase, url)
+	if err != nil {
+		return fmt.Errorf("persist completion photo: %w", err)
+	}
+	return nil
+}
+
+func (h *WorkspaceHandler) openSessionCheckInAt(ctx context.Context, contractID, providerID string) (time.Time, bool, error) {
+	var zero time.Time
+	if h.db == nil {
+		return zero, false, nil
+	}
+	var at time.Time
+	err := h.db.QueryRow(ctx, `
+		SELECT checked_in_at
+		  FROM contract_work_sessions
+		 WHERE contract_id = $1
+		   AND provider_id = $2
+		   AND checked_out_at IS NULL`,
+		contractID, providerID).Scan(&at)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return zero, false, nil
+		}
+		return zero, false, fmt.Errorf("open session check-in: %w", err)
+	}
+	return at, true, nil
+}
+
+type persistedWorkSession struct {
+	checkedInAt     time.Time
+	checkedOutAt    *time.Time
+	durationMinutes int
+}
+
+func (h *WorkspaceHandler) latestWorkSession(ctx context.Context, contractID, providerID string) (persistedWorkSession, bool, error) {
+	var zero persistedWorkSession
+	if h.db == nil {
+		return zero, false, nil
+	}
+	var sess persistedWorkSession
+	var duration *int
+	err := h.db.QueryRow(ctx, `
+		SELECT checked_in_at, checked_out_at, duration_minutes
+		  FROM contract_work_sessions
+		 WHERE contract_id = $1
+		   AND provider_id = $2
+		 ORDER BY checked_in_at DESC
+		 LIMIT 1`,
+		contractID, providerID).Scan(&sess.checkedInAt, &sess.checkedOutAt, &duration)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return zero, false, nil
+		}
+		return zero, false, fmt.Errorf("latest work session: %w", err)
+	}
+	if duration != nil {
+		sess.durationMinutes = *duration
+	}
+	return sess, true, nil
 }

@@ -57,7 +57,19 @@ import { MonoPrice } from '@/components/ui/mono-price';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { JOB_STATUS, USER_ROLE } from '@/types';
-import type { JobDetail, MarketRange } from '@/types';
+import type { JobDetail, JobLiquidity, MarketRange } from '@/types';
+
+function ownerLiquidityCopy(liq: JobLiquidity): string | null {
+  if (liq.notified_count === 0 && liq.bid_count === 0) return null;
+  const who =
+    liq.notified_count === 1
+      ? '1 provider notified'
+      : `${String(liq.notified_count)} providers notified`;
+  if (liq.minutes_to_first_bid != null && liq.first_bid_at) {
+    return `${who} — first bid in ${String(liq.minutes_to_first_bid)} min`;
+  }
+  return `${who} — waiting for the first bid`;
+}
 
 const FALLBACK_MARKET_RANGE: MarketRange = {
   low_cents: 0,
@@ -252,6 +264,8 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
         : 'Flexible';
 
   const displayBidCount = bidCount ?? job.bid_count;
+  const liquidityLine =
+    isJobOwner && job.liquidity ? ownerLiquidityCopy(job.liquidity) : null;
 
   // ── Live auction: full terminal overlay ────────────────────────────────────
   if (isLiveAuction) {
@@ -321,6 +335,11 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
             {/* Job info */}
             <div className="hidden items-center gap-3 text-sm md:flex">
               <h1 className="font-semibold text-white/90">{job.title}</h1>
+              {liquidityLine ? (
+                <p className="text-xs text-white/50" data-testid="job-liquidity-live">
+                  {liquidityLine}
+                </p>
+              ) : null}
               {job.location_address && (
                 <div className="flex items-center gap-2 text-white/60">
                   <MapPin className="h-3.5 w-3.5" />
@@ -521,6 +540,14 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
             <p className="text-muted-foreground mt-1 text-sm">
               Posted {formatRelativeTime(new Date(job.created_at))}
             </p>
+            {liquidityLine ? (
+              <p
+                className="text-muted-foreground mt-2 text-sm"
+                data-testid="job-liquidity"
+              >
+                {liquidityLine}
+              </p>
+            ) : null}
           </div>
 
           {/* Category */}
@@ -736,6 +763,11 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                     {String(displayBidCount)} bid{displayBidCount !== 1 ? 's' : ''}
                   </span>
                 </div>
+                {liquidityLine ? (
+                  <p className="text-muted-foreground text-xs" data-testid="job-liquidity-sidebar">
+                    {liquidityLine}
+                  </p>
+                ) : null}
 
                 {/* Owner: request (or re-request) instant match on an open job.
                     Post-job form can fire this at publish; this covers already-

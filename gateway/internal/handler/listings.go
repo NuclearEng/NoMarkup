@@ -64,13 +64,19 @@ type ListingsHandler struct {
 	// NewListingsSearchHandler, which already receives the client. Optional:
 	// nil makes deleteListingDocument a no-op.
 	meili meilisearch.ServiceManager
+	// bgGate is the F4 Checkr bid gate (providers only when flag ON).
+	bgGate backgroundCheckBidGate
 }
 
 // NewListingsHandler returns a ListingsHandler. Both deps may be nil:
 // a nil DB returns empty payloads; a nil cache disables ping-viewer
 // counts and bid-event publishing (handlers degrade gracefully).
 func NewListingsHandler(db *pgxpool.Pool, cacheClient *cache.Client) *ListingsHandler {
-	return &ListingsHandler{db: db, cache: cacheClient}
+	return &ListingsHandler{
+		db:     db,
+		cache:  cacheClient,
+		bgGate: newBackgroundCheckBidGate(db, cacheClient),
+	}
 }
 
 // SetWishlist wires the wishlist price-alert notifier into the listing-create
@@ -216,16 +222,16 @@ type listingJSON struct {
 	WatcherCount         int                `json:"watcher_count"`
 	// Condition is a StockX-style enum: new | like_new | very_good | good |
 	// acceptable | for_parts. nil/null means the seller didn't grade.
-	Condition            *string            `json:"condition"`
+	Condition *string `json:"condition"`
 	// Best-Offer surface: highest pending offer (and which buyer made it).
 	// nil when no pending offer exists. Populated by overlayCurrentOffer.
-	CurrentOfferAmountCents *int64          `json:"current_offer_amount_cents"`
-	CurrentOfferBuyerID     *string         `json:"current_offer_buyer_id"`
+	CurrentOfferAmountCents *int64  `json:"current_offer_amount_cents"`
+	CurrentOfferBuyerID     *string `json:"current_offer_buyer_id"`
 	// Seller promote (promoted_listings): true only after charge succeeds.
 	IsPromoted    bool       `json:"is_promoted"`
 	PromotedUntil *time.Time `json:"promoted_until"`
-	CreatedAt            time.Time          `json:"created_at"`
-	UpdatedAt            time.Time          `json:"updated_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type listingDetailJSON struct {

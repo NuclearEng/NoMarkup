@@ -343,6 +343,8 @@ func main() {
 	// bidHandler depends on the contract client so awarding a bid also creates
 	// a contract row in the same request (fixes severed customer-accept pipeline).
 	bidHandler := handler.NewBidHandler(bidClient, contractClient, dbPool)
+	// Flag cache for the F4 background-check bid gate (IsFeatureDisabled).
+	bidHandler.SetCache(cacheClient)
 	// Wire the trust engine so the customer-facing bid list shows each bidder's
 	// real computed trust score (otherwise it renders without a trust gauge).
 	bidHandler.SetTrustClient(trustClient)

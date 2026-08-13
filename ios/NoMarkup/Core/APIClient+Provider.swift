@@ -1136,6 +1136,7 @@ struct ProviderBackgroundCheck: Codable, Sendable, Hashable {
     var status: String?
     var checkrId: String?
     var reportUrl: String?
+    var invitationUrl: String?
     var createdAt: String?
     var updatedAt: String?
 
@@ -1176,6 +1177,17 @@ struct ProviderBackgroundCheck: Codable, Sendable, Hashable {
         default:
             return false
         }
+    }
+
+    /// Checkr hosted invitation when the gateway returned one. Never synthesized.
+    var openableInvitationURL: URL? {
+        let raw = (invitationUrl ?? reportUrl)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http"
+        else { return nil }
+        return url
     }
 }
 

@@ -358,22 +358,15 @@ export function PricingPageContent() {
           {/* Section header */}
           <div className="mb-5 space-y-2">
             <div className="flex items-center gap-3">
-              <div className="glass-pill inline-flex items-center gap-2 rounded-full px-3.5 py-1 text-xs font-medium text-white/60">
-                <span
-                  className="inline-block h-1.5 w-1.5 rounded-full bg-white/40"
-                  aria-hidden="true"
-                />
-                Illustrative
-              </div>
               <h2
                 id="heatmap-heading"
                 className="text-lg font-bold text-white sm:text-xl"
               >
-                Category price comparison
+                Completed jobs by ZIP
               </h2>
             </div>
             <p className="text-sm text-white/50">
-              Category-level market rates for comparison — not a live neighborhood map.
+              Completed jobs by ZIP (where we have coordinates).
             </p>
           </div>
 

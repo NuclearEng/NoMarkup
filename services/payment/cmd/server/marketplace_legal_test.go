@@ -84,6 +84,14 @@ func TestResolveMarketplaceLegalGates(t *testing.T) {
 			wantTOS:    "tos-2026-08-12",
 		},
 		{
+			name:       "shipped_bid_auth_tos_honors_charge",
+			env:        "production",
+			charge:     true,
+			tos:        "tos-2026-08-12-bid-auth",
+			wantCharge: true,
+			wantTOS:    "tos-2026-08-12-bid-auth",
+		},
+		{
 			name:       "tos_set_honors_expiry_only",
 			env:        "production",
 			expiry:     true,

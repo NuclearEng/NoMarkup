@@ -1,6 +1,6 @@
 .PHONY: up down dev dev-full dev-infra dev-status dev-logs migrate-up migrate-down seed proto-gen proto-gen-go proto-gen-rust \
        verify-proto setup-tools test lint fmt build-gateway build-web build-engines build-services build build-all clean \
-       ios-archive-lint ios-archive founder-secrets-check encrypt-pii encrypt-pii-dry-run
+       ios-archive-lint ios-archive founder-secrets-check origin-check encrypt-pii encrypt-pii-dry-run
 
 # ── Native Dev (bin/dev) ─────────────────────────────────────
 
@@ -84,6 +84,12 @@ encrypt-pii-dry-run:
 # Does not close Founder-Action residuals. See docs/compliance/founder-action-board.md.
 founder-secrets-check:
 	./scripts/founder-secrets-check.sh
+
+# Public origin probe (F7). Default allow-down (exit 0 with FAIL rows)
+# so CI without DNS is not red. ORIGIN_CHECK_STRICT=1 or --strict fails.
+# Canonical hosts: https://no-markup.com and https://api.no-markup.com
+origin-check:
+	./scripts/origin-check.sh
 
 # ── Toolchain Setup ───────────────────────────────────────────
 

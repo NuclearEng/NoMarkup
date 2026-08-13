@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   },
 };
 
-const LAST_UPDATED = 'July 26, 2026';
+const LAST_UPDATED = 'August 12, 2026';
 
 export default function TermsOfServicePage() {
   return (
@@ -140,6 +140,7 @@ export default function TermsOfServicePage() {
         },
         {
           id: 'payments',
+          dataTosVersion: 'tos-2026-08-12-bid-auth',
           title: '5. Payments, fees, and escrow',
           content: (
             <>
@@ -164,6 +165,13 @@ export default function TermsOfServicePage() {
                   partner to collect or report.
                 </li>
               </ul>
+              {/* tos-2026-08-12-bid-auth — bid-authorization for goods off-session charge */}
+              <p data-tos-version="tos-2026-08-12-bid-auth">
+                Placing a bid or using Buy it now on a goods listing authorizes NoMarkup to charge
+                the payment method saved on your account if you win or complete the purchase, for
+                the winning amount plus disclosed platform fees and applicable tax. If that charge
+                fails, you can complete payment from the order page.
+              </p>
               <p>
                 Chargebacks, refunds, and guarantee claims are handled under the policies shown at
                 the time of the transaction and any applicable written guarantee terms.

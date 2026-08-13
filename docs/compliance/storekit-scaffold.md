@@ -1,6 +1,6 @@
 # StoreKit 2 Scaffold — Rail B Digital Subscriptions (FR-12)
 
-**Status:** Scaffold only — **disabled by default** (`AppConfig.storeKitEnabled = false`)  
+**Status:** Server JWS verify **implemented** (embedded Apple Root CA - G3); still **flag-gated** — `AppConfig.storeKitEnabled = false`, `APP_STORE_IAP_VERIFY` unset/false.  
 **Date:** 2026-08-12  
 **Guideline:** App Store Review **3.1.1** (digital features → IAP inside the binary)  
 **Related:** [`v1-ios-product-cut.md`](./v1-ios-product-cut.md) · [`ios-payment-rails-design.md`](./ios-payment-rails-design.md) · [`asc-packaging-checklist.md`](./asc-packaging-checklist.md)
@@ -15,7 +15,7 @@
 | **Purchase UI** | Hidden when flag is false |
 | **Web digital upgrade** | **Forbidden** — PlanLimitsView does **not** link to web checkout / “Manage on web” for digital tiers while IAP is off |
 | **Free-tier posture** | “Included free for launch” + read-only paid tier comparison |
-| **When to flip true** | ASC products live + Review Notes updated + (ideally) server JWS verify |
+| **When to flip true** | ASC products live + Review Notes updated + `APP_STORE_IAP_VERIFY=true` (server JWS crypto is implemented) |
 
 This scaffold is **not** a claim that paid digital IAP is review-ready. Default ships free-tier-safe.
 
@@ -73,9 +73,9 @@ Do **not** enable `StoreKitEnabled` until these IDs exist in ASC for the app rec
 | Path | Status |
 |------|--------|
 | StoreKit transaction on device | Scaffolded (`Transaction.currentEntitlements` + local UserDefaults flag) |
-| Backend verify | **SCAFFOLDED fail-closed** — `POST /api/v1/iap/app-store/verify` (auth required). Parses compact JWS and rejects unsigned/garbage (`alg=none`, malformed). Returns **503** unless `APP_STORE_IAP_VERIFY=true` **and** Apple-root/JWS crypto is implemented. This pass does **not** walk Apple's `x5c` chain and **never** returns `{valid:true}` without crypto. |
+| Backend verify | **Implemented, flag-gated** — `POST /api/v1/iap/app-store/verify` (auth required). Walks compact JWS `x5c` to the embedded **Apple Root CA - G3**, verifies the ES256 signature, persists `iap_entitlements` (migration `126`). Returns **503** unless `APP_STORE_IAP_VERIFY=true`. Garbage / `alg=none` / untrusted leaf → **400**. Never `{valid:true}` without a verified chain+signature. |
 | Client call | `StoreKitManager` POSTs `jws` + `product_ids` when `storeKitEnabled == true`. When `StoreKitEnabled=false` (committed default) it **never** calls the endpoint. |
-| Server feature grant from IAP | **Do not** grant production paid unlocks from the local flag or a 503. Live IAP = ASC products + Review Notes + Apple-root verifier (**Founder-Action**). |
+| Server feature grant from IAP | Persist is not a product unlock by itself. Live IAP = flip `StoreKitEnabled` + `APP_STORE_IAP_VERIFY=true` + ASC products + Review Notes (**Founder-Action**). Do **not** grant paid unlocks from the local UserDefaults flag or a 503. |
 
 `Info.plist` `StoreKitEnabled` stays **false**. Flipping the client flag does not make the gateway attest.
 
@@ -86,7 +86,7 @@ Do **not** enable `StoreKitEnabled` until these IDs exist in ASC for the app rec
 1. [ ] Create four auto-renewable products in ASC (IDs above).
 2. [ ] Paid Apps Agreement + banking + tax complete.
 3. [ ] Optional: StoreKit Configuration `.storekit` file for Simulator dogfood.
-4. [ ] Implement Apple-root / App Store Server API JWS verify behind `APP_STORE_IAP_VERIFY=true` (endpoint already 503-fail-closed).
+4. [x] Apple-root JWS verify is implemented (embedded Apple Root CA - G3). Leave `APP_STORE_IAP_VERIFY` unset/false until ASC products exist.
 5. [ ] Set Info.plist `StoreKitEnabled` = true **or** scheme env `NOMARKUP_STOREKIT_ENABLED=true` for dogfood only.
 6. [ ] Update App Review Notes (paste block below).
 7. [ ] Schedule 2 / 3.1.2 subscription disclosures on any paywall UI.

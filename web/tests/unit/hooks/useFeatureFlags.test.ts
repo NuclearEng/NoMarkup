@@ -168,6 +168,7 @@ describe('defaultFeatureFlagValue / isFinancialFeatureFlag', () => {
       'smart_matching',
       'provider_business_os',
       'fair_price_index',
+      'background_checks',
     ] as const) {
       expect(isFinancialFeatureFlag(key)).toBe(false);
       expect(defaultFeatureFlagValue(key)).toBe(true);

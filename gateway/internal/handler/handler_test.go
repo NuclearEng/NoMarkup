@@ -12,9 +12,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
-	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	subscriptionv1 "github.com/nomarkup/nomarkup/proto/subscription/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -54,6 +54,7 @@ type mockJobClient struct {
 	publishJobFn  func(ctx context.Context, req *jobv1.PublishJobRequest) (*jobv1.PublishJobResponse, error)
 	searchJobsFn  func(ctx context.Context, req *jobv1.SearchJobsRequest) (*jobv1.SearchJobsResponse, error)
 	deleteDraftFn func(ctx context.Context, req *jobv1.DeleteDraftRequest) (*jobv1.DeleteDraftResponse, error)
+	getJobFn      func(ctx context.Context, req *jobv1.GetJobRequest) (*jobv1.GetJobResponse, error)
 }
 
 func (m *mockJobClient) CreateJob(ctx context.Context, req *jobv1.CreateJobRequest, _ ...grpc.CallOption) (*jobv1.CreateJobResponse, error) {
@@ -76,11 +77,18 @@ func (m *mockJobClient) DeleteDraft(ctx context.Context, req *jobv1.DeleteDraftR
 	return m.deleteDraftFn(ctx, req)
 }
 
+func (m *mockJobClient) GetJob(ctx context.Context, req *jobv1.GetJobRequest, _ ...grpc.CallOption) (*jobv1.GetJobResponse, error) {
+	if m.getJobFn == nil {
+		return nil, status.Error(codes.Unimplemented, "GetJob not stubbed")
+	}
+	return m.getJobFn(ctx, req)
+}
+
 // mockSubscriptionClient implements subscriptionv1.SubscriptionServiceClient for testing.
 type mockSubscriptionClient struct {
 	subscriptionv1.SubscriptionServiceClient
-	listTiersFn         func(ctx context.Context, req *subscriptionv1.ListTiersRequest) (*subscriptionv1.ListTiersResponse, error)
-	getSubscriptionFn   func(ctx context.Context, req *subscriptionv1.GetSubscriptionRequest) (*subscriptionv1.GetSubscriptionResponse, error)
+	listTiersFn          func(ctx context.Context, req *subscriptionv1.ListTiersRequest) (*subscriptionv1.ListTiersResponse, error)
+	getSubscriptionFn    func(ctx context.Context, req *subscriptionv1.GetSubscriptionRequest) (*subscriptionv1.GetSubscriptionResponse, error)
 	checkFeatureAccessFn func(ctx context.Context, req *subscriptionv1.CheckFeatureAccessRequest) (*subscriptionv1.CheckFeatureAccessResponse, error)
 }
 
@@ -224,7 +232,7 @@ func TestAuthHandler_Login(t *testing.T) {
 					AccessToken:          "jwt-token",
 					AccessTokenExpiresAt: timestamppb.Now(),
 					RefreshToken:         "refresh-token",
-					MfaRequired:         false,
+					MfaRequired:          false,
 				}, nil
 			},
 			wantStatus: http.StatusOK,
@@ -361,9 +369,9 @@ func TestJobHandler_Create(t *testing.T) {
 			wantStatus: http.StatusUnauthorized,
 		},
 		{
-			name:      "invalid_body_returns_400",
-			body:      `{bad json`,
-			hasClaims: true,
+			name:       "invalid_body_returns_400",
+			body:       `{bad json`,
+			hasClaims:  true,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
@@ -653,11 +661,11 @@ func TestWriteGRPCError_mapping(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		grpcCode   codes.Code
-		grpcMsg    string
-		wantHTTP   int
-		wantMsg    string
+		name     string
+		grpcCode codes.Code
+		grpcMsg  string
+		wantHTTP int
+		wantMsg  string
 	}{
 		{
 			name:     "already_exists_to_409",
@@ -752,11 +760,11 @@ func TestExtractIP(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		forwarded string
-		realIP    string
+		name       string
+		forwarded  string
+		realIP     string
 		remoteAddr string
-		wantIP    string
+		wantIP     string
 	}{
 		{
 			name:       "x_forwarded_for_first_from_trusted_peer",

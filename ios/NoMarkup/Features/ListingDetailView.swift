@@ -110,6 +110,10 @@ struct ListingDetailView: View {
     /// `NSUserActivity` type donated when the user views a listing.
     private static let viewListingActivityType = "com.nomarkup.app.viewListing"
 
+    /// One-sentence goods bid / BIN authorization (ToS §5, tos-2026-08-12-bid-auth).
+    private static let bidAuthorizationDisclosure =
+        "Placing a goods bid or Buy it now authorizes NoMarkup to charge your saved payment method if you win, for the winning amount plus disclosed fees and tax; if the charge fails, you can pay from the order page."
+
     /// On-device Spotlight summary — public-safe fields only (category + pickup area).
     private var spotlightDescription: String {
         var parts = ["Local marketplace auction on NoMarkup"]
@@ -1280,6 +1284,11 @@ struct ListingDetailView: View {
                     Text("Pays \(priceLabel) via Apple Pay (or card). Funds are held in escrow until you confirm pickup. Local pickup only.")
                         .font(.footnote)
                         .foregroundStyle(BrandTheme.textSecondary)
+                    Text(Self.bidAuthorizationDisclosure)
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("listingDetail.bidAuthDisclosure")
 
                     if let buyNowStatusMessage {
                         Text(buyNowStatusMessage)
@@ -1370,6 +1379,12 @@ struct ListingDetailView: View {
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     .accessibilityLabel("Authorizing bid bond")
                 }
+
+                Text(Self.bidAuthorizationDisclosure)
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("listingDetail.bidAuthDisclosure")
 
                 if let bondCents = bidBondAmountCents, pendingBidCents != nil, !isPostingBond {
                     VStack(alignment: .leading, spacing: 8) {

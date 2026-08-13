@@ -371,11 +371,20 @@ export interface Job {
   distance_km?: number | null;
 }
 
+export interface JobLiquidity {
+  notified_count: number;
+  first_bid_at: string | null;
+  minutes_to_first_bid?: number;
+  bid_count: number;
+}
+
 export interface JobDetail extends Job {
   customer_display_name: string;
   customer_avatar_url: string | null;
   customer_member_since: string;
   customer_jobs_posted: number;
+  /** Owner-only. Omitted for every other caller. */
+  liquidity?: JobLiquidity;
 }
 
 export interface CreateJobInput {

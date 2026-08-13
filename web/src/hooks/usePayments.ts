@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import {
+  parseProofOfWorkMissing,
+  proofOfWorkBlockedMessage,
+} from '@/hooks/useWorkEvidence';
 import { api, clearIdempotencyKey, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import type {
   CreatePaymentInput,
@@ -335,6 +339,40 @@ export function useCreateStripeAccountSession() {
       ),
     onError: (err) => {
       toast.error(getApiErrorMessage(err, 'Failed to start embedded Stripe setup'));
+    },
+  });
+}
+
+/**
+ * POST /payments/{id}/release — customer (or admin) releases held escrow.
+ * 409 proof-of-work is mapped to the blocked-release copy; never toast success.
+ */
+export function useReleaseEscrow() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (variables: { paymentId: string; reason?: string }) => {
+      const raw = await api.post<Payment>(
+        `/api/v1/payments/${variables.paymentId}/release`,
+        { reason: variables.reason ?? 'customer approved completion' },
+        idempotencyHeader(`payment-release:${variables.paymentId}`),
+      );
+      return raw;
+    },
+    onSuccess: (_data, variables) => {
+      clearIdempotencyKey(`payment-release:${variables.paymentId}`);
+      toast.success('Escrow released to the provider');
+      void queryClient.invalidateQueries({ queryKey: ['payments'] });
+      void queryClient.invalidateQueries({ queryKey: ['payment', variables.paymentId] });
+      void queryClient.invalidateQueries({ queryKey: ['work-evidence'] });
+    },
+    onError: (err) => {
+      const missing = parseProofOfWorkMissing(err);
+      if (missing !== null) {
+        toast.error(proofOfWorkBlockedMessage(missing));
+        return;
+      }
+      toast.error(getApiErrorMessage(err, 'Failed to release escrow'));
     },
   });
 }

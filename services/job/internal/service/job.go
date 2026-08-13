@@ -586,8 +586,18 @@ func (s *JobService) triggerProviderMatching(job *domain.Job) {
 	}()
 }
 
-// notifyProviderOfMatch sends a match notification to a single provider.
+// notifyProviderOfMatch records the match (F2 liquidity) then sends a
+// notification. The ledger write happens even when the push fails-soft or
+// the notifier is unset — the provider was selected.
 func (s *JobService) notifyProviderOfMatch(ctx context.Context, match domain.MatchedProvider, jobID, jobTitle, categoryName string) {
+	if err := s.repo.RecordJobMatchNotification(ctx, jobID, match.ProviderID); err != nil {
+		slog.Error("failed to record job match notification",
+			"provider_id", match.ProviderID,
+			"job_id", jobID,
+			"error", err,
+		)
+	}
+
 	if s.notifier == nil {
 		slog.Warn("notification sender not configured — skipping match notification",
 			"provider_id", match.ProviderID,

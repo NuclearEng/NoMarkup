@@ -75,6 +75,10 @@ vi.mock('@/components/contracts/RecurringSchedule', () => ({
   RecurringSchedule: () => createElement('div', { 'data-testid': 'recurring-schedule' }),
 }));
 
+vi.mock('@/components/contracts/WorkEvidencePack', () => ({
+  WorkEvidencePack: () => createElement('div', { 'data-testid': 'work-evidence-pack' }),
+}));
+
 vi.mock('@/components/payments/InstallmentSchedule', () => ({
   InstallmentSchedule: () => createElement('div', { 'data-testid': 'installment-schedule' }),
 }));
@@ -235,6 +239,22 @@ describe('ContractDetailPage', () => {
     contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
     render(withQueryClient(createElement(ContractDetailPage)));
     expect(screen.getByTestId('milestone-tracker')).toBeDefined();
+  });
+
+  it('shows the proof-of-work pack for the customer', () => {
+    authUser.user = { id: 'cust-1' };
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByTestId('work-evidence-pack')).toBeDefined();
+  });
+
+  it('shows the proof-of-work pack for the provider (read-only)', () => {
+    authUser.user = { id: 'prov-1' };
+    contractState.isLoading = false;
+    contractState.data = { contract: makeContract({ status: 'active' }), change_orders: [] };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByTestId('work-evidence-pack')).toBeDefined();
   });
 
   it('shows provider Start Work button when active and provider role with no started_at', () => {

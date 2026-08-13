@@ -18,6 +18,7 @@ import {
   useCreateStripeAccount,
   useInstantPayout,
   useStripeOnboardingLink,
+  useReleaseEscrow,
 } from '@/hooks/usePayments';
 import type {
   Payment,
@@ -46,8 +47,22 @@ vi.mock('@/lib/api', () => ({
   idempotencyHeader: () => ({ 'Idempotency-Key': 'test-idem-key' }),
   clearIdempotencyKey: vi.fn(),
   ApiError: class ApiError extends Error {
-    code = 'ERR';
+    status: number;
+    body: string;
+    constructor(status: number, body: string) {
+      super(`API error ${String(status)}: ${body}`);
+      this.name = 'ApiError';
+      this.status = status;
+      this.body = body;
+    }
     userMessage(fallback: string) {
+      try {
+        const parsed = JSON.parse(this.body) as { error?: string; message?: string };
+        if (parsed.error) return parsed.error;
+        if (parsed.message) return parsed.message;
+      } catch {
+        // not JSON
+      }
       return this.message || fallback;
     }
   },
@@ -55,7 +70,7 @@ vi.mock('@/lib/api', () => ({
     err instanceof Error && err.message ? err.message : fallback,
 }));
 
-const { api } = await import('@/lib/api');
+const { api, ApiError } = await import('@/lib/api');
 const { toast } = await import('sonner');
 
 function createTestQueryClient(): QueryClient {
@@ -615,5 +630,62 @@ describe('useStripeOnboardingLink', () => {
       '/api/v1/providers/me/stripe/onboarding?return_url=https%3A%2F%2Fapp.test%2Freturn&refresh_url=https%3A%2F%2Fapp.test%2Frefresh',
     );
     expect(fetched.data?.url).toBe('https://stripe.test/onb/abc');
+  });
+});
+
+describe('useReleaseEscrow', () => {
+  let queryClient: QueryClient;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('posts release with a sticky idempotency key and toasts success', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ ...mockPayment, status: 'released' });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useReleaseEscrow(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate({ paymentId: 'pmt-1' });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/payments/pmt-1/release',
+      { reason: 'customer approved completion' },
+      { 'Idempotency-Key': 'test-idem-key' },
+    );
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Escrow released to the provider');
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['payments'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['payment', 'pmt-1'] });
+  });
+
+  it('maps a 409 proof-of-work body to missing copy and does not toast success', async () => {
+    const err = new ApiError(
+      409,
+      JSON.stringify({
+        error: 'proof of work required',
+        missing: ['check_in', 'after_photo'],
+      }),
+    );
+    vi.mocked(api.post).mockRejectedValueOnce(err);
+
+    const { result } = renderHook(() => useReleaseEscrow(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate({ paymentId: 'pmt-1' });
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+
+    expect(vi.mocked(toast.success)).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      'Need check-in and an after photo before funds release',
+    );
   });
 });

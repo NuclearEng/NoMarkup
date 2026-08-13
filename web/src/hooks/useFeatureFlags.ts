@@ -20,6 +20,7 @@ export const FEATURE_FLAG_KEYS = [
   'smart_matching',
   'provider_business_os',
   'fair_price_index',
+  'background_checks',
   // Service verticals
   'legal_services',
   // Financial features (each enforced by RequireFlag in the gateway)

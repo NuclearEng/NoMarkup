@@ -271,6 +271,84 @@ describe('(public)/jobs/[id]/page', () => {
     expect(screen.getByTestId('bid-list')).toBeDefined();
   });
 
+  it('shows owner liquidity when providers were notified and a bid arrived', () => {
+    setAuth({
+      user: { id: 'cust-1', roles: ['customer'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: {
+        ...baseJob,
+        liquidity: {
+          notified_count: 3,
+          first_bid_at: '2026-04-01T00:12:00Z',
+          minutes_to_first_bid: 12,
+          bid_count: 2,
+        },
+      },
+    });
+    renderClient();
+    expect(screen.getByTestId('job-liquidity').textContent).toBe(
+      '3 providers notified — first bid in 12 min',
+    );
+  });
+
+  it('shows waiting copy when providers were notified but no bid yet', () => {
+    setAuth({
+      user: { id: 'cust-1', roles: ['customer'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: {
+        ...baseJob,
+        liquidity: {
+          notified_count: 3,
+          first_bid_at: null,
+          bid_count: 0,
+        },
+      },
+    });
+    renderClient();
+    expect(screen.getByTestId('job-liquidity').textContent).toBe(
+      '3 providers notified — waiting for the first bid',
+    );
+  });
+
+  it('hides liquidity when notified_count and bid_count are both zero', () => {
+    setAuth({
+      user: { id: 'cust-1', roles: ['customer'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: {
+        ...baseJob,
+        liquidity: { notified_count: 0, first_bid_at: null, bid_count: 0 },
+      },
+    });
+    renderClient();
+    expect(screen.queryByTestId('job-liquidity')).toBeNull();
+  });
+
+  it('hides liquidity for a non-owner even if the payload includes it', () => {
+    setAuth({
+      user: { id: 'other-user', roles: ['provider'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: {
+        ...baseJob,
+        liquidity: {
+          notified_count: 3,
+          first_bid_at: '2026-04-01T00:12:00Z',
+          minutes_to_first_bid: 12,
+          bid_count: 2,
+        },
+      },
+    });
+    renderClient();
+    expect(screen.queryByTestId('job-liquidity')).toBeNull();
+  });
+
   it('lets the job owner request instant match when accept-now price is set', () => {
     const mutate = vi.fn();
     setAuth({

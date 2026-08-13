@@ -362,6 +362,8 @@ func New(
 
 	// @public Fair Price Index routes (no auth required, SEO-friendly)
 	r.Get("/api/v1/pricing", pricingHandler.GetPricingOverview)
+	// heatmap must register before {category} so "heatmap" is not captured as a slug.
+	r.Get("/api/v1/pricing/heatmap", pricingHandler.GetHeatmap)
 	r.Get("/api/v1/pricing/{category}", pricingHandler.GetPricingByCategory)
 
 	// Public market price range (no auth required) — the FairPriceWidget on
@@ -391,6 +393,12 @@ func New(
 	// the protected /api/v1 block below.
 	r.Post("/api/v1/cookie-consent", complianceHandler.LogCookieConsent)
 	r.Get("/api/v1/tos/current", complianceHandler.GetCurrentToS)
+
+	// @public Field RUM ingest (F8). No auth, no cookies, no PII. The
+	// global limiter applies (TierPublicRead). Nil-db / insert errors
+	// return 202 so the browser beacon never fails the page.
+	rumHandler := handler.NewRumHandler(dbPool)
+	r.Post("/api/v1/rum", rumHandler.PostSample)
 
 	// Public "report this listing" endpoint — anonymous visitors can flag a
 	// listing as stolen/counterfeit/prohibited. Wrapped in optionalAuth so a
@@ -505,10 +513,10 @@ func New(
 		r.Post("/me/push-subscriptions", pushSubscriptionsHandler.Subscribe)
 		r.Delete("/me/push-subscriptions/{id}", pushSubscriptionsHandler.Unsubscribe)
 
-		// STOREKIT-B2 — App Store JWS verify. Auth required. Fail-closed 503
-		// unless APP_STORE_IAP_VERIFY=true AND Apple-root crypto is implemented.
-		// Never returns {valid:true} without crypto (see handler/iap.go).
-		r.Post("/iap/app-store/verify", handler.NewIAPHandler().VerifyAppStore)
+		// STOREKIT-B2 / F6 — App Store JWS verify. Auth required. Fail-closed
+		// 503 unless APP_STORE_IAP_VERIFY=true. Walks x5c to the embedded
+		// Apple Root CA - G3 and persists iap_entitlements on success.
+		r.Post("/iap/app-store/verify", handler.NewIAPHandler(dbPool).VerifyAppStore)
 
 		// ── Compliance (auth half) ─────────────────────────────────────
 		// ToS re-acceptance: the web client polls GET /api/v1/tos/current
@@ -747,6 +755,7 @@ func New(
 				r.Post("/{id}/checkout", workspaceHandler.CheckOut)
 				r.Get("/{id}/work-session", workspaceHandler.GetWorkSession)
 				r.Post("/{id}/completion-photos", workspaceHandler.UploadCompletionPhoto)
+				r.Get("/{id}/work-evidence", workspaceHandler.GetWorkEvidence)
 
 				// Post-completion tip / gratuity (Wave 5 audit Section H).
 				// Customer-only enforcement is internal to the handler;
@@ -1221,6 +1230,9 @@ func New(
 			// Feature flags
 			r.Get("/flags", featureFlagHandler.ListFeatureFlags)
 			r.Put("/flags/{key}", featureFlagHandler.UpdateFeatureFlag)
+
+			// Field RUM p75 last 24h (F8). rum_samples has no PII columns.
+			r.Get("/rum", rumHandler.GetSummary)
 		})
 
 		// Notification routes

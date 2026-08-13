@@ -28,13 +28,17 @@ type PaymentHandler struct {
 	// payment (FR-18.8). Optional: nil → process/capture still succeeds; resume
 	// is best-effort only and must never fail the money path.
 	contractClient contractv1.ContractServiceClient
-	// db backs the instant-payout SUMMARY path (sum of prior instant_payouts)
-	// and FR-16.7 recurring payment-retry reset after visit capture. Mutation
-	// InstantPayout is owned by the payment service gRPC. May be nil in unit
-	// tests that don't exercise those paths.
+	// db backs the instant-payout SUMMARY path (sum of prior instant_payouts),
+	// FR-16.7 recurring payment-retry reset after visit capture, and F1
+	// proof-of-work evaluation on ReleasePayment. Mutation InstantPayout is
+	// owned by the payment service gRPC. May be nil in unit tests that don't
+	// exercise those paths — a nil db cannot prove work and the release gate
+	// fails closed for non-admins.
 	db *pgxpool.Pool
 	// resetPaymentRetryFn overrides SQL reset for unit tests (nil in production).
 	resetPaymentRetryFn func(ctx context.Context, recurringID string) error
+	// workEvidenceFn overrides Postgres proof-of-work evaluation in tests.
+	workEvidenceFn func(ctx context.Context, contractID string) (ready bool, missing []string, err error)
 }
 
 // NewPaymentHandler creates a new PaymentHandler. db is the gateway's shared
@@ -718,7 +722,7 @@ func (h *PaymentHandler) ListPayments(w http.ResponseWriter, r *http.Request) {
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -832,6 +836,12 @@ func (h *PaymentHandler) ReleasePayment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// F1: service escrow cannot release without durable check-in + after photo.
+	// Admin (existing ActorIsAdmin path) skips. Goods / no contract_id skip.
+	if !hasRole(claims, "admin") && !h.allowProofOfWorkRelease(r.Context(), w, paymentID) {
+		return
+	}
+
 	// Same reasoning as RefundPayment: the route's party check cannot tell the
 	// payer from the payee, and releasing escrow pays the provider. The service
 	// refuses a provider releasing their own escrow.
@@ -867,6 +877,51 @@ func (h *PaymentHandler) ReleasePayment(w http.ResponseWriter, r *http.Request) 
 	)
 
 	writeJSON(w, http.StatusOK, protoPaymentToJSON(pay))
+}
+
+// allowProofOfWorkRelease returns true when the non-admin actor may proceed
+// (no contract / goods, or evidence is ready). On block or lookup failure it
+// writes the response and returns false. Missing evidence is always 409, never 500.
+func (h *PaymentHandler) allowProofOfWorkRelease(ctx context.Context, w http.ResponseWriter, paymentID string) bool {
+	if h.paymentClient == nil {
+		writeProofOfWorkRequired(w, proofOfWorkMissing(false, false))
+		return false
+	}
+	resp, err := h.paymentClient.GetPayment(ctx, &paymentv1.GetPaymentRequest{PaymentId: paymentID})
+	if err != nil {
+		writeGRPCError(w, err)
+		return false
+	}
+	var contractID string
+	if p := resp.GetPayment(); p != nil {
+		contractID = p.GetContractId()
+	}
+	if contractID == "" {
+		return true
+	}
+
+	ready, missing, evalErr := h.evaluateReleaseProofOfWork(ctx, contractID)
+	if evalErr != nil {
+		slog.WarnContext(ctx, "release: proof-of-work lookup failed; failing closed",
+			"payment_id", paymentID,
+			"contract_id", contractID,
+			"error", evalErr,
+		)
+		writeProofOfWorkRequired(w, proofOfWorkMissing(false, false))
+		return false
+	}
+	if !ready {
+		writeProofOfWorkRequired(w, missing)
+		return false
+	}
+	return true
+}
+
+func (h *PaymentHandler) evaluateReleaseProofOfWork(ctx context.Context, contractID string) (bool, []string, error) {
+	if h.workEvidenceFn != nil {
+		return h.workEvidenceFn(ctx, contractID)
+	}
+	return evaluateProofOfWork(ctx, h.db, contractID)
 }
 
 type calculateFeesRequest struct {
@@ -929,6 +984,7 @@ type instantPayoutRequest struct {
 //  2. CLAIM ledger first under per-provider advisory lock.
 //  3. Stripe Connect Instant Payout (or payout_dev_* only in payment-service
 //     devMode — never with live keys).
+//
 // Gateway is a thin auth + verified-provider gate + gRPC proxy.
 func (h *PaymentHandler) InstantPayout(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
@@ -1359,21 +1415,21 @@ func protoPaymentToJSON(p *paymentv1.Payment) map[string]interface{} {
 
 	result := map[string]interface{}{
 		"id":                    p.GetId(),
-		"contract_id":          p.GetContractId(),
-		"customer_id":          p.GetCustomerId(),
-		"provider_id":          p.GetProviderId(),
-		"amount_cents":         p.GetAmountCents(),
-		"platform_fee_cents":   p.GetPlatformFeeCents(),
-		"guarantee_fee_cents":  p.GetGuaranteeFeeCents(),
+		"contract_id":           p.GetContractId(),
+		"customer_id":           p.GetCustomerId(),
+		"provider_id":           p.GetProviderId(),
+		"amount_cents":          p.GetAmountCents(),
+		"platform_fee_cents":    p.GetPlatformFeeCents(),
+		"guarantee_fee_cents":   p.GetGuaranteeFeeCents(),
 		"provider_payout_cents": p.GetProviderPayoutCents(),
-		"status":               paymentStatusToString(p.GetStatus()),
-		"failure_reason":       p.GetFailureReason(),
-		"refund_amount_cents":  p.GetRefundAmountCents(),
-		"refund_reason":        p.GetRefundReason(),
-		"installment_number":   p.GetInstallmentNumber(),
-		"total_installments":   p.GetTotalInstallments(),
-		"retry_count":          p.GetRetryCount(),
-		"created_at":           formatTimestamp(p.GetCreatedAt()),
+		"status":                paymentStatusToString(p.GetStatus()),
+		"failure_reason":        p.GetFailureReason(),
+		"refund_amount_cents":   p.GetRefundAmountCents(),
+		"refund_reason":         p.GetRefundReason(),
+		"installment_number":    p.GetInstallmentNumber(),
+		"total_installments":    p.GetTotalInstallments(),
+		"retry_count":           p.GetRetryCount(),
+		"created_at":            formatTimestamp(p.GetCreatedAt()),
 	}
 
 	if p.GetMilestoneId() != "" {

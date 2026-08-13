@@ -104,6 +104,17 @@ describe('BuyItNowButton payment wiring', () => {
     dialogProps = null;
   });
 
+  it('shows bid-authorization disclosure before the buy-now submit', () => {
+    render(<BuyItNowButton listing={listing} />, { wrapper });
+    const disclosure = screen.getByTestId('bid-auth-disclosure');
+    expect(disclosure.textContent).toMatch(/authorizes NoMarkup to charge your saved payment method/i);
+    expect(disclosure.textContent).toMatch(/if the charge fails, you can pay from the order page/i);
+    const submit = screen.getByRole('button', { name: 'Buy now for $50.00' });
+    expect(
+      disclosure.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('sends the Idempotency-Key the gateway requires on buy-now', async () => {
     post.mockResolvedValue({ order_id: 'order-1', client_secret: TOKEN });
     await buyNow();

@@ -1865,9 +1865,14 @@ actor APIClient {
         struct APIErrorBody: Decodable {
             let error: String?
             let message: String?
+            let missing: [String]?
         }
         guard let body = try? JSONDecoder().decode(APIErrorBody.self, from: data) else {
             return nil
+        }
+        // F1 release gate: 409 `{ error, missing }` — surface the checklist, not a raw conflict.
+        if let missing = body.missing, !missing.isEmpty {
+            return ProofOfWorkCopy.releaseBlockedMessage(missing: missing)
         }
         if let error = body.error, !error.isEmpty { return error }
         if let message = body.message, !message.isEmpty { return message }

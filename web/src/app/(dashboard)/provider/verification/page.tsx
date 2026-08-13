@@ -3,6 +3,7 @@
 import { ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 
+import { BackgroundCheckPanel } from '@/components/providers/BackgroundCheckPanel';
 import { VerificationDocumentsPanel } from '@/components/providers/VerificationDocumentsPanel';
 import { Button } from '@/components/ui/button';
 import { PageTransition } from '@/components/ui/page-transition';
@@ -26,6 +27,7 @@ export default function ProviderVerificationPage() {
           </Button>
         </div>
 
+        <BackgroundCheckPanel />
         <VerificationDocumentsPanel />
       </div>
     </PageTransition>

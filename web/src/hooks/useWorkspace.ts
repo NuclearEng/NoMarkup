@@ -90,6 +90,7 @@ export function useCheckIn(contractId: string) {
     onSuccess: () => {
       toast.success('Checked in successfully');
       void queryClient.invalidateQueries({ queryKey: ['work-session', contractId] });
+      void queryClient.invalidateQueries({ queryKey: ['work-evidence', contractId] });
     },
     onError: (err: unknown) => {
       toast.error(getApiErrorMessage(err, 'Failed to check in. Please try again.'));
@@ -138,6 +139,7 @@ export function useCheckOut(contractId: string) {
         hours > 0 ? `${String(hours)}h ${String(mins)}m` : `${String(mins)} min`;
       toast.success(`Checked out — worked ${label}`);
       void queryClient.invalidateQueries({ queryKey: ['work-session', contractId] });
+      void queryClient.invalidateQueries({ queryKey: ['work-evidence', contractId] });
     },
     onError: (err: unknown) => {
       toast.error(getApiErrorMessage(err, 'Failed to check out. Please try again.'));
@@ -150,6 +152,8 @@ export function useCheckOut(contractId: string) {
  * Uses fetch directly (not api.post) because multipart forms can't use JSON Content-Type.
  */
 export function useUploadCompletionPhoto(contractId: string) {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({
       file,
@@ -188,6 +192,7 @@ export function useUploadCompletionPhoto(contractId: string) {
     },
     onSuccess: (data) => {
       toast.success(`${data.phase === 'before' ? 'Before' : 'After'} photo uploaded`);
+      void queryClient.invalidateQueries({ queryKey: ['work-evidence', contractId] });
     },
     onError: (err: unknown) => {
       toast.error(getApiErrorMessage(err, 'Failed to upload photo. Please try again.'));

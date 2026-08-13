@@ -23,18 +23,18 @@ func NewPricingHandler(db *pgxpool.Pool) *PricingHandler {
 
 // pricingRow represents a single row from the fair_price_index materialized view.
 type pricingRow struct {
-	CategoryName   string    `json:"category_name"`
-	CategorySlug   string    `json:"category_slug"`
-	ZipCode        string    `json:"zip_code"`
-	CompletedJobs  int64     `json:"completed_jobs"`
-	AvgPriceCents  int64     `json:"avg_price_cents"`
-	P25PriceCents  int64     `json:"p25_price_cents"`
-	MedianCents    int64     `json:"median_price_cents"`
-	P75PriceCents  int64     `json:"p75_price_cents"`
-	MinPriceCents  int64     `json:"min_price_cents"`
-	MaxPriceCents  int64     `json:"max_price_cents"`
-	AvgSavingsCents *int64   `json:"avg_savings_cents"`
-	RefreshedAt    time.Time `json:"refreshed_at"`
+	CategoryName    string    `json:"category_name"`
+	CategorySlug    string    `json:"category_slug"`
+	ZipCode         string    `json:"zip_code"`
+	CompletedJobs   int64     `json:"completed_jobs"`
+	AvgPriceCents   int64     `json:"avg_price_cents"`
+	P25PriceCents   int64     `json:"p25_price_cents"`
+	MedianCents     int64     `json:"median_price_cents"`
+	P75PriceCents   int64     `json:"p75_price_cents"`
+	MinPriceCents   int64     `json:"min_price_cents"`
+	MaxPriceCents   int64     `json:"max_price_cents"`
+	AvgSavingsCents *int64    `json:"avg_savings_cents"`
+	RefreshedAt     time.Time `json:"refreshed_at"`
 }
 
 // GetPricingByCategory handles GET /api/v1/pricing/{category}.
@@ -168,4 +168,63 @@ func (h *PricingHandler) GetPricingOverview(w http.ResponseWriter, r *http.Reque
 
 	// Cacheable at the CDN edge: public pricing overview, no per-user content.
 	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"categories": categories}, 300, 3600)
+}
+
+// heatmapQuery joins fair_price_index to zip_codes so we only emit ZIPs
+// that have real coordinates. Unknown / missing zips drop out of the INNER JOIN.
+const heatmapQuery = `
+	SELECT z.zip,
+	       z.lat,
+	       z.lng,
+	       f.median_price_cents,
+	       f.completed_jobs
+	FROM fair_price_index f
+	INNER JOIN zip_codes z ON z.zip = f.zip_code
+	WHERE f.zip_code <> 'unknown'
+	  AND ($1 = '' OR f.category_slug = $1)
+	ORDER BY f.completed_jobs DESC`
+
+type heatmapPoint struct {
+	ZipCode          string  `json:"zip_code"`
+	Lat              float64 `json:"lat"`
+	Lng              float64 `json:"lng"`
+	MedianPriceCents int64   `json:"median_price_cents"`
+	CompletedJobs    int64   `json:"completed_jobs"`
+}
+
+// GetHeatmap handles GET /api/v1/pricing/heatmap?category={slug}.
+// Public. Plots only ZIPs that exist in zip_codes with real lat/lng.
+func (h *PricingHandler) GetHeatmap(w http.ResponseWriter, r *http.Request) {
+	points := []heatmapPoint{}
+	if h.db == nil {
+		writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"points": points}, 300, 3600)
+		return
+	}
+
+	category := r.URL.Query().Get("category")
+
+	rows, err := h.db.Query(r.Context(), heatmapQuery, category)
+	if err != nil {
+		slog.Error("failed to query pricing heatmap", "category", category, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to get pricing heatmap")
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var p heatmapPoint
+		if err := rows.Scan(&p.ZipCode, &p.Lat, &p.Lng, &p.MedianPriceCents, &p.CompletedJobs); err != nil {
+			slog.Error("failed to scan heatmap row", "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to read pricing heatmap")
+			return
+		}
+		points = append(points, p)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("error iterating heatmap rows", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to read pricing heatmap")
+		return
+	}
+
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"points": points}, 300, 3600)
 }

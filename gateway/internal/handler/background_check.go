@@ -88,12 +88,15 @@ func (h *BackgroundCheckHandler) SetHTTPClient(c *http.Client) {
 }
 
 // backgroundCheckJSON is the public response shape for GET/POST.
+// invitation_url is the Checkr hosted-invite link when the vendor returned one
+// (persisted in report_url). Never invent status=clear / PASS here.
 type backgroundCheckJSON struct {
-	Status    string  `json:"status"`
-	CheckrID  *string `json:"checkr_id,omitempty"`
-	ReportURL *string `json:"report_url,omitempty"`
-	CreatedAt *string `json:"created_at,omitempty"`
-	UpdatedAt *string `json:"updated_at,omitempty"`
+	Status        string  `json:"status"`
+	CheckrID      *string `json:"checkr_id,omitempty"`
+	ReportURL     *string `json:"report_url,omitempty"`
+	InvitationURL *string `json:"invitation_url,omitempty"`
+	CreatedAt     *string `json:"created_at,omitempty"`
+	UpdatedAt     *string `json:"updated_at,omitempty"`
 }
 
 // Get handles GET /api/v1/providers/me/background-check.
@@ -121,7 +124,7 @@ func (h *BackgroundCheckHandler) Get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load background check status")
 		return
 	}
-	writeJSON(w, http.StatusOK, row)
+	writeJSON(w, http.StatusOK, hydrateBackgroundCheckJSON(row))
 }
 
 // Create handles POST /api/v1/providers/me/background-check.
@@ -161,7 +164,7 @@ func (h *BackgroundCheckHandler) Create(w http.ResponseWriter, r *http.Request) 
 			// "complete" without clear/consider still means in-progress adjudication.
 			// Return existing pending; do not open a second Checkr order blindly.
 			if existing.Status == "pending" {
-				writeJSON(w, http.StatusOK, existing)
+				writeJSON(w, http.StatusOK, hydrateBackgroundCheckJSON(existing))
 				return
 			}
 		}
@@ -229,7 +232,7 @@ func (h *BackgroundCheckHandler) Create(w http.ResponseWriter, r *http.Request) 
 		"checkr_id", checkrID,
 		"candidate_id", candidateID,
 	)
-	writeJSON(w, http.StatusCreated, row)
+	writeJSON(w, http.StatusCreated, hydrateBackgroundCheckJSON(row))
 }
 
 // HandleWebhook handles POST /api/v1/webhooks/checkr.
@@ -515,6 +518,28 @@ func splitDisplayName(display string) (first, last string) {
 
 func errorsIsNoRows(err error) bool {
 	return err != nil && (err == pgx.ErrNoRows || strings.Contains(err.Error(), "no rows"))
+}
+
+// hydrateBackgroundCheckJSON copies a persisted invitation/report http(s) URL
+// onto invitation_url so GET/POST clients can open the Checkr invite.
+func hydrateBackgroundCheckJSON(row backgroundCheckJSON) backgroundCheckJSON {
+	if row.InvitationURL != nil && strings.TrimSpace(*row.InvitationURL) != "" {
+		return row
+	}
+	if row.ReportURL == nil {
+		return row
+	}
+	u := strings.TrimSpace(*row.ReportURL)
+	if !isHTTPURL(u) {
+		return row
+	}
+	row.InvitationURL = &u
+	return row
+}
+
+func isHTTPURL(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	return strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "http://")
 }
 
 // ─── Checkr HTTP client (real endpoints; scaffold) ───────────────────────────

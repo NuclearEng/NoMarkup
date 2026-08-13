@@ -30,6 +30,45 @@ vi.mock('next/link', () => ({
     createElement('a', { href }, children),
 }));
 
+const backgroundCheckState: {
+  data: { status: string; invitation_url?: string | null } | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  isFetching: boolean;
+  refetch: ReturnType<typeof vi.fn>;
+} = {
+  data: { status: 'not_started' },
+  isLoading: false,
+  isError: false,
+  error: null,
+  isFetching: false,
+  refetch: vi.fn(),
+};
+
+const startMutate = vi.fn();
+
+vi.mock('@/hooks/useFeatureFlags', () => ({
+  useFeatureFlag: () => true,
+  useFeatureFlags: () => ({ background_checks: true }),
+}));
+
+vi.mock('@/hooks/useBackgroundCheck', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useBackgroundCheck')>(
+    '@/hooks/useBackgroundCheck',
+  );
+  return {
+    ...actual,
+    useBackgroundCheck: () => backgroundCheckState,
+    useStartBackgroundCheck: () => ({
+      mutate: startMutate,
+      isPending: false,
+      isError: false,
+      error: null,
+    }),
+  };
+});
+
 vi.mock('@/hooks/useProviderProfile', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/useProviderProfile')>(
     '@/hooks/useProviderProfile',
@@ -70,6 +109,13 @@ describe('ProviderVerificationPage', () => {
     documentsState.refetch = vi.fn();
     uploadMutate.mockReset();
     uploadImageMock.mockReset();
+    startMutate.mockReset();
+    backgroundCheckState.data = { status: 'not_started' };
+    backgroundCheckState.isLoading = false;
+    backgroundCheckState.isError = false;
+    backgroundCheckState.error = null;
+    backgroundCheckState.isFetching = false;
+    backgroundCheckState.refetch = vi.fn();
   });
 
   afterEach(() => {
@@ -87,6 +133,35 @@ describe('ProviderVerificationPage', () => {
       'href',
       '/provider/onboarding',
     );
+    expect(screen.getByRole('heading', { name: /background check/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /start background check/i })).toBeEnabled();
+    expect(screen.queryByRole('link', { name: /open checkr/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^pass$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/passed/i)).not.toBeInTheDocument();
+  });
+
+  it('shows Checkr status and Open Checkr when invitation_url is present', () => {
+    backgroundCheckState.data = {
+      status: 'pending',
+      invitation_url: 'https://apply.checkr.com/invite/abc',
+    };
+
+    render(withQueryClient(createElement(ProviderVerificationPage)));
+
+    expect(screen.getByText(/^pending$/i)).toBeInTheDocument();
+    const open = screen.getByRole('link', { name: /open checkr/i });
+    expect(open).toHaveAttribute('href', 'https://apply.checkr.com/invite/abc');
+    expect(screen.getByRole('button', { name: /start background check/i })).toBeDisabled();
+    expect(screen.getByText('Pending')).toBeInTheDocument();
+    expect(screen.queryByText(/^pass$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^passed$/i)).not.toBeInTheDocument();
+  });
+
+  it('starts a background check from the start button', async () => {
+    const user = userEvent.setup();
+    render(withQueryClient(createElement(ProviderVerificationPage)));
+    await user.click(screen.getByRole('button', { name: /start background check/i }));
+    expect(startMutate).toHaveBeenCalled();
   });
 
   it('surfaces resubmission lockout for a document type', () => {

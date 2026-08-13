@@ -145,6 +145,13 @@ struct VerificationCenterView: View {
                 .disabled(isBusy || backgroundCheckLoading || backgroundCheckRequesting || !auth.isAuthenticated)
                 .frame(minHeight: 44)
                 .listRowBackground(BrandTheme.navyElevated)
+
+                if let inviteURL = backgroundCheck?.openableInvitationURL {
+                    Link("Open Checkr", destination: inviteURL)
+                        .frame(minHeight: 44)
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .accessibilityHint("Opens the Checkr invitation in a browser")
+                }
             } header: {
                 Text("Background check").brandSectionHeader()
             } footer: {

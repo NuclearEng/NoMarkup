@@ -57,11 +57,12 @@ const (
 // (or starting) price in cents. Scaled tiers match best-in-class expectations
 // (eBay/StockX style) and close the corresponding gap in the best-in-class audit.
 // Tiers (example):
-//   < $50   → $1
-//   < $200  → $5
-//   < $1k   → $10
-//   < $5k   → $25
-//   >= $5k  → $50
+//
+//	< $50   → $1
+//	< $200  → $5
+//	< $1k   → $10
+//	< $5k   → $25
+//	>= $5k  → $50
 func listingMinIncrementForPrice(priceCents int64) int64 {
 	switch {
 	case priceCents < 5_000:
@@ -151,8 +152,8 @@ func listingRateToBPS(rate float64) int64 {
 }
 
 type placeListingBidRequest struct {
-	AmountCents    int64  `json:"amount_cents"`
-	MaxBidCents    *int64 `json:"max_bid_cents,omitempty"`
+	AmountCents int64  `json:"amount_cents"`
+	MaxBidCents *int64 `json:"max_bid_cents,omitempty"`
 }
 
 // autoBidStep is one rung in the proxy-bid cascade. The cascade is
@@ -168,9 +169,9 @@ type autoBidStep struct {
 
 // cascadeOutcome describes the final state after the auto-bid loop.
 type cascadeOutcome struct {
-	Steps        []autoBidStep
-	FinalAmount  int64
-	FinalBidder  string
+	Steps       []autoBidStep
+	FinalAmount int64
+	FinalBidder string
 }
 
 // computeAutoBidCascade simulates the eBay-style proxy bidding loop in
@@ -329,10 +330,6 @@ func computeAutoBidCascade(
 // the lock is acquired so racing bids are forced to compare against a
 // committed current_bid_cents.
 func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request) {
-	if h.db == nil {
-		writeError(w, http.StatusServiceUnavailable, "database unavailable")
-		return
-	}
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
@@ -341,6 +338,21 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 	id := chi.URLParam(r, "id")
 	if !isValidUUID(id) {
 		writeError(w, http.StatusBadRequest, "invalid listing id")
+		return
+	}
+
+	// F4: when background_checks is ON, providers must have clear/consider.
+	// Customer-only buyers are not gated (Checkr is a provider path).
+	// Runs before the db-nil guard so unit tests can stub the gate.
+	if hasRole(claims, "provider") {
+		if code, msg := h.bgGate.deny(r.Context(), claims.UserID); code != 0 {
+			writeError(w, code, msg)
+			return
+		}
+	}
+
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
 		return
 	}
 
@@ -490,11 +502,11 @@ func (h *ListingsHandler) PlaceListingBid(w http.ResponseWriter, r *http.Request
 //
 // Returns:
 //   - bid:        JSON for the LAST bid in the cascade (the row that
-//                 currently holds 'active' status).
+//     currently holds 'active' status).
 //   - currentCents: final price after the cascade (== bid.AmountCents).
 //   - bidderCount: distinct bidder count post-insert.
 //   - snipeApplied / newEnds: snipe extension based on the final bid
-//                 timestamp (which is the cascade's last step).
+//     timestamp (which is the cascade's last step).
 //
 // On validation failure, returns errCode != 0 and an errMsg suitable for
 // the user.
@@ -516,13 +528,13 @@ func (h *ListingsHandler) placeBidTx(ctx context.Context, listingID, bidderID st
 	defer tx.Rollback(ctx)
 
 	var (
-		sellerID         string
-		status           string
-		startCents       int64
-		currentBidCents  pgtype.Int8
-		minIncrement     pgtype.Int8
-		auctionEndsAt    pgtype.Timestamptz
-		snipeCount       int
+		sellerID        string
+		status          string
+		startCents      int64
+		currentBidCents pgtype.Int8
+		minIncrement    pgtype.Int8
+		auctionEndsAt   pgtype.Timestamptz
+		snipeCount      int
 	)
 	err = tx.QueryRow(ctx, `
 		SELECT seller_id, status, starting_price_cents,
@@ -1080,7 +1092,7 @@ func (h *ListingsHandler) MyListingBids(w http.ResponseWriter, r *http.Request) 
 	defer rows.Close()
 
 	type myBid struct {
-		Bid     listingBidJSON `json:"bid"`
+		Bid     listingBidJSON         `json:"bid"`
 		Listing map[string]interface{} `json:"listing"`
 	}
 	out := make([]myBid, 0)
@@ -1515,10 +1527,10 @@ func (h *ListingsHandler) RetractBid(w http.ResponseWriter, r *http.Request) {
 	// promote. Prefer 'outbid' rows (the legitimate runner-up); skip
 	// 'retracted' / 'awarded'.
 	var (
-		nextID       string
-		nextBidder   string
-		nextAmount   int64
-		hasNext      bool
+		nextID     string
+		nextBidder string
+		nextAmount int64
+		hasNext    bool
 	)
 	err = tx.QueryRow(r.Context(), `
 		SELECT id, bidder_id, amount_cents

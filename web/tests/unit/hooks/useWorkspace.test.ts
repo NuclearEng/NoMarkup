@@ -143,6 +143,7 @@ describe('useCheckIn', () => {
       { lat: 37.7749, lng: -122.4194 },
     );
     expect(spy).toHaveBeenCalledWith({ queryKey: ['work-session', 'c-1'] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['work-evidence', 'c-1'] });
   });
 });
 
@@ -169,6 +170,7 @@ describe('useCheckOut', () => {
     );
     expect(result.current.data?.duration_minutes).toBe(480);
     expect(spy).toHaveBeenCalledWith({ queryKey: ['work-session', 'c-1'] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['work-evidence', 'c-1'] });
   });
 });
 
@@ -190,6 +192,7 @@ describe('useUploadCompletionPhoto', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const file = new File(['data'], 'photo.jpg', { type: 'image/jpeg' });
+    const spy = vi.spyOn(client, 'invalidateQueries');
 
     const { result } = renderHook(() => useUploadCompletionPhoto('c-1'), { wrapper: wrap(client) });
     result.current.mutate({ file, phase: 'before' });
@@ -204,6 +207,7 @@ describe('useUploadCompletionPhoto', () => {
     expect(callArgs[1].credentials).toBe('include');
     expect((callArgs[1].headers as Record<string, string>)['Authorization']).toBe('Bearer test-token');
     expect(result.current.data?.url).toBe('https://cdn/img.jpg');
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['work-evidence', 'c-1'] });
   });
 
   it('throws when the upload response is not ok', async () => {

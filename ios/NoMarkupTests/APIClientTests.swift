@@ -319,3 +319,40 @@ final class APIClientAuthRetryTests: XCTestCase {
         XCTAssertEqual(log.count(pathSuffix: "/auth/refresh"), 0, "no refresh attempt without a token")
     }
 }
+
+// MARK: - F4 Checkr invitation_url
+
+final class ProviderBackgroundCheckDecodingTests: XCTestCase {
+    func testDecodesInvitationURLAndNeverInventsPass() throws {
+        let json = """
+        {"status":"pending","checkr_id":"inv_1","invitation_url":"https://apply.checkr.com/invite/abc","report_url":"https://apply.checkr.com/invite/abc"}
+        """
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let row = try decoder.decode(ProviderBackgroundCheck.self, from: Data(json.utf8))
+        XCTAssertEqual(row.status, "pending")
+        XCTAssertEqual(row.invitationUrl, "https://apply.checkr.com/invite/abc")
+        XCTAssertEqual(row.openableInvitationURL?.absoluteString, "https://apply.checkr.com/invite/abc")
+        XCTAssertEqual(row.displayStatus, "Pending")
+        XCTAssertFalse(row.displayStatus.lowercased().contains("pass"))
+    }
+
+    func testFallsBackToReportURLForOpenCheckr() throws {
+        let json = #"{"status":"pending","report_url":"https://apply.checkr.com/invite/from-report"}"#
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let row = try decoder.decode(ProviderBackgroundCheck.self, from: Data(json.utf8))
+        XCTAssertNil(row.invitationUrl)
+        XCTAssertEqual(row.openableInvitationURL?.host, "apply.checkr.com")
+    }
+
+    func testClearIsNotRelabeledPass() throws {
+        let json = #"{"status":"clear"}"#
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let row = try decoder.decode(ProviderBackgroundCheck.self, from: Data(json.utf8))
+        XCTAssertEqual(row.displayStatus, "Clear")
+        XCTAssertFalse(row.displayStatus.lowercased().contains("pass"))
+        XCTAssertNil(row.openableInvitationURL)
+    }
+}

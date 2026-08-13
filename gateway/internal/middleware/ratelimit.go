@@ -244,6 +244,9 @@ var routeTiers = []struct {
 	// stay on the standard tier — they're DATA-layer cached (CLAUDE.md §14) and
 	// not worth over-throttling.
 	{"/api/v1/listings/autocomplete", TierPublicRead},
+	// Public write: anonymous field-RUM beacons. Per-IP is the only
+	// abuse defense; 30/min is enough for ~5 vitals per page.
+	{"/api/v1/rum", TierPublicRead},
 
 	// Strict tier — expensive operations.
 	{"/api/v1/auth/send-phone-otp", TierStrict},

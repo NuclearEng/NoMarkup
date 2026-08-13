@@ -38,7 +38,12 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
+vi.mock('@/lib/auth', () => ({
+  getAccessToken: vi.fn(() => null),
+}));
+
 const { api, ApiError: FakeApiError } = await import('@/lib/api');
+const { getAccessToken } = await import('@/lib/auth');
 const { toast } = await import('sonner');
 
 function createTestQueryClient(): QueryClient {
@@ -179,6 +184,7 @@ describe('useJob', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(getAccessToken).mockReturnValue(null);
     queryClient = createTestQueryClient();
   });
 
@@ -187,11 +193,9 @@ describe('useJob', () => {
   });
 
   it('fetches a single job by id', async () => {
-    // /api/v1/jobs/:id is public — useJob goes through api.getPublic,
-    // not api.get, to skip the auth token + 401 retry cycle.
-    // GET /api/v1/jobs/{id} (single-job detail endpoint) is the ONLY job
-    // endpoint that wraps the body in `{ job: ... }` — see gateway/job.go:472.
-    // Mutations (POST/PATCH/DELETE) return the bare job JSON.
+    // Signed-out: public GET so we do not trip the 401 refresh/login cycle.
+    // GET /api/v1/jobs/{id} wraps the body in `{ job: ... }`.
+    vi.mocked(getAccessToken).mockReturnValue(null);
     vi.mocked(api.getPublic).mockResolvedValueOnce({ job: mockJobDetail });
 
     const { result } = renderHook(() => useJob('job-1'), {
@@ -202,6 +206,22 @@ describe('useJob', () => {
 
     expect(result.current.data?.id).toBe('job-1');
     expect(result.current.data?.customer_display_name).toBe('Test Customer');
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith('/api/v1/jobs/job-1');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+  });
+
+  it('uses the authed GET when a token is present so owner liquidity can attach', async () => {
+    vi.mocked(getAccessToken).mockReturnValue('tok');
+    vi.mocked(api.get).mockResolvedValueOnce({ job: mockJobDetail });
+
+    const { result } = renderHook(() => useJob('job-1'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/jobs/job-1');
+    expect(vi.mocked(api.getPublic)).not.toHaveBeenCalled();
   });
 
   it('does not fetch when id is empty', () => {

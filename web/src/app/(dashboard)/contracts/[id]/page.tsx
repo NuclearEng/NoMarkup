@@ -23,6 +23,7 @@ import { CompletionFlow } from '@/components/contracts/CompletionFlow';
 import { ContractAcceptance } from '@/components/contracts/ContractAcceptance';
 import { GuaranteeCoverage } from '@/components/contracts/GuaranteeCoverage';
 import { RecurringSchedule } from '@/components/contracts/RecurringSchedule';
+import { WorkEvidencePack } from '@/components/contracts/WorkEvidencePack';
 import { DirectionsButton } from '@/components/maps/DirectionsButton';
 import { InsuranceSelector } from '@/components/insurance/InsuranceSelector';
 import { InstallmentPlanSelector } from '@/components/payments/InstallmentPlanSelector';
@@ -535,6 +536,15 @@ export default function ContractDetailPage() {
         contract.milestones.every((m) => m.status === MILESTONE_STATUS.APPROVED)) ||
         !!contract.completed_at) ? (
         <CompletionFlow contract={contract} />
+      ) : null}
+
+      {/* F1 proof of work — sessions + photos; customer release CTA when escrow is held. */}
+      {(isCustomer || isProvider) ? (
+        <WorkEvidencePack
+          contractId={contract.id}
+          isCustomer={isCustomer}
+          isProvider={isProvider}
+        />
       ) : null}
 
       {/* Guarantee Coverage */}

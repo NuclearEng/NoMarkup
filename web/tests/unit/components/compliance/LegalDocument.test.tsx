@@ -69,4 +69,25 @@ describe('LegalDocument', () => {
     expect(screen.queryByRole('navigation', { name: 'On this page' })).toBeNull();
     expect(document.getElementById('help')).not.toBeNull();
   });
+
+  it('stamps data-tos-version on a section when provided', () => {
+    render(
+      <LegalDocument
+        title="Terms"
+        lastUpdated="August 12, 2026"
+        showToc={false}
+        sections={[
+          {
+            id: 'payments',
+            title: 'Payments',
+            dataTosVersion: 'tos-2026-08-12-bid-auth',
+            content: <p>Bid authorization body.</p>,
+          },
+        ]}
+      />,
+    );
+
+    const section = document.getElementById('payments');
+    expect(section?.getAttribute('data-tos-version')).toBe('tos-2026-08-12-bid-auth');
+  });
 });

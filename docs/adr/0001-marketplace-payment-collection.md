@@ -97,12 +97,21 @@ card fails must be told, or the 72h window is a countdown they cannot see.
 
 **Decision-ID: OFFSESSION-LEGAL.** Off-session goods charging stays **off**
 unless an operator explicitly sets both `MARKETPLACE_OFFSESSION_CHARGE=true`
-**and** `MARKETPLACE_OFFSESSION_TOS_VERSION` to a non-empty terms id or date
-proving bid-authorization language shipped. The same ToS version env covers
-`MARKETPLACE_PAYMENT_EXPIRY` (expiry cancels wins; same legal/notification bar).
+**and** `MARKETPLACE_OFFSESSION_TOS_VERSION=tos-2026-08-12-bid-auth`. The same
+ToS version env covers `MARKETPLACE_PAYMENT_EXPIRY` (expiry cancels wins; same
+legal/notification bar).
 
-Defaults stay off. Flip only after legal terms say placing a bid authorizes an
-off-session charge. This ADR does not contain that ToS text.
+**Terms text now ships** in `/terms` §5 (`id: payments`,
+`data-tos-version="tos-2026-08-12-bid-auth"`): placing a goods bid or Buy it
+now authorizes NoMarkup to charge the saved payment method if you win, for the
+winning amount plus disclosed fees and tax; if the charge fails, you can pay
+from the order page. Listing bid / BIN surfaces disclose the same sentence
+before submit.
+
+The operator must still set **both** env vars. This ADR does not flip
+`MARKETPLACE_OFFSESSION_CHARGE` or `MARKETPLACE_PAYMENT_EXPIRY`. Defaults stay
+off. Production still refuses to start if either flag is true and the ToS
+version is empty.
 
 Fail-closed pairing in `services/payment/cmd/server`:
 

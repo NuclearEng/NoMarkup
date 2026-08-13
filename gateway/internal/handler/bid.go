@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	bidv1 "github.com/nomarkup/nomarkup/proto/bid/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
@@ -22,25 +23,31 @@ import (
 
 // BidHandler handles HTTP endpoints for bids.
 //
-// db is optional — when non-nil it is used purely to EMIT in-app notifications
-// for bid events (a provider placing a bid → notify the job's customer; a
-// customer awarding a bid → notify the winning provider). It is never on the
-// critical path of placing/awarding a bid; a nil pool simply skips the
-// notification (fail-soft), matching the rest of the gateway's nil-safe pattern.
+// db is optional — when non-nil it is used to EMIT in-app notifications
+// for bid events and to evaluate the F4 background-check bid gate (flag ON
+// requires latest provider_background_checks.status in {clear, consider}).
+// A nil pool skips notifications and the bid gate (fail-soft / cannot read
+// the flag as explicitly enabled).
 type BidHandler struct {
 	bidClient      bidv1.BidServiceClient
 	contractClient contractv1.ContractServiceClient
 	trustClient    trustv1.TrustServiceClient
 	userClient     userv1.UserServiceClient
 	db             *pgxpool.Pool
+	bgGate         backgroundCheckBidGate
 }
 
 // NewBidHandler creates a new BidHandler. The optional contractClient is used
 // to create a contract row immediately after a bid is awarded — without it,
 // awarding a bid just flips status and the customer-accept → contract pipeline
-// stays severed. db (optional) is used only to emit in-app notifications.
+// stays severed. db (optional) is used for notifications and the Checkr bid gate.
 func NewBidHandler(bidClient bidv1.BidServiceClient, contractClient contractv1.ContractServiceClient, db *pgxpool.Pool) *BidHandler {
-	return &BidHandler{bidClient: bidClient, contractClient: contractClient, db: db}
+	return &BidHandler{
+		bidClient:      bidClient,
+		contractClient: contractClient,
+		db:             db,
+		bgGate:         newBackgroundCheckBidGate(db, nil),
+	}
 }
 
 // SetTrustClient wires the trust engine into the bid handler so the
@@ -60,6 +67,12 @@ func (h *BidHandler) SetTrustClient(c trustv1.TrustServiceClient) {
 // a blank provider name. Nil-safe: an unset client makes enrichment a no-op.
 func (h *BidHandler) SetUserClient(c userv1.UserServiceClient) {
 	h.userClient = c
+}
+
+// SetCache wires Redis into the background-check bid gate so IsFeatureDisabled
+// can hit the flag cache. Nil-safe; leave unset for unit tests.
+func (h *BidHandler) SetCache(c *cache.Client) {
+	h.bgGate.cache = c
 }
 
 // resolveProviderNames resolves a set of provider user ids to their public
@@ -115,6 +128,11 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 
 	if !hasRole(claims, "provider") {
 		writeError(w, http.StatusForbidden, "provider role required")
+		return
+	}
+
+	if code, msg := h.bgGate.deny(r.Context(), claims.UserID); code != 0 {
+		writeError(w, code, msg)
 		return
 	}
 
@@ -666,7 +684,6 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 		"bids": bids,
 	})
 }
-
 
 // batchVerificationBadges loads verified document types per provider (FR-4.5).
 // Concurrent fan-out mirrors batchTrustScores; fail-soft on any error.

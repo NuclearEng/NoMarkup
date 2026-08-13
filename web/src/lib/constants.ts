@@ -47,6 +47,10 @@ export const REVISION_MIN_NOTES_LENGTH = 200;
 
 export const MIN_TOUCH_TARGET_PX = 44; // WCAG 2.2 AA
 
+/** One-sentence goods bid / BIN authorization shown before submit (ToS §5). */
+export const GOODS_BID_AUTHORIZATION_DISCLOSURE =
+  'Placing a goods bid or Buy it now authorizes NoMarkup to charge your saved payment method if you win, for the winning amount plus disclosed fees and tax; if the charge fails, you can pay from the order page.';
+
 // Deprecated: use useFeatureFlag('live_auction') from @/hooks/useFeatureFlags instead.
 // This env-based flag is kept for backward compatibility during migration.
 export const ENABLE_LIVE_AUCTION = process.env['NEXT_PUBLIC_ENABLE_LIVE_AUCTION'] === 'true';

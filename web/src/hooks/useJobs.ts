@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { toast } from 'sonner';
 
 import { ApiError, api } from '@/lib/api';
+import { getAccessToken } from '@/lib/auth';
 import type {
   CreateJobInput,
   Job,
@@ -82,7 +83,14 @@ export function useSearchJobs(
 export function useJob(id: string, options?: { initialData?: JobDetail }) {
   return useQuery({
     queryKey: ['jobs', id],
-    queryFn: () => api.getPublic<{ job: JobDetail }>(`/api/v1/jobs/${id}`).then((res) => res.job),
+    queryFn: () => {
+      // Public route with optional auth. A signed-in owner needs the
+      // Authorization header so the gateway can attach `liquidity`.
+      const fetchJob = getAccessToken()
+        ? api.get<{ job: JobDetail }>(`/api/v1/jobs/${id}`)
+        : api.getPublic<{ job: JobDetail }>(`/api/v1/jobs/${id}`);
+      return fetchJob.then((res) => res.job);
+    },
     enabled: !!id,
     // Optional server-seeded detail (the RSC page passes its fetch result) so
     // SSR + client first paint render the same data — no skeleton, no refetch

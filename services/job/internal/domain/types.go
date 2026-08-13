@@ -45,45 +45,45 @@ var ValidAuctionTypes = map[string]struct{}{
 
 // Job represents a service job posting.
 type Job struct {
-	ID                   string
-	CustomerID           string
-	PropertyID           string
-	Title                string
-	Description          string
-	CategoryID           string
-	SubcategoryID        string
-	ServiceTypeID        string
-	ServiceAddress       string
-	ServiceCity          string
-	ServiceState         string
-	ServiceZip           string
-	ScheduleType         string
-	ScheduledDate        *time.Time
-	ScheduleRangeStart   *time.Time
-	ScheduleRangeEnd     *time.Time
-	IsRecurring          bool
-	RecurrenceFrequency  *string
-	StartingBidCents     *int64
-	OfferAcceptedCents   *int64
-	AuctionDurationHours int
-	AuctionEndsAt        *time.Time
-	MinProviderRating    *float64
-	Status               string
-	BidCount             int
-	AwardedProviderID    *string
-	AwardedBidID         *string
-	RepostedFromID       *string
-	RepostCount          int
-	AuctionType          string
-	SnipeExtensionCount  int32
+	ID                    string
+	CustomerID            string
+	PropertyID            string
+	Title                 string
+	Description           string
+	CategoryID            string
+	SubcategoryID         string
+	ServiceTypeID         string
+	ServiceAddress        string
+	ServiceCity           string
+	ServiceState          string
+	ServiceZip            string
+	ScheduleType          string
+	ScheduledDate         *time.Time
+	ScheduleRangeStart    *time.Time
+	ScheduleRangeEnd      *time.Time
+	IsRecurring           bool
+	RecurrenceFrequency   *string
+	StartingBidCents      *int64
+	OfferAcceptedCents    *int64
+	AuctionDurationHours  int
+	AuctionEndsAt         *time.Time
+	MinProviderRating     *float64
+	Status                string
+	BidCount              int
+	AwardedProviderID     *string
+	AwardedBidID          *string
+	RepostedFromID        *string
+	RepostCount           int
+	AuctionType           string
+	SnipeExtensionCount   int32
 	OriginalAuctionEndsAt *time.Time
-	AwardedAt            *time.Time
-	ClosedAt             *time.Time
-	CompletedAt          *time.Time
-	CancelledAt          *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	DeletedAt            *time.Time
+	AwardedAt             *time.Time
+	ClosedAt              *time.Time
+	CompletedAt           *time.Time
+	CancelledAt           *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	DeletedAt             *time.Time
 
 	// Wave 5 services-polish (migration 046).
 	// IsHourly toggles flat-rate vs. hourly billing on the job posting.
@@ -261,14 +261,14 @@ type GetJobsOnMapInput struct {
 
 // MatchedProvider represents a provider matched to a job by the pre-matching engine.
 type MatchedProvider struct {
-	ProviderID    string
-	DisplayName   string
-	TrustScore    float64
-	TrustTier     string
-	DistanceKm    float64
-	WinRate       float64
+	ProviderID     string
+	DisplayName    string
+	TrustScore     float64
+	TrustTier      string
+	DistanceKm     float64
+	WinRate        float64
 	AvgResponseMin int
-	MatchScore    float64
+	MatchScore     float64
 }
 
 // MatchingRepository defines persistence operations for provider matching.
@@ -311,4 +311,7 @@ type JobRepository interface {
 	AdminSuspendJob(ctx context.Context, jobID, reason string) error
 	AdminRemoveJob(ctx context.Context, jobID, reason string) error
 	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error
+
+	// Match notify ledger (F2). Idempotent: ON CONFLICT DO NOTHING.
+	RecordJobMatchNotification(ctx context.Context, jobID, providerID string) error
 }

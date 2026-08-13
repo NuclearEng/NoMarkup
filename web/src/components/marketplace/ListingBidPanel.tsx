@@ -9,6 +9,7 @@ import { BidBondPrompt } from '@/components/compliance/BidBondPrompt';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { GOODS_BID_AUTHORIZATION_DISCLOSURE } from '@/lib/constants';
 import { LISTING_BID_RETRACT_WINDOW_MS } from '@/lib/listing-bid-retract';
 import { cn, formatCents } from '@/lib/utils';
 
@@ -356,6 +357,12 @@ export function ListingBidPanel({
 
       {isDock ? (
         <div className="flex flex-col gap-2" data-testid="listing-bid-dock">
+          <p
+            className="text-[10px] leading-snug text-zinc-500"
+            data-testid="bid-auth-disclosure"
+          >
+            {GOODS_BID_AUTHORIZATION_DISCLOSURE}
+          </p>
           <div className="flex items-end gap-2">
             <div className="min-w-0 flex-1 space-y-1">
               <Label htmlFor="listing-bid-amount-dock" className="text-[10px] text-zinc-500">
@@ -502,6 +509,13 @@ export function ListingBidPanel({
               {error}
             </p>
           ) : null}
+
+          <p
+            className="text-xs leading-snug text-zinc-500"
+            data-testid="bid-auth-disclosure"
+          >
+            {GOODS_BID_AUTHORIZATION_DISCLOSURE}
+          </p>
 
           <Button
             type="button"
