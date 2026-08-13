@@ -918,6 +918,116 @@ struct AdminConsoleView: View {
     @State private var showUserActionSheet = false
 
     var body: some View {
+        adminConsoleBody
+        .navigationTitle("Admin")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .brandNavigationBarChrome()
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if auth.isAuthenticated, !auth.isScaffoldSession, !forbidden {
+                adminTabStrip
+            }
+        }
+        .sheet(isPresented: $showFraudReviewSheet) {
+            fraudReviewSheet
+        }
+        .sheet(isPresented: $showDisputeResolveSheet) {
+            disputeResolveSheet
+        }
+        .sheet(isPresented: $showUserActionSheet) {
+            userActionSheet
+        }
+        .confirmationDialog(
+            "Finalize account deletion?",
+            isPresented: Binding(
+                get: { pendingFinalizeUser != nil },
+                set: { if !$0 { pendingFinalizeUser = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Finalize deletion", role: .destructive) {
+                guard let user = pendingFinalizeUser else { return }
+                pendingFinalizeUser = nil
+                Task { await finalizeUserDeletion(user) }
+            }
+            Button("Cancel", role: .cancel) { pendingFinalizeUser = nil }
+        } message: {
+            if let user = pendingFinalizeUser {
+                Text("Permanently erase \(user.displayLabel) now, bypassing the 30-day grace. This cannot be undone.")
+            } else {
+                Text("Permanently erase this account now, bypassing the 30-day grace. This cannot be undone.")
+            }
+        }
+        .task(id: tab) { await load() }
+        .refreshable { await load() }
+        .accessibilityIdentifier("admin.console.root")
+    }
+
+    /// Section picker. A horizontal `ScrollView` of 22 capsules inside
+    /// `safeAreaInset` collapses to 0 height on iOS 26 (17e: blank band,
+    /// tabs untappable). A labeled menu stays visible and reaches every tab.
+    /// Per-tab ids are kept on menu rows for UITests (`admin.console.tab.*`).
+    private var adminTabStrip: some View {
+        HStack(spacing: 10) {
+            Text("Section")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.textSecondary)
+                .accessibilityHidden(true)
+            Menu {
+                ForEach(SectionTab.allCases) { t in
+                    Button {
+                        BrandHaptics.selection()
+                        tab = t
+                    } label: {
+                        if t == tab {
+                            Label(t.rawValue, systemImage: "checkmark")
+                        } else {
+                            Text(t.rawValue)
+                        }
+                    }
+                    .accessibilityIdentifier(
+                        "admin.console.tab.\(t.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))"
+                    )
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(tab.rawValue)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(BrandTheme.gold, in: Capsule())
+                .frame(minHeight: 44)
+                .fixedSize(horizontal: true, vertical: false)
+                .contentShape(Capsule())
+            }
+            .accessibilityLabel("Admin section, \(tab.rawValue)")
+            .accessibilityIdentifier("admin.console.tabs.menu")
+            Spacer(minLength: 8)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .background(BrandTheme.surfaceRaised)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(BrandTheme.hairline)
+                .frame(height: 1)
+                .accessibilityHidden(true)
+        }
+        .accessibilityIdentifier("admin.console.tabs")
+    }
+
+    @ViewBuilder
+    private var adminConsoleBody: some View {
         Group {
             if auth.isScaffoldSession || !auth.isAuthenticated {
                 BrandEmptyState(
@@ -1035,98 +1145,11 @@ struct AdminConsoleView: View {
                     }
                 }
                 .brandListBackground()
+                .accessibilityIdentifier(
+                    "admin.\(tab.rawValue.lowercased().replacingOccurrences(of: " ", with: "-")).root"
+                )
             }
         }
-        .navigationTitle("Admin")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .brandNavigationBarChrome()
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if auth.isAuthenticated, !auth.isScaffoldSession, !forbidden {
-                // ScrollViewReader keeps the selected capsule fully on-screen so clipped
-                // off-edge buttons never report invalid AX activation points (UITest
-                // "Failed to determine hittability of … Button").
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(SectionTab.allCases) { t in
-                                Button {
-                                    BrandHaptics.selection()
-                                    tab = t
-                                } label: {
-                                    Text(t.rawValue)
-                                        .font(.caption.weight(.semibold))
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
-                                        .background(
-                                            tab == t ? BrandTheme.gold : BrandTheme.navyElevated,
-                                            in: Capsule()
-                                        )
-                                        .foregroundStyle(
-                                            tab == t ? BrandTheme.ctaLabelOnGold : BrandTheme.textSecondary
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                                .contentShape(Capsule())
-                                .fixedSize(horizontal: true, vertical: false)
-                                .frame(minHeight: 44)
-                                .id(t)
-                                // Stable ids for UITests (horizontal strip; label-only match can miss off-screen).
-                                .accessibilityIdentifier(
-                                    "admin.console.tab.\(t.rawValue.lowercased().replacingOccurrences(of: " ", with: "-"))"
-                                )
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                    }
-                    .background(BrandTheme.navy)
-                    .accessibilityIdentifier("admin.console.tabs")
-                    .onAppear {
-                        proxy.scrollTo(tab, anchor: .center)
-                    }
-                    .onChange(of: tab) { _, newTab in
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            proxy.scrollTo(newTab, anchor: .center)
-                        }
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showFraudReviewSheet) {
-            fraudReviewSheet
-        }
-        .sheet(isPresented: $showDisputeResolveSheet) {
-            disputeResolveSheet
-        }
-        .sheet(isPresented: $showUserActionSheet) {
-            userActionSheet
-        }
-        .confirmationDialog(
-            "Finalize account deletion?",
-            isPresented: Binding(
-                get: { pendingFinalizeUser != nil },
-                set: { if !$0 { pendingFinalizeUser = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Finalize deletion", role: .destructive) {
-                guard let user = pendingFinalizeUser else { return }
-                pendingFinalizeUser = nil
-                Task { await finalizeUserDeletion(user) }
-            }
-            Button("Cancel", role: .cancel) { pendingFinalizeUser = nil }
-        } message: {
-            if let user = pendingFinalizeUser {
-                Text("Permanently erase \(user.displayLabel) now, bypassing the 30-day grace. This cannot be undone.")
-            } else {
-                Text("Permanently erase this account now, bypassing the 30-day grace. This cannot be undone.")
-            }
-        }
-        .task(id: tab) { await load() }
-        .refreshable { await load() }
-        .accessibilityIdentifier("admin.console.root")
     }
 
     // MARK: - Flag rows

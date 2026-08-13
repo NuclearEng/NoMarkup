@@ -34,6 +34,8 @@ struct JobsView: View {
     /// Empty = any; otherwise gateway values: flexible | specific_date | date_range.
     @State private var filterScheduleType = ""
     @State private var showBrowseFilters = false
+    /// Mine empty copy is role-specific — providers do not post this list.
+    @State private var viewerHasProviderRole = false
 
     private let scheduleFilterOptions: [(id: String, label: String)] = [
         ("", "Any schedule"),
@@ -88,11 +90,6 @@ struct JobsView: View {
     private var listRoot: some View {
         content
             .navigationTitle("Jobs")
-            .searchable(text: $searchText, prompt: segment == .browse ? "Search jobs" : "Search is browse-only")
-            .onSubmit(of: .search) {
-                guard segment == .browse else { return }
-                Task { await load(reset: true) }
-            }
             .refreshable { await load(reset: true) }
             .task(id: segment) { await load(reset: true) }
             .onChange(of: segment) { _, _ in
@@ -141,8 +138,19 @@ struct JobsView: View {
             }
             .brandNavigationBarChrome()
             .safeAreaInset(edge: .top, spacing: 0) {
-                if segment == .browse, showBrowseFilters {
-                    browseFiltersBar
+                VStack(spacing: 0) {
+                    BrandCatalogSearchField(
+                        text: $searchText,
+                        prompt: segment == .browse ? "Search jobs" : "Search is browse-only",
+                        enabled: segment == .browse,
+                        accessibilityID: "jobs.search"
+                    ) {
+                        guard segment == .browse else { return }
+                        Task { await load(reset: true) }
+                    }
+                    if segment == .browse, showBrowseFilters {
+                        browseFiltersBar
+                    }
                 }
             }
     }
@@ -237,7 +245,7 @@ struct JobsView: View {
                 Task { await load(reset: true) }
             }
             .accessibilityIdentifier("jobs.error")
-        } else if jobs.isEmpty {
+        } else if jobs.isEmpty, pagination?.resolvedHasNext != true {
             BrandEmptyState(
                 title: "No open reverse auctions",
                 systemImage: "wrench.and.screwdriver",
@@ -254,14 +262,22 @@ struct JobsView: View {
                 }
 
                 Section {
+                    if jobs.isEmpty {
+                        Text("No open auctions on this page. Load more to keep scanning the floor.")
+                            .font(.subheadline)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityIdentifier("jobs.browse.drainEmpty")
+                    }
                     ForEach(jobs) { job in
                         jobRowLink(job)
                     }
                 } header: {
-                    if let total = pagination?.resolvedTotal, total > 0 {
-                        Text("\(jobs.count) of \(total)").brandSectionHeader()
+                    if jobs.isEmpty {
+                        Text("Open floor").brandSectionHeader()
                     } else {
-                        Text("Open jobs").brandSectionHeader()
+                        Text("\(jobs.count) open").brandSectionHeader()
                     }
                 }
 
@@ -290,6 +306,7 @@ struct JobsView: View {
                 }
             }
             .brandListBackground()
+            .brandTabBarClearance()
             .accessibilityIdentifier("jobs.list")
         }
     }
@@ -328,11 +345,24 @@ struct JobsView: View {
                 Task { await load(reset: true) }
             }
         } else if myJobs.isEmpty {
-            BrandEmptyState(
-                title: "No jobs yet",
-                systemImage: "tray",
-                message: "Jobs you post as a customer show up here. Providers bid down until the market sets the price. Pull to refresh after posting on the website."
-            )
+            if viewerHasProviderRole {
+                BrandEmptyState(
+                    title: "No awarded work",
+                    systemImage: "briefcase",
+                    message: "Awarded and in-progress jobs show up here. Browse the open floor to bid on live reverse auctions.",
+                    actionTitle: "Browse the open floor"
+                ) {
+                    segment = .browse
+                }
+                .accessibilityIdentifier("jobs.mine.empty")
+            } else {
+                BrandEmptyState(
+                    title: "No jobs yet",
+                    systemImage: "tray",
+                    message: "Jobs you post as a customer show up here. Providers bid down until the market sets the price. Pull to refresh after posting on the website."
+                )
+                .accessibilityIdentifier("jobs.mine.empty")
+            }
         } else {
             List {
                 Section {
@@ -459,33 +489,8 @@ struct JobsView: View {
 
         switch segment {
         case .browse:
-            let nextPage = reset ? 1 : (pagination?.resolvedPage ?? 1) + 1
             do {
-                let categoryIds: [String]? = filterCategoryId.isEmpty
-                    ? nil
-                    : [filterCategoryId]
-                let schedule: String? = filterScheduleType.isEmpty ? nil : filterScheduleType
-                let response = try await APIClient.shared.fetchJobs(
-                    page: nextPage,
-                    pageSize: pageSize,
-                    q: searchText,
-                    categoryIds: categoryIds,
-                    latitude: AppConfig.browseLatitude,
-                    longitude: AppConfig.browseLongitude,
-                    scheduleType: schedule,
-                    minPriceCents: minStartingBidCents,
-                    sort: "created_at",
-                    sortDir: "desc"
-                )
-                // Browse is the open floor — closed/cancelled history belongs on Mine.
-                let loaded = response.jobs.filter { Self.isOpenBrowseStatus($0.status) }
-                if reset {
-                    jobs = loaded
-                } else {
-                    let existing = Set(jobs.map(\.id))
-                    jobs.append(contentsOf: loaded.filter { !existing.contains($0.id) })
-                }
-                pagination = response.pagination
+                try await loadOpenBrowse(reset: reset, pageSize: pageSize)
             } catch {
                 if reset, jobs.isEmpty {
                     errorMessage = error.localizedDescription
@@ -501,6 +506,11 @@ struct JobsView: View {
             }
             let nextPage = reset ? 1 : (myPagination?.resolvedPage ?? 1) + 1
             do {
+                if reset, !auth.isScaffoldSession {
+                    if let me = try? await APIClient.shared.fetchMe() {
+                        viewerHasProviderRole = me.hasProviderRole
+                    }
+                }
                 let response = try await APIClient.shared.fetchMyJobs(page: nextPage, pageSize: pageSize)
                 if reset {
                     myJobs = response.jobs
@@ -536,6 +546,53 @@ struct JobsView: View {
             return false
         }
     }
+
+    /// Bound so a closed-first catalog cannot hammer the gateway on first paint.
+    private static let browseClosedDrainLimit = 8
+
+    /// Fetch browse pages until at least one open-floor row lands, or pages run out.
+    /// Closed-only pages stay off the default floor (empty + Load more, not Closed cards).
+    @MainActor
+    private func loadOpenBrowse(reset: Bool, pageSize: Int) async throws {
+        var page = reset ? 1 : (pagination?.resolvedPage ?? 1) + 1
+        var collected: [JobSummary] = []
+        var seen = Set(reset ? [String]() : jobs.map(\.id))
+        var lastMeta: PaginationMeta?
+
+        for _ in 0..<Self.browseClosedDrainLimit {
+            let categoryIds: [String]? = filterCategoryId.isEmpty ? nil : [filterCategoryId]
+            let schedule: String? = filterScheduleType.isEmpty ? nil : filterScheduleType
+            let response = try await APIClient.shared.fetchJobs(
+                page: page,
+                pageSize: pageSize,
+                q: searchText,
+                categoryIds: categoryIds,
+                latitude: AppConfig.browseLatitude,
+                longitude: AppConfig.browseLongitude,
+                scheduleType: schedule,
+                minPriceCents: minStartingBidCents,
+                sort: "created_at",
+                sortDir: "desc",
+                status: "open"
+            )
+            lastMeta = response.pagination
+            let open = response.jobs.filter { Self.isOpenBrowseStatus($0.status) }
+            for job in open where !seen.contains(job.id) {
+                seen.insert(job.id)
+                collected.append(job)
+            }
+            if !open.isEmpty { break }
+            guard response.pagination?.resolvedHasNext == true else { break }
+            page += 1
+        }
+
+        if reset {
+            jobs = collected
+        } else {
+            jobs.append(contentsOf: collected)
+        }
+        pagination = lastMeta
+    }
 }
 
 // MARK: - Row
@@ -549,7 +606,7 @@ private struct JobRowView: View {
 
     private var isLive: Bool {
         switch (job.status ?? "").lowercased() {
-        case "active", "open", "bidding", "live":
+        case "active", "open", "bidding", "live", "published":
             return true
         default:
             return false
@@ -647,8 +704,8 @@ private struct JobRowView: View {
                         .foregroundStyle(BrandTheme.textSecondary)
                         .lineLimit(1)
                 }
-                if let bids = job.bidCount {
-                    Label("\(bids) bids", systemImage: "hammer")
+                if job.resolvedBidCount > 0 {
+                    Label("\(job.resolvedBidCount) bids", systemImage: "hammer")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }

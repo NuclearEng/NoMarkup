@@ -63,6 +63,7 @@ struct ProviderDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .keepRootTabBarVisible()
         .task { await load() }
         .refreshable { await load() }
         .sheet(isPresented: $showReportSheet) {

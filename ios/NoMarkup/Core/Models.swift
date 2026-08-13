@@ -203,6 +203,17 @@ struct PaginationMeta: Codable, Sendable, Hashable {
     }
 }
 
+// MARK: - Bid heat (list vs detail)
+
+/// Catalog "N bids" must use the published heat fields, not a nested ladder
+/// length. List rows decode `bid_count` / `bidder_count`; detail `/bids`
+/// returns a trail (outbid + auto-bid rows) that is often larger.
+enum CatalogBidCount {
+    static func resolved(bidCount: Int?, bidderCount: Int?) -> Int {
+        max(bidCount ?? 0, bidderCount ?? 0)
+    }
+}
+
 // MARK: - Listings (goods forward-auction)
 
 struct ListingPhoto: Codable, Sendable, Hashable, Identifiable {
@@ -305,6 +316,11 @@ struct ListingSummary: Codable, Sendable, Hashable, Identifiable {
             return until > Date()
         }
         return true
+    }
+
+    /// Same number the detail chip prints — `bid_count`, then live `bidder_count`.
+    var resolvedBidCount: Int {
+        CatalogBidCount.resolved(bidCount: bidCount, bidderCount: bidderCount)
     }
 }
 
@@ -421,6 +437,10 @@ struct ListingDetail: Codable, Sendable, Hashable, Identifiable {
         sellerListingsCount = nil
         sellerTrustTier = nil
         sellerTrustScore = nil
+    }
+
+    var resolvedBidCount: Int {
+        CatalogBidCount.resolved(bidCount: bidCount, bidderCount: bidderCount)
     }
 }
 
@@ -1012,6 +1032,10 @@ struct JobSummary: Codable, Sendable, Hashable, Identifiable {
         if f.isEmpty { return "Yes" }
         return StatusChipStyle.displayLabel(f)
     }
+
+    var resolvedBidCount: Int {
+        CatalogBidCount.resolved(bidCount: bidCount, bidderCount: nil)
+    }
 }
 
 /// Detail from `GET /api/v1/jobs/{id}` (`{ "job": ... }`).
@@ -1124,6 +1148,12 @@ struct JobDetail: Codable, Sendable, Hashable, Identifiable {
         completedAt = nil
         auctionClosedAt = nil
         liquidity = nil
+    }
+
+    /// Public chip matches the list row (`bid_count`). Do not fold in
+    /// owner-only `liquidity.bid_count` or a nested ladder length.
+    var resolvedBidCount: Int {
+        CatalogBidCount.resolved(bidCount: bidCount, bidderCount: nil)
     }
 }
 
@@ -2148,6 +2178,12 @@ struct ListingBidsResponse: Codable, Sendable {
     let bids: [ListingBidRow]
     var currentBidCents: Int64?
     var bidderCount: Int?
+    /// Present when the envelope includes `bid_count`; do not use `bids.count`.
+    var bidCount: Int?
+
+    var resolvedBidCount: Int {
+        CatalogBidCount.resolved(bidCount: bidCount, bidderCount: bidderCount)
+    }
 }
 
 /// Nested bid from job owner bid list (auth). Flexible keys for proto JSON.
@@ -2645,6 +2681,13 @@ enum FlexibleJSONValue: Codable, Sendable, Hashable {
 
 struct JobBidsResponse: Codable, Sendable {
     let bids: [JobBidEntry]
+    /// Envelope may include `bid_count` / `count`; never treat `bids.count` as heat.
+    var bidCount: Int?
+    var count: Int?
+
+    var resolvedBidCount: Int {
+        CatalogBidCount.resolved(bidCount: bidCount ?? count, bidderCount: nil)
+    }
 }
 
 // MARK: - Live auction state / events (optional light poll)
@@ -2934,15 +2977,12 @@ struct MyListingBidEntry: Codable, Sendable, Hashable, Identifiable {
 
     /// eBay-style 60s retract: leading/winning bid only, within 60s of placement.
     /// Server re-checks ownership + window — this is UI-only gating.
+    /// Future-dated `created_at` (clock skew / TZ parse) must not open a hours-long window.
     func canRetract(now: Date = Date()) -> Bool {
         guard isWinning else { return false }
         guard listingIdForAPI != nil, bidIdForAPI != nil else { return false }
-        guard let createdAt = bid?.createdAt,
-              let created = CatalogDateFormat.parseISO(createdAt)
-        else {
-            return false
-        }
-        return now.timeIntervalSince(created) < 60
+        guard let remaining = retractSecondsRemaining(now: now) else { return false }
+        return remaining > 0 && remaining <= 60
     }
 
     func retractSecondsRemaining(now: Date = Date()) -> Int? {
@@ -2951,8 +2991,10 @@ struct MyListingBidEntry: Codable, Sendable, Hashable, Identifiable {
         else {
             return nil
         }
-        let remaining = 60 - Int(now.timeIntervalSince(created))
-        return remaining > 0 ? remaining : nil
+        let elapsed = now.timeIntervalSince(created)
+        guard elapsed >= 0 else { return nil }
+        let remaining = 60 - Int(elapsed)
+        return remaining > 0 && remaining <= 60 ? remaining : nil
     }
 }
 
@@ -2970,6 +3012,9 @@ struct MyJobBidRow: Codable, Sendable, Hashable, Identifiable {
     var status: String?
     var isOfferAccepted: Bool?
     var createdAt: String?
+    /// Present when the bids/mine payload includes a title; else hydrated from `GET /jobs/{id}`.
+    var title: String?
+    var jobTitle: String?
 
     var displayAmount: String {
         MoneyFormat.usd(cents: amountCents ?? 0)
@@ -2981,8 +3026,9 @@ struct MyJobBidRow: Codable, Sendable, Hashable, Identifiable {
     }
 
     var displayTitle: String {
-        if let jobId, !jobId.isEmpty {
-            return "Job · \(String(jobId.prefix(8)))…"
+        for candidate in [title, jobTitle] {
+            let named = candidate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !named.isEmpty { return named }
         }
         return "Service bid"
     }

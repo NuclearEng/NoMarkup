@@ -108,6 +108,7 @@ struct NotificationsView: View {
                     }
                 }
                 .brandListBackground()
+                .brandTabBarClearance()
             }
         }
         .navigationTitle(navigationTitleText)

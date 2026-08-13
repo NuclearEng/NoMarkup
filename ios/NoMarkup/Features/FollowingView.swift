@@ -39,6 +39,7 @@ struct FollowingView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .keepRootTabBarVisible()
         .task { await load() }
         .refreshable { await load() }
     }
@@ -103,7 +104,12 @@ struct FollowingView: View {
     private func followRow(_ seller: FollowedSeller) -> some View {
         HStack(alignment: .center, spacing: 12) {
             NavigationLink {
-                ProviderDetailView(providerID: seller.sellerId)
+                // Same LazyView deferral as ProvidersView — eager
+                // ProviderDetailView specialization here was enough to
+                // detach the Account tab bar after pop (SIM-TEST.5/6).
+                LazyView {
+                    ProviderDetailView(providerID: seller.sellerId)
+                }
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(seller.displayLabel)

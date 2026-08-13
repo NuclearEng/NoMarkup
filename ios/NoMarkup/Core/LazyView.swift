@@ -14,6 +14,9 @@ struct LazyView<Content: View>: View {
     }
 
     var body: some View {
+        // Account destinations share this wrapper — keep the root tab bar
+        // pinned so iOS 18+/26 cannot leave `root.tabview` hidden after pop.
         build()
+            .keepRootTabBarVisible()
     }
 }

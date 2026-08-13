@@ -67,13 +67,6 @@ struct MarketplaceView: View {
     private var listRoot: some View {
         content
             .navigationTitle("Marketplace")
-            .searchable(text: $searchText, prompt: "Search listings")
-            .onSubmit(of: .search) {
-                // Free-text search clears a prior category-slug filter so q= wins.
-                categorySlugFilter = nil
-                suggestions = []
-                Task { await load(reset: true) }
-            }
             .onChange(of: searchText) { _, newValue in
                 scheduleAutocomplete(for: newValue)
                 // Clearing the search field also clears the category filter.
@@ -84,6 +77,18 @@ struct MarketplaceView: View {
             .refreshable { await load(reset: true) }
             .task { await load(reset: true) }
             .brandNavigationBarChrome()
+            .safeAreaInset(edge: .top, spacing: 0) {
+                BrandCatalogSearchField(
+                    text: $searchText,
+                    prompt: "Search listings",
+                    accessibilityID: "marketplace.search"
+                ) {
+                    // Free-text search clears a prior category-slug filter so q= wins.
+                    categorySlugFilter = nil
+                    suggestions = []
+                    Task { await load(reset: true) }
+                }
+            }
             .sheet(isPresented: $showCreateListing) {
                 NavigationStack {
                     CreateListingView()
@@ -253,6 +258,7 @@ struct MarketplaceView: View {
                 }
             }
             .brandListBackground()
+            .brandTabBarClearance()
             .accessibilityIdentifier("marketplace.list")
         }
     }
@@ -412,47 +418,83 @@ struct MarketplaceView: View {
 private struct ListingRowView: View {
     let listing: ListingSummary
 
+    private var isLive: Bool {
+        let status = (listing.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch status {
+        case "active", "open", "bidding", "live", "published":
+            break
+        default:
+            return false
+        }
+        if let ends = listing.auctionEndsAt, ends < Date() {
+            return false
+        }
+        return true
+    }
+
+    private var bidCountValue: Int {
+        listing.resolvedBidCount
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Dedicated chrome row — LIVE / Bid up / countdown never share title width.
+            HStack(alignment: .center, spacing: 8) {
+                BrandGlassStatusChip(
+                    title: isLive ? "LIVE" : "GOODS",
+                    kind: isLive ? .live : .muted,
+                    showPulse: isLive
+                )
+                .accessibilityLabel(isLive ? "Live forward auction" : "Forward auction, goods")
+                Text("Bid up")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandTheme.goldBright)
+                    .fixedSize(horizontal: true, vertical: false)
+                if bidCountValue > 0 {
+                    Text("\(bidCountValue) bids")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(BrandTheme.goldBright)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                Spacer(minLength: 8)
+                listingCountdownChip
+            }
+
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(listing.displayTitle)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(BrandTheme.textPrimary)
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(listing.displayPrice)
                         .font(.body.weight(.bold).monospacedDigit())
+                        .minimumScaleFactor(0.75)
+                        .lineLimit(1)
                         .foregroundStyle(BrandTheme.goldBright)
                         .contentTransition(.numericText())
-                    Text(listing.priceCaption)
-                        .font(.caption2)
+                    Text(listing.priceCaption.uppercased())
+                        .font(.caption2.weight(.bold).monospaced())
+                        .tracking(0.6)
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
                 .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(listing.priceCaption) \(listing.displayPrice)")
             }
 
-            HStack(spacing: 8) {
-                let live = (listing.status ?? "").lowercased() == "active"
-                    && (listing.auctionCountdown.map { $0 != "Ended" } ?? true)
-                if live {
-                    HStack(spacing: 4) {
-                        LivePulseDot()
-                        Text("LIVE")
-                            .font(.caption2.weight(.bold).monospaced())
-                            .tracking(0.4)
-                            .foregroundStyle(BrandTheme.success)
-                    }
-                    .accessibilityElement(children: .combine)
+            HStack(spacing: 10) {
+                if let distance = listing.distanceLabel {
+                    Label(distance, systemImage: "location.fill")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(BrandTheme.teal)
+                        .lineLimit(1)
                 }
-                Text("Bid up")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(BrandTheme.goldBright)
-                if let status = listing.status, !status.isEmpty {
-                    StatusChipView(
-                        label: StatusChipStyle.displayLabel(status),
-                        style: StatusChipStyle.forStatus(status)
-                    )
+                if let location = listing.locationLabel {
+                    Label(location, systemImage: "mappin.and.ellipse")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .lineLimit(1)
                 }
                 if let condition = listing.condition, !condition.isEmpty {
                     Text(condition.replacingOccurrences(of: "_", with: " ").capitalized)
@@ -467,37 +509,44 @@ private struct ListingRowView: View {
                         .lineLimit(1)
                 }
             }
-
-            HStack(spacing: 12) {
-                // Server `distance_km` when browse center was supplied (AppConfig lat/lng).
-                if let distance = listing.distanceLabel {
-                    Label(distance, systemImage: "location.fill")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(BrandTheme.teal)
-                        .lineLimit(1)
-                }
-                // City/state, else pickup ZIP (`locationLabel` already falls back to ZIP).
-                if let location = listing.locationLabel {
-                    Label(location, systemImage: "mappin.and.ellipse")
-                        .font(.caption)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .lineLimit(1)
-                }
-                if let bids = listing.bidCount {
-                    Label("\(bids) bids", systemImage: "hammer")
-                        .font(.caption)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                }
-                if let countdown = listing.auctionCountdown {
-                    Label(countdown, systemImage: "clock")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(countdown == "Ended" ? BrandTheme.textSecondary : BrandTheme.goldBright)
-                        .lineLimit(1)
-                }
-            }
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    @ViewBuilder
+    private var listingCountdownChip: some View {
+        if let ends = listing.auctionEndsAt {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let label = CatalogDateFormat.countdownChipLabel(until: ends, now: context.date)
+                let ended = label == "Ended"
+                let urgent = CatalogDateFormat.isCountdownUrgent(until: ends, now: context.date)
+                BrandGlassStatusChip(
+                    title: label,
+                    kind: ended ? .muted : (urgent ? .urgent : .gold)
+                )
+                .accessibilityLabel(
+                    "Auction \(CatalogDateFormat.countdownLabel(until: ends, now: context.date))"
+                )
+            }
+        }
+    }
+
+    private var accessibilitySummary: String {
+        var parts: [String] = [
+            isLive ? "Live forward auction" : "Forward auction, goods",
+            listing.displayTitle,
+            "\(listing.priceCaption) \(listing.displayPrice)",
+            "Bid up",
+        ]
+        if bidCountValue > 0 {
+            parts.append("\(bidCountValue) bids")
+        }
+        if let location = listing.locationLabel {
+            parts.append(location)
+        }
+        return parts.joined(separator: ", ")
     }
 }
 

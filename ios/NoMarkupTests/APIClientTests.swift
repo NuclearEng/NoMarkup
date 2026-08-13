@@ -356,3 +356,46 @@ final class ProviderBackgroundCheckDecodingTests: XCTestCase {
         XCTAssertNil(row.openableInvitationURL)
     }
 }
+
+// MARK: - List vs detail bid heat
+
+final class CatalogBidCountTests: XCTestCase {
+    private var decoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
+    func testPrefersPublishedHeatOverNestedTrailLength() throws {
+        let json = """
+        {
+          "bids": [
+            {"id":"1"},{"id":"2"},{"id":"3"},{"id":"4"},
+            {"id":"5"},{"id":"6"},{"id":"7"}
+          ],
+          "bidder_count": 3,
+          "bid_count": 1
+        }
+        """
+        let payload = try decoder.decode(ListingBidsResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(payload.bids.count, 7)
+        XCTAssertEqual(payload.resolvedBidCount, 3)
+        XCTAssertEqual(CatalogBidCount.resolved(bidCount: 1, bidderCount: 3), 3)
+    }
+
+    func testListingSummaryHeatUsesBidCountAndBidderCount() throws {
+        let json = """
+        {
+          "id": "00000000-0000-0000-0000-000000009102",
+          "title": "Snap-on socket set",
+          "bid_count": 1,
+          "bidder_count": 3
+        }
+        """
+        let row = try decoder.decode(ListingSummary.self, from: Data(json.utf8))
+        XCTAssertEqual(row.bidCount, 1)
+        XCTAssertEqual(row.bidderCount, 3)
+        XCTAssertEqual(row.resolvedBidCount, 3)
+    }
+}

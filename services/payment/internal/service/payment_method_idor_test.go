@@ -116,3 +116,57 @@ func TestSetDefaultPaymentMethod_IDOR(t *testing.T) {
 		t.Fatalf("B's default flipped to a foreign card: got (%q, %v)", gotB, err)
 	}
 }
+
+// TestSetDefaultPaymentMethod_tableIsSourceOfTruth: flipping default updates
+// the local directory even when no Stripe Customer is provisioned. Ownership
+// still fails closed; siblings lose is_default.
+func TestSetDefaultPaymentMethod_tableIsSourceOfTruth(t *testing.T) {
+	t.Parallel()
+
+	const userID = "00000000-0000-0000-0000-00000000000a"
+
+	ss := &StripeService{devMode: true}
+	svc := NewPaymentService(&mockPaymentRepo{}, ss)
+	dir := newFakeCustomerDirectory()
+	dir.addUser(userID, "a@example.com", "User A")
+	svc.SetCustomerProvisioner(NewCustomerProvisioner(dir, ss))
+
+	ctx := context.Background()
+	visa := domain.PaymentMethod{ID: "pm_visa", Type: "card", Brand: "visa", LastFour: "4242"}
+	mc := domain.PaymentMethod{ID: "pm_mc", Type: "card", Brand: "mastercard", LastFour: "5555"}
+	if err := dir.UpsertUserPaymentMethod(ctx, userID, "cus_unused", visa); err != nil {
+		t.Fatalf("upsert visa: %v", err)
+	}
+	if err := dir.UpsertUserPaymentMethod(ctx, userID, "cus_unused", mc); err != nil {
+		t.Fatalf("upsert mc: %v", err)
+	}
+	if err := dir.SetDefaultUserPaymentMethod(ctx, userID, visa.ID); err != nil {
+		t.Fatalf("seed default: %v", err)
+	}
+
+	if err := svc.SetDefaultPaymentMethod(ctx, userID, mc.ID); err != nil {
+		t.Fatalf("set default to mastercard: %v", err)
+	}
+	got, err := dir.GetDefaultUserPaymentMethod(ctx, userID)
+	if err != nil || got != mc.ID {
+		t.Fatalf("default after flip: got (%q, %v), want %q", got, err, mc.ID)
+	}
+	methods, err := dir.ListUserPaymentMethods(ctx, userID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, m := range methods {
+		wantDefault := m.ID == mc.ID
+		if m.IsDefault != wantDefault {
+			t.Fatalf("method %s is_default=%v, want %v", m.ID, m.IsDefault, wantDefault)
+		}
+	}
+
+	if err := svc.SetDefaultPaymentMethod(ctx, userID, "pm_missing"); !errors.Is(err, domain.ErrPaymentNotFound) {
+		t.Fatalf("unknown method: want ErrPaymentNotFound, got %v", err)
+	}
+	got, err = dir.GetDefaultUserPaymentMethod(ctx, userID)
+	if err != nil || got != mc.ID {
+		t.Fatalf("unknown-id probe mutated default: got (%q, %v)", got, err)
+	}
+}

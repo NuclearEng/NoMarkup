@@ -200,34 +200,78 @@ final class ScreenshotWalkUITests: XCTestCase {
         return isOnScreen(element)
     }
 
-    /// Horizontal admin console tab strip — swipe left until the tab is on-screen, then tap.
+    /// Pick an Admin Section menu row (Flags / Users / Fees / …).
+    /// The iOS 26 capsule strip collapsed; ids live on Menu rows (`admin.console.tab.*`)
+    /// and the labeled picker is `admin.console.tabs.menu`.
     @discardableResult
     private func tapAdminConsoleTab(_ label: String) -> Bool {
         let tabs = byID("admin.console.tabs")
-        guard tabs.waitForExistence(timeout: 4) else { return false }
-        let slug = label.lowercased().replacingOccurrences(of: " ", with: "-")
-        let byId = byID("admin.console.tab.\(slug)")
-        let byName = app.buttons[label]
-        // Prefer stable id; fall back to label. Always use safeTap (never raw .tap()).
-        func tryTap() -> Bool {
-            if byId.exists, safeTap(byId) { return true }
-            if byName.exists, safeTap(byName) { return true }
+        let menu = byID("admin.console.tabs.menu")
+        guard tabs.waitForExistence(timeout: 4) || menu.waitForExistence(timeout: 2) else {
             return false
         }
-        if tryTap() { return true }
-        for _ in 0..<14 {
-            // Reveal more of the capsule strip.
-            tabs.swipeLeft()
-            settle(0.2)
-            if tryTap() { return true }
+        let slug = label.lowercased().replacingOccurrences(of: " ", with: "-")
+        let rowID = "admin.console.tab.\(slug)"
+        let byId = byID(rowID)
+
+        // Already on this section (gold pill / a11y label "Admin section, Flags").
+        if menu.exists {
+            let lab = menu.label
+            if lab == label || lab.hasSuffix(", \(label)") { return true }
         }
-        // One reverse pass (overshot).
-        for _ in 0..<6 {
-            tabs.swipeRight()
-            settle(0.2)
-            if tryTap() { return true }
+
+        func tapMenuRow() -> Bool {
+            if byId.exists, safeTap(byId) { return true }
+            let previous = continueAfterFailure
+            continueAfterFailure = true
+            defer { continueAfterFailure = previous }
+            if app.menuItems[label].exists {
+                app.menuItems[label].tap()
+                return true
+            }
+            let idHits = app.descendants(matching: .any).matching(identifier: rowID)
+            for i in 0..<min(idHits.count, 6) {
+                let el = idHits.element(boundBy: i)
+                if el.exists, safeTap(el) { return true }
+            }
+            // Labelled buttons that are not the root tab bar (Jobs / Marketplace / …).
+            let labeled = app.buttons.matching(NSPredicate(format: "label == %@", label))
+            let appFrame = app.frame
+            for i in 0..<min(labeled.count, 8) {
+                let el = labeled.element(boundBy: i)
+                guard el.exists else { continue }
+                let f = el.frame
+                guard f.width.isFinite, f.height.isFinite, f.width > 1, f.height > 1 else { continue }
+                if f.minY > appFrame.maxY - 120 { continue }
+                if el.identifier.hasPrefix("tab.") { continue }
+                if safeTap(el) { return true }
+            }
+            return false
         }
-        return false
+
+        if tapMenuRow() { return true }
+
+        func openSectionMenu() -> Bool {
+            if menu.exists, safeTap(menu) { return true }
+            if menu.exists {
+                let previous = continueAfterFailure
+                continueAfterFailure = true
+                menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                continueAfterFailure = previous
+                return true
+            }
+            if tabs.exists, safeTap(tabs) { return true }
+            let byA11y = app.buttons.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "Admin section")
+            ).firstMatch
+            return byA11y.exists && safeTap(byA11y)
+        }
+
+        guard openSectionMenu() else { return false }
+        settle(0.35)
+        if tapMenuRow() { return true }
+        settle(0.45)
+        return tapMenuRow()
     }
 
     /// Tap the nav-bar back button when present.
@@ -298,11 +342,35 @@ final class ScreenshotWalkUITests: XCTestCase {
 
     /// Switch to a tab and unwind its navigation stack to the root list.
     private func popToRoot(_ label: String) {
+        // If a destination hid the tab bar, pop via Back first so Account's
+        // `.toolbar(.visible, for: .tabBar)` can restore chrome before retap.
+        if !app.tabBars.firstMatch.exists {
+            var unwind = 0
+            while unwind < 8 {
+                if hasBackButton {
+                    goBack()
+                } else if safeTap(app.navigationBars.buttons["Back"]) {
+                    settle(0.5)
+                } else if safeTap(app.buttons["Back"]) {
+                    settle(0.5)
+                } else {
+                    break
+                }
+                unwind += 1
+                if app.tabBars.firstMatch.exists { break }
+            }
+        }
         openTab(label)
         var attempts = 0
         // Legal / ops destinations can be deep; allow more back presses than the old 4.
-        while hasBackButton && attempts < 8 {
-            goBack()
+        while attempts < 8 {
+            if hasBackButton {
+                goBack()
+            } else if safeTap(app.navigationBars.buttons["Back"]) {
+                settle(0.5)
+            } else {
+                break
+            }
             attempts += 1
         }
     }
@@ -503,6 +571,7 @@ final class ScreenshotWalkUITests: XCTestCase {
         "Community Guidelines": "account.row.communityGuidelines",
         "Support": "account.row.support",
         "Export Data": "account.row.exportData",
+        "Sign out": "account.row.signOut",
         "Delete Account": "account.row.deleteAccount",
         "Plan limits": "account.row.planLimits",
         "Feature flag status": "account.row.featureFlags",
@@ -592,7 +661,9 @@ final class ScreenshotWalkUITests: XCTestCase {
                 login(email: customerEmail, screenshotPrefix: "\(shotPrefix)-recover")
                 recoveredShell = true
             }
-            // Export is not a NavigationLink; admin is role-gated.
+            // Export is not a NavigationLink. Admin console is role-gated —
+            // test06 asserts the row is absent instead of soft-skipping.
+            if entry.id == "account.row.admin" { continue }
             visitAccountRowByID(entry.id, shotName: "\(shotPrefix)-\(entry.shot)")
         }
     }
@@ -1235,15 +1306,14 @@ final class ScreenshotWalkUITests: XCTestCase {
             || hasBackButton
         XCTAssertTrue(hasChrome, "Admin console destination must render chrome")
         snap("admin-console-root")
-        // Exercise a couple of section tabs without mutations.
-        // Horizontal capsule strip — never use raw isHittable (off-screen tabs throw).
-        for tabLabel in ["Disputes", "Users", "Fraud", "Jobs"] {
+        // Section Menu (admin.console.tabs.menu) — not the retired capsule strip.
+        for tabLabel in ["Disputes", "Users", "Fraud", "Jobs", "Fees", "Banking", "Markets", "Platform"] {
             if tapAdminConsoleTab(tabLabel) {
                 settle(1.4)
                 XCTAssertTrue(app.state == .runningForeground, "crash on admin tab \(tabLabel)")
                 snap("admin-console-tab-\(tabLabel.lowercased())")
             } else {
-                recordSkip("admin-console-tab-\(tabLabel.lowercased())", "tab control not on-screen after horizontal swipe")
+                recordSkip("admin-console-tab-\(tabLabel.lowercased())", "section menu row not found")
             }
         }
         popToRoot("Account")
@@ -1259,6 +1329,7 @@ final class ScreenshotWalkUITests: XCTestCase {
         popToRoot("Account")
         settle(1.0)
         snap("cust-sweep-account-root")
+        XCTAssertFalse(byID("account.row.admin").exists, "customer seed must not show Admin console")
         visitAllAccountRowsByID(shotPrefix: "cust")
         // Account must still be alive after full sweep (no stack overflow).
         XCTAssertTrue(app.state == .runningForeground, "app crashed during customer Account row sweep")
@@ -1376,13 +1447,18 @@ final class ScreenshotWalkUITests: XCTestCase {
             // Flags tab is default — screenshot load result.
             settle(1.0)
             snap("admin-sweep-console-flags")
-            // Horizontal tab strip (same path as test05) — soft-skip if off-screen.
-            _ = tapAdminConsoleTab("Disputes")
-            settle(1.0)
-            snap("admin-sweep-console-disputes")
-            _ = tapAdminConsoleTab("Users")
-            settle(1.0)
-            snap("admin-sweep-console-users")
+            // Section Menu (same path as test05).
+            for tabLabel in ["Disputes", "Users", "Fraud", "Jobs"] {
+                if tapAdminConsoleTab(tabLabel) {
+                    settle(1.0)
+                    snap("admin-sweep-console-\(tabLabel.lowercased())")
+                } else {
+                    recordSkip(
+                        "admin-sweep-console-\(tabLabel.lowercased())",
+                        "section menu row not found"
+                    )
+                }
+            }
         } else {
             XCTFail("account.row.admin not hittable for admin@ seed")
         }

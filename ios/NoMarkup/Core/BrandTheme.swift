@@ -918,6 +918,29 @@ extension View {
         }
     }
 
+    /// Pin the root 5-tab bar so a NavigationLink push cannot swallow it.
+    /// iOS 18+/26 implicitly hides `.tabBar` on some pushed lists (`.searchable`,
+    /// nested `NavigationLink`s) and pop does not always restore — SIM-TEST.5/6.
+    func keepRootTabBarVisible() -> some View {
+        #if os(iOS)
+        self.toolbar(.visible, for: .tabBar)
+        #else
+        self
+        #endif
+    }
+
+    /// Extra list/form footer so the last section sits above the iOS 26 floating tab bar.
+    /// 28pt was not enough — the capsule + home indicator cover ~80pt (SIM-UI tab clip).
+    func brandTabBarClearance(_ height: CGFloat = 80) -> some View {
+        #if os(iOS)
+        self.safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: height)
+        }
+        #else
+        self
+        #endif
+    }
+
     /// DES.4 — primary CTA with Liquid Glass on iOS 26+, borderedProminent pre-26.
     /// Prefer on bid / place / submit gold CTAs; call-site `.tint(BrandTheme.accent)`.
     func glassProminentBrandCTA() -> some View {
@@ -1420,6 +1443,66 @@ struct BrandInlineErrorCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .brandCard(padding: 0)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Always-visible catalog search pill (Jobs Browse / Marketplace).
+/// iOS 26 system `.searchable(prompt:)` renders a blank capsule on List
+/// surfaces until focus; Messages empty-state still shows “Search inbox”.
+/// This matches that Messages prompt: magnifying glass + readable placeholder.
+struct BrandCatalogSearchField: View {
+    @Binding var text: String
+    var prompt: String
+    var enabled: Bool = true
+    var accessibilityID: String?
+    var onSubmit: () -> Void = {}
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.body.weight(.medium))
+                .foregroundStyle(BrandTheme.textSecondary)
+                .accessibilityHidden(true)
+            TextField(
+                prompt,
+                text: $text,
+                prompt: Text(prompt).foregroundStyle(BrandTheme.textSecondary)
+            )
+            .textFieldStyle(.plain)
+            .font(.body)
+            .foregroundStyle(BrandTheme.textPrimary)
+            .disabled(!enabled)
+            .submitLabel(.search)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .onSubmit(onSubmit)
+            .accessibilityLabel(prompt)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(BrandTheme.surfaceRaised)
+        )
+        .opacity(enabled ? 1 : 0.55)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(BrandTheme.navy)
+        .modifier(OptionalAccessibilityIdentifier(accessibilityID))
+    }
+}
+
+private struct OptionalAccessibilityIdentifier: ViewModifier {
+    var id: String?
+    init(_ id: String?) { self.id = id }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let id, !id.isEmpty {
+            content.accessibilityIdentifier(id)
+        } else {
+            content
+        }
     }
 }
 

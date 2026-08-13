@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Product home — reverse-auction first, materials-first (not scaffold marketing).
 struct HomeView: View {
@@ -6,6 +9,16 @@ struct HomeView: View {
     @Environment(\.selectedRootTab) private var selectedRootTab
     /// A11Y.3: solid hairline divider under Reduce Transparency.
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    /// iPhone 17e-class (~844pt tall, ~390pt wide). Pro Max (~932pt) already
+    /// clears Market Desk + LIVE NOW / GOODS LIVE / GATEWAY above the floating tab.
+    private var usesCompactHomeChrome: Bool {
+        #if canImport(UIKit)
+        UIScreen.main.bounds.height < 880
+        #else
+        false
+        #endif
+    }
 
     @State private var healthOK: Bool?
     @State private var isChecking = false
@@ -38,7 +51,7 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: usesCompactHomeChrome ? 14 : 24) {
                     heroSection
                     marketDeskStrip
                     if jobTotal != nil || listingTotal != nil {
@@ -54,11 +67,14 @@ struct HomeView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
-                .padding(.bottom, 48)
+                .padding(.bottom, usesCompactHomeChrome ? 16 : 24)
                 // DES.12 / DES.20 — cap column width on iPad so hero + cards stay readable.
                 .brandReadableWidth()
             }
             .brandScreenBackground()
+            // Floating tab capsule (~80pt) is not in the scroll safe area on iOS 26.
+            // Compact phones also tighten hero spacing so desk + stats clear it on first paint.
+            .brandTabBarClearance()
             .navigationTitle("NoMarkup")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
@@ -107,78 +123,82 @@ struct HomeView: View {
 
     private var heroSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Brand tile — champagne M↓ = SpringBoard icon (icon gold / product navy desk).
-            HStack(alignment: .center, spacing: 14) {
-                NoMarkupIcon(showWordmark: false, size: 56)
-                    .accessibilityHidden(true)
+            // Brand + copy only — `home.hero` must not flatten the CTA identifiers.
+            VStack(alignment: .leading, spacing: 0) {
+                // Brand tile — champagne M↓ = SpringBoard icon (icon gold / product navy desk).
+                HStack(alignment: .center, spacing: 14) {
+                    NoMarkupIcon(showWordmark: false, size: usesCompactHomeChrome ? 48 : 56)
+                        .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 8) {
-                        RoundedRectangle(cornerRadius: 1, style: .continuous)
-                            .fill(BrandTheme.gold)
-                            .frame(width: 14, height: 1.5)
-                        Text("REVERSE AUCTION")
-                            .font(.caption2.weight(.heavy).monospaced())
-                            .tracking(1.4)
-                            .foregroundStyle(BrandTheme.gold)
-                            .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 8) {
+                            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                                .fill(BrandTheme.gold)
+                                .frame(width: 14, height: 1.5)
+                            Text("REVERSE AUCTION")
+                                .font(.caption2.weight(.heavy).monospaced())
+                                .tracking(1.4)
+                                .foregroundStyle(BrandTheme.gold)
+                                .lineLimit(1)
+                        }
+                        (
+                            Text("No")
+                                .foregroundColor(BrandTheme.textPrimary)
+                            + Text("Markup")
+                                .foregroundColor(BrandTheme.goldBright)
+                        )
+                        .font(.title3.weight(.heavy))
+                        .accessibilityLabel("NoMarkup")
                     }
-                    (
-                        Text("No")
-                            .foregroundColor(BrandTheme.textPrimary)
-                        + Text("Markup")
-                            .foregroundColor(BrandTheme.goldBright)
-                    )
-                    .font(.title3.weight(.heavy))
-                    .accessibilityLabel("NoMarkup")
-                }
 
-                Spacer(minLength: 0)
+                    Spacer(minLength: 0)
 
-                if let signedInLabel {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(auth.isScaffoldSession ? BrandTheme.warning : BrandTheme.success)
-                            .frame(width: 6, height: 6)
-                        Text(auth.isScaffoldSession ? "Offline" : "Live")
-                            .font(.caption2.weight(.semibold).monospaced())
-                            .foregroundStyle(BrandTheme.textSecondary)
-                            .lineLimit(1)
+                    if let signedInLabel {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(auth.isScaffoldSession ? BrandTheme.warning : BrandTheme.success)
+                                .frame(width: 6, height: 6)
+                            Text(auth.isScaffoldSession ? "Offline" : "Live")
+                                .font(.caption2.weight(.semibold).monospaced())
+                                .foregroundStyle(BrandTheme.textSecondary)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(BrandTheme.surfaceRaised))
+                        .accessibilityLabel(signedInLabel)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(BrandTheme.surfaceRaised))
-                    .accessibilityLabel(signedInLabel)
                 }
+                .padding(.bottom, usesCompactHomeChrome ? 10 : 16)
+
+                // Showcase hero — serif energy via system rounded weight + italic gold line.
+                (
+                    Text("The Market Sets\nThe Price.\n")
+                        .foregroundColor(BrandTheme.textPrimary)
+                    + Text("Not The Markup.")
+                        .foregroundColor(BrandTheme.goldBright)
+                        .italic()
+                )
+                .font(.system(usesCompactHomeChrome ? .title2 : .title, design: .serif).weight(.regular))
+                .lineSpacing(usesCompactHomeChrome ? 1 : 3)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityLabel("The Market Sets The Price. Not The Markup.")
+                .padding(.bottom, usesCompactHomeChrome ? 6 : 10)
+
+                Text(
+                    "Providers compete in real-time reverse auctions. Prices fall to fair market rates — not the middleman."
+                )
+                .font(usesCompactHomeChrome ? .footnote : .subheadline)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .lineSpacing(usesCompactHomeChrome ? 2 : 3)
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.bottom, 16)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("home.hero")
 
-            // Showcase hero — serif energy via system rounded weight + italic gold line.
-            (
-                Text("The Market Sets\nThe Price.\n")
-                    .foregroundColor(BrandTheme.textPrimary)
-                + Text("Not The Markup.")
-                    .foregroundColor(BrandTheme.goldBright)
-                    .italic()
-            )
-            .font(.system(.title, design: .serif).weight(.regular))
-            .lineSpacing(3)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityAddTraits(.isHeader)
-            .accessibilityLabel("The Market Sets The Price. Not The Markup.")
-            .padding(.bottom, 10)
-
-            Text(
-                "Providers compete in real-time reverse auctions. Prices fall to fair market rates — not the middleman."
-            )
-            .font(.subheadline)
-            .foregroundStyle(BrandTheme.textSecondary)
-            .lineSpacing(3)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.bottom, 18)
-
-            // CTA stack: one gold primary, one urgency ghost, two equal secondary.
-            VStack(spacing: 10) {
+            // CTA stack is a sibling of `home.hero` so XCUITest can see `home.browseJobs`.
+            VStack(spacing: usesCompactHomeChrome ? 8 : 10) {
                 Button {
                     BrandHaptics.medium()
                     selectedRootTab?.wrappedValue = .jobs
@@ -236,11 +256,14 @@ struct HomeView: View {
                         .frame(minHeight: 40)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Sell an item")
+                .accessibilityHint("Opens the native sell form")
                 .accessibilityIdentifier("home.sellItem")
             }
+            .padding(.top, usesCompactHomeChrome ? 12 : 18)
         }
-        .brandCard(padding: 20, heroGradient: true, elevated: true)
-        .accessibilityIdentifier("home.hero")
+        .brandCard(padding: usesCompactHomeChrome ? 14 : 20, heroGradient: true, elevated: true)
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: - Market desk (Bloomberg ambient + Robinhood tick)
@@ -303,7 +326,7 @@ struct HomeView: View {
         HStack(spacing: 0) {
             statCell(
                 value: jobTotal.map { Self.compactCount($0) } ?? "—",
-                label: "JOBS"
+                label: "LIVE NOW"
             )
             divider
             statCell(
@@ -340,6 +363,8 @@ struct HomeView: View {
                 .font(.caption2.weight(.heavy).monospaced())
                 .tracking(0.8)
                 .foregroundStyle(BrandTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
@@ -493,12 +518,16 @@ struct HomeView: View {
                             .font(.body.weight(.semibold))
                         Image(systemName: "arrow.right")
                             .font(.caption.weight(.semibold))
+                            .accessibilityHidden(true)
                     }
                     .foregroundStyle(BrandTheme.goldBright)
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: 48)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("View all jobs")
+                .accessibilityHint("Opens the Jobs tab")
+                .accessibilityIdentifier("home.viewAllJobs")
             }
         }
     }
@@ -531,6 +560,7 @@ struct HomeView: View {
                         Image(systemName: "chevron.right")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(BrandTheme.textSecondary.opacity(0.6))
+                            .accessibilityHidden(true)
                     }
                     .padding(18)
                     .contentShape(Rectangle())
@@ -559,12 +589,15 @@ struct HomeView: View {
                             .font(.body.weight(.semibold))
                         Image(systemName: "arrow.right")
                             .font(.caption.weight(.semibold))
+                            .accessibilityHidden(true)
                     }
                     .foregroundStyle(BrandTheme.goldBright)
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: 48)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Browse marketplace")
+                .accessibilityHint("Opens the Marketplace tab")
             }
 
             Button {
@@ -576,7 +609,9 @@ struct HomeView: View {
             }
             .buttonStyle(.plain)
             .frame(minHeight: 40)
+            .accessibilityLabel("Sell an item")
             .accessibilityHint("Opens the native sell form")
+            .accessibilityIdentifier("home.sellItem.marketplace")
         }
     }
 
@@ -697,6 +732,19 @@ struct HomeView: View {
         }
     }
 
+    /// Prefer pagination total when every row on the page is live so a pageSize
+    /// of 20 cannot print as “20 GOODS” against a 49-lot floor.
+    private static func liveOrPaginationTotal(
+        liveCount: Int,
+        pageCount: Int,
+        pagination: PaginationMeta?
+    ) -> Int {
+        if liveCount == pageCount, let total = pagination?.resolvedTotal, total > liveCount {
+            return total
+        }
+        return liveCount
+    }
+
     private static func endsSooner(lhs: String?, rhs: String?) -> Bool {
         let left = lhs.flatMap { CatalogDateFormat.parseISO($0) } ?? .distantFuture
         let right = rhs.flatMap { CatalogDateFormat.parseISO($0) } ?? .distantFuture
@@ -740,9 +788,10 @@ struct HomeView: View {
                 page: 1,
                 pageSize: 100,
                 sort: "created_at",
-                sortDir: "desc"
+                sortDir: "desc",
+                status: "open"
             )
-            async let listingsResponse = APIClient.shared.fetchListings(page: 1, pageSize: 20)
+            async let listingsResponse = APIClient.shared.fetchListings(page: 1, pageSize: 100)
             let jobsResult = try await jobsResponse
             let listingsResult = try await listingsResponse
             // Ticker: priced jobs from the unfiltered page (live first). Do not
@@ -767,9 +816,25 @@ struct HomeView: View {
                 .sorted { Self.endsSooner(lhsDate: $0.auctionEndsAt, rhsDate: $1.auctionEndsAt) }
             jobs = Array(liveJobs.prefix(8))
             listings = Array(liveListings.prefix(3))
-            // OPEN JOBS / GOODS LIVE are live-status counts, not mixed Search totals.
-            jobTotal = liveJobs.count
-            listingTotal = liveListings.count
+            // LIVE NOW: live-status on a mixed page; pagination total when the
+            // fetched page is all live (pageSize must not become the stat).
+            jobTotal = Self.liveOrPaginationTotal(
+                liveCount: liveJobs.count,
+                pageCount: jobsResult.jobs.count,
+                pagination: jobsResult.pagination
+            )
+            // GOODS LIVE: public listings are already status=active. Bind the
+            // desk to pagination.resolvedTotal (Marketplace "N of total"),
+            // never the first-page length.
+            if let total = listingsResult.pagination?.resolvedTotal, total > 0 {
+                listingTotal = total
+            } else {
+                listingTotal = Self.liveOrPaginationTotal(
+                    liveCount: liveListings.count,
+                    pageCount: listingsResult.listings.count,
+                    pagination: listingsResult.pagination
+                )
+            }
             catalogError = nil
         } catch {
             if jobs.isEmpty {
@@ -1029,7 +1094,7 @@ private struct HomeJobCard: View {
     }
 
     private var bidCountValue: Int {
-        job.bidCount ?? 0
+        job.resolvedBidCount
     }
 
     /// H1.4 home parity — typical reverse-auction band from starting bid when present.
@@ -1211,7 +1276,7 @@ private struct HomeListingCard: View {
     }
 
     private var bidCountValue: Int {
-        listing.bidCount ?? 0
+        listing.resolvedBidCount
     }
 
     var body: some View {

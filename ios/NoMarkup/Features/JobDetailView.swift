@@ -659,9 +659,7 @@ struct JobDetailView: View {
         .brandListBackground()
         // Floating iOS 26 tab bar overlays the last List section when this
         // view is pushed inside Jobs (sheet presentation already has Close).
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: 28)
-        }
+        .brandTabBarClearance()
     }
 
     // MARK: - Spectate terminal entry
@@ -1272,10 +1270,9 @@ struct JobDetailView: View {
     }
 
     private func effectiveBidCount(job: JobDetail) -> Int {
-        if case .loaded = ladderState, !bidEntries.isEmpty {
-            return bidEntries.count
-        }
-        return job.bidCount ?? bidEntries.count
+        let published = job.resolvedBidCount
+        if published > 0 { return published }
+        return job.bidCount ?? 0
     }
 
     private struct HeroPrice {
@@ -2065,18 +2062,36 @@ struct JobDetailView: View {
 
     private func bidHint(for job: JobDetail, isUpdate: Bool) -> String {
         if isUpdate, let current = ownActiveBidAmountCents {
-            return "Enter a dollar amount strictly below your current bid (\(MoneyFormat.usd(cents: current))). Example: if your bid is $450, try 425.00."
+            let example = Self.reverseBidExampleDollars(ceilingCents: current)
+            return "Enter a dollar amount strictly below your current bid (\(MoneyFormat.usd(cents: current))). Example: \(example) — not \(current)."
         }
         if let leading = leadingBidCents {
-            return "Reverse auction: enter a lower dollar amount than the leading bid (\(MoneyFormat.usd(cents: leading))). Example: if leading is $450, try 425.00."
+            let example = Self.reverseBidExampleDollars(ceilingCents: leading)
+            return "Reverse auction: enter a lower dollar amount than the leading bid (\(MoneyFormat.usd(cents: leading))). Example: \(example) — not \(leading)."
         }
         if let start = job.startingBidCents {
-            return "Reverse auction: enter a competitive dollar bid at or below the starting bid (\(MoneyFormat.usd(cents: start))). Example: 400.00 — not 40000."
+            let example = Self.reverseBidExampleDollars(ceilingCents: start)
+            return "Reverse auction: enter a competitive dollar bid at or below the starting bid (\(MoneyFormat.usd(cents: start))). Example: \(example) — not \(start)."
         }
         if let price = job.displayPrice {
             return "Reverse auction: enter your bid in dollars (e.g. 125.00). Current price \(price) — lower competes to win."
         }
         return "Reverse auction: enter your bid in dollars (e.g. 125.00), not cents. Lower bids compete. Provider accounts only."
+    }
+
+    /// A sample dollar amount strictly below `ceilingCents` so the hint never
+    /// suggests bidding above the reverse-auction cap.
+    private static func reverseBidExampleDollars(ceilingCents: Int64) -> String {
+        let cents: Int64
+        if ceilingCents > 200 {
+            cents = max(100, (ceilingCents * 80) / 100)
+            if cents >= ceilingCents {
+                return String(format: "%.2f", Double(max(1, ceilingCents - 1)) / 100.0)
+            }
+        } else {
+            cents = max(1, ceilingCents - 1)
+        }
+        return String(format: "%.2f", Double(cents) / 100.0)
     }
 
     // MARK: - Details (below auction chrome)
@@ -2113,8 +2128,8 @@ struct JobDetailView: View {
             if let ends = job.auctionEndsAt, !ends.isEmpty {
                 LabeledContent("Auction ends", value: CatalogDateFormat.friendlyDateTime(ends))
             }
-            if let bids = job.bidCount {
-                LabeledContent("Bids", value: "\(bids)")
+            if job.resolvedBidCount > 0 {
+                LabeledContent("Bids", value: "\(job.resolvedBidCount)")
             }
             if let label = job.recurrenceLabel {
                 LabeledContent("Recurring", value: label)
@@ -2691,6 +2706,13 @@ struct JobDetailView: View {
         do {
             let response = try await APIClient.shared.fetchJobBids(jobId: jobID)
             bidEntries = response.bids
+            if var job = detail {
+                let published = response.resolvedBidCount
+                if (job.bidCount == nil || job.bidCount == 0), published > 0 {
+                    job.bidCount = published
+                    detail = job
+                }
+            }
             ladderState = .loaded
         } catch let error as APIClientError where error.isUnauthorized {
             bidEntries = []

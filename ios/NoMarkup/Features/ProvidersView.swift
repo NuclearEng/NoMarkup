@@ -15,6 +15,7 @@ struct ProvidersView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .brandNavigationBarChrome()
+            .keepRootTabBarVisible()
             .searchable(text: $searchText, prompt: "Search providers")
             .onSubmit(of: .search) {
                 Task { await load() }

@@ -351,6 +351,7 @@ final class NoMarkupUITests: XCTestCase {
         "Business & finance": "account.row.businessFinance",
         "Plan limits": "account.row.planLimits",
         "Feature flag status": "account.row.featureFlags",
+        "Sign out": "account.row.signOut",
         "Delete Account": "account.row.deleteAccount",
     ]
 

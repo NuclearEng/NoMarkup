@@ -3,7 +3,7 @@
 
 enum GitRevision {
     /// Short git SHA (appends `-dirty` when tracked sources differ from HEAD).
-    static let short: String = "cddcd1c9"
+    static let short: String = "74c11ef4-dirty"
     /// Branch name at stamp time.
     static let branch: String = "fix/security-audit-2026-04-23"
 }

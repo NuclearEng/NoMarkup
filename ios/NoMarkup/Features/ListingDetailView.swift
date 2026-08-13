@@ -927,10 +927,15 @@ struct ListingDetailView: View {
     }
 
     private func effectiveBidCount(listing: ListingDetail) -> Int {
-        if case .loaded = ladderState, !bidRows.isEmpty {
-            return bidRows.count
+        let published = listing.resolvedBidCount
+        if published > 0 { return published }
+        if case .loaded = ladderState {
+            return CatalogBidCount.resolved(
+                bidCount: listing.bidCount,
+                bidderCount: listing.bidderCount ?? ladderBidderCount
+            )
         }
-        return listing.bidCount ?? bidRows.count
+        return 0
     }
 
     private func heroPriceAmount(_ listing: ListingDetail) -> String {
@@ -1103,12 +1108,8 @@ struct ListingDetailView: View {
         guard let bidder = row.bidderId, bidder == me else { return false }
         let isLeading = row.isWinning == true || sortedLadder.first?.id == row.id
         guard isLeading else { return false }
-        guard let createdAt = row.createdAt,
-              let created = CatalogDateFormat.parseISO(createdAt)
-        else {
-            return false
-        }
-        return now.timeIntervalSince(created) < 60
+        guard let remaining = retractSecondsRemaining(row, now: now) else { return false }
+        return remaining > 0 && remaining <= 60
     }
 
     private func retractSecondsRemaining(_ row: ListingBidRow, now: Date) -> Int? {
@@ -1117,8 +1118,10 @@ struct ListingDetailView: View {
         else {
             return nil
         }
-        let remaining = 60 - Int(now.timeIntervalSince(created))
-        return remaining > 0 ? remaining : nil
+        let elapsed = now.timeIntervalSince(created)
+        guard elapsed >= 0 else { return nil }
+        let remaining = 60 - Int(elapsed)
+        return remaining > 0 && remaining <= 60 ? remaining : nil
     }
 
     // MARK: - Soft live feed (marketplace spectator WS + HTTP poll fallback)
@@ -1323,8 +1326,30 @@ struct ListingDetailView: View {
 
     // MARK: - Place bid (forward auction)
 
+    /// Same gate as the sticky dock: no dollar form after close / expire / seller view.
+    private func auctionAcceptsBids(_ listing: ListingDetail) -> Bool {
+        let status = (listing.status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if status == "sold" || status == "cancelled" || status == "expired" || status == "ended" {
+            return false
+        }
+        if let ends = listing.auctionEndsAt, ends < Date() {
+            return false
+        }
+        return true
+    }
+
     @ViewBuilder
     private func placeBidSection(_ listing: ListingDetail) -> some View {
+        if !auctionAcceptsBids(listing) {
+            Section {
+                Text("This auction has ended. New bids are closed.")
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Auction closed").brandSectionHeader()
+            }
+        } else {
         Section {
             if !auth.isAuthenticated {
                 Text("Sign in to place a bid on this listing.")
@@ -1449,6 +1474,7 @@ struct ListingDetailView: View {
         } footer: {
             Text("Goods are forward auctions — enter dollars (for example 95.00), not cents. Bid above the current high to take the lead. Set an optional max bid to auto-defend your lead (proxy bid). First-time bidders may need a refundable bid bond.")
                 .foregroundStyle(BrandTheme.textSecondary)
+        }
         }
     }
 
@@ -1844,8 +1870,8 @@ struct ListingDetailView: View {
                     Text(ends.formatted(date: .abbreviated, time: .shortened))
                 }
             }
-            if let bids = listing.bidCount {
-                LabeledContent("Bids", value: "\(bids)")
+            if listing.resolvedBidCount > 0 {
+                LabeledContent("Bids", value: "\(listing.resolvedBidCount)")
             }
             if let bidders = listing.bidderCount ?? ladderBidderCount {
                 LabeledContent("Bidders", value: "\(bidders)")
@@ -2554,7 +2580,13 @@ struct ListingDetailView: View {
                 if let bidders = response.bidderCount {
                     listing.bidderCount = bidders
                 }
-                listing.bidCount = response.bids.count
+                // Heat is bid_count / bidder_count — not the nested trail length.
+                if listing.bidCount == nil || listing.bidCount == 0 {
+                    let published = response.resolvedBidCount
+                    if published > 0 {
+                        listing.bidCount = published
+                    }
+                }
                 detail = listing
             }
             ladderState = .loaded

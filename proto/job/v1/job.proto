@@ -279,6 +279,9 @@ message SearchJobsRequest {
   string text_query = 8;
   nomarkup.common.v1.SortRequest sort = 9;
   nomarkup.common.v1.PaginationRequest pagination = 10;
+  // Optional public-browse filter. Unset keeps the service default (active).
+  // Gateway maps query `status=open` onto JOB_STATUS_ACTIVE.
+  optional JobStatus status_filter = 11;
 }
 
 message SearchJobsResponse {

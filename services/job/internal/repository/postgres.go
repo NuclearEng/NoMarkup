@@ -587,10 +587,25 @@ func categorySubtreeFilter(categoryIDs []string, startIdx int) (string, []interf
 }
 
 func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.SearchJobsInput) ([]*domain.Job, *domain.Pagination, error) {
-	// Build the query dynamically.
-	where := []string{"j.status = 'active'", "j.deleted_at IS NULL"}
+	// Build the query dynamically. Public browse defaults to active; an
+	// explicit StatusFilter (from GET /jobs?status=) replaces that default.
+	where := []string{"j.deleted_at IS NULL"}
 	args := []interface{}{}
 	argIdx := 1
+
+	status := "active"
+	if input.StatusFilter != nil {
+		sf := strings.ToLower(strings.TrimSpace(*input.StatusFilter))
+		if sf != "" && sf != "unspecified" {
+			if sf == "open" {
+				sf = "active"
+			}
+			status = sf
+		}
+	}
+	where = append(where, fmt.Sprintf("j.status = $%d", argIdx))
+	args = append(args, status)
+	argIdx++
 
 	if len(input.CategoryIDs) > 0 {
 		clause, clauseArgs, next := categorySubtreeFilter(input.CategoryIDs, argIdx)

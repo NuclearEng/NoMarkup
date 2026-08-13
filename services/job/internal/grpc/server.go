@@ -281,6 +281,10 @@ func (s *Server) SearchJobs(ctx context.Context, req *jobv1.SearchJobsRequest) (
 		v := req.GetRecurringOnly()
 		input.RecurringOnly = &v
 	}
+	if req.StatusFilter != nil {
+		sf := protoJobStatusToString(req.GetStatusFilter())
+		input.StatusFilter = &sf
+	}
 
 	if sort := req.GetSort(); sort != nil {
 		input.SortField = sort.GetField()

@@ -1806,13 +1806,14 @@ func (s *PaymentService) DeletePaymentMethod(ctx context.Context, customerID, pa
 	return nil
 }
 
-// SetDefaultPaymentMethod points the caller's saved card at Stripe and then
-// locally. Ownership is checked against the local directory first so a
-// non-owner cannot flip another user's default (or probe whether a pm_ id
-// exists). Stripe is updated before the local write so an off-session charge
-// that races the persist still hits the card the user just chose. Either
-// failure is returned — we do not treat a Stripe-only or local-only update
-// as success. Re-defaulting the card that is already default is a no-op.
+// SetDefaultPaymentMethod marks the caller's saved card as default locally.
+// Ownership is checked against the local directory first so a non-owner
+// cannot flip another user's default (or probe whether a pm_ id exists).
+// When a Stripe Customer is already provisioned the invoice-settings default
+// is mirrored first so an off-session charge that races the persist still
+// hits the card the user just chose; with no Customer the local table is
+// the sole source of truth and no Stripe call is made. Re-defaulting the
+// card that is already default is a no-op.
 func (s *PaymentService) SetDefaultPaymentMethod(ctx context.Context, customerID, paymentMethodID string) error {
 	if customerID == "" || paymentMethodID == "" {
 		return domain.ErrPaymentNotFound
@@ -1840,16 +1841,19 @@ func (s *PaymentService) SetDefaultPaymentMethod(ctx context.Context, customerID
 		return nil
 	}
 
+	// Local table is the source of truth for which card is default
+	// (idx_user_payment_methods_one_default). Mirror to Stripe only when a
+	// Customer is already provisioned — do not mint one as a side effect of
+	// flipping default, and do not invent a Stripe call when there is nothing
+	// to update.
 	stripeCustomerID, err := customers.Lookup(ctx, customerID)
 	if err != nil {
 		return fmt.Errorf("set default payment method: %w", err)
 	}
-	if stripeCustomerID == "" {
-		return fmt.Errorf("set default payment method: stripe customer not provisioned: %w", domain.ErrPaymentNotFound)
-	}
-
-	if err := s.stripe.SetCustomerDefaultPaymentMethod(ctx, stripeCustomerID, paymentMethodID); err != nil {
-		return fmt.Errorf("set default payment method: stripe: %w", err)
+	if stripeCustomerID != "" {
+		if err := s.stripe.SetCustomerDefaultPaymentMethod(ctx, stripeCustomerID, paymentMethodID); err != nil {
+			return fmt.Errorf("set default payment method: stripe: %w", err)
+		}
 	}
 	if err := customers.dir.SetDefaultUserPaymentMethod(ctx, customerID, paymentMethodID); err != nil {
 		return fmt.Errorf("set default payment method: %w", err)

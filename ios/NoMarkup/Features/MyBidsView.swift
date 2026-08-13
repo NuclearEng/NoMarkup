@@ -262,6 +262,7 @@ struct MyBidsView: View {
                 }
             }
             .brandListBackground()
+            .brandTabBarClearance()
         }
     }
 
@@ -577,7 +578,7 @@ struct MyBidsView: View {
                 listingBids = response.bids
             case .services:
                 let response = try await APIClient.shared.fetchMyJobBids(page: 1, pageSize: 40)
-                jobBids = response.bids
+                jobBids = await Self.hydratedJobBidTitles(response.bids)
             }
             // IOS-SYS.WD.3 — refresh the widget snapshot from the fresh authoritative list.
             syncWidgetActiveBidCount()
@@ -589,6 +590,41 @@ struct MyBidsView: View {
             if currentListIsEmpty {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    /// `GET /bids/mine` is a flat proto row (no job title). Fill titles from
+    /// `GET /jobs/{id}` so the list does not print truncated UUIDs.
+    private static func hydratedJobBidTitles(_ bids: [MyJobBidRow]) async -> [MyJobBidRow] {
+        let missing = Set(
+            bids.compactMap { bid -> String? in
+                let named = (bid.title ?? bid.jobTitle)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard named.isEmpty, let id = bid.jobId, !id.isEmpty else { return nil }
+                return id
+            }
+        )
+        guard !missing.isEmpty else { return bids }
+        var titles: [String: String] = [:]
+        await withTaskGroup(of: (String, String?).self) { group in
+            for id in missing.prefix(20) {
+                group.addTask {
+                    let job = try? await APIClient.shared.fetchJob(id: id)
+                    return (id, job?.displayTitle)
+                }
+            }
+            for await (id, title) in group {
+                if let title, !title.isEmpty, title != "Untitled job" {
+                    titles[id] = title
+                }
+            }
+        }
+        guard !titles.isEmpty else { return bids }
+        return bids.map { bid in
+            guard let id = bid.jobId, let title = titles[id] else { return bid }
+            var copy = bid
+            copy.title = title
+            return copy
         }
     }
 

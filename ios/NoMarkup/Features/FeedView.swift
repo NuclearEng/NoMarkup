@@ -55,10 +55,12 @@ struct FeedView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .keepRootTabBarVisible()
         .task { await load(reset: true) }
         .refreshable { await load(reset: true) }
         .navigationDestination(for: ListingSummary.self) { listing in
             ListingDetailView(listingID: listing.id, preview: listing)
+                .keepRootTabBarVisible()
         }
     }
 

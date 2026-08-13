@@ -205,6 +205,7 @@ struct MessagesView: View {
                                     ? BrandTheme.surfaceRaised
                                     : BrandTheme.navyElevated
                             )
+                            .accessibilityIdentifier("messages.row.\(channel.id)")
                             .accessibilityHint("Shows conversation in the side panel")
                         } else {
                             NavigationLink(value: channel) {
@@ -212,6 +213,7 @@ struct MessagesView: View {
                             }
                             .frame(minHeight: 44)
                             .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityIdentifier("messages.row.\(channel.id)")
                             .accessibilityHint("Opens conversation")
                         }
                     }

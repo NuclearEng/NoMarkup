@@ -662,6 +662,10 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 		v := true
 		grpcReq.RecurringOnly = &v
 	}
+	if statusStr := q.Get("status"); statusStr != "" {
+		st := stringToJobStatus(statusStr)
+		grpcReq.StatusFilter = &st
+	}
 
 	if sortField := q.Get("sort"); sortField != "" {
 		dir := commonv1.SortDirection_SORT_DIRECTION_ASC
@@ -1219,7 +1223,7 @@ func stringToJobStatus(s string) jobv1.JobStatus {
 	switch s {
 	case "draft":
 		return jobv1.JobStatus_JOB_STATUS_DRAFT
-	case "active":
+	case "active", "open":
 		return jobv1.JobStatus_JOB_STATUS_ACTIVE
 	case "closed":
 		return jobv1.JobStatus_JOB_STATUS_CLOSED

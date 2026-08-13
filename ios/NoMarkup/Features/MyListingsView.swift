@@ -165,8 +165,8 @@ struct MyListingsView: View {
                 Text(listing.priceCaption)
                     .font(.caption)
                     .foregroundStyle(BrandTheme.textSecondary)
-                if let bids = listing.bidCount {
-                    Text(String(localized: "· \(bids) bids"))
+                if listing.resolvedBidCount > 0 {
+                    Text(String(localized: "· \(listing.resolvedBidCount) bids"))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(BrandTheme.textSecondary)
                 }

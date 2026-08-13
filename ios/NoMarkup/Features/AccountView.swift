@@ -25,6 +25,9 @@ struct AccountView: View {
     /// NavigationLink push — Safari is modal chrome; pushing it via the nav stack
     /// can hide the tab bar and leave Close/Back stuck after dismiss.
     @State private var legalSheet: LegalSheetTarget?
+    /// Sign out sits next to Verify / Security — require a confirm so a fat-finger
+    /// does not dump a signed-in provider onto LoginView.
+    @State private var confirmSignOut = false
 
     var body: some View {
         NavigationStack {
@@ -224,11 +227,12 @@ struct AccountView: View {
                     .accessibilityIdentifier("account.row.verification")
 
                     Button("Sign out", role: .destructive) {
-                        // Device unregister + widget wipe run inside signOut()
-                        // (IOS-SYS.NT.4 / OBS-3) so every sign-out path is covered.
-                        auth.signOut()
+                        confirmSignOut = true
                     }
                     .frame(minHeight: 44)
+                    .accessibilityLabel("Sign out")
+                    .accessibilityHint("Asks to confirm, then signs you out of this device")
+                    .accessibilityIdentifier("account.row.signOut")
                 } header: {
                     Text("Session").brandSectionHeader()
                 }
@@ -878,8 +882,25 @@ struct AccountView: View {
                 }
             }
             .brandListBackground()
+            // Floating iOS 26 tab bar overlays the last List rows (same as JobDetailView).
+            .brandTabBarClearance()
             .navigationTitle("Account")
             .brandNavigationBarChrome()
+            .keepRootTabBarVisible()
+            .confirmationDialog(
+                "Sign out of this device?",
+                isPresented: $confirmSignOut,
+                titleVisibility: .visible
+            ) {
+                Button("Sign out", role: .destructive) {
+                    // Device unregister + widget wipe run inside signOut()
+                    // (IOS-SYS.NT.4 / OBS-3) so every sign-out path is covered.
+                    auth.signOut()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You’ll need your password to sign back in. Active bids stay on the account.")
+            }
             .task {
                 await refreshSessionHints()
                 await refreshUnreadCount()

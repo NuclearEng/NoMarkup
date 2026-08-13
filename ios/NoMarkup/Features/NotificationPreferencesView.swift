@@ -73,7 +73,7 @@ struct NotificationPreferencesView: View {
                 formContent
             }
         }
-        .navigationTitle("Notifications")
+        .navigationTitle("Notification preferences")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

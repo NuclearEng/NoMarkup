@@ -440,6 +440,27 @@ func TestJobHandler_Search(t *testing.T) {
 	assert.Len(t, jobs, 2)
 }
 
+func TestJobHandler_Search_forwards_status(t *testing.T) {
+	t.Parallel()
+
+	var got *jobv1.JobStatus
+	client := &mockJobClient{
+		searchJobsFn: func(_ context.Context, req *jobv1.SearchJobsRequest) (*jobv1.SearchJobsResponse, error) {
+			got = req.StatusFilter
+			return &jobv1.SearchJobsResponse{Jobs: []*jobv1.Job{}}, nil
+		},
+	}
+	h := NewJobHandler(client, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?page=1&page_size=5&status=open", nil)
+	rec := httptest.NewRecorder()
+	h.Search(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, got)
+	assert.Equal(t, jobv1.JobStatus_JOB_STATUS_ACTIVE, *got)
+}
+
 func TestJobHandler_Search_grpc_error(t *testing.T) {
 	t.Parallel()
 

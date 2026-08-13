@@ -69,7 +69,7 @@ struct MarketTickerView: View {
                     Text("\(openJobs)")
                         .font(.caption2.weight(.bold).monospacedDigit())
                         .foregroundStyle(BrandTheme.textPrimary)
-                    Text(" JOBS")
+                    Text(" LIVE")
                         .font(.caption2.weight(.semibold).monospaced())
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
@@ -98,6 +98,9 @@ struct MarketTickerView: View {
                 }
             }
             .padding(.vertical, 1)
+            // Trailing inset so the last chip can scroll fully on-screen
+            // instead of clipping mid-price at the card edge.
+            .padding(.trailing, 14)
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
     }
@@ -163,8 +166,8 @@ struct MarketTickerView: View {
 
     private var accessibilitySummary: String {
         var parts = ["Market desk"]
-        if let openJobs { parts.append("\(openJobs) open jobs") }
-        if let liveListings { parts.append("\(liveListings) listings") }
+        if let openJobs { parts.append("\(openJobs) live now") }
+        if let liveListings { parts.append("\(liveListings) goods live") }
         for item in samplePrices.prefix(6) {
             var s = "\(item.label) \(item.priceLabel)"
             if let n = item.bidCount, n > 0 { s += ", \(n) bids" }

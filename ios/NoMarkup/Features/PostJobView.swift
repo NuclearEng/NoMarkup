@@ -211,6 +211,7 @@ struct PostJobView: View {
                 }
             }
             .brandListBackground()
+            .brandTabBarClearance()
             .scrollDismissesKeyboard(.interactively)
         }
         .background(BrandTheme.navy.ignoresSafeArea())

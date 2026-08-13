@@ -212,6 +212,7 @@ type SearchJobsInput struct {
 	ScheduleType  *string
 	RecurringOnly *bool
 	TextQuery     string
+	StatusFilter  *string
 	SortField     string
 	SortDesc      bool
 	Page          int
