@@ -45,6 +45,62 @@ final class ImageUploaderTests: XCTestCase {
         XCTAssertNil(ImageUploader.sniffMime(Data(garbage)))
     }
 
+    // MARK: - IOS-PERF.6 security-scoped file read (off MainActor)
+
+    func testReadSecurityScopedFileAcceptsPDFMagicBytes() throws {
+        let url = try Self.writeTempFile(
+            named: "ok.pdf",
+            bytes: [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34] // %PDF-1.4
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let data = try ImageUploader.readSecurityScopedFile(url: url)
+        XCTAssertEqual(ImageUploader.sniffMime(data), "application/pdf")
+        XCTAssertEqual([UInt8](data.prefix(4)), [0x25, 0x50, 0x44, 0x46])
+    }
+
+    func testReadSecurityScopedFileRejectsOversize() throws {
+        let url = try Self.writeTempFile(
+            named: "big.pdf",
+            bytes: [UInt8](repeating: 0x25, count: 16)
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        XCTAssertThrowsError(
+            try ImageUploader.readSecurityScopedFile(url: url, maxBytes: 8)
+        ) { error in
+            guard case APIClientError.httpStatus(let code, let detail) = error else {
+                return XCTFail("expected APIClientError.httpStatus, got \(error)")
+            }
+            XCTAssertEqual(code, 400)
+            XCTAssertTrue(detail.contains("10 MB"), "detail: \(detail)")
+        }
+    }
+
+    func testReadSecurityScopedFileIsNotMainActor() throws {
+        let url = try Self.writeTempFile(
+            named: "actor.pdf",
+            bytes: [0x25, 0x50, 0x44, 0x46]
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        // Compile-time: a nonisolated helper cannot call an `@MainActor` method.
+        let data = try Self.readSecurityScopedFileOffMain(url: url)
+        XCTAssertEqual([UInt8](data), [0x25, 0x50, 0x44, 0x46])
+    }
+
+    /// Proves `readSecurityScopedFile` is not `@MainActor` (IOS-PERF.6).
+    nonisolated private static func readSecurityScopedFileOffMain(url: URL) throws -> Data {
+        try ImageUploader.readSecurityScopedFile(url: url)
+    }
+
+    private static func writeTempFile(named name: String, bytes: [UInt8]) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ios-perf6-\(UUID().uuidString)-\(name)")
+        try Data(bytes).write(to: url, options: .atomic)
+        return url
+    }
+
     func testImageUploadContextWireValues() {
         XCTAssertEqual(ImageUploadContext.avatar.apiValue, "avatar")
         XCTAssertEqual(ImageUploadContext.job.apiValue, "job_photo")

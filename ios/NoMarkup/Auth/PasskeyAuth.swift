@@ -65,7 +65,8 @@ final class PasskeyAuth: NSObject, ObservableObject {
         }
     }
 
-    /// Enrollment from Security settings: register/options → platform key → register/verify.
+    /// Enrollment from Security settings or the post-register offer (`RegisterView`):
+    /// register/options → platform key → register/verify.
     /// Requires a signed-in session (register endpoints are authed).
     func registerPasskey() async {
         statusMessage = nil

@@ -115,6 +115,12 @@ final class ScreenshotWalkUITests: XCTestCase {
             withIntermediateDirectories: true
         )
         try? screenshot.pngRepresentation.write(to: url)
+        let hops = byID("debug.requestLog.latest")
+        let text = hops.exists ? hops.label : ""
+        let att = XCTAttachment(string: text.isEmpty ? "(no hops)" : text)
+        att.name = name + "-request-ids"
+        att.lifetime = .keepAlways
+        add(att)
     }
 
     private func recordSkip(_ surface: String, _ reason: String) {
@@ -201,8 +207,11 @@ final class ScreenshotWalkUITests: XCTestCase {
         let bounds = app.frame
         // Pixel offset from the app origin — never element.coordinate (throws on clip).
         let origin = app.coordinate(withNormalizedOffset: .zero)
+        // Tall list rows: tap 25% from the top so midY cannot land in the
+        // iOS 26 floating tab capsule (Payment methods → Jobs).
+        let tapY = f.height > 44 ? (f.minY + f.height * 0.25) : f.midY
         let point = origin.withOffset(
-            CGVector(dx: f.midX - bounds.minX, dy: f.midY - bounds.minY)
+            CGVector(dx: f.midX - bounds.minX, dy: tapY - bounds.minY)
         )
         point.tap()
         return true
@@ -228,9 +237,105 @@ final class ScreenshotWalkUITests: XCTestCase {
         return isOnScreen(element)
     }
 
-    /// Pick an Admin Section menu row (Flags / Users / Fees / …).
-    /// The iOS 26 capsule strip collapsed; ids live on Menu rows (`admin.console.tab.*`)
-    /// and the labeled picker is `admin.console.tabs.menu`.
+    /// Scroll until `element` is on-screen AND its bottom sits above the floating tab bar.
+    @discardableResult
+    private func scrollClearOfTabBar(_ element: XCUIElement, maxSwipes: Int = 10) -> Bool {
+        func clearsTabBar() -> Bool {
+            guard isOnScreen(element) else { return false }
+            let previous = continueAfterFailure
+            continueAfterFailure = true
+            defer { continueAfterFailure = previous }
+            let f = element.frame
+            guard f.maxY.isFinite else { return false }
+            return f.maxY < app.frame.maxY - 130
+        }
+
+        _ = scrollTo(element, maxSwipes: maxSwipes)
+        if clearsTabBar() { return true }
+
+        for _ in 0..<6 {
+            guard element.exists else { break }
+            let previous = continueAfterFailure
+            continueAfterFailure = true
+            let f = element.frame
+            continueAfterFailure = previous
+            if isOnScreen(element), f.maxY >= app.frame.maxY - 130 {
+                app.swipeUp()
+                settle(0.12)
+                if clearsTabBar() { return true }
+                continue
+            }
+            if !isOnScreen(element) {
+                app.swipeUp()
+                settle(0.12)
+                if clearsTabBar() { return true }
+            }
+        }
+        for _ in 0..<4 {
+            app.swipeDown()
+            settle(0.12)
+            if clearsTabBar() { return true }
+        }
+        return clearsTabBar()
+    }
+
+    /// Safari / share / confirm sheets that swallow the root tab bar.
+    /// Existence-only — do not `waitForExistence` (would add seconds per pop).
+    @discardableResult
+    private func dismissSystemSheets() -> Bool {
+        var dismissed = false
+        if byID("ageGate.dialog").exists {
+            _ = completeAgeGateIfPresent()
+            dismissed = true
+        }
+        if app.buttons["Not now"].exists {
+            _ = dismissNotificationPrePrompt()
+            dismissed = true
+        }
+        for title in ["Close", "Done", "Cancel"] {
+            let button = app.buttons[title]
+            if button.exists, safeTap(button) {
+                settle(0.3)
+                dismissed = true
+            }
+        }
+        if app.webViews.firstMatch.exists {
+            app.swipeDown()
+            settle(0.35)
+            dismissed = true
+        }
+        if app.sheets.firstMatch.exists {
+            app.swipeDown()
+            settle(0.3)
+            dismissed = true
+        }
+        return dismissed
+    }
+
+    private func tabShellPresent() -> Bool {
+        app.tabBars.firstMatch.exists || byID("root.tabview").exists
+    }
+
+    private func coldRelaunchAndLogin(email: String, screenshotPrefix: String) {
+        app.terminate()
+        settle(0.4)
+        app = XCUIApplication()
+        let env = ProcessInfo.processInfo.environment
+        let apiBase = env["NOMARKUP_API_BASE_URL"]
+            ?? env["TEST_RUNNER_NOMARKUP_API_BASE_URL"]
+            ?? "http://127.0.0.1:8081"
+        app.launchEnvironment["NOMARKUP_API_BASE_URL"] = apiBase
+        app.launchEnvironment["NOMARKUP_UI_TESTING"] = "1"
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+        settle(1.2)
+        login(email: email, screenshotPrefix: screenshotPrefix)
+    }
+
+    /// Pick an Admin Section sheet row (Flags / Users / Fees / …).
+    /// Opener is `admin.console.tabs.menu`; rows live in `admin.console.tabs.sheet`
+    /// (`admin.console.tab.<slug>`). SwiftUI Menu children are not in the AX tree
+    /// until presented — always open the picker before tapping a row.
     @discardableResult
     private func tapAdminConsoleTab(_ label: String) -> Bool {
         let tabs = byID("admin.console.tabs")
@@ -240,46 +345,18 @@ final class ScreenshotWalkUITests: XCTestCase {
         }
         let slug = label.lowercased().replacingOccurrences(of: " ", with: "-")
         let rowID = "admin.console.tab.\(slug)"
-        let byId = byID(rowID)
+        let destID = "admin.\(slug).root"
 
         // Already on this section (gold pill / a11y label "Admin section, Flags").
         if menu.exists {
             let lab = menu.label
-            if lab == label || lab.hasSuffix(", \(label)") { return true }
-        }
-
-        func tapMenuRow() -> Bool {
-            if byId.exists, safeTap(byId) { return true }
-            let previous = continueAfterFailure
-            continueAfterFailure = true
-            defer { continueAfterFailure = previous }
-            if app.menuItems[label].exists {
-                app.menuItems[label].tap()
+            if lab == label || lab.hasSuffix(", \(label)") {
+                _ = byID(destID).waitForExistence(timeout: 2)
                 return true
             }
-            let idHits = app.descendants(matching: .any).matching(identifier: rowID)
-            for i in 0..<min(idHits.count, 6) {
-                let el = idHits.element(boundBy: i)
-                if el.exists, safeTap(el) { return true }
-            }
-            // Labelled buttons that are not the root tab bar (Jobs / Marketplace / …).
-            let labeled = app.buttons.matching(NSPredicate(format: "label == %@", label))
-            let appFrame = app.frame
-            for i in 0..<min(labeled.count, 8) {
-                let el = labeled.element(boundBy: i)
-                guard el.exists else { continue }
-                let f = el.frame
-                guard f.width.isFinite, f.height.isFinite, f.width > 1, f.height > 1 else { continue }
-                if f.minY > appFrame.maxY - 120 { continue }
-                if el.identifier.hasPrefix("tab.") { continue }
-                if safeTap(el) { return true }
-            }
-            return false
         }
 
-        if tapMenuRow() { return true }
-
-        func openSectionMenu() -> Bool {
+        func openSectionPicker() -> Bool {
             if menu.exists, safeTap(menu) { return true }
             if menu.exists {
                 let previous = continueAfterFailure
@@ -295,11 +372,77 @@ final class ScreenshotWalkUITests: XCTestCase {
             return byA11y.exists && safeTap(byA11y)
         }
 
-        guard openSectionMenu() else { return false }
+        func tapSheetRow() -> Bool {
+            let row = byID(rowID)
+            if row.exists, isOnScreen(row), safeTap(row) { return true }
+            let previous = continueAfterFailure
+            continueAfterFailure = true
+            defer { continueAfterFailure = previous }
+            if app.menuItems[label].exists {
+                app.menuItems[label].tap()
+                return true
+            }
+            let idHits = app.descendants(matching: .any).matching(identifier: rowID)
+            for i in 0..<min(idHits.count, 8) {
+                let el = idHits.element(boundBy: i)
+                if el.exists, isOnScreen(el), safeTap(el) { return true }
+            }
+            let labeled = app.buttons.matching(NSPredicate(format: "label == %@", label))
+            let appFrame = app.frame
+            for i in 0..<min(labeled.count, 8) {
+                let el = labeled.element(boundBy: i)
+                guard el.exists else { continue }
+                let f = el.frame
+                guard f.width.isFinite, f.height.isFinite, f.width > 1, f.height > 1 else { continue }
+                if f.minY > appFrame.maxY - 120 { continue }
+                if el.identifier.hasPrefix("tab.") { continue }
+                if isOnScreen(el), safeTap(el) { return true }
+            }
+            return false
+        }
+
+        guard openSectionPicker() else { return false }
         settle(0.35)
-        if tapMenuRow() { return true }
-        settle(0.45)
-        return tapMenuRow()
+        let sheet = byID("admin.console.tabs.sheet")
+        _ = sheet.waitForExistence(timeout: 3)
+            || app.menuItems.firstMatch.waitForExistence(timeout: 1)
+
+        var tapped = tapSheetRow()
+        if !tapped {
+            for _ in 0..<10 {
+                if sheet.exists {
+                    sheet.swipeUp()
+                } else {
+                    app.swipeUp()
+                }
+                settle(0.12)
+                if tapSheetRow() {
+                    tapped = true
+                    break
+                }
+            }
+        }
+        if !tapped {
+            for _ in 0..<6 {
+                if sheet.exists {
+                    sheet.swipeDown()
+                } else {
+                    app.swipeDown()
+                }
+                settle(0.12)
+                if tapSheetRow() {
+                    tapped = true
+                    break
+                }
+            }
+        }
+        if !tapped {
+            if app.buttons["Close"].exists { _ = safeTap(app.buttons["Close"]) }
+            return false
+        }
+        settle(0.35)
+        _ = byID(destID).waitForExistence(timeout: 6)
+        return true
     }
 
     /// Tap the nav-bar back button when present.
@@ -326,14 +469,7 @@ final class ScreenshotWalkUITests: XCTestCase {
 
     /// Switch tabs via the tab BAR only (never the full-screen `tab.*` content ids).
     private func openTab(_ label: String) {
-        // Dismiss known full-screen blockers that hide the tab bar.
-        completeAgeGateIfPresent()
-        dismissNotificationPrePrompt()
-        // SFSafari / sheet dismiss affordances.
-        for title in ["Done", "Close", "Cancel"] {
-            let b = app.buttons[title]
-            if b.exists, safeTap(b) { settle(0.3) }
-        }
+        dismissSystemSheets()
 
         let barButton = app.tabBars.buttons[label]
         if barButton.waitForExistence(timeout: 4) {
@@ -370,6 +506,7 @@ final class ScreenshotWalkUITests: XCTestCase {
 
     /// Switch to a tab and unwind its navigation stack to the root list.
     private func popToRoot(_ label: String) {
+        dismissSystemSheets()
         // If a destination hid the tab bar, pop via Back first so Account's
         // `.toolbar(.visible, for: .tabBar)` can restore chrome before retap.
         if !app.tabBars.firstMatch.exists {
@@ -482,9 +619,9 @@ final class ScreenshotWalkUITests: XCTestCase {
         settle(0.8)
         let signOut = byID("account.row.signOut")
         var tapped = false
-        if scrollTo(signOut, maxSwipes: 8), safeTap(signOut) {
+        if scrollClearOfTabBar(signOut, maxSwipes: 8), safeTap(signOut) {
             tapped = true
-        } else if scrollTo(app.buttons["Sign out"], maxSwipes: 6) {
+        } else if scrollClearOfTabBar(app.buttons["Sign out"], maxSwipes: 6) {
             app.buttons["Sign out"].tap()
             tapped = true
         }
@@ -684,35 +821,60 @@ final class ScreenshotWalkUITests: XCTestCase {
         ("account.row.admin", "row-admin"),
     ]
 
+    private static let expectedHiddenHardOffRowIDs: Set<String> = [
+        "account.row.legalServices",
+        "account.row.insuranceQuote",
+    ]
+
+    private static let legalSafariRowIDs: Set<String> = [
+        "account.row.privacyPolicy",
+        "account.row.termsOfService",
+        "account.row.communityGuidelines",
+        "account.row.support",
+    ]
+
+    private func isExpectedHiddenHardOffRow(_ rowID: String) -> Bool {
+        Self.expectedHiddenHardOffRowIDs.contains(rowID)
+    }
+
     /// Visit every Account NavigationLink by stable id; soft-skip missing/role-gated rows.
     /// Also exercises button/info rows (widgets, GDPR export, sign-out confirm) that
     /// are not NavigationLinks.
     private func visitAllAccountRowsByID(shotPrefix: String, skipAdmin: Bool = true, recoverEmail: String? = nil) {
-        var recoveredShell = false
+        // Export / sign-out confirm / notif save must run before Following / legal
+        // Safari sheets can swallow the tab bar.
+        visitAccountActionRows(shotPrefix: shotPrefix)
+        exerciseNotificationPrefs(shotPrefix: shotPrefix)
+
+        var recoveries = 0
         for entry in Self.allAccountNavigationRowIDs {
-            // If a prior destination swallowed the tab bar, cold-recover once so
-            // the rest of the sweep can still exercise remaining rows.
-            if !recoveredShell,
-               !app.tabBars.firstMatch.exists,
-               !byID("root.tabview").exists {
-                recordSkip(
-                    "\(shotPrefix)-mid-sweep-recovery",
-                    "tab shell lost before \(entry.id); cold relaunch once"
-                )
-                app.terminate()
-                settle(0.4)
-                app = XCUIApplication()
-                let env = ProcessInfo.processInfo.environment
-                let apiBase = env["NOMARKUP_API_BASE_URL"]
-                    ?? env["TEST_RUNNER_NOMARKUP_API_BASE_URL"]
-                    ?? "http://127.0.0.1:8081"
-                app.launchEnvironment["NOMARKUP_API_BASE_URL"] = apiBase
-                app.launchEnvironment["NOMARKUP_UI_TESTING"] = "1"
-                app.launchArguments = ["-ui-testing"]
-                app.launch()
-                settle(1.2)
-                login(email: recoverEmail ?? customerEmail, screenshotPrefix: "\(shotPrefix)-recover")
-                recoveredShell = true
+            if !tabShellPresent() {
+                dismissSystemSheets()
+                var unwind = 0
+                while unwind < 6, !tabShellPresent() {
+                    if hasBackButton { goBack() } else { break }
+                    unwind += 1
+                }
+            }
+            if !tabShellPresent() {
+                if recoveries < 2 {
+                    recordSkip(
+                        "\(shotPrefix)-mid-sweep-recovery",
+                        "tab shell lost before \(entry.id); cold relaunch"
+                    )
+                    coldRelaunchAndLogin(
+                        email: recoverEmail ?? customerEmail,
+                        screenshotPrefix: "\(shotPrefix)-recover"
+                    )
+                    recoveries += 1
+                } else {
+                    recordSkip(
+                        "\(shotPrefix)-mid-sweep-remaining",
+                        "tab shell lost at \(entry.id); remaining rows not cascade-GAP"
+                    )
+                    noteWF("sweep", "GAP", "tab shell lost at \(entry.id); remaining skipped as cascade")
+                    break
+                }
             }
             // Admin console is role-gated — test06 asserts the row is absent
             // instead of soft-skipping. Widgets is informational (no push).
@@ -723,7 +885,6 @@ final class ScreenshotWalkUITests: XCTestCase {
             }
             visitAccountRowByID(entry.id, shotName: "\(shotPrefix)-\(entry.shot)")
         }
-        visitAccountActionRows(shotPrefix: shotPrefix)
     }
 
     /// Scroll an informational Account row into view and screenshot (no navigation).
@@ -731,7 +892,7 @@ final class ScreenshotWalkUITests: XCTestCase {
         popToRoot("Account")
         settle(0.3)
         let row = byID(rowID)
-        if scrollTo(row, maxSwipes: 14) {
+        if scrollClearOfTabBar(row, maxSwipes: 14) {
             snap(shotName)
             noteWF(rowID, "PASS", "visible on Account (info row)")
         } else {
@@ -752,13 +913,12 @@ final class ScreenshotWalkUITests: XCTestCase {
         popToRoot("Account")
         settle(0.3)
         let row = byID(rowID)
-        if row.exists, safeTap(row) { return true }
-        if scrollTo(row, maxSwipes: maxSwipes), safeTap(row) { return true }
+        if scrollClearOfTabBar(row, maxSwipes: maxSwipes), safeTap(row) { return true }
         for _ in 0..<4 {
             app.swipeUp()
             settle(0.08)
         }
-        return scrollTo(row, maxSwipes: 6) && safeTap(row)
+        return scrollClearOfTabBar(row, maxSwipes: 6) && safeTap(row)
     }
 
     private func visibleCopyContains(_ phrases: [String]) -> String? {
@@ -999,6 +1159,10 @@ final class ScreenshotWalkUITests: XCTestCase {
 
     private func exerciseHubList(_ rowID: String, shotName: String) {
         guard openAccountRowStay(rowID) else {
+            if isExpectedHiddenHardOffRow(rowID) {
+                noteWF(rowID, "PASS", "expected-hidden iOSHardOffKeys")
+                return
+            }
             recordSkip(shotName, "\(rowID) not hittable")
             noteWF(rowID, "GAP", "not hittable")
             return
@@ -1068,7 +1232,7 @@ final class ScreenshotWalkUITests: XCTestCase {
         popToRoot("Account")
         settle(0.3)
         let row = byID("account.row.exportData")
-        guard scrollTo(row, maxSwipes: 14), safeTap(row) else {
+        guard scrollClearOfTabBar(row, maxSwipes: 14), safeTap(row) else {
             recordSkip("\(shotPrefix)-row-exportData", "account.row.exportData not hittable")
             noteWF("exportData", "GAP", "\(shotPrefix) not hittable")
             return
@@ -1108,9 +1272,9 @@ final class ScreenshotWalkUITests: XCTestCase {
         settle(0.3)
         let row = byID("account.row.signOut")
         var tapped = false
-        if scrollTo(row, maxSwipes: 8), safeTap(row) {
+        if scrollClearOfTabBar(row, maxSwipes: 8), safeTap(row) {
             tapped = true
-        } else if scrollTo(app.buttons["Sign out"], maxSwipes: 6), safeTap(app.buttons["Sign out"]) {
+        } else if scrollClearOfTabBar(app.buttons["Sign out"], maxSwipes: 6), safeTap(app.buttons["Sign out"]) {
             tapped = true
         }
         guard tapped else {
@@ -1227,20 +1391,22 @@ final class ScreenshotWalkUITests: XCTestCase {
         settle(0.35)
         let row = byID(rowID)
         var opened = false
-        if row.exists, safeTap(row) {
-            opened = true
-        } else if scrollTo(row, maxSwipes: 10), safeTap(row) {
+        if scrollClearOfTabBar(row, maxSwipes: 10), safeTap(row) {
             opened = true
         } else {
             for _ in 0..<5 {
                 app.swipeUp()
                 settle(0.08)
             }
-            if scrollTo(row, maxSwipes: 6), safeTap(row) {
+            if scrollClearOfTabBar(row, maxSwipes: 6), safeTap(row) {
                 opened = true
             }
         }
         guard opened else {
+            if isExpectedHiddenHardOffRow(rowID) {
+                noteWF(rowID, "PASS", "expected-hidden iOSHardOffKeys")
+                return
+            }
             recordSkip(shotName, "Account row id '\(rowID)' not found/hittable")
             noteWF(rowID, "GAP", "\(shotName) not found/hittable")
             return
@@ -1250,12 +1416,29 @@ final class ScreenshotWalkUITests: XCTestCase {
         let crashed = app.staticTexts["Something went wrong"].exists
             || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "thread stack")).firstMatch.exists
         snap(shotName)
+        if Self.legalSafariRowIDs.contains(rowID) {
+            noteWF(rowID, crashed ? "FAIL" : "PASS", crashed ? "error chrome after open" : "\(shotName) opened; dismissed Safari sheet")
+            dismissSystemSheets()
+            popToRoot("Account")
+            return
+        }
         if crashed {
             recordSkip(shotName, "destination shows error chrome after open")
             noteWF(rowID, "FAIL", "\(shotName) error chrome after open")
             snap("\(shotName)-error")
         } else {
             noteWF(rowID, "PASS", "\(shotName) opened")
+        }
+        if rowID == "account.row.featureFlags" {
+            let legalOff = app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS[c] %@", "Legal services marketplace, off")
+            ).firstMatch.exists
+            let insuranceOff = app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS[c] %@", "Per-job insurance, off")
+            ).firstMatch.exists
+            if legalOff || insuranceOff {
+                noteWF("iOSHardOffKeys", "PASS", "feature flag status shows legal/insurance OFF")
+            }
         }
         // Empty load-error titles that should usually load with seed data.
         let badEmpty = [
@@ -1286,13 +1469,16 @@ final class ScreenshotWalkUITests: XCTestCase {
         // Prefer stable accessibility identifiers from AccountView.
         if let stableID = Self.accountRowIDs[label] {
             let byStable = byID(stableID)
-            if scrollTo(byStable, maxSwipes: 8), safeTap(byStable) {
+            if scrollClearOfTabBar(byStable, maxSwipes: 8), safeTap(byStable) {
                 settle(settleTime)
                 snap(shotName)
                 if let extra = extraScrollShot {
                     app.swipeUp()
                     settle(0.6)
                     snap(extra)
+                }
+                if Self.legalSafariRowIDs.contains(stableID) {
+                    dismissSystemSheets()
                 }
                 popToRoot("Account")
                 return
@@ -1302,7 +1488,7 @@ final class ScreenshotWalkUITests: XCTestCase {
                 app.swipeUp()
                 settle(0.1)
             }
-            if scrollTo(byStable, maxSwipes: 4), safeTap(byStable) {
+            if scrollClearOfTabBar(byStable, maxSwipes: 4), safeTap(byStable) {
                 settle(settleTime)
                 snap(shotName)
                 if let extra = extraScrollShot {
@@ -1310,7 +1496,14 @@ final class ScreenshotWalkUITests: XCTestCase {
                     settle(0.6)
                     snap(extra)
                 }
+                if Self.legalSafariRowIDs.contains(stableID) {
+                    dismissSystemSheets()
+                }
                 popToRoot("Account")
+                return
+            }
+            if isExpectedHiddenHardOffRow(stableID) {
+                noteWF(stableID, "PASS", "expected-hidden iOSHardOffKeys")
                 return
             }
             recordSkip(shotName, "Account row id '\(stableID)' not found/hittable")
@@ -1382,16 +1575,20 @@ final class ScreenshotWalkUITests: XCTestCase {
         settle(0.4)
         let row = byID(rowID)
         var opened = false
-        if scrollTo(row, maxSwipes: 14), safeTap(row) {
+        if scrollClearOfTabBar(row, maxSwipes: 14), safeTap(row) {
             opened = true
         } else {
             // Label fallback for older builds without account.row.* ids.
             let byName = byLabel(label)
-            if scrollTo(byName, maxSwipes: 14), safeTap(byName) {
+            if scrollClearOfTabBar(byName, maxSwipes: 14), safeTap(byName) {
                 opened = true
             }
         }
         guard opened else {
+            if isExpectedHiddenHardOffRow(rowID) {
+                noteWF(rowID, "PASS", "expected-hidden iOSHardOffKeys")
+                return
+            }
             recordSkip(shotName, "Account row '\(label)' / \(rowID) not found")
             return
         }
@@ -1595,6 +1792,9 @@ final class ScreenshotWalkUITests: XCTestCase {
         // Ordered roughly top-to-bottom through the Account list; bidirectional
         // scrolling covers drift from the lazy List's persistent position.
         visitAccountRow("Profile settings", shotName: "account-profile-settings")
+        exerciseExportData(shotPrefix: "cust")
+        exerciseSignOutDialog(shotPrefix: "cust", confirmLeave: false)
+        exerciseNotificationPrefs(shotPrefix: "cust")
         visitAccountRow(
             "Security",
             shotName: "account-security-top",
@@ -1696,7 +1896,6 @@ final class ScreenshotWalkUITests: XCTestCase {
         visitAccountRow("Marketplace map", shotName: "account-marketplace-map")
         visitAccountInfoRow("account.row.widgets", shotName: "account-widgets")
         exerciseAccountInnerWorkflows(shotPrefix: "cust", email: customerEmail)
-        visitAccountActionRows(shotPrefix: "cust")
     }
 
     // MARK: - 03: provider surfaces + empty states
@@ -1738,8 +1937,10 @@ final class ScreenshotWalkUITests: XCTestCase {
         visitAccountRow("Insurance quote", shotName: "provider-insurance-quote")
         visitAccountRow("Legal services", shotName: "provider-legal-services")
         visitAccountInfoRow("account.row.widgets", shotName: "provider-widgets")
+        exerciseExportData(shotPrefix: "prov")
+        exerciseSignOutDialog(shotPrefix: "prov", confirmLeave: false)
+        exerciseNotificationPrefs(shotPrefix: "prov")
         exerciseAccountInnerWorkflows(shotPrefix: "prov", email: providerEmail)
-        visitAccountActionRows(shotPrefix: "prov")
 
         // Marketplace: open first listing as provider (bid ladder vs seller view)
         popToRoot("Marketplace")
@@ -1910,21 +2111,10 @@ final class ScreenshotWalkUITests: XCTestCase {
         // detach the TabView chrome without crashing the process. Recover once
         // via cold login so we assert product liveness, not an intermediate
         // SwiftUI tab-bar flicker.
-        if !(byID("root.tabview").waitForExistence(timeout: 3) || app.tabBars.firstMatch.exists) {
+        if !tabShellPresent() {
+            dismissSystemSheets()
             recordSkip("cust-sweep-tab-recovery", "tab shell missing after sweep; cold relaunch")
-            app.terminate()
-            settle(0.5)
-            app = XCUIApplication()
-            let env = ProcessInfo.processInfo.environment
-            let apiBase = env["NOMARKUP_API_BASE_URL"]
-                ?? env["TEST_RUNNER_NOMARKUP_API_BASE_URL"]
-                ?? "http://127.0.0.1:8081"
-            app.launchEnvironment["NOMARKUP_API_BASE_URL"] = apiBase
-            app.launchEnvironment["NOMARKUP_UI_TESTING"] = "1"
-            app.launchArguments = ["-ui-testing"]
-            app.launch()
-            settle(1.5)
-            login(email: customerEmail, screenshotPrefix: "cust-sweep-recover")
+            coldRelaunchAndLogin(email: customerEmail, screenshotPrefix: "cust-sweep-recover")
             popToRoot("Account")
         }
         XCTAssertTrue(

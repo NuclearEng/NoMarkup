@@ -1274,7 +1274,61 @@
     "Enabled" : {},
     "Enabling…" : {},
     "End" : {},
+    "Ended" : {
+      "comment" : "Auction countdown when the close time has passed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ended"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finalizado"
+          }
+        }
+      }
+    },
     "Ends" : {},
+    "Ends %@" : {
+      "comment" : "Auction countdown when close is two weeks or more away; argument is an abbreviated date",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ends %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Termina %@"
+          }
+        }
+      }
+    },
+    "Ends in %@" : {
+      "comment" : "Auction countdown; argument is a compact duration such as 45m or 2h",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ends in %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Termina en %@"
+          }
+        }
+      }
+    },
     "Ends this auction for buyers. Listings with active bids cannot be cancelled from the app." : {},
     "Enter a code from a friend who invited you. Each account can redeem once." : {},
     "Enter a dollar amount (example 125.00) — not cents" : {},

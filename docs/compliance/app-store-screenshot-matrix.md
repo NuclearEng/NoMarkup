@@ -1,8 +1,8 @@
 # App Store screenshot matrix (iOS)
 
 **Audit IDs:** IOS-DES.14 · IOS-DIST.5  
-**Updated:** 2026-08-02  
-**Related:** [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) §6 · [`testflight-process.md`](./testflight-process.md)
+**Updated:** 2026-08-22  
+**Related:** [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) §6 · [`testflight-process.md`](./testflight-process.md) · [`asc-screenshot-frames.md`](./asc-screenshot-frames.md)
 
 ---
 
@@ -17,7 +17,11 @@
 
 Portrait by default. Prefer **native SwiftUI** chrome (Guideline **4.2** — not Safari shots of the marketing site).
 
-**Pixel status:** Media boxes open — **no** production screenshot set committed under `ios/` for ASC upload. Capture is **founder/ops**. Eng provides surfaces + harness.
+**Bezels (required):** composite capture into **Apple official product bezels** from [Apple Design Resources](https://developer.apple.com/design/resources/) — **iPhone 6.9″** (`Bezel-iPhone-17.dmg` / `Bezel-iPhone-16.dmg`) and **iPad 13″** (`Bezel-iPad-Pro-(M5).dmg`). URLs, marketing-guidelines link, and harness: [`asc-screenshot-frames.md`](./asc-screenshot-frames.md). Do **not** use unofficial mockups. Do **not** invent or commit fake screenshot PNGs.
+
+**Pixel status:** Media boxes open — **no** production screenshot set committed under `ios/` for ASC upload. Capture is **founder/ops**. Eng provides surfaces + harness + official-bezel URLs.
+
+**App icon:** flattened 1024 masters already live in [`brand/`](../../brand/) (`app-icon-1024.png`, `app-icon-champagne-m.png`, candidates). Apple’s App Icon Template / Icon Composer is on the same Design Resources hub — see frames doc.
 
 ---
 
@@ -89,9 +93,10 @@ open ios/NoMarkup.xcodeproj
 | Step | Done? |
 |------|:-----:|
 | Gateway + seed for realistic catalog | [ ] |
-| 6.9" iPhone set (ASC scenes 1–6) | [ ] |
-| 13" iPad set (same scenes) | [ ] |
-| App Icon 1024 present (`AppIcon-1024.png`) | [x] terminal master 37 |
+| Download official 6.9″ iPhone + 13″ iPad bezels ([frames](./asc-screenshot-frames.md)) | [ ] |
+| 6.9" iPhone set (ASC scenes 1–6), composited in Apple bezels | [ ] |
+| 13" iPad set (same scenes), composited in Apple bezels | [ ] |
+| App Icon 1024 present (`AppIcon-1024.png`) | [x] champagne M↓ in `brand/` + asset catalog |
 | Uploaded to ASC Media Manager | [ ] |
 
 ---
@@ -102,4 +107,4 @@ Optional for v1. Same dual-rail honesty rules (no regulated rails, no fake IAP).
 
 ---
 
-*DES.14 marketing assets: plan + harness done; ASC pixels are founder residual.*
+*DES.14: official Apple bezels required ([`asc-screenshot-frames.md`](./asc-screenshot-frames.md)); harness is `ScreenshotWalkUITests`. ASC pixels remain founder residual — no fake PNGs in tree.*

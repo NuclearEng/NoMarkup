@@ -192,6 +192,26 @@ final class PushRegistration: NSObject, ObservableObject {
     nonisolated static var viewActionIdentifier: String { "VIEW" }
     nonisolated static var dismissActionIdentifier: String { "DISMISS" }
 
+    /// UNNotificationCategory identifiers registered at configure() (IOS-SYS.NT.3).
+    /// Must stay in lockstep with `apnsCategory` on the notification service.
+    nonisolated static let registeredCategoryIdentifiers: Set<String> = [
+        "bid_outbid",
+        "bid_awarded",
+        "auction_closing_soon",
+        "contract_created",
+        "new_message",
+    ]
+
+    /// Categories that include the destructive DISMISS action alongside VIEW.
+    /// Chat has no Reply action: `UNTextInputNotificationAction` would need a
+    /// send-from-notification path (content/service extension or background
+    /// chat POST) that this target does not have. VIEW opens the thread via
+    /// the existing `action_url` deep link.
+    nonisolated static let categoryIdentifiersWithDismiss: Set<String> = [
+        "bid_outbid",
+        "new_message",
+    ]
+
     private func registerNotificationCategories() {
         let viewAction = UNNotificationAction(
             identifier: Self.viewActionIdentifier,
@@ -204,32 +224,17 @@ final class PushRegistration: NSObject, ObservableObject {
             options: [.destructive]
         )
 
-        let categories: Set<UNNotificationCategory> = [
-            UNNotificationCategory(
-                identifier: "bid_outbid",
-                actions: [viewAction, dismissAction],
+        let categories = Set(Self.registeredCategoryIdentifiers.map { identifier in
+            let actions: [UNNotificationAction] = Self.categoryIdentifiersWithDismiss.contains(identifier)
+                ? [viewAction, dismissAction]
+                : [viewAction]
+            return UNNotificationCategory(
+                identifier: identifier,
+                actions: actions,
                 intentIdentifiers: [],
                 options: []
-            ),
-            UNNotificationCategory(
-                identifier: "bid_awarded",
-                actions: [viewAction],
-                intentIdentifiers: [],
-                options: []
-            ),
-            UNNotificationCategory(
-                identifier: "auction_closing_soon",
-                actions: [viewAction],
-                intentIdentifiers: [],
-                options: []
-            ),
-            UNNotificationCategory(
-                identifier: "contract_created",
-                actions: [viewAction],
-                intentIdentifiers: [],
-                options: []
-            ),
-        ]
+            )
+        })
         UNUserNotificationCenter.current().setNotificationCategories(categories)
     }
 

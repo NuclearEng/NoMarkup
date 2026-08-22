@@ -50,7 +50,7 @@ Do **not** archive with Xcode 16 / iOS 18 SDK for App Store or TestFlight — AS
 |-------|--------|
 | **Marketing version** | First public App Store: **`1.0.0`** |
 | **Build number** | **Monotonic integer** per upload (never reuse for same version) |
-| Current tree | **`1.0.0` / build `3`** (`scripts/ios-archive-lint.sh`) |
+| Current tree | **`1.0.0` / build `3`** (`scripts/ios-archive-lint.sh`; DIST.17 Support DNS is warn-only) |
 
 **Founder:** Each re-upload → leave marketing version, **+1** build only (in Xcode or project).
 
@@ -147,7 +147,8 @@ Please cover:
 2) Marketplace browse + listing detail
 3) Jobs browse + job detail
 4) Sign in (email or SIWA) → Account legal links + Delete Account UI
-   (do not delete shared seed accounts)
+   (do not delete shared seed accounts). Account → Support is a native
+   fallback (mailto:support@no-markup.com) — it does not need live DNS.
 5) Plan limits: free-tier only — no IAP paywall
 6) Place-bid / Buy now only on staging you own (Stripe)
 7) Notifications pre-prompt after bid/watch if shown

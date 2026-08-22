@@ -2,6 +2,9 @@
 # Archive lint for iOS release hygiene (IOS-SEC.1 / IOS-DIST.1).
 # Fails if Release would resolve a non-HTTPS API base from Info.plist,
 # or if Xcode is below the App Store SDK floor (26).
+#
+# DIST.17 Support URL DNS/HTTP is a **warning only** (never exit 1). Public
+# no-markup.com DNS is founder/ops; the binary ships a native Support fallback.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -96,9 +99,22 @@ if [[ "$ENC" != "false" ]]; then
 fi
 ok "ITSAppUsesNonExemptEncryption=false"
 
+# --- DIST.17 Support URL DNS/HTTP (warn only; founder DNS is not an eng defect) ---
+# AppConfig.supportURL stays https://no-markup.com/support for ASC. In-app Support
+# uses LegalWebView fallback .nativeSupport + mailto:support@no-markup.com.
+# This check never fails the lint. GitHub Actions: ::warning:: annotation.
+SUPPORT_CHECK_URL="https://no-markup.com/support"
+if curl -sS -o /dev/null --connect-timeout 5 --max-time 10 -I "$SUPPORT_CHECK_URL" 2>/dev/null; then
+  ok "DIST.17 Support URL reachable ($SUPPORT_CHECK_URL)"
+else
+  echo "::warning::DIST.17 Support URL DNS failed" >&2
+  echo "WARN: DIST.17 Support URL DNS failed ($SUPPORT_CHECK_URL). Public DNS is founder/ops; archive lint does not fail. In-app Support uses native mailto:support@no-markup.com fallback." >&2
+fi
+
 echo
 echo "Archive lint passed. Still required before upload:"
 echo "  - Human device smoke (SE / iPad / AX5) — docs/compliance/device-smoke-checklist.md"
 echo "  - ASC privacy labels + age rating entry"
 echo "  - APNS_*.env for production push delivery"
 echo "  - Serve AASA at https://no-markup.com/.well-known/apple-app-site-association"
+echo "  - DIST.17: public DNS for https://no-markup.com/support (in-app Support is native mailto if NXDOMAIN)"

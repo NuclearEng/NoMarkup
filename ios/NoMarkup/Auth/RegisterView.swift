@@ -2,8 +2,10 @@ import SwiftUI
 
 struct RegisterView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var featureFlags: FeatureFlags
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
+    @StateObject private var passkeyAuth = PasskeyAuth()
 
     private enum Field {
         case displayName
@@ -25,28 +27,46 @@ struct RegisterView: View {
     }
 
     @State private var signupRole: SignupRole = .customer
+    /// Post-register passkey offer (IOS-SEC.2). Only set when the `passkeys` flag is on.
+    @State private var showingPasskeyOffer = false
+    /// Prevents a second offer after skip/enroll flips `isAuthenticated` back on.
+    @State private var didOfferPasskeyThisSignup = false
+    @State private var isFinishingIntoApp = false
+
+    private var passkeysEnabled: Bool {
+        PasskeyAuth.isEnabled(in: featureFlags)
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                header
-                formFields
-                rolePicker
-                actions
+                if showingPasskeyOffer, passkeysEnabled {
+                    passkeyOffer
+                } else {
+                    header
+                    formFields
+                    rolePicker
+                    actions
+                }
             }
             .padding(24)
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
         .background(BrandTheme.navy.ignoresSafeArea())
-        .navigationTitle("Create account")
+        .navigationTitle(showingPasskeyOffer && passkeysEnabled ? "Save a passkey" : "Create account")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.large)
         #endif
+        .navigationBarBackButtonHidden(showingPasskeyOffer && passkeysEnabled)
         .brandNavigationBarChrome()
         .onChange(of: auth.isAuthenticated) { _, signedIn in
-            if signedIn && !auth.isScaffoldSession {
-                dismiss()
+            handleAuthenticatedChange(signedIn)
+        }
+        .onDisappear {
+            // Swipe-back / parent teardown while holding the new session → enter the app.
+            if showingPasskeyOffer, !auth.isAuthenticated {
+                enterAppAfterRegister()
             }
         }
     }
@@ -205,6 +225,76 @@ struct RegisterView: View {
         }
     }
 
+    /// Optional post-signup enrollment. Rendered only after register succeeds *and*
+    /// the server `passkeys` flag is on (IOS-SEC.3 — never a dead-end on the form).
+    private var passkeyOffer: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Save a passkey?")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                Text("Sign in next time with \(BiometricGate.biometryDisplayName) — nothing to type or phish. Saved to iCloud Keychain and synced across your devices.")
+                    .font(.subheadline)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(spacing: 12) {
+                Button {
+                    guard !passkeyAuth.isBusy else { return }
+                    Task { await addPasskey() }
+                } label: {
+                    HStack(spacing: 10) {
+                        if passkeyAuth.isBusy {
+                            ProgressView()
+                                .tint(BrandTheme.goldBright)
+                        } else {
+                            Image(systemName: "person.badge.key.fill")
+                                .font(.body.weight(.semibold))
+                        }
+                        Text(passkeyAuth.isBusy ? "Saving passkey…" : "Save a passkey")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 48)
+                }
+                .buttonStyle(.bordered)
+                .tint(BrandTheme.goldBright)
+                .disabled(passkeyAuth.isBusy)
+                .accessibilityIdentifier("register.addPasskey")
+                .accessibilityLabel("Save a passkey")
+                .accessibilityHint("Creates a passkey for this account with \(BiometricGate.biometryDisplayName) and saves it to iCloud Keychain")
+
+                Button("Not now") {
+                    guard !passkeyAuth.isBusy else { return }
+                    enterAppAfterRegister()
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(BrandTheme.goldBright)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 44)
+                .disabled(passkeyAuth.isBusy)
+                .accessibilityIdentifier("register.skipPasskey")
+                .accessibilityLabel("Not now")
+                .accessibilityHint("Skip passkey setup and continue into the app")
+
+                if let status = passkeyAuth.statusMessage {
+                    Text(status)
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.success)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let error = passkeyAuth.errorMessage {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.destructive)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("Error: \(error)")
+                }
+            }
+        }
+    }
+
     private var fieldStroke: some View {
         RoundedRectangle(cornerRadius: 12, style: .continuous)
             .strokeBorder(BrandTheme.gold.opacity(0.15), lineWidth: 1)
@@ -248,6 +338,50 @@ struct RegisterView: View {
             displayName: name,
             roles: roles
         )
+
+        if auth.isAuthenticated, !auth.isScaffoldSession, passkeysEnabled {
+            presentPasskeyOffer()
+        }
+    }
+
+    private func handleAuthenticatedChange(_ signedIn: Bool) {
+        guard signedIn, !auth.isScaffoldSession else { return }
+        if showingPasskeyOffer { return }
+        if passkeysEnabled, !didOfferPasskeyThisSignup {
+            presentPasskeyOffer()
+            return
+        }
+        dismiss()
+    }
+
+    /// Keep Login/Register mounted so enrollment can run against the new session.
+    /// `register()` sets `isAuthenticated` in the same MainActor turn; flipping it
+    /// back here coalesces so RootView does not swap to tabs (and dismiss this offer).
+    private func presentPasskeyOffer() {
+        didOfferPasskeyThisSignup = true
+        showingPasskeyOffer = true
+        // Tokens stay in Keychain; RootView would otherwise tear this stack down.
+        auth.isAuthenticated = false
+    }
+
+    private func addPasskey() async {
+        await passkeyAuth.registerPasskey()
+        if passkeyAuth.statusMessage != nil, passkeyAuth.errorMessage == nil {
+            enterAppAfterRegister()
+        }
+    }
+
+    private func enterAppAfterRegister() {
+        guard !isFinishingIntoApp else { return }
+        isFinishingIntoApp = true
+        showingPasskeyOffer = false
+        if !auth.isAuthenticated {
+            let status = passkeyAuth.statusMessage
+                ?? auth.statusMessage
+                ?? "Account created. You’re signed in."
+            auth.adoptExistingSession(status: status)
+        }
+        dismiss()
     }
 }
 
@@ -255,5 +389,6 @@ struct RegisterView: View {
     NavigationStack {
         RegisterView()
             .environmentObject(AuthViewModel())
+            .environmentObject(FeatureFlags())
     }
 }

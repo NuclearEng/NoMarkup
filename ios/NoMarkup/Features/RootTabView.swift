@@ -56,6 +56,11 @@ struct RootTabView: View {
         }
         .environment(\.selectedRootTab, $selectedTab)
         .accessibilityIdentifier("root.tabview")
+        .overlay(alignment: .topLeading) {
+            if LaunchTestAuth.isHarness {
+                UITestRequestLogProbe()
+            }
+        }
         .task(id: auth.isAuthenticated) {
             await refreshUnreadBadges()
         }
@@ -154,6 +159,25 @@ struct RootTabView: View {
         }
     }
 
+    /// Hidden AX probe so XCUITest can attach recent `X-Request-ID` hops next to screenshots.
+    /// Not shown in VoiceOver for real users (`LaunchTestAuth.isHarness` only).
+    private struct UITestRequestLogProbe: View {
+        @ObservedObject private var log = ClientActionLog.shared
+
+        var body: some View {
+            let summary = log.debugSummary()
+            Text(summary.isEmpty ? " " : summary)
+                .font(.system(size: 1))
+                .foregroundStyle(.clear)
+                .frame(width: 8, height: 8)
+                .clipped()
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("debug.requestLog.latest")
+                .accessibilityLabel(summary)
+                .accessibilityAddTraits(.updatesFrequently)
+        }
+    }
+
     /// Push / string-path path (NotificationDeepLink).
     private func presentPendingDeepLink() {
         guard let url = deepLinks.pendingActionURL else { return }
@@ -192,6 +216,11 @@ struct RootTabView: View {
         case .account:
             selectedTab = .account
             deepLinks.clear()
+        case .catalogSearch(let surface, _):
+            selectedTab = surface == .jobs ? .jobs : .marketplace
+            // Keep catalogSearchQuery for MarketplaceView / JobsView; drop the
+            // typed route so we don't re-enter this case on the next appear.
+            deepLinks.acknowledgeRoute()
         case .job, .listing, .contract, .bids, .watchlist, .notifications, .postJob, .checkIn, .orders:
             switch route {
             case .bids, .watchlist, .notifications, .checkIn, .orders:
@@ -271,6 +300,9 @@ struct RootTabView: View {
             MyOrdersView()
         case .messages:
             MessagesView()
+        case .catalogSearch:
+            // Tab selection only — exhaustive, never presented as a sheet.
+            EmptyView()
         }
     }
 }

@@ -936,6 +936,7 @@ struct AdminConsoleView: View {
     @State private var userActionKind: UserModerationAction = .suspend
     @State private var userActionReason = ""
     @State private var showUserActionSheet = false
+    @State private var showSectionPicker = false
 
     var body: some View {
         adminConsoleBody
@@ -957,6 +958,9 @@ struct AdminConsoleView: View {
         }
         .sheet(isPresented: $showUserActionSheet) {
             userActionSheet
+        }
+        .sheet(isPresented: $showSectionPicker) {
+            adminSectionPickerSheet
         }
         .confirmationDialog(
             "Finalize account deletion?",
@@ -986,28 +990,18 @@ struct AdminConsoleView: View {
 
     /// Section picker. A horizontal `ScrollView` of 22 capsules inside
     /// `safeAreaInset` collapses to 0 height on iOS 26 (17e: blank band,
-    /// tabs untappable). A labeled menu stays visible and reaches every tab.
-    /// Per-tab ids are kept on menu rows for UITests (`admin.console.tab.*`).
+    /// tabs untappable). SwiftUI `Menu` rows are also missing from the AX tree
+    /// until opened, so UITests could not tap `admin.console.tab.*`. A sheet
+    /// List keeps every section in the tree after the opener is tapped.
     private var adminTabStrip: some View {
         HStack(spacing: 10) {
             Text("Section")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(BrandTheme.textSecondary)
                 .accessibilityHidden(true)
-            Menu {
-                ForEach(SectionTab.allCases) { t in
-                    Button {
-                        BrandHaptics.selection()
-                        tab = t
-                    } label: {
-                        if t == tab {
-                            Label(t.rawValue, systemImage: "checkmark")
-                        } else {
-                            Text(t.rawValue)
-                        }
-                    }
-                    .accessibilityIdentifier("admin.console.tab.\(t.slug)")
-                }
+            Button {
+                BrandHaptics.selection()
+                showSectionPicker = true
             } label: {
                 HStack(spacing: 6) {
                     Text(tab.rawValue)
@@ -1027,6 +1021,7 @@ struct AdminConsoleView: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .contentShape(Capsule())
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("Admin section, \(tab.rawValue)")
             .accessibilityIdentifier("admin.console.tabs.menu")
             Spacer(minLength: 8)
@@ -1042,6 +1037,48 @@ struct AdminConsoleView: View {
                 .accessibilityHidden(true)
         }
         .accessibilityIdentifier("admin.console.tabs")
+    }
+
+    private var adminSectionPickerSheet: some View {
+        NavigationStack {
+            List {
+                ForEach(SectionTab.allCases) { t in
+                    Button {
+                        BrandHaptics.selection()
+                        tab = t
+                        showSectionPicker = false
+                    } label: {
+                        HStack {
+                            if t == tab {
+                                Label(t.rawValue, systemImage: "checkmark")
+                            } else {
+                                Text(t.rawValue)
+                            }
+                            Spacer(minLength: 8)
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("admin.console.tab.\(t.slug)")
+                    .accessibilityAddTraits(t == tab ? [.isSelected] : [])
+                }
+            }
+            .brandListBackground()
+            .navigationTitle("Section")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showSectionPicker = false }
+                        .frame(minHeight: 44)
+                }
+            }
+        }
+        .tint(BrandTheme.accent)
+        .presentationDetents([.medium, .large])
+        .accessibilityIdentifier("admin.console.tabs.sheet")
     }
 
     @ViewBuilder

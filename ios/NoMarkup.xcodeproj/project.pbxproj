@@ -118,6 +118,7 @@ A100000000000000000000F0 /* LazyView.swift in Sources */ = {isa = PBXBuildFile; 
 		U10000000000000000000001 /* NoMarkupUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U10000000000000000000002 /* NoMarkupUITests.swift */; };
 		U20000000000000000000001 /* ScreenshotWalkUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U20000000000000000000002 /* ScreenshotWalkUITests.swift */; };
 		U30000000000000000000001 /* TabAuditUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U30000000000000000000002 /* TabAuditUITests.swift */; };
+		U40000000000000000000001 /* DeviceCapabilityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U40000000000000000000002 /* DeviceCapabilityUITests.swift */; };
 		A10000000000000000000070 /* Models+Extras.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000070 /* Models+Extras.swift */; };
 		A10000000000000000000071 /* APIClient+Extras.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000071 /* APIClient+Extras.swift */; };
 		A10000000000000000000072 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000072 /* ProvidersView.swift */; };
@@ -171,6 +172,8 @@ A100000000000000000000F0 /* LazyView.swift in Sources */ = {isa = PBXBuildFile; 
 		A100000000000000000000CA /* OpenMyBidsIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CA /* OpenMyBidsIntent.swift */; };
 		A100000000000000000000CB /* NoMarkupAppShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CB /* NoMarkupAppShortcuts.swift */; };
 		A100000000000000000000CC /* OpenPostJobIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CC /* OpenPostJobIntent.swift */; };
+		A100000000000000000000CE /* SearchNoMarkupIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CE /* SearchNoMarkupIntent.swift */; };
+		A100000000000000000000CF /* ListingVisualIntelligence.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CF /* ListingVisualIntelligence.swift */; };
 
 		W10000000000000000000001 /* NoMarkupWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000011 /* NoMarkupWidgetBundle.swift */; };
 		W10000000000000000000002 /* ActiveBidsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000012 /* ActiveBidsWidget.swift */; };
@@ -291,6 +294,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 		U10000000000000000000002 /* NoMarkupUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupUITests.swift; sourceTree = "<group>"; };
 		U20000000000000000000002 /* ScreenshotWalkUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotWalkUITests.swift; sourceTree = "<group>"; };
 		U30000000000000000000002 /* TabAuditUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabAuditUITests.swift; sourceTree = "<group>"; };
+		U40000000000000000000002 /* DeviceCapabilityUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCapabilityUITests.swift; sourceTree = "<group>"; };
 		U10000000000000000000003 /* NoMarkupUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000070 /* Models+Extras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+Extras.swift"; sourceTree = "<group>"; };
 		B10000000000000000000071 /* APIClient+Extras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Extras.swift"; sourceTree = "<group>"; };
@@ -359,6 +363,8 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 		B100000000000000000000CA /* OpenMyBidsIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenMyBidsIntent.swift; sourceTree = "<group>"; };
 		B100000000000000000000CB /* NoMarkupAppShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupAppShortcuts.swift; sourceTree = "<group>"; };
 		B100000000000000000000CC /* OpenPostJobIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenPostJobIntent.swift; sourceTree = "<group>"; };
+		B100000000000000000000CE /* SearchNoMarkupIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchNoMarkupIntent.swift; sourceTree = "<group>"; };
+		B100000000000000000000CF /* ListingVisualIntelligence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingVisualIntelligence.swift; sourceTree = "<group>"; };
 		B100000000000000000000C1 /* DeepLinkRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkRouter.swift; sourceTree = "<group>"; };
 		B100000000000000000000C2 /* NotificationPermissionCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPermissionCopy.swift; sourceTree = "<group>"; };
 
@@ -533,6 +539,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				U10000000000000000000002 /* NoMarkupUITests.swift */,
 				U20000000000000000000002 /* ScreenshotWalkUITests.swift */,
 				U30000000000000000000002 /* TabAuditUITests.swift */,
+				U40000000000000000000002 /* DeviceCapabilityUITests.swift */,
 			);
 			path = NoMarkupUITests;
 			sourceTree = "<group>";
@@ -719,6 +726,8 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 			isa = PBXGroup;
 			children = (
 				B100000000000000000000CC /* OpenPostJobIntent.swift */,
+				B100000000000000000000CE /* SearchNoMarkupIntent.swift */,
+				B100000000000000000000CF /* ListingVisualIntelligence.swift */,
 				B100000000000000000000CB /* NoMarkupAppShortcuts.swift */,
 				B100000000000000000000CA /* OpenMyBidsIntent.swift */,
 				B100000000000000000000C9 /* OpenWatchlistIntent.swift */,
@@ -861,8 +870,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 			knownRegions = (
 				en,
 				Base,
-				es,
-			);
+			); /* v1 English-only; incomplete es was IOS-L10N.3 */
 			mainGroup = E10000000000000000000001;
 			packageReferences = (
 				P10000000000000000000001 /* XCRemoteSwiftPackageReference "stripe-ios" */,
@@ -928,6 +936,8 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				A100000000000000000000F0 /* LazyView.swift in Sources */,
 				A100000000000000000000D0 /* StoreKitManager.swift in Sources */,
 				A100000000000000000000CC /* OpenPostJobIntent.swift in Sources */,
+				A100000000000000000000CE /* SearchNoMarkupIntent.swift in Sources */,
+				A100000000000000000000CF /* ListingVisualIntelligence.swift in Sources */,
 				A100000000000000000000CB /* NoMarkupAppShortcuts.swift in Sources */,
 				A100000000000000000000CA /* OpenMyBidsIntent.swift in Sources */,
 				A100000000000000000000C9 /* OpenWatchlistIntent.swift in Sources */,
@@ -1065,6 +1075,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				U10000000000000000000001 /* NoMarkupUITests.swift in Sources */,
 				U20000000000000000000001 /* ScreenshotWalkUITests.swift in Sources */,
 				U30000000000000000000001 /* TabAuditUITests.swift in Sources */,
+				U40000000000000000000001 /* DeviceCapabilityUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

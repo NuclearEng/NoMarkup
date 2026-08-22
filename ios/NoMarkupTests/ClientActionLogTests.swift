@@ -42,4 +42,43 @@ final class ClientActionLogTests: XCTestCase {
         let id = request.value(forHTTPHeaderField: ClientActionLog.requestIDHeader) ?? ""
         XCTAssertEqual(id.count, 16)
     }
+
+    func testDebugSummaryFormatsLastEightHttpHops() {
+        let mixed: [ClientActionEvent] = (0..<10).map { i in
+            ClientActionEvent(
+                id: UUID(),
+                at: Date(),
+                kind: i == 0 ? "ui" : "http",
+                method: "GET",
+                path: "/api/v1/x\(i)",
+                status: 200,
+                durationMs: 1,
+                requestID: "rid\(String(format: "%02d", i))",
+                outcome: "ok"
+            )
+        }
+        let summary = ClientActionLog.formatDebugSummary(mixed)
+        XCTAssertFalse(summary.contains("ui"), "debugSummary is HTTP hops only")
+        XCTAssertTrue(summary.contains("GET /api/v1/x1 200 rid01"))
+        XCTAssertTrue(summary.contains("GET /api/v1/x8 200 rid08"))
+        XCTAssertFalse(summary.contains("/api/v1/x9"), "capped at 8 HTTP hops")
+        XCTAssertFalse(summary.contains("Authorization"))
+        XCTAssertEqual(ClientActionLog.formatDebugSummary([]), "")
+    }
+
+    func testDebugSummaryReadsRecordedHttpEvent() {
+        let log = ClientActionLog()
+        let exp = expectation(description: "record landed on main")
+        log.record(
+            method: "GET",
+            path: "/api/v1/users/me",
+            status: 200,
+            durationMs: 12,
+            requestID: "abc123abc123abcd"
+        )
+        DispatchQueue.main.async { exp.fulfill() }
+        wait(for: [exp], timeout: 1)
+        let summary = log.debugSummary()
+        XCTAssertTrue(summary.contains("GET /api/v1/users/me 200 abc123abc123abcd"))
+    }
 }

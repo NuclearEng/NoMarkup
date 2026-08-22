@@ -2767,11 +2767,14 @@ struct JobDetailView: View {
         }
     }
 
+    /// HTTP fallback while the auction socket is down (open-floor live or known-live state).
+    private static let liveAuctionFallbackPollNanoseconds: UInt64 = 5_000_000_000
+
     /// Hybrid REST poll for live auction state + events.
     ///
     /// - **WS connected:** slow reconcile (~15s) so missed frames still surface.
-    /// - **WS down / unauth / non-participant:** fast poll for open-floor live (~1.5s)
-    ///   or known-live state (~2s); sealed/active stays ~10s.
+    /// - **WS down / unauth / non-participant:** fallback poll (~5s) for
+    ///   open-floor live or known-live state; sealed/active stays ~10s.
     /// Decode/network failures are ignored (endpoints may be feature-gated → 404).
     private func pollLiveAuctionStateLoop() async {
         // Always try once so a live job surfaces the arena even if status parsing lags.
@@ -2783,9 +2786,9 @@ struct JobDetailView: View {
             if isAuctionSocketLive {
                 interval = 15_000_000_000
             } else if isLiveAuctionType {
-                interval = 1_500_000_000
+                interval = Self.liveAuctionFallbackPollNanoseconds
             } else if liveAuctionStateAvailable {
-                interval = 2_000_000_000
+                interval = Self.liveAuctionFallbackPollNanoseconds
             } else {
                 interval = 10_000_000_000
             }

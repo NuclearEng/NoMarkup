@@ -5,9 +5,12 @@ import SwiftUI
 ///
 /// Consumed by:
 /// - `RootTabView` (`pendingActionURL` from APNs, `route` from App Intents / custom URL)
-/// - App Intents (`OpenMyBidsIntent`, etc.)
+/// - App Intents (`OpenMyBidsIntent`, `SearchNoMarkupIntent`, etc.)
 /// - Widgets (`nomarkup://…` via `widgetURL`)
 /// - `PushRegistration` notification taps
+///
+/// Catalog search (`SearchNoMarkupIntent` / Visual Intelligence) publishes
+/// `catalogSearchQuery` for MarketplaceView / JobsView to copy into their search fields.
 @MainActor
 final class DeepLinkRouter: ObservableObject {
     static let shared = DeepLinkRouter()
@@ -20,6 +23,14 @@ final class DeepLinkRouter: ObservableObject {
 
     /// Bumped on every typed `open` so identical consecutive routes still fire `onChange`.
     @Published private(set) var sequence: UInt = 0
+
+    /// Latest catalog search term from App Intents / `?q=` URLs. Survives `clear()`
+    /// until `consumeCatalogSearchQuery(for:)` — `RootTabView` clears the typed route
+    /// after switching tabs, and the catalog view reads this independently.
+    @Published private(set) var catalogSearchQuery: String?
+
+    /// Which catalog tab should apply `catalogSearchQuery`.
+    @Published private(set) var catalogSearchSurface: CatalogSearchSurface?
 
     private init() {}
 
@@ -44,6 +55,13 @@ final class DeepLinkRouter: ObservableObject {
     // MARK: - Typed routes (App Intents / custom scheme)
 
     func open(_ route: DeepLinkRoute) {
+        if case .catalogSearch(let surface, let query) = route {
+            catalogSearchQuery = query
+            catalogSearchSurface = surface
+        } else {
+            catalogSearchQuery = nil
+            catalogSearchSurface = nil
+        }
         self.route = route
         sequence &+= 1
         // Do not also set pendingActionURL — RootTabView presents once via `sequence`/`route`.
@@ -52,6 +70,23 @@ final class DeepLinkRouter: ObservableObject {
     func clear() {
         pendingActionURL = nil
         route = nil
+        catalogSearchQuery = nil
+        catalogSearchSurface = nil
+    }
+
+    /// Drop the typed route without discarding an in-flight catalog search query.
+    func acknowledgeRoute() {
+        pendingActionURL = nil
+        route = nil
+    }
+
+    /// Returns and clears the pending catalog search when it targets `surface`.
+    func consumeCatalogSearchQuery(for surface: CatalogSearchSurface) -> String? {
+        guard catalogSearchSurface == surface else { return nil }
+        let query = catalogSearchQuery
+        catalogSearchQuery = nil
+        catalogSearchSurface = nil
+        return query
     }
 
     /// Parse `nomarkup://…` custom scheme or https host paths into a route.
@@ -98,11 +133,39 @@ final class DeepLinkRouter: ObservableObject {
 
     static func route(from url: URL) -> DeepLinkRoute? {
         guard let parts = segments(from: url) else { return nil }
-        return routeFromSegments(parts)
+        return routeFromSegments(parts, queryItems: queryItems(from: url))
     }
 
     private static func routeFromPath(_ path: String) -> DeepLinkRoute? {
-        routeFromSegments(segments(fromPath: path))
+        let pathPart: String
+        let items: [URLQueryItem]?
+        if let q = path.firstIndex(of: "?") {
+            pathPart = String(path[..<q])
+            let query = String(path[path.index(after: q)...])
+            items = URLComponents(string: "https://no-markup.com?\(query)")?.queryItems
+        } else {
+            pathPart = path
+            items = nil
+        }
+        return routeFromSegments(segments(fromPath: pathPart), queryItems: items)
+    }
+
+    private static func queryItems(from url: URL) -> [URLQueryItem]? {
+        if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems {
+            return items
+        }
+        return URLComponents(string: url.absoluteString)?.queryItems
+    }
+
+    private static func queryValue(_ items: [URLQueryItem]?, names: String...) -> String? {
+        guard let items else { return nil }
+        for name in names {
+            if let raw = items.first(where: { $0.name.lowercased() == name })?.value {
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return trimmed }
+            }
+        }
+        return nil
     }
 
     /// URL → normalized path segments. `nomarkup://` counts the host as the first
@@ -134,8 +197,12 @@ final class DeepLinkRouter: ObservableObject {
         return parts
     }
 
-    private static func routeFromSegments(_ parts: [String]) -> DeepLinkRoute? {
+    private static func routeFromSegments(
+        _ parts: [String],
+        queryItems: [URLQueryItem]? = nil
+    ) -> DeepLinkRoute? {
         guard let head = parts.first?.lowercased() else { return nil }
+        let searchQuery = queryValue(queryItems, names: "q", "query")
         switch head {
         case "bids", "my-bids", "mybids":
             return .bids
@@ -154,6 +221,9 @@ final class DeepLinkRouter: ObservableObject {
                 return .checkIn(contractID: parts[1])
             }
             return .checkIn(contractID: nil)
+        case "search":
+            let term = searchQuery ?? parts.dropFirst().joined(separator: " ")
+            return .catalogSearch(surface: .marketplace, query: term)
         case "jobs", "job":
             if parts.count >= 2 {
                 // `/jobs/new` is the create funnel; a bare `/jobs` is browse.
@@ -161,6 +231,9 @@ final class DeepLinkRouter: ObservableObject {
                     return .postJob
                 }
                 return .job(id: parts[1])
+            }
+            if let searchQuery {
+                return .catalogSearch(surface: .jobs, query: searchQuery)
             }
             return .jobsBrowse
         case "listings", "listing", "marketplace", "auctions", "auction":
@@ -171,7 +244,7 @@ final class DeepLinkRouter: ObservableObject {
             if parts.count >= 2 {
                 return .listing(id: parts[1])
             }
-            return nil
+            return .catalogSearch(surface: .marketplace, query: searchQuery ?? "")
         case "orders", "order":
             // Orders (IOS-SEC.9): typed end-to-end. `nomarkup://orders` has an empty
             // `URL.path` (host-only), so a raw-string fallback would dead-end — the
@@ -193,6 +266,12 @@ final class DeepLinkRouter: ObservableObject {
     }
 }
 
+/// Catalog tab that should receive an in-app search term (IOS-INT.3).
+enum CatalogSearchSurface: String, Equatable, Hashable, Sendable {
+    case marketplace
+    case jobs
+}
+
 /// In-app destinations opened from URLs, push, widgets, and App Intents.
 enum DeepLinkRoute: Equatable, Hashable, Identifiable {
     case job(id: String)
@@ -211,6 +290,9 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
     /// My Orders (IOS-SEC.9). `id` is the order UUID when the link carried one;
     /// the surface is the same either way (`MyOrdersView` has no detail init yet).
     case orders(id: String?)
+    /// In-app catalog search (IOS-INT.3). Switches to Marketplace or Jobs and
+    /// publishes `catalogSearchQuery` for the search field already on those views.
+    case catalogSearch(surface: CatalogSearchSurface, query: String)
 
     var id: String {
         switch self {
@@ -226,6 +308,7 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
         case .account: return "account"
         case .checkIn(let id): return "checkIn:\(id ?? "")"
         case .orders(let id): return "orders:\(id ?? "")"
+        case .catalogSearch(let surface, let query): return "catalogSearch:\(surface.rawValue):\(query)"
         }
     }
 
@@ -248,6 +331,13 @@ enum DeepLinkRoute: Equatable, Hashable, Identifiable {
         case .orders(let id):
             if let id, !id.isEmpty { return "/orders/\(id)" }
             return "/orders"
+        case .catalogSearch(let surface, let query):
+            var comps = URLComponents()
+            comps.path = surface == .jobs ? "/jobs" : "/marketplace"
+            if !query.isEmpty {
+                comps.queryItems = [URLQueryItem(name: "q", value: query)]
+            }
+            return comps.string ?? comps.path
         }
     }
 }

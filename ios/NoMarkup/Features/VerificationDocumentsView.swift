@@ -553,7 +553,7 @@ private struct UploadVerificationDocumentSheet: View {
                         switch result {
                         case .success(let urls):
                             guard let url = urls.first else { return }
-                            loadPDF(from: url)
+                            Task { await loadPDF(from: url) }
                         case .failure(let error):
                             errorMessage = error.localizedDescription
                         }
@@ -635,17 +635,17 @@ private struct UploadVerificationDocumentSheet: View {
     }
     #endif
 
-    private func loadPDF(from url: URL) {
+    @MainActor
+    private func loadPDF(from url: URL) async {
         let accessed = url.startAccessingSecurityScopedResource()
         defer {
             if accessed { url.stopAccessingSecurityScopedResource() }
         }
         do {
-            let data = try Data(contentsOf: url)
-            guard data.count <= ImageUploader.maxFileBytes else {
-                errorMessage = "PDF must be 10 MB or smaller."
-                return
-            }
+            // Access is held on MainActor; I/O must not run here (IOS-PERF.6).
+            let data = try await Task.detached(priority: .userInitiated) {
+                try ImageUploader.readSecurityScopedFile(url: url)
+            }.value
             guard ImageUploader.sniffMime(data) == "application/pdf" else {
                 errorMessage = "Selected file is not a valid PDF."
                 return

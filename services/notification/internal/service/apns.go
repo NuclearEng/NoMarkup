@@ -425,6 +425,8 @@ func apnsCategory(notifType string) string {
 		return "auction_closing_soon"
 	case "contract_created", "contract_accepted":
 		return "contract_created"
+	case "new_message":
+		return "new_message"
 	default:
 		return ""
 	}

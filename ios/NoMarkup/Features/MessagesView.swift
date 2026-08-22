@@ -1592,7 +1592,10 @@ struct ChatThreadView: View {
         }
 
         do {
-            let data = try Data(contentsOf: url)
+            // Access is held on MainActor; I/O must not run here (IOS-PERF.6).
+            let data = try await Task.detached(priority: .userInitiated) {
+                try ImageUploader.readSecurityScopedFile(url: url)
+            }.value
             let confirmed = try await ImageUploader.uploadPDF(
                 data: data,
                 filename: url.lastPathComponent.isEmpty ? "attachment.pdf" : url.lastPathComponent,

@@ -177,7 +177,8 @@ final class NoMarkupUITests: XCTestCase {
     @discardableResult
     private func safeTap(_ element: XCUIElement) -> Bool {
         guard isOnScreen(element) else { return false }
-        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let dy: CGFloat = element.frame.height > 44 ? 0.25 : 0.5
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: dy)).tap()
         return true
     }
 
@@ -196,6 +197,39 @@ final class NoMarkupUITests: XCTestCase {
             if isOnScreen(element) { return true }
         }
         return isOnScreen(element)
+    }
+
+    /// Scroll until `element` is on-screen AND its bottom sits above the floating tab bar.
+    @discardableResult
+    private func scrollClearOfTabBar(_ element: XCUIElement, maxSwipes: Int = 10) -> Bool {
+        func clearsTabBar() -> Bool {
+            guard isOnScreen(element) else { return false }
+            let f = element.frame
+            guard f.maxY.isFinite else { return false }
+            return f.maxY < app.frame.maxY - 130
+        }
+        _ = scrollTo(element, maxSwipes: maxSwipes)
+        if clearsTabBar() { return true }
+        for _ in 0..<6 {
+            guard element.exists else { break }
+            if isOnScreen(element), element.frame.maxY >= app.frame.maxY - 130 {
+                app.swipeUp()
+                settle(0.12)
+                if clearsTabBar() { return true }
+                continue
+            }
+            if !isOnScreen(element) {
+                app.swipeUp()
+                settle(0.12)
+                if clearsTabBar() { return true }
+            }
+        }
+        for _ in 0..<4 {
+            app.swipeDown()
+            settle(0.12)
+            if clearsTabBar() { return true }
+        }
+        return clearsTabBar()
     }
 
     private func goBack() {
@@ -246,6 +280,14 @@ final class NoMarkupUITests: XCTestCase {
     }
 
     private func popToRoot(_ label: String) {
+        for title in ["Close", "Done", "Cancel"] {
+            let b = app.buttons[title]
+            if b.exists, safeTap(b) { settle(0.25) }
+        }
+        if app.webViews.firstMatch.exists || app.sheets.firstMatch.exists {
+            app.swipeDown()
+            settle(0.3)
+        }
         openTab(label)
         var attempts = 0
         while hasBackButton && attempts < 4 {
@@ -438,7 +480,7 @@ final class NoMarkupUITests: XCTestCase {
         // Prefer stable accessibility identifiers from AccountView (`account.row.*`).
         if let stableID = Self.accountRowIDs[label] {
             let byStable = byID(stableID)
-            if scrollTo(byStable, maxSwipes: 16), safeTap(byStable) {
+            if scrollClearOfTabBar(byStable, maxSwipes: 16), safeTap(byStable) {
                 settle(1.2)
                 return true
             }
@@ -449,7 +491,7 @@ final class NoMarkupUITests: XCTestCase {
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "&", with: "")
         let byAccessibility = byID(idCandidate)
-        if scrollTo(byAccessibility, maxSwipes: 10), safeTap(byAccessibility) {
+        if scrollClearOfTabBar(byAccessibility, maxSwipes: 10), safeTap(byAccessibility) {
             settle(1.2)
             return true
         }
@@ -463,7 +505,7 @@ final class NoMarkupUITests: XCTestCase {
         }
         // Label fallback — must keep working for UITests that key off visible text.
         let row = byLabel(label)
-        guard scrollTo(row, maxSwipes: 16), safeTap(row) else {
+        guard scrollClearOfTabBar(row, maxSwipes: 16), safeTap(row) else {
             NSLog("UITest soft-skip: Account row '%@' not found/hittable", label)
             return false
         }
@@ -502,18 +544,31 @@ final class NoMarkupUITests: XCTestCase {
             "account.row.notifications",
             "account.row.providerWorkspace",
             "account.row.instantOffers",
+            "account.row.paymentMethods",
+            "account.row.legalServices",
+            "account.row.insuranceQuote",
         ]
         if includeAdmin {
             rows.append("account.row.admin")
         }
+        let expectedHidden: Set<String> = [
+            "account.row.legalServices",
+            "account.row.insuranceQuote",
+        ]
         for id in rows {
-            openTab("Account")
+            popToRoot("Account")
             settle(0.3)
             let row = byID(id)
-            guard scrollTo(row, maxSwipes: 16), safeTap(row) else {
+            let found = scrollClearOfTabBar(row, maxSwipes: 16)
+            if !found {
+                if expectedHidden.contains(id) {
+                    NSLog("UITest expected-hidden iOSHardOffKeys: %@", id)
+                    continue
+                }
                 XCTFail("\(persona): catalog row \(id) not tappable")
                 return
             }
+            XCTAssertTrue(safeTap(row), "\(persona) tap \(id)")
             settle(1.0)
             XCTAssertTrue(app.state == .runningForeground, "\(persona) \(id) crashed")
         }
@@ -523,7 +578,7 @@ final class NoMarkupUITests: XCTestCase {
         openTab("Account")
         settle(0.4)
         let logRow = byID("account.row.requestLog")
-        XCTAssertTrue(scrollTo(logRow, maxSwipes: 16), "\(persona) request log row")
+        XCTAssertTrue(scrollClearOfTabBar(logRow, maxSwipes: 16), "\(persona) request log row")
         XCTAssertTrue(safeTap(logRow), "\(persona) open request log")
         XCTAssertTrue(
             byID("requestLog.root").waitForExistence(timeout: 10),

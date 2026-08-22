@@ -15,11 +15,15 @@ import UIKit
 /// Args: `-ui-test-email` value / `-ui-test-password` value / `-ui-test-scaffold` / `-ui-testing`
 enum LaunchTestAuth {
     static var isUITestLaunch: Bool {
+        if isHarness { return true }
+        return wantsScaffold || credentials() != nil
+    }
+
+    /// XCUITest process (`NOMARKUP_UI_TESTING=1` or `-ui-testing`) — not scaffold/auto-login.
+    static var isHarness: Bool {
         let env = ProcessInfo.processInfo.environment
         let args = ProcessInfo.processInfo.arguments
-        if env["NOMARKUP_UI_TESTING"] == "1" { return true }
-        if args.contains("-ui-testing") { return true }
-        return wantsScaffold || credentials() != nil
+        return env["NOMARKUP_UI_TESTING"] == "1" || args.contains("-ui-testing")
     }
 
     static var wantsScaffold: Bool {

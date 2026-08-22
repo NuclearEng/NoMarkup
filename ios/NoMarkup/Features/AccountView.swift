@@ -775,7 +775,11 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .accessibilityIdentifier("account.row.communityGuidelines")
                     Button {
-                        legalSheet = LegalSheetTarget(title: "Support", url: AppConfig.supportURL)
+                        legalSheet = LegalSheetTarget(
+                            title: "Support",
+                            url: AppConfig.supportURL,
+                            fallback: .nativeSupport
+                        )
                     } label: {
                         Label("Support", systemImage: "lifepreserver")
                     }
@@ -976,8 +980,7 @@ struct AccountView: View {
             }
             #endif
             .sheet(item: $legalSheet) { target in
-                LegalWebView(title: target.title, url: target.url)
-                    .ignoresSafeArea()
+                LegalWebView(title: target.title, url: target.url, fallback: target.fallback)
             }
         }
     }
@@ -1090,11 +1093,13 @@ private struct ExportShareItem: Identifiable {
     let url: URL
 }
 
-/// Sheet target for Privacy / Terms / Guidelines / Support (`SFSafariViewController`).
+/// Sheet target for Privacy / Terms / Guidelines / Support.
+/// Support uses `.nativeSupport` so NXDOMAIN on the public host is not a dead-end.
 private struct LegalSheetTarget: Identifiable {
     let id = UUID()
     let title: String
     let url: URL
+    var fallback: LegalWebView.Fallback = .safari
 }
 
 // ActivityShareSheet lives in SalesExportView.swift (shared for CSV/ICS/JSON share).

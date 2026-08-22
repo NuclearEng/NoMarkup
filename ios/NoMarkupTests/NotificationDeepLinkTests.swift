@@ -3,6 +3,13 @@ import UserNotifications
 import XCTest
 @testable import NoMarkup
 
+#if canImport(AppIntentsTesting)
+import AppIntentsTesting
+#endif
+#if canImport(VisualIntelligence)
+import VisualIntelligence
+#endif
+
 @MainActor
 final class NotificationDeepLinkTests: XCTestCase {
     private let sampleUUID = "550e8400-e29b-41d4-a716-446655440000"
@@ -260,6 +267,25 @@ final class NotificationActionBranchTests: XCTestCase {
         )
         XCTAssertFalse(PushRegistration.shouldDeepLink(forActionIdentifier: "SOME_FUTURE_ACTION"))
     }
+
+    func testRegisteredCategoriesIncludeNewMessage() {
+        XCTAssertEqual(
+            PushRegistration.registeredCategoryIdentifiers,
+            [
+                "bid_outbid",
+                "bid_awarded",
+                "auction_closing_soon",
+                "contract_created",
+                "new_message",
+            ]
+        )
+        XCTAssertTrue(PushRegistration.registeredCategoryIdentifiers.contains("new_message"))
+        XCTAssertEqual(PushRegistration.viewActionIdentifier, "VIEW")
+        XCTAssertEqual(PushRegistration.dismissActionIdentifier, "DISMISS")
+        XCTAssertTrue(PushRegistration.categoryIdentifiersWithDismiss.contains("new_message"))
+        XCTAssertTrue(PushRegistration.categoryIdentifiersWithDismiss.contains("bid_outbid"))
+        XCTAssertFalse(PushRegistration.categoryIdentifiersWithDismiss.contains("bid_awarded"))
+    }
 }
 
 // MARK: - App Intents session guard (IOS-INT.1 / INT.5)
@@ -343,6 +369,31 @@ final class AppIntentsAuthGuardTests: XCTestCase {
         intent.contract = ContractEntity(id: sampleUUID)
         let configured = intent
         await assertThrowsAndDoesNotNavigate({ _ = try await configured.perform() }, "CheckInToJobIntent")
+    }
+
+    func testSearchCatalogIntentSignedOutThrows() async {
+        var intent = SearchCatalogIntent()
+        intent.session = StubIntentSession(signedIn: false)
+        intent.query = "bike"
+        let configured = intent
+        await assertThrowsAndDoesNotNavigate({ _ = try await configured.perform() }, "SearchCatalogIntent")
+    }
+
+    func testSearchNoMarkupIntentSignedOutThrows() async {
+        guard #available(iOS 18.0, *) else { return }
+        var intent = SearchNoMarkupIntent()
+        intent.session = StubIntentSession(signedIn: false)
+        intent.criteria = StringSearchCriteria(term: "bike")
+        let configured = intent
+        await assertThrowsAndDoesNotNavigate({ _ = try await configured.perform() }, "SearchNoMarkupIntent")
+    }
+
+    func testOpenListingIntentSignedOutThrows() async {
+        var intent = OpenListingIntent()
+        intent.session = StubIntentSession(signedIn: false)
+        intent.target = ListingEntity(id: sampleUUID, title: "Bike")
+        let configured = intent
+        await assertThrowsAndDoesNotNavigate({ _ = try await configured.perform() }, "OpenListingIntent")
     }
 
     // MARK: Signed-in perform() — routes land on the shared router.
@@ -429,6 +480,75 @@ final class AppIntentsAuthGuardTests: XCTestCase {
         XCTAssertEqual(recorded?.lng ?? 0, -122.4194, accuracy: 0.0001)
         let container = result as? IntentResultContainer<String, Never, Never, IntentDialog>
         XCTAssertEqual(container?.value, "checked_in")
+    }
+
+    func testSearchCatalogIntentSignedInRoutesMarketplace() async throws {
+        DeepLinkRouter.shared.clear()
+        defer { DeepLinkRouter.shared.clear() }
+
+        var intent = SearchCatalogIntent()
+        intent.session = StubIntentSession(signedIn: true)
+        intent.query = "  vintage bike  "
+        _ = try await intent.perform()
+
+        XCTAssertEqual(
+            DeepLinkRouter.shared.route,
+            .catalogSearch(surface: .marketplace, query: "vintage bike")
+        )
+        XCTAssertEqual(DeepLinkRouter.shared.catalogSearchQuery, "vintage bike")
+    }
+
+    func testSearchNoMarkupIntentSignedInRoutesMarketplace() async throws {
+        guard #available(iOS 18.0, *) else { return }
+        DeepLinkRouter.shared.clear()
+        defer { DeepLinkRouter.shared.clear() }
+
+        var intent = SearchNoMarkupIntent()
+        intent.session = StubIntentSession(signedIn: true)
+        intent.criteria = StringSearchCriteria(term: "  vintage bike  ")
+        _ = try await intent.perform()
+
+        XCTAssertEqual(
+            DeepLinkRouter.shared.route,
+            .catalogSearch(surface: .marketplace, query: "vintage bike")
+        )
+        XCTAssertEqual(DeepLinkRouter.shared.catalogSearchQuery, "vintage bike")
+        XCTAssertEqual(DeepLinkRouter.shared.catalogSearchSurface, .marketplace)
+        XCTAssertEqual(
+            DeepLinkRouter.shared.consumeCatalogSearchQuery(for: .marketplace),
+            "vintage bike"
+        )
+        XCTAssertNil(DeepLinkRouter.shared.catalogSearchQuery)
+    }
+
+    func testSearchNoMarkupIntentJobsSurface() async throws {
+        guard #available(iOS 18.0, *) else { return }
+        DeepLinkRouter.shared.clear()
+        defer { DeepLinkRouter.shared.clear() }
+
+        var intent = SearchNoMarkupIntent()
+        intent.session = StubIntentSession(signedIn: true)
+        intent.criteria = StringSearchCriteria(term: "plumbing")
+        intent.surface = .jobs
+        _ = try await intent.perform()
+
+        XCTAssertEqual(
+            DeepLinkRouter.shared.route,
+            .catalogSearch(surface: .jobs, query: "plumbing")
+        )
+        XCTAssertEqual(DeepLinkRouter.shared.consumeCatalogSearchQuery(for: .jobs), "plumbing")
+        XCTAssertNil(DeepLinkRouter.shared.consumeCatalogSearchQuery(for: .marketplace))
+    }
+
+    func testOpenListingIntentSignedInRoutes() async throws {
+        DeepLinkRouter.shared.clear()
+        defer { DeepLinkRouter.shared.clear() }
+
+        var intent = OpenListingIntent()
+        intent.session = StubIntentSession(signedIn: true)
+        intent.target = ListingEntity(id: sampleUUID, title: "Vintage road bike")
+        _ = try await intent.perform()
+        XCTAssertEqual(DeepLinkRouter.shared.route, .listing(id: sampleUUID))
     }
 
     func testCheckInToJobIntentInjectedAPIFailureStillDeepLinks() async throws {
@@ -605,5 +725,153 @@ final class AppIntentsEntityTests: XCTestCase {
             String(localized: contract.displayRepresentation.title),
             "Contract \(String(sampleUUID.prefix(8)))"
         )
+    }
+
+    func testListingVisualSearchMatcherMatchesLabels() {
+        let bike = ListingEntity(id: sampleUUID, title: "Vintage road bike")
+        let chair = ListingEntity(id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", title: "Oak dining chair")
+        let untitled = ListingEntity(id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", title: nil)
+        let catalog = [bike, chair, untitled]
+
+        let hits = ListingVisualSearchMatcher.matching(labels: ["BIKE", "unused"], in: catalog)
+        XCTAssertEqual(hits.map(\.id), [sampleUUID])
+
+        XCTAssertTrue(ListingVisualSearchMatcher.matching(labels: ["  "], in: catalog).isEmpty)
+        XCTAssertTrue(ListingVisualSearchMatcher.matching(labels: ["bike"], in: []).isEmpty)
+    }
+}
+
+// MARK: - Catalog search routing (IOS-INT.3)
+
+@MainActor
+final class CatalogSearchDeepLinkTests: XCTestCase {
+    func testMarketplaceQueryURLs() {
+        XCTAssertEqual(
+            DeepLinkRouter.route(fromActionString: "/marketplace?q=bike"),
+            .catalogSearch(surface: .marketplace, query: "bike")
+        )
+        XCTAssertEqual(
+            DeepLinkRouter.route(fromActionString: "/search?q=oak%20chair"),
+            .catalogSearch(surface: .marketplace, query: "oak chair")
+        )
+        XCTAssertEqual(
+            DeepLinkRouter.route(from: URL(string: "nomarkup://marketplace?q=lamp")!),
+            .catalogSearch(surface: .marketplace, query: "lamp")
+        )
+        XCTAssertEqual(
+            DeepLinkRouter.route(fromActionString: "/marketplace"),
+            .catalogSearch(surface: .marketplace, query: "")
+        )
+        XCTAssertEqual(
+            DeepLinkRouter.route(fromActionString: "/listings/\(sampleListingID)"),
+            .listing(id: sampleListingID)
+        )
+    }
+
+    func testJobsQueryURLsKeepBrowseWithoutQuery() {
+        XCTAssertEqual(
+            DeepLinkRouter.route(fromActionString: "/jobs?q=plumbing"),
+            .catalogSearch(surface: .jobs, query: "plumbing")
+        )
+        XCTAssertEqual(DeepLinkRouter.route(fromActionString: "/jobs"), .jobsBrowse)
+        XCTAssertEqual(
+            DeepLinkRouter.route(fromActionString: "/jobs/\(sampleListingID)"),
+            .job(id: sampleListingID)
+        )
+    }
+
+    func testCatalogSearchActionURLRoundTrip() {
+        let market = DeepLinkRoute.catalogSearch(surface: .marketplace, query: "road bike")
+        XCTAssertEqual(
+            DeepLinkRouter.route(fromActionString: market.actionURLString),
+            market
+        )
+        let jobs = DeepLinkRoute.catalogSearch(surface: .jobs, query: "fence")
+        XCTAssertEqual(
+            DeepLinkRouter.route(fromActionString: jobs.actionURLString),
+            jobs
+        )
+    }
+
+    func testHandleMarketplaceSearchURLDeliversTypedRoute() {
+        let router = DeepLinkRouter.shared
+        router.clear()
+        defer { router.clear() }
+
+        XCTAssertTrue(router.handle(url: URL(string: "nomarkup://marketplace?q=bike")!))
+        XCTAssertEqual(router.route, .catalogSearch(surface: .marketplace, query: "bike"))
+        XCTAssertEqual(router.catalogSearchQuery, "bike")
+        XCTAssertEqual(router.consumeCatalogSearchQuery(for: .jobs), nil)
+        XCTAssertEqual(router.consumeCatalogSearchQuery(for: .marketplace), "bike")
+    }
+
+    private let sampleListingID = "550e8400-e29b-41d4-a716-446655440000"
+}
+
+// MARK: - App Intents Testing (IOS-INT.5)
+
+/// `AppIntentsTesting.IntentDefinitions` is **not** in iPhoneOS 26.5 (Xcode 26.5.0):
+/// searched iPhoneOS/iPhoneSimulator SDKs and Developer Library Frameworks.
+/// That module is WWDC26 / Xcode 27 (`IntentDefinitions(bundleIdentifier:)` +
+/// `makeIntent().run()` in a UI-test process).
+///
+/// SDK-equivalent on this SDK: in-process `AppIntent.perform()` — the same method
+/// the system invokes inside the app. When `AppIntentsTesting` appears, the
+/// `canImport` branch type-checks `IntentDefinitions`.
+@MainActor
+final class AppIntentsTestingFrameworkTests: XCTestCase {
+    func testAppIntentsTestingModuleOrSDKEquivalentPerform() async throws {
+        #if canImport(AppIntentsTesting)
+        let definitions = IntentDefinitions(bundleIdentifier: "com.nomarkup.app")
+        XCTAssertNotNil(definitions)
+        #endif
+
+        DeepLinkRouter.shared.clear()
+        defer { DeepLinkRouter.shared.clear() }
+
+        if #available(iOS 18.0, *) {
+            var search = SearchNoMarkupIntent()
+            search.session = StubIntentSession(signedIn: true)
+            search.criteria = StringSearchCriteria(term: "desk lamp")
+            _ = try await search.perform()
+            XCTAssertEqual(
+                DeepLinkRouter.shared.route,
+                .catalogSearch(surface: .marketplace, query: "desk lamp")
+            )
+        }
+
+        DeepLinkRouter.shared.clear()
+        var open = OpenListingIntent()
+        open.session = StubIntentSession(signedIn: true)
+        open.target = ListingEntity(id: "550e8400-e29b-41d4-a716-446655440000", title: "Lamp")
+        _ = try await open.perform()
+        XCTAssertEqual(
+            DeepLinkRouter.shared.route,
+            .listing(id: "550e8400-e29b-41d4-a716-446655440000")
+        )
+    }
+
+    func testVisualIntelligenceQueryCompilesWhenFrameworkPresent() async throws {
+        XCTAssertTrue(ListingVisualSearchMatcher.matching(labels: [], in: []).isEmpty)
+        #if canImport(VisualIntelligence)
+        if #available(iOS 26.0, *) {
+            let query = ListingVisualSearchQuery()
+            // SemanticContentDescriptor has no public memberwise init in the
+            // 26.5 swiftinterface; decode the documented `labels` payload.
+            let descriptor = try JSONDecoder().decode(
+                SemanticContentDescriptor.self,
+                from: Data(#"{"labels":["bike"]}"#.utf8)
+            )
+            let results = try await query.values(for: descriptor)
+            let catalog = try await ListingEntityQuery().suggestedEntities()
+            XCTAssertEqual(
+                results.map(\.id),
+                ListingVisualSearchMatcher.matching(
+                    labels: ["bike"],
+                    in: catalog
+                ).map(\.id)
+            )
+        }
+        #endif
     }
 }

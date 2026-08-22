@@ -21,30 +21,23 @@ enum CatalogDateFormat {
         return date.formatted(date: .abbreviated, time: .shortened)
     }
 
-    /// Short auction countdown: "Ends in 2h", "Ends in 45m", "Ended", or absolute if far out.
-    /// Prefer `countdownChipLabel` on dense list cards where "Ends in …" truncates.
+    /// Short auction countdown: localized "Ends in …" plus compact `Duration` units, "Ended", or an absolute date if far out.
+    /// Prefer `countdownChipLabel` on dense list cards where the "Ends in" prefix truncates.
     static func countdownLabel(until date: Date, now: Date = Date()) -> String {
         let remaining = date.timeIntervalSince(now)
         if remaining <= 0 {
-            return "Ended"
+            return String(localized: "Ended")
         }
         let minutes = Int(remaining / 60)
-        if minutes < 60 {
-            return "Ends in \(max(1, minutes))m"
-        }
         let hours = minutes / 60
-        if hours < 48 {
-            let remMin = minutes % 60
-            if remMin == 0 {
-                return "Ends in \(hours)h"
+        if hours >= 48 {
+            let days = hours / 24
+            if days >= 14 {
+                let absolute = date.formatted(date: .abbreviated, time: .omitted)
+                return String(localized: "Ends \(absolute)")
             }
-            return "Ends in \(hours)h \(remMin)m"
         }
-        let days = hours / 24
-        if days < 14 {
-            return "Ends in \(days)d"
-        }
-        return "Ends \(date.formatted(date: .abbreviated, time: .omitted))"
+        return String(localized: "Ends in \(compactDurationUnits(minutes: minutes))")
     }
 
     static func countdownLabel(iso: String, now: Date = Date()) -> String? {
@@ -53,34 +46,48 @@ enum CatalogDateFormat {
     }
 
     /// Compact chip copy for list cards — no "Ends in" prefix so capsules stay short.
-    /// Examples: "45m", "2h", "2h 30m", "3d", "Ended", or a short absolute date if far out.
+    /// Units come from `Duration.formatted` (en_US narrow: "45m", "2h", "2h 30m", "3d").
     static func countdownChipLabel(until date: Date, now: Date = Date()) -> String {
         let remaining = date.timeIntervalSince(now)
         if remaining <= 0 {
-            return "Ended"
+            return String(localized: "Ended")
         }
         let minutes = Int(remaining / 60)
-        if minutes < 60 {
-            return "\(max(1, minutes))m"
-        }
         let hours = minutes / 60
-        if hours < 48 {
-            let remMin = minutes % 60
-            if remMin == 0 {
-                return "\(hours)h"
+        if hours >= 48 {
+            let days = hours / 24
+            if days >= 14 {
+                return date.formatted(date: .abbreviated, time: .omitted)
             }
-            return "\(hours)h \(remMin)m"
         }
-        let days = hours / 24
-        if days < 14 {
-            return "\(days)d"
-        }
-        return date.formatted(date: .abbreviated, time: .omitted)
+        return compactDurationUnits(minutes: minutes)
     }
 
     static func countdownChipLabel(iso: String, now: Date = Date()) -> String? {
         guard let date = parseISO(iso) else { return nil }
         return countdownChipLabel(until: date, now: now)
+    }
+
+    /// Locale-aware compact units (en_US narrow: "45m", "2h", "2h 30m", "3d").
+    private static func compactDurationUnits(minutes totalMinutes: Int) -> String {
+        let minutes = max(1, totalMinutes)
+        if minutes < 60 {
+            return Duration.seconds(Int64(minutes) * 60)
+                .formatted(.units(allowed: [.minutes], width: .narrow))
+        }
+        let hours = minutes / 60
+        if hours < 48 {
+            let remMin = minutes % 60
+            if remMin == 0 {
+                return Duration.seconds(Int64(hours) * 3_600)
+                    .formatted(.units(allowed: [.hours], width: .narrow))
+            }
+            return Duration.seconds(Int64(hours) * 3_600 + Int64(remMin) * 60)
+                .formatted(.units(allowed: [.hours, .minutes], width: .narrow, maximumUnitCount: 2))
+        }
+        let days = hours / 24
+        return Duration.seconds(Int64(days) * 86_400)
+            .formatted(.units(allowed: [.days], width: .narrow))
     }
 
     /// True when remaining time is under one hour (urgency styling for chips).

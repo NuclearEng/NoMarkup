@@ -14,6 +14,7 @@ struct JobsView: View {
 
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @ObservedObject private var deepLinks = DeepLinkRouter.shared
 
     @State private var segment: Segment = .browse
     @State private var jobs: [JobSummary] = []
@@ -45,6 +46,15 @@ struct JobsView: View {
     ]
 
     private var usesSplitView: Bool { horizontalSizeClass == .regular }
+
+    /// Copies a pending App Intent / `/jobs?q=` search into the browse search field.
+    @discardableResult
+    private func applyIncomingCatalogSearch() -> Bool {
+        guard let q = deepLinks.consumeCatalogSearchQuery(for: .jobs) else { return false }
+        segment = .browse
+        searchText = q
+        return true
+    }
 
     private var minStartingBidCents: Int64? {
         let t = minStartingBidText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -91,7 +101,15 @@ struct JobsView: View {
         content
             .navigationTitle("Jobs")
             .refreshable { await load(reset: true) }
-            .task(id: segment) { await load(reset: true) }
+            .task(id: segment) {
+                _ = applyIncomingCatalogSearch()
+                await load(reset: true)
+            }
+            .onChange(of: deepLinks.sequence) { _, _ in
+                if applyIncomingCatalogSearch() {
+                    Task { await load(reset: true) }
+                }
+            }
             .onChange(of: segment) { _, _ in
                 BrandHaptics.selection()
                 selectedJob = nil

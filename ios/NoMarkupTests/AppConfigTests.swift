@@ -149,4 +149,20 @@ final class AppConfigTests: XCTestCase {
         XCTAssertTrue(expected.isSubset(of: FeatureFlags.iOSHardOffKeys))
         XCTAssertEqual(FeatureFlags.iOSHardOffKeys, expected)
     }
+
+    /// IOS-SEC.2 / SEC.3: passkeys stay server-gated (not iOS hard-off) and default
+    /// off so Register/Login never show a dead-end while AASA/DNS is not live.
+    @MainActor
+    func testPasskeysFlagDefaultsOffAndIsNotHardOff() {
+        XCTAssertEqual(PasskeyAuth.featureFlagKey, "passkeys")
+        XCTAssertFalse(
+            FeatureFlags.iOSHardOffKeys.contains(PasskeyAuth.featureFlagKey),
+            "passkeys is server-gated so it can be enabled after AASA/DNS; do not hard-off"
+        )
+        let flags = FeatureFlags()
+        XCTAssertFalse(
+            PasskeyAuth.isEnabled(in: flags),
+            "absent server flag must hide passkey UI (IOS-SEC.3)"
+        )
+    }
 }

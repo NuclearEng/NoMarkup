@@ -152,4 +152,18 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
             self?.events = []
         }
     }
+
+    /// Last 8 HTTP hops as `METHOD path status requestID` (labels only — no bodies/tokens).
+    /// UITest builds surface this on `debug.requestLog.latest`.
+    func debugSummary() -> String {
+        Self.formatDebugSummary(events)
+    }
+
+    static func formatDebugSummary(_ events: [ClientActionEvent], limit: Int = 8) -> String {
+        events
+            .filter { $0.kind == "http" }
+            .prefix(limit)
+            .map { "\($0.method) \($0.path) \($0.status) \($0.requestID)" }
+            .joined(separator: "\n")
+    }
 }

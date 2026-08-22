@@ -158,14 +158,14 @@ struct SpectateTerminalView: View {
                 .tracking(1.0)
                 .foregroundStyle(BrandTheme.textSecondary)
 
+            // IOS-A11Y.2: Dynamic Type largeTitle (not fixed 42pt) so money grows at AX5.
             Text(leadingPriceDisplay)
-                .font(.system(size: 42, weight: .bold, design: .rounded).monospacedDigit())
+                .font(.system(.largeTitle, design: .rounded, weight: .bold).monospacedDigit())
                 .foregroundStyle(isForwardAuction ? BrandTheme.goldBright : BrandTheme.success)
-                .minimumScaleFactor(0.5)
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
                 .contentTransition(.numericText())
                 .brandMoneyFlash(token: priceFlashToken, isDown: !isForwardAuction)
-                .animation(.easeOut(duration: 0.2), value: leadingPriceDisplay)
+                .brandAnimation(.easeOut(duration: 0.2), value: leadingPriceDisplay)
                 .accessibilityLabel("\(priceLabel): \(leadingPriceDisplay)")
 
             Text(priceCaption)
@@ -483,4 +483,21 @@ struct SpectateTerminalView: View {
     }
     .preferredColorScheme(.dark)
     .tint(BrandTheme.accent)
+}
+
+// IOS-A11Y.2: canvas check that the leading price grows (wraps) at accessibility 5.
+#Preview("Job spectate AX5") {
+    NavigationStack {
+        SpectateTerminalView(
+            target: .job(
+                id: "preview-job-ax5",
+                title: "Fix kitchen sink leak",
+                leadingCents: 12_500,
+                endsAtISO: ISO8601DateFormatter().string(from: Date().addingTimeInterval(3600))
+            )
+        )
+    }
+    .preferredColorScheme(.dark)
+    .tint(BrandTheme.accent)
+    .dynamicTypeSize(.accessibility5)
 }

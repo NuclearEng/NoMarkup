@@ -2607,10 +2607,13 @@ struct ListingDetailView: View {
 
     // MARK: - Marketplace spectator lifecycle
 
+    /// HTTP fallback while the marketplace spectator socket is down (IOS-PERF.5).
+    private static let liveAuctionFallbackPollNanoseconds: UInt64 = 5_000_000_000
+
     /// Hybrid REST poll for the public bid ladder.
     ///
     /// - **WS connected:** slow reconcile (~15s) so missed frames still surface.
-    /// - **WS down:** faster poll while the auction is open (~3s).
+    /// - **WS down:** faster poll while the auction is open (5s — IOS-PERF.5).
     /// - Auction closed: single pass then stop.
     private func pollBidLadderLoop() async {
         guard scenePhase == .active else { return }
@@ -2620,7 +2623,7 @@ struct ListingDetailView: View {
         while !Task.isCancelled {
             let interval: UInt64 = isMarketplaceSocketLive
                 ? 15_000_000_000
-                : 3_000_000_000
+                : Self.liveAuctionFallbackPollNanoseconds
             do {
                 try await Task.sleep(nanoseconds: interval)
             } catch {

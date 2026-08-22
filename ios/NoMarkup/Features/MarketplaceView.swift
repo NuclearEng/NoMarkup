@@ -25,8 +25,18 @@ struct MarketplaceView: View {
     /// Empty-catalog CTA → native sell wizard (same sheet as Home / Account).
     @State private var showCreateListing = false
     @EnvironmentObject private var auth: AuthViewModel
+    @ObservedObject private var deepLinks = DeepLinkRouter.shared
 
     private var usesSplitView: Bool { horizontalSizeClass == .regular }
+
+    /// Copies a pending App Intent / `?q=` search into the existing search field.
+    @discardableResult
+    private func applyIncomingCatalogSearch() -> Bool {
+        guard let q = deepLinks.consumeCatalogSearchQuery(for: .marketplace) else { return false }
+        searchText = q
+        categorySlugFilter = nil
+        return true
+    }
 
     var body: some View {
         Group {
@@ -75,7 +85,15 @@ struct MarketplaceView: View {
                 }
             }
             .refreshable { await load(reset: true) }
-            .task { await load(reset: true) }
+            .task {
+                _ = applyIncomingCatalogSearch()
+                await load(reset: true)
+            }
+            .onChange(of: deepLinks.sequence) { _, _ in
+                if applyIncomingCatalogSearch() {
+                    Task { await load(reset: true) }
+                }
+            }
             .brandNavigationBarChrome()
             .safeAreaInset(edge: .top, spacing: 0) {
                 BrandCatalogSearchField(

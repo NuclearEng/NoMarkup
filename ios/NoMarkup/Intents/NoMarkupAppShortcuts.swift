@@ -1,17 +1,9 @@
 import AppIntents
 import Foundation
 
-// INT.3 deferred: `@AssistantIntent(schema:)` / `@AssistantEntity(schema:)` DO exist in the
-// installed SDK (iPhoneOS 26.5, AppIntents.swiftinterface), but the complete list of
-// assistant schema domains was enumerated from that interface — assistant, books, browser,
-// camera, files, journal, mail, photos, presentation, reader, spreadsheet,
-// system (.search → ShowInAppSearchResultsIntent), visualIntelligence, whiteboard,
-// wordProcessor — and none models a marketplace / services domain (jobs, listings, bids,
-// orders). The only near-fit, `system.search`, requires a ShowInAppSearchResultsIntent-shaped
-// in-app search intent, which none of these four open-surface intents are. Conforming would
-// mislabel intents against a wrong schema, so schema conformance is deferred until Apple
-// ships a commerce/marketplace domain (or a NoMarkup search intent exists to pair with
-// `system.search`).
+// INT.3 closed: `SearchNoMarkupIntent` (`@AppIntent(schema: .system.search)` /
+// `ShowInAppSearchResultsIntent`) plus always-available `SearchCatalogIntent` in
+// AppShortcuts. Visual Intelligence: `ListingVisualIntelligence.swift`.
 
 // MARK: - Session guard (IOS-INT.1)
 
@@ -186,6 +178,12 @@ extension ListingEntity: IndexedEntity {}
 // MARK: - Shortcuts provider
 
 /// Siri / Shortcuts phrases for NoMarkup App Intents (IOS-SYS.AI.1).
+///
+/// Search phrases bind to `SearchCatalogIntent` (always available). The iOS 18
+/// `SearchNoMarkupIntent` (`system.search` schema) cannot sit in this builder:
+/// `@available(iOS 18)` + `if #available` hits `AppShortcutsBuilder.buildBlock`
+/// (`cannot pass array of type '[AppShortcut]'`), and an explicit array is
+/// rejected by `appintentsmetadataprocessor`.
 struct NoMarkupAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -227,6 +225,16 @@ struct NoMarkupAppShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Post Job",
             systemImageName: "plus.circle.fill"
+        )
+        AppShortcut(
+            intent: SearchCatalogIntent(),
+            phrases: [
+                "Search \(.applicationName)",
+                "Find on \(.applicationName)",
+                "Search listings in \(.applicationName)",
+            ],
+            shortTitle: "Search",
+            systemImageName: "magnifyingglass"
         )
     }
 }

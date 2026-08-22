@@ -213,6 +213,25 @@ enum ImageUploader: Sendable {
         )
     }
 
+    /// Read file bytes off the main actor (IOS-PERF.6).
+    /// Caller must `startAccessingSecurityScopedResource()` on MainActor, hop
+    /// here via `Task.detached` while access is held, then `stopAccessing` in a
+    /// `defer` on the caller — access is process-wide, not thread-local.
+    nonisolated static func readSecurityScopedFile(
+        url: URL,
+        maxBytes: Int = maxFileBytes
+    ) throws -> Data {
+        let values = try url.resourceValues(forKeys: [.fileSizeKey])
+        if let size = values.fileSize, size > maxBytes {
+            throw APIClientError.httpStatus(400, detail: "PDF must be 10 MB or smaller.")
+        }
+        let data = try Data(contentsOf: url)
+        guard data.count <= maxBytes else {
+            throw APIClientError.httpStatus(400, detail: "PDF must be 10 MB or smaller.")
+        }
+        return data
+    }
+
     /// Downsample + JPEG-encode source bytes off the main actor (≤`maxPixelDimension`).
     /// Use for PUT paths that are not the imaging confirm pipeline (contract
     /// completion photos). Never decode a full-resolution bitmap on MainActor.

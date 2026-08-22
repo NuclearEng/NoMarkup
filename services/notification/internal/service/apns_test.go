@@ -92,6 +92,7 @@ func TestAPNsCategory(t *testing.T) {
 		"bid_awarded":          "bid_awarded",
 		"auction_closing_soon": "auction_closing_soon",
 		"contract_created":     "contract_created",
+		"new_message":          "new_message",
 		"price_drop":           "",
 		"":                     "",
 	}
@@ -152,24 +153,27 @@ func TestBuildAPNsPayloadClassShaping(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		msg        pushMessage
-		wantLevel  string
-		wantSound  bool
-		wantThread string
+		name         string
+		msg          pushMessage
+		wantLevel    string
+		wantSound    bool
+		wantThread   string
+		wantCategory string
 	}{
 		{
-			name:       "outbid is time-sensitive with listing thread",
-			msg:        pushMessage{NotifType: "bid_outbid", EntityType: "listing", EntityID: "abc-123"},
-			wantLevel:  "time-sensitive",
-			wantSound:  true,
-			wantThread: "listing:abc-123",
+			name:         "outbid is time-sensitive with listing thread",
+			msg:          pushMessage{NotifType: "bid_outbid", EntityType: "listing", EntityID: "abc-123"},
+			wantLevel:    "time-sensitive",
+			wantSound:    true,
+			wantThread:   "listing:abc-123",
+			wantCategory: "bid_outbid",
 		},
 		{
-			name:      "closing soon is time-sensitive",
-			msg:       pushMessage{NotifType: "auction_closing_soon"},
-			wantLevel: "time-sensitive",
-			wantSound: true,
+			name:         "closing soon is time-sensitive",
+			msg:          pushMessage{NotifType: "auction_closing_soon"},
+			wantLevel:    "time-sensitive",
+			wantSound:    true,
+			wantCategory: "auction_closing_soon",
 		},
 		{
 			name:       "price drop is passive and silent",
@@ -192,11 +196,12 @@ func TestBuildAPNsPayloadClassShaping(t *testing.T) {
 			wantThread: "listing_order:o1",
 		},
 		{
-			name:       "message is active with bare entity-id thread",
-			msg:        pushMessage{NotifType: "new_message", EntityID: "conv-9"},
-			wantLevel:  "active",
-			wantSound:  true,
-			wantThread: "conv-9",
+			name:         "message is active with bare entity-id thread and category",
+			msg:          pushMessage{NotifType: "new_message", EntityID: "conv-9"},
+			wantLevel:    "active",
+			wantSound:    true,
+			wantThread:   "conv-9",
+			wantCategory: "new_message",
 		},
 		{
 			name:      "payment is active without thread",
@@ -232,6 +237,10 @@ func TestBuildAPNsPayloadClassShaping(t *testing.T) {
 			thread, _ := aps["thread-id"].(string)
 			if thread != tt.wantThread {
 				t.Errorf("thread-id = %q, want %q", thread, tt.wantThread)
+			}
+			gotCat, _ := aps["category"].(string)
+			if gotCat != tt.wantCategory {
+				t.Errorf("category = %q, want %q", gotCat, tt.wantCategory)
 			}
 		})
 	}
