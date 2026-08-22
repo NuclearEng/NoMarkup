@@ -345,6 +345,18 @@ All five sections run. Scope: full.
 - `PayWithApplePayButton` + recurring Apple Pay disclosures
 - Privacy equal-protection sentence; widget help; review notes paste block
 
+### App-only follow-up (same day, no Apple account)
+
+| Residual | Change |
+|----------|--------|
+| ASR-3.2.* visible disabled loan/insurance CTAs | Hub rows non-interactive when off; Advances / Instant payout empty-state only (no Request form) |
+| ASR-3.1.3.b.1 web Stripe Pro on iOS | `X-NoMarkup-Client: ios` + gateway free-tier caps while `APP_STORE_IAP_VERIFY` is off |
+| ASR-1.2.b no admin resolve | `POST /api/v1/admin/job-reports/{id}/resolve` + web `/admin/job-reports` + iOS Jobs reports tab |
+| ASR-1.2.f / 1.1.4 photo NSFW | Chat photos tap-to-reveal by default; SCA overlay when Communication Safety can scan |
+| Support copy omitted jobs | Report-abuse section now includes jobs |
+
+Still **not** closable in the app (founder/ops): live API, ASC record/screenshots/Privacy URL/demo password, org enrollment, counsel memo.
+
 ---
 
 ## Disclaimer

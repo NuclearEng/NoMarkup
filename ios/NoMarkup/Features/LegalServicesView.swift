@@ -22,7 +22,7 @@ struct LegalServicesView: View {
                 BrandEmptyState(
                     title: "Legal services unavailable",
                     systemImage: "scalemass",
-                    message: "The legal_services feature flag is off. Enable it on the server to browse the attorney reverse-auction vertical.",
+                    message: "Not available in this App Store build.",
                     actionTitle: "Refresh flags",
                     action: { Task { await flags.refresh() } }
                 )

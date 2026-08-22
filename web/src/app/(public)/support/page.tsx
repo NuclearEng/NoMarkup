@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   },
 };
 
-const LAST_UPDATED = 'July 26, 2026';
+const LAST_UPDATED = 'August 21, 2026';
 
 export default function SupportPage() {
   return (
@@ -77,10 +77,13 @@ export default function SupportPage() {
           content: (
             <>
               <p>
-                To report prohibited content, scams, harassment, or unsafe listings:
+                To report prohibited content, scams, harassment, or unsafe jobs or listings:
               </p>
               <ul>
-                <li>Use the in-app Report control on the listing, message, or profile when available.</li>
+                <li>
+                  Use the in-app Report control on the job, listing, message, or profile when
+                  available.
+                </li>
                 <li>
                   Or email{' '}
                   <a href="mailto:support@no-markup.com?subject=Report%20abuse">

@@ -779,7 +779,7 @@ struct MarketplaceMapView: View {
 // MARK: - Admin console (web `/admin/*`)
 
 /// Admin desk: flags, disputes, users (suspend/ban/reactivate/finalize-deletion),
-/// goods/user reports, fraud, advances, jobs, listings, goods disputes, markets,
+/// goods/job/user reports, fraud, advances, jobs, listings, goods disputes, markets,
 /// taxonomy questions, insurers, challenges (+ other AdminOpsViews panels).
 /// Requires admin role; soft 403, never crashes.
 struct AdminConsoleView: View {
@@ -796,6 +796,7 @@ struct AdminConsoleView: View {
         case reviews = "Reviews"
         case users = "Users"
         case goodsReports = "Goods"
+        case jobReports = "Jobs reports"
         case userReports = "Users reports"
         case fraud = "Fraud"
         case advances = "Advances"
@@ -830,6 +831,7 @@ struct AdminConsoleView: View {
 
     private enum ReportKind {
         case goods
+        case job
         case user
     }
 
@@ -888,6 +890,7 @@ struct AdminConsoleView: View {
     @State private var disputes: [AdminDisputeRow] = []
     @State private var users: [AdminUserRow] = []
     @State private var goodsReports: [AdminReportRow] = []
+    @State private var jobReports: [AdminReportRow] = []
     @State private var userReports: [AdminReportRow] = []
     @State private var fraudAlerts: [AdminFraudAlert] = []
     @State private var advances: [WorkingCapitalAdvance] = []
@@ -1139,6 +1142,8 @@ struct AdminConsoleView: View {
                         userRows
                     case .goodsReports:
                         reportRows(goodsReports, kind: .goods)
+                    case .jobReports:
+                        reportRows(jobReports, kind: .job)
                     case .userReports:
                         reportRows(userReports, kind: .user)
                     case .fraud:
@@ -1506,6 +1511,7 @@ struct AdminConsoleView: View {
         case .disputes: return disputes.isEmpty
         case .users: return users.isEmpty
         case .goodsReports: return goodsReports.isEmpty
+        case .jobReports: return jobReports.isEmpty
         case .userReports: return userReports.isEmpty
         case .fraud: return fraudAlerts.isEmpty
         case .advances: return advances.isEmpty
@@ -1875,6 +1881,11 @@ struct AdminConsoleView: View {
                     id: report.id,
                     action: action
                 )
+            case .job:
+                result = try await APIClient.shared.resolveAdminJobReport(
+                    id: report.id,
+                    action: action
+                )
             case .user:
                 result = try await APIClient.shared.resolveAdminUserReport(
                     id: report.id,
@@ -1886,6 +1897,10 @@ struct AdminConsoleView: View {
             case .goods:
                 if let idx = goodsReports.firstIndex(where: { $0.id == report.id }) {
                     goodsReports[idx].status = newStatus
+                }
+            case .job:
+                if let idx = jobReports.firstIndex(where: { $0.id == report.id }) {
+                    jobReports[idx].status = newStatus
                 }
             case .user:
                 if let idx = userReports.firstIndex(where: { $0.id == report.id }) {
@@ -2089,6 +2104,8 @@ struct AdminConsoleView: View {
                 users = try await APIClient.shared.fetchAdminUsers().users
             case .goodsReports:
                 goodsReports = try await APIClient.shared.fetchAdminGoodsReports().reports
+            case .jobReports:
+                jobReports = try await APIClient.shared.fetchAdminJobReports().reports
             case .userReports:
                 userReports = try await APIClient.shared.fetchAdminUserReports().reports
             case .fraud:

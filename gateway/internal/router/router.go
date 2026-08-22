@@ -1215,9 +1215,10 @@ func New(
 			})
 
 			// Job UGC reports (ASR-1.2.b). Intake is public-ish; this is the
-			// admin queue. Constructed above next to the listing report route.
+			// admin queue + resolve. Constructed above next to the listing report route.
 			r.Route("/job-reports", func(r chi.Router) {
 				r.Get("/", jobReportsHandler.ListJobReports)
+				r.Post("/{id}/resolve", jobReportsHandler.ResolveJobReport)
 			})
 
 			// User & message abuse reports (harassment/spam/scam/etc).

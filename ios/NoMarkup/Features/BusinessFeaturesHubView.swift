@@ -1,15 +1,19 @@
 import SwiftUI
 
 /// Full product parity hub: BNPL, insurance, advances, instant payout, expenses, tax.
-/// Each section is gated by `FeatureFlags.isEnabled` (server-driven; no hard-offs).
+/// Money-rail purchase surfaces are gated by `FeatureFlags.isEnabled` (iOS hard-off + server).
 struct BusinessFeaturesHubView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var flags: FeatureFlags
 
+    private var insuranceEnabled: Bool {
+        flags.isEnabled("per_job_insurance") || flags.isEnabled("insurance_competition")
+    }
+
     var body: some View {
         List {
             Section {
-                Text("These surfaces match the web provider portal and customer payment tools. Availability follows live feature flags from the server.")
+                Text("Expenses, invoices, and tax stay available. BNPL, insurance, advances, and instant payout are off in this App Store build until licensed.")
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .listRowBackground(BrandTheme.navyElevated)
@@ -47,7 +51,7 @@ struct BusinessFeaturesHubView: View {
             } header: {
                 Text("Money rails").brandSectionHeader()
             } footer: {
-                Text("When a flag is off, the server returns 503 for that rail — UI stays visible but actions explain the gate.")
+                Text("These rails are off in this App Store build until licensed. Purchase surfaces stay hidden while FeatureFlags.isEnabled is off (iOS hard-off plus server).")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -79,23 +83,20 @@ struct BusinessFeaturesHubView: View {
             }
 
             Section {
-                NavigationLink {
-                    LazyView { InsuranceQuoteFlowView() }
-                } label: {
-                    Label("Insurance quote", systemImage: "shield.lefthalf.filled")
+                insuranceCatalogRow(
+                    title: "Insurance quote",
+                    systemImage: "shield.lefthalf.filled",
+                    accessibilityHint: "Request a per-job insurance quote for a contract"
+                ) {
+                    InsuranceQuoteFlowView()
                 }
-                .frame(minHeight: 44)
-                .disabled(!flags.isEnabled("per_job_insurance") && !flags.isEnabled("insurance_competition"))
                 .accessibilityIdentifier("business.row.insuranceQuote")
-                .accessibilityHint("Request a per-job insurance quote for a contract")
-
-                NavigationLink {
-                    LazyView { InsuranceProductsBrowseView() }
-                } label: {
-                    Label("Browse insurance products", systemImage: "cross.case")
+                insuranceCatalogRow(
+                    title: "Browse insurance products",
+                    systemImage: "cross.case"
+                ) {
+                    InsuranceProductsBrowseView()
                 }
-                .frame(minHeight: 44)
-                .disabled(!flags.isEnabled("per_job_insurance") && !flags.isEnabled("insurance_competition"))
             } header: {
                 Text("Insurance catalog").brandSectionHeader()
             }
@@ -117,22 +118,74 @@ struct BusinessFeaturesHubView: View {
         systemImage: String,
         @ViewBuilder destination: @escaping () -> D
     ) -> some View {
-        let on = flags.isEnabled(flag)
-        NavigationLink {
-            // Defer construction until open — hub is already nested under Account LazyView.
-            LazyView { destination() }
-        } label: {
-            HStack {
-                Label(title, systemImage: systemImage)
-                Spacer()
-                Text(on ? "On" : "Flag off")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(on ? BrandTheme.success : BrandTheme.textSecondary)
+        gatedMoneyRow(
+            enabled: flags.isEnabled(flag),
+            title: title,
+            systemImage: systemImage
+        ) {
+            destination()
+        }
+    }
+
+    /// Quote + browse share two insurance flags. No NavigationLink into a purchase surface when both are off.
+    @ViewBuilder
+    private func insuranceCatalogRow<D: View>(
+        title: String,
+        systemImage: String,
+        accessibilityHint: String? = nil,
+        @ViewBuilder destination: @escaping () -> D
+    ) -> some View {
+        gatedMoneyRow(
+            enabled: insuranceEnabled,
+            title: title,
+            systemImage: systemImage,
+            accessibilityHint: accessibilityHint
+        ) {
+            destination()
+        }
+    }
+
+    /// Interactive destination only while `FeatureFlags.isEnabled` is true. Off rows are static — no Request/Purchase path.
+    @ViewBuilder
+    private func gatedMoneyRow<D: View>(
+        enabled: Bool,
+        title: String,
+        systemImage: String,
+        accessibilityHint: String? = nil,
+        @ViewBuilder destination: @escaping () -> D
+    ) -> some View {
+        Group {
+            if enabled {
+                NavigationLink {
+                    // Defer construction until open — hub is already nested under Account LazyView.
+                    LazyView { destination() }
+                } label: {
+                    HStack {
+                        Label(title, systemImage: systemImage)
+                        Spacer()
+                        Text("On")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(BrandTheme.success)
+                    }
+                    .frame(minHeight: 44)
+                }
+                .accessibilityHint(accessibilityHint ?? "Open \(title)")
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    Label(title, systemImage: systemImage)
+                    Spacer(minLength: 8)
+                    Text("Not in this App Store build")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .multilineTextAlignment(.trailing)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .allowsHitTesting(false)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(title), not in this App Store build")
             }
-            .frame(minHeight: 44)
         }
         .listRowBackground(BrandTheme.navyElevated)
-        .accessibilityHint(on ? "Open \(title)" : "\(title) flag is currently off on the server")
     }
 }
 
@@ -151,7 +204,15 @@ struct InstallmentsListView: View {
                 BrandEmptyState(
                     title: "Installments unavailable",
                     systemImage: "calendar.badge.exclamationmark",
-                    message: "The customer_bnpl feature flag is off. Enable it on the server to create payment plans."
+                    message: "Not available in this App Store build."
+                )
+            } else if auth.isScaffoldSession || !auth.isAuthenticated {
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "lock.circle",
+                    message: "Sign in to view installment plans on your contracts.",
+                    actionTitle: "Sign in",
+                    action: { auth.signOut() }
                 )
             } else if isLoading && plans.isEmpty {
                 BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading plans…")
@@ -159,7 +220,9 @@ struct InstallmentsListView: View {
                 BrandEmptyState(
                     title: "Couldn’t load plans",
                     systemImage: "exclamationmark.triangle",
-                    message: errorMessage
+                    message: errorMessage,
+                    actionTitle: "Try again",
+                    action: { Task { await load() } }
                 )
             } else if plans.isEmpty {
                 BrandEmptyState(
@@ -200,6 +263,7 @@ struct InstallmentsListView: View {
 
     @MainActor
     private func load() async {
+        guard flags.isEnabled("customer_bnpl") else { return }
         guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
         isLoading = true
         defer { isLoading = false }
@@ -224,6 +288,14 @@ struct InsurancePoliciesView: View {
         Group {
             if isLoading && policies.isEmpty {
                 BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading policies…")
+            } else if let errorMessage, policies.isEmpty {
+                BrandEmptyState(
+                    title: "Couldn’t load policies",
+                    systemImage: "exclamationmark.triangle",
+                    message: errorMessage,
+                    actionTitle: "Try again",
+                    action: { Task { await load() } }
+                )
             } else if policies.isEmpty {
                 BrandEmptyState(
                     title: "No policies yet",
@@ -271,11 +343,28 @@ struct InsuranceProductsBrowseView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @State private var products: [InsuranceProduct] = []
     @State private var isLoading = false
+    @State private var errorMessage: String?
 
     var body: some View {
         Group {
             if isLoading && products.isEmpty {
                 BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading products…")
+            } else if let errorMessage, products.isEmpty {
+                BrandEmptyState(
+                    title: "Couldn’t load products",
+                    systemImage: "exclamationmark.triangle",
+                    message: errorMessage,
+                    actionTitle: "Try again",
+                    action: { Task { await load() } }
+                )
+            } else if products.isEmpty {
+                BrandEmptyState(
+                    title: "No insurance products",
+                    systemImage: "cross.case",
+                    message: "Carrier products appear here when insurance is enabled and the catalog is published.",
+                    actionTitle: "Try again",
+                    action: { Task { await load() } }
+                )
             } else {
                 List(products) { product in
                     VStack(alignment: .leading, spacing: 4) {
@@ -291,6 +380,7 @@ struct InsuranceProductsBrowseView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(BrandTheme.goldBright)
                     }
+                    .frame(minHeight: 44)
                     .listRowBackground(BrandTheme.navyElevated)
                 }
                 .brandListBackground()
@@ -300,11 +390,22 @@ struct InsuranceProductsBrowseView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .task {
-            guard auth.isAuthenticated else { return }
-            isLoading = true
-            defer { isLoading = false }
-            products = (try? await APIClient.shared.fetchInsuranceProducts()) ?? []
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    @MainActor
+    private func load() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
+        isLoading = products.isEmpty
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            products = try await APIClient.shared.fetchInsuranceProducts()
+        } catch {
+            if products.isEmpty {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }
@@ -312,7 +413,7 @@ struct InsuranceProductsBrowseView: View {
 // MARK: - Insurance quote flow (web `/insurance/quotes` lite)
 
 /// Contract + product → `POST /api/v1/insurance/quote` (+ optional purchase).
-/// Account + Business hub entry. Server-gated by `per_job_insurance` / `insurance_competition`.
+/// Account + Business hub entry. Gated by `FeatureFlags.isEnabled` (iOS hard-off + server).
 struct InsuranceQuoteFlowView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var flags: FeatureFlags
@@ -341,17 +442,19 @@ struct InsuranceQuoteFlowView: View {
 
     var body: some View {
         Group {
-            if auth.isScaffoldSession || !auth.isAuthenticated {
-                BrandEmptyState(
-                    title: "Sign in required",
-                    systemImage: "shield.lefthalf.filled",
-                    message: "Sign in to request a per-job insurance quote for a contract."
-                )
-            } else if !insuranceEnabled {
+            if !insuranceEnabled {
                 BrandEmptyState(
                     title: "Insurance unavailable",
                     systemImage: "shield.slash",
-                    message: "per_job_insurance and insurance_competition flags are off. Enable one on the server to quote coverage."
+                    message: "Not available in this App Store build."
+                )
+            } else if auth.isScaffoldSession || !auth.isAuthenticated {
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "shield.lefthalf.filled",
+                    message: "Sign in to request a per-job insurance quote for a contract.",
+                    actionTitle: "Sign in",
+                    action: { auth.signOut() }
                 )
             } else if isLoadingCatalog && products.isEmpty && loadError == nil {
                 BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading insurance products…")
@@ -375,6 +478,7 @@ struct InsuranceQuoteFlowView: View {
         .brandNavigationBarChrome()
         .task {
             await flags.refresh()
+            guard insuranceEnabled else { return }
             await loadCatalog()
         }
         .accessibilityIdentifier("insurance.quote.flow")
@@ -565,6 +669,7 @@ struct InsuranceQuoteFlowView: View {
 
     @MainActor
     private func loadCatalog() async {
+        guard insuranceEnabled else { return }
         guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
         isLoadingCatalog = true
         defer { isLoadingCatalog = false }
@@ -590,6 +695,7 @@ struct InsuranceQuoteFlowView: View {
 
     @MainActor
     private func requestQuote() async {
+        guard insuranceEnabled else { return }
         let contractId = contractIdText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !contractId.isEmpty else {
             statusMessage = "Enter a contract id."
@@ -623,6 +729,7 @@ struct InsuranceQuoteFlowView: View {
 
     @MainActor
     private func purchase() async {
+        guard insuranceEnabled else { return }
         let contractId = contractIdText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !contractId.isEmpty else {
             statusMessage = "Enter a contract id."
@@ -667,6 +774,7 @@ struct AdvancesView: View {
     @State private var credit: CreditLimit?
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var loadFailed = false
     @State private var repayAmountText = ""
     @State private var repayingId: String?
     @State private var requestContractId = ""
@@ -674,15 +782,45 @@ struct AdvancesView: View {
     @State private var isRequesting = false
 
     var body: some View {
-        List {
+        Group {
             if !flags.isEnabled("working_capital") {
-                Section {
-                    Text("working_capital flag is off on the server.")
-                        .font(.footnote)
-                        .foregroundStyle(BrandTheme.warning)
-                        .listRowBackground(BrandTheme.navyElevated)
-                }
+                BrandEmptyState(
+                    title: "Working capital unavailable",
+                    systemImage: "building.columns",
+                    message: "Not available in this App Store build."
+                )
+            } else if auth.isScaffoldSession || !auth.isAuthenticated {
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "lock.circle",
+                    message: "Sign in as a provider to request working-capital advances.",
+                    actionTitle: "Sign in",
+                    action: { auth.signOut() }
+                )
+            } else if isLoading && advances.isEmpty && credit == nil && !loadFailed {
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading advances…")
+            } else if loadFailed, advances.isEmpty && credit == nil {
+                BrandEmptyState(
+                    title: "Couldn’t load advances",
+                    systemImage: "exclamationmark.triangle",
+                    message: errorMessage ?? "Check your connection and try again.",
+                    actionTitle: "Try again",
+                    action: { Task { await load() } }
+                )
+            } else {
+                advancesList
             }
+        }
+        .navigationTitle("Working capital")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private var advancesList: some View {
+        List {
             if let credit {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
@@ -723,7 +861,7 @@ struct AdvancesView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.gold)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
-                .disabled(isRequesting || !flags.isEnabled("working_capital"))
+                .disabled(isRequesting)
                 .listRowBackground(BrandTheme.navyElevated)
             } header: {
                 Text("Request advance").brandSectionHeader()
@@ -780,18 +918,13 @@ struct AdvancesView: View {
             }
         }
         .brandListBackground()
-        .navigationTitle("Working capital")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .task { await load() }
-        .refreshable { await load() }
     }
 
     @MainActor
     private func load() async {
+        guard flags.isEnabled("working_capital") else { return }
         guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
-        isLoading = true
+        isLoading = advances.isEmpty && credit == nil
         defer { isLoading = false }
         do {
             async let a = APIClient.shared.fetchMyAdvances()
@@ -799,13 +932,18 @@ struct AdvancesView: View {
             advances = try await a
             credit = try? await c
             errorMessage = nil
+            loadFailed = false
         } catch {
             errorMessage = error.localizedDescription
+            if advances.isEmpty && credit == nil {
+                loadFailed = true
+            }
         }
     }
 
     @MainActor
     private func requestAdvance() async {
+        guard flags.isEnabled("working_capital") else { return }
         let cid = requestContractId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cid.isEmpty else {
             errorMessage = "Enter a contract id."
@@ -857,19 +995,67 @@ struct InstantPayoutView: View {
     @State private var summary: InstantPayoutSummary?
     @State private var amountText = ""
     @State private var isSubmitting = false
+    @State private var isLoading = false
     @State private var statusMessage: String?
     @State private var statusIsError = false
+    @State private var loadError: String?
 
     var body: some View {
-        Form {
+        Group {
             if !flags.isEnabled("instant_payout") {
-                Section {
-                    Text("instant_payout flag is off. Enable the flag to request instant Connect payouts.")
-                        .font(.footnote)
-                        .foregroundStyle(BrandTheme.warning)
-                        .listRowBackground(BrandTheme.navyElevated)
-                }
+                BrandEmptyState(
+                    title: "Instant payout unavailable",
+                    systemImage: "bolt.slash",
+                    message: "Not available in this App Store build."
+                )
+            } else if auth.isScaffoldSession || !auth.isAuthenticated {
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "lock.circle",
+                    message: "Sign in as a provider to request instant payouts.",
+                    actionTitle: "Sign in",
+                    action: { auth.signOut() }
+                )
+            } else if isLoading && summary == nil && loadError == nil {
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading payout balance…")
+            } else if let loadError, summary == nil {
+                BrandEmptyState(
+                    title: "Couldn’t load payouts",
+                    systemImage: "exclamationmark.triangle",
+                    message: loadError,
+                    actionTitle: "Try again",
+                    action: { Task { await load() } }
+                )
+            } else {
+                payoutForm
             }
+        }
+        .navigationTitle("Instant payout")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    @MainActor
+    private func load() async {
+        guard flags.isEnabled("instant_payout") else { return }
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
+        isLoading = summary == nil
+        loadError = nil
+        defer { isLoading = false }
+        do {
+            summary = try await APIClient.shared.fetchInstantPayoutSummary()
+        } catch {
+            if summary == nil {
+                loadError = error.localizedDescription
+            }
+        }
+    }
+
+    private var payoutForm: some View {
+        Form {
             Section {
                 Text(summary?.displayAvailable ?? "—")
                     .font(.title2.weight(.bold).monospacedDigit())
@@ -895,7 +1081,7 @@ struct InstantPayoutView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(BrandTheme.gold)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
-                .disabled(isSubmitting || !flags.isEnabled("instant_payout"))
+                .disabled(isSubmitting)
                 .listRowBackground(BrandTheme.navyElevated)
             } header: {
                 Text("Payout").brandSectionHeader()
@@ -910,17 +1096,11 @@ struct InstantPayoutView: View {
             }
         }
         .brandListBackground()
-        .navigationTitle("Instant payout")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .task {
-            summary = try? await APIClient.shared.fetchInstantPayoutSummary()
-        }
     }
 
     @MainActor
     private func submit() async {
+        guard flags.isEnabled("instant_payout") else { return }
         guard let cents = MoneyFormat.cents(fromDollarsText: amountText), cents > 0 else {
             statusIsError = true
             statusMessage = "Enter a valid amount."
@@ -932,7 +1112,9 @@ struct InstantPayoutView: View {
             let result = try await APIClient.shared.requestInstantPayout(amountCents: cents)
             statusIsError = false
             statusMessage = "Submitted \(MoneyFormat.usd(cents: result.amountCents ?? cents))."
-            summary = try? await APIClient.shared.fetchInstantPayoutSummary()
+            if let refreshed = try? await APIClient.shared.fetchInstantPayoutSummary() {
+                summary = refreshed
+            }
         } catch {
             statusIsError = true
             statusMessage = error.localizedDescription
@@ -950,16 +1132,51 @@ struct ExpensesView: View {
     @State private var note = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var loadFailed = false
 
     var body: some View {
+        Group {
+            if auth.isScaffoldSession || !auth.isAuthenticated {
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "lock.circle",
+                    message: "Sign in as a provider to log business expenses.",
+                    actionTitle: "Sign in",
+                    action: { auth.signOut() }
+                )
+            } else if isLoading && expenses.isEmpty && !loadFailed {
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading expenses…")
+            } else if loadFailed, expenses.isEmpty {
+                BrandEmptyState(
+                    title: "Couldn’t load expenses",
+                    systemImage: "exclamationmark.triangle",
+                    message: errorMessage ?? "Check your connection and try again.",
+                    actionTitle: "Try again",
+                    action: { Task { await load() } }
+                )
+            } else {
+                expensesList
+            }
+        }
+        .navigationTitle("Expenses")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private var expensesList: some View {
         List {
             Section {
                 TextField("Category", text: $category)
                     .listRowBackground(BrandTheme.navyElevated)
+                    .frame(minHeight: 44)
                 DollarAmountField(text: $amountText, placeholder: "Amount $")
                     .listRowBackground(BrandTheme.navyElevated)
                 TextField("Description", text: $note, axis: .vertical)
                     .listRowBackground(BrandTheme.navyElevated)
+                    .frame(minHeight: 44)
                 Button("Add expense") {
                     Task { await add() }
                 }
@@ -1020,24 +1237,22 @@ struct ExpensesView: View {
             }
         }
         .brandListBackground()
-        .navigationTitle("Expenses")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .task { await load() }
-        .refreshable { await load() }
     }
 
     @MainActor
     private func load() async {
         guard auth.isAuthenticated else { return }
-        isLoading = true
+        isLoading = expenses.isEmpty
         defer { isLoading = false }
         do {
             expenses = try await APIClient.shared.fetchExpenses()
             errorMessage = nil
+            loadFailed = false
         } catch {
             errorMessage = error.localizedDescription
+            if expenses.isEmpty {
+                loadFailed = true
+            }
         }
     }
 
@@ -1080,6 +1295,7 @@ struct TaxCenterView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @State private var forms: [TaxForm] = []
     @State private var estimate: TaxEstimate?
+    @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var statusMessage: String?
     @State private var statusIsError = false
@@ -1098,6 +1314,43 @@ struct TaxCenterView: View {
     }
 
     var body: some View {
+        Group {
+            if auth.isScaffoldSession || !auth.isAuthenticated {
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "lock.circle",
+                    message: "Sign in as a provider to view tax estimates and 1099-NEC forms.",
+                    actionTitle: "Sign in",
+                    action: { auth.signOut() }
+                )
+            } else if isLoading && forms.isEmpty && estimate == nil && errorMessage == nil {
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading tax center…")
+            } else if let errorMessage, forms.isEmpty && estimate == nil {
+                BrandEmptyState(
+                    title: "Couldn’t load tax data",
+                    systemImage: "exclamationmark.triangle",
+                    message: errorMessage,
+                    actionTitle: "Try again",
+                    action: { Task { await load() } }
+                )
+            } else {
+                taxList
+            }
+        }
+        .navigationTitle("Tax center")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        #if canImport(UIKit)
+        .sheet(item: $documentShareItem) { item in
+            ActivityShareSheet(items: [item.url])
+        }
+        #endif
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private var taxList: some View {
         List {
             Section {
                 Picker("Tax year", selection: $selectedYear) {
@@ -1240,22 +1493,13 @@ struct TaxCenterView: View {
             }
         }
         .brandListBackground()
-        .navigationTitle("Tax center")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        #if canImport(UIKit)
-        .sheet(item: $documentShareItem) { item in
-            ActivityShareSheet(items: [item.url])
-        }
-        #endif
-        .task { await load() }
-        .refreshable { await load() }
     }
 
     @MainActor
     private func load() async {
         guard auth.isAuthenticated else { return }
+        isLoading = forms.isEmpty && estimate == nil
+        defer { isLoading = false }
         do {
             forms = try await APIClient.shared.fetchTaxForms()
             estimate = try? await APIClient.shared.fetchTaxEstimate(year: selectedYear)

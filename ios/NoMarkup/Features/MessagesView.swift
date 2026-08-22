@@ -2359,9 +2359,10 @@ private struct MessageBubbleRow: View {
     @ViewBuilder
     private var bubbleContent: some View {
         if message.isImageMessage, let url = message.safeImageURL {
-            // Platform photo only — AsyncImage loads https/http absolute URL from content.
+            // Platform photo only — ModeratedAsyncImage loads https/http absolute URL
+            // from content and hides incidental mature UGC (SCA, iOS 17+).
             // Plain Text fallback if decode fails; never HTML / attributed string.
-            AsyncImage(url: url) { phase in
+            ModeratedAsyncImage(url: url, requireTapToReveal: true) { phase in
                 switch phase {
                 case .success(let image):
                     image

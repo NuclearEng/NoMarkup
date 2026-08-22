@@ -77,6 +77,7 @@ actor APIClient {
         for url in candidates {
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
+            applyClientIdentity(to: &request)
             request.timeoutInterval = 8
             do {
                 let (_, response) = try await session.data(for: request)
@@ -100,6 +101,7 @@ actor APIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        applyClientIdentity(to: &request)
 
         let body = LoginRequestBody(email: email, password: password)
         request.httpBody = try JSONEncoder().encode(body)
@@ -150,6 +152,7 @@ actor APIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        applyClientIdentity(to: &request)
         request.timeoutInterval = 20
         request.httpBody = try JSONEncoder().encode(RefreshRequestBody(refreshToken: refresh))
 
@@ -180,10 +183,17 @@ actor APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        applyClientIdentity(to: &request)
         if let access = try tokenStore.read(.accessToken), !access.isEmpty {
             request.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
         }
         return request
+    }
+
+    /// ASR-3.1.3.b.1: every gateway JSON call identifies this native client so
+    /// Stripe website unlocks are not honored on iOS while StoreKit IAP verify is off.
+    private func applyClientIdentity(to request: inout URLRequest) {
+        request.setValue("ios", forHTTPHeaderField: "X-NoMarkup-Client")
     }
 
     /// POST /api/v1/auth/apple/native — AuthenticationServices identityToken exchange.
@@ -202,6 +212,7 @@ actor APIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        applyClientIdentity(to: &request)
         var body: [String: String] = ["identity_token": identityToken]
         if let fullName, !fullName.isEmpty {
             body["full_name"] = fullName
@@ -231,6 +242,7 @@ actor APIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        applyClientIdentity(to: &request)
         request.timeoutInterval = 20
         var body: [String: String] = ["identity_token": identityToken]
         if let fullName, !fullName.isEmpty {
@@ -257,6 +269,7 @@ actor APIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        applyClientIdentity(to: &request)
         request.timeoutInterval = 20
         let body: [String: String] = [
             "authorization_code": authorizationCode,
@@ -301,6 +314,7 @@ actor APIClient {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        applyClientIdentity(to: &request)
         request.timeoutInterval = 8
 
         let (data, response) = try await session.data(for: request)
@@ -1666,6 +1680,7 @@ actor APIClient {
         for (key, value) in headers {
             request.setValue(value, forHTTPHeaderField: key)
         }
+        applyClientIdentity(to: &request)
 
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1788,6 +1803,7 @@ actor APIClient {
         for (key, value) in headers {
             request.setValue(value, forHTTPHeaderField: key)
         }
+        applyClientIdentity(to: &request)
         if let rawBody {
             request.httpBody = rawBody
         }

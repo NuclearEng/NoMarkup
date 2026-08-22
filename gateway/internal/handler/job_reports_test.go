@@ -16,6 +16,7 @@ func newJobReportsRouter(h *JobReportsHandler) chi.Router {
 	r := chi.NewRouter()
 	r.Post("/api/v1/jobs/{id}/report", h.CreateJobReport)
 	r.Get("/api/v1/admin/job-reports", h.ListJobReports)
+	r.Post("/api/v1/admin/job-reports/{id}/resolve", h.ResolveJobReport)
 	return r
 }
 
@@ -82,6 +83,22 @@ func TestCreateJobReport_Table(t *testing.T) {
 			method:     http.MethodGet,
 			path:       "/api/v1/admin/job-reports",
 			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "admin resolve invalid uuid",
+			method:     http.MethodPost,
+			path:       "/api/v1/admin/job-reports/not-a-uuid/resolve",
+			body:       `{"action":"dismiss"}`,
+			authed:     true,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "admin resolve nil db fails closed",
+			method:     http.MethodPost,
+			path:       "/api/v1/admin/job-reports/" + validID + "/resolve",
+			body:       `{"action":"dismiss"}`,
+			authed:     true,
+			wantStatus: http.StatusServiceUnavailable,
 		},
 	}
 
@@ -188,6 +205,12 @@ func TestCreateJobReport_LiveDB(t *testing.T) {
 	if second.Code != http.StatusCreated {
 		t.Fatalf("second reporter: got %d want 201 (body=%s)", second.Code, second.Body.String())
 	}
+	var created2 struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &created2); err != nil || created2.ID == "" {
+		t.Fatalf("unmarshal second create: %v payload=%s", err, second.Body.String())
+	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/admin/job-reports?job_id="+jobID, nil)
 	listRec := httptest.NewRecorder()
@@ -223,5 +246,71 @@ func TestCreateJobReport_LiveDB(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("created report %s not visible in admin queue", created.ID)
+	}
+
+	resolve := func(t *testing.T, reportID, body, asUser string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost,
+			"/api/v1/admin/job-reports/"+reportID+"/resolve", bytes.NewReader([]byte(body)))
+		if asUser != "" {
+			req = authReq(req, asUser)
+		}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := resolve(t, created.ID, `{"action":"dismiss"}`, ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("resolve unauthed: got %d want 401 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if rec := resolve(t, created.ID, `{"action":"bogus"}`, reporter); rec.Code != http.StatusBadRequest {
+		t.Fatalf("resolve bad action: got %d want 400 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	unknownReport := "00000000-0000-0000-0000-000000000098"
+	if rec := resolve(t, unknownReport, `{"action":"dismiss"}`, reporter); rec.Code != http.StatusNotFound {
+		t.Fatalf("resolve missing: got %d want 404 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	resolveRec := resolve(t, created.ID, `{"action":"dismiss","notes":"not prohibited"}`, reporter)
+	if resolveRec.Code != http.StatusOK {
+		t.Fatalf("resolve: got %d want 200 (body=%s)", resolveRec.Code, resolveRec.Body.String())
+	}
+	var resolved struct {
+		ReportID string `json:"report_id"`
+		Status   string `json:"status"`
+	}
+	if err := json.Unmarshal(resolveRec.Body.Bytes(), &resolved); err != nil {
+		t.Fatalf("unmarshal resolve: %v", err)
+	}
+	if resolved.ReportID != created.ID || resolved.Status != "dismissed" {
+		t.Fatalf("unexpected resolve payload: %+v", resolved)
+	}
+	var afterStatus string
+	if err := pool.QueryRow(ctx, `SELECT status FROM job_reports WHERE id=$1`, created.ID).Scan(&afterStatus); err != nil {
+		t.Fatalf("read status after resolve: %v", err)
+	}
+	if afterStatus != "dismissed" {
+		t.Fatalf("after resolve: status=%s want dismissed", afterStatus)
+	}
+
+	if rec := resolve(t, created.ID, `{"action":"actioned"}`, reporter); rec.Code != http.StatusConflict {
+		t.Fatalf("resolve already terminal: got %d want 409 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	reviewRec := resolve(t, created2.ID, `{"action":"review","notes":"looking"}`, reporter)
+	if reviewRec.Code != http.StatusOK {
+		t.Fatalf("resolve review: got %d want 200 (body=%s)", reviewRec.Code, reviewRec.Body.String())
+	}
+	actionRec := resolve(t, created2.ID, `{"action":"actioned","notes":"removed"}`, reporter)
+	if actionRec.Code != http.StatusOK {
+		t.Fatalf("resolve actioned after review: got %d want 200 (body=%s)", actionRec.Code, actionRec.Body.String())
+	}
+	var afterActioned string
+	if err := pool.QueryRow(ctx, `SELECT status FROM job_reports WHERE id=$1`, created2.ID).Scan(&afterActioned); err != nil {
+		t.Fatalf("read status after actioned: %v", err)
+	}
+	if afterActioned != "actioned" {
+		t.Fatalf("after actioned: status=%s want actioned", afterActioned)
 	}
 }

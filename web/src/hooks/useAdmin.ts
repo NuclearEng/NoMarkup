@@ -644,6 +644,60 @@ export function useResolveReport() {
   });
 }
 
+// ─── Job reports ──────────────────────────────────────
+
+export interface AdminJobReport {
+  id: string;
+  job_id: string;
+  job_title: string;
+  reporter_id?: string | null;
+  reporter_email?: string | null;
+  reason: string;
+  description: string;
+  status: string;
+  resolution?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+}
+
+export interface AdminJobReportsResponse {
+  reports: AdminJobReport[];
+  pagination: { page: number; page_size: number; total: number };
+}
+
+export function useAdminJobReports(params?: {
+  status?: string;
+  job_id?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  const query = buildQuery({
+    status: params?.status,
+    job_id: params?.job_id,
+    page: params?.page,
+    page_size: params?.page_size,
+  });
+  return useQuery({
+    queryKey: ['admin', 'job-reports', params],
+    queryFn: () => api.get<AdminJobReportsResponse>(`/api/v1/admin/job-reports${query}`),
+  });
+}
+
+export function useResolveJobReport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { reportId: string; action: 'dismiss' | 'actioned' | 'review'; notes: string }) =>
+      api.post(`/api/v1/admin/job-reports/${vars.reportId}/resolve`, {
+        action: vars.action,
+        notes: vars.notes,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'job-reports'] });
+      void queryClient.invalidateQueries({ queryKey: [...adminKeys.all, 'jobs'] });
+    },
+  });
+}
+
 // ─── User & message abuse reports ─────────────────────
 
 export interface AdminUserReport {

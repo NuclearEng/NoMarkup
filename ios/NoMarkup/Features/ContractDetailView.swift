@@ -1338,7 +1338,7 @@ struct ContractDetailView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(BrandTheme.textSecondary)
             if let url = photo.safeImageURL {
-                AsyncImage(url: url) { phase in
+                ModeratedAsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
                         image

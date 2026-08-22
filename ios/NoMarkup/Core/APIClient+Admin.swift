@@ -53,6 +53,18 @@ extension APIClient {
         )
     }
 
+    /// GET `/api/v1/admin/job-reports` (job UGC reports queue)
+    func fetchAdminJobReports(page: Int = 1, pageSize: Int = 40) async throws -> AdminReportsResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "admin", "job-reports"],
+            query: [
+                URLQueryItem(name: "page", value: String(max(1, page))),
+                URLQueryItem(name: "page_size", value: String(min(max(1, pageSize), 100))),
+            ],
+            authorized: true
+        )
+    }
+
     /// GET `/api/v1/admin/user-reports`
     func fetchAdminUserReports(page: Int = 1, pageSize: Int = 40) async throws -> AdminReportsResponse {
         try await getJSON(
@@ -182,6 +194,22 @@ extension APIClient {
     ) async throws -> AdminReportResolveResponse {
         try await resolveAdminReport(
             pathSegment: "goods-reports",
+            id: id,
+            action: action,
+            notes: notes
+        )
+    }
+
+    /// POST `/api/v1/admin/job-reports/{id}/resolve`
+    /// Actions: `dismiss` | `actioned` | `review`.
+    @discardableResult
+    func resolveAdminJobReport(
+        id: String,
+        action: String,
+        notes: String = ""
+    ) async throws -> AdminReportResolveResponse {
+        try await resolveAdminReport(
+            pathSegment: "job-reports",
             id: id,
             action: action,
             notes: notes
@@ -1568,6 +1596,8 @@ struct AdminReportsResponse: Decodable, Sendable {
             reports = r
         } else if let r = try c.decodeIfPresent([AdminReportRow].self, forKey: .goodsReports) {
             reports = r
+        } else if let r = try c.decodeIfPresent([AdminReportRow].self, forKey: .jobReports) {
+            reports = r
         } else if let r = try c.decodeIfPresent([AdminReportRow].self, forKey: .userReports) {
             reports = r
         } else {
@@ -1578,6 +1608,7 @@ struct AdminReportsResponse: Decodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case reports
         case goodsReports
+        case jobReports
         case userReports
     }
 }

@@ -161,4 +161,31 @@ final class ImageUploaderTests: XCTestCase {
         XCTAssertNil(URLCache.shared.cachedResponse(for: request))
     }
     #endif
+
+    // MARK: - ASR-1.2.f sensitive media gate
+
+    func testSensitiveMediaGateFailsOpenWhenCannotScan() {
+        XCTAssertFalse(SensitiveMediaGate.hideByDefault(canScan: false, isSensitive: true))
+        XCTAssertFalse(SensitiveMediaGate.hideByDefault(canScan: false, isSensitive: false))
+    }
+
+    func testSensitiveMediaGateHidesOnlyWhenAnalyzerFlags() {
+        XCTAssertTrue(SensitiveMediaGate.hideByDefault(canScan: true, isSensitive: true))
+        XCTAssertFalse(SensitiveMediaGate.hideByDefault(canScan: true, isSensitive: false))
+    }
+
+    func testSensitiveMediaGateChatAlwaysHidesUntilTap() {
+        XCTAssertTrue(SensitiveMediaGate.hideByDefault(
+            canScan: false, isSensitive: false, requireTapToReveal: true
+        ))
+        XCTAssertTrue(SensitiveMediaGate.hideByDefault(
+            canScan: true, isSensitive: false, requireTapToReveal: true
+        ))
+    }
+
+    func testSensitiveMediaGateCopyIsNotColorOnly() {
+        XCTAssertEqual(SensitiveMediaGate.hidePrompt, "Sensitive media — tap to show")
+        XCTAssertFalse(SensitiveMediaGate.hidePrompt.isEmpty)
+        XCTAssertEqual(SensitiveMediaGate.revealHint, "Reveals the photo")
+    }
 }

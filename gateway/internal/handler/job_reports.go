@@ -11,8 +11,9 @@ package handler
 //
 // Routes:
 //
-//   POST /api/v1/jobs/{id}/report     CreateJobReport (optionalAuth)
-//   GET  /api/v1/admin/job-reports    ListJobReports  (admin)
+//   POST /api/v1/jobs/{id}/report                  CreateJobReport (optionalAuth)
+//   GET  /api/v1/admin/job-reports                 ListJobReports  (admin)
+//   POST /api/v1/admin/job-reports/{id}/resolve    ResolveJobReport (admin)
 
 import (
 	"context"
@@ -30,7 +31,7 @@ import (
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
-// JobReportsHandler exposes job-report intake plus a minimal admin list.
+// JobReportsHandler exposes job-report intake, admin list, and admin resolve.
 // A nil db short-circuits every endpoint (503 on writes, empty list on reads).
 type JobReportsHandler struct {
 	db *pgxpool.Pool
@@ -277,5 +278,86 @@ func (h *JobReportsHandler) ListJobReports(w http.ResponseWriter, r *http.Reques
 			"page_size": pageSize,
 			"total":     total,
 		},
+	})
+}
+
+// ResolveJobReport handles POST /api/v1/admin/job-reports/{id}/resolve.
+// Body: { "action": "dismiss" | "actioned" | "review", "notes": "..." }
+//
+// Same semantics as AdminMarketplaceHandler.ResolveReport: parameterized
+// UPDATE, terminal states (dismissed/actioned) are immutable (409), missing
+// rows 404. 'reviewed' is intermediate and may still advance. Dismissing so
+// open reports drop below 3 does not undelete the job — auto-hide is
+// one-way (safer; deleted_at is already set at 3 attributable reports).
+func (h *JobReportsHandler) ResolveJobReport(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !isValidUUID(id) {
+		writeError(w, http.StatusBadRequest, "invalid report id")
+		return
+	}
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "reporting unavailable")
+		return
+	}
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	var body struct {
+		Action string `json:"action"`
+		Notes  string `json:"notes"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+
+	var newStatus string
+	switch body.Action {
+	case "dismiss":
+		newStatus = "dismissed"
+	case "actioned":
+		newStatus = "actioned"
+	case "review":
+		newStatus = "reviewed"
+	default:
+		writeError(w, http.StatusBadRequest, "action must be dismiss|actioned|review")
+		return
+	}
+
+	// Only resolve a report that is not already in a terminal state. Without
+	// this, a second resolve silently overwrites the prior resolution,
+	// reviewed_by, and reviewed_at — letting one admin's verdict be replaced with
+	// no audit trail. 'reviewed' is intermediate and may still advance.
+	tag, err := h.db.Exec(r.Context(), `
+		UPDATE job_reports
+		   SET status = $1, reviewed_by = $2, reviewed_at = now(),
+		       resolution = $3, updated_at = now()
+		 WHERE id = $4 AND status NOT IN ('dismissed', 'actioned')`,
+		newStatus, claims.UserID, body.Notes, id)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "admin resolve job report failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to resolve")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		// Either the report doesn't exist (404) or it's already terminal (409).
+		var exists bool
+		if e := h.db.QueryRow(r.Context(),
+			`SELECT EXISTS (SELECT 1 FROM job_reports WHERE id = $1)`, id).Scan(&exists); e != nil {
+			slog.ErrorContext(r.Context(), "admin resolve job report existence check failed", "error", e)
+			writeError(w, http.StatusInternalServerError, "failed to resolve")
+			return
+		}
+		if !exists {
+			writeError(w, http.StatusNotFound, "report not found")
+			return
+		}
+		writeError(w, http.StatusConflict, "report already resolved")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"report_id": id,
+		"status":    newStatus,
 	})
 }

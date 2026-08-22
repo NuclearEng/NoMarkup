@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Server feature-flag status for money rails (BNPL, advances, insurance, etc.).
+/// Feature-flag status for money rails (BNPL, advances, insurance, etc.).
 ///
 /// Product surfaces live under **Business & finance**. This view is diagnostic:
-/// shows whether each flag is enabled on the server. No permanent hard-offs.
+/// ON/OFF is `FeatureFlags.isEnabled` (iOS hard-off plus server). Rails stay off
+/// in this App Store build until licensed.
 struct RegulatedRailsStatusView: View {
     @EnvironmentObject private var flags: FeatureFlags
 
@@ -20,7 +21,7 @@ struct RegulatedRailsStatusView: View {
     var body: some View {
         List {
             Section {
-                Text("These rails follow live server flags. Open Business & finance to use enabled products.")
+                Text("These rails are off in this App Store build until licensed. ON/OFF is the FeatureFlags.isEnabled gate (iOS hard-off plus server). Open Business & finance for expenses, invoices, and tax.")
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .listRowBackground(BrandTheme.navyElevated)
@@ -58,7 +59,7 @@ struct RegulatedRailsStatusView: View {
                     .accessibilityLabel("\(row.title), \(flags.isEnabled(row.key) ? "on" : "off")")
                 }
             } header: {
-                Text("Server flags").brandSectionHeader()
+                Text("Flag status").brandSectionHeader()
             }
 
             Section {

@@ -411,20 +411,24 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
-                    .accessibilityHint("BNPL, insurance, advances, instant payout, expenses, and tax — full web parity")
+                    .accessibilityHint("Expenses, invoices, and tax. BNPL, insurance, advances, and instant payout are off in this App Store build.")
                     .accessibilityIdentifier("account.row.businessFinance")
 
-                    NavigationLink {
-                        LazyView {
-                            InsuranceQuoteFlowView()
+                    // Hidden while FeatureFlags.isEnabled is false (iOS hard-off + server).
+                    if featureFlags.isEnabled("per_job_insurance")
+                        || featureFlags.isEnabled("insurance_competition") {
+                        NavigationLink {
+                            LazyView {
+                                InsuranceQuoteFlowView()
+                            }
+                        } label: {
+                            Label("Insurance quote", systemImage: "shield.lefthalf.filled")
                         }
-                    } label: {
-                        Label("Insurance quote", systemImage: "shield.lefthalf.filled")
+                        .frame(minHeight: 44)
+                        .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
+                        .accessibilityHint("Request a per-job insurance quote for a contract")
+                        .accessibilityIdentifier("account.row.insuranceQuote")
                     }
-                    .frame(minHeight: 44)
-                    .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
-                    .accessibilityHint("Request a per-job insurance quote for a contract")
-                    .accessibilityIdentifier("account.row.insuranceQuote")
 
                     NavigationLink {
                         LazyView {
@@ -854,7 +858,7 @@ struct AccountView: View {
                         Label("Feature flag status", systemImage: "flag")
                     }
                     .frame(minHeight: 44)
-                    .accessibilityHint("Server feature flags for BNPL, insurance, advances, and related rails")
+                    .accessibilityHint("Diagnostic ON/OFF for regulated rails. Off in this App Store build until licensed.")
                     .accessibilityIdentifier("account.row.featureFlags")
 
                     if hasAdminRole {
@@ -872,8 +876,8 @@ struct AccountView: View {
                     }
 
                     Text(AppConfig.storeKitEnabled
-                        ? "Digital Pro / Business plans use App Store In-App Purchase when enabled. BNPL, insurance, advances, and instant payout use server flags — open Business & finance when enabled."
-                        : "Digital plans are included free for launch in this app (no In-App Purchase, no web digital upgrade). BNPL, insurance, advances, and instant payout use server flags — open Business & finance when enabled.")
+                        ? "Digital Pro / Business plans use App Store In-App Purchase when enabled. BNPL, insurance, advances, and instant payout are off in this App Store build until licensed."
+                        : "Digital plans are included free for launch in this app (no In-App Purchase, no web digital upgrade). BNPL, insurance, advances, and instant payout are off in this App Store build until licensed.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

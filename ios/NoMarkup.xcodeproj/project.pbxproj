@@ -98,8 +98,10 @@ A100000000000000000000F0 /* LazyView.swift in Sources */ = {isa = PBXBuildFile; 
 		A10000000000000000000051 /* JobsMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000051 /* JobsMapView.swift */; };
 		A10000000000000000000052 /* PushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000052 /* PushRegistration.swift */; };
 		A10000000000000000000053 /* ImageUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000053 /* ImageUploader.swift */; };
+		A100000000000000000000F2 /* ModeratedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F2 /* ModeratedAsyncImage.swift */; };
 		A10000000000000000000054 /* ProfileSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000054 /* ProfileSettingsView.swift */; };
 		A10000000000000000000055 /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000055 /* MapKit.framework */; };
+		A100000000000000000000F3 /* SensitiveContentAnalysis.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F3 /* SensitiveContentAnalysis.framework */; };
 		A10000000000000000000056 /* CoreLocation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000056 /* CoreLocation.framework */; };
 		A10000000000000000000057 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000057 /* UserNotifications.framework */; };
 		A10000000000000000000059 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000059 /* NetworkMonitor.swift */; };
@@ -269,7 +271,9 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 		B10000000000000000000051 /* JobsMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsMapView.swift; sourceTree = "<group>"; };
 		B10000000000000000000052 /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
 		B10000000000000000000053 /* ImageUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageUploader.swift; sourceTree = "<group>"; };
+		B100000000000000000000F2 /* ModeratedAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeratedAsyncImage.swift; sourceTree = "<group>"; };
 		B10000000000000000000054 /* ProfileSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSettingsView.swift; sourceTree = "<group>"; };
+		B100000000000000000000F3 /* SensitiveContentAnalysis.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SensitiveContentAnalysis.framework; path = System/Library/Frameworks/SensitiveContentAnalysis.framework; sourceTree = SDKROOT; };
 		B10000000000000000000055 /* MapKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MapKit.framework; path = System/Library/Frameworks/MapKit.framework; sourceTree = SDKROOT; };
 		B10000000000000000000056 /* CoreLocation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreLocation.framework; path = System/Library/Frameworks/CoreLocation.framework; sourceTree = SDKROOT; };
 		B10000000000000000000057 /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
@@ -418,6 +422,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				A10000000000000000000056 /* CoreLocation.framework in Frameworks */,
 				A10000000000000000000057 /* UserNotifications.framework in Frameworks */,
 				A1000000000000000000005A /* Network.framework in Frameworks */,
+				A100000000000000000000F3 /* SensitiveContentAnalysis.framework in Frameworks */,
 				A10000000000000000000024 /* StripePaymentSheet in Frameworks */,
 				W1000000000000000000000B /* LocalAuthentication.framework in Frameworks */,
 			);
@@ -494,6 +499,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				B10000000000000000000056 /* CoreLocation.framework */,
 				B10000000000000000000057 /* UserNotifications.framework */,
 				B1000000000000000000005A /* Network.framework */,
+				B100000000000000000000F3 /* SensitiveContentAnalysis.framework */,
 				W10000000000000000000021 /* WidgetKit.framework */,
 				W10000000000000000000022 /* SwiftUI.framework */,
 				W10000000000000000000023 /* ActivityKit.framework */,
@@ -577,6 +583,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				B100000000000000000000E8 /* SpotlightIndex.swift */,
 				B10000000000000000000052 /* PushRegistration.swift */,
 				B10000000000000000000053 /* ImageUploader.swift */,
+				B100000000000000000000F2 /* ModeratedAsyncImage.swift */,
 				B100000000000000000000AD /* Models+RegulatedRails.swift */,
 				B100000000000000000000AC /* APIClient+RegulatedRails.swift */,
 				B100000000000000000000AB /* CameraImagePicker.swift */,
@@ -978,6 +985,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				A10000000000000000000051 /* JobsMapView.swift in Sources */,
 				A10000000000000000000052 /* PushRegistration.swift in Sources */,
 				A10000000000000000000053 /* ImageUploader.swift in Sources */,
+				A100000000000000000000F2 /* ModeratedAsyncImage.swift in Sources */,
 				A10000000000000000000054 /* ProfileSettingsView.swift in Sources */,
 				A10000000000000000000059 /* NetworkMonitor.swift in Sources */,
 				A10000000000000000000077 /* ReferralsView.swift in Sources */,
