@@ -65,6 +65,22 @@ struct EmployeesView: View {
                     actionTitle: nil,
                     action: nil
                 )
+                .safeAreaInset(edge: .bottom) {
+                    NavigationLink {
+                        ProfileSettingsView()
+                    } label: {
+                        Text("Open Profile settings")
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 48)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
+                    .accessibilityHint("Enable the provider role so you can manage your team")
+                }
             } else if employees.isEmpty {
                 BrandEmptyState(
                     title: "No team members",

@@ -1,0 +1,158 @@
+# Named API workflows. Full web page inventory: pages.json (105 App Router routes).
+# iOS: every TAP/SCREEN/HTTP hop is recorded in Account → Request log regardless of this file.
+# Join to client request log + gateway request_id.
+# status: expected HTTP on the primary hop. 2xx means success class, not a single code.
+version: 1
+personas: [customer, provider, provider2, admin]
+workflows:
+  - id: auth.login
+    label: Sign in
+    ios: login.submit
+    web: /login
+    method: POST
+    path: /api/v1/auth/login
+    status: 200
+  - id: account.me
+    label: Load Account hub
+    ios: account.row.profile
+    web: /settings/account
+    method: GET
+    path: /api/v1/users/me
+    status: 200
+  - id: account.profile.save
+    label: Save display name
+    ios: account.row.profile
+    web: /profile
+    method: PUT
+    path: /api/v1/users/me
+    status: 200
+  - id: account.security
+    label: Security settings
+    ios: account.row.security
+    web: /settings/security
+    method: GET
+    path: /api/v1/users/me
+    status: 200
+  - id: account.verification
+    label: Verify email & phone
+    ios: account.row.verification
+    web: /settings/account
+    method: POST
+    path: /api/v1/auth/resend-verification
+    status: [200, 204]
+  - id: account.post_job
+    label: Post a job
+    ios: account.row.postJob
+    web: /jobs/new
+    method: POST
+    path: /api/v1/jobs
+    status: 201
+  - id: account.orders
+    label: Orders list
+    ios: account.row.orders
+    web: /orders
+    method: GET
+    path: /api/v1/me/orders
+    status: 200
+  - id: account.contracts
+    label: Contracts list
+    ios: account.row.contracts
+    web: /contracts
+    method: GET
+    path: /api/v1/contracts
+    status: 200
+  - id: account.bids
+    label: My bids
+    ios: account.row.myBids
+    web: /bids
+    method: GET
+    path: /api/v1/bids/mine
+    status: 200
+  - id: account.listings
+    label: My listings
+    ios: account.row.myListings
+    web: /sell/mine
+    method: GET
+    path: /api/v1/listings/mine
+    status: 200
+  - id: account.watchlist
+    label: Watchlist
+    ios: account.row.watchlist
+    web: /me/watchlist
+    method: GET
+    path: /api/v1/me/watchlist
+    status: 200
+  - id: account.payment_methods
+    label: Payment methods
+    ios: account.row.paymentMethods
+    web: /settings/payment-methods
+    method: GET
+    path: /api/v1/payments/methods
+    status: 200
+  - id: account.notifications
+    label: Notifications
+    ios: account.row.notifications
+    web: /notifications
+    method: GET
+    path: /api/v1/notifications
+    status: 200
+  - id: account.notification_prefs.save
+    label: Save notification preferences
+    ios: account.row.notificationPreferences
+    web: /settings/notifications
+    method: PUT
+    path: /api/v1/notifications/preferences
+    status: 200
+  - id: account.plan_limits
+    label: Plan limits
+    ios: account.row.planLimits
+    web: /settings/subscription
+    method: GET
+    path: /api/v1/subscriptions/tiers
+    status: 200
+  - id: account.export
+    label: Export data
+    ios: account.row.exportData
+    web: /settings/account
+    method: GET
+    path: /api/v1/users/me/export
+    status: 200
+  - id: account.request_log
+    label: Open request log (local, no API)
+    ios: account.row.requestLog
+    web: /settings/request-log
+    method: null
+    path: null
+    status: null
+  - id: account.admin.flags
+    label: Admin flags
+    persona: admin
+    ios: account.row.admin
+    web: /admin/flags
+    method: GET
+    path: /api/v1/admin/flags
+    status: 200
+    deny:
+      customer: 403
+      provider: 403
+  - id: provider.workspace
+    label: Provider workspace
+    ios: account.row.providerWorkspace
+    web: /provider/workspace
+    method: GET
+    path: /api/v1/contracts
+    status: 200
+  - id: provider.payouts
+    label: Seller payouts
+    ios: account.row.sellerPayouts
+    web: /settings/payment-methods
+    method: GET
+    path: /api/v1/payments/stripe/account
+    status: [200, 404]
+  - id: provider.instant_offers
+    label: Instant offers
+    ios: account.row.instantOffers
+    web: /provider/offers
+    method: GET
+    path: /api/v1/provider/offers
+    status: [200, 403, 404, 503]

@@ -16,6 +16,7 @@ struct NoMarkupApp: App {
         // IOS-PERF.3: bounded URLCache for AsyncImage / default URL loading + purge on memory pressure.
         ImageUploader.configureCache()
         ImageUploader.installMemoryWarningPurge()
+        ActionAuditProbe.install()
     }
 
     var body: some Scene {

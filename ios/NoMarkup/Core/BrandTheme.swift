@@ -822,6 +822,7 @@ struct BrandGhostButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             // ButtonStyle has no Reduce Motion env; short press feedback is OK at system default.
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+            .background(AuditPressProbe(isPressed: configuration.isPressed, path: "brand.ghost"))
     }
 
     private func ghostBorder(pressed: Bool) -> Color {
@@ -873,6 +874,23 @@ struct BrandPrimaryButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .opacity(configuration.isPressed ? 0.94 : 1)
             .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+            .background(AuditPressProbe(isPressed: configuration.isPressed, path: "brand.primary"))
+    }
+}
+
+/// Fires one TAP into the request log when a styled button goes down.
+private struct AuditPressProbe: View {
+    let isPressed: Bool
+    let path: String
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onChange(of: isPressed) { _, pressed in
+                if pressed {
+                    ClientActionLog.shared.recordUI(method: "TAP", path: path, kind: "ui")
+                }
+            }
     }
 }
 

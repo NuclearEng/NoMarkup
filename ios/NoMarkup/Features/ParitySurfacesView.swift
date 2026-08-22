@@ -43,7 +43,9 @@ struct PaymentsHistoryView: View {
                 BrandEmptyState(
                     title: "Sign in required",
                     systemImage: "creditcard",
-                    message: "Sign in to view your payment and escrow history."
+                    message: "Sign in to view your payment and escrow history.",
+                    actionTitle: "Sign in",
+                    action: { auth.signOut() }
                 )
             } else if isLoading && payments.isEmpty {
                 BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading payments…")
@@ -186,7 +188,9 @@ struct PositionsBlotterView: View {
                 BrandEmptyState(
                     title: "Sign in required",
                     systemImage: "chart.bar.doc.horizontal",
-                    message: "Sign in to see open bids and watched auctions on one desk."
+                    message: "Sign in to see open bids and watched auctions on one desk.",
+                    actionTitle: "Sign in",
+                    action: { auth.signOut() }
                 )
             } else if isLoading && isEmpty {
                 BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading positions…")
@@ -208,23 +212,31 @@ struct PositionsBlotterView: View {
                                 .foregroundStyle(BrandTheme.textSecondary)
                         } else {
                             ForEach(jobBids) { bid in
-                                NavigationLink {
-                                    if let jobId = bid.jobId, !jobId.isEmpty {
+                                if let jobId = bid.jobId, !jobId.isEmpty {
+                                    NavigationLink {
                                         JobDetailView(jobID: jobId, preview: nil)
-                                    } else {
-                                        Text("Job unavailable")
-                                            .foregroundStyle(BrandTheme.textSecondary)
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(bid.displayTitle)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(BrandTheme.textPrimary)
+                                            Text("\(bid.displayAmount) · \(bid.displayStatus)")
+                                                .font(.caption.monospacedDigit())
+                                                .foregroundStyle(BrandTheme.goldBright)
+                                        }
+                                        .frame(minHeight: 44)
                                     }
-                                } label: {
+                                } else {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(bid.displayTitle)
                                             .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(BrandTheme.textPrimary)
-                                        Text("\(bid.displayAmount) · \(bid.displayStatus)")
+                                        Text("\(bid.displayAmount) · \(bid.displayStatus) · job unavailable")
                                             .font(.caption.monospacedDigit())
-                                            .foregroundStyle(BrandTheme.goldBright)
+                                            .foregroundStyle(BrandTheme.textSecondary)
                                     }
                                     .frame(minHeight: 44)
+                                    .accessibilityLabel("\(bid.displayTitle), job unavailable")
                                 }
                             }
                         }
@@ -239,30 +251,38 @@ struct PositionsBlotterView: View {
                                 .foregroundStyle(BrandTheme.textSecondary)
                         } else {
                             ForEach(listingBids) { entry in
-                                NavigationLink {
-                                    if let lid = entry.listingIdForAPI {
+                                if let lid = entry.listingIdForAPI {
+                                    NavigationLink {
                                         ListingDetailView(listingID: lid, preview: nil)
-                                    } else {
-                                        Text("Listing unavailable")
-                                            .foregroundStyle(BrandTheme.textSecondary)
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(entry.displayTitle)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(BrandTheme.textPrimary)
+                                            HStack(spacing: 8) {
+                                                Text(entry.displayAmount)
+                                                    .font(.caption.monospacedDigit())
+                                                    .foregroundStyle(BrandTheme.goldBright)
+                                                if entry.isWinning {
+                                                    Text("Leading")
+                                                        .font(.caption2.weight(.bold))
+                                                        .foregroundStyle(BrandTheme.success)
+                                                }
+                                            }
+                                        }
+                                        .frame(minHeight: 44)
                                     }
-                                } label: {
+                                } else {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(entry.displayTitle)
                                             .font(.subheadline.weight(.semibold))
                                             .foregroundStyle(BrandTheme.textPrimary)
-                                        HStack(spacing: 8) {
-                                            Text(entry.displayAmount)
-                                                .font(.caption.monospacedDigit())
-                                                .foregroundStyle(BrandTheme.goldBright)
-                                            if entry.isWinning {
-                                                Text("Leading")
-                                                    .font(.caption2.weight(.bold))
-                                                    .foregroundStyle(BrandTheme.success)
-                                            }
-                                        }
+                                        Text("\(entry.displayAmount) · listing unavailable")
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(BrandTheme.textSecondary)
                                     }
                                     .frame(minHeight: 44)
+                                    .accessibilityLabel("\(entry.displayTitle), listing unavailable")
                                 }
                             }
                         }
@@ -403,10 +423,11 @@ struct FairPriceIndexView: View {
                     }
                     .listRowBackground(BrandTheme.navyElevated)
                 } else if let errorMessage {
-                    Text(errorMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(BrandTheme.warning)
-                        .listRowBackground(BrandTheme.navyElevated)
+                    BrandInlineErrorCard(message: errorMessage) {
+                        Task { await loadPrice() }
+                    }
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .listRowInsets(EdgeInsets())
                 } else if selectedCategoryId.isEmpty {
                     Text("Pick a category to load the fair-price band.")
                         .font(.subheadline)
@@ -650,23 +671,14 @@ struct MarketplaceMapView: View {
             }
 
             if let errorMessage, listings.isEmpty {
-                VStack(spacing: 12) {
-                    Text("Couldn’t load listings")
-                        .font(.headline)
-                        .foregroundStyle(BrandTheme.textPrimary)
-                    Text(errorMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .multilineTextAlignment(.center)
-                    Button("Try again") {
-                        Task { await reload(recenter: false) }
-                    }
-                    .brandPrimaryButton()
-                    .frame(maxWidth: 200)
+                BrandEmptyState(
+                    title: "Couldn’t load listings",
+                    systemImage: "exclamationmark.triangle",
+                    message: errorMessage,
+                    actionTitle: "Try again"
+                ) {
+                    Task { await reload(recenter: false) }
                 }
-                .padding(24)
-                .brandCard(padding: 20)
-                .padding(24)
             }
 
             VStack {
@@ -1039,7 +1051,9 @@ struct AdminConsoleView: View {
                 BrandEmptyState(
                     title: "Sign in required",
                     systemImage: "lock.shield",
-                    message: "Admin console requires an authenticated admin session."
+                    message: "Admin console requires an authenticated admin session.",
+                    actionTitle: "Sign in",
+                    action: { auth.signOut() }
                 )
             } else if forbidden {
                 BrandEmptyState(

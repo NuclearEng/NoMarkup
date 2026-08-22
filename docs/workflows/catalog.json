@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "personas": ["customer", "provider", "provider2", "admin"],
+  "workflows": [
+    {"id":"auth.login","label":"Sign in","web":"/login","ios":"login.submit","method":"POST","path":"/api/v1/auth/login","status":200},
+    {"id":"account.me","label":"Load account","web":"/settings/account","ios":"account.row.profile","method":"GET","path":"/api/v1/users/me","status":200},
+    {"id":"account.security","label":"Security settings","web":"/settings/security","ios":"account.row.security","method":"GET","path":"/api/v1/users/me","status":200},
+    {"id":"account.orders","label":"Orders list","web":"/orders","ios":"account.row.orders","method":"GET","path":"/api/v1/me/orders","status":[200,404]},
+    {"id":"account.contracts","label":"Contracts list","web":"/contracts","ios":"account.row.contracts","method":"GET","path":"/api/v1/contracts","status":200},
+    {"id":"account.bids","label":"My bids","web":"/bids","ios":"account.row.myBids","method":"GET","path":"/api/v1/bids/mine","status":200},
+    {"id":"account.listings","label":"My listings","web":"/sell/mine","ios":"account.row.myListings","method":"GET","path":"/api/v1/listings/mine","status":[200,404]},
+    {"id":"account.watchlist","label":"Watchlist","web":"/me/watchlist","ios":"account.row.watchlist","method":"GET","path":"/api/v1/me/watchlist","status":[200,404]},
+    {"id":"account.payment_methods","label":"Payment methods","web":"/settings/payment-methods","ios":"account.row.paymentMethods","method":"GET","path":"/api/v1/payments/methods","status":[200,404]},
+    {"id":"account.notifications","label":"Notifications","web":"/notifications","ios":"account.row.notifications","method":"GET","path":"/api/v1/notifications","status":200},
+    {"id":"account.plan_limits","label":"Plan limits","web":"/settings/subscription","ios":"account.row.planLimits","method":"GET","path":"/api/v1/subscriptions/tiers","status":200},
+    {"id":"account.admin.flags","label":"Admin flags","web":"/admin/flags","ios":"account.row.admin","method":"GET","path":"/api/v1/admin/flags","status":200,"deny":{"customer":403,"provider":403,"provider2":403}},
+    {"id":"provider.workspace","label":"Provider workspace","web":"/provider/workspace","ios":"account.row.providerWorkspace","method":"GET","path":"/api/v1/contracts","status":200},
+    {"id":"provider.instant_offers","label":"Instant offers","web":"/provider/offers","ios":"account.row.instantOffers","method":"GET","path":"/api/v1/provider/offers","status":[200,403,404,503]}
+  ]
+}

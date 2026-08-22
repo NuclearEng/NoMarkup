@@ -42,6 +42,10 @@
 A100000000000000000000EE /* GitRevision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000EE /* GitRevision.swift */; };
 A100000000000000000000EF /* DevAPIBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000EF /* DevAPIBase.swift */; };
 A100000000000000000000F0 /* LazyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F0 /* LazyView.swift */; };
+		A100000000000000000000F4 /* ClientActionLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F4 /* ClientActionLog.swift */; };
+		A100000000000000000000F5 /* ClientActionLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F5 /* ClientActionLogView.swift */; };
+		A100000000000000000000F6 /* ActionAuditProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F6 /* ActionAuditProbe.swift */; };
+		T1000000000000000000000F /* ClientActionLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001F /* ClientActionLogTests.swift */; };
 		A100000000000000000000D0 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000D0 /* StoreKitManager.swift */; };
 		A100000000000000000000D1 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B100000000000000000000D1 /* StoreKit.framework */; };
 		A10000000000000000000003 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* KeychainTokenStore.swift */; };
@@ -340,6 +344,10 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 		T1000000000000000000001C /* WorkEvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkEvidenceTests.swift; sourceTree = "<group>"; };
 		T1000000000000000000001D /* NotificationPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreferencesTests.swift; sourceTree = "<group>"; };
 		T1000000000000000000001E /* AgeGateMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgeGateMathTests.swift; sourceTree = "<group>"; };
+		T1000000000000000000001F /* ClientActionLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientActionLogTests.swift; sourceTree = "<group>"; };
+		B100000000000000000000F4 /* ClientActionLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientActionLog.swift; sourceTree = "<group>"; };
+		B100000000000000000000F5 /* ClientActionLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientActionLogView.swift; sourceTree = "<group>"; };
+		B100000000000000000000F6 /* ActionAuditProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionAuditProbe.swift; sourceTree = "<group>"; };
 		T10000000000000000000020 /* NoMarkupTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B100000000000000000000C3 /* PasskeyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeyAuth.swift; sourceTree = "<group>"; };
 		B100000000000000000000C4 /* BiometricGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricGate.swift; sourceTree = "<group>"; };
@@ -546,6 +554,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				T1000000000000000000001C /* WorkEvidenceTests.swift */,
 				T1000000000000000000001D /* NotificationPreferencesTests.swift */,
 				T1000000000000000000001E /* AgeGateMathTests.swift */,
+				T1000000000000000000001F /* ClientActionLogTests.swift */,
 			);
 			path = NoMarkupTests;
 			sourceTree = "<group>";
@@ -566,6 +575,8 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				B100000000000000000000C4 /* BiometricGate.swift */,
 				B10000000000000000000003 /* KeychainTokenStore.swift */,
 				B10000000000000000000004 /* APIClient.swift */,
+				B100000000000000000000F4 /* ClientActionLog.swift */,
+				B100000000000000000000F6 /* ActionAuditProbe.swift */,
 				B1000000000000000000002C /* APIClient+Auth.swift */,
 				B10000000000000000000040 /* APIClient+Commerce.swift */,
 				B10000000000000000000031 /* APIClient+Contracts.swift */,
@@ -633,6 +644,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				B100000000000000000000A1 /* JobDraftsView.swift */,
 				B1000000000000000000000C /* MessagesView.swift */,
 				B1000000000000000000000D /* AccountView.swift */,
+				B100000000000000000000F5 /* ClientActionLogView.swift */,
 				B100000000000000000000B3 /* OnboardingWizardView.swift */,
 				B100000000000000000000B0 /* VerificationCenterView.swift */,
 				B10000000000000000000054 /* ProfileSettingsView.swift */,
@@ -933,6 +945,9 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				A100000000000000000000E8 /* SpotlightIndex.swift in Sources */,
 				A10000000000000000000003 /* KeychainTokenStore.swift in Sources */,
 				A10000000000000000000004 /* APIClient.swift in Sources */,
+				A100000000000000000000F4 /* ClientActionLog.swift in Sources */,
+				A100000000000000000000F5 /* ClientActionLogView.swift in Sources */,
+				A100000000000000000000F6 /* ActionAuditProbe.swift in Sources */,
 				A10000000000000000000005 /* AuthViewModel.swift in Sources */,
 				A10000000000000000000006 /* LoginView.swift in Sources */,
 				A10000000000000000000007 /* SignInWithAppleButton.swift in Sources */,
@@ -1071,6 +1086,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				T1000000000000000000000C /* WorkEvidenceTests.swift in Sources */,
 				T1000000000000000000000D /* NotificationPreferencesTests.swift in Sources */,
 				T1000000000000000000000E /* AgeGateMathTests.swift in Sources */,
+				T1000000000000000000000F /* ClientActionLogTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

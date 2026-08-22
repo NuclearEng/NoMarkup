@@ -15,18 +15,31 @@ struct AccountDeletionView: View {
     private let requiredPhrase = "DELETE"
 
     var body: some View {
-        Form {
+        Group {
             if auth.isScaffoldSession || !auth.isAuthenticated {
-                Section {
-                    Text("Sign in required to request account deletion. Browse-only mode has no API credentials.")
-                        .font(.subheadline)
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .listRowBackground(BrandTheme.navyElevated)
-                        .accessibilityIdentifier("accountDeletion.needsSignIn")
-                }
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "trash",
+                    message: "Sign in to request account deletion. Browse-only mode has no API credentials.",
+                    actionTitle: auth.isScaffoldSession ? "Sign out to log in" : "Sign in",
+                    action: { auth.signOut() }
+                )
+                .accessibilityIdentifier("accountDeletion.needsSignIn")
+            } else {
+                deletionForm
             }
+        }
+        .navigationTitle("Delete Account")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .brandNavigationBarChrome()
+        .tint(BrandTheme.accent)
+        .accessibilityIdentifier("accountDeletion.root")
+    }
 
+    private var deletionForm: some View {
+        Form {
             Section {
                 Text("Requesting deletion schedules permanent removal of your NoMarkup account after a grace period (typically 30 days on the server). You can cancel during the grace window on web or a future app build.")
                     .font(.subheadline)
@@ -72,6 +85,7 @@ struct AccountDeletionView: View {
                     .frame(minHeight: 48)
                 }
                 .disabled(!canSubmit || isSubmitting || auth.isScaffoldSession || !auth.isAuthenticated)
+                .accessibilityIdentifier("accountDeletion.submit")
             }
 
             if let resultMessage {
@@ -84,18 +98,14 @@ struct AccountDeletionView: View {
 
             Section {
                 Link("Open web account settings", destination: AppConfig.publicWebBaseURL.appending(path: "settings/account"))
+                    .frame(minHeight: 44)
                 Link("Privacy Policy", destination: AppConfig.privacyURL)
+                    .frame(minHeight: 44)
             } header: {
                 Text("Also available").brandSectionHeader()
             }
         }
         .brandListBackground()
-        .navigationTitle("Delete Account")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .brandNavigationBarChrome()
-        .tint(BrandTheme.accent)
     }
 
     private var canSubmit: Bool {

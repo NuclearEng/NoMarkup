@@ -72,6 +72,8 @@ struct ProviderInstantOffersView: View {
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
                 }
+            } else if isLoading && offers.isEmpty && loadError == nil {
+                BrandLoadingScreen(kind: .catalog, rows: 4, accessibilityLabel: "Loading Instant offers…")
             } else if let loadError, offers.isEmpty {
                 BrandEmptyState(
                     title: "Couldn’t load offers",

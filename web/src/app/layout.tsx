@@ -8,6 +8,7 @@ import { CommandPalette } from '@/components/command/command-palette';
 import { AgeGate } from '@/components/compliance/AgeGate';
 import { CookieConsent } from '@/components/compliance/CookieConsent';
 import { ToSReaccept } from '@/components/compliance/ToSReaccept';
+import { ActionCapture } from '@/components/providers/ActionCapture';
 import { AuthRestorer } from '@/components/providers/AuthRestorer';
 import { QueryProvider } from '@/components/providers/QueryProvider';
 import { WebVitalsReporter } from '@/components/providers/WebVitalsReporter';
@@ -151,6 +152,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           Skip to main content
         </a>
         <QueryProvider>
+          <ActionCapture />
           <AuthRestorer />
           <WebVitalsReporter />
           <main id="main-content">{children}</main>

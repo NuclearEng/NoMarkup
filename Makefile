@@ -1,8 +1,20 @@
 .PHONY: up down dev dev-full dev-infra dev-status dev-logs migrate-up migrate-down seed proto-gen proto-gen-go proto-gen-rust \
        verify-proto setup-tools test lint fmt build-gateway build-web build-engines build-services build build-all clean \
-       ios-archive-lint ios-archive founder-secrets-check origin-check encrypt-pii encrypt-pii-dry-run
+       ios-archive-lint ios-archive founder-secrets-check origin-check encrypt-pii encrypt-pii-dry-run \
+       e2e-catalog e2e-ios-catalog
 
 # ── Native Dev (bin/dev) ─────────────────────────────────────
+
+# Catalog-driven E2E (web request log + named workflows). Requires bin/dev + SEED_PASSWORD.
+e2e-catalog:
+	cd web && npx playwright test tests/e2e/catalog --project=chromium
+
+# iOS catalog: login hop + Account row walk must appear in Request log.
+e2e-ios-catalog:
+	DEVELOPER_DIR="$${DEVELOPER_DIR:-/Applications/Xcode-26.5.0.app/Contents/Developer}" \
+	xcodebuild test -project ios/NoMarkup.xcodeproj -scheme NoMarkup \
+	  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+	  -only-testing:NoMarkupUITests/NoMarkupUITests/testCatalogAllPersonasRequestLogAndRows
 
 dev:
 	bin/dev up

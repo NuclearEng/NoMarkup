@@ -78,6 +78,7 @@ struct RegulatedRailsStatusView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .accessibilityIdentifier("featureFlags.root")
         .task { await flags.refresh() }
         .refreshable { await flags.refresh() }
     }

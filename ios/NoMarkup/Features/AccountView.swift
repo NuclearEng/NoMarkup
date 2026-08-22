@@ -839,6 +839,17 @@ struct AccountView: View {
                 Section {
                     NavigationLink {
                         LazyView {
+                            ClientActionLogView()
+                        }
+                    } label: {
+                        Label("Request log", systemImage: "list.clipboard")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Shows recent API calls from this device with status, duration, and request id.")
+                    .accessibilityIdentifier("account.row.requestLog")
+
+                    NavigationLink {
+                        LazyView {
                             PlanLimitsView()
                         }
                     } label: {

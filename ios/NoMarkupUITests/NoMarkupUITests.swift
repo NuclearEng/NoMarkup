@@ -55,6 +55,10 @@ final class NoMarkupUITests: XCTestCase {
         Self.testCredential("NOMARKUP_UI_TEST_ADMIN_EMAIL", default: "admin@nomarkup.com")
     }
 
+    private var provider2Email: String {
+        Self.testCredential("NOMARKUP_UI_TEST_PROVIDER2_EMAIL", default: "provider2@nomarkup.com")
+    }
+
     private var password: String {
         Self.testCredential("NOMARKUP_UI_TEST_PASSWORD", default: "Password123!")
     }
@@ -468,6 +472,70 @@ final class NoMarkupUITests: XCTestCase {
     }
 
     // MARK: - Existing smoke tests
+
+    /// Catalog E2E for every seed persona: login hops + Account rows + Request log.
+    func testCatalogAllPersonasRequestLogAndRows() throws {
+        let personas: [(email: String, label: String, adminRow: Bool)] = [
+            (customerEmail, "customer", false),
+            (providerEmail, "provider", false),
+            (provider2Email, "provider2", false),
+            (adminEmail, "admin", true),
+        ]
+        for persona in personas {
+            ensureSignedIn(email: persona.email, password: password)
+            XCTAssertTrue(
+                waitForSignedInShell(timeout: 25),
+                "\(persona.label) must reach tab shell"
+            )
+            runCatalogAccountRows(includeAdmin: persona.adminRow, persona: persona.label)
+            assertRequestLogHasHttpHops(persona: persona.label)
+        }
+    }
+
+    private func runCatalogAccountRows(includeAdmin: Bool, persona: String) {
+        var rows = [
+            "account.row.profile",
+            "account.row.orders",
+            "account.row.contracts",
+            "account.row.myBids",
+            "account.row.planLimits",
+            "account.row.notifications",
+            "account.row.providerWorkspace",
+            "account.row.instantOffers",
+        ]
+        if includeAdmin {
+            rows.append("account.row.admin")
+        }
+        for id in rows {
+            openTab("Account")
+            settle(0.3)
+            let row = byID(id)
+            guard scrollTo(row, maxSwipes: 16), safeTap(row) else {
+                XCTFail("\(persona): catalog row \(id) not tappable")
+                return
+            }
+            settle(1.0)
+            XCTAssertTrue(app.state == .runningForeground, "\(persona) \(id) crashed")
+        }
+    }
+
+    private func assertRequestLogHasHttpHops(persona: String) {
+        openTab("Account")
+        settle(0.4)
+        let logRow = byID("account.row.requestLog")
+        XCTAssertTrue(scrollTo(logRow, maxSwipes: 16), "\(persona) request log row")
+        XCTAssertTrue(safeTap(logRow), "\(persona) open request log")
+        XCTAssertTrue(
+            byID("requestLog.root").waitForExistence(timeout: 10),
+            "\(persona) requestLog.root"
+        )
+        let httpCount = byID("requestLog.httpCount")
+        XCTAssertTrue(httpCount.waitForExistence(timeout: 8), "\(persona) requestLog.httpCount")
+        let raw = (httpCount.value as? String) ?? httpCount.label
+        let digits = raw.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()
+        let n = Int(digits) ?? 0
+        XCTAssertGreaterThan(n, 0, "\(persona) login/hub API hops must be in the request log, got '\(raw)'")
+    }
 
     /// After cold launch, either the login form or the signed-in tab shell is visible.
     func testColdLaunchShowsLoginOrTabs() throws {

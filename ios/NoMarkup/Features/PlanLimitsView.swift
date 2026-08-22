@@ -46,6 +46,7 @@ struct PlanLimitsView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .brandNavigationBarChrome()
+            .accessibilityIdentifier("planLimits.root")
             .task {
                 await load()
                 if storeKitOn {

@@ -39,6 +39,7 @@ struct CalendarExportView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .accessibilityIdentifier("calendarExport.root")
         #if canImport(UIKit)
         .sheet(item: $shareItem, onDismiss: {
             cleanupTempFile()

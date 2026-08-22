@@ -3,6 +3,7 @@ import {
   attachTraceToSentry,
   withClientApiSpan,
 } from '@/lib/otel/sentry-bridge';
+import { recordClientAction } from '@/lib/client-action-log';
 import {
   HEADER_REQUEST_ID,
   HEADER_TRACEPARENT,
@@ -139,6 +140,11 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  const started =
+    typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const durationMs = (): number =>
+    (typeof performance !== 'undefined' ? performance.now() : Date.now()) - started;
+
   return withClientApiSpan(
     {
       method,
@@ -160,6 +166,13 @@ async function request<T>(
           body: body ? JSON.stringify(body) : undefined,
         });
       } catch {
+        recordClientAction({
+          method,
+          path,
+          status: 0,
+          durationMs: durationMs(),
+          requestId: traceHeaders[HEADER_REQUEST_ID],
+        });
         throw new ApiError(503, 'Unable to reach the server. Please try again shortly.');
       }
 
@@ -185,6 +198,13 @@ async function request<T>(
             body: body ? JSON.stringify(body) : undefined,
           });
         } else {
+          recordClientAction({
+            method,
+            path,
+            status: 401,
+            durationMs: durationMs(),
+            requestId: traceHeaders[HEADER_REQUEST_ID],
+          });
           clearTokens();
           if (typeof window !== 'undefined') {
             window.location.href = '/login';
@@ -194,10 +214,18 @@ async function request<T>(
       }
 
       // Prefer the gateway-echoed id (authoritative) for Sentry tags.
+      const requestId =
+        response.headers.get(HEADER_REQUEST_ID) ?? traceHeaders[HEADER_REQUEST_ID];
       attachTraceToSentry({
-        requestId:
-          response.headers.get(HEADER_REQUEST_ID) ?? traceHeaders[HEADER_REQUEST_ID],
+        requestId,
         traceparent: traceHeaders[HEADER_TRACEPARENT],
+      });
+      recordClientAction({
+        method,
+        path,
+        status: response.status,
+        durationMs: durationMs(),
+        requestId,
       });
 
       if (!response.ok) {

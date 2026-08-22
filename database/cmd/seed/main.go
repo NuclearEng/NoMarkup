@@ -768,11 +768,16 @@ func main() {
 	// WHERE NOT EXISTS guard saw an existing 'free' row).
 
 	_, err = tx.Exec(ctx, `
-		INSERT INTO subscription_tiers (id, slug, name, role, price_cents, max_active_jobs, max_bids_per_month, features_json, active)
+		INSERT INTO subscription_tiers (
+			id, slug, name, role, price_cents, monthly_price_cents,
+			max_active_jobs, max_bids_per_month, max_active_bids, max_service_categories,
+			featured_placement, analytics_access, priority_support, verified_badge_boost,
+			portfolio_image_limit, instant_enabled, features_json, active
+		)
 		VALUES
-			($1, 'free',         'free',          'customer', 0,    1,    NULL, '{"analytics": false, "priority_placement": false}', true),
-			($2, 'pro_customer', 'pro_customer',  'customer', 1999, NULL, NULL, '{"analytics": true, "priority_placement": true, "unlimited_jobs": true}', true),
-			($3, 'pro_provider', 'pro_provider',  'provider', 2999, NULL, NULL, '{"analytics": true, "priority_placement": true, "unlimited_bids": true, "badge": true}', true)
+			($1, 'free',         'free',          'customer', 0,    0,    1,    NULL, 3,  1,  false, false, false, false, 5,   false, '{"analytics": false, "priority_placement": false}', true),
+			($2, 'pro_customer', 'pro_customer',  'customer', 1999, 1999, NULL, NULL, 10, 5,  false, true,  true,  false, 20,  false, '{"analytics": true, "priority_placement": true, "unlimited_jobs": true}', true),
+			($3, 'pro_provider', 'pro_provider',  'provider', 2999, 2999, NULL, NULL, 50, 20, true,  true,  true,  true,  100, true,  '{"analytics": true, "priority_placement": true, "unlimited_bids": true, "badge": true}', true)
 		ON CONFLICT DO NOTHING`,
 		freeTierID, proCustomerTierID, proProviderTierID,
 	)

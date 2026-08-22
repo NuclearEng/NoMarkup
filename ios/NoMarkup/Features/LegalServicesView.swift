@@ -35,6 +35,7 @@ struct LegalServicesView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .accessibilityIdentifier("legalServices.root")
         .task {
             await flags.refresh()
             guard flags.isEnabled("legal_services") else { return }
@@ -94,10 +95,11 @@ struct LegalServicesView: View {
                     BrandLoadingScreen(kind: .catalog, rows: 3, accessibilityLabel: "Loading open cases…")
                         .frame(maxWidth: .infinity, minHeight: 44)
                 } else if let jobsError, jobs.isEmpty {
-                    Text(jobsError)
-                        .font(.footnote)
-                        .foregroundStyle(BrandTheme.destructive)
-                        .frame(minHeight: 44)
+                    BrandInlineErrorCard(message: jobsError) {
+                        Task { await loadJobs() }
+                    }
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .listRowInsets(EdgeInsets())
                 } else if jobs.isEmpty {
                     Text(isResolvingCategory
                           ? "Resolving legal categories…"

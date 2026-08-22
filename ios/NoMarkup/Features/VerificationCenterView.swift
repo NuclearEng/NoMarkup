@@ -22,6 +22,45 @@ struct VerificationCenterView: View {
     @State private var backgroundCheckRequesting = false
 
     var body: some View {
+        Group {
+            if auth.isScaffoldSession {
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "checkmark.shield",
+                    message: "Browse-only mode has no API credentials. Sign in to verify email and phone.",
+                    actionTitle: "Sign out to log in",
+                    action: { auth.signOut() }
+                )
+            } else if !auth.isAuthenticated {
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "lock.circle",
+                    message: "Sign in to resend email verification and complete phone OTP.",
+                    actionTitle: "Sign in",
+                    action: { auth.signOut() }
+                )
+            } else {
+                verificationForm
+            }
+        }
+        .navigationTitle("Verify account")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .brandNavigationBarChrome()
+        .accessibilityIdentifier("verificationCenter.root")
+        .task {
+            if emailForResend.isEmpty {
+                let e = auth.email.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !e.isEmpty { emailForResend = e }
+            }
+            if auth.isAuthenticated, featureFlags.isEnabled("background_checks") {
+                await loadBackgroundCheck()
+            }
+        }
+    }
+
+    private var verificationForm: some View {
         Form {
             Section {
                 Text("Verify email and phone before posting jobs or transacting. Codes are delivered by the user service (SMS in environments with SMS configured).")
@@ -50,6 +89,7 @@ struct VerificationCenterView: View {
                 .disabled(isBusy || emailForResend.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .frame(minHeight: 44)
                 .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityIdentifier("verification.resendEmail")
 
                 TextField("Email verification token (from link)", text: $emailToken)
                     .textInputAutocapitalization(.never)
@@ -61,6 +101,7 @@ struct VerificationCenterView: View {
                 .disabled(isBusy || emailToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .frame(minHeight: 44)
                 .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityIdentifier("verification.submitEmailToken")
             } header: {
                 Text("Email").brandSectionHeader()
             } footer: {
@@ -79,6 +120,7 @@ struct VerificationCenterView: View {
                 .disabled(isBusy || phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !auth.isAuthenticated)
                 .frame(minHeight: 44)
                 .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityIdentifier("verification.sendOTP")
 
                 TextField("OTP code", text: $otpCode)
                     .keyboardType(.numberPad)
@@ -90,6 +132,7 @@ struct VerificationCenterView: View {
                 .disabled(isBusy || otpCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !auth.isAuthenticated)
                 .frame(minHeight: 44)
                 .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityIdentifier("verification.verifyPhone")
             } header: {
                 Text("Phone").brandSectionHeader()
             } footer: {
@@ -191,20 +234,6 @@ struct VerificationCenterView: View {
             }
         }
         .brandListBackground()
-        .navigationTitle("Verify account")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .brandNavigationBarChrome()
-        .task {
-            if emailForResend.isEmpty {
-                let e = auth.email.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !e.isEmpty { emailForResend = e }
-            }
-            if auth.isAuthenticated, featureFlags.isEnabled("background_checks") {
-                await loadBackgroundCheck()
-            }
-        }
     }
 
     @MainActor

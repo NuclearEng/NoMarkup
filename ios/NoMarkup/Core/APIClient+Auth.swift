@@ -312,12 +312,16 @@ extension APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 30
         request.httpBody = try JSONEncoder().encode(body)
+        ClientActionLog.stamp(&request)
 
+        let started = Date()
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await URLSession.shared.data(for: request)
+            ClientActionLog.shared.record(request: request, response: response, error: nil, started: started)
         } catch {
+            ClientActionLog.shared.record(request: request, response: nil, error: error, started: started)
             throw APIClientError.unreachable
         }
         try AuthHTTP.throwIfNeeded(response: response, data: data)
@@ -353,12 +357,16 @@ extension APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
         request.httpBody = try JSONEncoder().encode(body)
+        ClientActionLog.stamp(&request)
 
+        let started = Date()
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await URLSession.shared.data(for: request)
+            ClientActionLog.shared.record(request: request, response: response, error: nil, started: started)
         } catch {
+            ClientActionLog.shared.record(request: request, response: nil, error: error, started: started)
             throw APIClientError.unreachable
         }
 

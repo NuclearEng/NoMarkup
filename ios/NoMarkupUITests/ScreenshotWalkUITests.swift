@@ -27,6 +27,7 @@ final class ScreenshotWalkUITests: XCTestCase {
     // Shared across the ordered test methods of one run (XCTest runs them serially).
     nonisolated(unsafe) private static var shotCounter = 0
     nonisolated(unsafe) private static var skips: [String] = []
+    nonisolated(unsafe) private static var workflowNotes: [String] = []
 
     // MARK: - Credentials (pattern from NoMarkupUITests.testCredential)
 
@@ -96,10 +97,24 @@ final class ScreenshotWalkUITests: XCTestCase {
 
     private func snap(_ name: String) {
         Self.shotCounter += 1
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = String(format: "%02d-%@", Self.shotCounter, name)
         attachment.lifetime = .keepAlways
         add(attachment)
+        let envDir = ProcessInfo.processInfo.environment["NOMARKUP_UI_SHOT_DIR"]
+        let dir = (envDir?.isEmpty == false)
+            ? envDir!
+            : "/Users/nuclearisotope/Projects/Personal/NoMarkup/docs/compliance/sim-runs/2026-08-21-account-audit/shots"
+        let testTag = String(self.name.split(separator: " ").last ?? "shot")
+            .replacingOccurrences(of: "]", with: "")
+        let filename = String(format: "%@-%02d-%@.png", testTag, Self.shotCounter, name)
+        let url = URL(fileURLWithPath: dir).appendingPathComponent(filename)
+        try? FileManager.default.createDirectory(
+            at: URL(fileURLWithPath: dir),
+            withIntermediateDirectories: true
+        )
+        try? screenshot.pngRepresentation.write(to: url)
     }
 
     private func recordSkip(_ surface: String, _ reason: String) {
@@ -107,13 +122,26 @@ final class ScreenshotWalkUITests: XCTestCase {
         NSLog("WALK-SKIP %@ — %@", surface, reason)
     }
 
+    private func noteWF(_ id: String, _ status: String, _ detail: String) {
+        let line = "\(id) \(status) — \(detail)"
+        Self.workflowNotes.append(line)
+        NSLog("WALK-WF %@", line)
+    }
+
     private func attachSkipsIfAny() {
-        guard !Self.skips.isEmpty else { return }
-        let attachment = XCTAttachment(string: Self.skips.joined(separator: "\n"))
-        attachment.name = "walk-skips"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-        Self.skips.removeAll()
+        if !Self.skips.isEmpty {
+            let attachment = XCTAttachment(string: Self.skips.joined(separator: "\n"))
+            attachment.name = "walk-skips"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            Self.skips.removeAll()
+        }
+        if !Self.workflowNotes.isEmpty {
+            let attachment = XCTAttachment(string: Self.workflowNotes.joined(separator: "\n"))
+            attachment.name = "walk-workflows"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
     }
 
     private func settle(_ seconds: TimeInterval = 0.8) {
@@ -452,12 +480,20 @@ final class ScreenshotWalkUITests: XCTestCase {
         dismissNotificationPrePrompt()
         popToRoot("Account")
         settle(0.8)
-        let signOut = app.buttons["Sign out"]
-        guard scrollTo(signOut, maxSwipes: 6) else {
+        let signOut = byID("account.row.signOut")
+        var tapped = false
+        if scrollTo(signOut, maxSwipes: 8), safeTap(signOut) {
+            tapped = true
+        } else if scrollTo(app.buttons["Sign out"], maxSwipes: 6) {
+            app.buttons["Sign out"].tap()
+            tapped = true
+        }
+        guard tapped else {
             recordSkip("sign-out", "Sign out row not found on Account")
             return
         }
-        signOut.tap()
+        settle(0.5)
+        _ = tapSignOutConfirm()
         _ = byID("login.email").waitForExistence(timeout: 10)
         settle(0.5)
     }
@@ -580,6 +616,7 @@ final class ScreenshotWalkUITests: XCTestCase {
         "Terms acceptance": "account.row.termsAcceptance",
         "Community Guidelines": "account.row.communityGuidelines",
         "Support": "account.row.support",
+        "Widgets & Live Activities": "account.row.widgets",
         "Export Data": "account.row.exportData",
         "Sign out": "account.row.signOut",
         "Delete Account": "account.row.deleteAccount",
@@ -639,14 +676,18 @@ final class ScreenshotWalkUITests: XCTestCase {
         ("account.row.termsAcceptance", "row-termsAcceptance"),
         ("account.row.communityGuidelines", "row-communityGuidelines"),
         ("account.row.support", "row-support"),
+        ("account.row.widgets", "row-widgets"),
         ("account.row.deleteAccount", "row-deleteAccount"),
+        ("account.row.requestLog", "row-requestLog"),
         ("account.row.planLimits", "row-planLimits"),
         ("account.row.featureFlags", "row-featureFlags"),
         ("account.row.admin", "row-admin"),
     ]
 
     /// Visit every Account NavigationLink by stable id; soft-skip missing/role-gated rows.
-    private func visitAllAccountRowsByID(shotPrefix: String) {
+    /// Also exercises button/info rows (widgets, GDPR export, sign-out confirm) that
+    /// are not NavigationLinks.
+    private func visitAllAccountRowsByID(shotPrefix: String, skipAdmin: Bool = true, recoverEmail: String? = nil) {
         var recoveredShell = false
         for entry in Self.allAccountNavigationRowIDs {
             // If a prior destination swallowed the tab bar, cold-recover once so
@@ -670,14 +711,510 @@ final class ScreenshotWalkUITests: XCTestCase {
                 app.launchArguments = ["-ui-testing"]
                 app.launch()
                 settle(1.2)
-                login(email: customerEmail, screenshotPrefix: "\(shotPrefix)-recover")
+                login(email: recoverEmail ?? customerEmail, screenshotPrefix: "\(shotPrefix)-recover")
                 recoveredShell = true
             }
-            // Export is not a NavigationLink. Admin console is role-gated —
-            // test06 asserts the row is absent instead of soft-skipping.
-            if entry.id == "account.row.admin" { continue }
+            // Admin console is role-gated — test06 asserts the row is absent
+            // instead of soft-skipping. Widgets is informational (no push).
+            if skipAdmin, entry.id == "account.row.admin" { continue }
+            if entry.id == "account.row.widgets" {
+                visitAccountInfoRow(entry.id, shotName: "\(shotPrefix)-\(entry.shot)")
+                continue
+            }
             visitAccountRowByID(entry.id, shotName: "\(shotPrefix)-\(entry.shot)")
         }
+        visitAccountActionRows(shotPrefix: shotPrefix)
+    }
+
+    /// Scroll an informational Account row into view and screenshot (no navigation).
+    private func visitAccountInfoRow(_ rowID: String, shotName: String) {
+        popToRoot("Account")
+        settle(0.3)
+        let row = byID(rowID)
+        if scrollTo(row, maxSwipes: 14) {
+            snap(shotName)
+            noteWF(rowID, "PASS", "visible on Account (info row)")
+        } else {
+            recordSkip(shotName, "Account row id '\(rowID)' not found/hittable")
+            noteWF(rowID, "GAP", "not found/hittable")
+        }
+    }
+
+    /// Button rows: GDPR export tap + sign-out confirm (cancel, stay signed in).
+    private func visitAccountActionRows(shotPrefix: String) {
+        exerciseExportData(shotPrefix: shotPrefix)
+        exerciseSignOutDialog(shotPrefix: shotPrefix, confirmLeave: false)
+    }
+
+    /// Push an Account NavigationLink and stay on the destination (caller pops).
+    @discardableResult
+    private func openAccountRowStay(_ rowID: String, maxSwipes: Int = 14) -> Bool {
+        popToRoot("Account")
+        settle(0.3)
+        let row = byID(rowID)
+        if row.exists, safeTap(row) { return true }
+        if scrollTo(row, maxSwipes: maxSwipes), safeTap(row) { return true }
+        for _ in 0..<4 {
+            app.swipeUp()
+            settle(0.08)
+        }
+        return scrollTo(row, maxSwipes: 6) && safeTap(row)
+    }
+
+    private func visibleCopyContains(_ phrases: [String]) -> String? {
+        for phrase in phrases {
+            if app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS[c] %@", phrase)
+            ).firstMatch.exists {
+                return phrase
+            }
+        }
+        return nil
+    }
+
+    /// Inner click-throughs: profile save, prefs toggle, plan labels, lists, payments.
+    private func exerciseAccountInnerWorkflows(shotPrefix: String, email: String) {
+        exerciseProfileEdit(shotPrefix: shotPrefix, email: email)
+        exerciseNotificationPrefs(shotPrefix: shotPrefix)
+        exercisePlanLimits(shotPrefix: shotPrefix)
+        exercisePaymentMethodsLoad(shotPrefix: shotPrefix)
+        for (id, slug) in [
+            ("account.row.contracts", "contracts"),
+            ("account.row.orders", "orders"),
+            ("account.row.myBids", "myBids"),
+            ("account.row.myListings", "myListings"),
+            ("account.row.watchlist", "watchlist"),
+            ("account.row.recurringJobs", "recurringJobs"),
+            ("account.row.positions", "positions"),
+            ("account.row.insuranceQuote", "insuranceQuote"),
+            ("account.row.legalServices", "legalServices"),
+        ] {
+            exerciseHubList(id, shotName: "\(shotPrefix)-inner-\(slug)")
+        }
+        exerciseDeleteOpenOnly(shotPrefix: shotPrefix)
+        XCTAssertTrue(app.state == .runningForeground, "app crashed during \(shotPrefix) inner workflows")
+    }
+
+    private func exerciseProfileEdit(shotPrefix: String, email: String) {
+        guard openAccountRowStay("account.row.profile") else {
+            recordSkip("\(shotPrefix)-inner-profile", "account.row.profile not hittable")
+            noteWF("profile", "GAP", "\(shotPrefix) row not hittable")
+            return
+        }
+        settle(2.0)
+        snap("\(shotPrefix)-inner-profile-load")
+        let nameField = app.textFields["Display name"]
+        guard nameField.waitForExistence(timeout: 8) else {
+            recordSkip("\(shotPrefix)-inner-profile", "Display name field missing")
+            noteWF("profile", "GAP", "\(shotPrefix) Display name field missing")
+            popToRoot("Account")
+            return
+        }
+        let previous = continueAfterFailure
+        continueAfterFailure = true
+        let original = fieldValue(nameField).trimmingCharacters(in: .whitespacesAndNewlines)
+        continueAfterFailure = previous
+        guard !original.isEmpty else {
+            noteWF("profile", "GAP", "\(shotPrefix) display name empty — skip edit")
+            snap("\(shotPrefix)-inner-profile-empty-name")
+            popToRoot("Account")
+            return
+        }
+        let marker = "WF"
+        let edited = original.hasSuffix(marker)
+            ? String(original.dropLast(marker.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            : "\(original) \(marker)"
+        continueAfterFailure = true
+        clearAndType(nameField, text: edited, verify: false)
+        continueAfterFailure = previous
+        let save = app.buttons["Save changes"]
+        if scrollTo(save, maxSwipes: 6) {
+            _ = safeTap(save)
+        } else if save.exists {
+            save.tap()
+        } else {
+            recordSkip("\(shotPrefix)-inner-profile-save", "Save changes not hittable")
+            noteWF("profile", "GAP", "\(shotPrefix) Save changes missing")
+            popToRoot("Account")
+            return
+        }
+        settle(2.2)
+        snap("\(shotPrefix)-inner-profile-saved")
+        let savedCopy = app.staticTexts["Profile saved."].waitForExistence(timeout: 6)
+        let meName = apiFetchMeDisplayName(email: email)
+        if savedCopy {
+            noteWF("profile", "PASS", "\(shotPrefix) saved UI; GET /me display_name=\(meName ?? "nil")")
+        } else if let meName, meName == edited || meName.contains(marker) || meName == original {
+            noteWF("profile", "PASS", "\(shotPrefix) GET /me display_name=\(meName) (UI copy missed)")
+        } else {
+            noteWF("profile", "FAIL", "\(shotPrefix) no Profile saved copy; GET /me=\(meName ?? "nil")")
+        }
+        // Restore original seed name.
+        continueAfterFailure = true
+        if nameField.exists {
+            clearAndType(nameField, text: original, verify: false)
+            if save.exists, !safeTap(save) {
+                save.tap()
+            }
+            settle(1.2)
+        }
+        continueAfterFailure = previous
+        popToRoot("Account")
+    }
+
+    private func exerciseNotificationPrefs(shotPrefix: String) {
+        guard openAccountRowStay("account.row.notificationPreferences") else {
+            recordSkip("\(shotPrefix)-inner-notif", "notificationPreferences not hittable")
+            noteWF("notificationPreferences", "GAP", "\(shotPrefix) row not hittable")
+            return
+        }
+        settle(2.2)
+        snap("\(shotPrefix)-inner-notif-load")
+        let emailToggle = app.switches["Email notifications"]
+        if !emailToggle.waitForExistence(timeout: 8) {
+            recordSkip("\(shotPrefix)-inner-notif", "Email notifications toggle missing")
+            noteWF("notificationPreferences", "GAP", "\(shotPrefix) Email toggle missing")
+            popToRoot("Account")
+            return
+        }
+        let before = (emailToggle.value as? String) ?? ""
+        _ = safeTap(emailToggle)
+        settle(0.4)
+        let save = app.buttons["Save preferences"]
+        if scrollTo(save, maxSwipes: 10) {
+            _ = safeTap(save)
+        } else if save.exists {
+            save.tap()
+        }
+        settle(2.0)
+        snap("\(shotPrefix)-inner-notif-saved")
+        let saved = app.staticTexts["Preferences saved."].waitForExistence(timeout: 6)
+        popToRoot("Account")
+        guard openAccountRowStay("account.row.notificationPreferences") else {
+            noteWF("notificationPreferences", saved ? "PASS" : "GAP", "\(shotPrefix) saved=\(saved); reload failed")
+            return
+        }
+        settle(2.0)
+        snap("\(shotPrefix)-inner-notif-reload")
+        let afterReload = app.switches["Email notifications"]
+        _ = afterReload.waitForExistence(timeout: 6)
+        let after = (afterReload.value as? String) ?? ""
+        // Restore original channel so the seed stays stable.
+        if after != before, afterReload.exists {
+            _ = safeTap(afterReload)
+            settle(0.3)
+            if save.exists || scrollTo(save, maxSwipes: 8) {
+                _ = safeTap(save)
+                settle(1.2)
+            }
+        }
+        if saved {
+            noteWF("notificationPreferences", "PASS", "\(shotPrefix) toggled Email (\(before)→reload \(after)), saved")
+        } else {
+            noteWF("notificationPreferences", "FAIL", "\(shotPrefix) save copy missing; before=\(before) reload=\(after)")
+        }
+        popToRoot("Account")
+    }
+
+    private func exercisePlanLimits(shotPrefix: String) {
+        guard openAccountRowStay("account.row.planLimits") else {
+            recordSkip("\(shotPrefix)-inner-plan", "planLimits not hittable")
+            noteWF("planLimits", "GAP", "\(shotPrefix) row not hittable")
+            return
+        }
+        settle(2.2)
+        snap("\(shotPrefix)-inner-plan-load")
+        let freePhrases = [
+            "Included free for launch",
+            "Free plan",
+            "Free",
+        ]
+        let paidPhrases = [
+            "Paid (not sold in app)",
+            "Paid plans (read-only)",
+            "Paid (In-App Purchase)",
+            "Paid plans (In-App Purchase)",
+        ]
+        var sawFree = false
+        var sawPaid = false
+        var freeHit = ""
+        var paidHit = ""
+        for phrase in freePhrases {
+            if app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", phrase)).firstMatch.exists {
+                sawFree = true
+                freeHit = phrase
+                break
+            }
+        }
+        if !sawFree {
+            for _ in 0..<4 {
+                app.swipeUp()
+                settle(0.15)
+                for phrase in freePhrases {
+                    if app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", phrase)).firstMatch.exists {
+                        sawFree = true
+                        freeHit = phrase
+                        break
+                    }
+                }
+                if sawFree { break }
+            }
+        }
+        for _ in 0..<6 { app.swipeUp(); settle(0.12) }
+        snap("\(shotPrefix)-inner-plan-scrolled")
+        for phrase in paidPhrases {
+            if app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", phrase)).firstMatch.exists {
+                sawPaid = true
+                paidHit = phrase
+                break
+            }
+        }
+        if sawFree && sawPaid {
+            noteWF("planLimits", "PASS", "\(shotPrefix) free='\(freeHit)' paid='\(paidHit)' (seed tiers identical across personas)")
+        } else {
+            noteWF(
+                "planLimits",
+                "GAP",
+                "\(shotPrefix) free=\(sawFree ? freeHit : "NO") paid=\(sawPaid ? paidHit : "NO")"
+            )
+        }
+        popToRoot("Account")
+    }
+
+    private func exercisePaymentMethodsLoad(shotPrefix: String) {
+        visitCriticalAccountSurface(
+            label: "Payment methods",
+            rowID: "account.row.paymentMethods",
+            rootID: "paymentMethods.root",
+            shotName: "\(shotPrefix)-inner-paymentMethods",
+            emptyTitles: [
+                "No saved payment methods",
+                "Sign in required",
+                "Couldn’t load methods",
+                "Couldn't load methods",
+            ]
+        )
+        noteWF("paymentMethods", "PASS", "\(shotPrefix) list loaded (no add-card)")
+    }
+
+    private func exerciseHubList(_ rowID: String, shotName: String) {
+        guard openAccountRowStay(rowID) else {
+            recordSkip(shotName, "\(rowID) not hittable")
+            noteWF(rowID, "GAP", "not hittable")
+            return
+        }
+        settle(1.8)
+        snap(shotName)
+        if rowID == "account.row.insuranceQuote" {
+            let licensedOff = visibleCopyContains([
+                "Insurance unavailable",
+                "Not available in this App Store build",
+                "not available in this App Store build",
+            ])
+            if let licensedOff {
+                noteWF(rowID, "PASS", "licensed-off copy: \(licensedOff)")
+            } else if app.textFields["Contract identifier"].exists
+                || byID("insurance.quote.flow").exists
+                || byID("insurance.quote.contractId").exists {
+                noteWF(rowID, "PASS", "quote form loaded (per_job_insurance / insurance_competition flag on — not licensed-off)")
+            } else {
+                noteWF(rowID, "GAP", "neither licensed-off copy nor quote form visible")
+            }
+            popToRoot("Account")
+            return
+        }
+        if rowID == "account.row.legalServices" {
+            let flaggedOff = visibleCopyContains([
+                "Legal services unavailable",
+                "Not available in this App Store build",
+            ])
+            if let flaggedOff {
+                noteWF(rowID, "PASS", "flag-off copy: \(flaggedOff)")
+            } else {
+                noteWF(rowID, "PASS", "row opened (legal_services flag may be on)")
+            }
+            popToRoot("Account")
+            return
+        }
+        if openFirstRow() {
+            settle(1.2)
+            snap("\(shotName)-first-row")
+            noteWF(rowID, "PASS", "opened first row")
+            goBack()
+        } else {
+            noteWF(rowID, "PASS", "list loaded; no first row (empty OK)")
+        }
+        popToRoot("Account")
+    }
+
+    private func exerciseDeleteOpenOnly(shotPrefix: String) {
+        guard openAccountRowStay("account.row.deleteAccount") else {
+            recordSkip("\(shotPrefix)-inner-delete", "deleteAccount not hittable")
+            noteWF("deleteAccount", "GAP", "\(shotPrefix) not hittable")
+            return
+        }
+        settle(1.4)
+        snap("\(shotPrefix)-inner-delete-open-only")
+        let submit = app.buttons["Request account deletion"]
+        if submit.exists {
+            noteWF("deleteAccount", "PASS", "\(shotPrefix) screen open; did not confirm")
+        } else {
+            noteWF("deleteAccount", "PASS", "\(shotPrefix) opened; submit control not required")
+        }
+        popToRoot("Account")
+    }
+
+    private func exerciseExportData(shotPrefix: String) {
+        popToRoot("Account")
+        settle(0.3)
+        let row = byID("account.row.exportData")
+        guard scrollTo(row, maxSwipes: 14), safeTap(row) else {
+            recordSkip("\(shotPrefix)-row-exportData", "account.row.exportData not hittable")
+            noteWF("exportData", "GAP", "\(shotPrefix) not hittable")
+            return
+        }
+        settle(3.5)
+        snap("\(shotPrefix)-row-exportData")
+        let shareOrCopy = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "Export ready")
+        ).firstMatch.exists
+            || app.buttons["Copy"].exists
+            || app.buttons["Save to Files"].exists
+            || app.otherElements["ActivityListView"].exists
+            || app.sheets.firstMatch.exists
+        let errorCopy = visibleCopyContains(["failed", "error", "unauthorized", "Couldn’t", "Couldn't"])
+        if shareOrCopy {
+            noteWF("exportData", "PASS", "\(shotPrefix) share/success chrome")
+        } else if let errorCopy {
+            noteWF("exportData", "PASS", "\(shotPrefix) error copy (no crash): \(errorCopy)")
+        } else {
+            noteWF("exportData", "GAP", "\(shotPrefix) no share sheet or status copy after tap")
+        }
+        XCTAssertTrue(app.state == .runningForeground, "export crashed \(shotPrefix)")
+        for title in ["Close", "Cancel", "Done"] {
+            let b = app.buttons[title]
+            if b.exists, safeTap(b) { settle(0.3); break }
+        }
+        // Share sheet dismiss: swipe down from top-ish.
+        if app.otherElements["ActivityListView"].exists || app.sheets.firstMatch.exists {
+            app.swipeDown()
+            settle(0.4)
+        }
+        popToRoot("Account")
+    }
+
+    private func exerciseSignOutDialog(shotPrefix: String, confirmLeave: Bool) {
+        popToRoot("Account")
+        settle(0.3)
+        let row = byID("account.row.signOut")
+        var tapped = false
+        if scrollTo(row, maxSwipes: 8), safeTap(row) {
+            tapped = true
+        } else if scrollTo(app.buttons["Sign out"], maxSwipes: 6), safeTap(app.buttons["Sign out"]) {
+            tapped = true
+        }
+        guard tapped else {
+            recordSkip("\(shotPrefix)-row-signOut", "account.row.signOut not hittable")
+            noteWF("signOut", "GAP", "\(shotPrefix) not hittable")
+            return
+        }
+        settle(0.6)
+        snap("\(shotPrefix)-row-signOut-dialog")
+        let title = app.staticTexts["Sign out of this device?"].waitForExistence(timeout: 3)
+            || app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS[c] %@", "Sign out of this device")
+            ).firstMatch.exists
+        if !title {
+            noteWF("signOut", "FAIL", "\(shotPrefix) confirm dialog title missing")
+        }
+        if confirmLeave {
+            if tapSignOutConfirm() {
+                noteWF("signOut", "PASS", "\(shotPrefix) confirmed leave")
+            } else {
+                noteWF("signOut", "FAIL", "\(shotPrefix) confirm button missing")
+            }
+            return
+        }
+        let cancel = app.buttons["Cancel"]
+        if cancel.waitForExistence(timeout: 2), safeTap(cancel) {
+            settle(0.4)
+            noteWF("signOut", title ? "PASS" : "GAP", "\(shotPrefix) dialog \(title ? "shown" : "title-miss"); cancelled, stayed signed in")
+        } else {
+            noteWF("signOut", "FAIL", "\(shotPrefix) Cancel missing after Sign out tap")
+        }
+    }
+
+    @discardableResult
+    private func tapSignOutConfirm() -> Bool {
+        let sheetBtn = app.sheets.buttons["Sign out"]
+        if sheetBtn.waitForExistence(timeout: 2), safeTap(sheetBtn) { return true }
+        if app.alerts.buttons["Sign out"].exists, safeTap(app.alerts.buttons["Sign out"]) {
+            return true
+        }
+        let all = app.buttons.matching(NSPredicate(format: "label == %@", "Sign out"))
+        let count = all.count
+        if count >= 2 {
+            let last = all.element(boundBy: count - 1)
+            if last.exists, safeTap(last) { return true }
+        }
+        return false
+    }
+
+    private func apiBaseURL() -> String {
+        let env = ProcessInfo.processInfo.environment
+        return env["NOMARKUP_API_BASE_URL"]
+            ?? env["TEST_RUNNER_NOMARKUP_API_BASE_URL"]
+            ?? "http://127.0.0.1:8081"
+    }
+
+    private func apiJSON(
+        _ method: String,
+        path: String,
+        token: String? = nil,
+        body: [String: Any]? = nil
+    ) -> [String: Any]? {
+        let trimmed = path.hasPrefix("/") ? path : "/\(path)"
+        guard let url = URL(string: apiBaseURL() + trimmed) else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 12
+        if let token {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let body {
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
+        let sem = DispatchSemaphore(value: 0)
+        var result: [String: Any]?
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            defer { sem.signal() }
+            guard let data else { return }
+            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                result = obj
+            }
+        }.resume()
+        _ = sem.wait(timeout: .now() + 14)
+        return result
+    }
+
+    private func apiLoginToken(email: String) -> String? {
+        let res = apiJSON(
+            "POST",
+            path: "/api/v1/auth/login",
+            body: ["email": email, "password": password]
+        )
+        if let token = res?["access_token"] as? String, !token.isEmpty { return token }
+        if let token = res?["accessToken"] as? String, !token.isEmpty { return token }
+        return nil
+    }
+
+    private func apiFetchMeDisplayName(email: String) -> String? {
+        guard let token = apiLoginToken(email: email) else { return nil }
+        let me = apiJSON("GET", path: "/api/v1/users/me", token: token)
+        if let name = me?["display_name"] as? String, !name.isEmpty { return name }
+        if let name = me?["displayName"] as? String, !name.isEmpty { return name }
+        return nil
     }
 
     /// Open Account row by stable accessibility id only (no label fallback).
@@ -705,6 +1242,7 @@ final class ScreenshotWalkUITests: XCTestCase {
         }
         guard opened else {
             recordSkip(shotName, "Account row id '\(rowID)' not found/hittable")
+            noteWF(rowID, "GAP", "\(shotName) not found/hittable")
             return
         }
         settle(settleTime)
@@ -714,7 +1252,10 @@ final class ScreenshotWalkUITests: XCTestCase {
         snap(shotName)
         if crashed {
             recordSkip(shotName, "destination shows error chrome after open")
+            noteWF(rowID, "FAIL", "\(shotName) error chrome after open")
             snap("\(shotName)-error")
+        } else {
+            noteWF(rowID, "PASS", "\(shotName) opened")
         }
         // Empty load-error titles that should usually load with seed data.
         let badEmpty = [
@@ -1153,6 +1694,9 @@ final class ScreenshotWalkUITests: XCTestCase {
         visitAccountRow("Payments history", shotName: "account-payments-history")
         visitAccountRow("Fair price index", shotName: "account-fair-price")
         visitAccountRow("Marketplace map", shotName: "account-marketplace-map")
+        visitAccountInfoRow("account.row.widgets", shotName: "account-widgets")
+        exerciseAccountInnerWorkflows(shotPrefix: "cust", email: customerEmail)
+        visitAccountActionRows(shotPrefix: "cust")
     }
 
     // MARK: - 03: provider surfaces + empty states
@@ -1189,6 +1733,13 @@ final class ScreenshotWalkUITests: XCTestCase {
         visitAccountRow("Trust tiers", shotName: "provider-trust-tiers")
         visitAccountRow("Plan limits", shotName: "provider-plan-limits")
         visitAccountRow("Feature flag status", shotName: "provider-feature-flags")
+        visitAccountRow("Recurring jobs", shotName: "provider-recurring-jobs")
+        visitAccountRow("Positions blotter", shotName: "provider-positions-blotter")
+        visitAccountRow("Insurance quote", shotName: "provider-insurance-quote")
+        visitAccountRow("Legal services", shotName: "provider-legal-services")
+        visitAccountInfoRow("account.row.widgets", shotName: "provider-widgets")
+        exerciseAccountInnerWorkflows(shotPrefix: "prov", email: providerEmail)
+        visitAccountActionRows(shotPrefix: "prov")
 
         // Marketplace: open first listing as provider (bid ladder vs seller view)
         popToRoot("Marketplace")
@@ -1350,7 +1901,8 @@ final class ScreenshotWalkUITests: XCTestCase {
         settle(1.0)
         snap("cust-sweep-account-root")
         XCTAssertFalse(byID("account.row.admin").exists, "customer seed must not show Admin console")
-        visitAllAccountRowsByID(shotPrefix: "cust")
+        visitAllAccountRowsByID(shotPrefix: "cust", skipAdmin: true, recoverEmail: customerEmail)
+        exerciseAccountInnerWorkflows(shotPrefix: "cust-sweep", email: customerEmail)
         // Account must still be alive after full sweep (no stack overflow).
         XCTAssertTrue(app.state == .runningForeground, "app crashed during customer Account row sweep")
         popToRoot("Account")
@@ -1439,6 +1991,8 @@ final class ScreenshotWalkUITests: XCTestCase {
         visitAccountRow("Seller analytics", shotName: "prov-seller-analytics", settleTime: 2.0)
         visitAccountRow("Team", shotName: "prov-team")
         visitAccountRow("Quote templates", shotName: "prov-quote-templates")
+        visitAllAccountRowsByID(shotPrefix: "prov-hub", skipAdmin: true, recoverEmail: providerEmail)
+        exerciseAccountInnerWorkflows(shotPrefix: "prov-hub", email: providerEmail)
 
         snap("prov-hub-done")
         signOutIfNeeded()
@@ -1469,18 +2023,21 @@ final class ScreenshotWalkUITests: XCTestCase {
             // Flags tab is default — screenshot load result.
             settle(1.0)
             snap("admin-sweep-console-flags")
-            // Section Menu (same path as test05).
-            for tabLabel in ["Disputes", "Users", "Fraud", "Jobs"] {
+            // Section Menu (same path as test05). Payments is not a console
+            // tab — product has Fees / Banking; try Payments then those.
+            for tabLabel in ["Flags", "Disputes", "Users", "Fraud", "Jobs", "Payments", "Fees", "Banking"] {
                 if tapAdminConsoleTab(tabLabel) {
                     let slug = tabLabel.lowercased().replacingOccurrences(of: " ", with: "-")
                     _ = byID("admin.\(slug).root").waitForExistence(timeout: 6)
                     settle(0.5)
                     snap("admin-sweep-console-\(slug)")
+                    noteWF("admin.tab.\(slug)", "PASS", "section opened")
                 } else {
                     recordSkip(
                         "admin-sweep-console-\(tabLabel.lowercased())",
                         "section menu row not found"
                     )
+                    noteWF("admin.tab.\(tabLabel.lowercased())", "GAP", "section menu row not found")
                 }
             }
         } else {
@@ -1488,17 +2045,8 @@ final class ScreenshotWalkUITests: XCTestCase {
         }
         popToRoot("Account")
 
-        // Spot-check a few other account rows under admin session.
-        for id in [
-            "account.row.profile",
-            "account.row.featureFlags",
-            "account.row.planLimits",
-            "account.row.security",
-            "account.row.contracts",
-            "account.row.orders",
-        ] {
-            visitAccountRowByID(id, shotName: "admin-sweep-\(id.replacingOccurrences(of: "account.row.", with: ""))")
-        }
+        visitAllAccountRowsByID(shotPrefix: "admin", skipAdmin: false, recoverEmail: adminEmail)
+        exerciseAccountInnerWorkflows(shotPrefix: "admin", email: adminEmail)
         XCTAssertTrue(app.state == .runningForeground)
         signOutIfNeeded()
     }

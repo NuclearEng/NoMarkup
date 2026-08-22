@@ -72,6 +72,7 @@ struct SecuritySettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .accessibilityIdentifier("security.root")
         .task {
             await loadAgeStatus()
             await loadMFAProfile()

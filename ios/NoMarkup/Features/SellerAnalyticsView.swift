@@ -46,10 +46,13 @@ struct SellerAnalyticsView: View {
             } else if let analytics {
                 content(analytics)
             } else {
-                ProgressView()
-                    .tint(BrandTheme.accent)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                BrandEmptyState(
+                    title: "No analytics yet",
+                    systemImage: "chart.bar",
+                    message: "Sales revenue, sell-through, and top categories appear here after you sell an item.",
+                    actionTitle: "Try again",
+                    action: { Task { await load() } }
+                )
             }
         }
         .navigationTitle("Seller analytics")
@@ -57,6 +60,7 @@ struct SellerAnalyticsView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .accessibilityIdentifier("sellerAnalytics.root")
         .task { await load() }
         .refreshable { await load() }
         .onChange(of: range) { _, _ in

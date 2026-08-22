@@ -194,6 +194,11 @@ actor APIClient {
     /// Stripe website unlocks are not honored on iOS while StoreKit IAP verify is off.
     private func applyClientIdentity(to request: inout URLRequest) {
         request.setValue("ios", forHTTPHeaderField: "X-NoMarkup-Client")
+        ClientActionLog.stamp(&request)
+    }
+
+    private func recordHop(request: URLRequest, response: URLResponse?, error: Error?, started: Date) {
+        ClientActionLog.shared.record(request: request, response: response, error: error, started: started)
     }
 
     /// POST /api/v1/auth/apple/native — AuthenticationServices identityToken exchange.
@@ -1690,10 +1695,12 @@ actor APIClient {
             request.httpBody = try encoder.encode(body)
         }
 
+        let started = Date()
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
+            recordHop(request: request, response: response, error: nil, started: started)
         } catch {
             // Transient transport failures only — never retry HTTP 4xx (except 401 refresh below).
             // GET/DELETE: full auto-retry. POST/PATCH/PUT: only when there was no response at all
@@ -1713,6 +1720,7 @@ actor APIClient {
                     transportAttempt: transportAttempt + 1
                 )
             }
+            recordHop(request: request, response: nil, error: error, started: started)
             throw APIClientError.unreachable
         }
 
@@ -1808,10 +1816,12 @@ actor APIClient {
             request.httpBody = rawBody
         }
 
+        let started = Date()
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
+            recordHop(request: request, response: response, error: nil, started: started)
         } catch {
             if Self.shouldRetryTransport(error: error, method: method, attempt: transportAttempt) {
                 let delayIndex = min(transportAttempt, Self.transportRetryDelays.count - 1)
@@ -1828,6 +1838,7 @@ actor APIClient {
                     transportAttempt: transportAttempt + 1
                 )
             }
+            recordHop(request: request, response: nil, error: error, started: started)
             throw APIClientError.unreachable
         }
 

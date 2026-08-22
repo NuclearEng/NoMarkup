@@ -51,8 +51,16 @@ export interface ButtonProps
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
+    const fromAria = props['aria-label'];
+    const fromChildren = typeof props.children === 'string' ? props.children : undefined;
+    const workflow = props['data-workflow'] ?? fromAria ?? fromChildren;
     return (
-      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        {...props}
+        data-workflow={workflow}
+      />
     );
   },
 );

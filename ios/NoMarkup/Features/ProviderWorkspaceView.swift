@@ -105,10 +105,8 @@ struct ProviderWorkspaceView: View {
             } else if profile != nil {
                 formContent
             } else {
-                ProgressView()
-                    .tint(BrandTheme.accent)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .brandScreenBackground()
+                // Role check passed; profile GET still in flight (or stalled).
+                BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading provider workspace…")
             }
         }
         .navigationTitle("Provider workspace")

@@ -61,6 +61,7 @@ struct RootTabView: View {
         }
         .onChange(of: selectedTab) { _, tab in
             BrandHaptics.selection()
+            ClientActionLog.shared.recordUI(method: "TAB", path: "tab.\(String(describing: tab))", kind: "ui")
             // Refresh when leaving messages/account so badges stay honest after reads.
             if tab != .messages && tab != .account {
                 Task { await refreshUnreadBadges() }

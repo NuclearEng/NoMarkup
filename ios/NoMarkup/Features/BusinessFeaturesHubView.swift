@@ -312,6 +312,7 @@ struct InsurancePoliciesView: View {
                             .font(.caption)
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
+                    .frame(minHeight: 44)
                     .listRowBackground(BrandTheme.navyElevated)
                 }
                 .brandListBackground()

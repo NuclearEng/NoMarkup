@@ -39,6 +39,7 @@ struct SalesExportView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .accessibilityIdentifier("salesExport.root")
         #if canImport(UIKit)
         .sheet(item: $shareItem, onDismiss: {
             cleanupTempFile()
