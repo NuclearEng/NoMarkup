@@ -159,6 +159,7 @@ struct MessagesView: View {
             }
         } else if isLoading && channels.isEmpty {
             BrandLoadingScreen(kind: .inbox, rows: 8, accessibilityLabel: "Loading messages…")
+                .accessibilityIdentifier("messages.loading")
         } else if let errorMessage, channels.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load messages",
@@ -168,6 +169,7 @@ struct MessagesView: View {
             ) {
                 Task { await load() }
             }
+            .accessibilityIdentifier("messages.error")
         } else if channels.isEmpty && inboxSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             BrandEmptyState(
                 title: "No conversations yet",
@@ -178,6 +180,7 @@ struct MessagesView: View {
                 secondaryActionTitle: "Browse marketplace",
                 secondaryAction: { selectedRootTab?.wrappedValue = .marketplace }
             )
+            .accessibilityIdentifier("messages.empty")
         } else if displayedChannels.isEmpty {
             BrandEmptyState(
                 title: "No matching conversations",
@@ -186,6 +189,7 @@ struct MessagesView: View {
                     ? "Searching inbox…"
                     : "No conversations match “\(inboxSearchText.trimmingCharacters(in: .whitespacesAndNewlines))”. Clear search to see your full inbox (server search covers party names and last-message previews on the loaded page)."
             )
+            .accessibilityIdentifier("messages.searchEmpty")
         } else {
             List {
                 Section {
@@ -237,6 +241,7 @@ struct MessagesView: View {
                 }
             }
             .brandListBackground()
+            .accessibilityIdentifier("messages.list")
         }
     }
 
@@ -596,6 +601,12 @@ struct ChatThreadView: View {
             && !(counterpartyUserID == currentUserID)
     }
 
+    /// Share contact confirm requires at least one field — empty POST is a dead submit.
+    private var canShareContactFields: Bool {
+        !shareContactPhone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !shareContactEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// Receipt under the caller's last own message only (web double-check parity).
     ///
     /// - **seen:** peer MarkRead watermark ≥ message `created_at`, or `is_read`, or
@@ -698,6 +709,7 @@ struct ChatThreadView: View {
                     }
                     .accessibilityLabel("Propose terms")
                     .accessibilityHint("Open a form to propose local payment terms to the customer")
+                    .accessibilityIdentifier("messages.proposeTerms")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -708,6 +720,7 @@ struct ChatThreadView: View {
                         } label: {
                             Label("Propose terms", systemImage: "doc.badge.plus")
                         }
+                        .accessibilityIdentifier("messages.proposeTerms.menu")
                     }
                     // FR-8.8 — explicit opt-in Share Contact Info.
                     Button {
@@ -715,30 +728,35 @@ struct ChatThreadView: View {
                     } label: {
                         Label("Share contact", systemImage: "person.crop.circle.badge.plus")
                     }
+                    .accessibilityIdentifier("messages.shareContact")
                     if canMutateSafety {
                         Button {
                             showReportSheet = true
                         } label: {
                             Label("Report user", systemImage: "flag")
                         }
+                        .accessibilityIdentifier("messages.report")
                         Button(role: .destructive) {
                             confirmBlock = true
                         } label: {
                             Label("Block user", systemImage: "hand.raised.fill")
                         }
                         .disabled(isBlocking)
+                        .accessibilityIdentifier("messages.block")
                     }
                     Button {
                         showWebSafari = true
                     } label: {
                         Label("Open on web", systemImage: "safari")
                     }
+                    .accessibilityIdentifier("messages.openWeb")
                 } label: {
                     Image(systemName: "ellipsis.circle")
                         .frame(minWidth: 44, minHeight: 44)
                 }
                 .accessibilityLabel("Conversation actions")
                 .accessibilityHint("Propose terms, report or block the other person, or open this chat on the web")
+                .accessibilityIdentifier("messages.actions")
             }
         }
         .alert("Block this user?", isPresented: $confirmBlock) {
@@ -758,7 +776,7 @@ struct ChatThreadView: View {
             Button("Share") {
                 Task { await shareContact() }
             }
-            .disabled(isSharingContact)
+            .disabled(isSharingContact || !canShareContactFields)
         } message: {
             Text("This posts your phone and/or email in the thread as an explicit share. Only do this when you are ready to go off-platform or coordinate handoff.")
         }
@@ -770,6 +788,27 @@ struct ChatThreadView: View {
                     onDone: { showReportSheet = false }
                 )
                 .environmentObject(auth)
+            } else {
+                NavigationStack {
+                    BrandEmptyState(
+                        title: "Can’t report",
+                        systemImage: "flag.slash",
+                        message: "Couldn’t determine the other person in this chat.",
+                        actionTitle: "Close",
+                        action: { showReportSheet = false }
+                    )
+                    .navigationTitle("Report user")
+                    #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                    #endif
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { showReportSheet = false }
+                                .frame(minHeight: 44)
+                        }
+                    }
+                }
+                .accessibilityIdentifier("messages.report.empty")
             }
         }
         .sheet(isPresented: $showProposeTermsSheet) {
@@ -1026,8 +1065,10 @@ struct ChatThreadView: View {
             ) {
                 auth.signOut()
             }
+            .accessibilityIdentifier("messages.thread.signIn")
         } else if isLoading && messages.isEmpty {
             BrandLoadingScreen(kind: .inbox, rows: 8, accessibilityLabel: "Loading messages…")
+                .accessibilityIdentifier("messages.thread.loading")
         } else if let errorMessage, messages.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load thread",
@@ -1038,6 +1079,7 @@ struct ChatThreadView: View {
                 secondaryActionTitle: "Open on web",
                 secondaryAction: { showWebSafari = true }
             )
+            .accessibilityIdentifier("messages.thread.error")
         } else if messages.isEmpty {
             BrandEmptyState(
                 title: "Start the conversation",
@@ -1048,6 +1090,7 @@ struct ChatThreadView: View {
                 actionTitle: canCompose ? "Write a message" : nil,
                 action: canCompose ? { composerFocused = true } : nil
             )
+            .accessibilityIdentifier("messages.thread.empty")
         } else if displayedMessages.isEmpty {
             BrandEmptyState(
                 title: isSearchingServer ? "Searching…" : "No matches",
@@ -1056,6 +1099,7 @@ struct ChatThreadView: View {
                     ? "Looking through this conversation on the server…"
                     : "No messages in this thread match “\(searchText.trimmingCharacters(in: .whitespacesAndNewlines))”. Clear search to see the full conversation (server search covers history beyond the loaded page)."
             )
+            .accessibilityIdentifier("messages.thread.searchEmpty")
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -1158,6 +1202,7 @@ struct ChatThreadView: View {
                 .disabled(!canAttachPhoto)
                 .accessibilityLabel("Attach photo")
                 .accessibilityHint("Upload a photo from your library. JPEG, PNG, or WebP up to 10 MB.")
+                .accessibilityIdentifier("messages.attachPhoto")
 
                 #if canImport(UIKit)
                 Button {
@@ -1177,6 +1222,7 @@ struct ChatThreadView: View {
                 .disabled(!canAttachPhoto || !UIImagePickerController.isSourceTypeAvailable(.camera))
                 .accessibilityLabel("Take photo")
                 .accessibilityHint("Capture a photo with the camera for this conversation")
+                .accessibilityIdentifier("messages.camera")
                 #endif
 
                 // FR-8.3 PDF attach — chat_attachment context, pass-through.
@@ -1205,6 +1251,7 @@ struct ChatThreadView: View {
                 .disabled(!canAttachFile)
                 .accessibilityLabel("Attach PDF")
                 .accessibilityHint("Upload a PDF file up to 10 MB for this conversation")
+                .accessibilityIdentifier("messages.attachPDF")
                 .fileImporter(
                     isPresented: $showPDFImporter,
                     allowedContentTypes: [.pdf],
@@ -1233,6 +1280,7 @@ struct ChatThreadView: View {
                     .focused($composerFocused)
                     .disabled(!canCompose || isSending || isUploadingAttachment)
                     .accessibilityLabel("Message")
+                    .accessibilityIdentifier("messages.composer")
 
                 Button {
                     Task { await sendText() }
@@ -1334,6 +1382,11 @@ struct ChatThreadView: View {
     private func shareContact() async {
         safetyStatusMessage = nil
         safetyStatusIsError = false
+        guard canShareContactFields else {
+            safetyStatusIsError = true
+            safetyStatusMessage = "Enter a phone number or email to share."
+            return
+        }
         isSharingContact = true
         defer { isSharingContact = false }
         do {
@@ -1858,6 +1911,7 @@ private struct ProposeTermsSheet: View {
                     .tint(BrandTheme.accent)
                     .accessibilityLabel("Send proposal")
                     .accessibilityHint("Posts proposed local terms for the customer to accept or reject")
+                    .accessibilityIdentifier("proposeTerms.submit")
                 }
             }
             .brandListBackground()
@@ -1865,10 +1919,12 @@ private struct ProposeTermsSheet: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
+            .accessibilityIdentifier("proposeTerms.root")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: onCancel)
                         .disabled(isSubmitting)
+                        .accessibilityIdentifier("proposeTerms.cancel")
                 }
             }
             .interactiveDismissDisabled(isSubmitting)
@@ -1949,6 +2005,7 @@ private struct ChatReportUserSheet: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityLabel("Report reason")
+                    .accessibilityIdentifier("chatReport.reason")
                 } header: {
                     Text("Why are you reporting?").brandSectionHeader()
                 }
@@ -1957,6 +2014,7 @@ private struct ChatReportUserSheet: View {
                     TextEditor(text: $descriptionText)
                         .frame(minHeight: 120)
                         .accessibilityLabel("Additional details")
+                        .accessibilityIdentifier("chatReport.details")
                 } header: {
                     Text("Details (optional)").brandSectionHeader()
                 } footer: {
@@ -1970,6 +2028,7 @@ private struct ChatReportUserSheet: View {
                             .font(.footnote)
                             .foregroundStyle(statusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("chatReport.status")
                     }
                 }
 
@@ -1990,6 +2049,7 @@ private struct ChatReportUserSheet: View {
                     .tint(BrandTheme.accent)
                     .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isSubmitting || !auth.isAuthenticated || auth.isScaffoldSession)
+                    .accessibilityIdentifier("chatReport.submit")
                 }
             }
             .brandListBackground()
@@ -1998,10 +2058,12 @@ private struct ChatReportUserSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .brandNavigationBarChrome()
+            .accessibilityIdentifier("chatReport.root")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDone() }
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("chatReport.cancel")
                 }
             }
         }

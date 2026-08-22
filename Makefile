@@ -1,11 +1,19 @@
 .PHONY: up down dev dev-full dev-infra dev-status dev-logs migrate-up migrate-down seed proto-gen proto-gen-go proto-gen-rust \
        verify-proto setup-tools test lint fmt build-gateway build-web build-engines build-services build build-all clean \
        ios-archive-lint ios-archive founder-secrets-check origin-check encrypt-pii encrypt-pii-dry-run \
-       e2e-catalog e2e-ios-catalog
+       e2e-catalog e2e-ios-catalog generate-catalog check-catalog
 
 # ── Native Dev (bin/dev) ─────────────────────────────────────
 
-# Catalog-driven E2E (web request log + named workflows). Requires bin/dev + SEED_PASSWORD.
+# catalog.yaml is SSOT; catalog.json is generated (Playwright + Chi contract read JSON).
+generate-catalog:
+	node docs/workflows/generate-catalog.mjs
+
+check-catalog: generate-catalog
+	git diff --exit-code -- docs/workflows/catalog.json
+
+# Catalog-driven E2E. CI (no SEED_PASSWORD) runs the VCR/backendless path.
+# Full login + hop walk needs bin/dev + SEED_PASSWORD.
 e2e-catalog:
 	cd web && npx playwright test tests/e2e/catalog --project=chromium
 

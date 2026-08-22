@@ -1692,6 +1692,13 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
         return normalizedEscrow == "pending_payment" || mapped == "pending"
     }
 
+    /// Apple Pay is buyer-only — sellers must not see a pay CTA on their own sale.
+    func needsPaymentAsBuyer(userId: String?) -> Bool {
+        guard needsPayment else { return false }
+        guard let userId, !userId.isEmpty, buyerId == userId else { return false }
+        return true
+    }
+
     /// Buyer may confirm pickup only while funds are held (pre-pickup_confirmed).
     func canConfirmPickupAsBuyer(userId: String?) -> Bool {
         guard let userId, !userId.isEmpty, buyerId == userId else { return false }
@@ -1750,7 +1757,13 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
     /// after mutual pickup confirm on the server — not via `/payments/.../release`).
     func nextActionCaption(userId: String?) -> String? {
         if needsPayment {
-            return "Next: pay with Apple Pay (or card). Funds are held in escrow until pickup."
+            if let userId, !userId.isEmpty, buyerId == userId {
+                return "Next: pay with Apple Pay (or card). Funds are held in escrow until pickup."
+            }
+            if let userId, !userId.isEmpty, sellerId == userId {
+                return "Waiting for the buyer to pay. Escrow starts after payment."
+            }
+            return "Awaiting payment."
         }
         if canConfirmPickupAsBuyer(userId: userId) {
             return "Next: confirm pickup after you receive the goods."

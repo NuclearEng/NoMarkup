@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiError, api, downloadAuthenticated, getApiErrorMessage } from '@/lib/api';
+import {
+  ApiError,
+  api,
+  downloadAuthenticated,
+  fetchMeActivity,
+  getApiErrorMessage,
+  parseMeActivityPayload,
+} from '@/lib/api';
 import { HEADER_REQUEST_ID, HEADER_TRACEPARENT, parseTraceparent } from '@/lib/otel/trace-context';
 
 // Mock auth helpers so we control the token state without touching localStorage.
@@ -393,5 +400,87 @@ describe('downloadAuthenticated', () => {
     await expect(downloadAuthenticated('/api/v1/files/missing', 'x.pdf')).rejects.toBeInstanceOf(
       ApiError,
     );
+  });
+});
+
+describe('parseMeActivityPayload', () => {
+  it('maps snake_case rows and wrapped items', () => {
+    const rows = parseMeActivityPayload({
+      items: [
+        {
+          request_id: 'abc123abc123abcd',
+          method: 'get',
+          path: '/api/v1/users/me',
+          status: 200,
+          duration_ms: 12,
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.requestId).toBe('abc123abc123abcd');
+    expect(rows[0]?.method).toBe('GET');
+    expect(rows[0]?.durationMs).toBe(12);
+  });
+
+  it('accepts a bare array with camelCase keys', () => {
+    const rows = parseMeActivityPayload([
+      { requestId: 'rid', method: 'POST', path: '/api/v1/jobs', status: 201, durationMs: 9, at: 't' },
+    ]);
+    expect(rows[0]?.requestId).toBe('rid');
+    expect(rows[0]?.at).toBe('t');
+  });
+
+  it('returns [] for unknown shapes', () => {
+    expect(parseMeActivityPayload(null)).toEqual([]);
+    expect(parseMeActivityPayload({ ok: true })).toEqual([]);
+  });
+});
+
+describe('fetchMeActivity', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns mapped rows on 200', async () => {
+    vi.mocked(getAccessToken).mockReturnValue('tok');
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          activity: [{ request_id: 'rid-1', method: 'GET', path: '/api/v1/users/me', status: 200 }],
+        }),
+        { status: 200 },
+      ),
+    );
+    const rows = await fetchMeActivity();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.requestId).toBe('rid-1');
+    const call = vi.mocked(fetch).mock.calls[0];
+    expect(String(call?.[0])).toBe('/api/v1/me/activity');
+  });
+
+  it('treats 404 as empty (endpoint may not exist yet)', async () => {
+    vi.mocked(getAccessToken).mockReturnValue('tok');
+    vi.mocked(fetch).mockResolvedValueOnce(new Response('{"error":"not found"}', { status: 404 }));
+    await expect(fetchMeActivity()).resolves.toEqual([]);
+  });
+
+  it('treats 401 as empty', async () => {
+    vi.mocked(getAccessToken).mockReturnValue('tok');
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response('expired', { status: 401 }))
+      .mockResolvedValueOnce(new Response('no', { status: 401 }));
+    const origLoc = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { href: '', origin: origLoc.origin, pathname: origLoc.pathname },
+    });
+    await expect(fetchMeActivity()).resolves.toEqual([]);
+    Object.defineProperty(window, 'location', { configurable: true, value: origLoc });
   });
 });

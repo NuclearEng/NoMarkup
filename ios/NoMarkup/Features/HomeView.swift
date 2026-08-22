@@ -97,6 +97,7 @@ struct HomeView: View {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("Close") { showPostJob = false }
                                     .frame(minHeight: 44)
+                                    .accessibilityIdentifier("postJob.close")
                             }
                         }
                 }
@@ -110,6 +111,7 @@ struct HomeView: View {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("Close") { showSellItem = false }
                                     .frame(minHeight: 44)
+                                    .accessibilityIdentifier("createListing.close")
                             }
                         }
                 }
@@ -158,6 +160,7 @@ struct HomeView: View {
                             Circle()
                                 .fill(auth.isScaffoldSession ? BrandTheme.warning : BrandTheme.success)
                                 .frame(width: 6, height: 6)
+                                .accessibilityHidden(true)
                             Text(auth.isScaffoldSession ? "Offline" : "Live")
                                 .font(.caption2.weight(.semibold).monospaced())
                                 .foregroundStyle(BrandTheme.textSecondary)
@@ -166,7 +169,8 @@ struct HomeView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .background(Capsule().fill(BrandTheme.surfaceRaised))
-                        .accessibilityLabel(signedInLabel)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(auth.isScaffoldSession ? "Browsing offline" : "Signed in as \(signedInLabel)")
                     }
                 }
                 .padding(.bottom, usesCompactHomeChrome ? 10 : 16)
@@ -252,10 +256,12 @@ struct HomeView: View {
                     Text("Sell an item")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(BrandTheme.goldBright.opacity(0.9))
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 40)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
                 .accessibilityLabel("Sell an item")
                 .accessibilityHint("Opens the native sell form")
                 .accessibilityIdentifier("home.sellItem")
@@ -631,6 +637,7 @@ struct HomeView: View {
                             : (healthOK == false ? BrandTheme.destructive : BrandTheme.textSecondary.opacity(0.4))
                     )
                     .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
             }
 
             Text(healthOK == true ? "DESK LIVE" : (healthOK == false ? "DESK OFFLINE" : "…"))

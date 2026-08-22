@@ -78,6 +78,7 @@ struct ProfileSettingsView: View {
                     .foregroundStyle(BrandTheme.textPrimary)
                     .frame(minHeight: 44)
                     .accessibilityLabel("Display name")
+                    .accessibilityIdentifier("profile.displayName")
 
                 if let email = profile?.email, !email.isEmpty {
                     LabeledContent("Email") {
@@ -257,6 +258,7 @@ struct ProfileSettingsView: View {
                 .frame(minHeight: 44)
             }
             .disabled(uploading || isSaving)
+            .accessibilityIdentifier("profile.photoLibrary")
             .accessibilityHint("Opens the photo library. JPEG, PNG, or WebP up to 10 MB.")
 
             #if canImport(UIKit)
@@ -271,6 +273,7 @@ struct ProfileSettingsView: View {
                     || isSaving
                     || !UIImagePickerController.isSourceTypeAvailable(.camera)
             )
+            .accessibilityIdentifier("profile.takePhoto")
             .accessibilityHint("Opens the camera to capture a new profile photo")
             #endif
         } header: {

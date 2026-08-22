@@ -576,6 +576,7 @@ struct MarketplaceMapView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .brandNavigationBarChrome()
+            .accessibilityIdentifier("marketplace.map.root")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -595,6 +596,7 @@ struct MarketplaceMapView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityHint("Centers the map on your location when permitted")
+                    .accessibilityIdentifier("marketplace.map.myLocation")
                 }
             }
             .task {
@@ -619,7 +621,6 @@ struct MarketplaceMapView: View {
             } message: {
                 Text(LocationPurposeCopy.marketPickerPrePrompt)
             }
-            .accessibilityIdentifier("marketplace.map.root")
     }
 
     private var content: some View {

@@ -900,6 +900,23 @@ extension APIClient {
             authorized: .required
         )
     }
+
+    // MARK: Request activity (owner-only hop log)
+
+    /// GET `/api/v1/me/activity` — signed-in user's server hops (web `fetchMeActivity` parity).
+    /// Owner-only (`/me`, claims.UserID). 401/404 resolve to [] so Request log stays on local hops.
+    /// Payload is method/path/status/duration/request_id only — no bodies or tokens.
+    func fetchMeActivity() async throws -> [ClientActionLog.MeActivityItem] {
+        do {
+            let data = try await getData(
+                pathComponents: ["api", "v1", "me", "activity"],
+                authorized: .required
+            )
+            return ClientActionLog.parseMeActivityPayload(data)
+        } catch let error as APIClientError where error.isUnauthorized || error.isNotFound {
+            return []
+        }
+    }
 }
 
 // MARK: - Request bodies (camelCase → snake_case via encoder)

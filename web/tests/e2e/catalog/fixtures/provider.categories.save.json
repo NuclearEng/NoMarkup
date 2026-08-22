@@ -1,0 +1,9 @@
+{
+  "method": "PUT",
+  "path": "/api/v1/providers/me/categories",
+  "status": 400,
+  "contentType": "application/json",
+  "body": {
+    "error": "invalid request body"
+  }
+}

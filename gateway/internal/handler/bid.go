@@ -24,10 +24,11 @@ import (
 // BidHandler handles HTTP endpoints for bids.
 //
 // db is optional — when non-nil it is used to EMIT in-app notifications
-// for bid events and to evaluate the F4 background-check bid gate (flag ON
-// requires latest provider_background_checks.status in {clear, consider}).
-// A nil pool skips notifications and the bid gate (fail-soft / cannot read
-// the flag as explicitly enabled).
+// for bid events, evaluate the F4 background-check bid gate (flag ON
+// requires latest provider_background_checks.status in {clear, consider}),
+// and enforce subscription plan limits on PlaceBid. A nil pool skips
+// notifications, the bid gate (fail-soft / cannot read the flag as
+// explicitly enabled), and plan-limit checks.
 type BidHandler struct {
 	bidClient      bidv1.BidServiceClient
 	contractClient contractv1.ContractServiceClient
@@ -35,18 +36,21 @@ type BidHandler struct {
 	userClient     userv1.UserServiceClient
 	db             *pgxpool.Pool
 	bgGate         backgroundCheckBidGate
+	planLimits     PlanLimitGuard
 }
 
 // NewBidHandler creates a new BidHandler. The optional contractClient is used
 // to create a contract row immediately after a bid is awarded — without it,
 // awarding a bid just flips status and the customer-accept → contract pipeline
-// stays severed. db (optional) is used for notifications and the Checkr bid gate.
+// stays severed. db (optional) is used for notifications, the Checkr bid gate,
+// and plan-limit checks.
 func NewBidHandler(bidClient bidv1.BidServiceClient, contractClient contractv1.ContractServiceClient, db *pgxpool.Pool) *BidHandler {
 	return &BidHandler{
 		bidClient:      bidClient,
 		contractClient: contractClient,
 		db:             db,
 		bgGate:         newBackgroundCheckBidGate(db, nil),
+		planLimits:     newPlanLimitGuard(db),
 	}
 }
 
@@ -343,6 +347,13 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 			"bid_id", prior["id"],
 		)
 		writeJSON(w, http.StatusCreated, prior)
+		return
+	}
+
+	// After durable replay: a retry that already has a bid must not 403
+	// just because the provider is at their plan limit.
+	if code, msg := h.planLimits.denyActiveBid(r, claims.UserID); code != 0 {
+		writeError(w, code, msg)
 		return
 	}
 

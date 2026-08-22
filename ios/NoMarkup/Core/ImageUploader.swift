@@ -455,6 +455,7 @@ struct PhotoPickSection: View {
                 .frame(minHeight: 44)
             }
             .disabled(uploading || atCapacity)
+            .accessibilityIdentifier("photoPick.library")
             .listRowBackground(BrandTheme.navyElevated)
             .onChange(of: pickerItems) { _, newItems in
                 guard !newItems.isEmpty else { return }
@@ -470,6 +471,7 @@ struct PhotoPickSection: View {
             }
             .disabled(uploading || atCapacity || !UIImagePickerController.isSourceTypeAvailable(.camera))
             .listRowBackground(BrandTheme.navyElevated)
+            .accessibilityIdentifier("photoPick.camera")
             .accessibilityHint("Opens the camera to capture a photo for this job or listing")
             .sheet(isPresented: $showCamera) {
                 CameraImagePicker(image: $cameraImage)

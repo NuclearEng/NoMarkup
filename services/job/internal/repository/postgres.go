@@ -606,6 +606,12 @@ func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.Search
 	where = append(where, fmt.Sprintf("j.status = $%d", argIdx))
 	args = append(args, status)
 	argIdx++
+	// status=open/active means a live bidding window, not "row still marked
+	// active after auction_ends_at". Gateway effectiveJobStatus maps those
+	// to closed; exclude them here so public browse totalCount matches.
+	if status == "active" {
+		where = append(where, "(j.auction_ends_at IS NULL OR j.auction_ends_at > now())")
+	}
 
 	if len(input.CategoryIDs) > 0 {
 		clause, clauseArgs, next := categorySubtreeFilter(input.CategoryIDs, argIdx)

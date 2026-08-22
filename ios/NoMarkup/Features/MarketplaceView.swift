@@ -114,6 +114,7 @@ struct MarketplaceView: View {
                             ToolbarItem(placement: .cancellationAction) {
                                 Button("Close") { showCreateListing = false }
                                     .frame(minHeight: 44)
+                                    .accessibilityIdentifier("createListing.close")
                             }
                         }
                 }
@@ -123,7 +124,7 @@ struct MarketplaceView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
-                        MarketplaceMapView()
+                        LazyView { MarketplaceMapView() }
                     } label: {
                         Label("Map", systemImage: "map")
                     }
@@ -158,9 +159,11 @@ struct MarketplaceView: View {
             .accessibilityIdentifier("marketplace.error")
         } else if listings.isEmpty, !showsSuggestions {
             BrandEmptyState(
-                title: "No listings nearby",
+                title: hasSearchQuery ? "No matching listings" : "No listings nearby",
                 systemImage: "bag",
-                message: "Local goods auctions — buyers bid up, pickup within 25 mi. Escrow holds funds until pickup. Pull to refresh, or be the first to list.",
+                message: hasSearchQuery
+                    ? "Nothing matches “\(searchText.trimmingCharacters(in: .whitespacesAndNewlines))”. Try another term, or list an item nearby."
+                    : "Local goods auctions — buyers bid up, pickup within 25 mi. Escrow holds funds until pickup. Pull to refresh, or be the first to list.",
                 actionTitle: "Sell an item",
                 action: {
                     BrandHaptics.selection()
@@ -281,6 +284,11 @@ struct MarketplaceView: View {
         }
     }
 
+    private var hasSearchQuery: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !(categorySlugFilter?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
     private var showsSuggestions: Bool {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2
             && (!suggestions.isEmpty || isLoadingSuggestions)
@@ -319,6 +327,7 @@ struct MarketplaceView: View {
         } header: {
             Text("Suggestions").brandSectionHeader()
         }
+        .accessibilityIdentifier("marketplace.suggestions")
     }
 
     private func scheduleAutocomplete(for raw: String) {

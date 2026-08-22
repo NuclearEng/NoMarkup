@@ -33,12 +33,14 @@ struct ForgotPasswordView: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(BrandTheme.goldBright)
                     .frame(minHeight: 44)
+                    .accessibilityIdentifier("forgotPassword.haveToken")
                 }
                 messages
             }
             .padding(24)
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("forgotPassword.root")
         }
         .background(BrandTheme.navy.ignoresSafeArea())
         .navigationTitle("Reset password")
@@ -84,6 +86,7 @@ struct ForgotPasswordView: View {
                 .submitLabel(.go)
                 .onSubmit { Task { await requestReset() } }
                 .accessibilityLabel("Email for password reset")
+                .accessibilityIdentifier("forgotPassword.email")
 
             Button {
                 Task { await requestReset() }
@@ -105,6 +108,7 @@ struct ForgotPasswordView: View {
             .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(auth.isLoading)
             .accessibilityLabel("Send password reset email")
+            .accessibilityIdentifier("forgotPassword.send")
         }
     }
 
@@ -126,6 +130,7 @@ struct ForgotPasswordView: View {
                 .submitLabel(.next)
                 .onSubmit { focusedField = .newPassword }
                 .accessibilityLabel("Password reset token")
+                .accessibilityIdentifier("forgotPassword.token")
 
             SecureField("New password", text: $newPassword)
                 .textContentType(.newPassword)
@@ -137,6 +142,7 @@ struct ForgotPasswordView: View {
                 .submitLabel(.next)
                 .onSubmit { focusedField = .confirmPassword }
                 .accessibilityLabel("New password")
+                .accessibilityIdentifier("forgotPassword.newPassword")
 
             SecureField("Confirm new password", text: $confirmPassword)
                 .textContentType(.newPassword)
@@ -148,6 +154,7 @@ struct ForgotPasswordView: View {
                 .submitLabel(.go)
                 .onSubmit { Task { await submitNewPassword() } }
                 .accessibilityLabel("Confirm new password")
+                .accessibilityIdentifier("forgotPassword.confirmPassword")
 
             Text("At least 8 characters with letters and a number or symbol.")
                 .font(.caption)
@@ -173,6 +180,7 @@ struct ForgotPasswordView: View {
             .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(auth.isLoading)
             .accessibilityLabel("Update password with reset token")
+            .accessibilityIdentifier("forgotPassword.update")
         }
     }
 
@@ -184,6 +192,7 @@ struct ForgotPasswordView: View {
                     .foregroundStyle(BrandTheme.destructive)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Error: \(error)")
+                    .accessibilityIdentifier("forgotPassword.error")
             }
 
             if let status = auth.statusMessage {
@@ -200,6 +209,7 @@ struct ForgotPasswordView: View {
             .foregroundStyle(BrandTheme.goldBright)
             .frame(maxWidth: .infinity)
             .frame(minHeight: 44)
+            .accessibilityIdentifier("forgotPassword.signIn")
         }
     }
 

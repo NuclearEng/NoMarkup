@@ -51,6 +51,9 @@ jobs:
       # FE-03 — ban arbitrary raw hex in components/app (allowlist for Mapbox/OAuth/OG icons)
       - run: cd web && npm run check:hex
       - run: cd web && npm run typecheck
+      # catalog.yaml is SSOT; catalog.json must be generated (no drift).
+      - name: Check catalog.json is generated from catalog.yaml
+        run: make check-catalog
 
   web-test:
     name: Web Tests
@@ -88,6 +91,12 @@ jobs:
       - name: Install Playwright browsers
         working-directory: web
         run: npx playwright install --with-deps chromium
+      # Backendless catalog VCR: fixture completeness + mocked API hops.
+      # Required check via `build.needs: e2e-test`. Live stack (SEED_PASSWORD)
+      # is skipped here; mutations still assert via frozen fixtures.
+      - name: Catalog VCR (backendless)
+        working-directory: web
+        run: npx playwright test tests/e2e/catalog --project=chromium
       # PR/push gate: Chromium only (QA-08). Installs match --project so we do
       # not run firefox/webkit without browser deps. Specs are backend-tolerant
       # (no stack in this job). Cross-browser coverage is the optional

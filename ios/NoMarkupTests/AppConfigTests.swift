@@ -110,6 +110,48 @@ final class AppConfigTests: XCTestCase {
         XCTAssertNil(LaunchTestAuth.credentials(environment: [:], arguments: ["NoMarkup"]))
     }
 
+    func testHarnessWithoutCredentialsSkipsKeychainRestore() {
+        XCTAssertTrue(
+            LaunchTestAuth.shouldSkipKeychainRestore(
+                environment: ["NOMARKUP_UI_TESTING": "1"],
+                arguments: ["-ui-testing"]
+            ),
+            "XCUITest harness with no email/password must skip Keychain restore"
+        )
+        XCTAssertTrue(
+            LaunchTestAuth.shouldSkipKeychainRestore(
+                environment: ["NOMARKUP_UI_TESTING": "true"],
+                arguments: []
+            ),
+            "NOMARKUP_UI_TESTING=true is a harness flag, not a leftover session"
+        )
+        XCTAssertTrue(
+            LaunchTestAuth.isHarness(environment: ["NOMARKUP_UI_TESTING": "yes"], arguments: [])
+        )
+        XCTAssertFalse(
+            LaunchTestAuth.shouldSkipKeychainRestore(
+                environment: [:],
+                arguments: ["NoMarkup"]
+            ),
+            "DEBUG dogfood (no harness flags) still restores Keychain"
+        )
+        XCTAssertTrue(
+            LaunchTestAuth.shouldSkipKeychainRestore(
+                environment: [
+                    "NOMARKUP_UI_TEST_EMAIL": "customer@nomarkup.com",
+                    "NOMARKUP_UI_TEST_PASSWORD": "Password123!",
+                ],
+                arguments: []
+            )
+        )
+        XCTAssertTrue(
+            LaunchTestAuth.shouldSkipKeychainRestore(
+                environment: ["NOMARKUP_UI_TEST_SCAFFOLD": "1"],
+                arguments: []
+            )
+        )
+    }
+
     func testStoreKitEnabledDefaultsFalse() {
         // Committed Info.plist sets StoreKitEnabled=false; purchase paths must stay off for 3.1.1 free-tier binary.
         // Env override may flip true in dogfood schemes — only assert default when env unset.

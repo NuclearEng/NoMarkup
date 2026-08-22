@@ -461,6 +461,33 @@ func TestJobHandler_Search_forwards_status(t *testing.T) {
 	assert.Equal(t, jobv1.JobStatus_JOB_STATUS_ACTIVE, *got)
 }
 
+func TestJobHandler_Search_openOmitsPastDeadlineActiveRows(t *testing.T) {
+	t.Parallel()
+	past := timestamppb.New(time.Now().Add(-time.Hour))
+	client := &mockJobClient{
+		searchJobsFn: func(_ context.Context, _ *jobv1.SearchJobsRequest) (*jobv1.SearchJobsResponse, error) {
+			return &jobv1.SearchJobsResponse{
+				Jobs: []*jobv1.Job{
+					{Id: "live", Status: jobv1.JobStatus_JOB_STATUS_ACTIVE, AuctionEndsAt: timestamppb.New(time.Now().Add(time.Hour))},
+					{Id: "stale", Status: jobv1.JobStatus_JOB_STATUS_ACTIVE, AuctionEndsAt: past},
+				},
+			}, nil
+		},
+	}
+	h := NewJobHandler(client, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?page=1&page_size=20&status=open", nil)
+	rec := httptest.NewRecorder()
+	h.Search(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body struct {
+		Jobs []map[string]interface{} `json:"jobs"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Jobs, 1)
+	assert.Equal(t, "live", body.Jobs[0]["id"])
+	assert.Equal(t, "active", body.Jobs[0]["status"])
+}
+
 func TestJobHandler_Search_grpc_error(t *testing.T) {
 	t.Parallel()
 

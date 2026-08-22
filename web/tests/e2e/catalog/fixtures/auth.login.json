@@ -1,0 +1,11 @@
+{
+  "method": "POST",
+  "path": "/api/v1/auth/login",
+  "status": 200,
+  "contentType": "application/json",
+  "body": {
+    "access_token": "vcr.access.token",
+    "user_id": "00000000-0000-4000-8000-000000000001",
+    "mfa_required": false
+  }
+}

@@ -698,9 +698,20 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	wantLive := false
+	if statusStr := q.Get("status"); statusStr == "open" || statusStr == "active" {
+		wantLive = true
+	}
 	jobs := make([]map[string]interface{}, 0, len(resp.GetJobs()))
 	for _, j := range resp.GetJobs() {
-		jobs = append(jobs, protoJobToJSON(j))
+		row := protoJobToJSON(j)
+		if wantLive {
+			st, _ := row["status"].(string)
+			if st != "active" {
+				continue
+			}
+		}
+		jobs = append(jobs, row)
 	}
 
 	result := map[string]interface{}{

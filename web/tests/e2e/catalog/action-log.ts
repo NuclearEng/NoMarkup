@@ -24,6 +24,33 @@ function statusMatches(actual: number, expected: number | number[] | undefined):
   return actual === expected;
 }
 
+export function catalogPathMatches(actual: string, pattern: string): boolean {
+  const a = (actual.split('?')[0] ?? actual).replace(/\/$/, '') || '/';
+  const p = pattern.replace(/\/$/, '') || '/';
+  if (!p.includes('{')) {
+    return a === p || a.includes(p);
+  }
+  const aSegs = a.split('/');
+  const pSegs = p.split('/');
+  if (aSegs.length === pSegs.length) {
+    return pSegs.every((seg, i) => {
+      const got = aSegs[i] ?? '';
+      if (seg.startsWith('{') && seg.endsWith('}')) return got.length > 0;
+      return seg === got;
+    });
+  }
+  const re = new RegExp(
+    p
+      .split('/')
+      .map((seg) => {
+        if (seg.startsWith('{') && seg.endsWith('}')) return '[^/]+';
+        return seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      })
+      .join('/'),
+  );
+  return re.test(a);
+}
+
 export async function expectHttpHop(
   page: Page,
   spec: { method: string; path: string; status?: number | number[] },
@@ -38,7 +65,7 @@ export async function expectHttpHop(
           (e) =>
             e.kind === 'http' &&
             e.method.toUpperCase() === spec.method.toUpperCase() &&
-            e.path.includes(spec.path) &&
+            catalogPathMatches(e.path, spec.path) &&
             statusMatches(e.status, spec.status),
         );
         return found !== undefined;

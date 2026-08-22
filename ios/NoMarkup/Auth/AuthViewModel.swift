@@ -15,21 +15,36 @@ import UIKit
 /// Args: `-ui-test-email` value / `-ui-test-password` value / `-ui-test-scaffold` / `-ui-testing`
 enum LaunchTestAuth {
     static var isUITestLaunch: Bool {
-        if isHarness { return true }
-        return wantsScaffold || credentials() != nil
+        shouldSkipKeychainRestore()
     }
 
     /// XCUITest process (`NOMARKUP_UI_TESTING=1` or `-ui-testing`) — not scaffold/auto-login.
     static var isHarness: Bool {
-        let env = ProcessInfo.processInfo.environment
-        let args = ProcessInfo.processInfo.arguments
-        return env["NOMARKUP_UI_TESTING"] == "1" || args.contains("-ui-testing")
+        isHarness(
+            environment: ProcessInfo.processInfo.environment,
+            arguments: ProcessInfo.processInfo.arguments
+        )
+    }
+
+    static func isHarness(
+        environment: [String: String],
+        arguments: [String]
+    ) -> Bool {
+        isTruthyFlag(environment["NOMARKUP_UI_TESTING"]) || arguments.contains("-ui-testing")
     }
 
     static var wantsScaffold: Bool {
-        let env = ProcessInfo.processInfo.environment
-        let args = ProcessInfo.processInfo.arguments
-        return args.contains("-ui-test-scaffold") || env["NOMARKUP_UI_TEST_SCAFFOLD"] == "1"
+        wantsScaffold(
+            environment: ProcessInfo.processInfo.environment,
+            arguments: ProcessInfo.processInfo.arguments
+        )
+    }
+
+    static func wantsScaffold(
+        environment: [String: String],
+        arguments: [String]
+    ) -> Bool {
+        arguments.contains("-ui-test-scaffold") || isTruthyFlag(environment["NOMARKUP_UI_TEST_SCAFFOLD"])
     }
 
     static func credentials(
@@ -51,6 +66,27 @@ enum LaunchTestAuth {
     }
 
     static var isActive: Bool { wantsScaffold || credentials() != nil }
+
+    /// Harness (with or without credentials), scaffold, or env auto-login — never restore
+    /// a leftover dogfood Keychain session. DEBUG dogfood (no flags) still restores.
+    static func shouldSkipKeychainRestore(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) -> Bool {
+        isHarness(environment: environment, arguments: arguments)
+            || wantsScaffold(environment: environment, arguments: arguments)
+            || credentials(environment: environment, arguments: arguments) != nil
+    }
+
+    /// `1` / `true` / `yes` so a misspelled `NOMARKUP_UI_TESTING=true` still skips restore.
+    private static func isTruthyFlag(_ raw: String?) -> Bool {
+        switch (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "1", "true", "yes":
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 /// Auth state for email/password, MFA, register, password reset, SIWA, and Google (ASWebAuth + PKCE).
@@ -94,10 +130,11 @@ final class AuthViewModel: ObservableObject {
 
     init() {
         #if DEBUG
-        if LaunchTestAuth.isActive {
+        if LaunchTestAuth.shouldSkipKeychainRestore() {
             // UITest / sim role launches must not restore a previous dogfood session.
             // Stale refresh 401s used to post "Your session expired" *after* env login
             // wrote fresh tokens and bounce XCUITest back to Sign in.
+            // Harness with no credentials (login a11y) must also skip Keychain restore.
             try? tokenStore.clearSession()
             isAuthenticated = false
             isScaffoldSession = false

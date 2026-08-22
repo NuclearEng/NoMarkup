@@ -30,6 +30,7 @@ struct TrustScoreView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .brandNavigationBarChrome()
+            .accessibilityIdentifier("trustScore.root")
             .task { await load() }
             .refreshable { await load() }
     }

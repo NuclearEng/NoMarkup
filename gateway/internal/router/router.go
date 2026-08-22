@@ -136,6 +136,10 @@ func New(
 	r.Use(middleware.Tracing)
 	r.Use(middleware.Metrics)
 	r.Use(middleware.Logging)
+	// Persist API hops for Account/Settings → Request log. After Logging so
+	// the access log still wraps the writer. Fail-soft (nil DB / insert
+	// error never fails the request).
+	r.Use(middleware.Activity(dbPool, authMW))
 	r.Use(middleware.CORS(allowedOrigins, production))
 	r.Use(middleware.SecurityHeaders(production))
 	r.Use(rateLimiter.Middleware)
@@ -399,6 +403,7 @@ func New(
 	// return 202 so the browser beacon never fails the page.
 	rumHandler := handler.NewRumHandler(dbPool)
 	r.Post("/api/v1/rum", rumHandler.PostSample)
+	activityHandler := handler.NewActivityHandler(dbPool)
 
 	// Public "report this listing" endpoint — anonymous visitors can flag a
 	// listing as stolen/counterfeit/prohibited. Wrapped in optionalAuth so a
@@ -517,6 +522,11 @@ func New(
 		// service iterates both lists when fanning a notification out.
 		r.Post("/me/push-subscriptions", pushSubscriptionsHandler.Subscribe)
 		r.Delete("/me/push-subscriptions/{id}", pushSubscriptionsHandler.Unsubscribe)
+
+		// Server-side request log (survives reinstall). Owner-only: keys off
+		// claims.UserID. Device-local logs are a ring buffer; this is the
+		// durable copy. See middleware.Activity for the writer.
+		r.Get("/me/activity", activityHandler.ListMyActivity)
 
 		// STOREKIT-B2 / F6 — App Store JWS verify. Auth required. Fail-closed
 		// 503 unless APP_STORE_IAP_VERIFY=true. Walks x5c to the embedded

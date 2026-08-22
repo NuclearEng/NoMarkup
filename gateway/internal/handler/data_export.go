@@ -217,6 +217,7 @@ func (h *DataExportHandler) ExportMyData(w http.ResponseWriter, r *http.Request)
 		{"saved_searches", h.exportSavedSearches},
 		{"followed_sellers", h.exportFollows},
 		{"referrals", h.exportReferrals},
+		{"request_activity", h.exportRequestActivity},
 	}
 
 	for _, s := range sections {
@@ -246,16 +247,16 @@ func (h *DataExportHandler) ExportMyData(w http.ResponseWriter, r *http.Request)
 // (suspension_reason) are deliberately omitted.
 func (h *DataExportHandler) exportProfile(ctx context.Context, userID string) (map[string]interface{}, error) {
 	var (
-		id, email, displayName            string
-		phone, avatarURL, timezone        *string
-		emailVerified, phoneVerified       bool
-		mfaEnabled                         bool
-		roles                              []string
-		status                             string
-		lastLoginAt, lastActiveAt          *time.Time
-		createdAt                          time.Time
-		updatedAt                          *time.Time
-		deletionRequestedAt                *time.Time
+		id, email, displayName       string
+		phone, avatarURL, timezone   *string
+		emailVerified, phoneVerified bool
+		mfaEnabled                   bool
+		roles                        []string
+		status                       string
+		lastLoginAt, lastActiveAt    *time.Time
+		createdAt                    time.Time
+		updatedAt                    *time.Time
+		deletionRequestedAt          *time.Time
 	)
 	err := h.db.QueryRow(ctx, `
 		SELECT id::text, email, email_verified, phone, phone_verified,
@@ -349,12 +350,12 @@ func (h *DataExportHandler) exportJobs(ctx context.Context, userID string) (inte
 		 ORDER BY created_at DESC
 		 LIMIT $2`, userID, func(rows scanner) (map[string]interface{}, error) {
 		var (
-			id, title, status            string
-			description                  *string
-			city, state, zip             *string
-			startingBidCents             *int64
-			bidCount                     int
-			createdAt                    time.Time
+			id, title, status string
+			description       *string
+			city, state, zip  *string
+			startingBidCents  *int64
+			bidCount          int
+			createdAt         time.Time
 		)
 		if err := rows.Scan(&id, &title, &description, &status, &city, &state, &zip, &startingBidCents, &bidCount, &createdAt); err != nil {
 			return nil, err
@@ -421,20 +422,20 @@ func (h *DataExportHandler) exportContracts(ctx context.Context, userID string) 
 		 LIMIT $2`, userID, func(rows scanner) (map[string]interface{}, error) {
 		var (
 			id, contractNumber, status, myRole, counterparty string
-			amountCents                                       int64
-			createdAt                                         time.Time
+			amountCents                                      int64
+			createdAt                                        time.Time
 		)
 		if err := rows.Scan(&id, &contractNumber, &status, &amountCents, &createdAt, &myRole, &counterparty); err != nil {
 			return nil, err
 		}
 		return map[string]interface{}{
-			"id":                 id,
-			"contract_number":    contractNumber,
-			"status":             status,
-			"amount_cents":       amountCents,
-			"my_role":            myRole,
-			"counterparty_name":  counterparty, // redacted: display name only
-			"created_at":         createdAt.UTC().Format(time.RFC3339),
+			"id":                id,
+			"contract_number":   contractNumber,
+			"status":            status,
+			"amount_cents":      amountCents,
+			"my_role":           myRole,
+			"counterparty_name": counterparty, // redacted: display name only
+			"created_at":        createdAt.UTC().Format(time.RFC3339),
 		}, nil
 	})
 }
@@ -449,11 +450,11 @@ func (h *DataExportHandler) exportListings(ctx context.Context, userID string) (
 		 ORDER BY created_at DESC
 		 LIMIT $2`, userID, func(rows scanner) (map[string]interface{}, error) {
 		var (
-			id, title, status         string
-			description, pickupZip    *string
-			startingPrice             int64
-			currentBid                *int64
-			createdAt                 time.Time
+			id, title, status      string
+			description, pickupZip *string
+			startingPrice          int64
+			currentBid             *int64
+			createdAt              time.Time
 		)
 		if err := rows.Scan(&id, &title, &description, &status, &startingPrice, &currentBid, &pickupZip, &createdAt); err != nil {
 			return nil, err
@@ -588,7 +589,7 @@ func (h *DataExportHandler) exportPayments(ctx context.Context, userID string) (
 		 ORDER BY created_at DESC
 		 LIMIT $2`, userID, func(rows scanner) (map[string]interface{}, error) {
 		var (
-			id, contractID, status, myRole          string
+			id, contractID, status, myRole           string
 			amountCents, platformFee, providerPayout int64
 			createdAt                                time.Time
 		)
@@ -617,9 +618,9 @@ func (h *DataExportHandler) exportInstantPayouts(ctx context.Context, userID str
 		 ORDER BY created_at DESC
 		 LIMIT $2`, userID, func(rows scanner) (map[string]interface{}, error) {
 		var (
-			id, status                   string
-			amountCents, feeCents, net   int64
-			createdAt                    time.Time
+			id, status                 string
+			amountCents, feeCents, net int64
+			createdAt                  time.Time
 		)
 		if err := rows.Scan(&id, &amountCents, &feeCents, &net, &status, &createdAt); err != nil {
 			return nil, err
@@ -645,9 +646,9 @@ func (h *DataExportHandler) exportAdvances(ctx context.Context, userID string) (
 		 ORDER BY created_at DESC
 		 LIMIT $2`, userID, func(rows scanner) (map[string]interface{}, error) {
 		var (
-			id, status                        string
+			id, status                          string
 			advanceCents, feeCents, repaidCents int64
-			createdAt                         time.Time
+			createdAt                           time.Time
 		)
 		if err := rows.Scan(&id, &advanceCents, &feeCents, &repaidCents, &status, &createdAt); err != nil {
 			return nil, err
@@ -708,8 +709,8 @@ func (h *DataExportHandler) exportMessagesSent(ctx context.Context, userID strin
 		 LIMIT $2`, userID, func(rows scanner) (map[string]interface{}, error) {
 		var (
 			id, channelID, msgType, content, attachmentName string
-			isDeleted                                        bool
-			createdAt                                        time.Time
+			isDeleted                                       bool
+			createdAt                                       time.Time
 		)
 		if err := rows.Scan(&id, &channelID, &msgType, &content, &attachmentName, &isDeleted, &createdAt); err != nil {
 			return nil, err
@@ -886,6 +887,35 @@ func (h *DataExportHandler) exportReferrals(ctx context.Context, userID string) 
 			"referred_name":         referredName, // redacted: display name only
 			"referrer_credit_cents": derefInt(creditCents),
 			"created_at":            createdAt.UTC().Format(time.RFC3339),
+		}, nil
+	})
+}
+
+// exportRequestActivity returns the subject's own API hop log. Paths are
+// stored query-stripped; bodies/Authorization/cookies/IP are never persisted.
+func (h *DataExportHandler) exportRequestActivity(ctx context.Context, userID string) (interface{}, bool, error) {
+	return h.queryRows(ctx, `
+		SELECT id::text, request_id, method, path, status, duration_ms, created_at
+		  FROM user_request_activity
+		 WHERE user_id = $1
+		 ORDER BY created_at DESC
+		 LIMIT $2`, userID, func(rows scanner) (map[string]interface{}, error) {
+		var (
+			id, requestID, method, path string
+			status, durationMs          int
+			createdAt                   time.Time
+		)
+		if err := rows.Scan(&id, &requestID, &method, &path, &status, &durationMs, &createdAt); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"id":          id,
+			"request_id":  requestID,
+			"method":      method,
+			"path":        path,
+			"status":      status,
+			"duration_ms": durationMs,
+			"created_at":  createdAt.UTC().Format(time.RFC3339),
 		}, nil
 	})
 }

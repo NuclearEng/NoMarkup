@@ -948,8 +948,8 @@ extension View {
     }
 
     /// Extra list/form footer so the last section sits above the iOS 26 floating tab bar.
-    /// 28pt was not enough — the capsule + home indicator cover ~80pt (SIM-UI tab clip).
-    func brandTabBarClearance(_ height: CGFloat = 80) -> some View {
+    /// 80pt still left Continue / last rows over the Jobs tab icon on Pro Max (SIM-UI 2026-08-22).
+    func brandTabBarClearance(_ height: CGFloat = 112) -> some View {
         #if os(iOS)
         self.safeAreaInset(edge: .bottom, spacing: 0) {
             Color.clear.frame(height: height)
@@ -1495,6 +1495,7 @@ struct BrandCatalogSearchField: View {
             .autocorrectionDisabled()
             .onSubmit(onSubmit)
             .accessibilityLabel(prompt)
+            .modifier(OptionalAccessibilityIdentifier(accessibilityID))
         }
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -1506,7 +1507,6 @@ struct BrandCatalogSearchField: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(BrandTheme.navy)
-        .modifier(OptionalAccessibilityIdentifier(accessibilityID))
     }
 }
 

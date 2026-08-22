@@ -72,6 +72,7 @@ struct OnboardingWizardView: View {
                     actionTitle: "Close",
                     action: { dismiss() }
                 )
+                .accessibilityIdentifier("onboarding.signIn")
             } else if needsSignIn || !auth.isAuthenticated {
                 BrandEmptyState(
                     title: "Sign in required",
@@ -80,8 +81,10 @@ struct OnboardingWizardView: View {
                     actionTitle: "Close",
                     action: { dismiss() }
                 )
+                .accessibilityIdentifier("onboarding.signIn")
             } else if isLoadingProfile && profile == nil {
                 BrandLoadingScreen(kind: .form, accessibilityLabel: "Loading profile…")
+                    .accessibilityIdentifier("onboarding.loading")
             } else if let errorMessage, profile == nil {
                 BrandEmptyState(
                     title: "Couldn’t load profile",
@@ -90,6 +93,7 @@ struct OnboardingWizardView: View {
                     actionTitle: "Try again",
                     action: { Task { await loadProfile() } }
                 )
+                .accessibilityIdentifier("onboarding.error")
             } else {
                 wizardContent
             }
@@ -99,6 +103,7 @@ struct OnboardingWizardView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .brandNavigationBarChrome()
+        .accessibilityIdentifier("onboarding.root")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Not now") {
@@ -106,6 +111,7 @@ struct OnboardingWizardView: View {
                 }
                 .foregroundStyle(BrandTheme.goldBright)
                 .accessibilityHint("Close setup and continue using the app. You can finish later from Account.")
+                .accessibilityIdentifier("onboarding.notNow")
             }
         }
         .navigationDestination(isPresented: $showVerificationCenter) {
@@ -239,6 +245,7 @@ struct OnboardingWizardView: View {
                 .overlay(fieldStroke)
                 .frame(minHeight: 44)
                 .accessibilityLabel("Display name")
+                .accessibilityIdentifier("onboarding.displayName")
             Text("At most 80 characters. Public on bids and chat.")
                 .font(.caption)
                 .foregroundStyle(BrandTheme.textSecondary)
@@ -259,6 +266,7 @@ struct OnboardingWizardView: View {
                 .overlay(fieldStroke)
                 .frame(minHeight: 44)
                 .accessibilityLabel("Phone number")
+                .accessibilityIdentifier("onboarding.phone")
 
             if otpSent {
                 TextField("OTP code", text: $otpCode)
@@ -270,6 +278,7 @@ struct OnboardingWizardView: View {
                     .overlay(fieldStroke)
                     .frame(minHeight: 44)
                     .accessibilityLabel("One-time passcode")
+                    .accessibilityIdentifier("onboarding.otp")
             }
 
             Button {
@@ -287,6 +296,7 @@ struct OnboardingWizardView: View {
             .buttonStyle(.bordered)
             .tint(BrandTheme.accent)
             .disabled(isBusy || phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .accessibilityIdentifier("onboarding.sendOTP")
 
             if otpSent {
                 Button {
@@ -300,6 +310,7 @@ struct OnboardingWizardView: View {
                 .tint(BrandTheme.accent)
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isBusy || otpCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("onboarding.verifyOTP")
             }
 
             Button {
@@ -344,6 +355,7 @@ struct OnboardingWizardView: View {
             .tint(BrandTheme.accent)
             .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .accessibilityHint("Opens the create-property form")
+            .accessibilityIdentifier("onboarding.addProperty")
 
             NavigationLink {
                 PropertiesView()
@@ -532,6 +544,7 @@ struct OnboardingWizardView: View {
         .foregroundStyle(BrandTheme.ctaLabelOnGold)
         .disabled(!enabled || isBusy)
         .accessibilityLabel(title)
+        .accessibilityIdentifier(step == .done ? "onboarding.done" : "onboarding.continue")
     }
 
     private func secondarySkipButton(title: String, action: @escaping () -> Void) -> some View {
@@ -542,6 +555,7 @@ struct OnboardingWizardView: View {
             .frame(minHeight: 44)
             .disabled(isBusy)
             .accessibilityHint("Skip this step. You can complete it later from Account.")
+            .accessibilityIdentifier("onboarding.skip")
     }
 
     private var fieldStroke: some View {

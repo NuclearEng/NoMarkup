@@ -498,6 +498,7 @@ struct ListingDetailView: View {
                     Label("Report listing", systemImage: "flag")
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
+                .accessibilityIdentifier("listingDetail.report")
 
                 Button {
                     showWebSafari = true
@@ -505,9 +506,13 @@ struct ListingDetailView: View {
                     Label("Open on web", systemImage: "safari")
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
+                .accessibilityIdentifier("listingDetail.openWeb")
             }
         }
         .brandListBackground()
+        // Same fold as jobs: floating tab bar covers Report / Open on web
+        // when the sticky bid dock is hidden (unsigned / seller / closed).
+        .brandTabBarClearance()
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if showStickyBidDock(for: listing) {
                 stickyBidDock(for: listing)
@@ -687,6 +692,7 @@ struct ListingDetailView: View {
                     .disabled(isTogglingWatch)
                     .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel(isWatching ? "Remove from watchlist" : "Add to watchlist")
+                    .accessibilityIdentifier("listingDetail.watch")
                     .accessibilityHint(
                         isWatching
                             ? "Stops watching this listing"
@@ -1315,6 +1321,7 @@ struct ListingDetailView: View {
                         .disabled(isPlacingBid || isPostingBond)
                         .buttonStyle(.plain)
                         .accessibilityLabel("Buy now with Apple Pay")
+                        .accessibilityIdentifier("listingDetail.buyNow")
                     }
                 }
             } header: {
@@ -1474,6 +1481,7 @@ struct ListingDetailView: View {
             Text("Goods are forward auctions — enter dollars (for example 95.00), not cents. Bid above the current high to take the lead. Set an optional max bid to auto-defend your lead (proxy bid). First-time bidders may need a refundable bid bond.")
                 .foregroundStyle(BrandTheme.textSecondary)
         }
+        .accessibilityIdentifier("listingDetail.placeBid")
         }
     }
 
@@ -2849,6 +2857,7 @@ private struct ListingReportSheet: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityLabel("Report reason")
+                    .accessibilityIdentifier("listingReport.reason")
                 } header: {
                     Text("Why are you reporting this?").brandSectionHeader()
                 }
@@ -2857,6 +2866,7 @@ private struct ListingReportSheet: View {
                     TextEditor(text: $descriptionText)
                         .frame(minHeight: 120)
                         .accessibilityLabel("Additional details")
+                        .accessibilityIdentifier("listingReport.details")
                 } header: {
                     Text("Details (optional)").brandSectionHeader()
                 } footer: {
@@ -2870,6 +2880,7 @@ private struct ListingReportSheet: View {
                             .font(.footnote)
                             .foregroundStyle(statusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("listingReport.status")
                     }
                 }
 
@@ -2890,6 +2901,7 @@ private struct ListingReportSheet: View {
                     .tint(BrandTheme.accent)
                     .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isSubmitting)
+                    .accessibilityIdentifier("listingReport.submit")
                 }
             }
             .brandListBackground()
@@ -2898,10 +2910,12 @@ private struct ListingReportSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .brandNavigationBarChrome()
+            .accessibilityIdentifier("listingReport.root")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDone() }
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("listingReport.cancel")
                 }
             }
         }

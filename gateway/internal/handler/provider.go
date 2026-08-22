@@ -24,6 +24,7 @@ type ProviderHandler struct {
 	userClient  userv1.UserServiceClient
 	trustClient trustv1.TrustServiceClient
 	db          *pgxpool.Pool
+	planLimits  PlanLimitGuard
 }
 
 // NewProviderHandler creates a new ProviderHandler.
@@ -33,7 +34,12 @@ type ProviderHandler struct {
 // score for the public profile; if it or the score is unavailable the profile
 // still renders without the trust card.
 func NewProviderHandler(userClient userv1.UserServiceClient, trustClient trustv1.TrustServiceClient, db *pgxpool.Pool) *ProviderHandler {
-	return &ProviderHandler{userClient: userClient, trustClient: trustClient, db: db}
+	return &ProviderHandler{
+		userClient:  userClient,
+		trustClient: trustClient,
+		db:          db,
+		planLimits:  newPlanLimitGuard(db),
+	}
 }
 
 type updateProviderRequest struct {
@@ -213,6 +219,11 @@ func (h *ProviderHandler) UpdateCategories(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if code, msg := h.planLimits.denyCategories(r, claims.UserID, len(req.CategoryIDs)); code != 0 {
+		writeError(w, code, msg)
+		return
+	}
+
 	resp, err := h.userClient.UpdateServiceCategories(r.Context(), &userv1.UpdateServiceCategoriesRequest{
 		UserId:      claims.UserID,
 		CategoryIds: req.CategoryIDs,
@@ -245,6 +256,11 @@ func (h *ProviderHandler) UpdatePortfolio(w http.ResponseWriter, r *http.Request
 
 	var req updatePortfolioRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if code, msg := h.planLimits.denyPortfolio(r, claims.UserID, len(req.Images)); code != 0 {
+		writeError(w, code, msg)
 		return
 	}
 

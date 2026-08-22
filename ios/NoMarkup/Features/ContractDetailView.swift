@@ -1089,6 +1089,7 @@ struct ContractDetailView: View {
                     ) {
                         showDisputeSheet = true
                     }
+                    .accessibilityIdentifier("contract.dispute")
                 }
 
                 if status == "completed" {
@@ -1195,6 +1196,7 @@ struct ContractDetailView: View {
                     } else {
                         Label("Check in at job site", systemImage: "mappin.and.ellipse")
                             .frame(maxWidth: .infinity, minHeight: 44)
+                            .accessibilityIdentifier("contract.checkIn")
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -3407,6 +3409,7 @@ private struct OpenDisputeSheet: View {
             }
             .brandListBackground()
             .navigationTitle("Open dispute")
+            .accessibilityIdentifier("contract.dispute.root")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

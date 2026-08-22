@@ -166,4 +166,169 @@ final class ClientActionLog: ObservableObject, @unchecked Sendable {
             .map { "\($0.method) \($0.path) \($0.status) \($0.requestID)" }
             .joined(separator: "\n")
     }
+
+    // MARK: Server activity merge (web request-log parity)
+
+    /// One row from `GET /api/v1/me/activity`. No bodies, tokens, or query strings.
+    struct MeActivityItem: Equatable, Sendable {
+        var requestId: String
+        var method: String
+        var path: String
+        var status: Int
+        var durationMs: Int
+        var createdAt: String
+    }
+
+    /// Merged local + server hop for Request log. `source` is local | server | both.
+    struct MergedActionEvent: Identifiable, Equatable, Sendable {
+        let id: String
+        let at: Date
+        let kind: String
+        let method: String
+        let path: String
+        let status: Int
+        let durationMs: Int
+        let requestID: String
+        let outcome: String
+        let source: String
+
+        var statusLabel: String {
+            if kind == "ui" || kind == "screen" { return kind }
+            if status == 0 { return "no response" }
+            return "\(status)"
+        }
+    }
+
+    /// Strip query/hash from a path the way the gateway sanitizes on read.
+    static func sanitizedActivityPath(_ raw: String) -> String {
+        var path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if path.isEmpty { return "/" }
+        if let idx = path.firstIndex(where: { $0 == "?" || $0 == "#" }) {
+            path = String(path[..<idx]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return path.isEmpty ? "/" : path
+    }
+
+    /// Flexible decode of `{events|items|activity|rows}` or a bare array.
+    static func parseMeActivityPayload(_ data: Data) -> [MeActivityItem] {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        return parseMeActivityJSON(obj)
+    }
+
+    static func parseMeActivityJSON(_ raw: Any?) -> [MeActivityItem] {
+        if let arr = raw as? [Any] {
+            return arr.compactMap { parseMeActivityRow($0) }
+        }
+        guard let dict = raw as? [String: Any] else { return [] }
+        for key in ["events", "items", "activity", "rows"] {
+            if dict[key] != nil {
+                return parseMeActivityJSON(dict[key])
+            }
+        }
+        return []
+    }
+
+    private static func parseMeActivityRow(_ raw: Any) -> MeActivityItem? {
+        guard let dict = raw as? [String: Any] else { return nil }
+        func str(_ keys: String...) -> String {
+            for key in keys {
+                if let value = dict[key] as? String { return value }
+            }
+            return ""
+        }
+        func int(_ keys: String...) -> Int {
+            for key in keys {
+                if let value = dict[key] as? Int { return value }
+                if let value = dict[key] as? NSNumber { return value.intValue }
+                if let value = dict[key] as? String, let parsed = Int(value) { return parsed }
+            }
+            return 0
+        }
+        return MeActivityItem(
+            requestId: str("request_id", "requestId"),
+            method: str("method").uppercased(),
+            path: sanitizedActivityPath(str("path")),
+            status: int("status"),
+            durationMs: int("duration_ms", "durationMs"),
+            createdAt: str("created_at", "at")
+        )
+    }
+
+    static func parseActivityDate(_ raw: String) -> Date {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return Date.distantPast }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: trimmed) { return date }
+        let basic = ISO8601DateFormatter()
+        basic.formatOptions = [.withInternetDateTime]
+        return basic.date(from: trimmed) ?? Date.distantPast
+    }
+
+    /// Dedupes on `requestID` when present (web `mergeActivity`). Local wins; server fills gaps.
+    static func mergeActivity(
+        local: [ClientActionEvent],
+        server: [MeActivityItem]
+    ) -> [MergedActionEvent] {
+        var byId: [String: MergedActionEvent] = [:]
+        var unmatched: [MergedActionEvent] = []
+
+        for event in local {
+            let row = MergedActionEvent(
+                id: event.id.uuidString,
+                at: event.at,
+                kind: event.kind,
+                method: event.method,
+                path: event.path,
+                status: event.status,
+                durationMs: event.durationMs,
+                requestID: event.requestID,
+                outcome: event.outcome,
+                source: "local"
+            )
+            if !event.requestID.isEmpty {
+                byId[event.requestID] = row
+            } else {
+                unmatched.append(row)
+            }
+        }
+
+        for item in server {
+            if !item.requestId.isEmpty, var existing = byId[item.requestId] {
+                existing = MergedActionEvent(
+                    id: existing.id,
+                    at: existing.at,
+                    kind: existing.kind,
+                    method: existing.method.isEmpty ? item.method : existing.method,
+                    path: existing.path.isEmpty ? item.path : existing.path,
+                    status: existing.status == 0 && item.status > 0 ? item.status : existing.status,
+                    durationMs: existing.durationMs == 0 && item.durationMs > 0 ? item.durationMs : existing.durationMs,
+                    requestID: existing.requestID,
+                    outcome: existing.outcome,
+                    source: "both"
+                )
+                byId[item.requestId] = existing
+                continue
+            }
+            unmatched.append(
+                MergedActionEvent(
+                    id: "server-\(item.requestId)-\(item.createdAt)-\(item.path)",
+                    at: parseActivityDate(item.createdAt),
+                    kind: "http",
+                    method: item.method,
+                    path: item.path,
+                    status: item.status,
+                    durationMs: item.durationMs,
+                    requestID: item.requestId,
+                    outcome: outcome(status: item.status, error: nil),
+                    source: "server"
+                )
+            )
+        }
+
+        return (Array(byId.values) + unmatched).sorted { lhs, rhs in
+            if lhs.at == rhs.at { return false }
+            return lhs.at > rhs.at
+        }
+    }
 }

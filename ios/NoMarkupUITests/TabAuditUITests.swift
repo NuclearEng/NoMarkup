@@ -120,7 +120,7 @@ final class TabAuditUITests: XCTestCase {
         let mState = waitForCatalogSettle(
             loadingID: "marketplace.loading",
             settledIDs: ["marketplace.list", "marketplace.empty", "marketplace.error"],
-            emptyTitles: ["No listings nearby", "Couldn’t load listings", "Couldn't load listings"]
+            emptyTitles: ["No listings nearby", "No matching listings", "Couldn’t load listings", "Couldn't load listings"]
         )
         snap("20-marketplace-list")
         findings.append("Marketplace settle: \(mState)")
@@ -172,7 +172,7 @@ final class TabAuditUITests: XCTestCase {
         let jState = waitForCatalogSettle(
             loadingID: "jobs.loading",
             settledIDs: ["jobs.list", "jobs.empty", "jobs.error"],
-            emptyTitles: ["No open reverse auctions", "Couldn’t load jobs", "Couldn't load jobs"]
+            emptyTitles: ["No open reverse auctions", "No matching jobs", "Couldn’t load jobs", "Couldn't load jobs"]
         )
         snap("30-jobs-list")
         findings.append("Jobs settle: \(jState)")
@@ -251,7 +251,7 @@ final class TabAuditUITests: XCTestCase {
         let pj = waitForCatalogSettle(
             loadingID: "jobs.loading",
             settledIDs: ["jobs.list", "jobs.empty", "jobs.error"],
-            emptyTitles: ["No open reverse auctions", "Couldn’t load jobs", "Couldn't load jobs"]
+            emptyTitles: ["No open reverse auctions", "No matching jobs", "Couldn’t load jobs", "Couldn't load jobs"]
         )
         snap("61-provider-jobs-list")
         findings.append("Provider jobs settle: \(pj)")
@@ -483,9 +483,13 @@ final class TabAuditUITests: XCTestCase {
                     settle(0.2)
                 }
             }
+            if byID("ageGate.checkError").exists {
+                let retry = byID("ageGate.retry")
+                if retry.exists { _ = safeTap(retry) }
+            }
+            completeAgeGateIfPresent()
+            dismissNotificationPrePrompt()
             if tabView.exists || app.tabBars.firstMatch.exists {
-                completeAgeGateIfPresent()
-                dismissNotificationPrePrompt()
                 return true
             }
             settle(0.4)
@@ -498,11 +502,21 @@ final class TabAuditUITests: XCTestCase {
             let submit = byID("login.submit")
             clearAndType(emailField, text: email ?? customerEmail, secure: false)
             clearAndType(passwordField, text: password, secure: true)
-            submit.tap()
-            if tabView.waitForExistence(timeout: 25) {
+            let go = app.keyboards.buttons["Go"]
+            if go.waitForExistence(timeout: 1.0) {
+                go.tap()
+            } else if !safeTap(submit) {
+                let previous = continueAfterFailure
+                continueAfterFailure = true
+                submit.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                continueAfterFailure = previous
+            }
+            let inner = Date().addingTimeInterval(25)
+            while Date() < inner {
                 completeAgeGateIfPresent()
                 dismissNotificationPrePrompt()
-                return true
+                if tabView.exists || app.tabBars.firstMatch.exists { return true }
+                settle(0.4)
             }
         }
         return tabView.exists || app.tabBars.firstMatch.exists

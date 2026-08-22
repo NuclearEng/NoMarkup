@@ -278,6 +278,7 @@ struct JobsMapView: View {
             }
         }
         .brandScreenBackground()
+        .accessibilityIdentifier("jobs.map.root")
     }
 
     /// Coordinate pins after optional client-side min starting bid filter.

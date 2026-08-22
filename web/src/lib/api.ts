@@ -322,6 +322,65 @@ export function __resetIdempotencyKeysForTests(): void {
   idempotencyKeyByOperation.clear();
 }
 
+/** One row from GET /api/v1/me/activity (snake_case or camelCase). */
+export type MeActivityItem = {
+  requestId: string;
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number;
+  at: string;
+};
+
+function asActivityString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function asActivityNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function mapMeActivityRow(row: Record<string, unknown>): MeActivityItem {
+  return {
+    requestId: asActivityString(row['request_id']) || asActivityString(row['requestId']),
+    method: asActivityString(row['method']).toUpperCase(),
+    path: asActivityString(row['path']),
+    status: asActivityNumber(row['status']),
+    durationMs: asActivityNumber(row['duration_ms']) || asActivityNumber(row['durationMs']),
+    at: asActivityString(row['created_at']) || asActivityString(row['at']),
+  };
+}
+
+export function parseMeActivityPayload(raw: unknown): MeActivityItem[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null)
+      .map(mapMeActivityRow);
+  }
+  if (typeof raw === 'object' && raw !== null) {
+    const obj = raw as Record<string, unknown>;
+    const nested = obj['items'] ?? obj['activity'] ?? obj['events'] ?? obj['rows'];
+    if (Array.isArray(nested)) return parseMeActivityPayload(nested);
+  }
+  return [];
+}
+
+/**
+ * Server-side activity log for the signed-in user. 401/404 (endpoint not
+ * shipped yet) resolve to [] so the request-log page can stay on local hops.
+ */
+export async function fetchMeActivity(): Promise<MeActivityItem[]> {
+  try {
+    const raw = await api.get<unknown>('/api/v1/me/activity');
+    return parseMeActivityPayload(raw);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 401 || err.status === 404)) {
+      return [];
+    }
+    throw err;
+  }
+}
+
 // downloadAuthenticated fetches a protected file endpoint with the current
 // bearer token and triggers a browser download. Required because a plain
 // <a href> can't attach the Authorization header — the gateway middleware

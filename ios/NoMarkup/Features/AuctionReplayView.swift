@@ -55,6 +55,7 @@ struct AuctionReplayView: View {
                     rows: 6,
                     accessibilityLabel: "Loading auction replay…"
                 )
+                .accessibilityIdentifier("auctionReplay.loading")
             case .failed(let message):
                 BrandEmptyState(
                     title: "Couldn’t load replay",
@@ -64,6 +65,7 @@ struct AuctionReplayView: View {
                 ) {
                     Task { await load() }
                 }
+                .accessibilityIdentifier("auctionReplay.error")
             case .empty:
                 BrandEmptyState(
                     title: emptyTitle,
@@ -73,6 +75,7 @@ struct AuctionReplayView: View {
                 ) {
                     Task { await load() }
                 }
+                .accessibilityIdentifier("auctionReplay.empty")
             case .loaded:
                 replayList
             }

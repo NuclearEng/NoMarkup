@@ -204,7 +204,7 @@ struct MyOrdersView: View {
                     .accessibilityLabel(next)
             }
 
-            if order.needsPayment {
+            if order.needsPaymentAsBuyer(userId: currentUserID) {
                 if payingOrderID == order.id {
                     ProgressView()
                         .frame(maxWidth: .infinity, minHeight: 44)
@@ -219,6 +219,7 @@ struct MyOrdersView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Pay with Apple Pay")
                     .accessibilityHint("Opens Apple Pay or card checkout for this order")
+                    .accessibilityIdentifier("orders.pay")
                 }
             }
 
@@ -239,6 +240,7 @@ struct MyOrdersView: View {
                 .tint(BrandTheme.success)
                 .disabled(isBusy)
                 .accessibilityHint("Confirms you picked up the item; mutual confirm releases escrow on the server")
+                .accessibilityIdentifier("orders.confirmPickup")
             }
 
             if showSellerConfirm {

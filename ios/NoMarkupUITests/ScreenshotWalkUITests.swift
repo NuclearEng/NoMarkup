@@ -217,66 +217,60 @@ final class ScreenshotWalkUITests: XCTestCase {
         return true
     }
 
-    /// Bidirectional lazy-List search: swipe up first, then fall back to swiping down.
-    /// Cap swipes tightly so missing Account rows soft-skip instead of multi-minute hangs.
+    /// Drag inside the Account list (mid-screen), never `app.swipeUp()` — that
+    /// flings the whole window and looks like idle scrolling.
+    private func swipeAccountList(up: Bool) {
+        let startY: CGFloat = up ? 0.58 : 0.30
+        let endY: CGFloat = up ? 0.30 : 0.58
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY))
+        start.press(forDuration: 0.05, thenDragTo: end)
+        settle(0.08)
+    }
+
+    /// Tap Y for `safeTap` (25% from top on tall rows) sits above the tab capsule.
+    private func tapPointClearsTabBar(_ element: XCUIElement) -> Bool {
+        guard isOnScreen(element) else { return false }
+        let previous = continueAfterFailure
+        continueAfterFailure = true
+        defer { continueAfterFailure = previous }
+        let f = element.frame
+        guard f.height.isFinite, f.minY.isFinite else { return false }
+        let tapY = f.height > 44 ? (f.minY + f.height * 0.25) : f.midY
+        return tapY < app.frame.maxY - 120
+    }
+
+    /// Bidirectional lazy-List search using list-local drags.
+    /// Rewind toward the top first so Session-section rows are not buried, then
+    /// walk down. Account has 50+ rows — callers must pass 24+ for the bottom.
     @discardableResult
-    private func scrollTo(_ element: XCUIElement, maxSwipes: Int = 8) -> Bool {
+    private func scrollTo(_ element: XCUIElement, maxSwipes: Int = 6) -> Bool {
         if isOnScreen(element) { return true }
-        let up = min(maxSwipes, 10)
-        for _ in 0..<up {
-            app.swipeUp()
-            settle(0.12)
+        for _ in 0..<maxSwipes {
             if isOnScreen(element) { return true }
+            swipeAccountList(up: false)
         }
-        let down = min(maxSwipes, 8)
-        for _ in 0..<down {
-            app.swipeDown()
-            settle(0.12)
+        for _ in 0..<maxSwipes {
             if isOnScreen(element) { return true }
+            swipeAccountList(up: true)
         }
         return isOnScreen(element)
     }
 
-    /// Scroll until `element` is on-screen AND its bottom sits above the floating tab bar.
+    /// Ready to tap: on-screen and the tap point is above the floating tab bar.
+    /// Do **not** require the whole cell `maxY` above the tab — XCTest frames for
+    /// SwiftUI rows are often tall, which used to cause endless swipe loops.
     @discardableResult
-    private func scrollClearOfTabBar(_ element: XCUIElement, maxSwipes: Int = 10) -> Bool {
-        func clearsTabBar() -> Bool {
-            guard isOnScreen(element) else { return false }
-            let previous = continueAfterFailure
-            continueAfterFailure = true
-            defer { continueAfterFailure = previous }
-            let f = element.frame
-            guard f.maxY.isFinite else { return false }
-            return f.maxY < app.frame.maxY - 130
-        }
-
+    private func scrollClearOfTabBar(_ element: XCUIElement, maxSwipes: Int = 6) -> Bool {
+        if tapPointClearsTabBar(element) { return true }
         _ = scrollTo(element, maxSwipes: maxSwipes)
-        if clearsTabBar() { return true }
-
-        for _ in 0..<6 {
+        if tapPointClearsTabBar(element) { return true }
+        for _ in 0..<3 {
             guard element.exists else { break }
-            let previous = continueAfterFailure
-            continueAfterFailure = true
-            let f = element.frame
-            continueAfterFailure = previous
-            if isOnScreen(element), f.maxY >= app.frame.maxY - 130 {
-                app.swipeUp()
-                settle(0.12)
-                if clearsTabBar() { return true }
-                continue
-            }
-            if !isOnScreen(element) {
-                app.swipeUp()
-                settle(0.12)
-                if clearsTabBar() { return true }
-            }
+            swipeAccountList(up: true)
+            if tapPointClearsTabBar(element) { return true }
         }
-        for _ in 0..<4 {
-            app.swipeDown()
-            settle(0.12)
-            if clearsTabBar() { return true }
-        }
-        return clearsTabBar()
+        return tapPointClearsTabBar(element)
     }
 
     /// Safari / share / confirm sheets that swallow the root tab bar.
@@ -667,17 +661,76 @@ final class ScreenshotWalkUITests: XCTestCase {
         clearAndType(passwordField, text: password, verify: false)
 
         XCTAssertTrue(submit.exists, "login.submit not found")
-        submit.tap()
+        submitLoginForm(submit: submit)
 
+        let gatePrefix = screenshotPrefix ?? String(email.prefix(while: { $0 != "@" }))
+        let signedIn = waitForSignedInAfterLogin(timeout: 30, ageGateSnapName: "\(gatePrefix)-age-gate")
+        if !signedIn {
+            if let prefix = screenshotPrefix {
+                snap("\(prefix)-login-failed")
+            } else {
+                snap("login-failed")
+            }
+            if byID("login.error").exists {
+                NSLog("UITest login.error: %@", byID("login.error").label)
+            }
+        }
         XCTAssertTrue(
-            byID("root.tabview").waitForExistence(timeout: 30),
+            signedIn,
             "root.tabview should appear after signing in as \(email)"
         )
-        settle(1.5)
-        // First-login gates for accounts without stored DOB, then the pre-prompt.
-        let gatePrefix = screenshotPrefix ?? String(email.prefix(while: { $0 != "@" }))
-        completeAgeGateIfPresent(snapName: "\(gatePrefix)-age-gate")
+        settle(0.8)
         dismissNotificationPrePrompt()
+    }
+
+    /// Submit without `XCUIElement.tap()` scroll-to-visible. Software keyboard
+    /// covers Sign in; product already wires SecureField `.submitLabel(.go)` to
+    /// `auth.login()`. Falling back to `element.tap()` hits the wrong point
+    /// (SIM-TEST login flake: hit {201,341} after scroll, stayed on Sign in).
+    private func submitLoginForm(submit: XCUIElement) {
+        let go = app.keyboards.buttons["Go"]
+        if go.waitForExistence(timeout: 1.2) {
+            go.tap()
+            settle(0.4)
+            return
+        }
+        if app.keyboards.firstMatch.exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+            settle(0.35)
+        }
+        if safeTap(submit) { return }
+        let previous = continueAfterFailure
+        continueAfterFailure = true
+        submit.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        continueAfterFailure = previous
+        settle(0.4)
+    }
+
+    /// Tab chrome can be AX-hidden while `ageGate.*` is `.isModal`. Complete
+    /// the gate (and retry overlay) before asserting `root.tabview`.
+    @discardableResult
+    private func waitForSignedInAfterLogin(
+        timeout: TimeInterval,
+        ageGateSnapName: String? = nil
+    ) -> Bool {
+        let tabView = byID("root.tabview")
+        let deadline = Date().addingTimeInterval(timeout)
+        var snappedGate = false
+        while Date() < deadline {
+            if byID("ageGate.checkError").exists {
+                let retry = byID("ageGate.retry")
+                if retry.exists { _ = safeTap(retry) }
+            }
+            if completeAgeGateIfPresent(snapName: snappedGate ? nil : ageGateSnapName) {
+                snappedGate = true
+            }
+            _ = dismissNotificationPrePrompt()
+            if tabView.exists || app.tabBars.firstMatch.exists {
+                return true
+            }
+            settle(0.4)
+        }
+        return tabView.exists || app.tabBars.firstMatch.exists
     }
 
     /// Open the first NAVIGABLE row of the current list: decorative cells (intro
@@ -705,6 +758,7 @@ final class ScreenshotWalkUITests: XCTestCase {
     /// Keep in sync with every `accessibilityIdentifier("account.row.*")` in AccountView.
     private static let accountRowIDs: [String: String] = [
         "Profile settings": "account.row.profile",
+        "Request log": "account.row.requestLog",
         "Security": "account.row.security",
         "Verify email & phone": "account.row.verification",
         "Post a job": "account.row.postJob",
@@ -769,6 +823,7 @@ final class ScreenshotWalkUITests: XCTestCase {
         ("account.row.instantOffers", "row-instantOffers"),
         ("account.row.security", "row-security"),
         ("account.row.verification", "row-verification"),
+        ("account.row.requestLog", "row-requestLog"),
         ("account.row.postJob", "row-postJob"),
         ("account.row.drafts", "row-drafts"),
         ("account.row.sell", "row-sell"),
@@ -815,7 +870,6 @@ final class ScreenshotWalkUITests: XCTestCase {
         ("account.row.support", "row-support"),
         ("account.row.widgets", "row-widgets"),
         ("account.row.deleteAccount", "row-deleteAccount"),
-        ("account.row.requestLog", "row-requestLog"),
         ("account.row.planLimits", "row-planLimits"),
         ("account.row.featureFlags", "row-featureFlags"),
         ("account.row.admin", "row-admin"),
@@ -892,7 +946,7 @@ final class ScreenshotWalkUITests: XCTestCase {
         popToRoot("Account")
         settle(0.3)
         let row = byID(rowID)
-        if scrollClearOfTabBar(row, maxSwipes: 14) {
+        if scrollClearOfTabBar(row, maxSwipes: 24) {
             snap(shotName)
             noteWF(rowID, "PASS", "visible on Account (info row)")
         } else {
@@ -909,16 +963,13 @@ final class ScreenshotWalkUITests: XCTestCase {
 
     /// Push an Account NavigationLink and stay on the destination (caller pops).
     @discardableResult
-    private func openAccountRowStay(_ rowID: String, maxSwipes: Int = 14) -> Bool {
+    private func openAccountRowStay(_ rowID: String, maxSwipes: Int = 24) -> Bool {
         popToRoot("Account")
         settle(0.3)
         let row = byID(rowID)
         if scrollClearOfTabBar(row, maxSwipes: maxSwipes), safeTap(row) { return true }
-        for _ in 0..<4 {
-            app.swipeUp()
-            settle(0.08)
-        }
-        return scrollClearOfTabBar(row, maxSwipes: 6) && safeTap(row)
+        swipeAccountList(up: true)
+        return scrollClearOfTabBar(row, maxSwipes: 3) && safeTap(row)
     }
 
     private func visibleCopyContains(_ phrases: [String]) -> String? {
@@ -963,7 +1014,9 @@ final class ScreenshotWalkUITests: XCTestCase {
         }
         settle(2.0)
         snap("\(shotPrefix)-inner-profile-load")
-        let nameField = app.textFields["Display name"]
+        let nameField = byID("profile.displayName").exists
+            ? byID("profile.displayName")
+            : app.textFields["Display name"]
         guard nameField.waitForExistence(timeout: 8) else {
             recordSkip("\(shotPrefix)-inner-profile", "Display name field missing")
             noteWF("profile", "GAP", "\(shotPrefix) Display name field missing")
@@ -1391,14 +1444,13 @@ final class ScreenshotWalkUITests: XCTestCase {
         settle(0.35)
         let row = byID(rowID)
         var opened = false
-        if scrollClearOfTabBar(row, maxSwipes: 10), safeTap(row) {
+        // Account has 50+ rows. A cap of 6 never reaches Subscriptions /
+        // request log / legal / admin from the top (test07 skipped them).
+        if scrollClearOfTabBar(row, maxSwipes: 24), safeTap(row) {
             opened = true
         } else {
-            for _ in 0..<5 {
-                app.swipeUp()
-                settle(0.08)
-            }
-            if scrollClearOfTabBar(row, maxSwipes: 6), safeTap(row) {
+            for _ in 0..<8 { swipeAccountList(up: false) }
+            if scrollClearOfTabBar(row, maxSwipes: 28), safeTap(row) {
                 opened = true
             }
         }
@@ -1659,7 +1711,7 @@ final class ScreenshotWalkUITests: XCTestCase {
         let marketplaceState = waitForCatalogSettle(
             loadingID: "marketplace.loading",
             settledIDs: ["marketplace.list", "marketplace.empty", "marketplace.error"],
-            emptyTitles: ["No listings nearby", "Couldn’t load listings", "Couldn't load listings"]
+            emptyTitles: ["No listings nearby", "No matching listings", "Couldn’t load listings", "Couldn't load listings"]
         )
         snap("marketplace-list")
         if marketplaceState == "timeout" {
@@ -1724,6 +1776,7 @@ final class ScreenshotWalkUITests: XCTestCase {
             settledIDs: ["jobs.list", "jobs.empty", "jobs.error"],
             emptyTitles: [
                 "No open reverse auctions",
+                "No matching jobs",
                 "Couldn’t load jobs",
                 "Couldn't load jobs",
             ]
@@ -2027,12 +2080,12 @@ final class ScreenshotWalkUITests: XCTestCase {
         popToRoot("Account")
         settle(1.2)
         snap("admin-account-root-top")
-        app.swipeUp()
+        swipeAccountList(up: true)
         settle(0.4)
-        app.swipeUp()
+        swipeAccountList(up: true)
         settle(0.4)
         snap("admin-account-root-mid")
-        for _ in 0..<4 { app.swipeUp(); settle(0.3) }
+        for _ in 0..<4 { swipeAccountList(up: true); settle(0.3) }
         snap("admin-account-root-bottom")
 
         // Server-flag surface an admin would care about (read-only on iOS).
@@ -2040,16 +2093,23 @@ final class ScreenshotWalkUITests: XCTestCase {
 
         // Admin console (hasAdminRole gate) — open root + switch a few tabs.
         // Hard requirement: must not crash (stack overflow historically hit here).
+        // Subscriptions sits near list bottom; jump there then scan (scrollTo
+        // upward-first from the top never reached account.row.admin).
         popToRoot("Account")
         settle(0.5)
         let adminRow = byID("account.row.admin")
         var openedAdmin = false
-        if scrollTo(adminRow, maxSwipes: 14), safeTap(adminRow) {
+        if scrollClearOfTabBar(adminRow, maxSwipes: 16), safeTap(adminRow) {
             openedAdmin = true
         } else {
-            let byLabel = byLabel("Admin console")
-            if scrollTo(byLabel, maxSwipes: 10), safeTap(byLabel) {
+            for _ in 0..<12 { swipeAccountList(up: true) }
+            if scrollClearOfTabBar(adminRow, maxSwipes: 10), safeTap(adminRow) {
                 openedAdmin = true
+            } else {
+                let byLabel = byLabel("Admin console")
+                if scrollClearOfTabBar(byLabel, maxSwipes: 10), safeTap(byLabel) {
+                    openedAdmin = true
+                }
             }
         }
         XCTAssertTrue(
@@ -2123,6 +2183,32 @@ final class ScreenshotWalkUITests: XCTestCase {
             "tab shell should remain (or recover) after Account sweep"
         )
         snap("cust-sweep-account-still-alive")
+        signOutIfNeeded()
+    }
+
+    /// Short visible walk: open a handful of Account destinations by id.
+    /// Proves taps happen (not list-fling loops). Full matrix is test06.
+    func test09AccountRowTapSmoke() throws {
+        signOutIfNeeded()
+        login(email: customerEmail, screenshotPrefix: "tap-smoke")
+        popToRoot("Account")
+        settle(0.8)
+        snap("tap-smoke-account-root")
+        let ids = [
+            "account.row.profile",
+            "account.row.security",
+            "account.row.paymentMethods",
+            "account.row.orders",
+            "account.row.planLimits",
+            "account.row.requestLog",
+        ]
+        for id in ids {
+            let short = String(id.split(separator: ".").last ?? Substring(id))
+            visitAccountRowByID(id, shotName: "tap-smoke-\(short)")
+        }
+        XCTAssertTrue(app.state == .runningForeground, "app crashed during Account tap smoke")
+        popToRoot("Account")
+        snap("tap-smoke-still-alive")
         signOutIfNeeded()
     }
 

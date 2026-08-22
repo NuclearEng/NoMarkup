@@ -205,16 +205,22 @@ struct PostJobView: View {
                         Text("Fix to continue").brandSectionHeader()
                     }
                 }
-
-                Section {
-                    wizardNavigationButtons
-                }
             }
             .brandListBackground()
-            .brandTabBarClearance()
             .scrollDismissesKeyboard(.interactively)
         }
         .background(BrandTheme.navy.ignoresSafeArea())
+        // Pin Continue / Submit above the iOS 26 floating tab capsule (SIM-UI 2026-08-22).
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 10) {
+                wizardNavigationButtons
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 112)
+            .frame(maxWidth: .infinity)
+            .background(BrandTheme.navy)
+        }
     }
 
     // MARK: Step 1 — Basics

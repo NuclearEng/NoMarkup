@@ -226,6 +226,17 @@ struct AccountView: View {
                     .accessibilityHint("Resend email verification and complete phone OTP")
                     .accessibilityIdentifier("account.row.verification")
 
+                    NavigationLink {
+                        LazyView {
+                            ClientActionLogView()
+                        }
+                    } label: {
+                        Label("Request log", systemImage: "list.clipboard")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityHint("Shows recent API calls from this device with status, duration, and request id.")
+                    .accessibilityIdentifier("account.row.requestLog")
+
                     Button("Sign out", role: .destructive) {
                         confirmSignOut = true
                     }
@@ -841,17 +852,6 @@ struct AccountView: View {
                 }
 
                 Section {
-                    NavigationLink {
-                        LazyView {
-                            ClientActionLogView()
-                        }
-                    } label: {
-                        Label("Request log", systemImage: "list.clipboard")
-                    }
-                    .frame(minHeight: 44)
-                    .accessibilityHint("Shows recent API calls from this device with status, duration, and request id.")
-                    .accessibilityIdentifier("account.row.requestLog")
-
                     NavigationLink {
                         LazyView {
                             PlanLimitsView()

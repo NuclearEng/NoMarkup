@@ -35,8 +35,12 @@ struct JobsView: View {
     /// Empty = any; otherwise gateway values: flexible | specific_date | date_range.
     @State private var filterScheduleType = ""
     @State private var showBrowseFilters = false
-    /// Mine empty copy is role-specific — providers do not post this list.
+    /// Mine empty copy is role-specific — `/jobs/mine` is the customer owner list.
+    /// Dual-role users keep the customer empty (they can post). Provider-only
+    /// users get a browse CTA instead of “Post a job”.
     @State private var viewerHasProviderRole = false
+    @State private var viewerHasCustomerRole = false
+    @State private var showPostJob = false
 
     private let scheduleFilterOptions: [(id: String, label: String)] = [
         ("", "Any schedule"),
@@ -171,10 +175,28 @@ struct JobsView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showPostJob) {
+                NavigationStack {
+                    PostJobView()
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close") { showPostJob = false }
+                                    .frame(minHeight: 44)
+                                    .accessibilityIdentifier("postJob.close")
+                            }
+                        }
+                }
+                .environmentObject(auth)
+                .tint(BrandTheme.accent)
+            }
     }
 
     private var hasActiveBrowseFilters: Bool {
         !filterCategoryId.isEmpty || minStartingBidCents != nil || !filterScheduleType.isEmpty
+    }
+
+    private var hasBrowseSearchQuery: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var browseFiltersBar: some View {
@@ -234,6 +256,7 @@ struct JobsView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(BrandTheme.navyElevated)
+        .accessibilityIdentifier("jobs.filters.bar")
     }
 
     @ViewBuilder
@@ -265,9 +288,16 @@ struct JobsView: View {
             .accessibilityIdentifier("jobs.error")
         } else if jobs.isEmpty, pagination?.resolvedHasNext != true {
             BrandEmptyState(
-                title: "No open reverse auctions",
+                title: hasBrowseSearchQuery ? "No matching jobs" : "No open reverse auctions",
                 systemImage: "wrench.and.screwdriver",
-                message: "When customers post work, qualified providers compete here on price. Pull to refresh or clear search."
+                message: hasBrowseSearchQuery
+                    ? "Nothing matches “\(searchText.trimmingCharacters(in: .whitespacesAndNewlines))”. Clear search or post a job."
+                    : "When customers post work, qualified providers compete here on price. Pull to refresh, or post a job and watch providers bid down.",
+                actionTitle: "Post a job",
+                action: {
+                    BrandHaptics.selection()
+                    showPostJob = true
+                }
             )
             .accessibilityIdentifier("jobs.empty")
         } else {
@@ -342,6 +372,7 @@ struct JobsView: View {
             ) {
                 auth.signOut()
             }
+            .accessibilityIdentifier("jobs.mine.empty")
         } else if needsSignIn {
             BrandEmptyState(
                 title: "Sign in required",
@@ -351,8 +382,10 @@ struct JobsView: View {
             ) {
                 auth.signOut()
             }
+            .accessibilityIdentifier("jobs.mine.empty")
         } else if isLoading && myJobs.isEmpty {
             BrandLoadingScreen(kind: .catalog, rows: 5, accessibilityLabel: "Loading your jobs…")
+                .accessibilityIdentifier("jobs.loading")
         } else if let errorMessage, myJobs.isEmpty {
             BrandEmptyState(
                 title: "Couldn’t load your jobs",
@@ -362,25 +395,9 @@ struct JobsView: View {
             ) {
                 Task { await load(reset: true) }
             }
+            .accessibilityIdentifier("jobs.error")
         } else if myJobs.isEmpty {
-            if viewerHasProviderRole {
-                BrandEmptyState(
-                    title: "No awarded work",
-                    systemImage: "briefcase",
-                    message: "Awarded and in-progress jobs show up here. Browse the open floor to bid on live reverse auctions.",
-                    actionTitle: "Browse the open floor"
-                ) {
-                    segment = .browse
-                }
-                .accessibilityIdentifier("jobs.mine.empty")
-            } else {
-                BrandEmptyState(
-                    title: "No jobs yet",
-                    systemImage: "tray",
-                    message: "Jobs you post as a customer show up here. Providers bid down until the market sets the price. Pull to refresh after posting on the website."
-                )
-                .accessibilityIdentifier("jobs.mine.empty")
-            }
+            mineEmptyState
         } else {
             List {
                 Section {
@@ -414,6 +431,37 @@ struct JobsView: View {
                 }
             }
             .brandListBackground()
+            .brandTabBarClearance()
+            .accessibilityIdentifier("jobs.list")
+        }
+    }
+
+    /// Mine is `GET /jobs/mine` (jobs this user posted). Dual-role keeps the
+    /// customer empty + Post CTA. Provider-only users cannot post this list.
+    @ViewBuilder
+    private var mineEmptyState: some View {
+        if viewerHasProviderRole && !viewerHasCustomerRole {
+            BrandEmptyState(
+                title: "No awarded work",
+                systemImage: "briefcase",
+                message: "This list is jobs you post as a customer. Bid on the open floor, or enable customer in Profile to post.",
+                actionTitle: "Browse the open floor"
+            ) {
+                segment = .browse
+            }
+            .accessibilityIdentifier("jobs.mine.empty")
+        } else {
+            BrandEmptyState(
+                title: "No jobs yet",
+                systemImage: "tray",
+                message: "Jobs you post as a customer show up here. Providers bid down until the market sets the price.",
+                actionTitle: "Post a job",
+                action: {
+                    BrandHaptics.selection()
+                    showPostJob = true
+                }
+            )
+            .accessibilityIdentifier("jobs.mine.empty")
         }
     }
 
@@ -527,6 +575,7 @@ struct JobsView: View {
                 if reset, !auth.isScaffoldSession {
                     if let me = try? await APIClient.shared.fetchMe() {
                         viewerHasProviderRole = me.hasProviderRole
+                        viewerHasCustomerRole = me.hasCustomerRole
                     }
                 }
                 let response = try await APIClient.shared.fetchMyJobs(page: nextPage, pageSize: pageSize)

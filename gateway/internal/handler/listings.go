@@ -276,6 +276,9 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 	var clauses []string
 	var args []interface{}
 	clauses = append(clauses, "l.status = 'active'", "l.is_hidden = false")
+	// Public catalog is a live floor: past-deadline rows still marked
+	// `active` until a closer worker runs. Match effectiveListingStatus.
+	clauses = append(clauses, publicListingLiveWindowSQL)
 
 	if cat := q.Get("category_id"); cat != "" && isValidUUID(cat) {
 		args = append(args, cat)
@@ -331,7 +334,7 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if q.Get("ending_soon") == "true" {
-		clauses = append(clauses, "l.auction_ends_at IS NOT NULL AND l.auction_ends_at <= now() + interval '1 hour'")
+		clauses = append(clauses, "l.auction_ends_at IS NOT NULL AND l.auction_ends_at > now() AND l.auction_ends_at <= now() + interval '1 hour'")
 	}
 	if needle := strings.TrimSpace(q.Get("q")); needle != "" {
 		args = append(args, "%"+needle+"%")
@@ -515,10 +518,12 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 			s := condition.String
 			l.Condition = &s
 		}
-		// Lazy past-deadline transition (see effectiveListingStatus): a
-		// just-ended auction still has status='active' in the row until a
-		// close-worker sweeps it; show 'ended' so the card badge matches the
-		// expired countdown rather than reading 'active'.
+		// Belt-and-suspenders with publicListingLiveWindowSQL: a row that
+		// races now() between COUNT and SELECT, or a NULL-deadline edge,
+		// must still be dropped from the public floor.
+		if !includeInPublicListingCatalog(l.Status, l.AuctionEndsAt) {
+			continue
+		}
 		l.Status = effectiveListingStatus(l.Status, l.AuctionEndsAt)
 		l.Photos = []listingPhotoJSON{}
 		results = append(results, l)
@@ -1086,6 +1091,20 @@ func jsonRawOrNull(v interface{}) json.RawMessage {
 }
 
 var _ = jsonRawOrNull // silence unused
+
+// publicListingLiveWindowSQL is the GET /listings live-floor predicate.
+// Past-deadline rows can still be status='active' until a closer worker
+// runs; they must not appear on the public catalog. Matches
+// effectiveListingStatus / includeInPublicListingCatalog.
+const publicListingLiveWindowSQL = "(l.auction_ends_at IS NULL OR l.auction_ends_at > now())"
+
+// includeInPublicListingCatalog is the post-scan twin of
+// publicListingLiveWindowSQL. An 'active' listing past auction_ends_at
+// is omitted (not rewritten as 'ended' on this endpoint — the browse
+// floor is live-only).
+func includeInPublicListingCatalog(status string, auctionEndsAt *time.Time) bool {
+	return effectiveListingStatus(status, auctionEndsAt) == "active"
+}
 
 // effectiveListingStatus computes the display status for a listing, lazily
 // transitioning an `active` auction whose deadline has already passed to

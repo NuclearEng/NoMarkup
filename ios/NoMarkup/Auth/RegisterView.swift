@@ -52,6 +52,7 @@ struct RegisterView: View {
             .padding(24)
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("register.root")
         }
         .background(BrandTheme.navy.ignoresSafeArea())
         .navigationTitle(showingPasskeyOffer && passkeysEnabled ? "Save a passkey" : "Create account")
@@ -97,6 +98,7 @@ struct RegisterView: View {
                 .submitLabel(.next)
                 .onSubmit { focusedField = .email }
                 .accessibilityLabel("Display name")
+                .accessibilityIdentifier("register.displayName")
 
             TextField("Email", text: $email)
                 .textContentType(.emailAddress)
@@ -111,6 +113,7 @@ struct RegisterView: View {
                 .submitLabel(.next)
                 .onSubmit { focusedField = .password }
                 .accessibilityLabel("Email")
+                .accessibilityIdentifier("register.email")
 
             SecureField("Password", text: $password)
                 .textContentType(.newPassword)
@@ -122,6 +125,7 @@ struct RegisterView: View {
                 .submitLabel(.next)
                 .onSubmit { focusedField = .confirmPassword }
                 .accessibilityLabel("Password")
+                .accessibilityIdentifier("register.password")
 
             SecureField("Confirm password", text: $confirmPassword)
                 .textContentType(.newPassword)
@@ -133,6 +137,7 @@ struct RegisterView: View {
                 .submitLabel(.go)
                 .onSubmit { Task { await submit() } }
                 .accessibilityLabel("Confirm password")
+                .accessibilityIdentifier("register.confirmPassword")
 
             Text("At least 8 characters with letters and a number or symbol.")
                 .font(.caption)
@@ -154,6 +159,7 @@ struct RegisterView: View {
             .frame(minHeight: 44)
             .accessibilityLabel("Account type")
             .accessibilityHint("Customer posts jobs and buys goods. Provider bids and sells. Both enables both roles.")
+            .accessibilityIdentifier("register.role")
 
             Text(roleHelpCopy)
                 .font(.caption)
@@ -198,6 +204,7 @@ struct RegisterView: View {
             .foregroundStyle(BrandTheme.ctaLabelOnGold)
             .disabled(auth.isLoading)
             .accessibilityLabel("Create account")
+            .accessibilityIdentifier("register.submit")
 
             if let error = auth.errorMessage {
                 Text(error)
@@ -205,6 +212,7 @@ struct RegisterView: View {
                     .foregroundStyle(BrandTheme.destructive)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Error: \(error)")
+                    .accessibilityIdentifier("register.error")
             }
 
             if let status = auth.statusMessage {
@@ -222,6 +230,7 @@ struct RegisterView: View {
             .frame(maxWidth: .infinity)
             .frame(minHeight: 44)
             .accessibilityLabel("Back to sign in")
+            .accessibilityIdentifier("register.signIn")
         }
     }
 

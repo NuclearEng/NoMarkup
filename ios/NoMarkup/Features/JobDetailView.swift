@@ -598,6 +598,7 @@ struct JobDetailView: View {
                 .listRowBackground(BrandTheme.navyElevated)
                 .accessibilityLabel("Ask a question")
                 .accessibilityHint("Opens a pre-bid chat channel with the job owner")
+                .accessibilityIdentifier("jobDetail.askQuestion")
             } header: {
                 Text("Questions").brandSectionHeader()
             } footer: {
@@ -1423,11 +1424,12 @@ struct JobDetailView: View {
 
             case .loaded:
                 if sortedLadder.isEmpty {
-                    Text("No bids yet — be first to compete")
+                    Text(emptyLadderCopy)
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .accessibilityLabel("No bids yet — be first to compete")
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(emptyLadderCopy)
                 } else {
                     if bidEntries.count > 1 {
                         Picker("Sort bids", selection: $ladderSort) {
@@ -1507,14 +1509,32 @@ struct JobDetailView: View {
         } header: {
             Text("Auction · bid ladder").brandSectionHeader()
         } footer: {
-            if canAward {
-                Text("You own this job. Award a bid to create the contract. Sort by Price (lowest wins), Trust, Rating, or Jobs completed. Filter by trust tier and experience. Leading badge always follows lowest price.")
-                    .foregroundStyle(BrandTheme.textSecondary)
-            } else {
-                Text("Lowest dollar bid leads. Rank follows the selected sort; Leading badge stays on lowest price. Bids are sealed from other providers.")
-                    .foregroundStyle(BrandTheme.textSecondary)
-            }
+            Text(ladderFooterCopy)
+                .foregroundStyle(BrandTheme.textSecondary)
         }
+    }
+
+    /// Empty-ladder copy must not invite bidding on a closed/ended job.
+    private var emptyLadderCopy: String {
+        if !isAuctionActiveForPolling {
+            return isJobOwner
+                ? "No bids were placed. Repost to open a new bidding window."
+                : "No bids were placed on this auction."
+        }
+        if isJobOwner {
+            return "No bids yet. Providers will appear here as they compete."
+        }
+        return "No bids yet — be first to compete"
+    }
+
+    private var ladderFooterCopy: String {
+        if canAward {
+            if sortedLadder.isEmpty && !isAuctionActiveForPolling {
+                return "You own this job. No bids arrived — repost to start a new window."
+            }
+            return "You own this job. Award a bid to create the contract. Sort by Price (lowest wins), Trust, Rating, or Jobs completed. Filter by trust tier and experience. Leading badge always follows lowest price."
+        }
+        return "Lowest dollar bid leads. Rank follows the selected sort; Leading badge stays on lowest price. Bids are sealed from other providers."
     }
 
     /// 1-based rank by reverse-auction price among non-withdrawn bids (1 = lowest = leading).
@@ -2021,6 +2041,7 @@ struct JobDetailView: View {
             )
             .foregroundStyle(BrandTheme.textSecondary)
         }
+        .accessibilityIdentifier("jobDetail.placeBid")
     }
 
     /// Instant-accept at the customer's `offer_accepted_cents` (FR-4.4).
@@ -3103,6 +3124,7 @@ private struct JobReportSheet: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityLabel("Report reason")
+                    .accessibilityIdentifier("jobReport.reason")
                 } header: {
                     Text("Why are you reporting this?").brandSectionHeader()
                 }
@@ -3111,6 +3133,7 @@ private struct JobReportSheet: View {
                     TextEditor(text: $descriptionText)
                         .frame(minHeight: 120)
                         .accessibilityLabel("Additional details")
+                        .accessibilityIdentifier("jobReport.details")
                 } header: {
                     Text("Details (optional)").brandSectionHeader()
                 } footer: {
@@ -3124,6 +3147,7 @@ private struct JobReportSheet: View {
                             .font(.footnote)
                             .foregroundStyle(statusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("jobReport.status")
                     }
                 }
 
@@ -3144,6 +3168,7 @@ private struct JobReportSheet: View {
                     .tint(BrandTheme.accent)
                     .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isSubmitting)
+                    .accessibilityIdentifier("jobReport.submit")
                 }
             }
             .brandListBackground()
@@ -3152,10 +3177,12 @@ private struct JobReportSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .brandNavigationBarChrome()
+            .accessibilityIdentifier("jobReport.root")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDone() }
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("jobReport.cancel")
                 }
             }
         }

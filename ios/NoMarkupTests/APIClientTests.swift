@@ -520,3 +520,64 @@ final class ListingReplayDecodingTests: XCTestCase {
         XCTAssertTrue(replay.events.isEmpty)
     }
 }
+
+// MARK: - GET /api/v1/me/activity fail-soft
+
+final class APIClientMeActivityTests: XCTestCase {
+    private static let service = "com.nomarkup.tests.meactivity"
+
+    private var store: KeychainTokenStore!
+    private var client: APIClient!
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        store = KeychainTokenStore(service: Self.service)
+        try? store.clearSession()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        client = APIClient(session: URLSession(configuration: configuration), tokenStore: store)
+    }
+
+    override func tearDownWithError() throws {
+        MockURLProtocol.setHandler(nil)
+        try? store.clearSession()
+        client = nil
+        store = nil
+        try super.tearDownWithError()
+    }
+
+    func testFetchMeActivity200MapsEvents() async throws {
+        try store.save("access-ok", for: .accessToken)
+        MockURLProtocol.setHandler { request in
+            XCTAssertTrue(request.url?.path.hasSuffix("/api/v1/me/activity") ?? false)
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer access-ok")
+            let body = """
+            {"events":[{"request_id":"rid-1","method":"GET","path":"/api/v1/users/me","status":200,"duration_ms":11,"created_at":"2026-08-22T00:00:00Z"}]}
+            """
+            return (200, body)
+        }
+        let rows = try await client.fetchMeActivity()
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.requestId, "rid-1")
+        XCTAssertEqual(rows.first?.path, "/api/v1/users/me")
+    }
+
+    func testFetchMeActivity404ReturnsEmpty() async throws {
+        try store.save("access-ok", for: .accessToken)
+        MockURLProtocol.setHandler { _ in
+            (404, #"{"error":"not found"}"#)
+        }
+        let rows = try await client.fetchMeActivity()
+        XCTAssertEqual(rows, [])
+    }
+
+    func testFetchMeActivity401WithoutRefreshReturnsEmpty() async throws {
+        try store.save("access-stale", for: .accessToken)
+        MockURLProtocol.setHandler { _ in
+            (401, #"{"error":"authentication required"}"#)
+        }
+        let rows = try await client.fetchMeActivity()
+        XCTAssertEqual(rows, [])
+    }
+}

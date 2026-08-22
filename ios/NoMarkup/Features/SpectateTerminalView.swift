@@ -89,6 +89,7 @@ struct SpectateTerminalView: View {
             .padding(20)
         }
         .brandScreenBackground()
+        .accessibilityIdentifier("spectate.root")
         .navigationTitle("Spectate")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

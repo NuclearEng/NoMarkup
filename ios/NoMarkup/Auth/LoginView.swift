@@ -207,6 +207,7 @@ struct LoginView: View {
                     }
                 }
                 .accessibilityLabel("Authenticator code")
+                .accessibilityIdentifier("login.mfaCode")
 
             Button {
                 guard !auth.isBusy else { return }
@@ -227,6 +228,7 @@ struct LoginView: View {
             .brandPrimaryButton()
             .disabled(auth.isBusy)
             .accessibilityLabel("Verify authenticator code and sign in")
+            .accessibilityIdentifier("login.mfaSubmit")
 
             Button("Back to sign in") {
                 auth.cancelMFA()
@@ -236,6 +238,7 @@ struct LoginView: View {
             .frame(maxWidth: .infinity)
             .frame(minHeight: 44)
             .disabled(auth.isBusy)
+            .accessibilityIdentifier("login.mfaBack")
 
             if let error = auth.errorMessage {
                 Text(error)
@@ -243,6 +246,7 @@ struct LoginView: View {
                     .foregroundStyle(BrandTheme.destructive)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Error: \(error)")
+                    .accessibilityIdentifier("login.mfaError")
             }
 
             if let status = auth.statusMessage {
@@ -250,6 +254,7 @@ struct LoginView: View {
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("login.mfaStatus")
             }
         }
     }
@@ -300,6 +305,7 @@ struct LoginView: View {
                 .font(.caption2)
                 .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
                 .textSelection(.enabled)
+                .accessibilityHidden(true)
         }
     }
 
@@ -312,6 +318,7 @@ struct LoginView: View {
                     .frame(minHeight: 44)
             }
             .accessibilityLabel("Create account")
+            .accessibilityIdentifier("login.register")
             .disabled(auth.isBusy)
 
             Spacer(minLength: 8)
@@ -323,6 +330,7 @@ struct LoginView: View {
                     .frame(minHeight: 44)
             }
             .accessibilityLabel("Forgot password")
+            .accessibilityIdentifier("login.forgotPassword")
             .disabled(auth.isBusy)
         }
     }
@@ -391,13 +399,14 @@ struct LoginView: View {
             guard !auth.isBusy, !passkeyAuth.isBusy else { return }
             auth.enterScaffoldSession()
         }
-        .frame(maxWidth: .infinity)
-        .frame(minHeight: 44)
         .font(.subheadline)
         .foregroundStyle(BrandTheme.goldBright)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .contentShape(Rectangle())
         .disabled(auth.isBusy || passkeyAuth.isBusy)
         .opacity(auth.isBusy || passkeyAuth.isBusy ? 0.55 : 1)
         .accessibilityHint("Opens the tab shell without calling the API. For design and layout review only.")
+        .accessibilityIdentifier("login.scaffold")
     }
 
     private var footerLegal: some View {
@@ -407,7 +416,11 @@ struct LoginView: View {
                 .foregroundStyle(BrandTheme.textSecondary)
             HStack(spacing: 16) {
                 Link("Privacy", destination: AppConfig.privacyURL)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("login.privacy")
                 Link("Terms", destination: AppConfig.termsURL)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("login.terms")
             }
             .font(.caption.weight(.medium))
             .tint(BrandTheme.accent)
