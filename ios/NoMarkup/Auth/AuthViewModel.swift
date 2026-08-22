@@ -5,6 +5,50 @@ import SwiftUI
 import UIKit
 #endif
 
+/// DEBUG / UITest launch switches parsed from process env and argv.
+///
+/// Env (preferred for `devicectl` — use `DEVICECTL_CHILD_` prefix or
+/// `--environment-variables`):
+/// - `NOMARKUP_UI_TEST_EMAIL` / `NOMARKUP_UI_TEST_PASSWORD`
+/// - `NOMARKUP_UI_TEST_SCAFFOLD=1`
+/// - `NOMARKUP_UI_TESTING=1` (XCUITest harness; hides SIWA/passkey sheets)
+/// Args: `-ui-test-email` value / `-ui-test-password` value / `-ui-test-scaffold` / `-ui-testing`
+enum LaunchTestAuth {
+    static var isUITestLaunch: Bool {
+        let env = ProcessInfo.processInfo.environment
+        let args = ProcessInfo.processInfo.arguments
+        if env["NOMARKUP_UI_TESTING"] == "1" { return true }
+        if args.contains("-ui-testing") { return true }
+        return wantsScaffold || credentials() != nil
+    }
+
+    static var wantsScaffold: Bool {
+        let env = ProcessInfo.processInfo.environment
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-ui-test-scaffold") || env["NOMARKUP_UI_TEST_SCAFFOLD"] == "1"
+    }
+
+    static func credentials(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        arguments: [String] = ProcessInfo.processInfo.arguments
+    ) -> (email: String, password: String)? {
+        var testEmail = environment["NOMARKUP_UI_TEST_EMAIL"]
+        var testPassword = environment["NOMARKUP_UI_TEST_PASSWORD"]
+        if let i = arguments.firstIndex(of: "-ui-test-email"), arguments.index(after: i) < arguments.endIndex {
+            testEmail = arguments[arguments.index(after: i)]
+        }
+        if let i = arguments.firstIndex(of: "-ui-test-password"), arguments.index(after: i) < arguments.endIndex {
+            testPassword = arguments[arguments.index(after: i)]
+        }
+        let email = testEmail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let password = testPassword ?? ""
+        guard !email.isEmpty, !password.isEmpty else { return nil }
+        return (email, password)
+    }
+
+    static var isActive: Bool { wantsScaffold || credentials() != nil }
+}
+
 /// Auth state for email/password, MFA, register, password reset, SIWA, and Google (ASWebAuth + PKCE).
 @MainActor
 final class AuthViewModel: ObservableObject {
@@ -39,56 +83,73 @@ final class AuthViewModel: ObservableObject {
     /// `nonisolated(unsafe)` so `deinit` can remove the observer without MainActor hop.
     nonisolated(unsafe) private var sessionExpiredObserver: NSObjectProtocol?
 
+    /// Bumped on every successful auth write and on sign-out. In-flight Keychain
+    /// restore / stale `.noMarkupSessionExpired` handlers compare against this so
+    /// they cannot wipe a login that completed while they were in flight.
+    private var sessionEpoch: UInt64 = 0
+
     init() {
+        #if DEBUG
+        if LaunchTestAuth.isActive {
+            // UITest / sim role launches must not restore a previous dogfood session.
+            // Stale refresh 401s used to post "Your session expired" *after* env login
+            // wrote fresh tokens and bounce XCUITest back to Sign in.
+            try? tokenStore.clearSession()
+            isAuthenticated = false
+            isScaffoldSession = false
+            observeSessionExpired()
+            return
+        }
+        #endif
         restoreSessionIfPossible()
         observeSessionExpired()
     }
 
     /// DEBUG / UITest: auto-login from launch environment or process arguments.
-    ///
-    /// Env (preferred for `devicectl` — use `DEVICECTL_CHILD_` prefix or
-    /// `--environment-variables`):
-    /// - `NOMARKUP_UI_TEST_EMAIL`
-    /// - `NOMARKUP_UI_TEST_PASSWORD`
-    /// Args: `-ui-test-email` value / `-ui-test-password` value
-    /// Also supports `-ui-test-scaffold` for browse-only chrome.
     @discardableResult
     func applyLaunchTestCredentialsIfNeeded() async -> Bool {
         #if DEBUG
-        let env = ProcessInfo.processInfo.environment
-        let args = ProcessInfo.processInfo.arguments
-
-        if args.contains("-ui-test-scaffold") || env["NOMARKUP_UI_TEST_SCAFFOLD"] == "1" {
+        if LaunchTestAuth.wantsScaffold {
             enterScaffoldSession()
             return true
         }
 
-        var testEmail = env["NOMARKUP_UI_TEST_EMAIL"]
-        var testPassword = env["NOMARKUP_UI_TEST_PASSWORD"]
-        if let i = args.firstIndex(of: "-ui-test-email"), args.index(after: i) < args.endIndex {
-            testEmail = args[args.index(after: i)]
-        }
-        if let i = args.firstIndex(of: "-ui-test-password"), args.index(after: i) < args.endIndex {
-            testPassword = args[args.index(after: i)]
-        }
-
-        guard let email = testEmail?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !email.isEmpty,
-              let password = testPassword, !password.isEmpty
-        else {
+        guard let creds = LaunchTestAuth.credentials() else {
             return false
         }
 
-        // Always honor launch-test credentials. Optimistic Keychain restore can
-        // flip `isAuthenticated` before refresh fails ("session expired"), which
-        // used to skip argv/env login and leave XCUI / sim role launches signed out.
-        self.email = email
-        self.password = password
+        // Invalidate any in-flight restore and drop leftover tokens before login
+        // so a delayed refresh 401 cannot clear the session we are about to write.
+        beginNewSessionEpoch()
+        try? tokenStore.clearSession()
+        isAuthenticated = false
+        isScaffoldSession = false
+        statusMessage = nil
+        errorMessage = nil
+
+        self.email = creds.email
+        self.password = creds.password
+
+        if isBusy {
+            let deadline = Date().addingTimeInterval(8)
+            while isBusy, Date() < deadline {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+        if isAuthenticated, !isScaffoldSession {
+            return true
+        }
         await login()
         return isAuthenticated && !isScaffoldSession
         #else
         return false
         #endif
+    }
+
+    @discardableResult
+    private func beginNewSessionEpoch() -> UInt64 {
+        sessionEpoch += 1
+        return sessionEpoch
     }
 
     deinit {
@@ -124,11 +185,14 @@ final class AuthViewModel: ObservableObject {
 
     /// Proactive / silent refresh on cold start (single-flight via APIClient).
     private func restoreViaRefresh() async {
+        let epoch = sessionEpoch
         do {
             _ = try await api.refreshSession()
+            guard epoch == sessionEpoch else { return }
             isScaffoldSession = false
             isAuthenticated = true
         } catch let error as APIClientError where error.isUnauthorized {
+            guard epoch == sessionEpoch else { return }
             // Definitive auth failure — clear session so RootView returns to LoginView.
             handleDefinitiveAuthFailure(reason: .refreshRejected)
         } catch {
@@ -157,7 +221,15 @@ final class AuthViewModel: ObservableObject {
     func handleSessionExpiredNotification() {
         guard !isScaffoldSession else { return }
         guard isAuthenticated else { return }
-        handleDefinitiveAuthFailure(reason: .sessionExpired)
+        let epoch = sessionEpoch
+        Task { @MainActor in
+            // A login that completed while this notification was in flight bumped the
+            // epoch; keep that session. APIClient also suppresses the post when the
+            // refresh token was replaced, but this is the last line of defense.
+            guard epoch == sessionEpoch else { return }
+            guard !isScaffoldSession, isAuthenticated else { return }
+            handleDefinitiveAuthFailure(reason: .sessionExpired)
+        }
     }
 
     private enum AuthFailureReason {
@@ -169,6 +241,7 @@ final class AuthViewModel: ObservableObject {
     /// server-confirmed auth death (not network blips).
     /// RootView observes `isAuthenticated` → false and already calls `push.resetSessionState()`.
     private func handleDefinitiveAuthFailure(reason: AuthFailureReason) {
+        beginNewSessionEpoch()
         try? tokenStore.clearSession()
         isAuthenticated = false
         isScaffoldSession = false
@@ -194,6 +267,7 @@ final class AuthViewModel: ObservableObject {
 
     /// Adopt a session already written to Keychain (e.g. passkey verify).
     func adoptExistingSession(status: String = "Signed in.") {
+        beginNewSessionEpoch()
         clearSensitiveInMemoryFields()
         isScaffoldSession = false
         isAuthenticated = true
@@ -229,6 +303,7 @@ final class AuthViewModel: ObservableObject {
             switch result {
             case .signedIn:
                 BrandHaptics.success()
+                beginNewSessionEpoch()
                 clearSensitiveInMemoryFields()
                 isScaffoldSession = false
                 isAuthenticated = true
@@ -271,6 +346,7 @@ final class AuthViewModel: ObservableObject {
 
         do {
             _ = try await api.verifyMFA(challengeToken: challenge, totpCode: code)
+            beginNewSessionEpoch()
             clearSensitiveInMemoryFields()
             isScaffoldSession = false
             isAuthenticated = true
@@ -331,6 +407,7 @@ final class AuthViewModel: ObservableObject {
                 roles: roles
             )
             self.email = trimmedEmail
+            beginNewSessionEpoch()
             clearSensitiveInMemoryFields()
             isScaffoldSession = false
             isAuthenticated = true
@@ -399,6 +476,7 @@ final class AuthViewModel: ObservableObject {
     func enterScaffoldSession() {
         guard !isBusy else { return }
         errorMessage = nil
+        beginNewSessionEpoch()
         clearSensitiveInMemoryFields()
         isScaffoldSession = true
         isAuthenticated = true
@@ -406,6 +484,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func signOut() {
+        beginNewSessionEpoch()
         // Capture tokens first — Keychain must be empty before this returns so a
         // force-quit cannot restore the session, and a fast re-login cannot be
         // wiped by a deferred clearSession.
@@ -552,6 +631,7 @@ final class AuthViewModel: ObservableObject {
             let session = GoogleOAuthSession()
             let identityToken = try await session.signIn()
             _ = try await api.signInWithGoogle(identityToken: identityToken)
+            beginNewSessionEpoch()
             clearSensitiveInMemoryFields()
             isScaffoldSession = false
             isAuthenticated = true
@@ -583,6 +663,7 @@ final class AuthViewModel: ObservableObject {
                 authorizationCode: auth.authorizationCode,
                 redirectURI: auth.redirectURI
             )
+            beginNewSessionEpoch()
             clearSensitiveInMemoryFields()
             isScaffoldSession = false
             isAuthenticated = true
@@ -620,6 +701,7 @@ final class AuthViewModel: ObservableObject {
                 fullName: fullName,
                 nonce: nonce
             )
+            beginNewSessionEpoch()
             clearSensitiveInMemoryFields()
             isScaffoldSession = false
             isAuthenticated = true

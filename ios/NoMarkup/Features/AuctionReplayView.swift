@@ -3,9 +3,8 @@ import SwiftUI
 /// Chronological auction replay desk — lightweight web-parity surface.
 ///
 /// - **Job:** `GET …/jobs/{id}/auction/events` via `fetchJobAuctionEvents`.
-/// - **Listing:** no dedicated iOS listing-events client yet; falls back to the
-///   public bid ladder (`fetchListingBids`) as a static reverse-timeline, or a
-///   brand empty state when the ladder is empty / unavailable.
+/// - **Listing:** public `GET …/listings/{id}/replay` via `fetchListingReplay`
+///   (closed auctions; PII-stripped bidder labels).
 struct AuctionReplayView: View {
     enum Target: Hashable {
         case job(id: String, title: String?)
@@ -102,7 +101,7 @@ struct AuctionReplayView: View {
                         .listRowBackground(BrandTheme.navyElevated)
                         .accessibilityAddTraits(.isHeader)
                 }
-                Text(isJob ? "REVERSE AUCTION · CHRONOLOGICAL" : "FORWARD AUCTION · BID LADDER")
+                Text(isJob ? "REVERSE AUCTION · CHRONOLOGICAL" : "FORWARD AUCTION · CHRONOLOGICAL")
                     .font(.caption2.weight(.heavy).monospaced())
                     .tracking(0.8)
                     .foregroundStyle(BrandTheme.goldBright)
@@ -110,7 +109,7 @@ struct AuctionReplayView: View {
                     .accessibilityLabel(
                         isJob
                             ? "Reverse auction, chronological event replay"
-                            : "Forward auction, static bid ladder replay"
+                            : "Forward auction, chronological event replay"
                     )
             } footer: {
                 Text(footerCopy)
@@ -123,7 +122,7 @@ struct AuctionReplayView: View {
                         .listRowBackground(BrandTheme.navyElevated)
                 }
             } header: {
-                Text(isJob ? "Events" : "Bids").brandSectionHeader()
+                Text("Events").brandSectionHeader()
             }
         }
         .brandListBackground()
@@ -163,21 +162,21 @@ struct AuctionReplayView: View {
     // MARK: - Copy
 
     private var emptyTitle: String {
-        isJob ? "No auction events yet" : "Goods replay unavailable"
+        isJob ? "No auction events yet" : "No replay events yet"
     }
 
     private var emptyMessage: String {
         if isJob {
             return "When providers place reverse bids, they appear here in chronological order with amount, type, and time."
         }
-        return "Replay uses job auction events; goods replay coming soon. Bid ladder data was empty for this listing."
+        return "Replay is available after a goods auction closes. Bids, auto-bid cascades, and time extensions appear here in chronological order with anonymized bidders."
     }
 
     private var footerCopy: String {
         if isJob {
             return "Public job auction events · oldest first · amounts monospaced."
         }
-        return "Static snapshot from the public listing bid ladder (not a full event stream)."
+        return "Public listing auction replay · oldest first · bidders anonymized."
     }
 
     // MARK: - Load
@@ -197,10 +196,8 @@ struct AuctionReplayView: View {
                 loadState = rows.isEmpty ? .empty : .loaded
             case .listing(let id, let title):
                 if let title, !title.isEmpty { titleHint = title }
-                // Prefer public bid ladder as a static replay when a dedicated
-                // listing-events client is not wired. Soft-fail to brand empty.
-                let response = try await APIClient.shared.fetchListingBids(listingId: id)
-                rows = Self.rows(fromListingBids: response.bids)
+                let replay = try await APIClient.shared.fetchListingReplay(listingId: id)
+                rows = Self.rows(fromListingReplay: replay.events)
                 loadState = rows.isEmpty ? .empty : .loaded
             }
         } catch {
@@ -250,31 +247,31 @@ struct AuctionReplayView: View {
         }
     }
 
-    /// Chronological (created ascending) listing bids as a static replay stand-in.
-    private static func rows(fromListingBids bids: [ListingBidRow]) -> [ReplayRow] {
-        let sorted = bids.sorted { lhs, rhs in
-            let left = CatalogDateFormat.parseISO(lhs.createdAt ?? "") ?? .distantPast
-            let right = CatalogDateFormat.parseISO(rhs.createdAt ?? "") ?? .distantPast
+    /// Oldest-first chronological order for listing replay events (mirrors job mapping).
+    private static func rows(fromListingReplay events: [ListingReplayEvent]) -> [ReplayRow] {
+        let sorted = events.sorted { lhs, rhs in
+            let left = CatalogDateFormat.parseISO(lhs.at ?? "") ?? .distantPast
+            let right = CatalogDateFormat.parseISO(rhs.at ?? "") ?? .distantPast
             if left != right { return left < right }
-            return (lhs.amountCents ?? 0) < (rhs.amountCents ?? 0)
+            return lhs.id < rhs.id
         }
-        return sorted.map { bid in
+        return sorted.map { event in
+            let amount: String?
+            if let cents = event.displayAmountCents, cents > 0 {
+                amount = MoneyFormat.usd(cents: cents)
+            } else {
+                amount = nil
+            }
             let time: String
-            if let created = bid.createdAt, !created.isEmpty {
-                time = CatalogDateFormat.friendlyDateTime(created)
+            if let at = event.at, !at.isEmpty {
+                time = CatalogDateFormat.friendlyDateTime(at)
             } else {
                 time = "—"
             }
-            let type: String
-            if bid.isWinning == true {
-                type = "Leading bid · \(bid.displayName)"
-            } else {
-                type = "Bid · \(bid.displayName)"
-            }
             return ReplayRow(
-                id: bid.id,
-                typeLabel: type,
-                amountLabel: bid.amountCents.map { MoneyFormat.usd(cents: $0) },
+                id: event.id,
+                typeLabel: event.displayEventLabel,
+                amountLabel: amount,
                 timeLabel: time
             )
         }

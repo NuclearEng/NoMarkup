@@ -15,6 +15,7 @@ import (
 
 type mockAnalyticsRepo struct {
 	getMarketRangeFn              func(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, zipCode string) (*domain.MarketRange, error)
+	getMarketRangeAtFn            func(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, lat, lng, radiusKm float64) (*domain.MarketRange, error)
 	getMarketTrendsFn             func(ctx context.Context, categoryID string, subcategoryID *string, region *string, startDate, endDate time.Time, groupBy string) ([]domain.PriceTrend, error)
 	getClearedPriceTransactionsFn func(ctx context.Context, categoryID string, asOf time.Time) ([]domain.ClearedPriceTransaction, error)
 	getCategoryIDBySlugFn         func(slug string) (string, error)
@@ -27,6 +28,12 @@ type mockAnalyticsRepo struct {
 
 func (m *mockAnalyticsRepo) GetMarketRange(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, zipCode string) (*domain.MarketRange, error) {
 	return m.getMarketRangeFn(ctx, categoryID, subcategoryID, serviceTypeID, zipCode)
+}
+func (m *mockAnalyticsRepo) GetMarketRangeAt(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, lat, lng, radiusKm float64) (*domain.MarketRange, error) {
+	if m.getMarketRangeAtFn != nil {
+		return m.getMarketRangeAtFn(ctx, categoryID, subcategoryID, serviceTypeID, lat, lng, radiusKm)
+	}
+	return nil, domain.ErrMarketRangeNotFound
 }
 func (m *mockAnalyticsRepo) GetMarketTrends(ctx context.Context, categoryID string, subcategoryID *string, region *string, startDate, endDate time.Time, groupBy string) ([]domain.PriceTrend, error) {
 	return m.getMarketTrendsFn(ctx, categoryID, subcategoryID, region, startDate, endDate, groupBy)
@@ -121,6 +128,25 @@ func TestAnalyticsService_GetMarketRange(t *testing.T) {
 			assert.Equal(t, 42, mr.DataPoints)
 		})
 	}
+}
+
+func TestAnalyticsService_GetMarketRangeAt(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockAnalyticsRepo{
+		getMarketRangeAtFn: func(_ context.Context, _ string, _, _ *string, lat, lng, radiusKm float64) (*domain.MarketRange, error) {
+			assert.InDelta(t, 30.2672, lat, 0.0001)
+			assert.InDelta(t, -97.7431, lng, 0.0001)
+			assert.Equal(t, 80.0, radiusKm)
+			return &domain.MarketRange{ZipCode: "78701", MedianCents: 30000}, nil
+		},
+	}
+	svc := NewAnalyticsService(repo)
+
+	mr, err := svc.GetMarketRangeAt(context.Background(), "cat-1", nil, nil, 30.2672, -97.7431, 80)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	assert.Equal(t, "78701", mr.ZipCode)
 }
 
 // --- GetMarketTrends tests ---

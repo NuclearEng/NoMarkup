@@ -28,6 +28,7 @@ const (
 	ImagingService_ProcessDocument_FullMethodName       = "/nomarkup.imaging.v1.ImagingService/ProcessDocument"
 	ImagingService_GetUploadURL_FullMethodName          = "/nomarkup.imaging.v1.ImagingService/GetUploadURL"
 	ImagingService_ConfirmUpload_FullMethodName         = "/nomarkup.imaging.v1.ImagingService/ConfirmUpload"
+	ImagingService_DeleteUserObjects_FullMethodName     = "/nomarkup.imaging.v1.ImagingService/DeleteUserObjects"
 )
 
 // ImagingServiceClient is the client API for ImagingService service.
@@ -50,6 +51,11 @@ type ImagingServiceClient interface {
 	// Signed upload URLs
 	GetUploadURL(ctx context.Context, in *GetUploadURLRequest, opts ...grpc.CallOption) (*GetUploadURLResponse, error)
 	ConfirmUpload(ctx context.Context, in *ConfirmUploadRequest, opts ...grpc.CallOption) (*ConfirmUploadResponse, error)
+	// GDPR erasure: delete every object under each upload-context prefix for
+	// user_id. Keys are `{context}/{user_id}/…` (avatars, portfolio, job-photos,
+	// documents, review-photos, listings, chat-attachments). Idempotent: zero
+	// matching objects returns objects_deleted=0.
+	DeleteUserObjects(ctx context.Context, in *DeleteUserObjectsRequest, opts ...grpc.CallOption) (*DeleteUserObjectsResponse, error)
 }
 
 type imagingServiceClient struct {
@@ -150,6 +156,16 @@ func (c *imagingServiceClient) ConfirmUpload(ctx context.Context, in *ConfirmUpl
 	return out, nil
 }
 
+func (c *imagingServiceClient) DeleteUserObjects(ctx context.Context, in *DeleteUserObjectsRequest, opts ...grpc.CallOption) (*DeleteUserObjectsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteUserObjectsResponse)
+	err := c.cc.Invoke(ctx, ImagingService_DeleteUserObjects_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ImagingServiceServer is the server API for ImagingService service.
 // All implementations must embed UnimplementedImagingServiceServer
 // for forward compatibility.
@@ -170,6 +186,11 @@ type ImagingServiceServer interface {
 	// Signed upload URLs
 	GetUploadURL(context.Context, *GetUploadURLRequest) (*GetUploadURLResponse, error)
 	ConfirmUpload(context.Context, *ConfirmUploadRequest) (*ConfirmUploadResponse, error)
+	// GDPR erasure: delete every object under each upload-context prefix for
+	// user_id. Keys are `{context}/{user_id}/…` (avatars, portfolio, job-photos,
+	// documents, review-photos, listings, chat-attachments). Idempotent: zero
+	// matching objects returns objects_deleted=0.
+	DeleteUserObjects(context.Context, *DeleteUserObjectsRequest) (*DeleteUserObjectsResponse, error)
 	mustEmbedUnimplementedImagingServiceServer()
 }
 
@@ -206,6 +227,9 @@ func (UnimplementedImagingServiceServer) GetUploadURL(context.Context, *GetUploa
 }
 func (UnimplementedImagingServiceServer) ConfirmUpload(context.Context, *ConfirmUploadRequest) (*ConfirmUploadResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ConfirmUpload not implemented")
+}
+func (UnimplementedImagingServiceServer) DeleteUserObjects(context.Context, *DeleteUserObjectsRequest) (*DeleteUserObjectsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteUserObjects not implemented")
 }
 func (UnimplementedImagingServiceServer) mustEmbedUnimplementedImagingServiceServer() {}
 func (UnimplementedImagingServiceServer) testEmbeddedByValue()                        {}
@@ -390,6 +414,24 @@ func _ImagingService_ConfirmUpload_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ImagingService_DeleteUserObjects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteUserObjectsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ImagingServiceServer).DeleteUserObjects(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ImagingService_DeleteUserObjects_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ImagingServiceServer).DeleteUserObjects(ctx, req.(*DeleteUserObjectsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ImagingService_ServiceDesc is the grpc.ServiceDesc for ImagingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -432,6 +474,10 @@ var ImagingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ConfirmUpload",
 			Handler:    _ImagingService_ConfirmUpload_Handler,
+		},
+		{
+			MethodName: "DeleteUserObjects",
+			Handler:    _ImagingService_DeleteUserObjects_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

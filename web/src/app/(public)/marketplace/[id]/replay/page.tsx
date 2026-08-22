@@ -26,9 +26,9 @@ export default function ListingReplayPage() {
       <h1 className="mb-1 text-2xl font-bold tracking-tight text-zinc-100">
         Auction Replay
       </h1>
-      {listing ? (
-        <p className="mb-6 text-sm text-zinc-400">{listing.title}</p>
-      ) : null}
+      {/* Always render the subtitle slot so SSR and the first client paint
+          share the same tree (listing title hydrates into the same <p>). */}
+      <p className="mb-6 min-h-5 text-sm text-zinc-400">{listing?.title ?? '\u00a0'}</p>
 
       <AuctionReplay listingId={listingId} />
     </div>

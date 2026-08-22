@@ -1,5 +1,6 @@
 import AppIntents
 import CoreSpotlight
+import PassKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -1275,10 +1276,11 @@ struct ListingDetailView: View {
                         .font(.footnote)
                         .foregroundStyle(BrandTheme.textSecondary)
                     Button {} label: {
-                        Label("Buy now \(priceLabel)", systemImage: "apple.logo")
+                        Label("Pay \(priceLabel)", systemImage: "creditcard.fill")
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .disabled(true)
+                    .accessibilityLabel("Pay \(priceLabel)")
                 } else if !isActive {
                     Text("Buy now is only available while the auction is active.")
                         .font(.footnote)
@@ -1300,23 +1302,20 @@ struct ListingDetailView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    Button {
-                        Task { await buyNow() }
-                    } label: {
-                        if isBuyingNow {
-                            ProgressView()
-                                .tint(BrandTheme.ctaLabelOnGold)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        } else {
-                            Label("Buy now \(priceLabel)", systemImage: "apple.logo")
-                                .frame(maxWidth: .infinity, minHeight: 44)
+                    if isBuyingNow {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .accessibilityLabel("Processing buy now")
+                    } else {
+                        PayWithApplePayButton(.buy) {
+                            Task { await buyNow() }
                         }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .payWithApplePayButtonStyle(.automatic)
+                        .disabled(isPlacingBid || isPostingBond)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Buy now with Apple Pay")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(BrandTheme.accent)
-                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
-                    .disabled(isBuyingNow || isPlacingBid || isPostingBond)
-                    .accessibilityLabel("Buy now for \(priceLabel) with Apple Pay")
                 }
             } header: {
                 Text("Buy now").brandSectionHeader()

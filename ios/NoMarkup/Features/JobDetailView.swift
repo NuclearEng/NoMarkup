@@ -16,6 +16,7 @@ struct JobDetailView: View {
     @State private var detail: JobDetail?
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var showReportSheet = false
 
     @State private var bidEntries: [JobBidEntry] = []
     @State private var ladderState: BidLadderState = .idle
@@ -397,6 +398,12 @@ struct JobDetailView: View {
     }
 
     var body: some View {
+        jobDetailPresentation(jobDetailCore)
+    }
+
+    /// Split from `body` so the type checker can finish (report sheet + dialogs).
+    @ViewBuilder
+    private var jobDetailCore: some View {
         Group {
             if let detail {
                 detailContent(detail)
@@ -445,6 +452,10 @@ struct JobDetailView: View {
         .userActivity(Self.viewJobActivityType, isActive: detail != nil) { activity in
             configureViewActivity(activity)
         }
+    }
+
+    private func jobDetailPresentation<Content: View>(_ content: Content) -> some View {
+        content
         .confirmationDialog(
             "Award this bid?",
             isPresented: Binding(
@@ -520,6 +531,11 @@ struct JobDetailView: View {
                 Text("Places a bid at the customer’s instant price of \(MoneyFormat.usd(cents: offer)). You can still lower that bid later.")
             } else {
                 Text("Places a bid at the customer’s instant-accept price.")
+            }
+        }
+        .sheet(isPresented: $showReportSheet) {
+            JobReportSheet(jobID: jobID) {
+                showReportSheet = false
             }
         }
         .sheet(isPresented: $showWebSafari) {
@@ -654,6 +670,16 @@ struct JobDetailView: View {
                 } header: {
                     Text("Customer").brandSectionHeader()
                 }
+            }
+
+            Section {
+                Button {
+                    showReportSheet = true
+                } label: {
+                    Label("Report job", systemImage: "flag")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+                .accessibilityIdentifier("jobDetail.report")
             }
         }
         .brandListBackground()
@@ -3049,6 +3075,114 @@ private enum BidLadderState: Equatable {
 /// Navigation payload after a successful FR-3.10 repost.
 private struct JobRepostRoute: Hashable, Identifiable {
     let id: String
+}
+
+// MARK: - Report sheet
+
+private struct JobReportSheet: View {
+    let jobID: String
+    var onDone: () -> Void
+
+    @State private var reason: JobReportReason = .misleading
+    @State private var descriptionText = ""
+    @State private var isSubmitting = false
+    @State private var statusMessage: String?
+    @State private var statusIsError = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Reason", selection: $reason) {
+                        ForEach(JobReportReason.allCases) { item in
+                            Text(item.displayName).tag(item)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityLabel("Report reason")
+                } header: {
+                    Text("Why are you reporting this?").brandSectionHeader()
+                }
+
+                Section {
+                    TextEditor(text: $descriptionText)
+                        .frame(minHeight: 120)
+                        .accessibilityLabel("Additional details")
+                } header: {
+                    Text("Details (optional)").brandSectionHeader()
+                } footer: {
+                    Text("Reports help keep jobs safe. False reports may lead to account action.")
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+
+                if let statusMessage {
+                    Section {
+                        Text(statusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(statusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Section {
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        if isSubmitting {
+                            ProgressView()
+                                .tint(BrandTheme.ctaLabelOnGold)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Text("Submit report")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandTheme.accent)
+                    .foregroundStyle(BrandTheme.ctaLabelOnGold)
+                    .disabled(isSubmitting)
+                }
+            }
+            .brandListBackground()
+            .navigationTitle("Report job")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .brandNavigationBarChrome()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onDone() }
+                        .frame(minHeight: 44)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func submit() async {
+        statusMessage = nil
+        statusIsError = false
+        isSubmitting = true
+        defer { isSubmitting = false }
+
+        do {
+            let response = try await APIClient.shared.reportJob(
+                id: jobID,
+                reason: reason.rawValue,
+                description: descriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            statusIsError = false
+            statusMessage = response.userFacingMessage
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            onDone()
+        } catch let error as APIClientError where error.isUnauthorized {
+            statusIsError = true
+            statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
 }
 
 #Preview {

@@ -4,10 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
+
+// MaxReviewPhotos is the product limit for review photos (matches
+// reviews_photo_urls_len CHECK / properties.photo_urls).
+const MaxReviewPhotos = 5
 
 // ReviewService implements review business logic.
 type ReviewService struct {
@@ -100,10 +105,10 @@ func (s *ReviewService) CreateReview(ctx context.Context, in CreateReviewInput) 
 		return nil, fmt.Errorf("create review: %w", domain.ErrNotEligible)
 	}
 
-	// photoURLs is currently dropped on the floor — the reviews schema has no
-	// photo_urls column. Photos for reviews are not yet implemented; if/when
-	// they are, add a separate review_photos table or column and persist here.
-	_ = in.PhotoURLs
+	photoURLs, err := normalizeReviewPhotoURLs(in.PhotoURLs)
+	if err != nil {
+		return nil, fmt.Errorf("create review: %w", err)
+	}
 
 	// Persist persona-appropriate category ratings only. Cross-direction dims
 	// are ignored so a mis-wired client cannot pollute the wrong columns.
@@ -114,6 +119,7 @@ func (s *ReviewService) CreateReview(ctx context.Context, in CreateReviewInput) 
 		ReviewerRole:  role,
 		OverallRating: in.OverallRating,
 		ReviewText:    in.Comment,
+		PhotoURLs:     photoURLs,
 	}
 	if role == "customer" {
 		review.QualityRating = in.QualityRating
@@ -150,6 +156,34 @@ func (s *ReviewService) CreateReview(ctx context.Context, in CreateReviewInput) 
 	)
 
 	return created, nil
+}
+
+// normalizeReviewPhotoURLs trims, drops empties, dedupes, enforces max 5, and
+// rejects non-http(s) URLs. Empty input is valid (no photos).
+func normalizeReviewPhotoURLs(in []string) ([]string, error) {
+	if len(in) == 0 {
+		return []string{}, nil
+	}
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, u := range in {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+			return nil, fmt.Errorf("%w: photo_urls must be http(s) CDN URLs", domain.ErrInvalidReviewPhotos)
+		}
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		out = append(out, u)
+		if len(out) > MaxReviewPhotos {
+			return nil, fmt.Errorf("%w: at most %d review photos", domain.ErrInvalidReviewPhotos, MaxReviewPhotos)
+		}
+	}
+	return out, nil
 }
 
 // GetReview retrieves a review by ID.

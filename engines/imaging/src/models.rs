@@ -140,6 +140,17 @@ pub enum UploadContext {
 }
 
 impl UploadContext {
+    /// Every upload context whose S3 prefix must be drained on GDPR erasure.
+    pub const ALL: [Self; 7] = [
+        Self::Avatar,
+        Self::Portfolio,
+        Self::JobPhoto,
+        Self::Document,
+        Self::ReviewPhoto,
+        Self::Listing,
+        Self::ChatAttachment,
+    ];
+
     /// Convert a string context to the enum. Returns `None` for unknown contexts.
     #[must_use]
     pub fn from_str_context(s: &str) -> Option<Self> {

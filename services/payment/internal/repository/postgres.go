@@ -260,7 +260,7 @@ func (r *PostgresRepository) ClaimPaymentStatus(ctx context.Context, id, fromSta
 	return nil
 }
 
-func (r *PostgresRepository) ListPayments(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*domain.Payment, int, error) {
+func (r *PostgresRepository) ListPayments(ctx context.Context, userID string, statusFilter string, contractID string, page, pageSize int) ([]*domain.Payment, int, error) {
 	where := []string{"(customer_id = $1 OR provider_id = $1)"}
 	args := []interface{}{userID}
 	argIdx := 2
@@ -268,6 +268,11 @@ func (r *PostgresRepository) ListPayments(ctx context.Context, userID string, st
 	if statusFilter != "" {
 		where = append(where, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, statusFilter)
+		argIdx++
+	}
+	if contractID != "" {
+		where = append(where, fmt.Sprintf("contract_id = $%d", argIdx))
+		args = append(args, contractID)
 		argIdx++
 	}
 
@@ -589,7 +594,7 @@ func (r *PostgresRepository) SetStripeOnboardingComplete(ctx context.Context, st
 // The subscriptions fallback is retained deliberately, and it is dead weight by
 // design rather than by accident. Before migration 102 this function read ONLY
 // subscriptions.stripe_customer_id, and SubscriptionService.CreateSubscription
-// never populated that column: the INSERT wrote '' and no UPDATE ever touched
+// never populated that column: the INSERT wrote ” and no UPDATE ever touched
 // it. So this function returned ("", nil) — success, empty — for every user who
 // has ever existed, which is why no off-session charge in this repo could work.
 // The fallback stays because it costs one indexed lookup only in the
@@ -801,6 +806,120 @@ func (r *PostgresRepository) UpdateFeeConfig(ctx context.Context, categoryID *st
 	}
 
 	return fc, nil
+}
+
+func scanCustomFee(row pgx.Row) (*domain.CustomFee, error) {
+	f := &domain.CustomFee{}
+	if err := row.Scan(&f.ID, &f.Name, &f.RateBPS, &f.Active, &f.CreatedAt, &f.UpdatedAt, &f.DeletedAt); err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+const customFeeSelect = `
+		SELECT id, name, rate_bps, active, created_at, updated_at, deleted_at
+		FROM platform_custom_fees`
+
+func (r *PostgresRepository) ListCustomFees(ctx context.Context) ([]*domain.CustomFee, error) {
+	rows, err := r.pool.Query(ctx, customFeeSelect+`
+		WHERE deleted_at IS NULL
+		ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list custom fees: %w", err)
+	}
+	defer rows.Close()
+
+	fees := make([]*domain.CustomFee, 0)
+	for rows.Next() {
+		f, err := scanCustomFee(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list custom fees scan: %w", err)
+		}
+		fees = append(fees, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list custom fees: %w", err)
+	}
+	return fees, nil
+}
+
+func (r *PostgresRepository) ListActiveCustomFees(ctx context.Context) ([]*domain.CustomFee, error) {
+	rows, err := r.pool.Query(ctx, customFeeSelect+`
+		WHERE deleted_at IS NULL AND active = true
+		ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list active custom fees: %w", err)
+	}
+	defer rows.Close()
+
+	fees := make([]*domain.CustomFee, 0)
+	for rows.Next() {
+		f, err := scanCustomFee(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list active custom fees scan: %w", err)
+		}
+		fees = append(fees, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list active custom fees: %w", err)
+	}
+	return fees, nil
+}
+
+func (r *PostgresRepository) GetCustomFee(ctx context.Context, id string) (*domain.CustomFee, error) {
+	f, err := scanCustomFee(r.pool.QueryRow(ctx, customFeeSelect+`
+		WHERE id = $1 AND deleted_at IS NULL`, id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get custom fee: %w", domain.ErrCustomFeeNotFound)
+		}
+		return nil, fmt.Errorf("get custom fee: %w", err)
+	}
+	return f, nil
+}
+
+func (r *PostgresRepository) CreateCustomFee(ctx context.Context, fee *domain.CustomFee) error {
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO platform_custom_fees (name, rate_bps, active)
+		VALUES ($1, $2, $3)
+		RETURNING id, name, rate_bps, active, created_at, updated_at, deleted_at`,
+		fee.Name, fee.RateBPS, fee.Active,
+	).Scan(&fee.ID, &fee.Name, &fee.RateBPS, &fee.Active, &fee.CreatedAt, &fee.UpdatedAt, &fee.DeletedAt)
+	if err != nil {
+		return fmt.Errorf("create custom fee: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) UpdateCustomFee(ctx context.Context, fee *domain.CustomFee) error {
+	err := r.pool.QueryRow(ctx, `
+		UPDATE platform_custom_fees
+		SET name = $2, rate_bps = $3, active = $4, updated_at = now()
+		WHERE id = $1 AND deleted_at IS NULL
+		RETURNING id, name, rate_bps, active, created_at, updated_at, deleted_at`,
+		fee.ID, fee.Name, fee.RateBPS, fee.Active,
+	).Scan(&fee.ID, &fee.Name, &fee.RateBPS, &fee.Active, &fee.CreatedAt, &fee.UpdatedAt, &fee.DeletedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("update custom fee: %w", domain.ErrCustomFeeNotFound)
+		}
+		return fmt.Errorf("update custom fee: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) DeactivateCustomFee(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE platform_custom_fees
+		SET active = false, deleted_at = now(), updated_at = now()
+		WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return fmt.Errorf("deactivate custom fee: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("deactivate custom fee: %w", domain.ErrCustomFeeNotFound)
+	}
+	return nil
 }
 
 // GetRevenueReport aggregates payment data grouped by the specified interval.

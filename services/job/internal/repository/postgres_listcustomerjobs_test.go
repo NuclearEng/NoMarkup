@@ -22,6 +22,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nomarkup/nomarkup/services/job/internal/crypto"
+	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,8 +56,9 @@ func repoTestDB(t *testing.T) *pgxpool.Pool {
 // TestListCustomerJobs_ColumnParity asserts that ListCustomerJobs' SELECT
 // list matches scanJobRow's destination count. Before today's fix this test
 // would have surfaced:
-//   list customer jobs scan: number of field descriptions must equal number
-//   of destinations, got 42 and 45
+//
+//	list customer jobs scan: number of field descriptions must equal number
+//	of destinations, got 42 and 45
 func TestListCustomerJobs_ColumnParity(t *testing.T) {
 	pool := repoTestDB(t)
 	repo := NewPostgresRepository(pool, testCipher(t))

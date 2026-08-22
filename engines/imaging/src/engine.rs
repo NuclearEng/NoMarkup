@@ -706,6 +706,24 @@ impl ImagePipeline {
         Ok((url, valid, actual_ct))
     }
 
+    /// GDPR erasure: delete every object stored for `user_id`.
+    ///
+    /// Covers (1) raw + `variant_key` outputs under `{context}/{user_id}/` for
+    /// every [`UploadContext`], and (2) `create_variant` outputs stored as
+    /// `{user_id}/{variant}/…` (avatar, portfolio, document thumbs).
+    ///
+    /// Job-keyed processed variants (`{job_id}/large/…`) are not included —
+    /// those keys are job UUIDs, not the user id. Raw job photos still live
+    /// under `job-photos/{user_id}/` and are deleted here.
+    pub async fn delete_user_objects(&self, user_id: &str) -> Result<u32, ImagingError> {
+        let prefixes = user_object_prefixes(user_id)?;
+        let mut deleted = 0u32;
+        for prefix in prefixes {
+            deleted += self.delete_prefix(&prefix).await?;
+        }
+        Ok(deleted)
+    }
+
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
@@ -764,6 +782,70 @@ impl ImagePipeline {
         Ok(())
     }
 
+    /// List + delete every object under `prefix`. Paginates; batches deletes
+    /// at 1000 (S3 DeleteObjects max). Empty prefix is success (0).
+    async fn delete_prefix(&self, prefix: &str) -> Result<u32, ImagingError> {
+        let mut deleted = 0u32;
+        let mut continuation: Option<String> = None;
+        loop {
+            let mut req = self
+                .s3_client
+                .list_objects_v2()
+                .bucket(&self.bucket)
+                .prefix(prefix);
+            if let Some(token) = continuation.as_ref() {
+                req = req.continuation_token(token);
+            }
+            let resp = req.send().await.map_err(|e| {
+                ImagingError::S3Error(format!("LIST {prefix}: {e}"))
+            })?;
+
+            let keys: Vec<String> = resp
+                .contents()
+                .iter()
+                .filter_map(|obj| obj.key().map(str::to_owned))
+                .collect();
+            if !keys.is_empty() {
+                deleted += self.delete_keys(&keys).await?;
+            }
+
+            if resp.is_truncated() == Some(true) {
+                continuation = resp.next_continuation_token().map(str::to_owned);
+                if continuation.is_none() {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(deleted)
+    }
+
+    async fn delete_keys(&self, keys: &[String]) -> Result<u32, ImagingError> {
+        let mut deleted = 0u32;
+        for chunk in keys.chunks(1000) {
+            let ids: Result<Vec<_>, _> = chunk
+                .iter()
+                .map(|k| aws_sdk_s3::types::ObjectIdentifier::builder().key(k).build())
+                .collect();
+            let ids = ids.map_err(|e| ImagingError::S3Error(format!("object identifier: {e}")))?;
+            let delete = aws_sdk_s3::types::Delete::builder()
+                .set_objects(Some(ids))
+                .quiet(true)
+                .build()
+                .map_err(|e| ImagingError::S3Error(format!("delete payload: {e}")))?;
+            self.s3_client
+                .delete_objects()
+                .bucket(&self.bucket)
+                .delete(delete)
+                .send()
+                .await
+                .map_err(|e| ImagingError::S3Error(format!("DELETE batch: {e}")))?;
+            deleted += u32::try_from(chunk.len()).unwrap_or(u32::MAX);
+        }
+        Ok(deleted)
+    }
+
     /// Create a resized variant, upload it, and return metadata.
     ///
     /// Takes the decoded image by `Arc` so the resize/encode can be moved onto
@@ -817,6 +899,25 @@ impl ImagePipeline {
     fn public_url(&self, key: &str) -> String {
         format!("{}/{}", self.public_url_base, key)
     }
+}
+
+/// S3 prefixes drained on GDPR erasure for `user_id`.
+///
+/// Rejects non-UUID ids so a caller cannot inject `../` or a bucket-wide
+/// empty prefix.
+pub fn user_object_prefixes(user_id: &str) -> Result<Vec<String>, ImagingError> {
+    if Uuid::parse_str(user_id).is_err() {
+        return Err(ImagingError::InvalidArgument(
+            "user_id must be a UUID".into(),
+        ));
+    }
+    let mut prefixes: Vec<String> = UploadContext::ALL
+        .iter()
+        .map(|ctx| format!("{}/{user_id}/", ctx.path_prefix()))
+        .collect();
+    // create_variant stores avatar/portfolio/document thumbs as `{user_id}/{variant}/…`.
+    prefixes.push(format!("{user_id}/"));
+    Ok(prefixes)
 }
 
 // ---------------------------------------------------------------------------
@@ -1242,6 +1343,29 @@ mod tests {
         assert_eq!(UploadContext::ReviewPhoto.path_prefix(), "review-photos");
         assert_eq!(UploadContext::Listing.path_prefix(), "listings");
         assert_eq!(UploadContext::ChatAttachment.path_prefix(), "chat-attachments");
+    }
+
+    #[test]
+    fn user_object_prefixes_cover_every_context_and_variant_root() {
+        let uid = "550e8400-e29b-41d4-a716-446655440000";
+        let prefixes = super::user_object_prefixes(uid).expect("valid uuid");
+        assert_eq!(prefixes.len(), UploadContext::ALL.len() + 1);
+        for ctx in UploadContext::ALL {
+            let expected = format!("{}/{uid}/", ctx.path_prefix());
+            assert!(
+                prefixes.contains(&expected),
+                "missing prefix {expected}, got {prefixes:?}"
+            );
+        }
+        assert!(prefixes.contains(&format!("{uid}/")));
+    }
+
+    #[test]
+    fn user_object_prefixes_reject_non_uuid() {
+        assert!(super::user_object_prefixes("").is_err());
+        assert!(super::user_object_prefixes("../").is_err());
+        assert!(super::user_object_prefixes("not-a-uuid").is_err());
+        assert!(super::user_object_prefixes("avatars/").is_err());
     }
 
     #[test]

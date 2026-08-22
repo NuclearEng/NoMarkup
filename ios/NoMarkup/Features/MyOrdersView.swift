@@ -1,3 +1,4 @@
+import PassKit
 import SwiftUI
 
 /// Buyer/seller order list — pay pending orders and complete escrow pickup handshake.
@@ -204,23 +205,21 @@ struct MyOrdersView: View {
             }
 
             if order.needsPayment {
-                Button {
-                    Task { await pay(order) }
-                } label: {
-                    if payingOrderID == order.id {
-                        ProgressView()
-                            .tint(BrandTheme.ctaLabelOnGold)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    } else {
-                        Label("Pay with Apple Pay", systemImage: "apple.logo")
-                            .frame(maxWidth: .infinity, minHeight: 44)
+                if payingOrderID == order.id {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .accessibilityLabel("Processing payment")
+                } else {
+                    PayWithApplePayButton(.plain) {
+                        Task { await pay(order) }
                     }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .payWithApplePayButtonStyle(.automatic)
+                    .disabled(isBusy)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Pay with Apple Pay")
+                    .accessibilityHint("Opens Apple Pay or card checkout for this order")
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(BrandTheme.accent)
-                .foregroundStyle(BrandTheme.ctaLabelOnGold)
-                .disabled(isBusy)
-                .accessibilityHint("Opens Apple Pay or card checkout for this order")
             }
 
             if showBuyerConfirm {

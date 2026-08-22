@@ -187,6 +187,7 @@ services:
       # Optional mesh peers (lazy dial; safe if profile not running).
       NOTIFICATION_SERVICE_ADDR: ${NOTIFICATION_SERVICE_ADDR:-notification:50059}
       PAYMENT_SERVICE_ADDR: payment:50054
+      IMAGING_SERVICE_ADDR: ${IMAGING_SERVICE_ADDR:-imaging:50058}
       SENTRY_DSN: ${SENTRY_DSN:-}
       DB_MAX_CONNS: ${DB_MAX_CONNS:-8}
       DB_MIN_CONNS: ${DB_MIN_CONNS:-1}
@@ -221,6 +222,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JOB_SERVICE_PORT: "50052"
+      PAYMENT_SERVICE_ADDR: payment:50054
       MEILISEARCH_URL: ${MEILISEARCH_URL:-http://meilisearch:7700}
       MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}

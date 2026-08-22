@@ -15,23 +15,29 @@ import (
 // --- Mock Payment Repository ---
 
 type mockPaymentRepo struct {
-	createPaymentFn               func(ctx context.Context, payment *domain.Payment) error
-	getPaymentFn                  func(ctx context.Context, id string) (*domain.Payment, error)
+	createPaymentFn                   func(ctx context.Context, payment *domain.Payment) error
+	getPaymentFn                      func(ctx context.Context, id string) (*domain.Payment, error)
 	getPaymentByRecurringInstanceIDFn func(ctx context.Context, recurringInstanceID string) (*domain.Payment, error)
-	getPaymentByIdempotencyKeyFn  func(ctx context.Context, idempotencyKey string) (*domain.Payment, error)
-	updatePaymentStatusFn         func(ctx context.Context, id string, status string) error
-	claimPaymentStatusFn          func(ctx context.Context, id, fromStatus, toStatus string) error
-	updateRefundCASFn             func(ctx context.Context, id string, expectedPrior, newTotal int64, refundReason string, refundedAt time.Time, stripeRefundID, status string) error
-	withProviderAdvisoryLockFn    func(ctx context.Context, providerID string, fn func(ctx context.Context) error) error
-	listPaymentsFn                func(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*domain.Payment, int, error)
-	getFeeConfigFn                func(ctx context.Context, categoryID string) (*domain.FeeConfig, error)
-	getDefaultFeeConfigFn         func(ctx context.Context) (*domain.FeeConfig, error)
-	findByStripePIFn              func(ctx context.Context, paymentIntentID string) (*domain.Payment, error)
-	updateStripeFieldsFn          func(ctx context.Context, id string, paymentIntentID, chargeID, transferID string) error
-	updateRefundFn                func(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
-	getStripeAccountIDFn          func(ctx context.Context, userID string) (string, error)
-	setStripeAccountIDFn          func(ctx context.Context, userID string, stripeAccountID string) error
-	setStripeOnboardingCompleteFn func(ctx context.Context, stripeAccountID string, complete bool) error
+	getPaymentByIdempotencyKeyFn      func(ctx context.Context, idempotencyKey string) (*domain.Payment, error)
+	updatePaymentStatusFn             func(ctx context.Context, id string, status string) error
+	claimPaymentStatusFn              func(ctx context.Context, id, fromStatus, toStatus string) error
+	updateRefundCASFn                 func(ctx context.Context, id string, expectedPrior, newTotal int64, refundReason string, refundedAt time.Time, stripeRefundID, status string) error
+	withProviderAdvisoryLockFn        func(ctx context.Context, providerID string, fn func(ctx context.Context) error) error
+	listPaymentsFn                    func(ctx context.Context, userID string, statusFilter string, contractID string, page, pageSize int) ([]*domain.Payment, int, error)
+	getFeeConfigFn                    func(ctx context.Context, categoryID string) (*domain.FeeConfig, error)
+	getDefaultFeeConfigFn             func(ctx context.Context) (*domain.FeeConfig, error)
+	listCustomFeesFn                  func(ctx context.Context) ([]*domain.CustomFee, error)
+	listActiveCustomFeesFn            func(ctx context.Context) ([]*domain.CustomFee, error)
+	getCustomFeeFn                    func(ctx context.Context, id string) (*domain.CustomFee, error)
+	createCustomFeeFn                 func(ctx context.Context, fee *domain.CustomFee) error
+	updateCustomFeeFn                 func(ctx context.Context, fee *domain.CustomFee) error
+	deactivateCustomFeeFn             func(ctx context.Context, id string) error
+	findByStripePIFn                  func(ctx context.Context, paymentIntentID string) (*domain.Payment, error)
+	updateStripeFieldsFn              func(ctx context.Context, id string, paymentIntentID, chargeID, transferID string) error
+	updateRefundFn                    func(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
+	getStripeAccountIDFn              func(ctx context.Context, userID string) (string, error)
+	setStripeAccountIDFn              func(ctx context.Context, userID string, stripeAccountID string) error
+	setStripeOnboardingCompleteFn     func(ctx context.Context, stripeAccountID string, complete bool) error
 	// Expense methods
 	createExpenseFn func(ctx context.Context, expense *domain.Expense) error
 	listExpensesFn  func(ctx context.Context, providerID string, startDate, endDate *time.Time, page, pageSize int) ([]*domain.Expense, int64, int, error)
@@ -135,9 +141,9 @@ func (m *mockPaymentRepo) WithProviderAdvisoryLock(ctx context.Context, provider
 	}
 	return fn(ctx)
 }
-func (m *mockPaymentRepo) ListPayments(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*domain.Payment, int, error) {
+func (m *mockPaymentRepo) ListPayments(ctx context.Context, userID string, statusFilter string, contractID string, page, pageSize int) ([]*domain.Payment, int, error) {
 	if m.listPaymentsFn != nil {
-		return m.listPaymentsFn(ctx, userID, statusFilter, page, pageSize)
+		return m.listPaymentsFn(ctx, userID, statusFilter, contractID, page, pageSize)
 	}
 	return nil, 0, nil
 }
@@ -146,6 +152,42 @@ func (m *mockPaymentRepo) GetFeeConfig(ctx context.Context, categoryID string) (
 }
 func (m *mockPaymentRepo) GetDefaultFeeConfig(ctx context.Context) (*domain.FeeConfig, error) {
 	return m.getDefaultFeeConfigFn(ctx)
+}
+func (m *mockPaymentRepo) ListCustomFees(ctx context.Context) ([]*domain.CustomFee, error) {
+	if m.listCustomFeesFn != nil {
+		return m.listCustomFeesFn(ctx)
+	}
+	return nil, nil
+}
+func (m *mockPaymentRepo) ListActiveCustomFees(ctx context.Context) ([]*domain.CustomFee, error) {
+	if m.listActiveCustomFeesFn != nil {
+		return m.listActiveCustomFeesFn(ctx)
+	}
+	return nil, nil
+}
+func (m *mockPaymentRepo) GetCustomFee(ctx context.Context, id string) (*domain.CustomFee, error) {
+	if m.getCustomFeeFn != nil {
+		return m.getCustomFeeFn(ctx, id)
+	}
+	return nil, domain.ErrCustomFeeNotFound
+}
+func (m *mockPaymentRepo) CreateCustomFee(ctx context.Context, fee *domain.CustomFee) error {
+	if m.createCustomFeeFn != nil {
+		return m.createCustomFeeFn(ctx, fee)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) UpdateCustomFee(ctx context.Context, fee *domain.CustomFee) error {
+	if m.updateCustomFeeFn != nil {
+		return m.updateCustomFeeFn(ctx, fee)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) DeactivateCustomFee(ctx context.Context, id string) error {
+	if m.deactivateCustomFeeFn != nil {
+		return m.deactivateCustomFeeFn(ctx, id)
+	}
+	return nil
 }
 func (m *mockPaymentRepo) FindByStripePaymentIntentID(ctx context.Context, paymentIntentID string) (*domain.Payment, error) {
 	return m.findByStripePIFn(ctx, paymentIntentID)
@@ -509,12 +551,17 @@ func defaultFeeConfig() *domain.FeeConfig {
 	}
 }
 
+// testPlatformEIN is a syntactically valid US EIN used by newTestPaymentService.
+// It is not a real EIN and must not be the dummy 88-1234567.
+const testPlatformEIN = "12-3456789"
+
 func newTestPaymentService(repo *mockPaymentRepo, stripe *mockStripeService) *PaymentService {
 	// We need to work with a real StripeService for the PaymentService.
 	// Since tests mock at the repo level and StripeService is a concrete struct,
 	// we'll create a dev-mode StripeService which provides stubs.
 	ss := &StripeService{devMode: true}
 	svc := NewPaymentService(repo, ss)
+	svc.SetPlatformEIN(testPlatformEIN)
 	// Wire a healthy default underwriter + trust source so advance-flow tests
 	// (which only need the available-credit guard to clear) work. Tests that
 	// exercise specific underwriting outcomes override these.
@@ -789,6 +836,234 @@ func TestPaymentService_CalculateFees_category_fallback_to_default(t *testing.T)
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(500), breakdown.PlatformFeeCents) // Default 5%
+}
+
+func TestPaymentService_CalculateFees_CustomFees(t *testing.T) {
+	t.Parallel()
+
+	base := &domain.FeeConfig{
+		FeePercentage:       0.05, // 500 bps
+		GuaranteePercentage: 0.02,
+		MinFeeCents:         0,
+	}
+
+	tests := []struct {
+		name               string
+		fees               []*domain.CustomFee
+		wantPlatformFee    int64
+		wantGuaranteeFee   int64
+		wantProviderPayout int64
+		wantErr            error
+	}{
+		{
+			name:               "zero_custom_fees",
+			fees:               nil,
+			wantPlatformFee:    500, // 5% of 10000
+			wantGuaranteeFee:   200,
+			wantProviderPayout: 9300,
+		},
+		{
+			name: "one_active_fee",
+			fees: []*domain.CustomFee{
+				{ID: "cf-1", Name: "Featured", RateBPS: 500, Active: true}, // 5%
+			},
+			wantPlatformFee:    1000, // 5% + 5%
+			wantGuaranteeFee:   200,
+			wantProviderPayout: 8800,
+		},
+		{
+			name: "two_active_fees",
+			fees: []*domain.CustomFee{
+				{ID: "cf-1", Name: "Featured", RateBPS: 300, Active: true}, // 3%
+				{ID: "cf-2", Name: "Rush", RateBPS: 200, Active: true},     // 2%
+			},
+			wantPlatformFee:    1000, // 5% + 3% + 2%
+			wantGuaranteeFee:   200,
+			wantProviderPayout: 8800,
+		},
+		{
+			name: "deactivated_fee_ignored",
+			fees: []*domain.CustomFee{
+				{ID: "cf-1", Name: "Featured", RateBPS: 500, Active: true},
+				// ListActiveCustomFees already filters inactive; a deactivated
+				// row must not appear here. Empty extra proves ignore-by-absence.
+			},
+			wantPlatformFee:    1000,
+			wantGuaranteeFee:   200,
+			wantProviderPayout: 8800,
+		},
+		{
+			name: "combined_cap_exceeded",
+			fees: []*domain.CustomFee{
+				{ID: "cf-1", Name: "Huge", RateBPS: 4600, Active: true}, // 5% + 46% = 51%
+			},
+			wantErr: domain.ErrCombinedFeeCapExceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			repo := &mockPaymentRepo{
+				getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+					return base, nil
+				},
+				listActiveCustomFeesFn: func(_ context.Context) ([]*domain.CustomFee, error) {
+					return tt.fees, nil
+				},
+			}
+			svc := newTestPaymentService(repo, nil)
+			breakdown, err := svc.CalculateFees(context.Background(), 10000, nil)
+			if tt.wantErr != nil {
+				require.Error(t, err)
+				assert.True(t, errors.Is(err, tt.wantErr))
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantPlatformFee, breakdown.PlatformFeeCents)
+			assert.Equal(t, tt.wantGuaranteeFee, breakdown.GuaranteeFeeCents)
+			assert.Equal(t, tt.wantProviderPayout, breakdown.ProviderPayoutCents)
+		})
+	}
+
+	t.Run("deactivated_row_not_in_active_list", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockPaymentRepo{
+			getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+				return base, nil
+			},
+			listActiveCustomFeesFn: func(_ context.Context) ([]*domain.CustomFee, error) {
+				// Active list omits the deactivated 10% fee.
+				return []*domain.CustomFee{
+					{ID: "cf-live", Name: "Live", RateBPS: 100, Active: true},
+				}, nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		breakdown, err := svc.CalculateFees(context.Background(), 10000, nil)
+		require.NoError(t, err)
+		assert.Equal(t, int64(600), breakdown.PlatformFeeCents) // 5% + 1%
+		assert.Equal(t, int64(9200), breakdown.ProviderPayoutCents)
+	})
+}
+
+func TestPaymentService_CustomFeeCRUD(t *testing.T) {
+	t.Parallel()
+
+	liveID := "11111111-1111-1111-1111-111111111111"
+
+	t.Run("create_and_list", func(t *testing.T) {
+		t.Parallel()
+		var stored *domain.CustomFee
+		repo := &mockPaymentRepo{
+			getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+				return defaultFeeConfig(), nil
+			},
+			listActiveCustomFeesFn: func(_ context.Context) ([]*domain.CustomFee, error) {
+				if stored == nil || !stored.Active {
+					return nil, nil
+				}
+				return []*domain.CustomFee{stored}, nil
+			},
+			listCustomFeesFn: func(_ context.Context) ([]*domain.CustomFee, error) {
+				if stored == nil {
+					return nil, nil
+				}
+				return []*domain.CustomFee{stored}, nil
+			},
+			createCustomFeeFn: func(_ context.Context, fee *domain.CustomFee) error {
+				fee.ID = liveID
+				stored = fee
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		created, err := svc.CreateCustomFee(context.Background(), "  Featured listing  ", 500)
+		require.NoError(t, err)
+		require.NotNil(t, created)
+		assert.Equal(t, "Featured listing", created.Name)
+		assert.Equal(t, int64(500), created.RateBPS)
+		assert.True(t, created.Active)
+
+		listed, err := svc.ListCustomFees(context.Background())
+		require.NoError(t, err)
+		require.Len(t, listed, 1)
+		assert.Equal(t, liveID, listed[0].ID)
+	})
+
+	t.Run("create_rejects_combined_cap", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockPaymentRepo{
+			getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+				return &domain.FeeConfig{FeePercentage: 0.08, Active: true}, nil
+			},
+			listActiveCustomFeesFn: func(_ context.Context) ([]*domain.CustomFee, error) {
+				return []*domain.CustomFee{{ID: "cf-1", RateBPS: 4000, Active: true}}, nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		_, err := svc.CreateCustomFee(context.Background(), "Too much", 500) // 8% + 40% + 5% = 53%
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrCombinedFeeCapExceeded))
+	})
+
+	t.Run("update_rate_and_deactivate", func(t *testing.T) {
+		t.Parallel()
+		existing := &domain.CustomFee{ID: liveID, Name: "Featured", RateBPS: 500, Active: true}
+		repo := &mockPaymentRepo{
+			getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+				return defaultFeeConfig(), nil
+			},
+			getCustomFeeFn: func(_ context.Context, id string) (*domain.CustomFee, error) {
+				if id != liveID {
+					return nil, domain.ErrCustomFeeNotFound
+				}
+				cp := *existing
+				return &cp, nil
+			},
+			listActiveCustomFeesFn: func(_ context.Context) ([]*domain.CustomFee, error) {
+				if !existing.Active {
+					return nil, nil
+				}
+				return []*domain.CustomFee{existing}, nil
+			},
+			updateCustomFeeFn: func(_ context.Context, fee *domain.CustomFee) error {
+				existing = fee
+				return nil
+			},
+			deactivateCustomFeeFn: func(_ context.Context, id string) error {
+				if id != liveID {
+					return domain.ErrCustomFeeNotFound
+				}
+				existing.Active = false
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		rate := int64(250)
+		updated, err := svc.UpdateCustomFee(context.Background(), liveID, nil, &rate, nil)
+		require.NoError(t, err)
+		assert.Equal(t, int64(250), updated.RateBPS)
+
+		err = svc.DeactivateCustomFee(context.Background(), liveID)
+		require.NoError(t, err)
+
+		err = svc.DeactivateCustomFee(context.Background(), "not-a-uuid")
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrInvalidAmount))
+	})
+
+	t.Run("create_rejects_empty_name", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestPaymentService(&mockPaymentRepo{
+			getDefaultFeeConfigFn: func(_ context.Context) (*domain.FeeConfig, error) {
+				return defaultFeeConfig(), nil
+			},
+		}, nil)
+		_, err := svc.CreateCustomFee(context.Background(), "   ", 100)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrInvalidAmount))
+	})
 }
 
 // --- CreatePayment tests ---

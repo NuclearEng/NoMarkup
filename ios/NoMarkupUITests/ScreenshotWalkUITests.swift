@@ -66,25 +66,25 @@ final class ScreenshotWalkUITests: XCTestCase {
         // Prefer "Open" for custom-scheme confirmation ("Open in NoMarkup?") so
         // deep-link tests are not cancelled; only then fall back to deny/dismiss.
         addUIInterruptionMonitor(withDescription: "System dialog") { alert in
-            for title in ["Open", "Allow", "OK"] {
-                let button = alert.buttons[title]
-                if button.exists { button.tap(); return true }
-            }
-            for title in ["Don’t Allow", "Don't Allow", "Not Now", "Cancel"] {
+            for title in ["Close", "Open", "Allow", "OK", "Continue", "Not Now", "Don’t Allow", "Don't Allow", "Cancel", "Later"] {
                 let button = alert.buttons[title]
                 if button.exists { button.tap(); return true }
             }
             return false
         }
-        // Intentionally no NOMARKUP_UI_TEST_* in app.launchEnvironment:
+        // Intentionally no NOMARKUP_UI_TEST_EMAIL in app.launchEnvironment:
         // the walk must exercise the real login form, not DEBUG auto-login.
+        // -ui-testing hides SIWA so the Simulator Apple ID sheet cannot cover the form.
         // Force local gateway for Simulator dogfood (scheme may still point at LAN).
         let env = ProcessInfo.processInfo.environment
         let apiBase = env["NOMARKUP_API_BASE_URL"]
             ?? env["TEST_RUNNER_NOMARKUP_API_BASE_URL"]
             ?? "http://127.0.0.1:8081"
         app.launchEnvironment["NOMARKUP_API_BASE_URL"] = apiBase
+        app.launchEnvironment["NOMARKUP_UI_TESTING"] = "1"
+        app.launchArguments = ["-ui-testing"]
         app.launch()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
     }
 
     override func tearDownWithError() throws {
@@ -473,6 +473,16 @@ final class ScreenshotWalkUITests: XCTestCase {
             signOutIfNeeded()
         }
 
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        settle(0.3)
+        for title in ["Close", "Not Now", "Not now", "Continue", "OK"] {
+            let button = app.alerts.buttons[title].exists ? app.alerts.buttons[title] : app.buttons[title]
+            if button.exists {
+                button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                settle(0.2)
+            }
+        }
+
         XCTAssertTrue(emailField.waitForExistence(timeout: 15), "login.email not found")
         XCTAssertTrue(passwordField.waitForExistence(timeout: 5), "login.password not found")
 
@@ -656,6 +666,8 @@ final class ScreenshotWalkUITests: XCTestCase {
                     ?? env["TEST_RUNNER_NOMARKUP_API_BASE_URL"]
                     ?? "http://127.0.0.1:8081"
                 app.launchEnvironment["NOMARKUP_API_BASE_URL"] = apiBase
+                app.launchEnvironment["NOMARKUP_UI_TESTING"] = "1"
+                app.launchArguments = ["-ui-testing"]
                 app.launch()
                 settle(1.2)
                 login(email: customerEmail, screenshotPrefix: "\(shotPrefix)-recover")
@@ -1356,6 +1368,8 @@ final class ScreenshotWalkUITests: XCTestCase {
                 ?? env["TEST_RUNNER_NOMARKUP_API_BASE_URL"]
                 ?? "http://127.0.0.1:8081"
             app.launchEnvironment["NOMARKUP_API_BASE_URL"] = apiBase
+            app.launchEnvironment["NOMARKUP_UI_TESTING"] = "1"
+            app.launchArguments = ["-ui-testing"]
             app.launch()
             settle(1.5)
             login(email: customerEmail, screenshotPrefix: "cust-sweep-recover")

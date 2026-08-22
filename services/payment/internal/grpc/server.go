@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nomarkup/nomarkup/pkg/grpmtls"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
-	"github.com/nomarkup/nomarkup/pkg/grpmtls"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 	"github.com/nomarkup/nomarkup/services/payment/internal/service"
 	grpclib "google.golang.org/grpc"
@@ -378,7 +378,7 @@ func (s *Server) ListPayments(ctx context.Context, req *paymentv1.ListPaymentsRe
 		}
 	}
 
-	payments, totalCount, err := s.svc.ListPayments(ctx, req.GetUserId(), statusFilter, int(page), int(pageSize))
+	payments, totalCount, err := s.svc.ListPayments(ctx, req.GetUserId(), statusFilter, req.GetContractId(), int(page), int(pageSize))
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -579,11 +579,11 @@ func (s *Server) AdminGetPaymentDetails(ctx context.Context, req *paymentv1.Admi
 	}
 
 	return &paymentv1.AdminGetPaymentDetailsResponse{
-		Payment:                domainPaymentToProto(payment),
-		Breakdown:              breakdown,
-		StripePaymentIntentId:  payment.StripePaymentIntentID,
-		StripeChargeId:         payment.StripeChargeID,
-		StripeTransferId:       payment.StripeTransferID,
+		Payment:               domainPaymentToProto(payment),
+		Breakdown:             breakdown,
+		StripePaymentIntentId: payment.StripePaymentIntentID,
+		StripeChargeId:        payment.StripeChargeID,
+		StripeTransferId:      payment.StripeTransferID,
 	}, nil
 }
 
@@ -618,16 +618,100 @@ func (s *Server) AdminUpdateFeeConfig(ctx context.Context, req *paymentv1.AdminU
 	}, nil
 }
 
+func customFeeToProto(f *domain.CustomFee) *paymentv1.CustomFee {
+	if f == nil {
+		return nil
+	}
+	pb := &paymentv1.CustomFee{
+		Id:      f.ID,
+		Name:    f.Name,
+		RateBps: int32(f.RateBPS),
+		Active:  f.Active,
+	}
+	if !f.CreatedAt.IsZero() {
+		pb.CreatedAt = timestamppb.New(f.CreatedAt)
+	}
+	if !f.UpdatedAt.IsZero() {
+		pb.UpdatedAt = timestamppb.New(f.UpdatedAt)
+	}
+	return pb
+}
+
+func (s *Server) AdminListCustomFees(ctx context.Context, _ *paymentv1.AdminListCustomFeesRequest) (*paymentv1.AdminListCustomFeesResponse, error) {
+	fees, err := s.svc.ListCustomFees(ctx)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	out := make([]*paymentv1.CustomFee, 0, len(fees))
+	for _, f := range fees {
+		out = append(out, customFeeToProto(f))
+	}
+	return &paymentv1.AdminListCustomFeesResponse{Fees: out}, nil
+}
+
+func (s *Server) AdminCreateCustomFee(ctx context.Context, req *paymentv1.AdminCreateCustomFeeRequest) (*paymentv1.AdminCreateCustomFeeResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	fee, err := s.svc.CreateCustomFee(ctx, req.GetName(), int64(req.GetRateBps()))
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.AdminCreateCustomFeeResponse{Fee: customFeeToProto(fee)}, nil
+}
+
+func (s *Server) AdminUpdateCustomFee(ctx context.Context, req *paymentv1.AdminUpdateCustomFeeRequest) (*paymentv1.AdminUpdateCustomFeeResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	if req.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "id is required")
+	}
+	var name *string
+	if req.Name != nil {
+		n := req.GetName()
+		name = &n
+	}
+	var rateBPS *int64
+	if req.RateBps != nil {
+		v := int64(req.GetRateBps())
+		rateBPS = &v
+	}
+	var active *bool
+	if req.Active != nil {
+		a := req.GetActive()
+		active = &a
+	}
+	fee, err := s.svc.UpdateCustomFee(ctx, req.GetId(), name, rateBPS, active)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.AdminUpdateCustomFeeResponse{Fee: customFeeToProto(fee)}, nil
+}
+
+func (s *Server) AdminDeactivateCustomFee(ctx context.Context, req *paymentv1.AdminDeactivateCustomFeeRequest) (*paymentv1.AdminDeactivateCustomFeeResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	if req.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "id is required")
+	}
+	if err := s.svc.DeactivateCustomFee(ctx, req.GetId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.AdminDeactivateCustomFeeResponse{Deactivated: true}, nil
+}
+
 // feeConfigToProto maps a domain FeeConfig onto the GetFeeConfigResponse proto,
 // including the lead-gen fields.
 func feeConfigToProto(fc *domain.FeeConfig) *paymentv1.GetFeeConfigResponse {
 	resp := &paymentv1.GetFeeConfigResponse{
-		FeePercentage:      fc.FeePercentage,
+		FeePercentage:       fc.FeePercentage,
 		GuaranteePercentage: fc.GuaranteePercentage,
-		MinFeeCents:        fc.MinFeeCents,
-		LeadGenEnabled:     fc.LeadGenEnabled,
-		LeadGenPercentage:  fc.LeadGenPercentage,
-		LeadGenMinFeeCents: fc.LeadGenMinFeeCents,
+		MinFeeCents:         fc.MinFeeCents,
+		LeadGenEnabled:      fc.LeadGenEnabled,
+		LeadGenPercentage:   fc.LeadGenPercentage,
+		LeadGenMinFeeCents:  fc.LeadGenMinFeeCents,
 	}
 	if fc.MaxFeeCents != nil {
 		resp.MaxFeeCents = *fc.MaxFeeCents
@@ -672,11 +756,11 @@ func (s *Server) GetRevenueReport(ctx context.Context, req *paymentv1.GetRevenue
 	}
 
 	return &paymentv1.GetRevenueReportResponse{
-		DataPoints:            dataPoints,
-		TotalGmvCents:         report.TotalGMVCents,
-		TotalRevenueCents:     report.TotalRevenueCents,
+		DataPoints:              dataPoints,
+		TotalGmvCents:           report.TotalGMVCents,
+		TotalRevenueCents:       report.TotalRevenueCents,
 		TotalGuaranteeFundCents: report.TotalGuaranteeFundCents,
-		EffectiveTakeRate:     report.EffectiveTakeRate,
+		EffectiveTakeRate:       report.EffectiveTakeRate,
 	}, nil
 }
 
@@ -797,6 +881,10 @@ func mapDomainError(err error) error {
 		return status.Error(codes.PermissionDenied, "you are not permitted to perform this action on this payment")
 	case errors.Is(err, domain.ErrFeeConfigNotFound):
 		return status.Error(codes.NotFound, "fee configuration not found")
+	case errors.Is(err, domain.ErrCustomFeeNotFound):
+		return status.Error(codes.NotFound, "custom fee not found")
+	case errors.Is(err, domain.ErrCombinedFeeCapExceeded):
+		return status.Error(codes.FailedPrecondition, "combined platform and custom fees exceed 50%")
 	case errors.Is(err, domain.ErrStripeAccountNotFound):
 		return status.Error(codes.NotFound, "stripe account not found")
 	case errors.Is(err, domain.ErrTransfersNotReady):

@@ -777,6 +777,18 @@ struct AccountView: View {
                     }
                     .frame(minHeight: 44)
                     .accessibilityIdentifier("account.row.support")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Widgets & Live Activities", systemImage: "rectangle.on.rectangle")
+                        Text(
+                            "Long-press the Home Screen, tap Edit, then Widgets, and add NoMarkup. Active Bids and Next Closing show your auctions. Live Activities appear on the Lock Screen after you place a bid. On iOS 18 you can add NoMarkup controls in Control Center."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(minHeight: 44, alignment: .leading)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("account.row.widgets")
                 } header: {
                     Text("Legal & support").brandSectionHeader()
                 }

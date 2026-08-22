@@ -261,6 +261,7 @@ func main() {
 	marketplaceSvc.SetAccountResolver(repo) // GetStripeAccountID → acct_*
 	// R6.1: goods take rate from platform_fee_config (same repo as services CalculateFees).
 	marketplaceSvc.SetFeeConfigLoader(repo)
+	marketplaceSvc.SetCustomFeeLoader(repo)
 	// Buyer-side Stripe Customer + default card, so the settlement sweeper can
 	// collect an auction win off-session.
 	marketplaceSvc.SetCustomerProvisioner(customerProvisioner)

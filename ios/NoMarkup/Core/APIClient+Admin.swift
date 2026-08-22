@@ -1125,6 +1125,68 @@ extension APIClient {
         )
     }
 
+    /// GET `/api/v1/admin/custom-fees` — admin-named additive platform fees.
+    func fetchAdminCustomFees() async throws -> [AdminCustomFee] {
+        let response: AdminCustomFeesResponse = try await getJSON(
+            pathComponents: ["api", "v1", "admin", "custom-fees"],
+            authorized: true
+        )
+        return response.fees ?? []
+    }
+
+    /// POST `/api/v1/admin/custom-fees` — persist a named fee (rate_bps, 500 = 5%).
+    @discardableResult
+    func createAdminCustomFee(name: String, rateBps: Int) async throws -> AdminCustomFee {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Fee name is required.")
+        }
+        let response: AdminCustomFeeMutationResponse = try await postJSON(
+            pathComponents: ["api", "v1", "admin", "custom-fees"],
+            body: AdminCustomFeeCreateBody(name: trimmed, rateBps: rateBps),
+            authorized: .required
+        )
+        if let fee = response.fee {
+            return fee
+        }
+        return AdminCustomFee(id: "", name: trimmed, rateBps: rateBps, active: true)
+    }
+
+    /// PATCH `/api/v1/admin/custom-fees/{id}`
+    @discardableResult
+    func updateAdminCustomFee(
+        id: String,
+        name: String? = nil,
+        rateBps: Int? = nil,
+        active: Bool? = nil
+    ) async throws -> AdminCustomFee {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Custom fee id is required.")
+        }
+        let response: AdminCustomFeeMutationResponse = try await patchJSON(
+            pathComponents: ["api", "v1", "admin", "custom-fees", trimmed],
+            body: AdminCustomFeeUpdateBody(name: name, rateBps: rateBps, active: active),
+            authorized: .required
+        )
+        if let fee = response.fee {
+            return fee
+        }
+        return AdminCustomFee(id: trimmed, name: name ?? "", rateBps: rateBps ?? 0, active: active ?? true)
+    }
+
+    /// DELETE `/api/v1/admin/custom-fees/{id}` — soft-deactivate (dropped from live calc).
+    func deleteAdminCustomFee(id: String) async throws {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Custom fee id is required.")
+        }
+        try await deleteEmpty(
+            pathComponents: ["api", "v1", "admin", "custom-fees", trimmed],
+            authorized: .required
+        )
+    }
+
     /// GET `/api/v1/admin/revenue` — GMV / revenue aggregates (+ optional date range).
     func fetchAdminRevenue(
         startDate: String? = nil,
@@ -1682,6 +1744,42 @@ struct AdminFeeConfigUpdateBody: Encodable, Sendable {
 
 private struct AdminFeeConfigUpdateResponse: Decodable, Sendable {
     var config: AdminFeeConfig?
+}
+
+struct AdminCustomFee: Decodable, Identifiable, Sendable, Hashable {
+    var id: String
+    var name: String
+    var rateBps: Int
+    var active: Bool? = true
+    var createdAt: String? = nil
+    var updatedAt: String? = nil
+
+    var percentDisplay: String {
+        let pct = Double(rateBps) / 100.0
+        if abs(pct.rounded() - pct) < 0.000_1 {
+            return String(Int(pct.rounded()))
+        }
+        return String(format: "%.2f", pct)
+    }
+}
+
+private struct AdminCustomFeesResponse: Decodable, Sendable {
+    var fees: [AdminCustomFee]?
+}
+
+private struct AdminCustomFeeMutationResponse: Decodable, Sendable {
+    var fee: AdminCustomFee?
+}
+
+private struct AdminCustomFeeCreateBody: Encodable, Sendable {
+    var name: String
+    var rateBps: Int
+}
+
+private struct AdminCustomFeeUpdateBody: Encodable, Sendable {
+    var name: String?
+    var rateBps: Int?
+    var active: Bool?
 }
 
 struct AdminRevenueReport: Decodable, Sendable {

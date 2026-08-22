@@ -166,7 +166,7 @@ extension APIClient {
     }
 
     /// POST `/api/v1/contracts/{id}/reviews`
-    /// Body: overall_rating, comment, optional category ratings (1–5).
+    /// Body: overall_rating, comment, optional category ratings (1–5), photo_urls (0–5 http(s)).
     /// Server requires comment ≥ 50 characters and review window eligibility.
     @discardableResult
     func createContractReview(
@@ -179,7 +179,8 @@ extension APIClient {
         valueRating: Int? = nil,
         paymentPromptnessRating: Int? = nil,
         scopeAccuracyRating: Int? = nil,
-        accessRating: Int? = nil
+        accessRating: Int? = nil,
+        photoURLs: [String] = []
     ) async throws -> ContractReviewResponse {
         let clamped = min(5, max(1, rating))
         let trimmed = comment.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -204,7 +205,8 @@ extension APIClient {
                 valueRating: clampOptional(valueRating),
                 paymentPromptnessRating: clampOptional(paymentPromptnessRating),
                 scopeAccuracyRating: clampOptional(scopeAccuracyRating),
-                accessRating: clampOptional(accessRating)
+                accessRating: clampOptional(accessRating),
+                photoUrls: photoURLs
             ),
             authorized: .required
         )
@@ -950,6 +952,7 @@ private struct ContractsCreateReviewBody: Encodable {
     let paymentPromptnessRating: Int32?
     let scopeAccuracyRating: Int32?
     let accessRating: Int32?
+    let photoUrls: [String]
 }
 
 private struct ReviewRespondBody: Encodable {

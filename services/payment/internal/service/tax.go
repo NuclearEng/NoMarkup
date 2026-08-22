@@ -4,11 +4,35 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
+
+// dummyPlatformEIN is the placeholder that used to be hardcoded onto generated
+// 1099-NEC forms. It must never be persisted as a payer EIN.
+const dummyPlatformEIN = "88-1234567"
+
+// usEINPattern is the IRS EIN display shape NN-NNNNNNN.
+var usEINPattern = regexp.MustCompile(`^\d{2}-\d{7}$`)
+
+// resolvePlatformEIN returns a trimmed US EIN suitable for a 1099-NEC payer
+// line, or ErrPlatformEINNotConfigured. Empty, whitespace, the dummy
+// 88-1234567, and non-US shapes are all rejected so a generated form never
+// ships a fake EIN.
+func resolvePlatformEIN(ein string) (string, error) {
+	ein = strings.TrimSpace(ein)
+	if ein == "" || ein == dummyPlatformEIN {
+		return "", domain.ErrPlatformEINNotConfigured
+	}
+	if !usEINPattern.MatchString(ein) {
+		return "", domain.ErrPlatformEINNotConfigured
+	}
+	return ein, nil
+}
 
 // GenerateTaxForm creates or updates a 1099-NEC tax form for a provider and year.
 func (s *PaymentService) GenerateTaxForm(ctx context.Context, providerID string, taxYear int) (*domain.TaxForm, error) {
@@ -19,6 +43,11 @@ func (s *PaymentService) GenerateTaxForm(ctx context.Context, providerID string,
 	currentYear := time.Now().Year()
 	if taxYear < 2020 || taxYear > currentYear {
 		return nil, fmt.Errorf("generate tax form: invalid tax year %d", taxYear)
+	}
+
+	platformEIN, err := resolvePlatformEIN(s.platformEIN)
+	if err != nil {
+		return nil, fmt.Errorf("generate tax form: %w", err)
 	}
 
 	// Get total provider earnings for the year.
@@ -65,7 +94,7 @@ func (s *PaymentService) GenerateTaxForm(ctx context.Context, providerID string,
 		TotalCompensationCents:  totalEarnings,
 		FederalTaxWithheldCents: 0,
 		StateTaxWithheldCents:   0,
-		PlatformEIN:             "88-1234567",
+		PlatformEIN:             platformEIN,
 		PlatformName:            "NoMarkup Inc.",
 		PDFURL:                  &pdfURL,
 		Status:                  "generated",

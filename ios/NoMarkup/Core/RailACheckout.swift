@@ -37,6 +37,19 @@ enum RailACheckout {
         }
     }
 
+    /// ASR-4.9.recur.* copy shown adjacent to first Apple Pay / PaymentSheet
+    /// authorization on a recurring service schedule (not one-shot contracts).
+    static func recurringAuthorizationDisclosure(frequency: String, amount: String) -> String {
+        let raw = frequency.trimmingCharacters(in: .whitespacesAndNewlines)
+        let term: String
+        if raw.isEmpty || raw.caseInsensitiveCompare("Recurring") == .orderedSame {
+            term = "on a recurring schedule"
+        } else {
+            term = raw.lowercased()
+        }
+        return "Renews \(term). Continues until you cancel. Each period provides one service visit at \(amount), held in escrow until you release it after approving work. That amount is billed each period; automatic retries may bill the same amount. Cancel in-app with Cancel schedule on this contract or from Recurring jobs."
+    }
+
     /// Configures `STPAPIClient` and presents PaymentSheet (Apple Pay when eligible).
     static func presentPaymentSheet(clientSecret: String) async throws {
         let secret = clientSecret.trimmingCharacters(in: .whitespacesAndNewlines)

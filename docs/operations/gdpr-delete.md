@@ -45,19 +45,19 @@ windows). The constant lives at
                       │
         ┌─────────────┼─────────────┬──────────────┐
         ▼             ▼             ▼              ▼
-   ┌────────┐   ┌──────────────┐ ┌────────┐  ┌────────┐
-   │Postgres│   │PaymentService│ │   S3   │  │ OAuth  │
-   │ cascade│   │/DeleteStripe-│ │ prefix │  │ revoke │
-   │ (1 tx) │   │   Accounts   │ │ delete │  │        │
-   │        │   │  (gRPC)      │ │        │  │        │
-   └────────┘   └──────┬───────┘ └────────┘  └────────┘
-                      │
-                      ▼
-                ┌──────────────┐
-                │ Stripe API   │
-                │ customer.Del │
-                │ account.Del  │
-                └──────────────┘
+   ┌────────┐   ┌──────────────┐ ┌────────────┐  ┌────────┐
+   │Postgres│   │PaymentService│ │  Imaging   │  │ OAuth  │
+   │ cascade│   │/DeleteStripe-│ │/DeleteUser │  │ local  │
+   │ (1 tx) │   │   Accounts   │ │  Objects   │  │ DELETE │
+   │        │   │  (gRPC)      │ │  (gRPC)    │  │        │
+   └────────┘   └──────┬───────┘ └─────┬──────┘  └────────┘
+                      │               │
+                      ▼               ▼
+                ┌──────────────┐  ┌────────┐
+                │ Stripe API   │  │  S3    │
+                │ customer.Del │  │ object │
+                │ account.Del  │  │ delete │
+                └──────────────┘  └────────┘
 ```
 
 ## Lifecycle
@@ -80,9 +80,10 @@ windows). The constant lives at
 4. **Cascade runs** in a single Postgres transaction
    (`repository.PostgresRepository.FinalizeAccountDeletion`). After commit,
    side-effect calls fire: Stripe customer + Connect account delete, S3
-   prefix delete, OAuth revoke. Each side-effect failure is logged but does
-   NOT roll back the in-DB cascade — the row's `deletion_finalized_at` is
-   set so the cron will not re-process it.
+   object delete (imaging), local oauth_accounts DELETE (already in the
+   tx). Each side-effect failure is logged but does NOT roll back the
+   in-DB cascade — the row's `deletion_finalized_at` is set so the cron
+   will not re-process it.
 5. **Audit log** entry written to `admin_audit_log` with
    `action='gdpr_finalize'`, target user id, and the per-table row counts
    plus Stripe outcomes.
@@ -117,7 +118,7 @@ windows). The constant lives at
 | `fraud_signals` | KEEP, evidence_json → NULL. user_id stays. | Compliance retention — we may need to demonstrate why a related account was banned. The evidence blob is PII (IP, fingerprints). |
 | `trust_scores` | DELETE. | Computed; meaningless once account is wiped. |
 | `trust_score_history` | DELETE. | Same. |
-| `oauth_accounts` | DELETE. Provider-side revoke handled via `OAuthRevoker` (Google/Apple revoke endpoint where supported). | Removes the link; provider revoke is best-effort. |
+| `oauth_accounts` | DELETE. Provider-side revoke is **not** called: the table stores `provider` + `provider_id` + `email` only (no refresh/access tokens), so Google/Apple/Facebook cannot be revoked remotely. | Removes the local link. Users must disconnect the app from the provider account if they want provider-side revocation. |
 | `subscriptions` | KEEP for accounting. stripe_customer_id remains so we know which Stripe customer was deleted. | Needed for accountant reconciliation. |
 | `listings` | KEEP rows where the user was the seller. title/description → "[deleted]", pickup_address → NULL, location → (0,0), keep pickup_zip_code (needed for tax analytics). | Public marketplace history; bids tied to it must remain resolvable. |
 | `listing_photos` | DELETE rows for affected listings. | Same reasoning as job_photos / portfolio images — photos are PII. |
@@ -126,7 +127,7 @@ windows). The constant lives at
 | `listing_reports` (035) | reporter_id → NULL (FK is `ON DELETE SET NULL`, so cascade is automatic), description → "[deleted]" when authored by the user. KEEP the row otherwise — auto-hide trail must survive deletion. | Internal moderation state. Anonymizing the reporter prevents retaliation reverse-lookup; redacting free-text removes any PII the user typed. |
 | `marketplace_disputes` | description → "[deleted]". KEEP all numeric / status fields. | Same reasoning as contract `disputes`: ledger integrity for resolved transfers. Free-text gets redacted. |
 | `seller_tax_forms` | KEEP, untouched. | 1099-K legal retention (IRS 7yr). |
-| `S3 users/{userID}/` | Delete every object. | Avatar, portfolio, KYC scans, completion photos, listing photos. |
+| S3 `{context}/{userID}/` + `{userID}/` | Delete every object via ImagingService/DeleteUserObjects. Contexts: avatars, portfolio, job-photos, documents, review-photos, listings, chat-attachments. Also `{userID}/{variant}/` processed thumbs. | Raw uploads + user-keyed variants. Job-keyed processed variants (`{job_id}/large/…`) are not drained (job rows are kept; photo DB rows are deleted). |
 | Stripe Customer | `stripe.Customer.del()`. | Outcome string recorded in audit log. |
 | Stripe Connect Account | `stripe.Account.del()`. May be rejected if open balance — see Open Edge Cases. | Outcome recorded. |
 
@@ -150,6 +151,27 @@ service. Wiring is via `PAYMENT_SERVICE_ADDR`:
 | set + reachable | Real Stripe `customer.Del` / `account.Del`, mapped outcomes below. |
 | set + unreachable | Connection error logged at WARN; falls back to noop deleter (`skipped_no_client`). |
 | unset | Falls back to noop deleter (`skipped_no_client`). |
+
+## S3 deletion adapter
+
+The user service does NOT call S3 directly (no AWS SDK in Go modules).
+Imaging owns the bucket and key layout and exposes:
+
+```
+ImagingService/DeleteUserObjects(user_id) → objects_deleted
+```
+
+Prefixes drained: `{avatars|portfolio|job-photos|documents|review-photos|listings|chat-attachments}/{user_id}/` plus `{user_id}/` (processed thumbs). `user_id` must be a UUID (prefix-injection fail-closed).
+
+The user service adapter is `objectStoreDeleterClient` in
+`services/user/cmd/server/object_store_deleter.go`. Wiring is via
+`IMAGING_SERVICE_ADDR` (k8s user Deployment, compose, prod compose):
+
+| `IMAGING_SERVICE_ADDR` | Behaviour |
+|------------------------|-----------|
+| set + reachable | List+delete matching objects; count recorded as `s3_objects`. |
+| set + unreachable | Connection error logged at WARN; S3 cleanup skipped. |
+| unset | S3 cleanup skipped (logged at WARN on boot). |
 
 ### Outcome Strings (audit-log values)
 
@@ -323,10 +345,12 @@ Lifecycle emails (request / cancel / finalize) are wired through
 - **Sentry / Mixpanel / external analytics deletion.** Manual today.
   Add `AnalyticsDeleter` interface alongside `OAuthRevoker` when those
   providers are wired.
-- **S3 prefix deletion + OAuth revoke.** Interfaces are in place
-  (`ObjectStoreDeleter`, `OAuthRevoker`) but main.go still wires `nil`.
-  Stripe deletion (the previous TODO) shipped 2026-04 — see
-  "Stripe Deletion Adapter" above.
+- **Provider-side OAuth revoke.** `oauth_accounts` has no stored refresh
+  tokens, so Google/Apple/Facebook cannot be revoked remotely. Local rows
+  are DELETE'd. Do not invent token storage just to call revoke.
+- **Job-keyed processed S3 variants** (`{job_id}/large/…`). Raw job
+  photos under `job-photos/{user_id}/` are deleted. Processed copies
+  keyed by job UUID are orphaned; job rows themselves are retained.
 
 ## Owner
 

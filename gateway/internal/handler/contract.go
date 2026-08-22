@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"html"
 	"log/slog"
 	"net/http"
@@ -533,7 +534,98 @@ func (h *ContractHandler) ApproveCompletion(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Customer approve-completion is itself confirmation of work. Release
+	// held services escrow as the customer actor without the standalone
+	// POST /payments/{id}/release proof-of-work 409 gate. Fail-soft: the
+	// contract is already approved; unpaid / already-released / refunded
+	// must not fail this response.
+	h.releaseServicesEscrowOnApprove(r.Context(), contractID, claims.UserID)
+
 	writeJSON(w, http.StatusOK, protoContractToJSON(resp.GetContract()))
+}
+
+// releaseServicesEscrowOnApprove lists escrow payments for the contract and
+// releases each as the customer. Missing payments, non-escrow status, and
+// ReleaseEscrow errors are logged and swallowed so ApproveCompletion still
+// returns the approved contract. The payment service CAS + Stripe idempotency
+// key escrow-release:<paymentID> make a second call a no-op, not a double pay.
+func (h *ContractHandler) releaseServicesEscrowOnApprove(ctx context.Context, contractID, customerID string) {
+	if h.paymentClient == nil {
+		slog.WarnContext(ctx, "approve-completion: payment client unset; escrow not released",
+			"contract_id", contractID,
+		)
+		return
+	}
+
+	escrowStatus := paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW
+	cid := contractID
+	listResp, err := h.paymentClient.ListPayments(ctx, &paymentv1.ListPaymentsRequest{
+		UserId:       customerID,
+		ContractId:   &cid,
+		StatusFilter: &escrowStatus,
+		Pagination: &commonv1.PaginationRequest{
+			Page:     1,
+			PageSize: 100,
+		},
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "approve-completion: ListPayments failed; contract approved, escrow not released",
+			"contract_id", contractID,
+			"error", err,
+		)
+		return
+	}
+
+	for _, p := range listResp.GetPayments() {
+		if p == nil || p.GetId() == "" {
+			continue
+		}
+		// Belt-and-braces: SQL already filters contract_id. Never release
+		// another contract's escrow if the page is mixed.
+		if p.GetContractId() != contractID {
+			continue
+		}
+		if p.GetStatus() != paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW {
+			slog.InfoContext(ctx, "approve-completion: payment not in escrow; skipping",
+				"contract_id", contractID,
+				"payment_id", p.GetId(),
+				"status", p.GetStatus().String(),
+			)
+			continue
+		}
+
+		rel, rerr := h.paymentClient.ReleaseEscrow(ctx, &paymentv1.ReleaseEscrowRequest{
+			PaymentId:   p.GetId(),
+			Reason:      "completion_approved",
+			ActorUserId: customerID,
+		})
+		if rerr != nil {
+			slog.WarnContext(ctx, "approve-completion: ReleaseEscrow failed; contract approved",
+				"contract_id", contractID,
+				"payment_id", p.GetId(),
+				"error", rerr,
+			)
+			continue
+		}
+
+		pay := rel.GetPayment()
+		if pay == nil {
+			pay = p
+		}
+		dollars := fmt.Sprintf("$%.2f", float64(pay.GetProviderPayoutCents())/100)
+		actionURL := "/payments/" + pay.GetId()
+		if pay.GetContractId() != "" {
+			actionURL = "/contracts/" + pay.GetContractId()
+		}
+		emitNotification(ctx, h.db,
+			customerID, pay.GetProviderId(),
+			"payout_sent",
+			"Payout released",
+			fmt.Sprintf("Escrow was released — your payout of %s is on the way.", dollars),
+			actionURL,
+			"payment", pay.GetId(),
+		)
+	}
 }
 
 type cancelContractRequest struct {

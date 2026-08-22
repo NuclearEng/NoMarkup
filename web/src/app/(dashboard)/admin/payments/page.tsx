@@ -25,13 +25,18 @@ import {
 import { Switch } from '@/components/ui/switch';
 import {
   useAdminPayments,
+  useCreateCustomFee,
+  useCustomFees,
+  useDeleteCustomFee,
   useFeeConfig,
   useRevenueReport,
+  useUpdateCustomFee,
   useUpdateFeeConfig,
 } from '@/hooks/useAdmin';
+import { getApiErrorMessage } from '@/lib/api';
 import { PAYMENT_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
-import type { FeeConfigSummary, Payment } from '@/types';
+import type { CustomFee, FeeConfigSummary, Payment } from '@/types';
 import { PAYMENT_STATUS } from '@/types';
 
 const ALL_FILTER = '__all__';
@@ -43,21 +48,20 @@ const STEP_PERCENT = 0.5;
 const MIN_PERCENT = 0;
 const MAX_PERCENT = 100;
 
-// localStorage keys for the client-side state this surface owns: the lock and
-// the (UI-only) custom-fee list. Namespaced so they don't collide.
+// localStorage key for the client-side lock. Namespaced so it doesn't collide.
+// Custom fees are persisted server-side (platform_custom_fees); lock is UI-only.
 const LOCK_STORAGE_KEY = 'nm.admin.fees.locked';
-const CUSTOM_FEES_STORAGE_KEY = 'nm.admin.fees.custom';
 
-// A client-side-only custom fee. There is currently NO backend store for
-// arbitrary named fees — platform_fee_config has fixed columns — so these are
-// persisted to localStorage and clearly flagged as not-yet-wired-to-the-API.
-// Persisting them for real needs a `platform_custom_fees` table + CRUD
-// endpoints (see the banner in CustomFeesSection).
-interface CustomFee {
-  id: string;
-  name: string;
-  /** Whole-number percent (e.g. 5 = 5%). */
-  rate: number;
+// bpsToPercent converts integer basis points (500) into the whole-number
+// percent the steppers operate on (5). Snapped to 2 decimals.
+function bpsToPercent(bps: number): number {
+  return Math.round((bps / 100) * 100) / 100;
+}
+
+// percentToBps converts a whole-number percent (5 = 5%) into integer basis
+// points (500). Matches platform_custom_fees.rate_bps.
+function percentToBps(percent: number): number {
+  return Math.round(clampPercent(percent) * 100);
 }
 
 // clampPercent keeps a stepper value inside [MIN_PERCENT, MAX_PERCENT] and
@@ -131,13 +135,23 @@ interface FeeSummaryRow {
 // outside platform_fee_config are labelled as set elsewhere.
 function CurrentFeesSummary({
   config,
+  customFees,
   isLoading,
   isError,
 }: {
   config: FeeConfigSummary | undefined;
+  customFees: CustomFee[];
   isLoading: boolean;
   isError: boolean;
 }) {
+  const customRows: FeeSummaryRow[] = customFees
+    .filter((f) => f.active)
+    .map((f) => ({
+      label: f.name,
+      value: percentLabel(bpsToPercent(f.rate_bps)),
+      note: 'Custom · seller-side',
+    }));
+
   const rows: FeeSummaryRow[] = config
     ? [
         {
@@ -168,6 +182,7 @@ function CurrentFeesSummary({
           value: feeCapLabel(config.max_fee_cents),
           note: 'Ceiling per transaction',
         },
+        ...customRows,
       ]
     : [];
 
@@ -350,7 +365,7 @@ function FeeStepper({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-9 w-9"
+            className="h-11 w-11"
             onClick={() => { step(-STEP_PERCENT); }}
             disabled={disabled || value <= MIN_PERCENT}
             aria-label={`Decrease ${label} by ${STEP_PERCENT.toString()}%`}
@@ -380,7 +395,7 @@ function FeeStepper({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-9 w-9"
+            className="h-11 w-11"
             onClick={() => { step(STEP_PERCENT); }}
             disabled={disabled || value >= MAX_PERCENT}
             aria-label={`Increase ${label} by ${STEP_PERCENT.toString()}%`}
@@ -396,19 +411,26 @@ function FeeStepper({
 
 interface CustomFeesSectionProps {
   fees: CustomFee[];
+  isLoading: boolean;
+  isError: boolean;
   locked: boolean;
-  onChangeRate: (id: string, rate: number) => void;
+  mutating: boolean;
+  mutationError: string | null;
+  onChangeRate: (id: string, ratePercent: number) => void;
   onRemove: (id: string) => void;
-  onAdd: (name: string, rate: number) => void;
+  onAdd: (name: string, rateBps: number) => Promise<void>;
 }
 
 // CustomFeesSection lists admin-defined custom fees (each with the same up/down
-// stepper) plus a small "add fee" form. IMPORTANT: there is no backend store
-// for these yet — they live in localStorage only and are NOT applied to any
-// transaction. The banner makes that explicit so the founder knows it's UI-only.
+// stepper) plus a small "add fee" form. Fees persist via
+// /api/v1/admin/custom-fees and are applied on live CalculateFees.
 function CustomFeesSection({
   fees,
+  isLoading,
+  isError,
   locked,
+  mutating,
+  mutationError,
   onChangeRate,
   onRemove,
   onAdd,
@@ -417,7 +439,7 @@ function CustomFeesSection({
   const [rate, setRate] = useState('');
   const [error, setError] = useState('');
 
-  function handleAdd() {
+  async function handleAdd() {
     const trimmed = name.trim();
     const parsed = Number(rate);
     if (trimmed === '') {
@@ -429,7 +451,7 @@ function CustomFeesSection({
       return;
     }
     setError('');
-    onAdd(trimmed, clampPercent(parsed));
+    await onAdd(trimmed, percentToBps(parsed));
     setName('');
     setRate('');
   }
@@ -439,39 +461,40 @@ function CustomFeesSection({
       <div className="space-y-1">
         <h3 className="text-sm font-semibold text-zinc-100">Custom fees</h3>
         <p className="text-xs text-zinc-400">
-          Define additional named fees and tune them with the same steppers.
+          Named fees applied on top of the platform commission. Combined
+          platform + custom take is capped at 50%.
         </p>
       </div>
 
-      <div
-        role="note"
-        className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-300"
-      >
-        <span className="font-semibold">UI preview only.</span> Custom fees are saved
-        to this browser, not the backend — they are not yet applied to any
-        transaction. Persisting them requires a <code>platform_custom_fees</code>{' '}
-        table and CRUD endpoints.
-      </div>
-
-      {fees.length > 0 ? (
+      {isError ? (
+        <p className="text-sm text-destructive" role="alert">
+          Could not load custom fees. Please refresh to try again.
+        </p>
+      ) : isLoading ? (
+        <div className="space-y-3" role="status" aria-label="Loading custom fees">
+          {[0, 1].map((i) => (
+            <Skeleton key={`custom-fee-skel-${String(i)}`} className="h-14 w-full" />
+          ))}
+        </div>
+      ) : fees.length > 0 ? (
         <div className="space-y-3">
           {fees.map((fee) => (
             <FeeStepper
               key={fee.id}
               id={`custom-fee-${fee.id}`}
               label={fee.name}
-              note="Custom · browser-only"
-              value={fee.rate}
+              note={fee.active ? 'Custom · live' : 'Custom · inactive'}
+              value={bpsToPercent(fee.rate_bps)}
               onValueChange={(next) => { onChangeRate(fee.id, next); }}
-              disabled={locked}
+              disabled={locked || mutating}
               trailing={
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-9 text-destructive hover:text-destructive"
+                  className="min-h-[44px] text-destructive hover:text-destructive"
                   onClick={() => { onRemove(fee.id); }}
-                  disabled={locked}
+                  disabled={locked || mutating}
                   aria-label={`Remove ${fee.name} fee`}
                 >
                   Remove
@@ -494,6 +517,7 @@ function CustomFeesSection({
               value={name}
               onChange={(e) => { setName(e.target.value); }}
               className="min-h-[44px]"
+              disabled={mutating}
               aria-invalid={error !== '' && name.trim() === '' ? true : undefined}
             />
           </div>
@@ -509,13 +533,15 @@ function CustomFeesSection({
               value={rate}
               onChange={(e) => { setRate(e.target.value); }}
               className="min-h-[44px] sm:w-28"
+              disabled={mutating}
             />
           </div>
           <Button
             type="button"
             variant="outline"
             className="min-h-[44px]"
-            onClick={handleAdd}
+            onClick={() => { void handleAdd(); }}
+            disabled={mutating}
           >
             <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
             Add fee
@@ -526,6 +552,12 @@ function CustomFeesSection({
       {error ? (
         <p className="text-sm text-destructive" role="alert">
           {error}
+        </p>
+      ) : null}
+
+      {mutationError ? (
+        <p className="text-sm text-destructive" role="alert">
+          {mutationError}
         </p>
       ) : null}
     </div>
@@ -552,8 +584,6 @@ export default function AdminPaymentsPage() {
   // Lock state — when locked the steppers are read-only. Persisted to
   // localStorage so a lock survives reloads (client-side only; no backend field).
   const [locked, setLocked] = useState(false);
-  // Custom fees (UI-only) persisted to localStorage.
-  const [customFees, setCustomFees] = useState<CustomFee[]>([]);
   // Seed the form from live config exactly once it arrives (and not again, so
   // in-progress stepper edits aren't clobbered by a refetch).
   const [seeded, setSeeded] = useState(false);
@@ -574,27 +604,20 @@ export default function AdminPaymentsPage() {
     isError: feeConfigError,
   } = useFeeConfig();
   const feeConfigMutation = useUpdateFeeConfig();
+  const {
+    data: customFeesData,
+    isLoading: customFeesLoading,
+    isError: customFeesError,
+  } = useCustomFees();
+  const createCustomFee = useCreateCustomFee();
+  const updateCustomFee = useUpdateCustomFee();
+  const deleteCustomFee = useDeleteCustomFee();
+  const customFees = customFeesData?.fees ?? [];
 
-  // Hydrate lock + custom fees from localStorage on mount (client-only).
+  // Hydrate lock from localStorage on mount (client-only).
   useEffect(() => {
     try {
       setLocked(window.localStorage.getItem(LOCK_STORAGE_KEY) === 'true');
-      const raw = window.localStorage.getItem(CUSTOM_FEES_STORAGE_KEY);
-      if (raw) {
-        const parsed: unknown = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          setCustomFees(
-            parsed.filter(
-              (f): f is CustomFee =>
-                typeof f === 'object' &&
-                f !== null &&
-                typeof (f as CustomFee).id === 'string' &&
-                typeof (f as CustomFee).name === 'string' &&
-                typeof (f as CustomFee).rate === 'number',
-            ),
-          );
-        }
-      }
     } catch {
       // Corrupt/unavailable storage — fall back to defaults silently.
     }
@@ -623,15 +646,6 @@ export default function AdminPaymentsPage() {
     }
   }, [feeConfig, seeded]);
 
-  function persistCustomFees(next: CustomFee[]) {
-    setCustomFees(next);
-    try {
-      window.localStorage.setItem(CUSTOM_FEES_STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // Storage unavailable — keep in-memory state; nothing else to do.
-    }
-  }
-
   function toggleLock() {
     const next = !locked;
     setLocked(next);
@@ -642,21 +656,27 @@ export default function AdminPaymentsPage() {
     }
   }
 
-  function handleAddCustomFee(name: string, rate: number) {
-    const id =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `${Date.now().toString()}-${Math.random().toString(36).slice(2)}`;
-    persistCustomFees([...customFees, { id, name, rate }]);
+  async function handleAddCustomFee(name: string, rateBps: number) {
+    await createCustomFee.mutateAsync({ name, rate_bps: rateBps });
   }
 
-  function handleChangeCustomRate(id: string, rate: number) {
-    persistCustomFees(customFees.map((f) => (f.id === id ? { ...f, rate } : f)));
+  function handleChangeCustomRate(id: string, ratePercent: number) {
+    void updateCustomFee.mutateAsync({ id, rate_bps: percentToBps(ratePercent) });
   }
 
   function handleRemoveCustomFee(id: string) {
-    persistCustomFees(customFees.filter((f) => f.id !== id));
+    void deleteCustomFee.mutateAsync(id);
   }
+
+  const customFeeMutationError =
+    createCustomFee.isError || updateCustomFee.isError || deleteCustomFee.isError
+      ? getApiErrorMessage(
+          createCustomFee.error ?? updateCustomFee.error ?? deleteCustomFee.error,
+          'Failed to update custom fee. Please try again.',
+        )
+      : null;
+  const customFeeMutating =
+    createCustomFee.isPending || updateCustomFee.isPending || deleteCustomFee.isPending;
 
   async function handleSaveFees() {
     await feeConfigMutation.mutateAsync({
@@ -822,6 +842,7 @@ export default function AdminPaymentsPage() {
       {/* Current Fees — read-only summary of the live, active rates */}
       <CurrentFeesSummary
         config={feeConfig}
+        customFees={customFees}
         isLoading={feeConfigLoading}
         isError={feeConfigError}
       />
@@ -999,10 +1020,13 @@ export default function AdminPaymentsPage() {
             ) : null}
           </div>
 
-          {/* Custom fees — UI-only, localStorage-backed */}
           <CustomFeesSection
             fees={customFees}
+            isLoading={customFeesLoading}
+            isError={customFeesError}
             locked={locked}
+            mutating={customFeeMutating}
+            mutationError={customFeeMutationError}
             onChangeRate={handleChangeCustomRate}
             onRemove={handleRemoveCustomFee}
             onAdd={handleAddCustomFee}

@@ -61,6 +61,12 @@ spec:
             # deployment only, so this service never saw it.
             - name: NOTIFICATION_SERVICE_ADDR
               value: "notification:50059"
+            # GDPR Stripe customer / Connect account delete (payment owns stripe-go).
+            - name: PAYMENT_SERVICE_ADDR
+              value: "payment:50054"
+            # GDPR S3 object delete (imaging owns the bucket and key layout).
+            - name: IMAGING_SERVICE_ADDR
+              value: "imaging:50058"
             # Base for the links in verification / password-reset emails.
             # Without it the service defaults to http://localhost:3000 and
             # emits unusable links.

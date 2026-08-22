@@ -40,7 +40,7 @@ final class TabAuditUITests: XCTestCase {
         continueAfterFailure = true
         app = XCUIApplication()
         addUIInterruptionMonitor(withDescription: "System dialog") { alert in
-            for title in ["Don’t Allow", "Don't Allow", "Not Now", "Cancel", "OK"] {
+            for title in ["Close", "Open", "Allow", "OK", "Continue", "Not Now", "Don’t Allow", "Don't Allow", "Cancel", "Later"] {
                 let button = alert.buttons[title]
                 if button.exists { button.tap(); return true }
             }
@@ -63,9 +63,15 @@ final class TabAuditUITests: XCTestCase {
             "NOMARKUP_API_BASE_URL",
             default: "http://127.0.0.1:8081"
         )
+        app.launchEnvironment["NOMARKUP_UI_TESTING"] = "1"
+        app.launchArguments = [
+            "-ui-testing",
+            "-ui-test-email", customerEmail,
+            "-ui-test-password", password,
+        ]
         app.launch()
 
-        XCTAssertTrue(waitForSignedInShell(timeout: 30), "customer should reach tab shell")
+        XCTAssertTrue(waitForSignedInShell(timeout: 30, email: customerEmail), "customer should reach tab shell")
         snap("10-customer-signed-in")
 
         // --- Home ---
@@ -231,8 +237,14 @@ final class TabAuditUITests: XCTestCase {
             "NOMARKUP_API_BASE_URL",
             default: "http://127.0.0.1:8081"
         )
+        app.launchEnvironment["NOMARKUP_UI_TESTING"] = "1"
+        app.launchArguments = [
+            "-ui-testing",
+            "-ui-test-email", providerEmail,
+            "-ui-test-password", password,
+        ]
         app.launch()
-        XCTAssertTrue(waitForSignedInShell(timeout: 30), "provider should reach tab shell")
+        XCTAssertTrue(waitForSignedInShell(timeout: 30, email: providerEmail), "provider should reach tab shell")
         snap("60-provider-signed-in")
 
         openTab("Jobs")
@@ -458,19 +470,33 @@ final class TabAuditUITests: XCTestCase {
     }
 
     @discardableResult
-    private func waitForSignedInShell(timeout: TimeInterval = 25) -> Bool {
+    private func waitForSignedInShell(timeout: TimeInterval = 25, email: String? = nil) -> Bool {
         let tabView = byID("root.tabview")
-        if tabView.waitForExistence(timeout: timeout) {
-            completeAgeGateIfPresent()
-            dismissNotificationPrePrompt()
-            return true
+        let deadline = Date().addingTimeInterval(timeout)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        settle(0.2)
+        while Date() < deadline {
+            for title in ["Close", "Not Now", "Not now", "Continue", "OK"] {
+                let button = app.alerts.buttons[title].exists ? app.alerts.buttons[title] : app.buttons[title]
+                if button.exists {
+                    button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                    settle(0.2)
+                }
+            }
+            if tabView.exists || app.tabBars.firstMatch.exists {
+                completeAgeGateIfPresent()
+                dismissNotificationPrePrompt()
+                return true
+            }
+            settle(0.4)
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
         }
         // Manual login fallback
         let emailField = byID("login.email")
         if emailField.waitForExistence(timeout: 4) {
             let passwordField = byID("login.password")
             let submit = byID("login.submit")
-            clearAndType(emailField, text: customerEmail, secure: false)
+            clearAndType(emailField, text: email ?? customerEmail, secure: false)
             clearAndType(passwordField, text: password, secure: true)
             submit.tap()
             if tabView.waitForExistence(timeout: 25) {
@@ -479,7 +505,7 @@ final class TabAuditUITests: XCTestCase {
                 return true
             }
         }
-        return false
+        return tabView.exists || app.tabBars.firstMatch.exists
     }
 
     private func clearAndType(_ field: XCUIElement, text: String, secure: Bool) {

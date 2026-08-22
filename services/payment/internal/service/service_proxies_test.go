@@ -23,14 +23,15 @@ func TestPaymentService_ListPayments(t *testing.T) {
 	t.Parallel()
 	expected := []*domain.Payment{{ID: "p1"}, {ID: "p2"}}
 	repo := &mockPaymentRepo{
-		listPaymentsFn: func(_ context.Context, userID, status string, page, pageSize int) ([]*domain.Payment, int, error) {
+		listPaymentsFn: func(_ context.Context, userID, status, contractID string, page, pageSize int) ([]*domain.Payment, int, error) {
 			assert.Equal(t, "user-1", userID)
 			assert.Equal(t, "released", status)
+			assert.Equal(t, "", contractID)
 			return expected, 42, nil
 		},
 	}
 	svc := newTestPaymentService(repo, nil)
-	got, total, err := svc.ListPayments(context.Background(), "user-1", "released", 1, 20)
+	got, total, err := svc.ListPayments(context.Background(), "user-1", "released", "", 1, 20)
 	require.NoError(t, err)
 	assert.Equal(t, expected, got)
 	assert.Equal(t, 42, total)
@@ -399,12 +400,12 @@ func TestPaymentService_AdminUpdateFeeConfig(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name                string
+		name                 string
 		feePct, guaranteePct float64
-		minFee              int64
-		maxFee              *int64
-		wantErr             bool
-		errContains         string
+		minFee               int64
+		maxFee               *int64
+		wantErr              bool
+		errContains          string
 	}{
 		{name: "happy_path", feePct: 0.05, guaranteePct: 0.02, minFee: 100},
 		{name: "fee_pct_negative", feePct: -0.01, wantErr: true, errContains: "fee_percentage"},
@@ -413,7 +414,7 @@ func TestPaymentService_AdminUpdateFeeConfig(t *testing.T) {
 		{name: "guarantee_pct_over_one", feePct: 0.05, guaranteePct: 1.5, wantErr: true, errContains: "guarantee_percentage"},
 		{name: "min_fee_negative", feePct: 0.05, minFee: -1, wantErr: true, errContains: "min_fee_cents"},
 		{
-			name: "max_fee_below_min",
+			name:   "max_fee_below_min",
 			feePct: 0.05, minFee: 200,
 			maxFee:      func() *int64 { v := int64(100); return &v }(),
 			wantErr:     true,

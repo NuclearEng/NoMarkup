@@ -129,6 +129,22 @@ struct ContractDetailView: View {
         return true
     }
 
+    /// ASR-4.9.recur.* — nil for one-shot contracts (do not show recurring copy).
+    private func recurringAuthorizationDisclosure(for contract: ContractDetail) -> String? {
+        let config = recurringConfig ?? contract.recurring
+        guard let config, !config.isCancelled else { return nil }
+        let amount: String
+        if let rate = config.rateCents, rate > 0 {
+            amount = config.displayRate
+        } else {
+            amount = MoneyFormat.usd(cents: contract.amountCents ?? 0)
+        }
+        return RailACheckout.recurringAuthorizationDisclosure(
+            frequency: config.displayFrequency,
+            amount: amount
+        )
+    }
+
     var body: some View {
         contractBody
             .navigationTitle(contract?.displayTitle ?? "Contract")
@@ -210,6 +226,7 @@ struct ContractDetailView: View {
                 pendingMilestoneApproveID: $pendingMilestoneApproveID,
                 pendingReleasePayment: $pendingReleasePayment,
                 payEscrowAmountLabel: contract.map { MoneyFormat.usd(cents: $0.amountCents ?? 0) } ?? "",
+                payEscrowRecurringDisclosure: contract.flatMap { recurringAuthorizationDisclosure(for: $0) },
                 onCancel: {
                     Task {
                         await runAction(title: pendingConfirmActionTitle ?? "Cancel contract") {
@@ -600,6 +617,17 @@ struct ContractDetailView: View {
                 if let next = config.nextOccurrence, !next.isEmpty {
                     LabeledContent("Next", value: CatalogDateFormat.friendlyDateTime(next))
                 }
+                if contract.isCustomer(userId: currentUserID), !config.isCancelled {
+                    Text(
+                        RailACheckout.recurringAuthorizationDisclosure(
+                            frequency: config.displayFrequency,
+                            amount: config.displayRate
+                        )
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
                 // FR-18.3 — customer toggles auto-approve (PATCH /recurring).
                 if contract.isCustomer(userId: currentUserID), !config.isCancelled {
                     Toggle(
@@ -777,8 +805,8 @@ struct ContractDetailView: View {
             } footer: {
                 Text(
                     config.hasPaymentRetryInfo
-                        ? "Payment setup failed previously; the platform retries CreatePayment on a day-3/day-7 schedule (pauses at 3 failures). Pause stops new visits; cancel ends after the next occurrence notice. Money is never invented client-side."
-                        : "Pause stops new visits; cancel ends the schedule after the next occurrence notice. Approving a visit may open PaymentSheet for that visit’s server amount (held escrow). Money is never invented client-side."
+                        ? "Payment setup failed previously; the platform retries CreatePayment on a day-3/day-7 schedule (pauses at 3 failures). Continues until you cancel. Pause stops new visits; cancel ends after the next occurrence notice. Money is never invented client-side."
+                        : "Continues until you cancel. Pause stops new visits; cancel ends the schedule after the next occurrence notice. Approving a visit may open PaymentSheet for that visit’s server amount (held escrow). Cancel with Cancel schedule on this contract or Recurring jobs. Money is never invented client-side."
                 )
                 .foregroundStyle(BrandTheme.textSecondary)
             }
@@ -890,6 +918,14 @@ struct ContractDetailView: View {
                 isCustomer
                 && instance.isPayable
                 && pendingForInstance?.hasPayCTA != true
+            if showPendingPay || showResidualPay {
+                Text(
+                    "This visit charges \(instance.displayAmount). Continues until you cancel — Cancel schedule on this contract or Recurring jobs."
+                )
+                .font(.caption)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
             if showPendingPay, let pending = pendingForInstance {
                 Button {
                     Task { await payRecurringInstanceEscrow(pending, contract: contract) }
@@ -900,7 +936,7 @@ struct ContractDetailView: View {
                     } else {
                         Label(
                             "Pay visit · \(instance.displayAmount)",
-                            systemImage: "creditcard"
+                            systemImage: "creditcard.fill"
                         )
                         .frame(maxWidth: .infinity, minHeight: 44)
                     }
@@ -910,7 +946,7 @@ struct ContractDetailView: View {
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isPayingRecurringInstance || actingActionTitle != nil)
                 .accessibilityHint(
-                    "Confirms the PaymentIntent for this visit amount, then captures into escrow"
+                    "Charges \(instance.displayAmount) for this visit via Apple Pay or card. Schedule continues until you cancel."
                 )
             } else if showResidualPay {
                 // Residual / soft-replay CreatePayment with recurring_instance_id
@@ -924,7 +960,7 @@ struct ContractDetailView: View {
                     } else {
                         Label(
                             "Pay visit · \(instance.displayAmount)",
-                            systemImage: "creditcard"
+                            systemImage: "creditcard.fill"
                         )
                         .frame(maxWidth: .infinity, minHeight: 44)
                     }
@@ -934,7 +970,7 @@ struct ContractDetailView: View {
                 .foregroundStyle(BrandTheme.ctaLabelOnGold)
                 .disabled(isPayingRecurringInstance || actingActionTitle != nil)
                 .accessibilityHint(
-                    "Creates or soft-replays a PaymentIntent for this visit, confirms, then captures into escrow"
+                    "Charges \(instance.displayAmount) for this visit via Apple Pay or card. Schedule continues until you cancel."
                 )
             }
         }
@@ -1396,13 +1432,22 @@ struct ContractDetailView: View {
                 if canPay {
                     feeBreakdownBlock(contract)
 
-                    Text(
-                        "Pay the contract amount to hold funds in escrow. Apple Pay / card via Stripe PaymentSheet. Charge amount is the server contract total — not client fee math."
-                    )
-                    .font(.footnote)
-                    .foregroundStyle(BrandTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .listRowBackground(BrandTheme.navyElevated)
+                    if let recurringCopy = recurringAuthorizationDisclosure(for: contract) {
+                        Text(recurringCopy)
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel(recurringCopy)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    } else {
+                        Text(
+                            "Pay the contract amount to hold funds in escrow. Apple Pay or card via Stripe. Charge amount is the server contract total — not client fee math."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+                    }
 
                     Button {
                         showPayEscrowConfirm = true
@@ -1424,7 +1469,9 @@ struct ContractDetailView: View {
                     .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isBusyForEscrowActions)
                     .accessibilityHint(
-                        "Creates a PaymentIntent for this contract amount, opens PaymentSheet, then captures into escrow"
+                        recurringAuthorizationDisclosure(for: contract) == nil
+                            ? "Creates a PaymentIntent for this contract amount, opens PaymentSheet, then captures into escrow"
+                            : "Charges the server contract amount via Apple Pay or card. Recurring schedule continues until you cancel."
                     )
                     .listRowBackground(BrandTheme.navyElevated)
                 }
@@ -3176,6 +3223,8 @@ private struct ContractConfirmationsModifier: ViewModifier {
     @Binding var pendingMilestoneApproveID: String?
     @Binding var pendingReleasePayment: ContractPayment?
     var payEscrowAmountLabel: String
+    /// ASR-4.9.recur.* — set only when this contract has an active recurring schedule.
+    var payEscrowRecurringDisclosure: String? = nil
     let onCancel: () -> Void
     let onMarkComplete: () -> Void
     let onApproveCompletion: () -> Void
@@ -3264,7 +3313,11 @@ private struct ContractConfirmationsModifier: ViewModifier {
                 Button("Pay \(payEscrowAmountLabel)", action: onPayEscrow)
                 Button("Not now", role: .cancel) {}
             } message: {
-                Text("Charges the server contract amount (\(payEscrowAmountLabel)) via Stripe PaymentSheet (Apple Pay when available). Funds stay in escrow until you release them after approving work. Sticky Idempotency-Key on create + process.")
+                if let payEscrowRecurringDisclosure, !payEscrowRecurringDisclosure.isEmpty {
+                    Text(payEscrowRecurringDisclosure)
+                } else {
+                    Text("Charges the server contract amount (\(payEscrowAmountLabel)) via Stripe PaymentSheet (Apple Pay when available). Funds stay in escrow until you release them after approving work. Sticky Idempotency-Key on create + process.")
+                }
             }
             .confirmationDialog(
                 "Release escrow to the provider?",
@@ -3427,6 +3480,8 @@ private struct LeaveReviewSheet: View {
     @State private var scopeAccuracyRating = 5
     @State private var accessRating = 5
     @State private var comment = ""
+    @State private var photoURLs: [String] = []
+    @State private var isUploadingPhotos = false
     @State private var isSubmitting = false
     @State private var isLoadingEligibility = true
     @State private var eligibility: ReviewEligibility?
@@ -3438,6 +3493,7 @@ private struct LeaveReviewSheet: View {
 
     private var canSubmit: Bool {
         !isSubmitting
+            && !isUploadingPhotos
             && commentCount >= 50
             && (eligibility?.isEligible == true)
     }
@@ -3539,6 +3595,16 @@ private struct LeaveReviewSheet: View {
                         Text("Reviews are double-blind: they become visible once both parties have submitted. Window is 90 days after completion. Category ratings use role-specific fields (FR-6.2).")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
+
+                    PhotoPickSection(
+                        context: .reviewPhoto,
+                        maxCount: 5,
+                        photoURLs: $photoURLs,
+                        isUploading: $isUploadingPhotos,
+                        errorMessage: $errorMessage,
+                        sectionTitle: "Photos (optional)",
+                        footerText: "Up to 5 photos · JPEG/PNG/WebP · 10 MB each. Library or camera; uploads before submit."
+                    )
                 }
 
                 if let errorMessage {
@@ -3610,7 +3676,8 @@ private struct LeaveReviewSheet: View {
                     qualityRating: qualityRating,
                     communicationRating: communicationRating,
                     timelinessRating: timelinessRating,
-                    valueRating: valueRating
+                    valueRating: valueRating,
+                    photoURLs: photoURLs
                 )
             } else {
                 _ = try await APIClient.shared.createContractReview(
@@ -3619,7 +3686,8 @@ private struct LeaveReviewSheet: View {
                     comment: comment,
                     paymentPromptnessRating: paymentPromptnessRating,
                     scopeAccuracyRating: scopeAccuracyRating,
-                    accessRating: accessRating
+                    accessRating: accessRating,
+                    photoURLs: photoURLs
                 )
             }
             onSuccess("Review submitted.")

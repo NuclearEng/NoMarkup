@@ -5,14 +5,25 @@ import SwiftUI
 ///
 /// Server: `GET /api/v1/flags` → flat JSON map `{ "customer_bnpl": true, ... }` (public, no auth).
 ///
-/// Product rule (full web parity): **no permanent iOS hard-offs**. Server flags +
-/// gateway `RequireFlag` gate money rails. UI shows disabled rails with
-/// clear copy when the flag is off (fail-closed UI).
+/// Server flags + gateway `RequireFlag` remain the production gate. This v1
+/// App Store binary additionally hard-offs regulated money rails so a seed-true
+/// flag cannot expose purchase CTAs. UI diagnostic surfaces still show "Flag off"
+/// because `isEnabled` returns false for keys in `iOSHardOffKeys`.
 @MainActor
 final class FeatureFlags: ObservableObject {
-    /// Reserved for emergency kill-switches only. Empty = full product surface
-    /// available when server enables the flag.
-    static let iOSHardOffKeys: Set<String> = []
+    /// v1 App Store binary hard-offs these until licenses + live-flagged exit.
+    /// Server flags remain the production gate; iOS additionally hard-offs so a
+    /// seed-true flag cannot expose purchase CTAs. `isEnabled` already returns
+    /// false for keys in this set.
+    static let iOSHardOffKeys: Set<String> = [
+        "customer_bnpl",
+        "working_capital",
+        "per_job_insurance",
+        "insurance_competition",
+        "legal_services",
+        "lead_gen",
+        "instant_payout",
+    ]
 
     /// Known product flag keys (for Account hub + regulated rails UI).
     static let productFlagKeys: [String] = [

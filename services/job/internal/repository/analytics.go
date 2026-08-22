@@ -14,8 +14,11 @@ import (
 
 // --- AnalyticsRepository methods on PostgresRepository ---
 
-func (r *PostgresRepository) GetMarketRange(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, zipCode string) (*domain.MarketRange, error) {
-	// Use service_type_id if provided, otherwise fall back to subcategory/category.
+// marketRangeMaxRadiusMeters is ~50 miles. Coordinates farther than this from
+// every zip_codes centroid return ErrMarketRangeNotFound — never a fake range.
+const marketRangeMaxRadiusMeters = 80_000.0
+
+func marketRangeLookupID(categoryID string, subcategoryID, serviceTypeID *string) string {
 	lookupID := categoryID
 	if subcategoryID != nil && *subcategoryID != "" {
 		lookupID = *subcategoryID
@@ -23,18 +26,30 @@ func (r *PostgresRepository) GetMarketRange(ctx context.Context, categoryID stri
 	if serviceTypeID != nil && *serviceTypeID != "" {
 		lookupID = *serviceTypeID
 	}
+	return lookupID
+}
 
+func marketRangeRadiusMeters(radiusKm float64) float64 {
+	meters := radiusKm * 1000
+	if meters <= 0 || meters > marketRangeMaxRadiusMeters {
+		return marketRangeMaxRadiusMeters
+	}
+	return meters
+}
+
+// normalizeUSZip trims and, for ZIP+4, keeps the 5-digit routing ZIP that
+// market_ranges.zip_code and zip_codes.zip store.
+func normalizeUSZip(zip string) string {
+	zip = strings.TrimSpace(zip)
+	if len(zip) >= 10 && zip[5] == '-' {
+		zip = zip[:5]
+	}
+	return zip
+}
+
+func scanMarketRange(row pgx.Row) (*domain.MarketRange, error) {
 	mr := &domain.MarketRange{}
-	err := r.pool.QueryRow(ctx, `
-		SELECT id, service_type_id, zip_code,
-		       COALESCE(city, ''), COALESCE(state, ''),
-		       low_cents, median_cents, high_cents,
-		       data_points, source, confidence,
-		       season, computed_at, valid_until
-		FROM market_ranges
-		WHERE service_type_id = $1 AND zip_code = $2
-		ORDER BY computed_at DESC
-		LIMIT 1`, lookupID, zipCode).Scan(
+	err := row.Scan(
 		&mr.ID, &mr.ServiceTypeID, &mr.ZipCode,
 		&mr.City, &mr.State,
 		&mr.LowCents, &mr.MedianCents, &mr.HighCents,
@@ -48,6 +63,70 @@ func (r *PostgresRepository) GetMarketRange(ctx context.Context, categoryID stri
 		return nil, fmt.Errorf("get market range: %w", err)
 	}
 	return mr, nil
+}
+
+func (r *PostgresRepository) GetMarketRange(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, zipCode string) (*domain.MarketRange, error) {
+	zipCode = normalizeUSZip(zipCode)
+	if zipCode == "" {
+		return nil, fmt.Errorf("get market range: %w", domain.ErrMarketRangeNotFound)
+	}
+
+	return scanMarketRange(r.pool.QueryRow(ctx, `
+		SELECT id, service_type_id, zip_code,
+		       COALESCE(city, ''), COALESCE(state, ''),
+		       low_cents, median_cents, high_cents,
+		       data_points, source, confidence,
+		       season, computed_at, valid_until
+		FROM market_ranges
+		WHERE service_type_id = $1 AND zip_code = $2
+		ORDER BY computed_at DESC
+		LIMIT 1`, marketRangeLookupID(categoryID, subcategoryID, serviceTypeID), zipCode))
+}
+
+// GetMarketRangeAt snaps (lat,lng) to the nearest market_ranges row by joining
+// zip_code onto zip_codes centroids (migration 039). market_ranges.zip_code
+// stores real US ZIPs (seed: 78701), not market slugs or coordinate strings.
+func (r *PostgresRepository) GetMarketRangeAt(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, lat, lng, radiusKm float64) (*domain.MarketRange, error) {
+	meters := marketRangeRadiusMeters(radiusKm)
+	return scanMarketRange(r.pool.QueryRow(ctx, `
+		SELECT mr.id, mr.service_type_id, mr.zip_code,
+		       COALESCE(mr.city, ''), COALESCE(mr.state, ''),
+		       mr.low_cents, mr.median_cents, mr.high_cents,
+		       mr.data_points, mr.source, mr.confidence,
+		       mr.season, mr.computed_at, mr.valid_until
+		FROM market_ranges mr
+		JOIN zip_codes z ON z.zip = mr.zip_code
+		WHERE mr.service_type_id = $1
+		  AND ST_DWithin(
+		        z.location,
+		        ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
+		        $4)
+		ORDER BY z.location <-> ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
+		         mr.computed_at DESC
+		LIMIT 1`,
+		marketRangeLookupID(categoryID, subcategoryID, serviceTypeID), lng, lat, meters))
+}
+
+// NearestZip returns the closest zip_codes.zip to (lat,lng) within radiusKm.
+func (r *PostgresRepository) NearestZip(ctx context.Context, lat, lng, radiusKm float64) (string, error) {
+	meters := marketRangeRadiusMeters(radiusKm)
+	var zip string
+	err := r.pool.QueryRow(ctx, `
+		SELECT zip
+		FROM zip_codes
+		WHERE ST_DWithin(
+		        location,
+		        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+		        $3)
+		ORDER BY location <-> ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography
+		LIMIT 1`, lng, lat, meters).Scan(&zip)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("nearest zip: %w", domain.ErrMarketRangeNotFound)
+		}
+		return "", fmt.Errorf("nearest zip: %w", err)
+	}
+	return zip, nil
 }
 
 // clearedPriceWindowDays bounds the candidate set to a recent window so the
@@ -67,12 +146,10 @@ const clearedPriceRowLimit = 5000
 // completed_at. Bounded to the last clearedPriceWindowDays relative to asOf and
 // clearedPriceRowLimit rows (most recent first).
 //
-// market_id is left empty: there is no zip→market mapping table in this schema
-// (markets, migration 051, is a craigslist-style metro list keyed by lat/lng,
-// with no zip column), so the engine falls back to its national hierarchy
-// levels. TODO(pricing): resolve a market_id once a zip→market mapping exists
-// (e.g. nearest active market to jobs.service_location), to unlock metro-level
-// shrinkage.
+// market_id is the nearest active markets.slug within 80 km of the job's
+// service point (markets.location, migration 051/058). Inactive / ungeocoded
+// catalog rows are ignored. If none is in range the engine falls back to
+// national hierarchy levels.
 //
 // GetCategoryIDBySlug resolves a service-category slug to its UUID. Returns an
 // empty string (no error) when the slug is unknown, so callers fail soft.
@@ -102,6 +179,7 @@ func (r *PostgresRepository) GetClearedPriceTransactions(ctx context.Context, ca
 		    j.category_id::text                       AS category_id,
 		    COALESCE(sc.parent_id::text, '')          AS parent_category_id,
 		    COALESCE(j.service_zip, '')               AS zip,
+		    COALESCE(nearest_market.slug, '')         AS market_id,
 		    b.amount_cents                            AS cleared_price_cents,
 		    c.completed_at                            AS settled_at,
 		    CASE COALESCE(ts.tier, 'new')
@@ -117,6 +195,19 @@ func (r *PostgresRepository) GetClearedPriceTransactions(ctx context.Context, ca
 		JOIN jobs j ON j.id = c.job_id
 		JOIN service_categories sc ON sc.id = j.category_id
 		LEFT JOIN trust_scores ts ON ts.user_id = c.provider_id AND ts.role = 'provider'
+		LEFT JOIN LATERAL (
+		    SELECT m.slug
+		    FROM markets m
+		    WHERE m.is_active
+		      AND m.location IS NOT NULL
+		      AND COALESCE(j.service_location, j.approximate_location) IS NOT NULL
+		      AND ST_DWithin(
+		            m.location,
+		            COALESCE(j.service_location, j.approximate_location)::geography,
+		            80000)
+		    ORDER BY m.location <-> COALESCE(j.service_location, j.approximate_location)::geography
+		    LIMIT 1
+		) nearest_market ON true
 		WHERE c.status = 'completed'
 		  AND c.completed_at IS NOT NULL
 		  AND c.completed_at >= $2
@@ -140,6 +231,7 @@ func (r *PostgresRepository) GetClearedPriceTransactions(ctx context.Context, ca
 			&t.CategoryID,
 			&t.ParentCategoryID,
 			&t.Zip,
+			&t.MarketID,
 			&t.ClearedPriceCents,
 			&t.SettledAt,
 			&trustTier,
@@ -148,8 +240,6 @@ func (r *PostgresRepository) GetClearedPriceTransactions(ctx context.Context, ca
 		}
 		t.SettledAt = t.SettledAt.UTC()
 		t.TrustTier = uint32(trustTier)
-		// No zip→market mapping available; engine falls back to national levels.
-		t.MarketID = ""
 		// Services carry no goods condition; the engine contract wants 4.
 		t.Condition = 4
 		// instant_match is not modeled on contracts/jobs in this schema yet.

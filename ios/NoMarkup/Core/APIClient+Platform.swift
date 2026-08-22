@@ -279,6 +279,8 @@ enum ImageUploadContext: String, Sendable, Hashable {
     /// Chat file attachments (PDF invoices, scope docs) — S3 prefix `chat-attachments/{userID}/…`.
     /// Accepts JPEG/PNG/WebP and PDF (pass-through). Photos in chat still use `.job`.
     case chatAttachment
+    /// Review photos on leave-review — S3 prefix `review-photos/{userID}/…`. Imaging allow-list `review_photo`.
+    case reviewPhoto
 
     /// Wire value for `context` on upload-url / confirm.
     var apiValue: String {
@@ -288,6 +290,7 @@ enum ImageUploadContext: String, Sendable, Hashable {
         case .listing: return "listing"
         case .document: return "document"
         case .chatAttachment: return "chat_attachment"
+        case .reviewPhoto: return "review_photo"
         }
     }
 }

@@ -30,12 +30,14 @@ type StripeDeleter interface {
 	DeleteConnectAccount(ctx context.Context, accountID string) (string, error)
 }
 
-// ObjectStoreDeleter abstracts S3 prefix deletion.
+// ObjectStoreDeleter abstracts S3 object deletion for a user.
 type ObjectStoreDeleter interface {
-	// DeletePrefix removes every object under the given prefix. Returns
-	// the number of objects deleted (best-effort) and any error. A nil
+	// DeleteUserObjects removes every object under each imaging upload-context
+	// prefix for the user (`{avatars|portfolio|job-photos|documents|
+	// review-photos|listings|chat-attachments}/{userID}/`). Returns the
+	// number of objects deleted (best-effort) and any error. A nil
 	// implementation makes the service skip S3 cleanup.
-	DeletePrefix(ctx context.Context, prefix string) (int, error)
+	DeleteUserObjects(ctx context.Context, userID string) (int, error)
 }
 
 // OAuthRevoker revokes the user's tokens at the upstream OAuth provider.
@@ -277,11 +279,9 @@ func (e *Erasure) FinalizeAccountDeletion(ctx context.Context, userID string, fo
 	}
 
 	if e.store != nil {
-		prefix := fmt.Sprintf("users/%s/", userID)
-		if n, sErr := e.store.DeletePrefix(ctx, prefix); sErr != nil {
-			slog.Error("gdpr: s3 prefix delete failed",
+		if n, sErr := e.store.DeleteUserObjects(ctx, userID); sErr != nil {
+			slog.Error("gdpr: s3 user-object delete failed",
 				"user_id", userID,
-				"prefix", prefix,
 				"error", sErr,
 			)
 		} else {

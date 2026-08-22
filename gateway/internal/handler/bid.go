@@ -102,6 +102,185 @@ func (h *BidHandler) resolveProviderNames(ctx context.Context, ids []string) map
 	return out
 }
 
+// batchLadderEnrichment loads jobs_completed (provider_profiles) and
+// review_summary (published review aggregates) for unique provider IDs.
+//
+// Prefer one SQL round trip each when the gateway has a pool (same tables the
+// public provider profile reads). Fill remaining jobs_completed — and
+// review_summary only when SQL did not run — via GetProviderProfile, bounded
+// like batchVerificationBadges. Fail-soft: a missing profile or lookup error
+// omits that field (caller keeps engine 0 / JSON null). Never invents a 5.0.
+func (h *BidHandler) batchLadderEnrichment(ctx context.Context, providerIDs []string) (map[string]int32, map[string]map[string]interface{}) {
+	jobs := make(map[string]int32)
+	reviews := make(map[string]map[string]interface{})
+	unique := dedupeUserIDs(providerIDs)
+	if len(unique) == 0 {
+		return jobs, reviews
+	}
+
+	reviewsFromSQL := false
+	if h.db != nil {
+		h.loadJobsCompletedSQL(ctx, unique, jobs)
+		reviewsFromSQL = h.loadReviewSummariesSQL(ctx, unique, reviews)
+	}
+
+	if h.userClient == nil {
+		return jobs, reviews
+	}
+
+	need := make([]string, 0, len(unique))
+	seenNeed := make(map[string]struct{}, len(unique))
+	addNeed := func(id string) {
+		if _, ok := seenNeed[id]; ok {
+			return
+		}
+		seenNeed[id] = struct{}{}
+		need = append(need, id)
+	}
+	for _, id := range unique {
+		if _, ok := jobs[id]; !ok {
+			addNeed(id)
+		}
+		if !reviewsFromSQL {
+			if _, ok := reviews[id]; !ok {
+				addNeed(id)
+			}
+		}
+	}
+
+	if len(need) == 0 {
+		return jobs, reviews
+	}
+
+	const maxConcurrent = 8
+	sem := make(chan struct{}, maxConcurrent)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, id := range need {
+		wg.Add(1)
+		go func(providerID string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			resp, err := h.userClient.GetProviderProfile(ctx, &userv1.GetProviderProfileRequest{UserId: providerID})
+			if err != nil {
+				slog.DebugContext(ctx, "bid list provider profile lookup failed", "error", err, "provider_id", providerID)
+				return
+			}
+			p := resp.GetProfile()
+			if p == nil {
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if _, ok := jobs[providerID]; !ok {
+				jobs[providerID] = p.GetJobsCompleted()
+			}
+			if !reviewsFromSQL {
+				if _, ok := reviews[providerID]; !ok {
+					if rs := reviewSummaryFromProto(p.GetReviewSummary()); rs != nil {
+						reviews[providerID] = rs
+					}
+				}
+			}
+		}(id)
+	}
+	wg.Wait()
+	return jobs, reviews
+}
+
+func (h *BidHandler) loadJobsCompletedSQL(ctx context.Context, ids []string, out map[string]int32) bool {
+	if h.db == nil {
+		return false
+	}
+	uuidIDs := uuidStrings(ids)
+	if len(uuidIDs) == 0 {
+		return true
+	}
+	rows, err := h.db.Query(ctx, `
+		SELECT user_id::text, COALESCE(jobs_completed, 0)
+		  FROM provider_profiles
+		 WHERE user_id = ANY($1::uuid[])`, uuidIDs)
+	if err != nil {
+		slog.WarnContext(ctx, "bid list: jobs_completed query failed", "error", err)
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var n int32
+		if err := rows.Scan(&id, &n); err != nil {
+			slog.WarnContext(ctx, "bid list: jobs_completed scan failed", "error", err)
+			return false
+		}
+		out[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		slog.WarnContext(ctx, "bid list: jobs_completed rows failed", "error", err)
+		return false
+	}
+	return true
+}
+
+func (h *BidHandler) loadReviewSummariesSQL(ctx context.Context, ids []string, out map[string]map[string]interface{}) bool {
+	if h.db == nil {
+		return false
+	}
+	uuidIDs := uuidStrings(ids)
+	if len(uuidIDs) == 0 {
+		return true
+	}
+	rows, err := h.db.Query(ctx, `
+		SELECT reviewee_id::text,
+		       AVG(overall_rating)::float8,
+		       COUNT(*)::int,
+		       COUNT(timeliness_rating) FILTER (WHERE timeliness_rating IS NOT NULL),
+		       COUNT(timeliness_rating) FILTER (WHERE timeliness_rating >= 4)
+		  FROM reviews
+		 WHERE reviewee_id = ANY($1::uuid[])
+		   AND status = 'published'
+		 GROUP BY reviewee_id`, uuidIDs)
+	if err != nil {
+		slog.WarnContext(ctx, "bid list: review summary query failed", "error", err)
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var avg float64
+		var count, rated, onTime int
+		if err := rows.Scan(&id, &avg, &count, &rated, &onTime); err != nil {
+			slog.WarnContext(ctx, "bid list: review summary scan failed", "error", err)
+			return false
+		}
+		var onTimeRate *float64
+		if rated > 0 {
+			v := float64(onTime) / float64(rated)
+			onTimeRate = &v
+		}
+		if rs := reviewSummaryJSON(avg, count, onTimeRate); rs != nil {
+			out[id] = rs
+		}
+	}
+	if err := rows.Err(); err != nil {
+		slog.WarnContext(ctx, "bid list: review summary rows failed", "error", err)
+		return false
+	}
+	return true
+}
+
+func uuidStrings(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if isValidUUID(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 type placeBidRequest struct {
 	AmountCents int64 `json:"amount_cents"`
 }
@@ -644,6 +823,10 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 	// FR-4.5: verification badges (engine leaves badges empty; enrich from
 	// verified documents via user service). Fail-soft when userClient is nil.
 	badgesByProvider := h.batchVerificationBadges(r.Context(), providerIDs)
+	// Engine BidWithProvider always ships jobs_completed=0 and no review_summary
+	// (engines/bidding grpc.rs). Hydrate from provider_profiles + published
+	// reviews — same sources as public GET /providers/{id}. Fail-soft.
+	jobsByProvider, reviewsByProvider := h.batchLadderEnrichment(r.Context(), providerIDs)
 
 	bids := make([]map[string]interface{}, 0, len(resp.GetBids()))
 	for _, bwp := range resp.GetBids() {
@@ -663,17 +846,25 @@ func (h *BidHandler) ListBidsForJob(w http.ResponseWriter, r *http.Request) {
 		if len(badges) == 0 {
 			badges = badgesByProvider[pid]
 		}
+		jobsCompleted := bwp.GetJobsCompleted()
+		if n, ok := jobsByProvider[pid]; ok {
+			jobsCompleted = n
+		}
+		var reviewSummary interface{}
+		if rs, ok := reviewsByProvider[pid]; ok {
+			reviewSummary = rs
+		}
 		entry := map[string]interface{}{
 			"bid":                    protoBidToJSON(bwp.GetBid()),
 			"provider_display_name":  displayName,
 			"provider_business_name": bwp.GetProviderBusinessName(),
 			"provider_avatar_url":    avatarURL,
-			"jobs_completed":         bwp.GetJobsCompleted(),
+			"jobs_completed":         jobsCompleted,
 			// Real trust score, fetched above. nil when the provider has no
 			// score yet or the trust engine was unreachable (fail-soft) — the
 			// BidCard then renders without a trust gauge, never an error.
 			"trust_score":    trustByProvider[bwp.GetBid().GetProviderId()],
-			"review_summary": nil,
+			"review_summary": reviewSummary,
 			// FR-4.5 — verified document types for badge chips (may be empty).
 			"badges": badges,
 		}

@@ -174,6 +174,29 @@ enum ListingReportReason: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// Valid `reason` values for `POST /api/v1/jobs/{id}/report`.
+enum JobReportReason: String, CaseIterable, Identifiable, Sendable {
+    case prohibited
+    case misleading
+    case spam
+    case scam
+    case harassment
+    case other
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .prohibited: return "Prohibited content"
+        case .misleading: return "Misleading"
+        case .spam: return "Spam"
+        case .scam: return "Scam"
+        case .harassment: return "Harassment"
+        case .other: return "Other"
+        }
+    }
+}
+
 // MARK: - Pagination
 
 /// Flexible pagination meta (listings use snake_case + dual camel keys; jobs use camelCase).
@@ -2197,6 +2220,156 @@ struct ListingBidsResponse: Codable, Sendable {
     }
 }
 
+/// One event from public `GET /api/v1/listings/{id}/replay`.
+/// Gateway JSON: `type`, `at`, `amount_cents`, `anonymized_bidder`, `extended_to`, `from`, `to`.
+struct ListingReplayEvent: Decodable, Sendable, Hashable, Identifiable {
+    var type: String?
+    var at: String?
+    var amountCents: Int64?
+    var anonymizedBidder: String?
+    var extendedTo: String?
+    /// Auto-bid cascade previous amount (`from` on the wire).
+    var fromCents: Int64?
+    /// Auto-bid cascade new amount (`to` on the wire).
+    var toCents: Int64?
+
+    var id: String {
+        let kind = type ?? ""
+        let when = at ?? ""
+        let amount = amountCents.map(String.init) ?? ""
+        let bidder = anonymizedBidder ?? ""
+        let from = fromCents.map(String.init) ?? ""
+        let to = toCents.map(String.init) ?? ""
+        return "\(when)|\(kind)|\(amount)|\(bidder)|\(from)|\(to)"
+    }
+
+    /// Human label matching job `AuctionEvent.displayEventLabel`, plus anonymized bidder when present.
+    var displayEventLabel: String {
+        let raw = (type ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let kind: String
+        switch raw {
+        case "bid_placed", "placed":
+            kind = "Bid placed"
+        case "snipe_extension", "extended":
+            kind = "Time extended"
+        case "auto_bid_cascade", "cascade":
+            kind = "Auto-bid cascade"
+        case "":
+            kind = "Activity"
+        default:
+            kind = raw
+                .replacingOccurrences(of: "_", with: " ")
+                .capitalized
+        }
+        let bidder = anonymizedBidder?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if bidder.isEmpty {
+            return kind
+        }
+        return "\(kind) · \(bidder)"
+    }
+
+    /// Bid amount, or cascade `to` when the row has no `amount_cents`.
+    var displayAmountCents: Int64? {
+        if let amountCents, amountCents > 0 {
+            return amountCents
+        }
+        if let toCents, toCents > 0 {
+            return toCents
+        }
+        return nil
+    }
+
+    init(
+        type: String? = nil,
+        at: String? = nil,
+        amountCents: Int64? = nil,
+        anonymizedBidder: String? = nil,
+        extendedTo: String? = nil,
+        fromCents: Int64? = nil,
+        toCents: Int64? = nil
+    ) {
+        self.type = type
+        self.at = at
+        self.amountCents = amountCents
+        self.anonymizedBidder = anonymizedBidder
+        self.extendedTo = extendedTo
+        self.fromCents = fromCents
+        self.toCents = toCents
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        type = try c.decodeIfPresent(String.self, forKey: .type)
+        at = try c.decodeIfPresent(String.self, forKey: .at)
+        amountCents = Self.decodeInt64(c, forKey: .amountCents)
+        anonymizedBidder = try c.decodeIfPresent(String.self, forKey: .anonymizedBidder)
+        extendedTo = try c.decodeIfPresent(String.self, forKey: .extendedTo)
+        fromCents = Self.decodeInt64(c, forKey: .fromCents)
+        toCents = Self.decodeInt64(c, forKey: .toCents)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case at
+        case amountCents
+        case anonymizedBidder
+        case extendedTo
+        case fromCents = "from"
+        case toCents = "to"
+    }
+
+    private static func decodeInt64(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> Int64? {
+        if let v = try? c.decodeIfPresent(Int64.self, forKey: key) { return v }
+        if let v = try? c.decodeIfPresent(Int.self, forKey: key) { return Int64(v) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key), let v = Int64(s) { return v }
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return Int64(d) }
+        return nil
+    }
+}
+
+/// Envelope from public `GET /api/v1/listings/{id}/replay`.
+struct ListingAuctionReplay: Decodable, Sendable {
+    var listingId: String?
+    var startedAt: String?
+    var endedAt: String?
+    var winnerId: String?
+    var events: [ListingReplayEvent]
+
+    init(
+        listingId: String? = nil,
+        startedAt: String? = nil,
+        endedAt: String? = nil,
+        winnerId: String? = nil,
+        events: [ListingReplayEvent] = []
+    ) {
+        self.listingId = listingId
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.winnerId = winnerId
+        self.events = events
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        listingId = try c.decodeIfPresent(String.self, forKey: .listingId)
+        startedAt = try c.decodeIfPresent(String.self, forKey: .startedAt)
+        endedAt = try c.decodeIfPresent(String.self, forKey: .endedAt)
+        winnerId = try c.decodeIfPresent(String.self, forKey: .winnerId)
+        events = try c.decodeIfPresent([ListingReplayEvent].self, forKey: .events) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case listingId
+        case startedAt
+        case endedAt
+        case winnerId
+        case events
+    }
+}
+
 /// Nested bid from job owner bid list (auth). Flexible keys for proto JSON.
 struct JobBidCore: Codable, Sendable, Hashable {
     var id: String?
@@ -2754,6 +2927,8 @@ struct AuctionEvent: Decodable, Sendable, Hashable, Identifiable {
             return "Auction ended"
         case "snipe_extension", "extended":
             return "Time extended"
+        case "auto_bid_cascade", "cascade":
+            return "Auto-bid cascade"
         case "":
             return "Activity"
         default:

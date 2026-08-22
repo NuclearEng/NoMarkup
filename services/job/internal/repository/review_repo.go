@@ -12,15 +12,15 @@ import (
 
 // reviewSelectColumns lists the columns we read for a review, joined with
 // optional review_responses. Kept in one place so every query (GetReview,
-// ListReviewsForUser, ListReviewsByUser, AdminListFlaggedReviews) stays in
-// sync with the schema (see migrations: reviewer_role, review_text,
-// review_window_ends — no is_flagged or photo_urls columns).
+// ListReviewsForUser, ListReviewsByUser) stays in sync with the schema
+// (see migrations: reviewer_role, review_text, review_window_ends,
+// photo_urls TEXT[] — flag state is derived from status='flagged').
 const reviewSelectColumns = `
 	r.id, r.contract_id, r.job_id, r.reviewer_id, r.reviewee_id, r.reviewer_role,
 	r.overall_rating, r.quality_rating, r.communication_rating,
 	r.timeliness_rating, r.value_rating,
 	r.payment_promptness_rating, r.scope_accuracy_rating, r.access_rating,
-	r.review_text, r.status,
+	r.review_text, COALESCE(r.photo_urls, '{}'), r.status,
 	r.flagged_at, r.flag_reason,
 	r.review_window_ends, r.created_at, r.updated_at,
 	rr.id, rr.review_id, rr.user_id, rr.response_text, rr.created_at`
@@ -57,6 +57,11 @@ func (r *PostgresRepository) CreateReview(ctx context.Context, review *domain.Re
 		}
 	}
 
+	photoURLs := review.PhotoURLs
+	if photoURLs == nil {
+		photoURLs = []string{}
+	}
+
 	var reviewID string
 	var createdAt, updatedAt time.Time
 	err = r.pool.QueryRow(ctx, `
@@ -65,20 +70,20 @@ func (r *PostgresRepository) CreateReview(ctx context.Context, review *domain.Re
 			overall_rating, quality_rating, communication_rating,
 			timeliness_rating, value_rating,
 			payment_promptness_rating, scope_accuracy_rating, access_rating,
-			review_text, status, review_window_ends
+			review_text, photo_urls, status, review_window_ends
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			$6, $7, $8,
 			$9, $10,
 			$11, $12, $13,
-			$14, 'pending', $15
+			$14, $15, 'pending', $16
 		)
 		RETURNING id, created_at, updated_at`,
 		review.ContractID, jobID, review.ReviewerID, review.RevieweeID, role,
 		review.OverallRating, review.QualityRating, review.CommunicationRating,
 		review.TimelinessRating, review.ValueRating,
 		review.PaymentPromptnessRating, review.ScopeAccuracyRating, review.AccessRating,
-		review.ReviewText, windowEnds,
+		review.ReviewText, photoURLs, windowEnds,
 	).Scan(&reviewID, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create review insert: %w", err)
@@ -108,7 +113,7 @@ func (r *PostgresRepository) GetReview(ctx context.Context, reviewID string) (*d
 		&rev.OverallRating, &qualityRating, &communicationRating,
 		&timelinessRating, &valueRating,
 		&paymentPromptness, &scopeAccuracy, &accessRating,
-		&rev.ReviewText, &rev.Status,
+		&rev.ReviewText, &rev.PhotoURLs, &rev.Status,
 		&flaggedAt, &flagReason,
 		&rev.ReviewWindowEnds, &rev.CreatedAt, &rev.UpdatedAt,
 		&respID, &respReviewID, &respResponderID, &respComment, &respCreatedAt,
@@ -557,7 +562,7 @@ func (r *PostgresRepository) AdminListFlaggedReviews(ctx context.Context, status
 		       rev.overall_rating, rev.quality_rating, rev.communication_rating,
 		       rev.timeliness_rating, rev.value_rating,
 		       rev.payment_promptness_rating, rev.scope_accuracy_rating, rev.access_rating,
-		       rev.review_text, rev.status,
+		       rev.review_text, COALESCE(rev.photo_urls, '{}'), rev.status,
 		       rev.flagged_at, rev.flag_reason,
 		       rev.review_window_ends, rev.created_at, rev.updated_at
 		FROM review_flags rf
@@ -589,7 +594,7 @@ func (r *PostgresRepository) AdminListFlaggedReviews(ctx context.Context, status
 			&rev.OverallRating, &qualityRating, &communicationRating,
 			&timelinessRating, &valueRating,
 			&paymentPromptness, &scopeAccuracy, &accessRating,
-			&rev.ReviewText, &rev.Status,
+			&rev.ReviewText, &rev.PhotoURLs, &rev.Status,
 			&revFlaggedAt, &revFlagReason,
 			&rev.ReviewWindowEnds, &rev.CreatedAt, &rev.UpdatedAt,
 		)
@@ -768,7 +773,7 @@ func scanReviewRow(rows pgx.Rows) (*domain.Review, error) {
 		&rev.OverallRating, &qualityRating, &communicationRating,
 		&timelinessRating, &valueRating,
 		&paymentPromptness, &scopeAccuracy, &accessRating,
-		&rev.ReviewText, &rev.Status,
+		&rev.ReviewText, &rev.PhotoURLs, &rev.Status,
 		&flaggedAt, &flagReason,
 		&rev.ReviewWindowEnds, &rev.CreatedAt, &rev.UpdatedAt,
 		&respID, &respReviewID, &respResponderID, &respComment, &respCreatedAt,

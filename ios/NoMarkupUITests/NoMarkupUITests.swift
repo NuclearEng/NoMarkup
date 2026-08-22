@@ -65,14 +65,11 @@ final class NoMarkupUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
 
-        // Defensive: dismiss system permission alerts without granting.
-        // Prefer "Open" for custom-scheme confirmation ("Open in NoMarkup?").
+        // Defensive: dismiss system permission / Apple ID sheets without granting.
+        // Never tap Settings — that leaves the app and stalls the suite.
+        // Prefer Close on "Sign in to your Apple Account".
         addUIInterruptionMonitor(withDescription: "System dialog") { alert in
-            for title in ["Open", "Allow", "OK"] {
-                let button = alert.buttons[title]
-                if button.exists { button.tap(); return true }
-            }
-            for title in ["Don’t Allow", "Don't Allow", "Not Now", "Cancel"] {
+            for title in ["Close", "Open", "Allow", "OK", "Continue", "Not Now", "Don’t Allow", "Don't Allow", "Cancel", "Later"] {
                 let button = alert.buttons[title]
                 if button.exists { button.tap(); return true }
             }
@@ -82,6 +79,7 @@ final class NoMarkupUITests: XCTestCase {
         // Default launch: customer seed credentials for DEBUG auto-login.
         configureLaunchCredentials(email: customerEmail, password: password)
         app.launch()
+        pokeSystemAlerts()
     }
 
     override func tearDownWithError() throws {
@@ -90,13 +88,48 @@ final class NoMarkupUITests: XCTestCase {
 
     // MARK: - Helpers
 
+    private var apiBaseURL: String {
+        Self.testCredential("NOMARKUP_API_BASE_URL", default: "http://127.0.0.1:8081")
+    }
+
     private func configureLaunchCredentials(email: String, password: String) {
+        // Pin the local gateway. The shared scheme still has a LAN IP that is
+        // unreachable on a laptop that changed networks — login then hangs on Sign in.
+        app.launchEnvironment["NOMARKUP_API_BASE_URL"] = apiBaseURL
+        app.launchEnvironment["NOMARKUP_UI_TESTING"] = "1"
+        app.launchArguments = ["-ui-testing"]
         if !email.isEmpty {
             app.launchEnvironment["NOMARKUP_UI_TEST_EMAIL"] = email
+            app.launchArguments += ["-ui-test-email", email]
         }
         if !password.isEmpty {
             app.launchEnvironment["NOMARKUP_UI_TEST_PASSWORD"] = password
+            app.launchArguments += ["-ui-test-password", password]
         }
+    }
+
+    /// UIInterruptionMonitor only fires after the test process interacts with the app.
+    private func pokeSystemAlerts() {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        settle(0.2)
+        dismissBlockingSheets()
+    }
+
+    /// In-app / SpringBoard sheets that sit on top of Sign in (Apple ID, age gate).
+    /// Never tap Settings — that backgrounds the app.
+    @discardableResult
+    private func dismissBlockingSheets() -> Bool {
+        var dismissed = false
+        for title in ["Close", "Not Now", "Not now", "Continue", "OK", "Don’t Allow", "Don't Allow"] {
+            let buttons = [app.alerts.buttons[title], app.buttons[title]]
+            for button in buttons where button.exists {
+                button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                settle(0.25)
+                dismissed = true
+                break
+            }
+        }
+        return dismissed
     }
 
     /// Relaunch the app under test with a specific role's credentials (DEBUG auto-login).
@@ -246,12 +279,50 @@ final class NoMarkupUITests: XCTestCase {
     @discardableResult
     private func waitForSignedInShell(timeout: TimeInterval = 25) -> Bool {
         let tabView = byID("root.tabview")
-        if tabView.waitForExistence(timeout: timeout) {
-            completeAgeGateIfPresent()
-            dismissNotificationPrePrompt()
-            return true
+        let deadline = Date().addingTimeInterval(timeout)
+        pokeSystemAlerts()
+        while Date() < deadline {
+            dismissBlockingSheets()
+            if tabView.exists || app.tabBars.firstMatch.exists {
+                completeAgeGateIfPresent()
+                dismissNotificationPrePrompt()
+                return true
+            }
+            settle(0.4)
+            pokeSystemAlerts()
         }
-        return false
+        return tabView.exists || app.tabBars.firstMatch.exists
+    }
+
+    private func fieldValue(_ field: XCUIElement) -> String {
+        (field.value as? String) ?? ""
+    }
+
+    /// Replace a text field's content. Triple-tap selects the line so typing
+    /// replaces leftover auto-login text instead of appending.
+    private func clearAndType(_ field: XCUIElement, text: String, verify: Bool) {
+        XCTAssertTrue(field.waitForExistence(timeout: 8), "field missing before type")
+        field.tap()
+        settle(0.2)
+        let placeholderValues = ["Email", "Password"]
+        var existing = fieldValue(field)
+        if placeholderValues.contains(existing) { existing = "" }
+        if !existing.isEmpty {
+            if verify {
+                field.tap(withNumberOfTaps: 3, numberOfTouches: 1)
+                settle(0.2)
+            }
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count + 2))
+        }
+        field.typeText(text)
+        guard verify else { return }
+        var typed = fieldValue(field)
+        if typed != text {
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: typed.count + text.count + 8))
+            field.typeText(text)
+            typed = fieldValue(field)
+        }
+        XCTAssertEqual(typed, text, "field content after typing")
     }
 
     /// Ensure we are signed in as `email`. Prefers DEBUG auto-login via relaunch;
@@ -277,6 +348,7 @@ final class NoMarkupUITests: XCTestCase {
         if waitForSignedInShell(timeout: 20) { return }
 
         // Manual form fallback.
+        pokeSystemAlerts()
         let emailField = byID("login.email")
         let passwordField = byID("login.password")
         let submit = byID("login.submit")
@@ -284,10 +356,8 @@ final class NoMarkupUITests: XCTestCase {
         XCTAssertTrue(passwordField.waitForExistence(timeout: 5), "login.password not found")
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "login.submit not found")
 
-        emailField.tap()
-        emailField.typeText(email)
-        passwordField.tap()
-        passwordField.typeText(password)
+        clearAndType(emailField, text: email, verify: true)
+        clearAndType(passwordField, text: password, verify: false)
         submit.tap()
 
         XCTAssertTrue(
@@ -430,10 +500,11 @@ final class NoMarkupUITests: XCTestCase {
         )
 
         // Prefer app auto-login via launchEnvironment (DEBUG RootView).
-        if waitForSignedInShell(timeout: 12) {
+        if waitForSignedInShell(timeout: 20) {
             return
         }
 
+        pokeSystemAlerts()
         let emailField = byID("login.email")
         let passwordField = byID("login.password")
         let submit = byID("login.submit")
@@ -442,10 +513,8 @@ final class NoMarkupUITests: XCTestCase {
         XCTAssertTrue(passwordField.waitForExistence(timeout: 5), "login.password not found")
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "login.submit not found")
 
-        emailField.tap()
-        emailField.typeText(email)
-        passwordField.tap()
-        passwordField.typeText(pwd)
+        clearAndType(emailField, text: email, verify: true)
+        clearAndType(passwordField, text: pwd, verify: false)
         submit.tap()
 
         XCTAssertTrue(

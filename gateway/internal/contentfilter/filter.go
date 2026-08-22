@@ -99,7 +99,25 @@ var baselineRules = []rule{
 	{phrase: "ecigarette", reason: ReasonProhibitedSubstances},
 	{phrase: "juul", reason: ReasonProhibitedSubstances},
 
-	// ── Controlled substances (ASR-1.4.3.c) — not cannabis ────────────
+	// ── Cannabis (ASR-1.4.3.c) — no licensed dispensary path in v1 ────
+	// Bare "weed" is omitted (garden "weed the lawn" / "weed eater" FPs).
+	{phrase: "cannabis", reason: ReasonProhibitedSubstances},
+	{phrase: "marijuana", reason: ReasonProhibitedSubstances},
+	{phrase: "marihuana", reason: ReasonProhibitedSubstances},
+	{phrase: "thc", reason: ReasonProhibitedSubstances},
+	{phrase: "delta-8", reason: ReasonProhibitedSubstances},
+	{phrase: "delta-9", reason: ReasonProhibitedSubstances},
+	{phrase: "delta 8", reason: ReasonProhibitedSubstances},
+	{phrase: "delta 9", reason: ReasonProhibitedSubstances},
+	{phrase: "edibles thc", reason: ReasonProhibitedSubstances},
+	{phrase: "thc edibles", reason: ReasonProhibitedSubstances},
+	{phrase: "cannabis accessories", reason: ReasonProhibitedSubstances},
+	{phrase: "cannabis paraphernalia", reason: ReasonProhibitedSubstances},
+	{phrase: "weed for sale", reason: ReasonProhibitedSubstances},
+	{phrase: "kush", reason: ReasonProhibitedSubstances},
+	{phrase: "cbd flower", reason: ReasonProhibitedSubstances},
+
+	// ── Controlled substances (ASR-1.4.3.c) ───────────────────────────
 	{phrase: "cocaine", reason: ReasonProhibitedSubstances},
 	{phrase: "crack cocaine", reason: ReasonProhibitedSubstances},
 	{phrase: "heroin", reason: ReasonProhibitedSubstances},

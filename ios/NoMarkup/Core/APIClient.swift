@@ -9,7 +9,9 @@ actor APIClient {
 
     private let session: URLSession
     /// Shared keychain store — also used by auth helpers via `tokenStoreForAuth`.
-    private let tokenStore: KeychainTokenStore
+    /// `nonisolated(unsafe)` so `APIClient+Auth` can persist login tokens onto the
+    /// same injected store tests use (Keychain itself is process-global + locked).
+    nonisolated(unsafe) private let tokenStore: KeychainTokenStore
     private let decoder: JSONDecoder
     /// Single-flight refresh so parallel 401s don't rotate the refresh token twice.
     private var refreshTask: Task<AuthTokenPair, Error>?
@@ -57,9 +59,7 @@ actor APIClient {
 
     /// Shared keychain for extension modules (auth) so login/refresh share one store.
     nonisolated var tokenStoreForAuth: KeychainTokenStore {
-        // Keychain is process-global by service; returning a new store with default
-        // service is equivalent, but prefer reading via actor when possible.
-        KeychainTokenStore()
+        tokenStore
     }
 
     // MARK: - Health
@@ -157,6 +157,17 @@ actor APIClient {
         try Self.throwIfNeeded(response: response, data: data)
 
         let pair = try decoder.decode(AuthTokenPair.self, from: data)
+
+        // A concurrent login/register may have replaced the session while this
+        // refresh was in flight. Do not clobber the newer tokens with the old
+        // rotation, or XCUITest auto-login races a dogfood Keychain restore.
+        let currentRefresh = try tokenStore.read(.refreshToken)
+        if let currentRefresh, currentRefresh != refresh {
+            if let access = try tokenStore.read(.accessToken), !access.isEmpty {
+                return AuthTokenPair(accessToken: access, refreshToken: currentRefresh)
+            }
+        }
+
         try tokenStore.save(pair.accessToken, for: .accessToken)
         if let newRefresh = pair.refreshToken {
             try tokenStore.save(newRefresh, for: .refreshToken)
@@ -822,6 +833,17 @@ actor APIClient {
         )
     }
 
+    /// POST `/api/v1/jobs/{id}/report` — optional auth. Same JSON shape as listing reports.
+    @discardableResult
+    func reportJob(id: String, reason: String, description: String) async throws -> ListingReportResponse {
+        let body = ListingReportRequestBody(reason: reason, description: description)
+        return try await postJSON(
+            pathComponents: ["api", "v1", "jobs", id, "report"],
+            body: body,
+            authorized: .optional
+        )
+    }
+
     /// POST `/api/v1/jobs/{id}/bids` — auth required (provider role on server).
     /// Body: `{ "amount_cents": N }`
     /// Idempotency-Key: sticky UUID keyed by `job-bid:{jobId}:{amountCents}` (web parity).
@@ -888,6 +910,19 @@ actor APIClient {
     /// GET `/api/v1/listings/{id}/bids` — public bid history (forward auction, ascending).
     func fetchListingBids(listingId: String) async throws -> ListingBidsResponse {
         try await getJSON(pathComponents: ["api", "v1", "listings", listingId, "bids"])
+    }
+
+    /// GET `/api/v1/listings/{id}/replay` — public goods-auction replay (closed listings only).
+    /// PII-stripped events (`bid_placed`, `snipe_extension`, `auto_bid_cascade`). Unauthenticated.
+    func fetchListingReplay(listingId: String) async throws -> ListingAuctionReplay {
+        let trimmed = listingId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Listing id is required.")
+        }
+        return try await getJSON(
+            pathComponents: ["api", "v1", "listings", trimmed, "replay"],
+            authorized: false
+        )
     }
 
     /// POST `/api/v1/jobs/{id}/bids/{bidID}/award` — customer awards a bid (creates contract).
@@ -1675,8 +1710,8 @@ actor APIClient {
            http.statusCode == 401
         {
             if !didRefresh {
-                let hasRefresh = (try? tokenStore.read(.refreshToken)).map { !$0.isEmpty } ?? false
-                if hasRefresh {
+                let refreshAtStart = (try? tokenStore.read(.refreshToken)).flatMap { $0.isEmpty ? nil : $0 }
+                if let refreshAtStart {
                     do {
                         _ = try await refreshSession()
                         return try await perform(
@@ -1690,12 +1725,15 @@ actor APIClient {
                             transportAttempt: 0
                         )
                     } catch {
-                        // Refresh failed completely — notify AuthViewModel; surface original 401.
-                        Self.postSessionExpired()
+                        // Refresh failed completely — notify AuthViewModel only if the
+                        // keychain still holds the token we tried (a concurrent login
+                        // may have replaced it).
+                        postSessionExpiredIfRefreshUnchanged(refreshAtStart)
                     }
                 } else {
-                    // No refresh token — session cannot be recovered.
-                    Self.postSessionExpired()
+                    // No refresh token — session cannot be recovered unless a
+                    // concurrent login just wrote one.
+                    postSessionExpiredIfRefreshUnchanged(nil)
                 }
             } else {
                 // Already refreshed once for this request; still 401 → definitive.
@@ -1782,8 +1820,8 @@ actor APIClient {
            http.statusCode == 401
         {
             if !didRefresh {
-                let hasRefresh = (try? tokenStore.read(.refreshToken)).map { !$0.isEmpty } ?? false
-                if hasRefresh {
+                let refreshAtStart = (try? tokenStore.read(.refreshToken)).flatMap { $0.isEmpty ? nil : $0 }
+                if let refreshAtStart {
                     do {
                         _ = try await refreshSession()
                         return try await performRaw(
@@ -1797,10 +1835,10 @@ actor APIClient {
                             transportAttempt: 0
                         )
                     } catch {
-                        Self.postSessionExpired()
+                        postSessionExpiredIfRefreshUnchanged(refreshAtStart)
                     }
                 } else {
-                    Self.postSessionExpired()
+                    postSessionExpiredIfRefreshUnchanged(nil)
                 }
             } else {
                 Self.postSessionExpired()
@@ -1854,6 +1892,15 @@ actor APIClient {
     /// Notify the main-actor auth layer that the session is dead. Does not clear tokens.
     private static func postSessionExpired() {
         NotificationCenter.default.post(name: .noMarkupSessionExpired, object: nil)
+    }
+
+    /// Post expiry only when Keychain still holds the refresh token that failed.
+    /// A concurrent login/register writes a different refresh token; that session
+    /// must survive the stale 401.
+    private func postSessionExpiredIfRefreshUnchanged(_ expectedRefresh: String?) {
+        let current = (try? tokenStore.read(.refreshToken)).flatMap { $0.isEmpty ? nil : $0 }
+        guard current == expectedRefresh else { return }
+        Self.postSessionExpired()
     }
 
     private static func throwIfNeeded(response: URLResponse, data: Data) throws {

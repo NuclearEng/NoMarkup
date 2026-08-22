@@ -1801,6 +1801,31 @@ export interface FeeConfigSummary {
   lead_gen_max_fee_cents: number | null;
 }
 
+/** Admin-named additive platform fee. rate_bps is integer basis points (500 = 5%). */
+export interface CustomFee {
+  id: string;
+  name: string;
+  rate_bps: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomFeesResponse {
+  fees: CustomFee[];
+}
+
+export interface CreateCustomFeeInput {
+  name: string;
+  rate_bps: number;
+}
+
+export interface UpdateCustomFeeInput {
+  name?: string;
+  rate_bps?: number;
+  active?: boolean;
+}
+
 export interface CategoryMetricsResponse {
   categories: CategoryMetric[];
 }

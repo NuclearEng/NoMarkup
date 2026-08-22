@@ -291,6 +291,12 @@ type FeeConfigLoader interface {
 	GetFeeConfig(ctx context.Context, categoryID string) (*domain.FeeConfig, error)
 }
 
+// CustomFeeLoader loads active admin custom fees (rate_bps). Implemented by
+// payment PostgresRepository.ListActiveCustomFees.
+type CustomFeeLoader interface {
+	ListActiveCustomFees(ctx context.Context) ([]*domain.CustomFee, error)
+}
+
 // MarketplaceSellerFeeCents computes listing_orders.fee_cents from fee config.
 // Combined platform + guarantee rates as one bps sum (single fee_cents column),
 // ceiling fractional cents, then min/max floor/cap on the combined fee.
@@ -333,6 +339,8 @@ type MarketplaceService struct {
 	now      func() time.Time // injectable for tests
 	// feeLoader reads platform_fee_config. When nil, MarketplaceFeeBps / DefaultFeeConfig.
 	feeLoader FeeConfigLoader
+	// customFees adds admin custom bps on top of the goods take. Optional.
+	customFees CustomFeeLoader
 
 	// buyers resolves a buyer's Stripe Customer and default payment method so an
 	// auction win can be collected off-session. Optional: when nil the sweeper
@@ -484,20 +492,67 @@ func (s *MarketplaceService) SetFeeConfigLoader(l FeeConfigLoader) {
 	s.feeLoader = l
 }
 
+// SetCustomFeeLoader wires platform_custom_fees into goods take-rate.
+func (s *MarketplaceService) SetCustomFeeLoader(l CustomFeeLoader) {
+	s.customFees = l
+}
+
 // resolveMarketplaceFeeCents is the charge-path SSOT for listing_orders.fee_cents.
 // Prefer live fee config; fall back to cfg.MarketplaceFeeBps; last resort DefaultFeeConfig.
 func (s *MarketplaceService) resolveMarketplaceFeeCents(ctx context.Context, amountCents int64) int64 {
+	var base int64
+	var platformBPS int64
 	if s.feeLoader != nil {
 		if fc, err := s.feeLoader.GetDefaultFeeConfig(ctx); err == nil && fc != nil {
-			return MarketplaceSellerFeeCents(amountCents, fc)
+			base = MarketplaceSellerFeeCents(amountCents, fc)
+			platformBPS = rateToBPS(fc.FeePercentage) + rateToBPS(fc.GuaranteePercentage)
 		}
 		// Soft-fail: log and continue to bps/default rather than fail the charge.
 		// Admin misconfig must not brick all goods settlement.
 	}
-	if s.cfg.MarketplaceFeeBps > 0 {
-		return feeFromBPS(amountCents, s.cfg.MarketplaceFeeBps)
+	if base == 0 {
+		if s.cfg.MarketplaceFeeBps > 0 {
+			base = feeFromBPS(amountCents, s.cfg.MarketplaceFeeBps)
+			platformBPS = s.cfg.MarketplaceFeeBps
+		} else {
+			fc := domain.DefaultFeeConfig()
+			base = MarketplaceSellerFeeCents(amountCents, fc)
+			platformBPS = rateToBPS(fc.FeePercentage) + rateToBPS(fc.GuaranteePercentage)
+		}
 	}
-	return MarketplaceSellerFeeCents(amountCents, domain.DefaultFeeConfig())
+	return base + s.customFeeCents(ctx, amountCents, platformBPS)
+}
+
+func (s *MarketplaceService) customFeeCents(ctx context.Context, amountCents, platformBPS int64) int64 {
+	if s.customFees == nil || amountCents <= 0 {
+		return 0
+	}
+	fees, err := s.customFees.ListActiveCustomFees(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "marketplace: list custom fees failed; charging without custom add-on",
+			"error", err,
+		)
+		return 0
+	}
+	var customBPS int64
+	for _, f := range fees {
+		if f == nil {
+			continue
+		}
+		customBPS += f.RateBPS
+	}
+	if customBPS <= 0 {
+		return 0
+	}
+	if platformBPS+customBPS > domain.MaxCombinedPlatformCustomBPS {
+		slog.ErrorContext(ctx, "marketplace: combined fee cap exceeded; charging without custom add-on",
+			"platform_bps", platformBPS,
+			"custom_bps", customBPS,
+			"cap_bps", domain.MaxCombinedPlatformCustomBPS,
+		)
+		return 0
+	}
+	return feeFromBPS(amountCents, customBPS)
 }
 
 // SetClock injects a deterministic clock for tests.

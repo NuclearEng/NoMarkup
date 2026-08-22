@@ -88,9 +88,10 @@ struct RecurringJobsView: View {
     private var listContent: some View {
         List {
             Section {
-                Text("Recurring service schedules on contracts where you are the customer or provider. Open a row for visit approve/pay; use actions here to pause, resume, or cancel.")
+                Text("Recurring service schedules on contracts where you are the customer or provider. Each schedule renews at the listed interval and continues until you cancel. Each period is one service visit at the listed rate, held in escrow. Future visits and automatic retries may bill that rate. Open a row to pay the first visit (Apple Pay or card via Stripe). Cancel here with Cancel, or on the contract with Cancel schedule.")
                     .font(.subheadline)
                     .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     .listRowBackground(BrandTheme.navyElevated)
             }
 
@@ -118,7 +119,7 @@ struct RecurringJobsView: View {
                 Text(String(localized: "\(rows.count) schedules"))
                     .brandSectionHeader()
             } footer: {
-                Text("Pause stops new visits; cancel ends the schedule after the next occurrence notice. Money and visit pay stay on the contract detail.")
+                Text("Continues until you cancel. Pause stops new visits; cancel ends the schedule after the next occurrence notice. Money and visit pay stay on the contract detail.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
@@ -192,6 +193,15 @@ struct RecurringJobsView: View {
                         Text(number)
                             .font(.caption2.monospaced())
                             .foregroundStyle(BrandTheme.textSecondary)
+                    }
+
+                    if !item.config.isCancelled {
+                        Text(
+                            "Renews \(item.config.displayFrequency.lowercased()). Continues until you cancel. Each period is one service visit at \(item.config.displayRate), held in escrow. Cancel on this row or the contract."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }

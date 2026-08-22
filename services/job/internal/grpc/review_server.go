@@ -264,6 +264,7 @@ func domainReviewToProto(r *domain.Review) *reviewv1.Review {
 		Direction:     stringToProtoReviewDirection(r.Direction()),
 		OverallRating: int32(r.OverallRating),
 		Comment:       r.ReviewText,
+		PhotoUrls:     r.PhotoURLs,
 		IsFlagged:     r.IsFlagged(),
 		CreatedAt:     timestamppb.New(r.CreatedAt),
 	}
@@ -436,6 +437,8 @@ func mapReviewDomainError(err error) error {
 		return status.Error(codes.FailedPrecondition, "flag already resolved")
 	case errors.Is(err, domain.ErrReviewAlreadyRemoved):
 		return status.Error(codes.FailedPrecondition, "review already removed")
+	case errors.Is(err, domain.ErrInvalidReviewPhotos):
+		return status.Error(codes.InvalidArgument, err.Error())
 	default:
 		// Check for validation errors (contain known messages).
 		msg := err.Error()

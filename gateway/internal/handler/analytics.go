@@ -20,7 +20,7 @@ import (
 // AnalyticsHandler handles HTTP endpoints for analytics.
 type AnalyticsHandler struct {
 	client     analyticsv1.AnalyticsServiceClient
-	jobClient  jobv1.JobServiceClient // for the Fair-Price engine RPC (GetFairPrice)
+	jobClient  jobv1.JobServiceClient   // for the Fair-Price engine RPC (GetFairPrice)
 	userClient userv1.UserServiceClient // property ownership for optional property_id filter
 }
 
@@ -124,6 +124,10 @@ func (h *AnalyticsHandler) GetMarketRange(w http.ResponseWriter, r *http.Request
 			return
 		}
 		req.ServiceTypeId = &stid
+	}
+
+	if zip := strings.TrimSpace(q.Get("zip")); zip != "" {
+		req.ZipCode = &zip
 	}
 
 	if latStr, lngStr := q.Get("lat"), q.Get("lng"); latStr != "" && lngStr != "" {

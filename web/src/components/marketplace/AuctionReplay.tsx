@@ -29,6 +29,13 @@ const SPEED_OPTIONS = [1, 2, 4] as const;
 
 export function AuctionReplay({ listingId }: AuctionReplayProps) {
   const { data, isLoading, isError } = useListingReplay(listingId);
+  // First paint must match SSR (pending query). Showing empty/error on the
+  // client before the query resolves caused a hydration mismatch vs the
+  // loading skeleton.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    setReady(true);
+  }, []);
   const [currentEventIndex, setCurrentEventIndex] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEED_OPTIONS)[number]>(1);
@@ -128,7 +135,7 @@ export function AuctionReplay({ listingId }: AuctionReplayProps) {
     setCurrentEventIndex(Math.max(-1, Math.min(idx, data.events.length - 1)));
   }
 
-  if (isLoading) {
+  if (!ready || isLoading) {
     return (
       <div className="border-border/50 bg-card overflow-hidden rounded-xl border shadow-lg">
         <div className="px-4 py-3 sm:px-6">

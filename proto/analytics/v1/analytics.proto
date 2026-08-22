@@ -70,6 +70,7 @@ message GetMarketRangeRequest {
   optional string service_type_id = 3;
   optional nomarkup.common.v1.Location location = 4;
   optional double radius_km = 5;
+  optional string zip_code = 6;            // US ZIP; preferred over location when set
 }
 
 message GetMarketRangeResponse {

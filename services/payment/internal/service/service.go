@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	underwritingv1 "github.com/nomarkup/nomarkup/proto/underwriting/v1"
@@ -75,11 +77,11 @@ type FeatureFlagChecker interface {
 
 // PaymentService implements payment business logic.
 type PaymentService struct {
-	repo             domain.PaymentRepository
-	stripe           *StripeService
-	subHook          SubscriptionWebhookHandler
-	installmentHook  InstallmentPaymentHandler
-	marketplaceHook  MarketplacePaymentHandler
+	repo            domain.PaymentRepository
+	stripe          *StripeService
+	subHook         SubscriptionWebhookHandler
+	installmentHook InstallmentPaymentHandler
+	marketplaceHook MarketplacePaymentHandler
 	// recurringFailHook records FR-16.7 strikes (+ FR-18.8 pause at threshold)
 	// after payment_intent.payment_failed for payments with recurring_instance_id.
 	// Optional: when nil, status still flips to failed and a residual is logged.
@@ -94,6 +96,11 @@ type PaymentService struct {
 	customers *CustomerProvisioner
 	// flags dual-gates regulated fee knobs (lead_gen). Optional in tests.
 	flags FeatureFlagChecker
+	// platformEIN is the IRS payer EIN stamped on generated 1099-NEC forms.
+	// Injected from PLATFORM_EIN at construction (overridable via SetPlatformEIN
+	// so tests stay t.Parallel and do not use t.Setenv). GenerateTaxForm fails
+	// closed when this is empty, the dummy 88-1234567, or not US EIN shape.
+	platformEIN string
 }
 
 // SetCustomerProvisioner wires Stripe Customer provisioning and payment-method
@@ -117,7 +124,17 @@ func (s *PaymentService) requireCustomers() (*CustomerProvisioner, error) {
 
 // NewPaymentService creates a new payment service.
 func NewPaymentService(repo domain.PaymentRepository, stripe *StripeService) *PaymentService {
-	return &PaymentService{repo: repo, stripe: stripe}
+	return &PaymentService{
+		repo:        repo,
+		stripe:      stripe,
+		platformEIN: strings.TrimSpace(os.Getenv("PLATFORM_EIN")),
+	}
+}
+
+// SetPlatformEIN injects the IRS payer EIN used on generated 1099-NEC forms.
+// Tests should call this instead of t.Setenv so they can stay t.Parallel.
+func (s *PaymentService) SetPlatformEIN(ein string) {
+	s.platformEIN = strings.TrimSpace(ein)
 }
 
 // SetSubscriptionWebhookHandler sets the subscription webhook handler for
@@ -192,7 +209,8 @@ func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, c
 	// a NUMERIC(5,4) column that pgx hands us as a float64; rateToBPS converts it
 	// to exact basis points at this read boundary and every cent below is int64.
 	// Fractional cents round UP so the platform never under-collects.
-	platformFee := feeFromBPS(amountCents, rateToBPS(feeConfig.FeePercentage))
+	platformBPS := rateToBPS(feeConfig.FeePercentage)
+	platformFee := feeFromBPS(amountCents, platformBPS)
 	if platformFee < feeConfig.MinFeeCents {
 		platformFee = feeConfig.MinFeeCents
 	}
@@ -202,6 +220,25 @@ func (s *PaymentService) CalculateFees(ctx context.Context, amountCents int64, c
 	if feeConfig.MaxFeeCents != nil && *feeConfig.MaxFeeCents > 0 && platformFee > *feeConfig.MaxFeeCents {
 		platformFee = *feeConfig.MaxFeeCents
 	}
+
+	// Additive admin custom fees: sum of active rate_bps, converted to cents
+	// and folded into platform_fee_cents. Combined platform + custom bps is
+	// capped at 50% fail-closed (do not mint a payment with an unbounded take).
+	customFees, err := s.repo.ListActiveCustomFees(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("calculate fees: list custom fees: %w", err)
+	}
+	var customBPS int64
+	for _, f := range customFees {
+		if f == nil {
+			continue
+		}
+		customBPS += f.RateBPS
+	}
+	if platformBPS+customBPS > domain.MaxCombinedPlatformCustomBPS {
+		return nil, fmt.Errorf("calculate fees: %w", domain.ErrCombinedFeeCapExceeded)
+	}
+	platformFee += feeFromBPS(amountCents, customBPS)
 
 	// Calculate guarantee fee.
 	guaranteeFee := feeFromBPS(amountCents, rateToBPS(feeConfig.GuaranteePercentage))
@@ -455,7 +492,6 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 
 	return payment, clientSecret, nil
 }
-
 
 // paymentCountsTowardContractCap reports whether a payment status commits
 // (or still holds) funds against the contract total for MON-21 cumulative cap.
@@ -1234,8 +1270,8 @@ func (s *PaymentService) GetPayment(ctx context.Context, paymentID string) (*dom
 }
 
 // ListPayments lists payments for a user with optional filtering.
-func (s *PaymentService) ListPayments(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*domain.Payment, int, error) {
-	return s.repo.ListPayments(ctx, userID, statusFilter, page, pageSize)
+func (s *PaymentService) ListPayments(ctx context.Context, userID string, statusFilter string, contractID string, page, pageSize int) ([]*domain.Payment, int, error) {
+	return s.repo.ListPayments(ctx, userID, statusFilter, contractID, page, pageSize)
 }
 
 // GetFeeConfig retrieves the active fee config for a category or default.
@@ -1903,7 +1939,147 @@ func (s *PaymentService) AdminUpdateFeeConfig(ctx context.Context, categoryID *s
 		return nil, fmt.Errorf("admin update fee config: lead_gen_max_fee_cents must be >= lead_gen_min_fee_cents: %w", domain.ErrInvalidAmount)
 	}
 
+	if err := s.ensureCombinedFeeCap(ctx, rateToBPS(feePercentage), 0, ""); err != nil {
+		return nil, fmt.Errorf("admin update fee config: %w", err)
+	}
+
 	return s.repo.UpdateFeeConfig(ctx, categoryID, feePercentage, guaranteePercentage, minFeeCents, maxFeeCents, leadGenEnabled, leadGenPercentage, leadGenMinFeeCents, leadGenMaxFeeCents)
+}
+
+func normalizeCustomFeeName(name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", fmt.Errorf("custom fee name is required: %w", domain.ErrInvalidAmount)
+	}
+	if utf8.RuneCountInString(trimmed) > domain.MaxCustomFeeNameLen {
+		return "", fmt.Errorf("custom fee name must be at most %d characters: %w", domain.MaxCustomFeeNameLen, domain.ErrInvalidAmount)
+	}
+	return trimmed, nil
+}
+
+func validateCustomFeeBPS(rateBPS int64) error {
+	if rateBPS < 0 || rateBPS > domain.MaxCustomFeeBPS {
+		return fmt.Errorf("rate_bps must be between 0 and %d: %w", domain.MaxCustomFeeBPS, domain.ErrInvalidAmount)
+	}
+	return nil
+}
+
+// ensureCombinedFeeCap fails closed when platform bps + active custom bps
+// (optionally substituting extraBPS for excludeID, or adding extraBPS as a
+// new fee when excludeID is empty) would exceed 50%.
+func (s *PaymentService) ensureCombinedFeeCap(ctx context.Context, platformBPS, extraBPS int64, excludeID string) error {
+	active, err := s.repo.ListActiveCustomFees(ctx)
+	if err != nil {
+		return fmt.Errorf("list custom fees: %w", err)
+	}
+	var customBPS int64
+	for _, f := range active {
+		if f == nil || f.ID == excludeID {
+			continue
+		}
+		customBPS += f.RateBPS
+	}
+	customBPS += extraBPS
+	if platformBPS+customBPS > domain.MaxCombinedPlatformCustomBPS {
+		return domain.ErrCombinedFeeCapExceeded
+	}
+	return nil
+}
+
+func (s *PaymentService) platformBPS(ctx context.Context) (int64, error) {
+	fc, err := s.GetFeeConfig(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	return rateToBPS(fc.FeePercentage), nil
+}
+
+func (s *PaymentService) ListCustomFees(ctx context.Context) ([]*domain.CustomFee, error) {
+	fees, err := s.repo.ListCustomFees(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list custom fees: %w", err)
+	}
+	return fees, nil
+}
+
+func (s *PaymentService) CreateCustomFee(ctx context.Context, name string, rateBPS int64) (*domain.CustomFee, error) {
+	trimmed, err := normalizeCustomFeeName(name)
+	if err != nil {
+		return nil, fmt.Errorf("create custom fee: %w", err)
+	}
+	if err := validateCustomFeeBPS(rateBPS); err != nil {
+		return nil, fmt.Errorf("create custom fee: %w", err)
+	}
+	platformBPS, err := s.platformBPS(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("create custom fee: %w", err)
+	}
+	if err := s.ensureCombinedFeeCap(ctx, platformBPS, rateBPS, ""); err != nil {
+		return nil, fmt.Errorf("create custom fee: %w", err)
+	}
+	fee := &domain.CustomFee{
+		Name:    trimmed,
+		RateBPS: rateBPS,
+		Active:  true,
+	}
+	if err := s.repo.CreateCustomFee(ctx, fee); err != nil {
+		return nil, fmt.Errorf("create custom fee: %w", err)
+	}
+	return fee, nil
+}
+
+func (s *PaymentService) UpdateCustomFee(ctx context.Context, id string, name *string, rateBPS *int64, active *bool) (*domain.CustomFee, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, fmt.Errorf("update custom fee: id must be a valid uuid: %w", domain.ErrInvalidAmount)
+	}
+	existing, err := s.repo.GetCustomFee(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("update custom fee: %w", err)
+	}
+	if name != nil {
+		trimmed, nerr := normalizeCustomFeeName(*name)
+		if nerr != nil {
+			return nil, fmt.Errorf("update custom fee: %w", nerr)
+		}
+		existing.Name = trimmed
+	}
+	if rateBPS != nil {
+		if err := validateCustomFeeBPS(*rateBPS); err != nil {
+			return nil, fmt.Errorf("update custom fee: %w", err)
+		}
+		existing.RateBPS = *rateBPS
+	}
+	if active != nil {
+		existing.Active = *active
+	}
+
+	willCount := existing.Active
+	extraBPS := int64(0)
+	excludeID := existing.ID
+	if willCount {
+		extraBPS = existing.RateBPS
+	}
+	platformBPS, err := s.platformBPS(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("update custom fee: %w", err)
+	}
+	if err := s.ensureCombinedFeeCap(ctx, platformBPS, extraBPS, excludeID); err != nil {
+		return nil, fmt.Errorf("update custom fee: %w", err)
+	}
+	if err := s.repo.UpdateCustomFee(ctx, existing); err != nil {
+		return nil, fmt.Errorf("update custom fee: %w", err)
+	}
+	return existing, nil
+}
+
+func (s *PaymentService) DeactivateCustomFee(ctx context.Context, id string) error {
+	if _, err := uuid.Parse(id); err != nil {
+		return fmt.Errorf("deactivate custom fee: id must be a valid uuid: %w", domain.ErrInvalidAmount)
+	}
+	if err := s.repo.DeactivateCustomFee(ctx, id); err != nil {
+		return fmt.Errorf("deactivate custom fee: %w", err)
+	}
+	return nil
 }
 
 // GetRevenueReport returns aggregated revenue data for a date range.

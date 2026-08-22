@@ -8,20 +8,25 @@ import (
 
 // Sentinel errors for payment domain.
 var (
-	ErrPaymentNotFound       = errors.New("payment not found")
-	ErrWebhookSignature      = errors.New("webhook signature verification failed")
-	ErrIdempotencyConflict   = errors.New("idempotency key conflict")
+	ErrPaymentNotFound     = errors.New("payment not found")
+	ErrWebhookSignature    = errors.New("webhook signature verification failed")
+	ErrIdempotencyConflict = errors.New("idempotency key conflict")
 	// ErrRecurringInstancePaymentExists is returned when INSERT violates
 	// uq_payments_recurring_instance (migration 111). CreatePayment soft-replays
 	// the existing row + real client_secret rather than minting a second PI.
 	ErrRecurringInstancePaymentExists = errors.New("payment already exists for recurring instance")
 	// ErrPaymentIntentMissing is returned when soft-replay finds a payment row
 	// without a Stripe PaymentIntent. Fail closed — never invent client_secret.
-	ErrPaymentIntentMissing = errors.New("payment has no stripe payment intent")
-	ErrInvalidAmount         = errors.New("invalid amount")
-	ErrInvalidStatus         = errors.New("invalid status transition")
+	ErrPaymentIntentMissing    = errors.New("payment has no stripe payment intent")
+	ErrInvalidAmount           = errors.New("invalid amount")
+	ErrInvalidStatus           = errors.New("invalid status transition")
 	ErrPaymentAlreadyProcessed = errors.New("payment already processed")
-	ErrFeeConfigNotFound     = errors.New("fee config not found")
+	ErrFeeConfigNotFound       = errors.New("fee config not found")
+	ErrCustomFeeNotFound       = errors.New("custom fee not found")
+	// ErrCombinedFeeCapExceeded is returned when platform fee bps plus the
+	// sum of active custom fee bps would exceed MaxCombinedPlatformCustomBPS
+	// (50%). Fail-closed: do not create the payment or persist the fee.
+	ErrCombinedFeeCapExceeded = errors.New("combined platform and custom fees exceed 50%")
 	// ErrNotAuthorizedActor is returned when the caller is a party to the
 	// payment but not the RIGHT party for this operation — e.g. a provider
 	// trying to release their own escrow, or a customer trying to refund a
@@ -31,7 +36,7 @@ var (
 	ErrStripeAccountNotFound = errors.New("stripe account not found")
 	// ErrTransfersNotReady — connected account cannot receive platform transfers yet
 	// (Accounts v2 stripe_transfers inactive / onboarding incomplete).
-	ErrTransfersNotReady = errors.New("connected account not ready for transfers")
+	ErrTransfersNotReady           = errors.New("connected account not ready for transfers")
 	ErrPlatformBankAccountNotFound = errors.New("platform bank account not found")
 	// ErrTipAlreadyRecorded is returned when contracts.tip_amount_cents is already non-zero.
 	ErrTipAlreadyRecorded = errors.New("tip already recorded")
@@ -88,14 +93,14 @@ type FeeConfig struct {
 	// Lead-gen fee: an additive, provider-side "qualified lead" fee charged on
 	// top of the platform take rate. Disabled by default (LeadGenEnabled=false)
 	// so existing pricing is unchanged.
-	LeadGenEnabled      bool
-	LeadGenPercentage   float64 // e.g. 0.10 = 10%
-	LeadGenMinFeeCents  int64
-	LeadGenMaxFeeCents  *int64 // nil = no cap
-	Active              bool
-	EffectiveFrom       time.Time
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	LeadGenEnabled     bool
+	LeadGenPercentage  float64 // e.g. 0.10 = 10%
+	LeadGenMinFeeCents int64
+	LeadGenMaxFeeCents *int64 // nil = no cap
+	Active             bool
+	EffectiveFrom      time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // DefaultFeeConfig returns the platform's standard fee configuration used when
@@ -121,6 +126,31 @@ func DefaultFeeConfig() *FeeConfig {
 		LeadGenMaxFeeCents:  nil,
 		Active:              true,
 	}
+}
+
+// MaxCombinedPlatformCustomBPS is the fail-closed ceiling on
+// platform_fee_config.fee_percentage (as bps) plus the sum of active
+// custom fee rate_bps. 5000 = 50%. Guarantee and lead-gen are out of
+// this cap — they are separate deductions.
+const MaxCombinedPlatformCustomBPS int64 = 5000
+
+// MaxCustomFeeBPS is the per-fee ceiling matching the DB CHECK (10000 = 100%).
+const MaxCustomFeeBPS int64 = 10000
+
+// MaxCustomFeeNameLen is the maximum stored name length (migration 128).
+const MaxCustomFeeNameLen = 100
+
+// CustomFee is an admin-named additive platform fee stored as integer
+// basis points (500 = 5%). Active, non-deleted rows are summed into
+// CalculateFees platform_fee_cents.
+type CustomFee struct {
+	ID        string
+	Name      string
+	RateBPS   int64
+	Active    bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt *time.Time
 }
 
 // PaymentBreakdown holds the fee breakdown for a payment.
@@ -203,15 +233,15 @@ type CreatePaymentInput struct {
 
 // Expense represents a provider expense record.
 type Expense struct {
-	ID           string
-	ProviderID   string
-	Category     string
-	Description  string
-	AmountCents  int64
-	ReceiptURL   *string
-	ExpenseDate  time.Time // DATE stored as time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID          string
+	ProviderID  string
+	Category    string
+	Description string
+	AmountCents int64
+	ReceiptURL  *string
+	ExpenseDate time.Time // DATE stored as time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // Advance represents a working capital advance.
@@ -295,11 +325,11 @@ type RevenueDataPoint struct {
 
 // RevenueReport holds aggregated revenue data.
 type RevenueReport struct {
-	DataPoints            []RevenueDataPoint
-	TotalGMVCents         int64
-	TotalRevenueCents     int64
+	DataPoints              []RevenueDataPoint
+	TotalGMVCents           int64
+	TotalRevenueCents       int64
 	TotalGuaranteeFundCents int64
-	EffectiveTakeRate     float64
+	EffectiveTakeRate       float64
 }
 
 // InstallmentPlan represents a BNPL installment plan.
@@ -361,6 +391,10 @@ var (
 	ErrTaxFormNotFound         = errors.New("tax form not found")
 	ErrContractNotFound        = errors.New("contract not found")
 	ErrBelow1099Threshold      = errors.New("earnings are below the $600 IRS 1099-NEC reporting threshold for this tax year")
+	// ErrPlatformEINNotConfigured is returned when GenerateTaxForm would stamp
+	// a missing, whitespace, placeholder (88-1234567), or non-US-shape EIN onto
+	// a 1099-NEC. Fail closed — never persist a form with an unusable payer EIN.
+	ErrPlatformEINNotConfigured = errors.New("platform EIN is not configured")
 )
 
 // Threshold1099NECCents is the IRS minimum nonemployee-compensation total
@@ -394,17 +428,17 @@ type TaxForm struct {
 
 // ContractDetail holds the contract + related info needed for invoice generation.
 type ContractDetail struct {
-	ID              string
-	ContractNumber  string
-	JobTitle        string
-	CustomerName    string
-	ProviderName    string
-	AmountCents     int64
-	PaymentTiming   string
-	Status          string
-	AcceptedAt      *time.Time
-	CompletedAt     *time.Time
-	CreatedAt       time.Time
+	ID             string
+	ContractNumber string
+	JobTitle       string
+	CustomerName   string
+	ProviderName   string
+	AmountCents    int64
+	PaymentTiming  string
+	Status         string
+	AcceptedAt     *time.Time
+	CompletedAt    *time.Time
+	CreatedAt      time.Time
 }
 
 // ContractForPayment holds the minimal contract fields needed to reconcile a
@@ -446,7 +480,7 @@ type PaymentRepository interface {
 	// Returns ErrInvalidStatus when the row is not currently in fromStatus (lost CAS race).
 	// Used by ProcessPayment (pending→processing) and ReleaseEscrow (escrow→released).
 	ClaimPaymentStatus(ctx context.Context, id, fromStatus, toStatus string) error
-	ListPayments(ctx context.Context, userID string, statusFilter string, page, pageSize int) ([]*Payment, int, error)
+	ListPayments(ctx context.Context, userID string, statusFilter string, contractID string, page, pageSize int) ([]*Payment, int, error)
 	GetFeeConfig(ctx context.Context, categoryID string) (*FeeConfig, error)
 	GetDefaultFeeConfig(ctx context.Context) (*FeeConfig, error)
 	FindByStripePaymentIntentID(ctx context.Context, paymentIntentID string) (*Payment, error)
@@ -476,6 +510,12 @@ type PaymentRepository interface {
 	AdminListPayments(ctx context.Context, userID string, statusFilter string, startTime, endTime *time.Time, page, pageSize int) ([]*Payment, int, int64, int64, error)
 	AdminGetPaymentDetails(ctx context.Context, paymentID string) (*Payment, error)
 	UpdateFeeConfig(ctx context.Context, categoryID *string, feePercentage, guaranteePercentage float64, minFeeCents int64, maxFeeCents *int64, leadGenEnabled bool, leadGenPercentage float64, leadGenMinFeeCents int64, leadGenMaxFeeCents *int64) (*FeeConfig, error)
+	ListCustomFees(ctx context.Context) ([]*CustomFee, error)
+	ListActiveCustomFees(ctx context.Context) ([]*CustomFee, error)
+	GetCustomFee(ctx context.Context, id string) (*CustomFee, error)
+	CreateCustomFee(ctx context.Context, fee *CustomFee) error
+	UpdateCustomFee(ctx context.Context, fee *CustomFee) error
+	DeactivateCustomFee(ctx context.Context, id string) error
 	GetRevenueReport(ctx context.Context, startTime, endTime *time.Time, groupBy string) (*RevenueReport, error)
 
 	// Platform bank account operations

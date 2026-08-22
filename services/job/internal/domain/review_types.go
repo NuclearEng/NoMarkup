@@ -17,15 +17,17 @@ var (
 	ErrFlagNotFound         = errors.New("flag not found")
 	ErrFlagAlreadyResolved  = errors.New("flag already resolved")
 	ErrReviewAlreadyRemoved = errors.New("review already removed")
+	// ErrInvalidReviewPhotos — not http(s), or more than MaxReviewPhotos (5).
+	ErrInvalidReviewPhotos = errors.New("invalid review photos")
 )
 
 // Review represents a review left by one party for another after a contract.
 //
 // Persisted columns (see migrations) — note the schema uses reviewer_role and
 // review_text rather than the older direction/comment naming, has no separate
-// is_flagged or photo_urls columns (flag state is derived from status='flagged'
-// + flagged_at, photos live elsewhere), and the window column is named
-// review_window_ends (no _at suffix).
+// is_flagged column (flag state is derived from status='flagged' + flagged_at),
+// photo_urls is TEXT[] (0–5 http(s) CDN URLs; migration 127), and the window
+// column is named review_window_ends (no _at suffix).
 //
 // Category ratings are direction-specific (FR-6.2):
 //   - Customer → provider: QualityRating, CommunicationRating, TimelinessRating, ValueRating
@@ -47,7 +49,8 @@ type Review struct {
 	ScopeAccuracyRating     *int
 	AccessRating            *int // property access
 	ReviewText              string
-	Status                  string // pending, published, flagged, removed
+	PhotoURLs               []string // public CDN URLs, 0–5
+	Status                  string   // pending, published, flagged, removed
 	FlaggedAt               *time.Time
 	FlagReason              string
 	ReviewWindowEnds        time.Time

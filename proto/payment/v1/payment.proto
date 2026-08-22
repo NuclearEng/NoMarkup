@@ -68,6 +68,12 @@ service PaymentService {
   rpc AdminGetPaymentDetails(AdminGetPaymentDetailsRequest) returns (AdminGetPaymentDetailsResponse);
   rpc AdminListPayments(AdminListPaymentsRequest) returns (AdminListPaymentsResponse);
   rpc AdminUpdateFeeConfig(AdminUpdateFeeConfigRequest) returns (AdminUpdateFeeConfigResponse);
+  // Admin-named additive fees (platform_custom_fees). Applied on live
+  // CalculateFees / CreatePayment as extra platform_fee_cents (integer bps).
+  rpc AdminListCustomFees(AdminListCustomFeesRequest) returns (AdminListCustomFeesResponse);
+  rpc AdminCreateCustomFee(AdminCreateCustomFeeRequest) returns (AdminCreateCustomFeeResponse);
+  rpc AdminUpdateCustomFee(AdminUpdateCustomFeeRequest) returns (AdminUpdateCustomFeeResponse);
+  rpc AdminDeactivateCustomFee(AdminDeactivateCustomFeeRequest) returns (AdminDeactivateCustomFeeResponse);
 
   // Platform banking (admin) — the platform's own payout bank account where
   // all collected fees route. Raw bank numbers never reach us: the client
@@ -563,6 +569,53 @@ message AdminUpdateFeeConfigRequest {
 
 message AdminUpdateFeeConfigResponse {
   GetFeeConfigResponse config = 1;
+}
+
+// Named additive platform fee. rate_bps is integer basis points (500 = 5%).
+message CustomFee {
+  string id = 1;
+  string name = 2;
+  int32 rate_bps = 3;
+  bool active = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message AdminListCustomFeesRequest {}
+
+message AdminListCustomFeesResponse {
+  repeated CustomFee fees = 1;
+}
+
+message AdminCreateCustomFeeRequest {
+  string admin_id = 1;
+  string name = 2;
+  int32 rate_bps = 3;
+}
+
+message AdminCreateCustomFeeResponse {
+  CustomFee fee = 1;
+}
+
+message AdminUpdateCustomFeeRequest {
+  string admin_id = 1;
+  string id = 2;
+  optional string name = 3;
+  optional int32 rate_bps = 4;
+  optional bool active = 5;
+}
+
+message AdminUpdateCustomFeeResponse {
+  CustomFee fee = 1;
+}
+
+message AdminDeactivateCustomFeeRequest {
+  string admin_id = 1;
+  string id = 2;
+}
+
+message AdminDeactivateCustomFeeResponse {
+  bool deactivated = 1;
 }
 
 // Platform banking — non-sensitive metadata only. Never carries raw account

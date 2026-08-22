@@ -12,6 +12,17 @@ struct LoginView: View {
         case mfaCode
     }
 
+    /// XCUITest / sim role launches: hide SIWA / passkey / Google / Facebook so the
+    /// Simulator "Sign in to your Apple Account" sheet cannot cover the email form.
+    /// Production and regular DEBUG dogfood still show every provider.
+    private var hideExternalAuth: Bool {
+        #if DEBUG
+        LaunchTestAuth.isUITestLaunch
+        #else
+        false
+        #endif
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -26,28 +37,32 @@ struct LoginView: View {
                         divider
                         // IOS-SEC.3: passkey entry is hidden entirely until the server
                         // `passkeys` flag is on — never a dead-end "coming soon" button.
-                        if PasskeyAuth.isEnabled(in: featureFlags) {
+                        if !hideExternalAuth, PasskeyAuth.isEnabled(in: featureFlags) {
                             passkeyButton
                         }
-                        SignInWithAppleButtonView { result, nonce in
-                            auth.handleSignInWithApple(result: result, nonce: nonce)
-                        }
-                        .disabled(auth.isBusy || passkeyAuth.isBusy)
-                        .opacity(auth.isBusy || passkeyAuth.isBusy ? 0.55 : 1)
-                        .allowsHitTesting(!auth.isBusy && !passkeyAuth.isBusy)
-                        if AppConfig.isGoogleSignInConfigured {
-                            GoogleSignInButton(isBusy: auth.isBusy || passkeyAuth.isBusy) {
-                                guard !auth.isBusy, !passkeyAuth.isBusy else { return }
-                                Task { await auth.signInWithGoogle() }
+                        if !hideExternalAuth {
+                            SignInWithAppleButtonView { result, nonce in
+                                auth.handleSignInWithApple(result: result, nonce: nonce)
+                            }
+                            .disabled(auth.isBusy || passkeyAuth.isBusy)
+                            .opacity(auth.isBusy || passkeyAuth.isBusy ? 0.55 : 1)
+                            .allowsHitTesting(!auth.isBusy && !passkeyAuth.isBusy)
+                            if AppConfig.isGoogleSignInConfigured {
+                                GoogleSignInButton(isBusy: auth.isBusy || passkeyAuth.isBusy) {
+                                    guard !auth.isBusy, !passkeyAuth.isBusy else { return }
+                                    Task { await auth.signInWithGoogle() }
+                                }
+                            }
+                            if AppConfig.isFacebookSignInConfigured {
+                                FacebookSignInButton(isBusy: auth.isBusy || passkeyAuth.isBusy) {
+                                    guard !auth.isBusy, !passkeyAuth.isBusy else { return }
+                                    Task { await auth.signInWithFacebook() }
+                                }
                             }
                         }
-                        if AppConfig.isFacebookSignInConfigured {
-                            FacebookSignInButton(isBusy: auth.isBusy || passkeyAuth.isBusy) {
-                                guard !auth.isBusy, !passkeyAuth.isBusy else { return }
-                                Task { await auth.signInWithFacebook() }
-                            }
-                        }
+                        #if DEBUG
                         scaffoldBypass
+                        #endif
                     }
                     footerLegal
                 }
@@ -269,6 +284,7 @@ struct LoginView: View {
                     .foregroundStyle(BrandTheme.destructive)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Error: \(error)")
+                    .accessibilityIdentifier("login.error")
             }
 
             if let status = auth.statusMessage {
@@ -276,6 +292,7 @@ struct LoginView: View {
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("login.status")
             }
 
             // Host only — never full base URL (avoids leaking path/query/credentials in UI).

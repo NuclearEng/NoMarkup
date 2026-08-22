@@ -13,10 +13,14 @@ import type {
   AdminUser,
   AdminUsersResponse,
   CategoryMetricsResponse,
+  CreateCustomFeeInput,
   CreatePlatformBankAccountInput,
+  CustomFee,
+  CustomFeesResponse,
   Dispute,
   FeeConfig,
   FeeConfigSummary,
+  UpdateCustomFeeInput,
   GrowthMetrics,
   Market,
   Payment,
@@ -49,6 +53,7 @@ const adminKeys = {
     [...adminKeys.all, 'revenue', startDate, endDate, groupBy] as const,
   feeConfig: (categoryId?: string) =>
     [...adminKeys.all, 'fee-config', categoryId] as const,
+  customFees: () => [...adminKeys.all, 'custom-fees'] as const,
   platformMetrics: (startDate?: string, endDate?: string) =>
     [...adminKeys.all, 'platform', 'metrics', startDate, endDate] as const,
   growthMetrics: (startDate?: string, endDate?: string, groupBy?: string) =>
@@ -373,6 +378,46 @@ export function useUpdateFeeConfig() {
     mutationFn: (config: FeeConfig) => api.put<FeeConfig>('/api/v1/admin/fees', config),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: adminKeys.all });
+    },
+  });
+}
+
+export function useCustomFees() {
+  return useQuery({
+    queryKey: adminKeys.customFees(),
+    queryFn: () => api.get<CustomFeesResponse>('/api/v1/admin/custom-fees'),
+  });
+}
+
+export function useCreateCustomFee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateCustomFeeInput) =>
+      api.post<{ fee: CustomFee }>('/api/v1/admin/custom-fees', input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.customFees() });
+    },
+  });
+}
+
+export function useUpdateCustomFee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: UpdateCustomFeeInput & { id: string }) =>
+      api.patch<{ fee: CustomFee }>(`/api/v1/admin/custom-fees/${id}`, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.customFees() });
+    },
+  });
+}
+
+export function useDeleteCustomFee() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.delete<{ deactivated: boolean }>(`/api/v1/admin/custom-fees/${id}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.customFees() });
     },
   });
 }

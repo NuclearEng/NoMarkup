@@ -159,7 +159,7 @@ func onTimeRateFromAdvances(advances []*domain.Advance) *float64 {
 // providerCreditScore computes a provider's live business credit score from
 // their released payments (volume/earnings) and advance repayment history.
 func (s *PaymentService) providerCreditScore(ctx context.Context, providerID string) (int, error) {
-	payments, _, err := s.repo.ListPayments(ctx, providerID, "released", 1, 1000)
+	payments, _, err := s.repo.ListPayments(ctx, providerID, "released", "", 1, 1000)
 	if err != nil {
 		return 0, fmt.Errorf("credit score: list payments: %w", err)
 	}
@@ -417,7 +417,7 @@ func (s *PaymentService) ComputeCreditLimit(ctx context.Context, providerID stri
 
 	// Lifetime settled earnings (display) + outstanding exposure + repayment
 	// record — all from our own ledgers.
-	payments, _, err := s.repo.ListPayments(ctx, providerID, "released", 1, 1000)
+	payments, _, err := s.repo.ListPayments(ctx, providerID, "released", "", 1, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("compute credit limit list payments: %w", err)
 	}

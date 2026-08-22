@@ -143,6 +143,9 @@ type ClearedPriceTransaction struct {
 type AnalyticsRepository interface {
 	// Market analytics
 	GetMarketRange(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, zipCode string) (*MarketRange, error)
+	// GetMarketRangeAt resolves lat/lng to the nearest market_ranges row whose
+	// zip_code exists in zip_codes, within max radius (~50 mi / 80 km default).
+	GetMarketRangeAt(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, lat, lng, radiusKm float64) (*MarketRange, error)
 
 	// Fair-price candidate set: per-completed-contract cleared prices for a
 	// category within a recent window, for the Rust pricing engine.

@@ -139,9 +139,14 @@ func (s *AnalyticsService) GetFairPrice(ctx context.Context, categoryID, categor
 	}, nil
 }
 
-// GetMarketRange returns market pricing for a service type in a location.
+// GetMarketRange returns market pricing for a service type in a ZIP.
 func (s *AnalyticsService) GetMarketRange(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, zipCode string) (*domain.MarketRange, error) {
 	return s.repo.GetMarketRange(ctx, categoryID, subcategoryID, serviceTypeID, zipCode)
+}
+
+// GetMarketRangeAt returns market pricing for a service type nearest to lat/lng.
+func (s *AnalyticsService) GetMarketRangeAt(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, lat, lng, radiusKm float64) (*domain.MarketRange, error) {
+	return s.repo.GetMarketRangeAt(ctx, categoryID, subcategoryID, serviceTypeID, lat, lng, radiusKm)
 }
 
 // GetMarketTrends returns market pricing trends over time.

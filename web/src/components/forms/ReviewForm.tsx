@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Plus, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
@@ -17,12 +17,14 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
+import { ImageUpload } from '@/components/ui/ImageUpload';
 import { Textarea } from '@/components/ui/textarea';
 import { useCreateReview } from '@/hooks/useReviews';
 import { reviewDimensionsForDirection } from '@/lib/review-dimensions';
 import { reviewSchema, type ReviewFormValues } from '@/lib/validations';
-import type { CreateReviewInput } from '@/types';
+import { UPLOAD_CONTEXT, type CreateReviewInput } from '@/types';
+
+const MAX_REVIEW_PHOTOS = 5;
 
 interface ReviewFormProps {
   contractId: string;
@@ -39,7 +41,6 @@ export function ReviewForm({
 }: ReviewFormProps) {
   const createReview = useCreateReview();
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
-  const [newPhotoUrl, setNewPhotoUrl] = useState('');
 
   // FR-6.2: real wire fields by persona (see review-dimensions).
   const dimensions = reviewDimensionsForDirection(direction);
@@ -63,18 +64,6 @@ export function ReviewForm({
     },
     mode: 'onTouched',
   });
-
-  function handleAddPhoto() {
-    const trimmed = newPhotoUrl.trim();
-    if (trimmed && !photoUrls.includes(trimmed)) {
-      setPhotoUrls([...photoUrls, trimmed]);
-      setNewPhotoUrl('');
-    }
-  }
-
-  function handleRemovePhoto(url: string) {
-    setPhotoUrls(photoUrls.filter((u) => u !== url));
-  }
 
   function handleSubmit(values: ReviewFormValues) {
     // Build POST body from persona dimensions only — never map labels onto
@@ -187,48 +176,28 @@ export function ReviewForm({
               )}
             />
 
-            {/* Photo URLs */}
-            <div className="space-y-3">
-              <p className="text-sm font-medium">Photos (optional)</p>
-              {photoUrls.length > 0 ? (
-                <div className="space-y-2">
-                  {photoUrls.map((url) => (
-                    <div key={url} className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate rounded border bg-muted px-3 py-2 text-sm">
-                        {url}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="min-h-[44px] min-w-[44px] shrink-0"
-                        onClick={() => { handleRemovePhoto(url); }}
-                        aria-label="Remove photo URL"
-                      >
-                        <X className="h-4 w-4" aria-hidden="true" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              <div className="flex gap-2">
-                <Input
-                  value={newPhotoUrl}
-                  onChange={(e) => { setNewPhotoUrl(e.target.value); }}
-                  placeholder="https://example.com/photo.jpg"
-                  className="min-h-[44px]"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="min-h-[44px] shrink-0"
-                  onClick={handleAddPhoto}
-                  disabled={!newPhotoUrl.trim()}
-                >
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  Add
-                </Button>
-              </div>
+            {/* Photos — imaging pipeline (review_photo), not pasted URLs */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Photos (optional, up to 5)</p>
+              <p className="text-xs text-muted-foreground">
+                JPEG/PNG/WebP · 10 MB each. Uploads through the platform image pipeline.
+              </p>
+              <ImageUpload
+                context={UPLOAD_CONTEXT.REVIEW_PHOTO}
+                multiple
+                maxFiles={MAX_REVIEW_PHOTOS}
+                onUploadComplete={(result) => {
+                  setPhotoUrls((prev) =>
+                    prev.includes(result.confirmedUrl) || prev.length >= MAX_REVIEW_PHOTOS
+                      ? prev
+                      : [...prev, result.confirmedUrl],
+                  );
+                }}
+                onRemove={(url) => {
+                  setPhotoUrls((prev) => prev.filter((u) => u !== url));
+                }}
+                placeholder="Add photos of the completed work"
+              />
             </div>
 
             {/* Submit */}

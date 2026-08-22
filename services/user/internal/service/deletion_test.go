@@ -175,13 +175,13 @@ func (r *recordingStripe) DeleteConnectAccount(_ context.Context, id string) (st
 }
 
 type fakeS3 struct {
-	prefix string
+	userID string
 	count  int
 	err    error
 }
 
-func (f *fakeS3) DeletePrefix(_ context.Context, prefix string) (int, error) {
-	f.prefix = prefix
+func (f *fakeS3) DeleteUserObjects(_ context.Context, userID string) (int, error) {
+	f.userID = userID
 	if f.err != nil {
 		return 0, f.err
 	}
@@ -356,7 +356,7 @@ func TestErasure_Finalize_StripeOutcomes(t *testing.T) {
 	assert.Equal(t, []string{"acct_xyz"}, stripe.accountCalls)
 	assert.Equal(t, "deleted", out.StripeCustomerOutcome)
 	assert.Equal(t, "skipped_balance", out.StripeAccountOutcome)
-	assert.Equal(t, "users/user-1/", store.prefix)
+	assert.Equal(t, "user-1", store.userID)
 	assert.Equal(t, int64(7), out.Counts["s3_objects"])
 }
 

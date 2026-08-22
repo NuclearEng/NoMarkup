@@ -1078,6 +1078,11 @@ struct AdminFeesView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var hasLoaded = false
+    @State private var customFees: [AdminCustomFee] = []
+    @State private var customFeeName = ""
+    @State private var customFeePercentText = ""
+    @State private var customFeeBusy = false
+    @State private var busyCustomFeeIDs: Set<String> = []
 
     init(
         embedded: Bool = false,
@@ -1216,6 +1221,74 @@ struct AdminFeesView: View {
                     }
 
                     Section {
+                        if customFees.isEmpty {
+                            Text("No custom fees yet.")
+                                .font(.caption)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                                .listRowBackground(BrandTheme.navyElevated)
+                                .frame(minHeight: 44)
+                        } else {
+                            ForEach(customFees) { fee in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(fee.name)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(BrandTheme.textPrimary)
+                                        Text("\(fee.percentDisplay)% · \(fee.active == false ? "inactive" : "live")")
+                                            .font(.caption)
+                                            .foregroundStyle(BrandTheme.textSecondary)
+                                    }
+                                    Spacer()
+                                    Button("Remove", role: .destructive) {
+                                        Task { await removeCustomFee(fee) }
+                                    }
+                                    .font(.caption.weight(.semibold))
+                                    .disabled(customFeeBusy || busyCustomFeeIDs.contains(fee.id))
+                                    .frame(minHeight: 44)
+                                    .accessibilityIdentifier("admin.fees.custom.remove.\(fee.id)")
+                                }
+                                .listRowBackground(BrandTheme.navyElevated)
+                                .frame(minHeight: 44)
+                            }
+                        }
+                        HStack {
+                            TextField("Name", text: $customFeeName)
+                                #if os(iOS)
+                                .textInputAutocapitalization(.never)
+                                #endif
+                                .accessibilityIdentifier("admin.fees.custom.name")
+                            TextField("%", text: $customFeePercentText)
+                                #if os(iOS)
+                                .keyboardType(.decimalPad)
+                                #endif
+                                .multilineTextAlignment(.trailing)
+                                .frame(maxWidth: 72)
+                                .accessibilityIdentifier("admin.fees.custom.pct")
+                        }
+                        .listRowBackground(BrandTheme.navyElevated)
+                        .frame(minHeight: 44)
+                        Button {
+                            Task { await addCustomFee() }
+                        } label: {
+                            if customFeeBusy {
+                                ProgressView().frame(maxWidth: .infinity)
+                            } else {
+                                Text("Add custom fee")
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .disabled(customFeeBusy)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("admin.fees.custom.add")
+                    } header: {
+                        Text("Custom fees").brandSectionHeader()
+                    } footer: {
+                        Text("Persisted and applied on live fee calculation (integer basis points). Combined platform + custom take is capped at 50%.")
+                            .font(.caption2)
+                    }
+
+                    Section {
                         Button {
                             Task { await save() }
                         } label: {
@@ -1311,9 +1384,11 @@ struct AdminFeesView: View {
             async let configTask = APIClient.shared.fetchAdminFeeConfig()
             async let revenueTask = APIClient.shared.fetchAdminRevenue()
             async let paymentsTask = APIClient.shared.fetchAdminPayments(page: 1, pageSize: 20)
+            async let customFeesTask = APIClient.shared.fetchAdminCustomFees()
             applyConfig(try await configTask)
             revenue = try? await revenueTask
             recentPayments = (try? await paymentsTask)?.payments ?? []
+            customFees = (try? await customFeesTask) ?? []
             forbidden = false
             errorMessage = nil
             hasLoaded = true
@@ -1406,6 +1481,56 @@ struct AdminFeesView: View {
             )
             applyConfig(try await APIClient.shared.updateAdminFeeConfig(body))
             actionMessage = "Fee configuration saved."
+            BrandHaptics.success()
+        } catch let error as APIClientError where error.isForbidden {
+            forbidden = true
+            BrandHaptics.error()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
+    }
+
+    @MainActor
+    private func addCustomFee() async {
+        let trimmed = customFeeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            actionMessage = "Enter a fee name."
+            BrandHaptics.warning()
+            return
+        }
+        guard let fraction = AdminFeeConfig.fraction(fromPercentText: customFeePercentText) else {
+            actionMessage = "Custom fee % must be 0–100."
+            BrandHaptics.warning()
+            return
+        }
+        let rateBps = Int((fraction * 10_000).rounded())
+        customFeeBusy = true
+        defer { customFeeBusy = false }
+        do {
+            _ = try await APIClient.shared.createAdminCustomFee(name: trimmed, rateBps: rateBps)
+            customFeeName = ""
+            customFeePercentText = ""
+            customFees = (try? await APIClient.shared.fetchAdminCustomFees()) ?? customFees
+            actionMessage = "Custom fee added."
+            BrandHaptics.success()
+        } catch let error as APIClientError where error.isForbidden {
+            forbidden = true
+            BrandHaptics.error()
+        } catch {
+            actionMessage = error.localizedDescription
+            BrandHaptics.error()
+        }
+    }
+
+    @MainActor
+    private func removeCustomFee(_ fee: AdminCustomFee) async {
+        busyCustomFeeIDs.insert(fee.id)
+        defer { busyCustomFeeIDs.remove(fee.id) }
+        do {
+            try await APIClient.shared.deleteAdminCustomFee(id: fee.id)
+            customFees.removeAll { $0.id == fee.id }
+            actionMessage = "Custom fee removed."
             BrandHaptics.success()
         } catch let error as APIClientError where error.isForbidden {
             forbidden = true

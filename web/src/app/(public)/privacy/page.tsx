@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   },
 };
 
-const LAST_UPDATED = 'July 26, 2026';
+const LAST_UPDATED = 'August 21, 2026';
 
 export default function PrivacyPolicyPage() {
   return (
@@ -166,6 +166,12 @@ export default function PrivacyPolicyPage() {
                   to protect rights, safety, and security.
                 </li>
               </ul>
+              <p>
+                Third parties that process personal data on our behalf (including payment
+                processors, hosting, and error-monitoring providers) are required to provide the
+                same or equal protection of that data as described in this Policy and as required
+                by applicable law and the Apple App Store Review Guidelines.
+              </p>
               <p>
                 We do not sell personal information for money. We do not share payment card data
                 with other users. Apple Pay / Stripe payment credentials are used only to complete

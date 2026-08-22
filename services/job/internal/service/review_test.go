@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -422,6 +423,90 @@ func TestCreateReview_NotParty(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrNotEligible)
+}
+
+func TestCreateReview_PersistsPhotoURLs(t *testing.T) {
+	t.Parallel()
+	repo := &mockReviewRepo{}
+	svc := NewReviewService(repo, &mockContractRepoForReview{})
+
+	urls := []string{
+		"https://cdn.example.com/reviews/a.jpg",
+		" http://cdn.example.com/reviews/b.jpg ",
+		"",
+		"https://cdn.example.com/reviews/a.jpg", // duplicate
+	}
+	created, err := svc.CreateReview(context.Background(), CreateReviewInput{
+		ContractID:    "c1",
+		ReviewerID:    "customer-1",
+		OverallRating: 5,
+		Comment:       validComment(),
+		PhotoURLs:     urls,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.NotNil(t, repo.lastCreated)
+	assert.Equal(t, []string{
+		"https://cdn.example.com/reviews/a.jpg",
+		"http://cdn.example.com/reviews/b.jpg",
+	}, repo.lastCreated.PhotoURLs)
+	assert.Equal(t, repo.lastCreated.PhotoURLs, created.PhotoURLs)
+}
+
+func TestCreateReview_PhotoURLsDroppedOnFloorRegression(t *testing.T) {
+	t.Parallel()
+	repo := &mockReviewRepo{}
+	svc := NewReviewService(repo, &mockContractRepoForReview{})
+
+	_, err := svc.CreateReview(context.Background(), CreateReviewInput{
+		ContractID:    "c1",
+		ReviewerID:    "customer-1",
+		OverallRating: 5,
+		Comment:       validComment(),
+		PhotoURLs:     []string{"https://cdn.example.com/reviews/keep.jpg"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, repo.lastCreated)
+	require.Len(t, repo.lastCreated.PhotoURLs, 1, "photo_urls must be persisted, not dropped on the floor")
+	assert.Equal(t, "https://cdn.example.com/reviews/keep.jpg", repo.lastCreated.PhotoURLs[0])
+}
+
+func TestCreateReview_RejectsNonHTTPPhotoURLs(t *testing.T) {
+	t.Parallel()
+	repo := &mockReviewRepo{}
+	svc := NewReviewService(repo, &mockContractRepoForReview{})
+
+	_, err := svc.CreateReview(context.Background(), CreateReviewInput{
+		ContractID:    "c1",
+		ReviewerID:    "customer-1",
+		OverallRating: 5,
+		Comment:       validComment(),
+		PhotoURLs:     []string{"ftp://files.example.com/a.jpg"},
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrInvalidReviewPhotos)
+	assert.Nil(t, repo.lastCreated)
+}
+
+func TestCreateReview_RejectsTooManyPhotoURLs(t *testing.T) {
+	t.Parallel()
+	repo := &mockReviewRepo{}
+	svc := NewReviewService(repo, &mockContractRepoForReview{})
+
+	tooMany := make([]string, MaxReviewPhotos+1)
+	for i := range tooMany {
+		tooMany[i] = fmt.Sprintf("https://cdn.example.com/reviews/%d.jpg", i)
+	}
+	_, err := svc.CreateReview(context.Background(), CreateReviewInput{
+		ContractID:    "c1",
+		ReviewerID:    "customer-1",
+		OverallRating: 5,
+		Comment:       validComment(),
+		PhotoURLs:     tooMany,
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrInvalidReviewPhotos)
+	assert.Nil(t, repo.lastCreated)
 }
 
 func TestCreateReview_OptionalCategoryRatingsOmitted(t *testing.T) {

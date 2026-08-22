@@ -34,6 +34,7 @@ import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { BidPushPrompt } from '@/components/jobs/BidPushPrompt';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { PermitIntelligenceBanner } from '@/components/jobs/PermitIntelligenceBanner';
+import { ReportJobButton } from '@/components/jobs/ReportJobButton';
 import { SavingsBadge } from '@/components/jobs/SavingsBadge';
 import { ViewerCount } from '@/components/jobs/ViewerCount';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
@@ -909,14 +910,20 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 {String(job.customer_jobs_posted)} job{job.customer_jobs_posted !== 1 ? 's' : ''}{' '}
                 posted
               </p>
-              {/* ASR-1.2.b — no job-level report API; user report on the poster. */}
-              {isAuthenticated && !isJobOwner ? (
-                <div className="pt-1">
-                  <ReportButton
-                    userId={job.customer_id}
-                    displayName={job.customer_display_name}
+              {!isJobOwner ? (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <ReportJobButton
+                    jobId={jobId}
+                    jobTitle={job.title}
                     className="text-muted-foreground hover:text-destructive"
                   />
+                  {isAuthenticated ? (
+                    <ReportButton
+                      userId={job.customer_id}
+                      displayName={job.customer_display_name}
+                      className="text-muted-foreground hover:text-destructive"
+                    />
+                  ) : null}
                 </div>
               ) : null}
             </CardContent>

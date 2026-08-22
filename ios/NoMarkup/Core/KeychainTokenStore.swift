@@ -33,7 +33,14 @@ final class KeychainTokenStore: @unchecked Sendable {
         } else if status == errSecItemNotFound {
             var add = query
             add[kSecValueData as String] = data
+            // Simulator XCTest clones often cannot satisfy ThisDeviceOnly at process
+            // start (~errSecInteractionNotAllowed). Device/release keeps ThisDeviceOnly
+            // so tokens never restore onto a different physical device from backup.
+            #if targetEnvironment(simulator)
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            #else
             add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            #endif
             let addStatus = SecItemAdd(add as CFDictionary, nil)
             guard addStatus == errSecSuccess else {
                 throw KeychainError.unhandled(addStatus)

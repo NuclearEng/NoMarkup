@@ -410,6 +410,11 @@ func New(
 	// never auto-hide on their own.
 	r.Post("/api/v1/listings/{id}/report", optionalAuth(authMW, adminMarketplaceHandler.CreateReport))
 
+	// Public "report this job" endpoint (ASR-1.2.b). Same optionalAuth +
+	// attributable-only auto-hide contract as listing reports (migration 130).
+	jobReportsHandler := handler.NewJobReportsHandler(dbPool)
+	r.Post("/api/v1/jobs/{id}/report", optionalAuth(authMW, jobReportsHandler.CreateJobReport))
+
 	// @public marketplace browse + spectator surface
 	// The whole point of the wedge: anonymous visitors land on the
 	// scoreboard at `/marketplace`, watch live auctions, and ping for
@@ -1147,6 +1152,13 @@ func New(
 			r.Get("/revenue", adminPaymentsHandler.GetRevenueReport)
 			r.Put("/fees", adminPaymentsHandler.UpdateFeeConfig)
 
+			r.Route("/custom-fees", func(r chi.Router) {
+				r.Get("/", adminPaymentsHandler.ListCustomFees)
+				r.Post("/", adminPaymentsHandler.CreateCustomFee)
+				r.Patch("/{id}", adminPaymentsHandler.UpdateCustomFee)
+				r.Delete("/{id}", adminPaymentsHandler.DeleteCustomFee)
+			})
+
 			// Platform payout bank account — where all collected fees route.
 			// The mutation calls Stripe, so guard the POST with an idempotency
 			// key to avoid creating duplicate external accounts on retry.
@@ -1200,6 +1212,12 @@ func New(
 			r.Route("/goods-reports", func(r chi.Router) {
 				r.Get("/", adminMarketplaceHandler.ListReports)
 				r.Post("/{id}/resolve", adminMarketplaceHandler.ResolveReport)
+			})
+
+			// Job UGC reports (ASR-1.2.b). Intake is public-ish; this is the
+			// admin queue. Constructed above next to the listing report route.
+			r.Route("/job-reports", func(r chi.Router) {
+				r.Get("/", jobReportsHandler.ListJobReports)
 			})
 
 			// User & message abuse reports (harassment/spam/scam/etc).

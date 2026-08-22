@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
@@ -70,5 +71,60 @@ func TestMarketplaceSellerFeeCents_nilConfigUsesDefault(t *testing.T) {
 	got := MarketplaceSellerFeeCents(20000, nil)
 	if got != 2000 {
 		t.Fatalf("nil config: got %d want 2000", got)
+	}
+}
+
+type stubCustomFees struct {
+	fees []*domain.CustomFee
+	err  error
+}
+
+func (s stubCustomFees) ListActiveCustomFees(context.Context) ([]*domain.CustomFee, error) {
+	return s.fees, s.err
+}
+
+type stubFeeConfig struct {
+	fc *domain.FeeConfig
+}
+
+func (s stubFeeConfig) GetDefaultFeeConfig(context.Context) (*domain.FeeConfig, error) {
+	return s.fc, nil
+}
+
+func (s stubFeeConfig) GetFeeConfig(context.Context, string) (*domain.FeeConfig, error) {
+	return s.fc, nil
+}
+
+func TestResolveMarketplaceFeeCents_addsActiveCustomFees(t *testing.T) {
+	t.Parallel()
+	svc := NewMarketplaceService(nil, nil)
+	svc.SetFeeConfigLoader(stubFeeConfig{fc: &domain.FeeConfig{
+		FeePercentage:       0.08,
+		GuaranteePercentage: 0.02,
+	}})
+	svc.SetCustomFeeLoader(stubCustomFees{fees: []*domain.CustomFee{
+		{RateBPS: 100}, // +1%
+	}})
+	// 20000 * 10% = 2000, plus 1% custom = 200
+	got := svc.resolveMarketplaceFeeCents(context.Background(), 20000)
+	if got != 2200 {
+		t.Fatalf("got %d want 2200 (10%% + 1%% of 20000)", got)
+	}
+}
+
+func TestResolveMarketplaceFeeCents_skipsCustomWhenCapExceeded(t *testing.T) {
+	t.Parallel()
+	svc := NewMarketplaceService(nil, nil)
+	svc.SetFeeConfigLoader(stubFeeConfig{fc: &domain.FeeConfig{
+		FeePercentage:       0.40,
+		GuaranteePercentage: 0.05,
+	}})
+	svc.SetCustomFeeLoader(stubCustomFees{fees: []*domain.CustomFee{
+		{RateBPS: 1000}, // +10% → 55% combined > 50% cap
+	}})
+	got := svc.resolveMarketplaceFeeCents(context.Background(), 20000)
+	// 45% of 20000 = 9000; custom skipped
+	if got != 9000 {
+		t.Fatalf("got %d want 9000 (custom skipped over cap)", got)
 	}
 }

@@ -8,8 +8,16 @@ enum NotificationPermissionCopy {
     static let prePromptTitle = "Stay ahead on bids"
 
     /// In-app pre-prompt body — bid / outbid / auction closing value.
+    /// Marketing is optional and is not granted by the system permission prompt (ASR-4.5.4).
     static let prePromptBody =
-        "Get alerts when you’re outbid, when an auction is about to close, or when a bid is awarded. You can change this anytime in Settings."
+        "Get alerts when you’re outbid, when an auction is about to close, or when a bid is awarded. You can change this anytime in Settings. Promotions, new listings, and price drops are optional and managed in Notification preferences — this prompt is not marketing consent."
+
+    /// Dedicated marketing-push consent (ASR-4.5.4). Enabling this turns on
+    /// promotional types; the user can then disable individual types.
+    static let marketingConsentTitle = "Marketing and recommendations"
+
+    static let marketingConsentBody =
+        "Promotions, new listings from followed sellers, and price drops are optional. They are not required to use the app."
 
     /// Confirm button that proceeds to the system permission dialog.
     static let prePromptConfirm = "Enable notifications"

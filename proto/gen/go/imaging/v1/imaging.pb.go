@@ -1533,6 +1533,94 @@ func (x *ConfirmUploadResponse) GetError() string {
 	return ""
 }
 
+type DeleteUserObjectsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // UUID; rejects non-UUID to prevent prefix injection
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteUserObjectsRequest) Reset() {
+	*x = DeleteUserObjectsRequest{}
+	mi := &file_imaging_v1_imaging_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteUserObjectsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteUserObjectsRequest) ProtoMessage() {}
+
+func (x *DeleteUserObjectsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_imaging_v1_imaging_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteUserObjectsRequest.ProtoReflect.Descriptor instead.
+func (*DeleteUserObjectsRequest) Descriptor() ([]byte, []int) {
+	return file_imaging_v1_imaging_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *DeleteUserObjectsRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+type DeleteUserObjectsResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ObjectsDeleted int32                  `protobuf:"varint,1,opt,name=objects_deleted,json=objectsDeleted,proto3" json:"objects_deleted,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeleteUserObjectsResponse) Reset() {
+	*x = DeleteUserObjectsResponse{}
+	mi := &file_imaging_v1_imaging_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteUserObjectsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteUserObjectsResponse) ProtoMessage() {}
+
+func (x *DeleteUserObjectsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_imaging_v1_imaging_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteUserObjectsResponse.ProtoReflect.Descriptor instead.
+func (*DeleteUserObjectsResponse) Descriptor() ([]byte, []int) {
+	return file_imaging_v1_imaging_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *DeleteUserObjectsResponse) GetObjectsDeleted() int32 {
+	if x != nil {
+		return x.ObjectsDeleted
+	}
+	return 0
+}
+
 var File_imaging_v1_imaging_proto protoreflect.FileDescriptor
 
 const file_imaging_v1_imaging_proto_rawDesc = "" +
@@ -1653,7 +1741,11 @@ const file_imaging_v1_imaging_proto_rawDesc = "" +
 	"\n" +
 	"source_url\x18\x01 \x01(\tR\tsourceUrl\x12\x14\n" +
 	"\x05valid\x18\x02 \x01(\bR\x05valid\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error*\x86\x01\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"3\n" +
+	"\x18DeleteUserObjectsRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"D\n" +
+	"\x19DeleteUserObjectsResponse\x12'\n" +
+	"\x0fobjects_deleted\x18\x01 \x01(\x05R\x0eobjectsDeleted*\x86\x01\n" +
 	"\vImageFormat\x12\x1c\n" +
 	"\x18IMAGE_FORMAT_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11IMAGE_FORMAT_JPEG\x10\x01\x12\x14\n" +
@@ -1665,7 +1757,7 @@ const file_imaging_v1_imaging_proto_rawDesc = "" +
 	"\x17RESIZE_MODE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fRESIZE_MODE_FIT\x10\x01\x12\x14\n" +
 	"\x10RESIZE_MODE_FILL\x10\x02\x12\x15\n" +
-	"\x11RESIZE_MODE_EXACT\x10\x032\xf4\a\n" +
+	"\x11RESIZE_MODE_EXACT\x10\x032\xe8\b\n" +
 	"\x0eImagingService\x12c\n" +
 	"\fProcessImage\x12(.nomarkup.imaging.v1.ProcessImageRequest\x1a).nomarkup.imaging.v1.ProcessImageResponse\x12r\n" +
 	"\x11GenerateThumbnail\x12-.nomarkup.imaging.v1.GenerateThumbnailRequest\x1a..nomarkup.imaging.v1.GenerateThumbnailResponse\x12u\n" +
@@ -1675,7 +1767,8 @@ const file_imaging_v1_imaging_proto_rawDesc = "" +
 	"\rProcessAvatar\x12).nomarkup.imaging.v1.ProcessAvatarRequest\x1a*.nomarkup.imaging.v1.ProcessAvatarResponse\x12l\n" +
 	"\x0fProcessDocument\x12+.nomarkup.imaging.v1.ProcessDocumentRequest\x1a,.nomarkup.imaging.v1.ProcessDocumentResponse\x12c\n" +
 	"\fGetUploadURL\x12(.nomarkup.imaging.v1.GetUploadURLRequest\x1a).nomarkup.imaging.v1.GetUploadURLResponse\x12f\n" +
-	"\rConfirmUpload\x12).nomarkup.imaging.v1.ConfirmUploadRequest\x1a*.nomarkup.imaging.v1.ConfirmUploadResponseB9Z7github.com/nomarkup/nomarkup/proto/imaging/v1;imagingv1b\x06proto3"
+	"\rConfirmUpload\x12).nomarkup.imaging.v1.ConfirmUploadRequest\x1a*.nomarkup.imaging.v1.ConfirmUploadResponse\x12r\n" +
+	"\x11DeleteUserObjects\x12-.nomarkup.imaging.v1.DeleteUserObjectsRequest\x1a..nomarkup.imaging.v1.DeleteUserObjectsResponseB9Z7github.com/nomarkup/nomarkup/proto/imaging/v1;imagingv1b\x06proto3"
 
 var (
 	file_imaging_v1_imaging_proto_rawDescOnce sync.Once
@@ -1690,7 +1783,7 @@ func file_imaging_v1_imaging_proto_rawDescGZIP() []byte {
 }
 
 var file_imaging_v1_imaging_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_imaging_v1_imaging_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_imaging_v1_imaging_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_imaging_v1_imaging_proto_goTypes = []any{
 	(ImageFormat)(0),                      // 0: nomarkup.imaging.v1.ImageFormat
 	(ResizeMode)(0),                       // 1: nomarkup.imaging.v1.ResizeMode
@@ -1716,7 +1809,9 @@ var file_imaging_v1_imaging_proto_goTypes = []any{
 	(*GetUploadURLResponse)(nil),          // 21: nomarkup.imaging.v1.GetUploadURLResponse
 	(*ConfirmUploadRequest)(nil),          // 22: nomarkup.imaging.v1.ConfirmUploadRequest
 	(*ConfirmUploadResponse)(nil),         // 23: nomarkup.imaging.v1.ConfirmUploadResponse
-	(*timestamppb.Timestamp)(nil),         // 24: google.protobuf.Timestamp
+	(*DeleteUserObjectsRequest)(nil),      // 24: nomarkup.imaging.v1.DeleteUserObjectsRequest
+	(*DeleteUserObjectsResponse)(nil),     // 25: nomarkup.imaging.v1.DeleteUserObjectsResponse
+	(*timestamppb.Timestamp)(nil),         // 26: google.protobuf.Timestamp
 }
 var file_imaging_v1_imaging_proto_depIdxs = []int32{
 	0,  // 0: nomarkup.imaging.v1.ImageVariant.format:type_name -> nomarkup.imaging.v1.ImageFormat
@@ -1741,7 +1836,7 @@ var file_imaging_v1_imaging_proto_depIdxs = []int32{
 	2,  // 19: nomarkup.imaging.v1.ProcessAvatarResponse.small:type_name -> nomarkup.imaging.v1.ImageVariant
 	2,  // 20: nomarkup.imaging.v1.ProcessDocumentResponse.processed:type_name -> nomarkup.imaging.v1.ImageVariant
 	2,  // 21: nomarkup.imaging.v1.ProcessDocumentResponse.thumbnail:type_name -> nomarkup.imaging.v1.ImageVariant
-	24, // 22: nomarkup.imaging.v1.GetUploadURLResponse.expires_at:type_name -> google.protobuf.Timestamp
+	26, // 22: nomarkup.imaging.v1.GetUploadURLResponse.expires_at:type_name -> google.protobuf.Timestamp
 	4,  // 23: nomarkup.imaging.v1.ImagingService.ProcessImage:input_type -> nomarkup.imaging.v1.ProcessImageRequest
 	6,  // 24: nomarkup.imaging.v1.ImagingService.GenerateThumbnail:input_type -> nomarkup.imaging.v1.GenerateThumbnailRequest
 	8,  // 25: nomarkup.imaging.v1.ImagingService.BatchProcessImages:input_type -> nomarkup.imaging.v1.BatchProcessImagesRequest
@@ -1751,17 +1846,19 @@ var file_imaging_v1_imaging_proto_depIdxs = []int32{
 	18, // 29: nomarkup.imaging.v1.ImagingService.ProcessDocument:input_type -> nomarkup.imaging.v1.ProcessDocumentRequest
 	20, // 30: nomarkup.imaging.v1.ImagingService.GetUploadURL:input_type -> nomarkup.imaging.v1.GetUploadURLRequest
 	22, // 31: nomarkup.imaging.v1.ImagingService.ConfirmUpload:input_type -> nomarkup.imaging.v1.ConfirmUploadRequest
-	5,  // 32: nomarkup.imaging.v1.ImagingService.ProcessImage:output_type -> nomarkup.imaging.v1.ProcessImageResponse
-	7,  // 33: nomarkup.imaging.v1.ImagingService.GenerateThumbnail:output_type -> nomarkup.imaging.v1.GenerateThumbnailResponse
-	9,  // 34: nomarkup.imaging.v1.ImagingService.BatchProcessImages:output_type -> nomarkup.imaging.v1.BatchProcessImagesResponse
-	12, // 35: nomarkup.imaging.v1.ImagingService.ProcessJobPhotos:output_type -> nomarkup.imaging.v1.ProcessJobPhotosResponse
-	15, // 36: nomarkup.imaging.v1.ImagingService.ProcessPortfolioImage:output_type -> nomarkup.imaging.v1.ProcessPortfolioImageResponse
-	17, // 37: nomarkup.imaging.v1.ImagingService.ProcessAvatar:output_type -> nomarkup.imaging.v1.ProcessAvatarResponse
-	19, // 38: nomarkup.imaging.v1.ImagingService.ProcessDocument:output_type -> nomarkup.imaging.v1.ProcessDocumentResponse
-	21, // 39: nomarkup.imaging.v1.ImagingService.GetUploadURL:output_type -> nomarkup.imaging.v1.GetUploadURLResponse
-	23, // 40: nomarkup.imaging.v1.ImagingService.ConfirmUpload:output_type -> nomarkup.imaging.v1.ConfirmUploadResponse
-	32, // [32:41] is the sub-list for method output_type
-	23, // [23:32] is the sub-list for method input_type
+	24, // 32: nomarkup.imaging.v1.ImagingService.DeleteUserObjects:input_type -> nomarkup.imaging.v1.DeleteUserObjectsRequest
+	5,  // 33: nomarkup.imaging.v1.ImagingService.ProcessImage:output_type -> nomarkup.imaging.v1.ProcessImageResponse
+	7,  // 34: nomarkup.imaging.v1.ImagingService.GenerateThumbnail:output_type -> nomarkup.imaging.v1.GenerateThumbnailResponse
+	9,  // 35: nomarkup.imaging.v1.ImagingService.BatchProcessImages:output_type -> nomarkup.imaging.v1.BatchProcessImagesResponse
+	12, // 36: nomarkup.imaging.v1.ImagingService.ProcessJobPhotos:output_type -> nomarkup.imaging.v1.ProcessJobPhotosResponse
+	15, // 37: nomarkup.imaging.v1.ImagingService.ProcessPortfolioImage:output_type -> nomarkup.imaging.v1.ProcessPortfolioImageResponse
+	17, // 38: nomarkup.imaging.v1.ImagingService.ProcessAvatar:output_type -> nomarkup.imaging.v1.ProcessAvatarResponse
+	19, // 39: nomarkup.imaging.v1.ImagingService.ProcessDocument:output_type -> nomarkup.imaging.v1.ProcessDocumentResponse
+	21, // 40: nomarkup.imaging.v1.ImagingService.GetUploadURL:output_type -> nomarkup.imaging.v1.GetUploadURLResponse
+	23, // 41: nomarkup.imaging.v1.ImagingService.ConfirmUpload:output_type -> nomarkup.imaging.v1.ConfirmUploadResponse
+	25, // 42: nomarkup.imaging.v1.ImagingService.DeleteUserObjects:output_type -> nomarkup.imaging.v1.DeleteUserObjectsResponse
+	33, // [33:43] is the sub-list for method output_type
+	23, // [23:33] is the sub-list for method input_type
 	23, // [23:23] is the sub-list for extension type_name
 	23, // [23:23] is the sub-list for extension extendee
 	0,  // [0:23] is the sub-list for field type_name
@@ -1778,7 +1875,7 @@ func file_imaging_v1_imaging_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_imaging_v1_imaging_proto_rawDesc), len(file_imaging_v1_imaging_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   22,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

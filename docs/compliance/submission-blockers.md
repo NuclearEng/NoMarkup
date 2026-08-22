@@ -19,6 +19,8 @@
 
 Engineering cannot complete Team signing or ASC portal clicks. This page lists **only what still blocks first public submit**.
 
+**2026-08-21 code remediations (audit P1–P12):** in progress in parallel (hard-off rails, age fail-closed, job report, privacy equal-protection text, widget disclosure/help, UGC/Apple Pay/marketing-push items). Founder/ASC portal rows **1–12 below remain open** — do not treat screenshots, contact, Privacy URL in ASC, or live API as complete.
+
 ---
 
 ## Remaining blockers — founder / ops only

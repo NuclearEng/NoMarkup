@@ -236,6 +236,30 @@ func main() {
 	// Fail-soft inside CreateContractFromAward — never blocks award.
 	contractService := service.NewContractService(repo, repo)
 	contractService.SetPendingLocalTermsApplier(service.NewPGPendingLocalTermsApplier(pool))
+
+	// 7-day auto-approve releases services escrow as a System actor. The
+	// connection is lazy (same as the pricing engine). Unset in production
+	// would complete contracts without paying the provider — fail closed.
+	if paymentAddr := os.Getenv("PAYMENT_SERVICE_ADDR"); paymentAddr != "" {
+		pc, perr := client.NewPaymentClient(paymentAddr)
+		if perr != nil {
+			slog.Error("failed to init payment client for contract auto-release", "error", perr)
+			if os.Getenv("ENVIRONMENT") == "production" {
+				os.Exit(1)
+			}
+			slog.Warn("auto-release: payment client disabled; 7-day sweep will complete contracts without releasing escrow")
+		} else {
+			defer func() { _ = pc.Close() }()
+			contractService.SetEscrowReleaser(pc)
+			slog.Info("auto-release: payment client enabled", "addr", paymentAddr)
+		}
+	} else if os.Getenv("ENVIRONMENT") == "production" {
+		slog.Error("PAYMENT_SERVICE_ADDR is required in production (7-day auto-approve would skip escrow release)")
+		os.Exit(1)
+	} else {
+		slog.Warn("PAYMENT_SERVICE_ADDR not set; 7-day auto-approve will complete contracts without releasing escrow")
+	}
+
 	contractSrv := grpcserver.NewContractServer(contractService)
 
 	// Wire up review service (shares same repo/pool).
@@ -318,6 +342,17 @@ func main() {
 		envDuration("AUCTION_CLOSE_INTERVAL", 30*time.Second),
 		envDuration("AUCTION_CLOSE_INITIAL_DELAY", 15*time.Second),
 		envInt("AUCTION_CLOSE_BATCH", 100),
+	)
+
+	// Services escrow: 7-day auto-approve of provider-marked-complete
+	// contracts the customer never confirmed. Releases held escrow as
+	// System, then finalises contract + job. Tied to sigCtx like the
+	// auction worker.
+	runAutoReleaseCompletedContractsCron(
+		sigCtx,
+		contractService,
+		envDuration("CONTRACT_AUTO_RELEASE_INTERVAL", time.Hour),
+		envDuration("CONTRACT_AUTO_RELEASE_INITIAL_DELAY", 2*time.Minute),
 	)
 
 	// Bid-bond safety net: release stranded authorized bonds on terminal

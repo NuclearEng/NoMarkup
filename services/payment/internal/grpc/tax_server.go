@@ -172,6 +172,8 @@ func mapTaxError(err error) error {
 		return status.Error(codes.InvalidArgument, "invalid amount")
 	case errors.Is(err, domain.ErrBelow1099Threshold):
 		return status.Error(codes.FailedPrecondition, domain.ErrBelow1099Threshold.Error())
+	case errors.Is(err, domain.ErrPlatformEINNotConfigured):
+		return status.Error(codes.FailedPrecondition, domain.ErrPlatformEINNotConfigured.Error())
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

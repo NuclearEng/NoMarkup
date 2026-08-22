@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	imagingv1 "github.com/nomarkup/nomarkup/proto/imaging/v1"
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
@@ -240,13 +241,20 @@ func main() {
 
 	// GDPR/CCPA erasure pipeline.
 	//
-	// Stripe deletion is now wired to the payment service via the
-	// PaymentService/DeleteStripeAccounts gRPC method (added 2026-04).
-	// When PAYMENT_SERVICE_ADDR is unset (e.g. unit tests, isolated user-
-	// service stack) the deleter is left nil and Erasure falls back to
-	// "skipped_no_client" outcomes — see deletion.go's noopStripeDeleter.
+	// Stripe deletion is wired to the payment service via
+	// PaymentService/DeleteStripeAccounts. When PAYMENT_SERVICE_ADDR is unset
+	// (unit tests, isolated user-service stack) the deleter is left nil and
+	// Erasure falls back to "skipped_no_client" — see deletion.go's
+	// noopStripeDeleter.
 	//
-	// S3 and OAuth deleters are still TODO.
+	// S3 deletion is wired to ImagingService/DeleteUserObjects. Imaging owns
+	// the bucket and the real key layout; the user service does not take an
+	// AWS SDK dependency. Unset IMAGING_SERVICE_ADDR skips S3 cleanup.
+	//
+	// OAuth provider-side revoke is not wired: oauth_accounts stores
+	// provider + provider_id + email only (no refresh/access tokens), so
+	// Google/Apple/Facebook cannot be revoked remotely. Local oauth_accounts
+	// rows are DELETE'd in the Postgres cascade.
 	var stripeDeleter service.StripeDeleter
 	if paymentAddr := os.Getenv("PAYMENT_SERVICE_ADDR"); paymentAddr != "" {
 		dialOpt, dialErr := meshClientDialOption()
@@ -269,6 +277,28 @@ func main() {
 		slog.Warn("PAYMENT_SERVICE_ADDR not set; GDPR Stripe deletion will record skipped_no_client")
 	}
 
+	var objectStore service.ObjectStoreDeleter
+	if imagingAddr := os.Getenv("IMAGING_SERVICE_ADDR"); imagingAddr != "" {
+		dialOpt, dialErr := meshClientDialOption()
+		if dialErr != nil {
+			slog.Error("failed to load mesh mTLS for imaging dial", "error", dialErr)
+			os.Exit(1)
+		}
+		imagingConn, err := grpclib.NewClient(imagingAddr,
+			dialOpt,
+			grpclib.WithStatsHandler(otelgrpc.NewClientHandler()),
+		)
+		if err != nil {
+			slog.Warn("failed to connect to imaging service, GDPR S3 deletion disabled",
+				"addr", imagingAddr, "error", err)
+		} else {
+			objectStore = newObjectStoreDeleterClient(imagingv1.NewImagingServiceClient(imagingConn))
+			slog.Info("imaging service connected for GDPR deletion", "addr", imagingAddr)
+		}
+	} else {
+		slog.Warn("IMAGING_SERVICE_ADDR not set; GDPR S3 deletion will skip object cleanup")
+	}
+
 	// GDPR lifecycle emails (request / cancel / finalize) ride the same
 	// notification → SendGrid path as password-reset and verification mail.
 	// When notifClient is nil (dev without NOTIFICATION_SERVICE_ADDR) Erasure
@@ -280,7 +310,7 @@ func main() {
 	} else {
 		slog.Warn("notification client unavailable; GDPR lifecycle emails will log Error until NOTIFICATION_SERVICE_ADDR is set")
 	}
-	erasureService := service.NewErasure(repo, stripeDeleter, nil, nil, gdprMailer)
+	erasureService := service.NewErasure(repo, stripeDeleter, objectStore, nil, gdprMailer)
 	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService, erasureService, notifClient, baseURL)
 
 	// Start gRPC server.

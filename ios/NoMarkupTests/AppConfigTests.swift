@@ -80,6 +80,36 @@ final class AppConfigTests: XCTestCase {
         XCTAssertEqual(AppConfig.facebookOAuthCallbackScheme, "nomarkup")
     }
 
+    func testLaunchTestAuthParsesEnvAndArgv() {
+        let envCreds = LaunchTestAuth.credentials(
+            environment: [
+                "NOMARKUP_UI_TEST_EMAIL": "  customer@nomarkup.com ",
+                "NOMARKUP_UI_TEST_PASSWORD": "Password123!",
+            ],
+            arguments: ["NoMarkup"]
+        )
+        XCTAssertEqual(envCreds?.email, "customer@nomarkup.com")
+        XCTAssertEqual(envCreds?.password, "Password123!")
+
+        let argvWins = LaunchTestAuth.credentials(
+            environment: [
+                "NOMARKUP_UI_TEST_EMAIL": "env@nomarkup.com",
+                "NOMARKUP_UI_TEST_PASSWORD": "env-pass",
+            ],
+            arguments: ["NoMarkup", "-ui-test-email", "argv@nomarkup.com", "-ui-test-password", "argv-pass"]
+        )
+        XCTAssertEqual(argvWins?.email, "argv@nomarkup.com")
+        XCTAssertEqual(argvWins?.password, "argv-pass")
+
+        XCTAssertNil(
+            LaunchTestAuth.credentials(
+                environment: ["NOMARKUP_UI_TEST_EMAIL": "solo@nomarkup.com"],
+                arguments: []
+            )
+        )
+        XCTAssertNil(LaunchTestAuth.credentials(environment: [:], arguments: ["NoMarkup"]))
+    }
+
     func testStoreKitEnabledDefaultsFalse() {
         // Committed Info.plist sets StoreKitEnabled=false; purchase paths must stay off for 3.1.1 free-tier binary.
         // Env override may flip true in dogfood schemes — only assert default when env unset.
@@ -100,5 +130,23 @@ final class AppConfigTests: XCTestCase {
         for id in AppConfig.storeKitProductIDs {
             XCTAssertTrue(id.hasPrefix("nomarkup."), "unexpected product id \(id)")
         }
+    }
+
+    /// `isEnabled` is @MainActor on a FeatureFlags instance (needs an API client).
+    /// Static set membership is enough to prove the App Store hard-off inventory
+    /// without constructing a live client.
+    @MainActor
+    func testIOSHardOffKeysContainsRegulatedRails() {
+        let expected: Set<String> = [
+            "customer_bnpl",
+            "working_capital",
+            "per_job_insurance",
+            "insurance_competition",
+            "legal_services",
+            "lead_gen",
+            "instant_payout",
+        ]
+        XCTAssertTrue(expected.isSubset(of: FeatureFlags.iOSHardOffKeys))
+        XCTAssertEqual(FeatureFlags.iOSHardOffKeys, expected)
     }
 }

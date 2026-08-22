@@ -318,6 +318,39 @@ final class APIClientAuthRetryTests: XCTestCase {
         XCTAssertEqual(log.count(pathSuffix: "/me/orders"), 1)
         XCTAssertEqual(log.count(pathSuffix: "/auth/refresh"), 0, "no refresh attempt without a token")
     }
+
+    func testStaleRefreshFailureDoesNotExpireAReplacedSession() async throws {
+        try store.save("old-access", for: .accessToken)
+        try store.save("refresh-1", for: .refreshToken)
+
+        let log = RequestLog()
+        MockURLProtocol.setHandler { [store] request in
+            let path = request.url?.path ?? ""
+            log.append(path: path, authorization: request.value(forHTTPHeaderField: "Authorization"))
+            if path.hasSuffix("/api/v1/auth/refresh") {
+                // Concurrent login replaced the session while this refresh was in flight.
+                try? store?.save("new-access", for: .accessToken)
+                try? store?.save("refresh-2", for: .refreshToken)
+                return (401, #"{"error":"invalid refresh token"}"#)
+            }
+            return (401, #"{"error":"token expired"}"#)
+        }
+
+        let noExpiry = expectation(forNotification: .noMarkupSessionExpired, object: nil)
+        noExpiry.isInverted = true
+
+        do {
+            _ = try await performAuthedOrdersGET()
+            XCTFail("Expected unauthorized from the original 401")
+        } catch let error as APIClientError {
+            XCTAssertTrue(error.isUnauthorized)
+        }
+
+        await fulfillment(of: [noExpiry], timeout: 0.4)
+        XCTAssertEqual(try store.read(.accessToken), "new-access")
+        XCTAssertEqual(try store.read(.refreshToken), "refresh-2")
+        XCTAssertEqual(log.count(pathSuffix: "/auth/refresh"), 1)
+    }
 }
 
 // MARK: - F4 Checkr invitation_url
@@ -397,5 +430,93 @@ final class CatalogBidCountTests: XCTestCase {
         XCTAssertEqual(row.bidCount, 1)
         XCTAssertEqual(row.bidderCount, 3)
         XCTAssertEqual(row.resolvedBidCount, 3)
+    }
+}
+
+// MARK: - Goods auction replay (`GET /api/v1/listings/{id}/replay`)
+
+final class ListingReplayDecodingTests: XCTestCase {
+    private var decoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
+    func testDecodesClosedListingReplayEnvelopeAndEvents() throws {
+        let json = """
+        {
+          "listing_id": "00000000-0000-0000-0000-000000000099",
+          "started_at": "2026-04-01T12:00:00Z",
+          "ended_at": "2026-04-02T12:00:00Z",
+          "winner_id": "00000000-0000-0000-0000-000000000001",
+          "events": [
+            {
+              "type": "bid_placed",
+              "at": "2026-04-01T12:05:00Z",
+              "amount_cents": 2500,
+              "anonymized_bidder": "Bidder #1"
+            },
+            {
+              "type": "bid_placed",
+              "at": "2026-04-01T12:05:01Z",
+              "amount_cents": 2750,
+              "anonymized_bidder": "Bidder #1"
+            },
+            {
+              "type": "auto_bid_cascade",
+              "at": "2026-04-01T12:05:01Z",
+              "from": 2500,
+              "to": 2750
+            },
+            {
+              "type": "snipe_extension",
+              "at": "2026-04-02T12:00:00Z",
+              "extended_to": "2026-04-02T12:00:00Z"
+            }
+          ]
+        }
+        """
+        let replay = try decoder.decode(ListingAuctionReplay.self, from: Data(json.utf8))
+        XCTAssertEqual(replay.listingId, "00000000-0000-0000-0000-000000000099")
+        XCTAssertEqual(replay.startedAt, "2026-04-01T12:00:00Z")
+        XCTAssertEqual(replay.endedAt, "2026-04-02T12:00:00Z")
+        XCTAssertEqual(replay.winnerId, "00000000-0000-0000-0000-000000000001")
+        XCTAssertEqual(replay.events.count, 4)
+
+        let placed = replay.events[0]
+        XCTAssertEqual(placed.type, "bid_placed")
+        XCTAssertEqual(placed.amountCents, 2500)
+        XCTAssertEqual(placed.anonymizedBidder, "Bidder #1")
+        XCTAssertEqual(placed.displayEventLabel, "Bid placed · Bidder #1")
+        XCTAssertEqual(placed.displayAmountCents, 2500)
+
+        let cascade = replay.events[2]
+        XCTAssertEqual(cascade.type, "auto_bid_cascade")
+        XCTAssertEqual(cascade.fromCents, 2500)
+        XCTAssertEqual(cascade.toCents, 2750)
+        XCTAssertEqual(cascade.displayEventLabel, "Auto-bid cascade")
+        XCTAssertEqual(cascade.displayAmountCents, 2750)
+
+        let snipe = replay.events[3]
+        XCTAssertEqual(snipe.type, "snipe_extension")
+        XCTAssertEqual(snipe.extendedTo, "2026-04-02T12:00:00Z")
+        XCTAssertEqual(snipe.displayEventLabel, "Time extended")
+        XCTAssertNil(snipe.displayAmountCents)
+    }
+
+    func testNullWinnerAndMissingEventsDecodeAsEmpty() throws {
+        let json = """
+        {
+          "listing_id": "00000000-0000-0000-0000-000000000099",
+          "started_at": "2026-04-01T12:00:00Z",
+          "ended_at": null,
+          "winner_id": null
+        }
+        """
+        let replay = try decoder.decode(ListingAuctionReplay.self, from: Data(json.utf8))
+        XCTAssertNil(replay.endedAt)
+        XCTAssertNil(replay.winnerId)
+        XCTAssertTrue(replay.events.isEmpty)
     }
 }

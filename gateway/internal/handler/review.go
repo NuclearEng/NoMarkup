@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -101,6 +102,11 @@ func (h *ReviewHandler) CreateReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	photoURLs, ok := normalizeReviewPhotoURLs(w, req.PhotoURLs)
+	if !ok {
+		return
+	}
+
 	// ASR-1.2.a — pre-post UGC filter on review comment.
 	if rejectProhibitedUGC(w, r, req.Comment) {
 		return
@@ -111,7 +117,7 @@ func (h *ReviewHandler) CreateReview(w http.ResponseWriter, r *http.Request) {
 		ReviewerId:    claims.UserID,
 		OverallRating: req.OverallRating,
 		Comment:       req.Comment,
-		PhotoUrls:     req.PhotoURLs,
+		PhotoUrls:     photoURLs,
 	}
 	if req.QualityRating != nil {
 		grpcReq.QualityRating = req.QualityRating
@@ -457,9 +463,11 @@ func protoReviewToJSON(r *reviewv1.Review, names map[string]string) map[string]i
 		result["access_rating"] = r.GetAccessRating()
 	}
 
-	if len(r.GetPhotoUrls()) > 0 {
-		result["photo_urls"] = r.GetPhotoUrls()
+	photoURLs := r.GetPhotoUrls()
+	if photoURLs == nil {
+		photoURLs = []string{}
 	}
+	result["photo_urls"] = photoURLs
 
 	if r.GetResponse() != nil {
 		result["response"] = protoReviewResponseToJSON(r.GetResponse(), names)
@@ -512,6 +520,39 @@ func stringToReviewDirection(s string) reviewv1.ReviewDirection {
 	default:
 		return reviewv1.ReviewDirection_REVIEW_DIRECTION_UNSPECIFIED
 	}
+}
+
+// maxReviewPhotos matches job-service MaxReviewPhotos / DB CHECK.
+const maxReviewPhotos = 5
+
+// normalizeReviewPhotoURLs trims, dedupes, enforces max 5, and requires
+// http(s) CDN URLs. Writes 400 and returns ok=false on violation.
+func normalizeReviewPhotoURLs(w http.ResponseWriter, in []string) ([]string, bool) {
+	if len(in) == 0 {
+		return []string{}, true
+	}
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, u := range in {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+			writeError(w, http.StatusBadRequest, "photo_urls must be http(s) URLs")
+			return nil, false
+		}
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		out = append(out, u)
+		if len(out) > maxReviewPhotos {
+			writeError(w, http.StatusBadRequest, "at most 5 review photos")
+			return nil, false
+		}
+	}
+	return out, true
 }
 
 func stringToFlagReason(s string) reviewv1.FlagReason {

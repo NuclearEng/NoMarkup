@@ -15,6 +15,9 @@ struct NotificationPreferencesView: View {
     @State private var editableRows: [NotificationPreferenceRow] = []
     @State private var globalPushEnabled = true
     @State private var globalEmailEnabled = true
+    /// ASR-4.5.4 — explicit in-app opt-in. Enabling consent turns marketing
+    /// push types on; disabling it forces them off. Global Push never grants this.
+    @State private var marketingConsent = false
     @State private var isLoading = false
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -108,7 +111,7 @@ struct NotificationPreferencesView: View {
 
                 Toggle("Push notifications", isOn: globalPushBinding)
                     .frame(minHeight: 44)
-                    .accessibilityHint("Turns push on or off for non-critical notification types below")
+                    .accessibilityHint("Turns push on or off for transactional types. Does not enable marketing alerts.")
 
                 Toggle("Email notifications", isOn: globalEmailBinding)
                     .frame(minHeight: 44)
@@ -117,17 +120,30 @@ struct NotificationPreferencesView: View {
                 Text("Global").brandSectionHeader()
             } footer: {
                 Text(
-                    "Global toggles update non-critical rows. Payment failures, disputes, and guarantee alerts stay on (FR-17.3). Save to apply on the server."
+                    "Global Push updates transactional types only. Payment failures, disputes, and guarantee alerts stay on (FR-17.3). Marketing push stays off unless you opt in below. Save to apply on the server."
                 )
                 .foregroundStyle(BrandTheme.textSecondary)
             }
 
+            Section {
+                Toggle(NotificationPermissionCopy.marketingConsentTitle, isOn: marketingConsentBinding)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("notifications.marketingConsent")
+                    .accessibilityHint("Optional. Enables promotional push types; not required to use the app.")
+            } header: {
+                Text("Marketing").brandSectionHeader()
+            } footer: {
+                Text(NotificationPermissionCopy.marketingConsentBody)
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
             ForEach(Array(editableRows.enumerated()), id: \.element.id) { index, row in
                 let critical = Self.isCriticalNotificationType(row.notificationType)
+                let marketing = Self.isMarketingNotificationType(row.notificationType)
                 Section {
                     Toggle("Push", isOn: binding(for: index, keyPath: \.pushEnabled))
                         .frame(minHeight: 44)
-                        .disabled(critical)
+                        .disabled(critical || (marketing && !marketingConsent))
                     Toggle("Email", isOn: binding(for: index, keyPath: \.emailEnabled))
                         .frame(minHeight: 44)
                         .disabled(critical)
@@ -150,6 +166,9 @@ struct NotificationPreferencesView: View {
                 } footer: {
                     if critical {
                         Text("Critical alerts cannot be turned off.")
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    } else if marketing && !marketingConsent {
+                        Text("Turn on Marketing and recommendations above to enable this promotional push.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
@@ -203,8 +222,12 @@ struct NotificationPreferencesView: View {
             set: { newValue in
                 globalPushEnabled = newValue
                 for i in editableRows.indices {
-                    if Self.isCriticalNotificationType(editableRows[i].notificationType) {
+                    let type = editableRows[i].notificationType
+                    if Self.isCriticalNotificationType(type) {
                         editableRows[i].pushEnabled = true
+                    } else if Self.isMarketingNotificationType(type) {
+                        // ASR-4.5.4 — global Push must not grant marketing.
+                        editableRows[i].pushEnabled = newValue && marketingConsent
                     } else {
                         editableRows[i].pushEnabled = newValue
                     }
@@ -212,6 +235,16 @@ struct NotificationPreferencesView: View {
                 if newValue, !push.isAuthorized {
                     push.requestFromSettings()
                 }
+            }
+        )
+    }
+
+    private var marketingConsentBinding: Binding<Bool> {
+        Binding(
+            get: { marketingConsent },
+            set: { newValue in
+                marketingConsent = newValue
+                applyMarketingPush(enabled: newValue)
             }
         )
     }
@@ -246,12 +279,17 @@ struct NotificationPreferencesView: View {
                     editableRows[index][keyPath: keyPath] = true
                     return
                 }
+                if keyPath == \.pushEnabled,
+                   Self.isMarketingNotificationType(type),
+                   !marketingConsent {
+                    // ASR-4.5.4 — marketing push requires dedicated consent.
+                    editableRows[index].pushEnabled = false
+                    return
+                }
                 editableRows[index][keyPath: keyPath] = newValue
-                // Keep global push in sync with all-row consensus (critical always on).
+                // Global Push tracks transactional rows only (critical always on; marketing is gated).
                 if keyPath == \.pushEnabled {
-                    globalPushEnabled = editableRows
-                        .filter { !Self.isCriticalNotificationType($0.notificationType) }
-                        .allSatisfy(\.pushEnabled)
+                    globalPushEnabled = Self.transactionalPushConsensus(editableRows)
                 }
                 if keyPath == \.emailEnabled {
                     globalEmailEnabled = editableRows
@@ -278,10 +316,9 @@ struct NotificationPreferencesView: View {
             } else {
                 editableRows = Self.forceCriticalEnabled(loaded.preferences)
             }
+            marketingConsent = Self.marketingConsent(from: editableRows)
             globalPushEnabled = loaded.globalPushEnabled
-                ?? (editableRows.isEmpty ? true : editableRows
-                    .filter { !Self.isCriticalNotificationType($0.notificationType) }
-                    .contains(where: \.pushEnabled))
+                ?? (editableRows.isEmpty ? true : Self.transactionalPushEnabled(editableRows))
             globalEmailEnabled = loaded.globalEmailEnabled
                 ?? (editableRows.isEmpty ? true : editableRows
                     .filter { !Self.isCriticalNotificationType($0.notificationType) }
@@ -314,10 +351,9 @@ struct NotificationPreferencesView: View {
             } else {
                 editableRows = payload
             }
+            marketingConsent = Self.marketingConsent(from: editableRows)
             globalPushEnabled = updated.globalPushEnabled
-                ?? editableRows
-                    .filter { !Self.isCriticalNotificationType($0.notificationType) }
-                    .contains(where: \.pushEnabled)
+                ?? Self.transactionalPushEnabled(editableRows)
             globalEmailEnabled = updated.globalEmailEnabled
                 ?? editableRows
                     .filter { !Self.isCriticalNotificationType($0.notificationType) }
@@ -330,12 +366,14 @@ struct NotificationPreferencesView: View {
         }
     }
 
-    private static func seededDefaultRows() -> [NotificationPreferenceRow] {
+    /// Product-relevant defaults when the server returns no per-type rows.
+    /// Marketing types seed Push **off** (ASR-4.5.4); transactional types seed on.
+    static func seededDefaultRows() -> [NotificationPreferenceRow] {
         forceCriticalEnabled(
             defaultPreferenceTypes.map { type in
                 NotificationPreferenceRow(
                     notificationType: type,
-                    pushEnabled: true,
+                    pushEnabled: !isMarketingNotificationType(type),
                     emailEnabled: defaultEmail(for: type),
                     smsEnabled: false,
                     inAppEnabled: true
@@ -366,6 +404,19 @@ struct NotificationPreferencesView: View {
         return false
     }
 
+    /// ASR-4.5.4 promotional / retention types. Matches `PushRegistration.shouldPlaySound`
+    /// silent class plus `welcome_day*` prefixes.
+    static func isMarketingNotificationType(_ type: String) -> Bool {
+        let t = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if t.isEmpty { return false }
+        switch t {
+        case "price_drop", "seller_new_listing", "promotional", "marketing":
+            return true
+        default:
+            return t.hasPrefix("welcome_day")
+        }
+    }
+
     private static func forceCriticalEnabled(_ rows: [NotificationPreferenceRow]) -> [NotificationPreferenceRow] {
         rows.map { row in
             guard isCriticalNotificationType(row.notificationType) else { return row }
@@ -375,6 +426,32 @@ struct NotificationPreferencesView: View {
             copy.inAppEnabled = true
             return copy
         }
+    }
+
+    private func applyMarketingPush(enabled: Bool) {
+        for i in editableRows.indices {
+            guard Self.isMarketingNotificationType(editableRows[i].notificationType) else { continue }
+            // Consent enables marketing types; global Push still has to be on.
+            editableRows[i].pushEnabled = enabled && globalPushEnabled
+        }
+    }
+
+    static func marketingConsent(from rows: [NotificationPreferenceRow]) -> Bool {
+        rows.contains { isMarketingNotificationType($0.notificationType) && $0.pushEnabled }
+    }
+
+    /// Any transactional (non-critical, non-marketing) row with push on.
+    private static func transactionalPushEnabled(_ rows: [NotificationPreferenceRow]) -> Bool {
+        rows.contains { isGlobalPushManagedType($0.notificationType) && $0.pushEnabled }
+    }
+
+    /// All transactional rows have push on (empty → true, matching `allSatisfy`).
+    private static func transactionalPushConsensus(_ rows: [NotificationPreferenceRow]) -> Bool {
+        rows.filter { isGlobalPushManagedType($0.notificationType) }.allSatisfy(\.pushEnabled)
+    }
+
+    private static func isGlobalPushManagedType(_ type: String) -> Bool {
+        !isCriticalNotificationType(type) && !isMarketingNotificationType(type)
     }
 }
 

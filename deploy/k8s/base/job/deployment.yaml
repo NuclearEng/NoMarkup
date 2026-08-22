@@ -46,6 +46,8 @@ spec:
               value: "51052"
             - name: PRICING_ENGINE_ADDR
               value: "pricing:50061"
+            - name: PAYMENT_SERVICE_ADDR
+              value: "payment:50054"
             - name: APP_VERSION
               valueFrom:
                 configMapKeyRef:

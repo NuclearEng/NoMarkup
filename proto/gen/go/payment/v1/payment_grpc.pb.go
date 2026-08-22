@@ -45,6 +45,10 @@ const (
 	PaymentService_AdminGetPaymentDetails_FullMethodName         = "/nomarkup.payment.v1.PaymentService/AdminGetPaymentDetails"
 	PaymentService_AdminListPayments_FullMethodName              = "/nomarkup.payment.v1.PaymentService/AdminListPayments"
 	PaymentService_AdminUpdateFeeConfig_FullMethodName           = "/nomarkup.payment.v1.PaymentService/AdminUpdateFeeConfig"
+	PaymentService_AdminListCustomFees_FullMethodName            = "/nomarkup.payment.v1.PaymentService/AdminListCustomFees"
+	PaymentService_AdminCreateCustomFee_FullMethodName           = "/nomarkup.payment.v1.PaymentService/AdminCreateCustomFee"
+	PaymentService_AdminUpdateCustomFee_FullMethodName           = "/nomarkup.payment.v1.PaymentService/AdminUpdateCustomFee"
+	PaymentService_AdminDeactivateCustomFee_FullMethodName       = "/nomarkup.payment.v1.PaymentService/AdminDeactivateCustomFee"
 	PaymentService_AdminGetPlatformBankAccount_FullMethodName    = "/nomarkup.payment.v1.PaymentService/AdminGetPlatformBankAccount"
 	PaymentService_AdminSetPlatformBankAccount_FullMethodName    = "/nomarkup.payment.v1.PaymentService/AdminSetPlatformBankAccount"
 	PaymentService_AdminDeletePlatformBankAccount_FullMethodName = "/nomarkup.payment.v1.PaymentService/AdminDeletePlatformBankAccount"
@@ -137,6 +141,12 @@ type PaymentServiceClient interface {
 	AdminGetPaymentDetails(ctx context.Context, in *AdminGetPaymentDetailsRequest, opts ...grpc.CallOption) (*AdminGetPaymentDetailsResponse, error)
 	AdminListPayments(ctx context.Context, in *AdminListPaymentsRequest, opts ...grpc.CallOption) (*AdminListPaymentsResponse, error)
 	AdminUpdateFeeConfig(ctx context.Context, in *AdminUpdateFeeConfigRequest, opts ...grpc.CallOption) (*AdminUpdateFeeConfigResponse, error)
+	// Admin-named additive fees (platform_custom_fees). Applied on live
+	// CalculateFees / CreatePayment as extra platform_fee_cents (integer bps).
+	AdminListCustomFees(ctx context.Context, in *AdminListCustomFeesRequest, opts ...grpc.CallOption) (*AdminListCustomFeesResponse, error)
+	AdminCreateCustomFee(ctx context.Context, in *AdminCreateCustomFeeRequest, opts ...grpc.CallOption) (*AdminCreateCustomFeeResponse, error)
+	AdminUpdateCustomFee(ctx context.Context, in *AdminUpdateCustomFeeRequest, opts ...grpc.CallOption) (*AdminUpdateCustomFeeResponse, error)
+	AdminDeactivateCustomFee(ctx context.Context, in *AdminDeactivateCustomFeeRequest, opts ...grpc.CallOption) (*AdminDeactivateCustomFeeResponse, error)
 	// Platform banking (admin) — the platform's own payout bank account where
 	// all collected fees route. Raw bank numbers never reach us: the client
 	// tokenizes via Stripe.js and sends a bank_account token.
@@ -459,6 +469,46 @@ func (c *paymentServiceClient) AdminUpdateFeeConfig(ctx context.Context, in *Adm
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AdminUpdateFeeConfigResponse)
 	err := c.cc.Invoke(ctx, PaymentService_AdminUpdateFeeConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) AdminListCustomFees(ctx context.Context, in *AdminListCustomFeesRequest, opts ...grpc.CallOption) (*AdminListCustomFeesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminListCustomFeesResponse)
+	err := c.cc.Invoke(ctx, PaymentService_AdminListCustomFees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) AdminCreateCustomFee(ctx context.Context, in *AdminCreateCustomFeeRequest, opts ...grpc.CallOption) (*AdminCreateCustomFeeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminCreateCustomFeeResponse)
+	err := c.cc.Invoke(ctx, PaymentService_AdminCreateCustomFee_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) AdminUpdateCustomFee(ctx context.Context, in *AdminUpdateCustomFeeRequest, opts ...grpc.CallOption) (*AdminUpdateCustomFeeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminUpdateCustomFeeResponse)
+	err := c.cc.Invoke(ctx, PaymentService_AdminUpdateCustomFee_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *paymentServiceClient) AdminDeactivateCustomFee(ctx context.Context, in *AdminDeactivateCustomFeeRequest, opts ...grpc.CallOption) (*AdminDeactivateCustomFeeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminDeactivateCustomFeeResponse)
+	err := c.cc.Invoke(ctx, PaymentService_AdminDeactivateCustomFee_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -888,6 +938,12 @@ type PaymentServiceServer interface {
 	AdminGetPaymentDetails(context.Context, *AdminGetPaymentDetailsRequest) (*AdminGetPaymentDetailsResponse, error)
 	AdminListPayments(context.Context, *AdminListPaymentsRequest) (*AdminListPaymentsResponse, error)
 	AdminUpdateFeeConfig(context.Context, *AdminUpdateFeeConfigRequest) (*AdminUpdateFeeConfigResponse, error)
+	// Admin-named additive fees (platform_custom_fees). Applied on live
+	// CalculateFees / CreatePayment as extra platform_fee_cents (integer bps).
+	AdminListCustomFees(context.Context, *AdminListCustomFeesRequest) (*AdminListCustomFeesResponse, error)
+	AdminCreateCustomFee(context.Context, *AdminCreateCustomFeeRequest) (*AdminCreateCustomFeeResponse, error)
+	AdminUpdateCustomFee(context.Context, *AdminUpdateCustomFeeRequest) (*AdminUpdateCustomFeeResponse, error)
+	AdminDeactivateCustomFee(context.Context, *AdminDeactivateCustomFeeRequest) (*AdminDeactivateCustomFeeResponse, error)
 	// Platform banking (admin) — the platform's own payout bank account where
 	// all collected fees route. Raw bank numbers never reach us: the client
 	// tokenizes via Stripe.js and sends a bank_account token.
@@ -1033,6 +1089,18 @@ func (UnimplementedPaymentServiceServer) AdminListPayments(context.Context, *Adm
 }
 func (UnimplementedPaymentServiceServer) AdminUpdateFeeConfig(context.Context, *AdminUpdateFeeConfigRequest) (*AdminUpdateFeeConfigResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdminUpdateFeeConfig not implemented")
+}
+func (UnimplementedPaymentServiceServer) AdminListCustomFees(context.Context, *AdminListCustomFeesRequest) (*AdminListCustomFeesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdminListCustomFees not implemented")
+}
+func (UnimplementedPaymentServiceServer) AdminCreateCustomFee(context.Context, *AdminCreateCustomFeeRequest) (*AdminCreateCustomFeeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdminCreateCustomFee not implemented")
+}
+func (UnimplementedPaymentServiceServer) AdminUpdateCustomFee(context.Context, *AdminUpdateCustomFeeRequest) (*AdminUpdateCustomFeeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdminUpdateCustomFee not implemented")
+}
+func (UnimplementedPaymentServiceServer) AdminDeactivateCustomFee(context.Context, *AdminDeactivateCustomFeeRequest) (*AdminDeactivateCustomFeeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdminDeactivateCustomFee not implemented")
 }
 func (UnimplementedPaymentServiceServer) AdminGetPlatformBankAccount(context.Context, *AdminGetPlatformBankAccountRequest) (*AdminGetPlatformBankAccountResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AdminGetPlatformBankAccount not implemented")
@@ -1630,6 +1698,78 @@ func _PaymentService_AdminUpdateFeeConfig_Handler(srv interface{}, ctx context.C
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PaymentServiceServer).AdminUpdateFeeConfig(ctx, req.(*AdminUpdateFeeConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_AdminListCustomFees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminListCustomFeesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).AdminListCustomFees(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_AdminListCustomFees_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).AdminListCustomFees(ctx, req.(*AdminListCustomFeesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_AdminCreateCustomFee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminCreateCustomFeeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).AdminCreateCustomFee(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_AdminCreateCustomFee_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).AdminCreateCustomFee(ctx, req.(*AdminCreateCustomFeeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_AdminUpdateCustomFee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminUpdateCustomFeeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).AdminUpdateCustomFee(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_AdminUpdateCustomFee_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).AdminUpdateCustomFee(ctx, req.(*AdminUpdateCustomFeeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PaymentService_AdminDeactivateCustomFee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminDeactivateCustomFeeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).AdminDeactivateCustomFee(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_AdminDeactivateCustomFee_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).AdminDeactivateCustomFee(ctx, req.(*AdminDeactivateCustomFeeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2410,6 +2550,22 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AdminUpdateFeeConfig",
 			Handler:    _PaymentService_AdminUpdateFeeConfig_Handler,
+		},
+		{
+			MethodName: "AdminListCustomFees",
+			Handler:    _PaymentService_AdminListCustomFees_Handler,
+		},
+		{
+			MethodName: "AdminCreateCustomFee",
+			Handler:    _PaymentService_AdminCreateCustomFee_Handler,
+		},
+		{
+			MethodName: "AdminUpdateCustomFee",
+			Handler:    _PaymentService_AdminUpdateCustomFee_Handler,
+		},
+		{
+			MethodName: "AdminDeactivateCustomFee",
+			Handler:    _PaymentService_AdminDeactivateCustomFee_Handler,
 		},
 		{
 			MethodName: "AdminGetPlatformBankAccount",

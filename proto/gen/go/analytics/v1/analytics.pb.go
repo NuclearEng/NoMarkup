@@ -222,6 +222,7 @@ type GetMarketRangeRequest struct {
 	ServiceTypeId *string                `protobuf:"bytes,3,opt,name=service_type_id,json=serviceTypeId,proto3,oneof" json:"service_type_id,omitempty"`
 	Location      *v1.Location           `protobuf:"bytes,4,opt,name=location,proto3,oneof" json:"location,omitempty"`
 	RadiusKm      *float64               `protobuf:"fixed64,5,opt,name=radius_km,json=radiusKm,proto3,oneof" json:"radius_km,omitempty"`
+	ZipCode       *string                `protobuf:"bytes,6,opt,name=zip_code,json=zipCode,proto3,oneof" json:"zip_code,omitempty"` // US ZIP; preferred over location when set
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -289,6 +290,13 @@ func (x *GetMarketRangeRequest) GetRadiusKm() float64 {
 		return *x.RadiusKm
 	}
 	return 0
+}
+
+func (x *GetMarketRangeRequest) GetZipCode() string {
+	if x != nil && x.ZipCode != nil {
+		return *x.ZipCode
+	}
+	return ""
 }
 
 type GetMarketRangeResponse struct {
@@ -2342,19 +2350,21 @@ const file_analytics_v1_analytics_proto_rawDesc = "" +
 	"\fperiod_start\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\vperiodStart\x12!\n" +
 	"\fmedian_cents\x18\x02 \x01(\x03R\vmedianCents\x12+\n" +
 	"\x11transaction_count\x18\x03 \x01(\x05R\x10transactionCount\x12+\n" +
-	"\x11change_percentage\x18\x04 \x01(\x01R\x10changePercentage\"\xb4\x02\n" +
+	"\x11change_percentage\x18\x04 \x01(\x01R\x10changePercentage\"\xe1\x02\n" +
 	"\x15GetMarketRangeRequest\x12\x1f\n" +
 	"\vcategory_id\x18\x01 \x01(\tR\n" +
 	"categoryId\x12*\n" +
 	"\x0esubcategory_id\x18\x02 \x01(\tH\x00R\rsubcategoryId\x88\x01\x01\x12+\n" +
 	"\x0fservice_type_id\x18\x03 \x01(\tH\x01R\rserviceTypeId\x88\x01\x01\x12=\n" +
 	"\blocation\x18\x04 \x01(\v2\x1c.nomarkup.common.v1.LocationH\x02R\blocation\x88\x01\x01\x12 \n" +
-	"\tradius_km\x18\x05 \x01(\x01H\x03R\bradiusKm\x88\x01\x01B\x11\n" +
+	"\tradius_km\x18\x05 \x01(\x01H\x03R\bradiusKm\x88\x01\x01\x12\x1e\n" +
+	"\bzip_code\x18\x06 \x01(\tH\x04R\azipCode\x88\x01\x01B\x11\n" +
 	"\x0f_subcategory_idB\x12\n" +
 	"\x10_service_type_idB\v\n" +
 	"\t_locationB\f\n" +
 	"\n" +
-	"_radius_km\"R\n" +
+	"_radius_kmB\v\n" +
+	"\t_zip_code\"R\n" +
 	"\x16GetMarketRangeResponse\x128\n" +
 	"\x05range\x18\x01 \x01(\v2\".nomarkup.analytics.v1.MarketRangeR\x05range\"\xf9\x01\n" +
 	"\x16GetMarketTrendsRequest\x12\x1f\n" +

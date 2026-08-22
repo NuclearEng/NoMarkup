@@ -22,8 +22,10 @@ func TestCheckUserText_Table(t *testing.T) {
 		{"magazine publication", "Selling a stack of vintage Time magazines", true, ""},
 		{"gunnison false positive guard", "Cabin rental in Gunnison Colorado", true, ""},
 		{"methuen place name", "Pickup near Methuen MA only", true, ""},
-		{"cannabis not banned v1", "Homegrown cannabis accessories decorative", true, ""},
 		{"review praise", "Great communication and on-time work!", true, ""},
+		{"garden weed the lawn", "Need someone to weed the garden this weekend", true, ""},
+		{"weed eater job", "Looking for a weed eater repair", true, ""},
+		{"weed trimmer listing", "Selling a used weed trimmer local pickup", true, ""},
 
 		// ── Weapons ──────────────────────────────────────────────────
 		{"gun bare", "Selling a gun", false, ReasonProhibitedWeapons},
@@ -44,6 +46,17 @@ func TestCheckUserText_Table(t *testing.T) {
 		{"nicotine", "Nicotine pouches bulk", false, ReasonProhibitedSubstances},
 		{"chewing tobacco", "Chewing tobacco unopened", false, ReasonProhibitedSubstances},
 		{"e-cigarette", "e-cigarette starter kit", false, ReasonProhibitedSubstances},
+
+		// ── Cannabis (ASR-1.4.3.c) ───────────────────────────────────
+		{"cannabis accessories now banned", "Homegrown cannabis accessories decorative", false, ReasonProhibitedSubstances},
+		{"marijuana", "Homegrown marijuana for sale", false, ReasonProhibitedSubstances},
+		{"marihuana spelling", "marihuana eighths local pickup", false, ReasonProhibitedSubstances},
+		{"thc", "THC gummies unopened", false, ReasonProhibitedSubstances},
+		{"delta-8", "delta-8 vape carts", false, ReasonProhibitedSubstances},
+		{"delta-9", "delta-9 distillate", false, ReasonProhibitedSubstances},
+		{"kush", "og kush strain", false, ReasonProhibitedSubstances},
+		{"cbd flower", "cbd flower eighths", false, ReasonProhibitedSubstances},
+		{"weed for sale", "weed for sale tonight", false, ReasonProhibitedSubstances},
 
 		// ── Controlled substances ────────────────────────────────────
 		{"cocaine", "pure cocaine available", false, ReasonProhibitedSubstances},

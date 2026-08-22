@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   },
 };
 
-const LAST_UPDATED = 'July 26, 2026';
+const LAST_UPDATED = 'August 21, 2026';
 
 export default function CommunityGuidelinesPage() {
   return (
@@ -83,7 +83,9 @@ export default function CommunityGuidelinesPage() {
                 <li>
                   <strong>Tobacco and controlled substances</strong> — tobacco products, nicotine
                   vapes where prohibited, recreational or illegal drugs, drug paraphernalia, and
-                  controlled substances without lawful authorization.
+                  controlled substances without lawful authorization. This includes{' '}
+                  <strong>cannabis, marijuana, THC, and cannabis paraphernalia</strong> — there is
+                  no licensed dispensary path in v1.
                 </li>
                 <li>
                   <strong>Pornography and sexual content</strong> — explicit sexual material,
@@ -141,8 +143,8 @@ export default function CommunityGuidelinesPage() {
               </p>
               <ul>
                 <li>
-                  Use in-app <strong>Report</strong> controls on listings, users, reviews, or chat
-                  where available.
+                  Use in-app <strong>Report</strong> controls on jobs, listings, users, reviews, or
+                  chat where available.
                 </li>
                 <li>
                   Use <strong>Block</strong> to stop further contact from a user in messaging

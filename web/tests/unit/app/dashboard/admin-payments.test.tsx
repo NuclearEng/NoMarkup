@@ -1,14 +1,14 @@
 // Tests for the admin payments page — exercises filter, fee form inputs,
 // save action, success/error states, and table column renderers via data fixtures.
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { withQueryClient } from './_helpers';
 
 // jsdom's Storage stub on this version doesn't expose a working localStorage;
-// install a minimal in-memory shim so the page can persist lock + custom-fee
-// state (and tests can clear it between cases).
+// install a minimal in-memory shim so the page can persist lock state
+// (and tests can clear it between cases).
 beforeAll(() => {
   const store = new Map<string, string>();
   Object.defineProperty(globalThis, 'localStorage', {
@@ -46,6 +46,19 @@ const feeConfigState: {
 const feeMutate = vi.fn(() => Promise.resolve({}));
 const feeState = { isPending: false, isError: false, isSuccess: false };
 
+const customFeesState: {
+  data: { fees: Record<string, unknown>[] } | undefined;
+  isLoading: boolean;
+  isError: boolean;
+} = { data: undefined, isLoading: false, isError: false };
+
+const createFeeMutate = vi.fn(() => Promise.resolve({}));
+const updateFeeMutate = vi.fn(() => Promise.resolve({}));
+const deleteFeeMutate = vi.fn(() => Promise.resolve({}));
+const createFeeState = { isPending: false, isError: false, error: null as unknown };
+const updateFeeState = { isPending: false, isError: false, error: null as unknown };
+const deleteFeeState = { isPending: false, isError: false, error: null as unknown };
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
   usePathname: () => '/admin/payments',
@@ -70,6 +83,25 @@ vi.mock('@/hooks/useAdmin', () => ({
     isPending: feeState.isPending,
     isError: feeState.isError,
     isSuccess: feeState.isSuccess,
+  }),
+  useCustomFees: () => customFeesState,
+  useCreateCustomFee: () => ({
+    mutateAsync: createFeeMutate,
+    isPending: createFeeState.isPending,
+    isError: createFeeState.isError,
+    error: createFeeState.error,
+  }),
+  useUpdateCustomFee: () => ({
+    mutateAsync: updateFeeMutate,
+    isPending: updateFeeState.isPending,
+    isError: updateFeeState.isError,
+    error: updateFeeState.error,
+  }),
+  useDeleteCustomFee: () => ({
+    mutateAsync: deleteFeeMutate,
+    isPending: deleteFeeState.isPending,
+    isError: deleteFeeState.isError,
+    error: deleteFeeState.error,
   }),
 }));
 
@@ -99,8 +131,23 @@ beforeEach(() => {
   feeState.isError = false;
   feeState.isSuccess = false;
   feeMutate.mockClear();
-  // The page persists lock + custom-fee state to localStorage; clear it so each
-  // test starts from an unlocked config with no custom fees.
+  customFeesState.data = undefined;
+  customFeesState.isLoading = false;
+  customFeesState.isError = false;
+  createFeeState.isPending = false;
+  createFeeState.isError = false;
+  createFeeState.error = null;
+  updateFeeState.isPending = false;
+  updateFeeState.isError = false;
+  updateFeeState.error = null;
+  deleteFeeState.isPending = false;
+  deleteFeeState.isError = false;
+  deleteFeeState.error = null;
+  createFeeMutate.mockClear();
+  updateFeeMutate.mockClear();
+  deleteFeeMutate.mockClear();
+  // The page persists lock state to localStorage; clear it so each test starts
+  // unlocked.
   window.localStorage.clear();
 });
 
@@ -349,16 +396,88 @@ describe('AdminPaymentsPage', () => {
     expect(incBtnAfter.disabled).toBe(false);
   });
 
-  it('adds a custom fee with its own stepper, flagged as UI-only', () => {
+  it('adds a custom fee via the API (percent → basis points)', async () => {
     render(withQueryClient(createElement(AdminPaymentsPage)));
     fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: 'Featured listing' } });
     fireEvent.change(screen.getByLabelText(/Default %/i), { target: { value: '5' } });
-    fireEvent.click(screen.getByRole('button', { name: /^Add fee$/i }));
-    // The new custom fee renders as a stepper seeded at 5%.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Add fee$/i }));
+    });
+    expect(createFeeMutate).toHaveBeenCalledWith({
+      name: 'Featured listing',
+      rate_bps: 500,
+    });
+    expect(screen.queryByText(/UI preview only/i)).toBeNull();
+  });
+
+  it('renders persisted custom fees as live steppers', () => {
+    customFeesState.data = {
+      fees: [
+        {
+          id: '11111111-1111-1111-1111-111111111111',
+          name: 'Featured listing',
+          rate_bps: 500,
+          active: true,
+          created_at: '2026-08-21T12:00:00Z',
+          updated_at: '2026-08-21T12:00:00Z',
+        },
+      ],
+    };
+    render(withQueryClient(createElement(AdminPaymentsPage)));
     const stepper = screen.getByRole('spinbutton', { name: /^Featured listing$/i });
     expect(stepper.getAttribute('aria-valuenow')).toBe('5');
-    // The UI-only flag is present so the admin knows it isn't persisted server-side.
-    expect(screen.getByText(/UI preview only/i)).toBeDefined();
+    expect(screen.getByText(/Custom · live/i)).toBeDefined();
+    expect(screen.queryByText(/UI preview only/i)).toBeNull();
+  });
+
+  it('patches rate_bps when a custom-fee stepper is incremented', () => {
+    customFeesState.data = {
+      fees: [
+        {
+          id: '11111111-1111-1111-1111-111111111111',
+          name: 'Featured listing',
+          rate_bps: 500,
+          active: true,
+          created_at: '2026-08-21T12:00:00Z',
+          updated_at: '2026-08-21T12:00:00Z',
+        },
+      ],
+    };
+    render(withQueryClient(createElement(AdminPaymentsPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Increase Featured listing/i }));
+    expect(updateFeeMutate).toHaveBeenCalledWith({
+      id: '11111111-1111-1111-1111-111111111111',
+      rate_bps: 550,
+    });
+  });
+
+  it('deactivates a custom fee via Remove', () => {
+    customFeesState.data = {
+      fees: [
+        {
+          id: '11111111-1111-1111-1111-111111111111',
+          name: 'Featured listing',
+          rate_bps: 500,
+          active: true,
+          created_at: '2026-08-21T12:00:00Z',
+          updated_at: '2026-08-21T12:00:00Z',
+        },
+      ],
+    };
+    render(withQueryClient(createElement(AdminPaymentsPage)));
+    fireEvent.click(screen.getByRole('button', { name: /Remove Featured listing fee/i }));
+    expect(deleteFeeMutate).toHaveBeenCalledWith('11111111-1111-1111-1111-111111111111');
+  });
+
+  it('shows custom-fee loading and error states', () => {
+    customFeesState.isLoading = true;
+    const { unmount } = render(withQueryClient(createElement(AdminPaymentsPage)));
+    expect(screen.getByLabelText(/Loading custom fees/i)).toBeDefined();
+    unmount();
+    customFeesState.isLoading = false;
+    customFeesState.isError = true;
+    render(withQueryClient(createElement(AdminPaymentsPage)));
+    expect(screen.getByText(/Could not load custom fees/i)).toBeDefined();
   });
 
   it('blocks adding a custom fee with no name', () => {

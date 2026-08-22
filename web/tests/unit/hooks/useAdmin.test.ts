@@ -23,6 +23,10 @@ import {
   useAdminPaymentDetails,
   usePlatformMetrics,
   useRevenueReport,
+  useCreateCustomFee,
+  useCustomFees,
+  useDeleteCustomFee,
+  useUpdateCustomFee,
   useUpdateFeeConfig,
   useGrowthMetrics,
   useCategoryMetrics,
@@ -1085,6 +1089,129 @@ describe('useUpdateFeeConfig', () => {
 
     expect(vi.mocked(api.put)).toHaveBeenCalledWith('/api/v1/admin/fees', config);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['admin'] });
+  });
+});
+
+describe('useCustomFees', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('GETs /api/v1/admin/custom-fees', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ fees: [] });
+
+    const { result } = renderHook(() => useCustomFees(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/admin/custom-fees');
+  });
+});
+
+describe('useCreateCustomFee', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('POSTs name and rate_bps', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      fee: { id: 'cf-1', name: 'Featured', rate_bps: 500, active: true },
+    });
+
+    const { result } = renderHook(() => useCreateCustomFee(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ name: 'Featured', rate_bps: 500 });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/admin/custom-fees', {
+      name: 'Featured',
+      rate_bps: 500,
+    });
+  });
+});
+
+describe('useUpdateCustomFee', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('PATCHes rate_bps by id', async () => {
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      fee: { id: 'cf-1', name: 'Featured', rate_bps: 250, active: true },
+    });
+
+    const { result } = renderHook(() => useUpdateCustomFee(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({ id: 'cf-1', rate_bps: 250 });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.patch)).toHaveBeenCalledWith('/api/v1/admin/custom-fees/cf-1', {
+      rate_bps: 250,
+    });
+  });
+});
+
+describe('useDeleteCustomFee', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('DELETEs by id', async () => {
+    vi.mocked(api.delete).mockResolvedValueOnce({ deactivated: true });
+
+    const { result } = renderHook(() => useDeleteCustomFee(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate('cf-1');
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(vi.mocked(api.delete)).toHaveBeenCalledWith('/api/v1/admin/custom-fees/cf-1');
   });
 });
 

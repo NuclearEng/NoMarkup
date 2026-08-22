@@ -150,7 +150,7 @@ func TestPaymentService_RequestAdvance(t *testing.T) {
 				// history with enough released earnings that the computed
 				// max_advance (= (earnings/6)/2) comfortably clears the 50000
 				// requested amount, and keep the score grade-eligible.
-				listPaymentsFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
+				listPaymentsFn: func(_ context.Context, _, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
 					// (1,000,000/6)/2 = 83,333 cents max_advance ≥ 50,000 requested.
 					return []*domain.Payment{{ProviderPayoutCents: 1_000_000}}, 1, nil
 				},
@@ -214,7 +214,7 @@ func TestPaymentService_RequestAdvance(t *testing.T) {
 
 		var createCalled bool
 		repo := &mockPaymentRepo{
-			listPaymentsFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
+			listPaymentsFn: func(_ context.Context, _, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
 				return []*domain.Payment{{ProviderPayoutCents: 1_000_000}}, 1, nil
 			},
 			listAdvancesFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Advance, int, error) {
@@ -521,7 +521,7 @@ func TestPaymentService_ComputeCreditLimit(t *testing.T) {
 
 	baseRepo := func(captured **domain.CreditLimit) *mockPaymentRepo {
 		return &mockPaymentRepo{
-			listPaymentsFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
+			listPaymentsFn: func(_ context.Context, _, _, _ string, _, _ int) ([]*domain.Payment, int, error) {
 				return []*domain.Payment{{ProviderPayoutCents: 500000}}, 1, nil
 			},
 			listAdvancesFn: func(_ context.Context, _, _ string, _, _ int) ([]*domain.Advance, int, error) {

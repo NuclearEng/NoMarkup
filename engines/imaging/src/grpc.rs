@@ -413,6 +413,34 @@ impl ImagingService for ImagingServiceImpl {
             error: error_msg,
         }))
     }
+
+    async fn delete_user_objects(
+        &self,
+        request: Request<imaging_proto::DeleteUserObjectsRequest>,
+    ) -> Result<Response<imaging_proto::DeleteUserObjectsResponse>, Status> {
+        let req = request.into_inner();
+        if req.user_id.is_empty() {
+            return Err(Status::invalid_argument("user_id is required"));
+        }
+
+        match self.pipeline.delete_user_objects(&req.user_id).await {
+            Ok(n) => {
+                info!(
+                    user_id = %req.user_id,
+                    objects_deleted = n,
+                    "grpc delete_user_objects completed"
+                );
+                let objects_deleted = i32::try_from(n).unwrap_or(i32::MAX);
+                Ok(Response::new(imaging_proto::DeleteUserObjectsResponse {
+                    objects_deleted,
+                }))
+            }
+            Err(e) => {
+                warn!(user_id = %req.user_id, error = %e, "grpc delete_user_objects failed");
+                Err(imaging_error_to_status(e))
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -631,6 +659,30 @@ mod tests {
             .await
             .expect_err("empty batch must be rejected");
 
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn delete_user_objects_rejects_empty_user_id() {
+        let service = test_service();
+        let status = service
+            .delete_user_objects(Request::new(imaging_proto::DeleteUserObjectsRequest {
+                user_id: String::new(),
+            }))
+            .await
+            .expect_err("empty user_id must be rejected before S3");
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn delete_user_objects_rejects_non_uuid() {
+        let service = test_service();
+        let status = service
+            .delete_user_objects(Request::new(imaging_proto::DeleteUserObjectsRequest {
+                user_id: "../secrets".into(),
+            }))
+            .await
+            .expect_err("non-UUID user_id must be rejected before S3");
         assert_eq!(status.code(), tonic::Code::InvalidArgument);
     }
 

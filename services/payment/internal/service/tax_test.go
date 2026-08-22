@@ -69,7 +69,7 @@ func TestPaymentService_GenerateTaxForm(t *testing.T) {
 		assert.Equal(t, "123 Pine St, Seattle WA 98101", tf.ProviderAddress)
 		assert.Equal(t, "1099-nec", tf.FormType)
 		assert.Equal(t, "generated", tf.Status)
-		assert.Equal(t, "88-1234567", tf.PlatformEIN)
+		assert.Equal(t, testPlatformEIN, tf.PlatformEIN)
 		assert.NotEmpty(t, tf.ID)
 		require.NotNil(t, tf.PDFURL)
 		assert.Contains(t, *tf.PDFURL, "/tax-forms/")
@@ -189,6 +189,60 @@ func TestPaymentService_GenerateTaxForm(t *testing.T) {
 		tf, err := svc.GenerateTaxForm(context.Background(), "prov-1", currentYear-1)
 		require.NoError(t, err)
 		assert.Equal(t, int64(60000), tf.TotalCompensationCents)
+		assert.Equal(t, testPlatformEIN, tf.PlatformEIN)
+	})
+
+	t.Run("uses_injected_platform_ein", func(t *testing.T) {
+		t.Parallel()
+		const injected = "98-7654321"
+		repo := &mockPaymentRepo{
+			getProviderEarningsFn: func(_ context.Context, _ string, _ int) (int64, error) { return 75000, nil },
+			createTaxFormFn:       func(_ context.Context, _ *domain.TaxForm) error { return nil },
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetPlatformEIN(injected)
+		tf, err := svc.GenerateTaxForm(context.Background(), "prov-1", currentYear-1)
+		require.NoError(t, err)
+		assert.Equal(t, injected, tf.PlatformEIN)
+	})
+
+	t.Run("rejects_unusable_platform_ein", func(t *testing.T) {
+		t.Parallel()
+		cases := []struct {
+			name string
+			ein  string
+		}{
+			{"missing", ""},
+			{"whitespace", "  \t "},
+			{"dummy", dummyPlatformEIN},
+			{"dummy_padded", "  " + dummyPlatformEIN + "  "},
+			{"no_hyphen", "123456789"},
+			{"letters", "AB-1234567"},
+			{"too_short", "12-345678"},
+			{"too_long", "12-34567890"},
+			{"missing_hyphen_digit", "1-23456789"},
+		}
+		for _, tt := range cases {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				createCalled := false
+				repo := &mockPaymentRepo{
+					getProviderEarningsFn: func(_ context.Context, _ string, _ int) (int64, error) {
+						return 75000, nil
+					},
+					createTaxFormFn: func(_ context.Context, _ *domain.TaxForm) error {
+						createCalled = true
+						return nil
+					},
+				}
+				svc := newTestPaymentService(repo, nil)
+				svc.SetPlatformEIN(tt.ein)
+				_, err := svc.GenerateTaxForm(context.Background(), "prov-1", currentYear-1)
+				require.Error(t, err)
+				assert.ErrorIs(t, err, domain.ErrPlatformEINNotConfigured)
+				assert.False(t, createCalled, "must not persist a 1099 with an unusable platform EIN")
+			})
+		}
 	})
 }
 
@@ -276,6 +330,30 @@ func TestPaymentService_GenerateTaxFormHTML(t *testing.T) {
 		assert.NotContains(t, html, "1234567890")
 		assert.Contains(t, html, "$5000.00") // 500000 cents
 		assert.Contains(t, html, "Form 1099-NEC Summary")
+		assert.Contains(t, html, "88-1234567",
+			"HTML may render an already-stored EIN; generate-path dummy rejection does not apply here")
+	})
+
+	t.Run("renders_stored_ein_even_when_service_ein_unset", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockPaymentRepo{
+			getTaxFormFn: func(_ context.Context, _ string, _ int) (*domain.TaxForm, error) {
+				return &domain.TaxForm{
+					ID:                "tf-stored",
+					TaxYear:           2025,
+					ProviderLegalName: "Acme",
+					ProviderAddress:   "123 Pine St",
+					PlatformEIN:       testPlatformEIN,
+					PlatformName:      "NoMarkup Inc.",
+					CreatedAt:         time.Now(),
+				}, nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetPlatformEIN("")
+		html, err := svc.GenerateTaxFormHTML(context.Background(), "prov-1", 2025)
+		require.NoError(t, err)
+		assert.Contains(t, html, testPlatformEIN)
 	})
 
 	t.Run("hides_tax_id_when_unknown", func(t *testing.T) {

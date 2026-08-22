@@ -51,6 +51,7 @@ final class ImageUploaderTests: XCTestCase {
         XCTAssertEqual(ImageUploadContext.listing.apiValue, "listing")
         XCTAssertEqual(ImageUploadContext.document.apiValue, "document")
         XCTAssertEqual(ImageUploadContext.chatAttachment.apiValue, "chat_attachment")
+        XCTAssertEqual(ImageUploadContext.reviewPhoto.apiValue, "review_photo")
     }
 
     func testNeedsDownsampleBoundary() {

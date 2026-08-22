@@ -13,10 +13,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // ProviderHandler handles HTTP endpoints for provider profiles.
@@ -51,10 +51,10 @@ type updateProviderRequest struct {
 }
 
 type setTermsRequest struct {
-	PaymentTiming      string               `json:"payment_timing"`
-	Milestones         []milestoneRequest    `json:"milestones"`
-	CancellationPolicy string               `json:"cancellation_policy"`
-	WarrantyTerms      string               `json:"warranty_terms"`
+	PaymentTiming      string             `json:"payment_timing"`
+	Milestones         []milestoneRequest `json:"milestones"`
+	CancellationPolicy string             `json:"cancellation_policy"`
+	WarrantyTerms      string             `json:"warranty_terms"`
 }
 
 type milestoneRequest struct {
@@ -77,9 +77,9 @@ type updatePortfolioRequest struct {
 }
 
 type setAvailabilityRequest struct {
-	Enabled      bool                     `json:"enabled"`
-	AvailableNow bool                     `json:"available_now"`
-	Schedule     []availabilityWindowReq  `json:"schedule"`
+	Enabled      bool                    `json:"enabled"`
+	AvailableNow bool                    `json:"available_now"`
+	Schedule     []availabilityWindowReq `json:"schedule"`
 }
 
 type availabilityWindowReq struct {
@@ -370,9 +370,9 @@ func (h *ProviderHandler) GetStreaks(w http.ResponseWriter, r *http.Request) {
 		var (
 			id, providerID                          string
 			categoryID                              *string
-			currentStreak, longestStreak, totalWins  int
-			categoryRank                             *int
-			updatedAt                                time.Time
+			currentStreak, longestStreak, totalWins int
+			categoryRank                            *int
+			updatedAt                               time.Time
 		)
 		if err := rows.Scan(&id, &providerID, &categoryID, &currentStreak, &longestStreak, &totalWins, &categoryRank, &updatedAt); err != nil {
 			slog.Error("failed to scan provider streak row", "provider_id", claims.UserID, "error", err)
@@ -380,14 +380,14 @@ func (h *ProviderHandler) GetStreaks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		streak := map[string]interface{}{
-			"id":              id,
-			"provider_id":     providerID,
-			"category_id":     categoryID,
-			"current_streak":  currentStreak,
-			"longest_streak":  longestStreak,
-			"total_wins":      totalWins,
-			"category_rank":   categoryRank,
-			"updated_at":      updatedAt.UTC().Format(time.RFC3339),
+			"id":             id,
+			"provider_id":    providerID,
+			"category_id":    categoryID,
+			"current_streak": currentStreak,
+			"longest_streak": longestStreak,
+			"total_wins":     totalWins,
+			"category_rank":  categoryRank,
+			"updated_at":     updatedAt.UTC().Format(time.RFC3339),
 		}
 		streaks = append(streaks, streak)
 	}
@@ -532,12 +532,6 @@ func (h *ProviderHandler) reviewSummary(ctx context.Context, userID string) map[
 		return nil
 	}
 
-	result := map[string]interface{}{
-		"average_rating": avg,
-		"review_count":   count,
-		"on_time_rate":   nil,
-	}
-
 	// On-time rate is derived from the double-blind reviews' timeliness_rating
 	// (1-5) as a proxy: the share of timeliness-rated reviews scored "on time"
 	// (>= 4 of 5). We do NOT read provider_profiles.on_time_rate — that column
@@ -561,13 +555,50 @@ func (h *ProviderHandler) reviewSummary(ctx context.Context, userID string) map[
 		userID,
 	).Scan(&rated, &onTime); err != nil {
 		slog.WarnContext(ctx, "provider on-time rate failed", "error", err, "user_id", userID)
-		return result
+		return reviewSummaryJSON(avg, count, nil)
 	}
+	var onTimeRate *float64
 	if rated > 0 {
-		result["on_time_rate"] = float64(onTime) / float64(rated)
+		v := float64(onTime) / float64(rated)
+		onTimeRate = &v
 	}
+	return reviewSummaryJSON(avg, count, onTimeRate)
+}
 
-	return result
+// reviewSummaryJSON is the public {average_rating, review_count, on_time_rate}
+// projection used by GET /providers/{id} and the customer bid ladder.
+// count <= 0 returns nil — never a fake 5.0 / empty object.
+func reviewSummaryJSON(avg float64, count int, onTimeRate *float64) map[string]interface{} {
+	if count <= 0 {
+		return nil
+	}
+	out := map[string]interface{}{
+		"average_rating": avg,
+		"review_count":   count,
+		"on_time_rate":   nil,
+	}
+	if onTimeRate != nil {
+		out["on_time_rate"] = *onTimeRate
+	}
+	return out
+}
+
+// reviewSummaryFromProto maps a user-service ReviewSummary. Count 0 / nil proto
+// is absent (JSON null), never a fabricated rating.
+func reviewSummaryFromProto(rs *userv1.ReviewSummary) map[string]interface{} {
+	if rs == nil {
+		return nil
+	}
+	count := int(rs.GetReviewCount())
+	if count <= 0 {
+		return nil
+	}
+	var onTimeRate *float64
+	if rs.GetOnTimeRate() > 0 {
+		v := rs.GetOnTimeRate()
+		onTimeRate = &v
+	}
+	return reviewSummaryJSON(rs.GetAverageRating(), count, onTimeRate)
 }
 
 // SearchProviders handles GET /api/v1/providers/search.
@@ -831,13 +862,13 @@ func protoProviderSearchResultToJSON(p *userv1.ProviderSearchResult) map[string]
 		// so the web's provider cards have a stable React key and link to
 		// /providers/{id} instead of /providers/undefined (broken nav + duplicate
 		// null keys).
-		"id":                 p.GetUserId(),
-		"user_id":            p.GetUserId(),
-		"display_name":       p.GetDisplayName(),
-		"business_name":      p.GetBusinessName(),
-		"avatar_url":         p.GetAvatarUrl(),
-		"distance_km":        p.GetDistanceKm(),
-		"instant_available":  p.GetInstantAvailable(),
+		"id":                p.GetUserId(),
+		"user_id":           p.GetUserId(),
+		"display_name":      p.GetDisplayName(),
+		"business_name":     p.GetBusinessName(),
+		"avatar_url":        p.GetAvatarUrl(),
+		"distance_km":       p.GetDistanceKm(),
+		"instant_available": p.GetInstantAvailable(),
 	}
 
 	if rs := p.GetReviewSummary(); rs != nil {

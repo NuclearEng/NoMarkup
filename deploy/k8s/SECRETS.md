@@ -97,6 +97,15 @@ unauthenticated to anything that can reach the pod.
 
 Apply + verify: [`docs/operations/monitoring-stack.md`](../../docs/operations/monitoring-stack.md).
 
+### `PLATFORM_EIN` — 1099-NEC payer EIN (generate-path, not startup-fatal)
+
+Payment service stamps this IRS EIN (`NN-NNNNNNN`) onto generated 1099-NEC
+forms. Provision it into `nomarkup-secrets` (payment `envFrom`) like the
+Stripe keys; do **not** commit a live EIN. Empty, whitespace, dummy
+`88-1234567`, and invalid shape are rejected at **GenerateTaxForm** — the
+service still starts. Already-stored forms with a real EIN can still be
+rendered.
+
 ## Provisioning (OPS-04 Partial)
 
 **In-repo today:** sample manifests + this doc. **Not done:** Founder still

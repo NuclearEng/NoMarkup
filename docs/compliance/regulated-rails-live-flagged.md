@@ -1,8 +1,8 @@
 # Regulated rails — path to `live-flagged` (fail-closed)
 
-**Date:** 2026-07-26 · **Truth refresh:** 2026-08-02  
+**Date:** 2026-07-26 · **Truth refresh:** 2026-08-21  
 **Mandate:** Do **not** enable BNPL / working capital / insurance / lead-gen / instant payout for **App Review / production** until licenses + live-flagged exit.  
-**Gate model:** Server feature flags + gateway `RequireFlag` (fail closed). `FeatureFlags.iOSHardOffKeys` is **empty** (reserved for emergency kill-switches only) — server is authoritative. No StoreKit. No production flag flip from this doc alone.
+**Gate model:** Server feature flags + gateway `RequireFlag` (fail closed). iOS additionally hard-offs the seven regulated keys in `FeatureFlags.iOSHardOffKeys` so a seed-true flag cannot expose purchase CTAs. Migration `129_disable_regulated_feature_flags` sets those rows `enabled=false` in the DB. No licenses are claimed. No StoreKit. No production flag flip from this doc alone.
 
 **Related:**  
 [`showcase-living-checklist.md`](./showcase-living-checklist.md) R6.2–R6.6 ·  
@@ -27,23 +27,36 @@
 
 ---
 
-## Regulated keys (server-authoritative; client hard-off set empty)
+## iOS hard-off + DB disable (review binary)
 
 ```text
-ios/NoMarkup/Core/FeatureFlags.swift → FeatureFlags.iOSHardOffKeys = []
+ios/NoMarkup/Core/FeatureFlags.swift → FeatureFlags.iOSHardOffKeys
+database/migrations/129_disable_regulated_feature_flags.up.sql → enabled=false
 ```
+
+`iOSHardOffKeys` (v1 App Store binary; `isEnabled` returns false regardless of `GET /api/v1/flags`):
+
+- `customer_bnpl`
+- `working_capital`
+- `per_job_insurance`
+- `insurance_competition`
+- `legal_services`
+- `lead_gen`
+- `instant_payout`
+
+Migration **129** sets the same seven keys `enabled=false` in `feature_flags` (060 seeded `customer_bnpl` / `instant_payout` / `per_job_insurance` / `working_capital` as TRUE). Diagnostic UI that already shows "Flag off" keeps working because `isEnabled` is false. This is **not** a license claim; rails stay `blocked-compliance` until live-flagged exit.
 
 | Flag key | Showcase row | Product one-liner | Review / prod until licenses |
 |----------|--------------|-------------------|------------------------------|
-| `lead_gen` | R6.2 | Outcome / qualified-lead fee on take-rate | **OFF** (server) |
-| `working_capital` | R6.3 | Provider advances against awarded work | **OFF** (server) |
-| `customer_bnpl` | R6.4 | Customer installment (BNPL) plans | **OFF** (server) |
-| `per_job_insurance` | R6.5 | Per-contract insurance quote / purchase / claims | **OFF** (server) |
-| `insurance_competition` | R6.5 | Multi-carrier quote competition | **OFF** (server) |
-| `legal_services` | E7 / expansion | Legal vertical browse + license surfaces | **OFF** (server) |
-| `instant_payout` | R6.6 | Provider instant Connect payout | **OFF** (server) |
+| `lead_gen` | R6.2 | Outcome / qualified-lead fee on take-rate | **OFF** (server + iOS hard-off) |
+| `working_capital` | R6.3 | Provider advances against awarded work | **OFF** (server + iOS hard-off) |
+| `customer_bnpl` | R6.4 | Customer installment (BNPL) plans | **OFF** (server + iOS hard-off) |
+| `per_job_insurance` | R6.5 | Per-contract insurance quote / purchase / claims | **OFF** (server + iOS hard-off) |
+| `insurance_competition` | R6.5 | Multi-carrier quote competition | **OFF** (server + iOS hard-off) |
+| `legal_services` | E7 / expansion | Legal vertical browse + license surfaces | **OFF** (server + iOS hard-off) |
+| `instant_payout` | R6.6 | Provider instant Connect payout | **OFF** (server + iOS hard-off) |
 
-**Proof path:** `isEnabled(_:)` reads `serverFlags` from `GET /api/v1/flags`. Client hard-off list is empty; emergency keys can be added to `iOSHardOffKeys` without a server deploy if needed. Gateway `RequireFlag` still fails closed when flags are disabled.
+**Proof path:** `isEnabled(_:)` returns `false` for any key in `iOSHardOffKeys` before reading `serverFlags`. Gateway `RequireFlag` still fails closed when flags are disabled (including after migration 129). Server remains the production gate; iOS hard-off is belt-and-suspenders so seed cannot expose purchase CTAs on the review binary.
 
 iOS consumer surface for App Review education:
 
@@ -296,7 +309,8 @@ Reviewers should conclude: regulated financial/insurance rails are **intentional
 
 | Concern | Path |
 |---------|------|
-| iOS hard-off | `ios/NoMarkup/Core/FeatureFlags.swift` |
+| iOS hard-off | `ios/NoMarkup/Core/FeatureFlags.swift` (`iOSHardOffKeys`) |
+| DB disable (review/prod) | `database/migrations/129_disable_regulated_feature_flags.up.sql` |
 | iOS status UI | `ios/NoMarkup/Features/RegulatedRailsStatusView.swift` |
 | Account entry | `ios/NoMarkup/Features/AccountView.swift` (Subscriptions / plan limits section) |
 | Web financial flag set | `web/src/hooks/useFeatureFlags.ts` |
@@ -310,4 +324,5 @@ Reviewers should conclude: regulated financial/insurance rails are **intentional
 
 | Date | Change |
 |------|--------|
+| 2026-08-21 | ASR-3.2 / licenses: populate `iOSHardOffKeys` with the seven regulated rails; migration 129 sets DB `enabled=false`. No licenses claimed. |
 | 2026-07-26 | Initial inventory + path to live-flagged; iOS read-only status surface; checklist remains honest `blocked-compliance` with scaffolding notes. |

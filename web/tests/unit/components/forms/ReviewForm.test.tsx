@@ -14,10 +14,30 @@ vi.mock('@/lib/api', () => ({
   ApiError: class ApiError extends Error {},
 }));
 
+vi.mock('next/image', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    __esModule: true,
+    default: (props: { src: string; alt: string; className?: string }) =>
+      h('img', { src: props.src, alt: props.alt, className: props.className }),
+  };
+});
+
 const mutateMock = vi.fn();
 const reviewState = { mutate: mutateMock, isPending: false, isError: false };
 vi.mock('@/hooks/useReviews', () => ({
   useCreateReview: () => reviewState,
+}));
+
+const uploadMock = vi.fn();
+vi.mock('@/hooks/useImageUpload', () => ({
+  useImageUpload: () => ({
+    upload: uploadMock,
+    status: 'idle',
+    progress: 0,
+    error: null,
+    reset: vi.fn(),
+  }),
 }));
 
 vi.mock('sonner', () => ({
@@ -36,6 +56,14 @@ describe('ReviewForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mutateMock.mockReset();
+    uploadMock.mockReset();
+    uploadMock.mockResolvedValue({
+      ok: true,
+      result: {
+        objectKey: 'review-photos/user/photo.jpg',
+        confirmedUrl: 'https://cdn.example.com/review-photos/photo.jpg',
+      },
+    });
     reviewState.isPending = false;
     reviewState.isError = false;
   });
@@ -85,9 +113,7 @@ describe('ReviewForm', () => {
       }),
     );
 
-    // FR-6.2 residual: API still uses quality/communication/timeliness/value keys.
     expect(screen.getByText('Payment promptness')).toBeDefined();
-    expect(screen.getByText('Communication')).toBeDefined();
     expect(screen.getByText('Accuracy of scope')).toBeDefined();
     expect(screen.getByText('Property access')).toBeDefined();
     expect(screen.queryByText('Quality of work')).toBeNull();
@@ -123,26 +149,61 @@ describe('ReviewForm', () => {
     });
   });
 
-  it('adds and removes a photo URL via the local-state controls', async () => {
+  it('uploads a photo via useImageUpload and includes photo_urls on submit', async () => {
     const user = userEvent.setup();
     const onSuccess = vi.fn();
-    render(
+    const { container } = render(
       createElement(ReviewForm, {
-        contractId: 'contract-1',
+        contractId: 'contract-42',
         direction: 'customer_to_provider',
         reviewWindowClosesAt: FUTURE_CLOSES_AT,
         onSuccess,
       }),
     );
 
-    const photoInput = screen.getByPlaceholderText('https://example.com/photo.jpg');
-    await user.type(photoInput, 'https://cdn.example.com/photo-1.jpg');
-    await user.click(screen.getByRole('button', { name: /^Add$/ }));
+    expect(screen.queryByPlaceholderText('https://example.com/photo.jpg')).toBeNull();
+    expect(screen.getByText(/Add photos of the completed work/)).toBeDefined();
 
-    expect(screen.getByText('https://cdn.example.com/photo-1.jpg')).toBeDefined();
+    const fileInput = container.querySelector('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+    const file = new File(['photo-bytes'], 'review.jpg', { type: 'image/jpeg' });
+    await user.upload(fileInput as HTMLInputElement, file);
 
-    await user.click(screen.getByRole('button', { name: /Remove photo URL/ }));
-    expect(screen.queryByText('https://cdn.example.com/photo-1.jpg')).toBeNull();
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(1);
+    });
+    expect(uploadMock.mock.calls[0]?.[0]).toBe(file);
+    await waitFor(() => {
+      expect(screen.getByAltText('review.jpg')).toBeDefined();
+    });
+
+    const overallGroup = screen.getByRole('radiogroup', { name: /Overall rating/ });
+    const fiveStarBtn = overallGroup.querySelectorAll('button[role="radio"]')[4];
+    expect(fiveStarBtn).toBeDefined();
+    if (fiveStarBtn) await user.click(fiveStarBtn);
+
+    const comment = screen.getByPlaceholderText(/Share your experience/);
+    await user.type(
+      comment,
+      'A long-enough review comment that satisfies the fifty character minimum requirement easily.',
+    );
+
+    const form = container.querySelector('form');
+    expect(form).not.toBeNull();
+    if (form) fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(mutateMock).toHaveBeenCalledTimes(1);
+    });
+
+    const calls = mutateMock.mock.calls as unknown[][];
+    const firstCall = calls[0] ?? [];
+    const args = firstCall[0] as {
+      contractId: string;
+      input: { overall_rating: number; comment: string; photo_urls?: string[] };
+    };
+    expect(args.contractId).toBe('contract-42');
+    expect(args.input.photo_urls).toEqual(['https://cdn.example.com/review-photos/photo.jpg']);
   });
 
   it('calls createReview.mutate with the correct payload on a valid submission', async () => {
@@ -248,40 +309,38 @@ describe('ReviewForm', () => {
     expect(screen.getByText(/Failed to submit review/)).toBeDefined();
   });
 
-  it('does not add a duplicate photo URL', async () => {
+  it('omits photo_urls when no photos were uploaded', async () => {
     const user = userEvent.setup();
     const onSuccess = vi.fn();
-    render(
+    const { container } = render(
       createElement(ReviewForm, {
-        contractId: 'contract-1',
-        direction: 'customer_to_provider',
+        contractId: 'contract-42',
+        direction: 'provider_to_customer',
         reviewWindowClosesAt: FUTURE_CLOSES_AT,
         onSuccess,
       }),
     );
-    const photoInput = screen.getByPlaceholderText('https://example.com/photo.jpg');
-    await user.type(photoInput, 'https://cdn.example.com/dup.jpg');
-    await user.click(screen.getByRole('button', { name: /^Add$/ }));
-    // Adding the same URL again should be a no-op.
-    await user.type(photoInput, 'https://cdn.example.com/dup.jpg');
-    await user.click(screen.getByRole('button', { name: /^Add$/ }));
-    // Only ONE matching URL row.
-    expect(screen.getAllByText('https://cdn.example.com/dup.jpg').length).toBe(1);
-  });
 
-  it('does not add an empty/whitespace-only photo URL', () => {
-    const onSuccess = vi.fn();
-    render(
-      createElement(ReviewForm, {
-        contractId: 'contract-1',
-        direction: 'customer_to_provider',
-        reviewWindowClosesAt: FUTURE_CLOSES_AT,
-        onSuccess,
-      }),
+    const overallGroup = screen.getByRole('radiogroup', { name: /Overall rating/ });
+    const fiveStarBtn = overallGroup.querySelectorAll('button[role="radio"]')[4];
+    if (fiveStarBtn) await user.click(fiveStarBtn);
+
+    const comment = screen.getByPlaceholderText(/Share your experience/);
+    await user.type(
+      comment,
+      'A long-enough review comment that satisfies the fifty character minimum requirement easily.',
     );
-    const addBtn = screen.getByRole('button', { name: /^Add$/ });
-    // disabled while empty — the call should be a no-op.
-    if (!(addBtn instanceof HTMLButtonElement)) throw new Error('expected button element');
-    expect(addBtn.disabled).toBe(true);
+
+    const form = container.querySelector('form');
+    if (form) fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(mutateMock).toHaveBeenCalledTimes(1);
+    });
+
+    const calls = mutateMock.mock.calls as unknown[][];
+    const firstCall = calls[0] ?? [];
+    const args = firstCall[0] as { input: { photo_urls?: string[] } };
+    expect(args.input.photo_urls).toBeUndefined();
   });
 });

@@ -395,7 +395,7 @@ extension APIClient {
         guard !access.isEmpty else {
             throw APIClientError.decoding("Auth response missing access_token")
         }
-        let store = KeychainTokenStore()
+        let store = tokenStoreForAuth
         try store.save(access, for: .accessToken)
         if let refresh = response.refreshToken, !refresh.isEmpty {
             try store.save(refresh, for: .refreshToken)

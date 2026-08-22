@@ -7,7 +7,17 @@ import (
 	"time"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+// escrowReleaser lists and releases held services-escrow payments. Used by
+// the 7-day auto-approve path as a System actor. Nil is valid: auto-approve
+// still completes the contract (unpaid / payment mesh unwired).
+type escrowReleaser interface {
+	ListEscrowPaymentIDs(ctx context.Context, customerID, contractID string) ([]string, error)
+	ReleaseEscrow(ctx context.Context, paymentID, reason string) error
+}
 
 // ContractService implements contract business logic.
 type ContractService struct {
@@ -16,6 +26,7 @@ type ContractService struct {
 	// pendingTerms applies chat-accepted local terms when the contract is
 	// created after a pre-award Accept (FR-5.4 residual). Nil = skip.
 	pendingTerms PendingLocalTermsApplier
+	escrow       escrowReleaser
 }
 
 // NewContractService creates a new contract service.
@@ -30,6 +41,12 @@ func NewContractService(contractRepo domain.ContractRepository, jobRepo domain.J
 // chat local terms onto the new contract. Optional; nil keeps award path only.
 func (s *ContractService) SetPendingLocalTermsApplier(a PendingLocalTermsApplier) {
 	s.pendingTerms = a
+}
+
+// SetEscrowReleaser wires the payment mesh for 7-day auto-approve escrow
+// release. Optional; nil keeps AutoReleaseCompletedContracts contract-only.
+func (s *ContractService) SetEscrowReleaser(r escrowReleaser) {
+	s.escrow = r
 }
 
 // CreateContractFromAward creates a contract from a bid award.
@@ -374,12 +391,17 @@ func (s *ContractService) ApproveCompletion(ctx context.Context, contractID, cus
 		slog.Warn("failed to update job status to completed", "job_id", updated.JobID, "error", err)
 	}
 
+	// Escrow is released by the gateway after this RPC succeeds, as the
+	// customer actor (ApproveCompletion is itself confirmation — no extra
+	// proof-of-work gate). The 7-day auto path releases here via System.
+
 	slog.Info("contract completion approved", "contract_id", contractID, "customer_id", customerID)
 	return updated, nil
 }
 
 // AutoReleaseCompletedContracts finds contracts where the provider marked complete
-// more than 7 days ago without customer action and auto-approves them.
+// more than 7 days ago without customer action and auto-approves them, releasing
+// held services escrow as a System actor (the provider must never self-release).
 func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) error {
 	contracts, err := s.contractRepo.GetContractsAwaitingApproval(ctx, 7*24*time.Hour)
 	if err != nil {
@@ -387,9 +409,23 @@ func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) err
 	}
 
 	for _, c := range contracts {
-		// Finalise the contract first (active+completed_at → completed), the
-		// same terminal transition a customer approval performs. Without this
-		// the contract would stay 'active' forever and be re-selected on every
+		// Release escrow BEFORE finalising the contract. If payment is down
+		// we skip this row so the next sweep retries; completing first would
+		// drop the contract from GetContractsAwaitingApproval and leave money
+		// held. Unpaid (no escrow rows) and already-released/refunded are
+		// fail-soft and still complete.
+		if err := s.releaseContractEscrowAsSystem(ctx, c.ID, c.CustomerID); err != nil {
+			slog.Warn("auto release: escrow release failed; will retry next sweep",
+				"contract_id", c.ID,
+				"job_id", c.JobID,
+				"error", err,
+			)
+			continue
+		}
+
+		// Finalise the contract (active+completed_at → completed), the same
+		// terminal transition a customer approval performs. Without this the
+		// contract would stay 'active' forever and be re-selected on every
 		// sweep. Only after the contract is terminal do we finalise the job.
 		if _, err := s.contractRepo.ApproveCompletion(ctx, c.ID); err != nil {
 			slog.Warn("auto release: failed to complete contract",
@@ -414,6 +450,60 @@ func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) err
 	}
 
 	return nil
+}
+
+// releaseContractEscrowAsSystem lists escrow payments for the contract and
+// releases each with ReleaseActor.System. Nil releaser, no payments, and
+// skippable status errors (not escrow / not found) return nil so auto-approve
+// can still complete. A hard mesh/Stripe error is returned so the sweep retries.
+func (s *ContractService) releaseContractEscrowAsSystem(ctx context.Context, contractID, customerID string) error {
+	if s.escrow == nil {
+		return nil
+	}
+
+	ids, err := s.escrow.ListEscrowPaymentIDs(ctx, customerID, contractID)
+	if err != nil {
+		return fmt.Errorf("list escrow for contract %s: %w", contractID, err)
+	}
+
+	var firstHard error
+	for _, id := range ids {
+		if err := s.escrow.ReleaseEscrow(ctx, id, "auto_release"); err != nil {
+			if skippableEscrowReleaseErr(err) {
+				slog.Warn("auto release: payment not in escrow; continuing",
+					"contract_id", contractID,
+					"payment_id", id,
+					"error", err,
+				)
+				continue
+			}
+			slog.Warn("auto release: ReleaseEscrow failed",
+				"contract_id", contractID,
+				"payment_id", id,
+				"error", err,
+			)
+			if firstHard == nil {
+				firstHard = err
+			}
+		}
+	}
+	return firstHard
+}
+
+func skippableEscrowReleaseErr(err error) bool {
+	if err == nil {
+		return true
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	switch st.Code() {
+	case codes.FailedPrecondition, codes.NotFound:
+		return true
+	default:
+		return false
+	}
 }
 
 // --- Change Order Methods ---
@@ -720,9 +810,9 @@ func (s *ContractService) AdminResolveDispute(
 
 	// Log audit entry.
 	auditDetails := map[string]any{
-		"dispute_id":         disputeID,
-		"contract_id":        resolved.ContractID,
-		"resolution_type":    resolutionType,
+		"dispute_id":          disputeID,
+		"contract_id":         resolved.ContractID,
+		"resolution_type":     resolutionType,
 		"refund_amount_cents": refundAmountCents,
 	}
 	if guaranteeOutcome != "" {
