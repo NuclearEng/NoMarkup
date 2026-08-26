@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -17,6 +18,8 @@ import (
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -525,6 +528,21 @@ func (h *ContractHandler) ApproveCompletion(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Release escrow BEFORE completing the contract. Complete-then-fail-soft
+	// left held funds on rows the 7-day sweeper never selected. Hard money
+	// errors 503 so the customer can retry while the contract is still active.
+	// Unpaid / already-released / refunded (NotFound, or FailedPrecondition
+	// with "invalid status") still proceed to approve. Provider-not-set-up
+	// and transfers-not-ready stay hard.
+	if err := h.releaseServicesEscrowOnApprove(r.Context(), contractID, claims.UserID); err != nil {
+		slog.WarnContext(r.Context(), "approve-completion: escrow release failed; not completing contract",
+			"contract_id", contractID,
+			"error", err,
+		)
+		writeError(w, http.StatusServiceUnavailable, "could not release escrow; please try again")
+		return
+	}
+
 	resp, err := h.contractClient.ApproveCompletion(r.Context(), &contractv1.ApproveCompletionRequest{
 		ContractId: contractID,
 		CustomerId: claims.UserID,
@@ -534,49 +552,65 @@ func (h *ContractHandler) ApproveCompletion(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Customer approve-completion is itself confirmation of work. Release
-	// held services escrow as the customer actor without the standalone
-	// POST /payments/{id}/release proof-of-work 409 gate. Fail-soft: the
-	// contract is already approved; unpaid / already-released / refunded
-	// must not fail this response.
-	h.releaseServicesEscrowOnApprove(r.Context(), contractID, claims.UserID)
-
 	writeJSON(w, http.StatusOK, protoContractToJSON(resp.GetContract()))
 }
 
+func skippableApproveReleaseErr(err error) bool {
+	if err == nil {
+		return true
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	if st.Code() == codes.NotFound {
+		return true
+	}
+	// Only the already-released / wrong-state CAS. Provider-not-set-up and
+	// transfers-not-ready are also FailedPrecondition and must stay hard.
+	return st.Code() == codes.FailedPrecondition && strings.Contains(st.Message(), "invalid status")
+}
+
+const (
+	escrowListPageSize = 100
+	maxEscrowListPages = 20
+)
+
 // releaseServicesEscrowOnApprove lists escrow payments for the contract and
-// releases each as the customer. Missing payments, non-escrow status, and
-// ReleaseEscrow errors are logged and swallowed so ApproveCompletion still
-// returns the approved contract. The payment service CAS + Stripe idempotency
-// key escrow-release:<paymentID> make a second call a no-op, not a double pay.
-func (h *ContractHandler) releaseServicesEscrowOnApprove(ctx context.Context, contractID, customerID string) {
+// releases each as the customer. CAS + Stripe idempotency key
+// escrow-release:<paymentID> make a retry a no-op, not a double pay.
+func (h *ContractHandler) releaseServicesEscrowOnApprove(ctx context.Context, contractID, customerID string) error {
 	if h.paymentClient == nil {
-		slog.WarnContext(ctx, "approve-completion: payment client unset; escrow not released",
-			"contract_id", contractID,
-		)
-		return
+		return fmt.Errorf("approve-completion: payment client unset")
 	}
 
 	escrowStatus := paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW
 	cid := contractID
-	listResp, err := h.paymentClient.ListPayments(ctx, &paymentv1.ListPaymentsRequest{
-		UserId:       customerID,
-		ContractId:   &cid,
-		StatusFilter: &escrowStatus,
-		Pagination: &commonv1.PaginationRequest{
-			Page:     1,
-			PageSize: 100,
-		},
-	})
-	if err != nil {
-		slog.WarnContext(ctx, "approve-completion: ListPayments failed; contract approved, escrow not released",
-			"contract_id", contractID,
-			"error", err,
-		)
-		return
+	var listed []*paymentv1.Payment
+	for page := int32(1); page <= maxEscrowListPages; page++ {
+		listResp, err := h.paymentClient.ListPayments(ctx, &paymentv1.ListPaymentsRequest{
+			UserId:       customerID,
+			ContractId:   &cid,
+			StatusFilter: &escrowStatus,
+			Pagination: &commonv1.PaginationRequest{
+				Page:     page,
+				PageSize: escrowListPageSize,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("list escrow payments: %w", err)
+		}
+		listed = append(listed, listResp.GetPayments()...)
+		if !listResp.GetPagination().GetHasNext() {
+			break
+		}
+		if page == maxEscrowListPages {
+			return fmt.Errorf("list escrow payments: truncated after %d pages", maxEscrowListPages)
+		}
 	}
 
-	for _, p := range listResp.GetPayments() {
+	var firstHard error
+	for _, p := range listed {
 		if p == nil || p.GetId() == "" {
 			continue
 		}
@@ -600,11 +634,22 @@ func (h *ContractHandler) releaseServicesEscrowOnApprove(ctx context.Context, co
 			ActorUserId: customerID,
 		})
 		if rerr != nil {
-			slog.WarnContext(ctx, "approve-completion: ReleaseEscrow failed; contract approved",
+			if skippableApproveReleaseErr(rerr) {
+				slog.InfoContext(ctx, "approve-completion: ReleaseEscrow skippable; continuing",
+					"contract_id", contractID,
+					"payment_id", p.GetId(),
+					"error", rerr,
+				)
+				continue
+			}
+			slog.WarnContext(ctx, "approve-completion: ReleaseEscrow failed",
 				"contract_id", contractID,
 				"payment_id", p.GetId(),
 				"error", rerr,
 			)
+			if firstHard == nil {
+				firstHard = rerr
+			}
 			continue
 		}
 
@@ -626,6 +671,7 @@ func (h *ContractHandler) releaseServicesEscrowOnApprove(ctx context.Context, co
 			"payment", pay.GetId(),
 		)
 	}
+	return firstHard
 }
 
 type cancelContractRequest struct {

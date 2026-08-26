@@ -394,6 +394,11 @@ message CreatePaymentResponse {
 message ProcessPaymentRequest {
   string payment_id = 1;
   string payment_method_id = 2;
+  // Who is capturing. Required for caller-initiated captures so the payment
+  // service can refuse a provider pulling authorized funds into escrow even
+  // if a mesh peer skips the gateway party check.
+  string actor_user_id = 3;
+  bool actor_is_admin = 4;
 }
 
 message ProcessPaymentResponse {

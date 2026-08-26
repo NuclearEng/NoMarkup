@@ -310,6 +310,7 @@ extension APIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("ios", forHTTPHeaderField: "X-NoMarkup-Client")
         request.timeoutInterval = 30
         request.httpBody = try JSONEncoder().encode(body)
         ClientActionLog.stamp(&request)
@@ -353,6 +354,7 @@ extension APIClient {
             request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue("ios", forHTTPHeaderField: "X-NoMarkup-Client")
         }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30

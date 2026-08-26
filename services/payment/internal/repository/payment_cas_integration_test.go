@@ -8,6 +8,8 @@
 //  1. ClaimPaymentStatus — status transition is compare-and-swap on status
 //  2. UpdateRefundCAS — refund total is compare-and-swap on refund_amount_cents
 //     with a hard cap at amount_cents
+//  2b. ConfirmRefundFromWebhook — monotonic confirm; never decreases, never
+//      overwrites a pending: CreateRefund claim
 //  3. ClaimListingOrderForRelease — FOR UPDATE + durable pending transfer stamp
 //     so concurrent dispute freeze / second auto-release lose (MON-18)
 //
@@ -421,6 +423,133 @@ func TestRefundCAS_UpdateRefundCAS(t *testing.T) {
 		}
 		if got := f.refundCents(t); got != 5_000 {
 			t.Fatalf("refund_amount_cents = %d, want 5000", got)
+		}
+	})
+}
+
+func TestRefundCAS_RevertRefundClaim_restoresPreviousID(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	f := newCASPaymentFixture(t, "escrow", 10_000)
+
+	if err := f.repo.UpdateRefundCAS(ctx, f.paymentID, 0, 4_000, "first", now, "re_prior", "partially_refunded"); err != nil {
+		t.Fatalf("seed first refund: %v", err)
+	}
+
+	pending := "pending:partially_refunded:4000:7000:re_prior"
+	if err := f.repo.UpdateRefundCAS(ctx, f.paymentID, 4_000, 7_000, "second", now, pending, "partially_refunded"); err != nil {
+		t.Fatalf("claim second: %v", err)
+	}
+
+	if err := f.repo.RevertRefundClaim(ctx, f.paymentID, 3_000, pending, "partially_refunded"); err != nil {
+		t.Fatalf("revert: %v", err)
+	}
+	got, err := f.repo.GetPayment(ctx, f.paymentID)
+	if err != nil {
+		t.Fatalf("get payment: %v", err)
+	}
+	if got.RefundAmountCents != 4_000 {
+		t.Fatalf("refund_amount_cents = %d, want 4000", got.RefundAmountCents)
+	}
+	if got.Status != "partially_refunded" {
+		t.Fatalf("status = %q, want partially_refunded", got.Status)
+	}
+	if got.StripeRefundID != "re_prior" {
+		t.Fatalf("stripe_refund_id = %q, want re_prior (never leave pending:)", got.StripeRefundID)
+	}
+}
+
+func TestRefundCAS_ConfirmRefundFromWebhook(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	t.Run("monotonic_increase", func(t *testing.T) {
+		f := newCASPaymentFixture(t, "escrow", 10_000)
+		if err := f.repo.ConfirmRefundFromWebhook(ctx, f.paymentID, 3_000, "wh", now, "re_a", "partially_refunded"); err != nil {
+			t.Fatalf("confirm: %v", err)
+		}
+		if got := f.refundCents(t); got != 3_000 {
+			t.Fatalf("refund_amount_cents = %d, want 3000", got)
+		}
+		if err := f.repo.ConfirmRefundFromWebhook(ctx, f.paymentID, 10_000, "wh", now, "re_b", "refunded"); err != nil {
+			t.Fatalf("confirm full: %v", err)
+		}
+		if got := f.refundCents(t); got != 10_000 {
+			t.Fatalf("refund_amount_cents = %d, want 10000", got)
+		}
+		if got := f.status(t); got != "refunded" {
+			t.Fatalf("status = %q, want refunded", got)
+		}
+	})
+
+	t.Run("never_decreases", func(t *testing.T) {
+		f := newCASPaymentFixture(t, "escrow", 10_000)
+		if err := f.repo.ConfirmRefundFromWebhook(ctx, f.paymentID, 4_000, "wh", now, "re_a", "partially_refunded"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		if err := f.repo.ConfirmRefundFromWebhook(ctx, f.paymentID, 1_000, "wh", now, "re_b", "partially_refunded"); err != nil {
+			t.Fatalf("decrease must be success: %v", err)
+		}
+		got, err := f.repo.GetPayment(ctx, f.paymentID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.RefundAmountCents != 4_000 {
+			t.Fatalf("refund_amount_cents = %d, want 4000", got.RefundAmountCents)
+		}
+		if got.StripeRefundID != "re_a" {
+			t.Fatalf("stripe_refund_id = %q, want re_a", got.StripeRefundID)
+		}
+	})
+
+	t.Run("does_not_clobber_pending_claim", func(t *testing.T) {
+		f := newCASPaymentFixture(t, "escrow", 10_000)
+		pending := "pending:escrow:0:7000:-"
+		if err := f.repo.UpdateRefundCAS(ctx, f.paymentID, 0, 7_000, "claim", now, pending, "partially_refunded"); err != nil {
+			t.Fatalf("claim: %v", err)
+		}
+		if err := f.repo.ConfirmRefundFromWebhook(ctx, f.paymentID, 7_000, "wh", now, "re_clobber", "refunded"); err != nil {
+			t.Fatalf("confirm pending: %v", err)
+		}
+		got, err := f.repo.GetPayment(ctx, f.paymentID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.StripeRefundID != pending {
+			t.Fatalf("stripe_refund_id = %q, want pending claim", got.StripeRefundID)
+		}
+		if got.RefundAmountCents != 7_000 {
+			t.Fatalf("refund_amount_cents = %d, want 7000", got.RefundAmountCents)
+		}
+	})
+
+	t.Run("empty_refund_id_keeps_existing", func(t *testing.T) {
+		f := newCASPaymentFixture(t, "escrow", 10_000)
+		if err := f.repo.ConfirmRefundFromWebhook(ctx, f.paymentID, 2_000, "wh", now, "re_keep", "partially_refunded"); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+		if err := f.repo.ConfirmRefundFromWebhook(ctx, f.paymentID, 5_000, "wh", now, "", "partially_refunded"); err != nil {
+			t.Fatalf("confirm empty id: %v", err)
+		}
+		got, err := f.repo.GetPayment(ctx, f.paymentID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.RefundAmountCents != 5_000 {
+			t.Fatalf("refund_amount_cents = %d, want 5000", got.RefundAmountCents)
+		}
+		if got.StripeRefundID != "re_keep" {
+			t.Fatalf("stripe_refund_id = %q, want re_keep", got.StripeRefundID)
+		}
+	})
+
+	t.Run("above_amount_cents_is_noop", func(t *testing.T) {
+		f := newCASPaymentFixture(t, "escrow", 10_000)
+		if err := f.repo.ConfirmRefundFromWebhook(ctx, f.paymentID, 10_001, "wh", now, "re_over", "refunded"); err != nil {
+			t.Fatalf("over amount must be success: %v", err)
+		}
+		if got := f.refundCents(t); got != 0 {
+			t.Fatalf("refund_amount_cents = %d, want 0", got)
 		}
 	})
 }

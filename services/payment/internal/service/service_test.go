@@ -22,6 +22,9 @@ type mockPaymentRepo struct {
 	updatePaymentStatusFn             func(ctx context.Context, id string, status string) error
 	claimPaymentStatusFn              func(ctx context.Context, id, fromStatus, toStatus string) error
 	updateRefundCASFn                 func(ctx context.Context, id string, expectedPrior, newTotal int64, refundReason string, refundedAt time.Time, stripeRefundID, status string) error
+	revertRefundClaimFn               func(ctx context.Context, id string, delta int64, pendingID, statusIfZero string) error
+	stampRefundIDFn                   func(ctx context.Context, id, pendingKey, refundID string) error
+	confirmRefundFromWebhookFn        func(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID, status string) error
 	withProviderAdvisoryLockFn        func(ctx context.Context, providerID string, fn func(ctx context.Context) error) error
 	listPaymentsFn                    func(ctx context.Context, userID string, statusFilter string, contractID string, page, pageSize int) ([]*domain.Payment, int, error)
 	getFeeConfigFn                    func(ctx context.Context, categoryID string) (*domain.FeeConfig, error)
@@ -132,6 +135,28 @@ func (m *mockPaymentRepo) UpdateRefundCAS(ctx context.Context, id string, expect
 	// Default: fall through to UpdateRefund when provided.
 	if m.updateRefundFn != nil {
 		return m.updateRefundFn(ctx, id, newTotal, refundReason, refundedAt, stripeRefundID, status)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) RevertRefundClaim(ctx context.Context, id string, delta int64, pendingID, statusIfZero string) error {
+	if m.revertRefundClaimFn != nil {
+		return m.revertRefundClaimFn(ctx, id, delta, pendingID, statusIfZero)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) StampRefundID(ctx context.Context, id, pendingKey, refundID string) error {
+	if m.stampRefundIDFn != nil {
+		return m.stampRefundIDFn(ctx, id, pendingKey, refundID)
+	}
+	return nil
+}
+func (m *mockPaymentRepo) ConfirmRefundFromWebhook(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID, status string) error {
+	if m.confirmRefundFromWebhookFn != nil {
+		return m.confirmRefundFromWebhookFn(ctx, id, refundAmountCents, refundReason, refundedAt, stripeRefundID, status)
+	}
+	// Default: route through UpdateRefund so older stubs keep working.
+	if m.updateRefundFn != nil {
+		return m.updateRefundFn(ctx, id, refundAmountCents, refundReason, refundedAt, stripeRefundID, status)
 	}
 	return nil
 }
@@ -1321,7 +1346,7 @@ func TestPaymentService_ProcessPayment(t *testing.T) {
 			}
 			svc := newTestPaymentService(repo, nil)
 
-			payment, err := svc.ProcessPayment(context.Background(), tt.payment.ID, "pm_test")
+			payment, err := svc.ProcessPayment(context.Background(), tt.payment.ID, "pm_test", ReleaseActor{IsAdmin: true})
 
 			if tt.wantErr != nil {
 				require.Error(t, err)
@@ -1592,7 +1617,7 @@ func TestPaymentService_EscrowStateTransitions(t *testing.T) {
 			var err error
 			switch tt.operation {
 			case "process":
-				_, err = svc.ProcessPayment(ctx, payment.ID, "pm_test")
+				_, err = svc.ProcessPayment(ctx, payment.ID, "pm_test", ReleaseActor{IsAdmin: true})
 			case "release":
 				_, err = svc.ReleaseEscrow(ctx, payment.ID, "completed", ReleaseActor{IsAdmin: true})
 			case "refund":

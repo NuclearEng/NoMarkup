@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -18,16 +19,76 @@ import (
 
 	keyfunc "github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
-	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"github.com/nomarkup/nomarkup/gateway/internal/sessionflag"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
-	oauthStateCookieName = "oauth_state"
+	oauthStateCookieName   = "oauth_state"
 	oauthStateCookieMaxAge = 600 // 10 minutes
+	oauthNextCookieName    = "oauth_next"
+	oauthNextCookieMaxAge  = 600
 )
+
+// safeOAuthNext returns a same-origin relative path, or "" if raw is empty or unsafe.
+func safeOAuthNext(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") || strings.Contains(raw, "://") {
+		return ""
+	}
+	return raw
+}
+
+func oauthNextFromQuery(r *http.Request) string {
+	if next := safeOAuthNext(r.URL.Query().Get("next")); next != "" {
+		return next
+	}
+	return safeOAuthNext(r.URL.Query().Get("returnTo"))
+}
+
+func oauthNextFromCookie(r *http.Request) string {
+	c, err := r.Cookie(oauthNextCookieName)
+	if err != nil {
+		return ""
+	}
+	return safeOAuthNext(c.Value)
+}
+
+func (h *OAuthHandler) setOAuthNextCookie(w http.ResponseWriter, r *http.Request) {
+	next := oauthNextFromQuery(r)
+	if next == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthNextCookieName,
+		Value:    next,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   oauthNextCookieMaxAge,
+	})
+}
+
+func (h *OAuthHandler) clearOAuthNextCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthNextCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
 
 // OAuthHandler handles OAuth authentication flows.
 type OAuthHandler struct {
@@ -35,6 +96,7 @@ type OAuthHandler struct {
 	secureCookie  bool
 	sessionSecret []byte
 	frontendURL   string
+	authMW        *middleware.AuthMiddleware
 }
 
 // NewOAuthHandler creates a new OAuthHandler.
@@ -50,6 +112,30 @@ func NewOAuthHandler(userClient userv1.UserServiceClient, secureCookie bool, ses
 		sessionSecret: []byte(sessionSecret),
 		frontendURL:   frontendURL,
 	}
+}
+
+// WithIdleSession wires idle-session seeding on OAuth success (same contract as
+// AuthHandler.completeSessionLogin). Additive; nil leaves seeding skipped.
+func (h *OAuthHandler) WithIdleSession(authMW *middleware.AuthMiddleware) *OAuthHandler {
+	h.authMW = authMW
+	return h
+}
+
+func (h *OAuthHandler) seedIdleSession(ctx context.Context, accessToken, fallbackUserID string) {
+	if h.authMW == nil {
+		return
+	}
+	userID := fallbackUserID
+	var roles []string
+	if accessToken != "" {
+		if claims, err := h.authMW.ValidateToken(accessToken); err == nil {
+			if claims.UserID != "" {
+				userID = claims.UserID
+			}
+			roles = claims.Roles
+		}
+	}
+	h.authMW.TouchIdleSession(ctx, userID, roles)
 }
 
 func googleOAuthConfig() *oauth2.Config {
@@ -101,6 +187,8 @@ func (h *OAuthHandler) InitGoogleOAuth(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, h.frontendURL+"/login?error=google_not_configured", http.StatusTemporaryRedirect)
 		return
 	}
+
+	h.setOAuthNextCookie(w, r)
 
 	state, err := generateOAuthState()
 	if err != nil {
@@ -237,6 +325,9 @@ func (h *OAuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Reques
 		AvatarUrl:  googleUser.Picture,
 	})
 	if err != nil {
+		if h.writeOAuthMFARedirect(w, r, err) {
+			return
+		}
 		slog.Error("failed to find or create oauth user", "provider", "google", "error", err)
 		http.Redirect(w, r, h.frontendURL+"/login?error=auth_failed", http.StatusTemporaryRedirect)
 		return
@@ -253,6 +344,8 @@ func (h *OAuthHandler) InitAppleOAuth(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, h.frontendURL+"/login?error=apple_not_configured", http.StatusTemporaryRedirect)
 		return
 	}
+
+	h.setOAuthNextCookie(w, r)
 
 	state, err := generateOAuthState()
 	if err != nil {
@@ -401,6 +494,9 @@ func (h *OAuthHandler) AppleOAuthCallback(w http.ResponseWriter, r *http.Request
 		AvatarUrl:  "", // Apple does not provide avatar URLs.
 	})
 	if err != nil {
+		if h.writeOAuthMFARedirect(w, r, err) {
+			return
+		}
 		slog.Error("failed to find or create oauth user", "provider", "apple", "error", err)
 		http.Redirect(w, r, h.frontendURL+"/login?error=auth_failed", http.StatusTemporaryRedirect)
 		return
@@ -411,6 +507,7 @@ func (h *OAuthHandler) AppleOAuthCallback(w http.ResponseWriter, r *http.Request
 
 // completeOAuthLogin sets the refresh token cookie and redirects to the frontend.
 func (h *OAuthHandler) completeOAuthLogin(w http.ResponseWriter, r *http.Request, result *userv1.FindOrCreateByOAuthResponse) {
+	h.seedIdleSession(r.Context(), result.GetAccessToken(), result.GetUserId())
 	refreshMaxAge := 7 * 24 * 60 * 60
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookieName,
@@ -440,7 +537,10 @@ func (h *OAuthHandler) completeOAuthLogin(w http.ResponseWriter, r *http.Request
 	redirectPath := "/dashboard"
 	if result.GetIsNewUser() {
 		redirectPath = "/onboarding"
+	} else if next := oauthNextFromCookie(r); next != "" {
+		redirectPath = next
 	}
+	h.clearOAuthNextCookie(w)
 
 	// Use a short-lived cookie to pass the token to the frontend SPA,
 	// which is safer than putting it in the URL.
@@ -673,6 +773,9 @@ func (h *OAuthHandler) NativeAppleSignIn(w http.ResponseWriter, r *http.Request)
 		AvatarUrl:  "",
 	})
 	if err != nil {
+		if writeOAuthMFAJSON(w, err) {
+			return
+		}
 		slog.Error("native apple sign-in: find or create user failed", "error", err)
 		writeGRPCError(w, err)
 		return
@@ -685,6 +788,7 @@ func (h *OAuthHandler) NativeAppleSignIn(w http.ResponseWriter, r *http.Request)
 
 // completeOAuthLoginJSON returns the token pair as JSON (native clients).
 func (h *OAuthHandler) completeOAuthLoginJSON(w http.ResponseWriter, r *http.Request, result *userv1.FindOrCreateByOAuthResponse) {
+	h.seedIdleSession(r.Context(), result.GetAccessToken(), result.GetUserId())
 	refreshMaxAge := 7 * 24 * 60 * 60
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookieName,
@@ -708,6 +812,57 @@ func (h *OAuthHandler) completeOAuthLoginJSON(w http.ResponseWriter, r *http.Req
 		"is_new_user":             result.GetIsNewUser(),
 		"user_id":                 result.GetUserId(),
 	})
+}
+
+func oauthMFAFromError(err error) *userv1.LoginResponse {
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.FailedPrecondition {
+		return nil
+	}
+	for _, d := range st.Details() {
+		lr, ok := d.(*userv1.LoginResponse)
+		if ok && lr.GetMfaRequired() {
+			return lr
+		}
+	}
+	return nil
+}
+
+func writeOAuthMFAJSON(w http.ResponseWriter, err error) bool {
+	lr := oauthMFAFromError(err)
+	if lr == nil {
+		return false
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"user_id":             lr.GetUserId(),
+		"mfa_required":        true,
+		"mfa_challenge_token": lr.GetMfaChallengeToken(),
+	})
+	return true
+}
+
+func (h *OAuthHandler) writeOAuthMFARedirect(w http.ResponseWriter, r *http.Request, err error) bool {
+	lr := oauthMFAFromError(err)
+	if lr == nil {
+		return false
+	}
+	// Cookie, not query: the challenge is a bearer secret and must not land in
+	// access logs. Same 60s JS-readable pattern as oauth_access_token.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_mfa_challenge",
+		Value:    lr.GetMfaChallengeToken(),
+		Path:     "/",
+		HttpOnly: false,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   60,
+	})
+	loginURL := h.frontendURL + "/login"
+	if next := oauthNextFromCookie(r); next != "" {
+		loginURL += "?next=" + url.QueryEscape(next)
+	}
+	http.Redirect(w, r, loginURL, http.StatusTemporaryRedirect)
+	return true
 }
 
 // nativeGoogleSignInRequest is the body for POST /api/v1/auth/google/native
@@ -772,6 +927,9 @@ func (h *OAuthHandler) NativeGoogleSignIn(w http.ResponseWriter, r *http.Request
 		AvatarUrl:  claims.Picture,
 	})
 	if err != nil {
+		if writeOAuthMFAJSON(w, err) {
+			return
+		}
 		slog.Error("native google sign-in: find or create user failed", "error", err)
 		writeGRPCError(w, err)
 		return
@@ -897,4 +1055,3 @@ func verifyGoogleIDToken(ctx context.Context, rawToken string) (*googleIDTokenCl
 	}
 	return nil, errors.New("google id_token audience mismatch")
 }
-

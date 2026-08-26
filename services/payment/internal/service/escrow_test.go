@@ -122,7 +122,7 @@ func TestEscrowStateMachine_pending_to_escrow(t *testing.T) {
 	}
 	f := newEscrowFixture(t, "pending", payment)
 
-	got, err := f.svc.ProcessPayment(context.Background(), payment.ID, "pm_test")
+	got, err := f.svc.ProcessPayment(context.Background(), payment.ID, "pm_test", ReleaseActor{IsAdmin: true})
 	require.NoError(t, err)
 	assert.Equal(t, "escrow", got.Status)
 	assert.Equal(t, 1, f.updateCalls["processing"], "must transition through processing")
@@ -163,7 +163,7 @@ func TestEscrowStateMachine_escrow_to_refunded_full(t *testing.T) {
 	got, err := f.svc.CreateRefund(context.Background(), payment.ID, 0, "customer requested", ReleaseActor{IsAdmin: true})
 	require.NoError(t, err)
 	assert.Equal(t, "refunded", got.Status)
-	assert.Equal(t, 1, f.refundCalls)
+	assert.Equal(t, 2, f.refundCalls, "claim pending then stamp Stripe refund id")
 	assert.Equal(t, int64(38500), f.transferAmount, "full refund records full amount")
 }
 
@@ -233,7 +233,7 @@ func TestEscrowStateMachine_escrow_cannot_be_processed_again(t *testing.T) {
 	payment := &domain.Payment{ID: "pay-8", ProviderID: "prov-1", StripePaymentIntentID: "pi_z"}
 	f := newEscrowFixture(t, "escrow", payment)
 
-	_, err := f.svc.ProcessPayment(context.Background(), payment.ID, "pm_test")
+	_, err := f.svc.ProcessPayment(context.Background(), payment.ID, "pm_test", ReleaseActor{IsAdmin: true})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrPaymentAlreadyProcessed))
 }

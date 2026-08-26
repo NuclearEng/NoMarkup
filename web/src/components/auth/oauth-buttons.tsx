@@ -1,21 +1,47 @@
 'use client';
 
+import { useSearchParams } from 'next/navigation';
+
 import { Button } from '@/components/ui/button';
 import { GoogleIcon, AppleIcon } from '@/components/auth/oauth-icons';
 import { FacebookIcon } from '@/components/auth/FacebookOAuthButton';
+import { safeInternalPath } from '@/lib/safe-internal-path';
 
 const GOOGLE_OAUTH_URL = '/api/v1/auth/oauth/google';
 const APPLE_OAUTH_URL = '/api/v1/auth/oauth/apple';
 const FACEBOOK_OAUTH_URL = '/api/v1/auth/oauth/facebook';
 
+/** Survives the OAuth round-trip; LoginForm reads this when `?next=` is gone. */
+export const POST_LOGIN_NEXT_KEY = 'nomarkup:post_login_next';
+
+function persistPostLoginNext(raw: string | null): void {
+  const path = safeInternalPath(raw, '');
+  if (path === '') return;
+  try {
+    sessionStorage.setItem(POST_LOGIN_NEXT_KEY, path);
+  } catch {
+    // sessionStorage can throw in private mode.
+  }
+}
+
 export function OAuthButtons() {
+  const searchParams = useSearchParams();
+  const next = searchParams.get('next') ?? searchParams.get('returnTo');
+
+  function startOAuth(url: string): void {
+    persistPostLoginNext(next);
+    const path = safeInternalPath(next, '');
+    window.location.href =
+      path === '' ? url : `${url}?next=${encodeURIComponent(path)}`;
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <Button
         variant="outline"
         className="min-h-[44px] w-full border border-white/10 bg-white/5 text-white/80 transition-all duration-200 hover:bg-white/10 hover:text-white active:scale-[0.99]"
         onClick={() => {
-          window.location.href = GOOGLE_OAUTH_URL;
+          startOAuth(GOOGLE_OAUTH_URL);
         }}
         type="button"
       >
@@ -26,7 +52,7 @@ export function OAuthButtons() {
         variant="outline"
         className="min-h-[44px] w-full border border-white/10 bg-white/5 text-white/80 transition-all duration-200 hover:bg-white/10 hover:text-white active:scale-[0.99]"
         onClick={() => {
-          window.location.href = APPLE_OAUTH_URL;
+          startOAuth(APPLE_OAUTH_URL);
         }}
         type="button"
       >
@@ -37,7 +63,7 @@ export function OAuthButtons() {
         variant="outline"
         className="min-h-[44px] w-full border border-white/10 bg-white/5 text-white/80 transition-all duration-200 hover:bg-white/10 hover:text-white active:scale-[0.99]"
         onClick={() => {
-          window.location.href = FACEBOOK_OAUTH_URL;
+          startOAuth(FACEBOOK_OAUTH_URL);
         }}
         type="button"
       >

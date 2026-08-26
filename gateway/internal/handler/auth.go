@@ -10,10 +10,10 @@ import (
 	"regexp"
 	"strings"
 
-	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
-	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"github.com/nomarkup/nomarkup/gateway/internal/sessionflag"
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -87,8 +87,12 @@ type authResponse struct {
 	UserID               string `json:"user_id,omitempty"`
 	AccessToken          string `json:"access_token,omitempty"`
 	AccessTokenExpiresAt string `json:"access_token_expires_at,omitempty"`
-	MFARequired          bool   `json:"mfa_required,omitempty"`
-	MFAChallengeToken    string `json:"mfa_challenge_token,omitempty"`
+	// RefreshToken is omitted for browser clients (HttpOnly cookie is the
+	// session). Native clients send X-NoMarkup-Client and need the token in
+	// JSON because they do not persist the cookie jar.
+	RefreshToken      string `json:"refresh_token,omitempty"`
+	MFARequired       bool   `json:"mfa_required,omitempty"`
+	MFAChallengeToken string `json:"mfa_challenge_token,omitempty"`
 }
 
 // registerPhoneOnlyRequest is the body for the phone-only signup flow.
@@ -129,6 +133,17 @@ func (h *AuthHandler) RegisterPhoneOnly(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Verify the anonymous signup OTP before creating the user. Creating first
+	// squatted +E.164@phone.nomarkup and VerifyPhone always failed because OTP
+	// is keyed by user_id and send-otp was auth-only.
+	if _, err := h.userClient.VerifyPhone(r.Context(), &userv1.VerifyPhoneRequest{
+		UserId:  phoneOTPUserID(req.Phone),
+		OtpCode: req.OTPCode,
+	}); err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
 	syntheticEmail := req.Phone + "@phone.nomarkup"
 	password, err := generatePhonePassword()
 	if err != nil {
@@ -158,21 +173,13 @@ func (h *AuthHandler) RegisterPhoneOnly(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if _, err := h.userClient.VerifyPhone(r.Context(), &userv1.VerifyPhoneRequest{
-		UserId:  regResp.GetUserId(),
-		OtpCode: req.OTPCode,
-	}); err != nil {
-		writeGRPCError(w, err)
-		return
-	}
+	h.completeSessionLogin(w, r, regResp.GetUserId(), regResp.GetAccessToken(), regResp.GetRefreshToken(), regResp.GetAccessTokenExpiresAt())
+}
 
-	h.setRefreshTokenCookie(w, regResp.GetRefreshToken(), regResp.GetUserId())
+const phoneOTPUserPrefix = "phone:"
 
-	writeJSON(w, http.StatusCreated, authResponse{
-		UserID:               regResp.GetUserId(),
-		AccessToken:          regResp.GetAccessToken(),
-		AccessTokenExpiresAt: formatTimestamp(regResp.GetAccessTokenExpiresAt()),
-	})
+func phoneOTPUserID(phone string) string {
+	return phoneOTPUserPrefix + phone
 }
 
 // generatePhonePassword returns a 32-byte URL-safe base64 string. The
@@ -246,11 +253,15 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	h.setRefreshTokenCookie(w, resp.GetRefreshToken(), resp.GetUserId())
 
-	writeJSON(w, http.StatusCreated, authResponse{
+	created := authResponse{
 		UserID:               resp.GetUserId(),
 		AccessToken:          resp.GetAccessToken(),
 		AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
-	})
+	}
+	if wantsRefreshTokenInBody(r) {
+		created.RefreshToken = resp.GetRefreshToken()
+	}
+	writeJSON(w, http.StatusCreated, created)
 }
 
 // Login handles POST /api/v1/auth/login.
@@ -311,11 +322,20 @@ func (h *AuthHandler) completeSessionLogin(w http.ResponseWriter, r *http.Reques
 	// its idle key immediately. Fail-open / no-op without authMW.
 	h.touchIdleFromAccessToken(r.Context(), accessToken, userID)
 
-	writeJSON(w, http.StatusOK, authResponse{
+	resp := authResponse{
 		UserID:               userID,
 		AccessToken:          accessToken,
 		AccessTokenExpiresAt: formatTimestamp(expiresAt),
-	})
+	}
+	if wantsRefreshTokenInBody(r) {
+		resp.RefreshToken = refreshToken
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func wantsRefreshTokenInBody(r *http.Request) bool {
+	c := strings.ToLower(strings.TrimSpace(r.Header.Get("X-NoMarkup-Client")))
+	return c == "ios" || c == "android"
 }
 
 // touchIdleFromAccessToken decodes the given access token to extract the user's
@@ -347,7 +367,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		refreshToken = cookie.Value
 	}
 
-	if refreshToken == "" {
+	if refreshToken == "" && wantsRefreshTokenInBody(r) {
 		var req refreshRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
 			refreshToken = req.RefreshToken
@@ -402,10 +422,14 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	h.setRefreshTokenCookie(w, resp.GetRefreshToken(), userID)
 
-	writeJSON(w, http.StatusOK, authResponse{
+	refreshed := authResponse{
 		AccessToken:          resp.GetAccessToken(),
 		AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
-	})
+	}
+	if wantsRefreshTokenInBody(r) {
+		refreshed.RefreshToken = resp.GetRefreshToken()
+	}
+	writeJSON(w, http.StatusOK, refreshed)
 }
 
 // decodeAccessToken validates the given access token and returns its userID and
@@ -430,7 +454,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		refreshToken = cookie.Value
 	}
 
-	if refreshToken == "" {
+	if refreshToken == "" && wantsRefreshTokenInBody(r) {
 		var req logoutRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
 			refreshToken = req.RefreshToken
@@ -549,20 +573,29 @@ type sendPhoneOTPRequest struct {
 }
 
 // SendPhoneOTP handles POST /api/v1/auth/send-phone-otp.
+// Dual-mode via optionalAuth: signed-in callers key the OTP by user_id
+// (existing verify-phone flow); anonymous callers must send E.164 phone and
+// the OTP is stored under nomarkup:otp:phone:{e164} for RegisterPhoneOnly.
 func (h *AuthHandler) SendPhoneOTP(w http.ResponseWriter, r *http.Request) {
-	claims, ok := middleware.GetClaims(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "missing claims")
-		return
-	}
-
 	var req sendPhoneOTPRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	req.Phone = strings.TrimSpace(req.Phone)
+
+	userID := ""
+	if claims, ok := middleware.GetClaims(r.Context()); ok {
+		userID = claims.UserID
+	}
+	if userID == "" {
+		if !phoneE164Pattern.MatchString(req.Phone) {
+			writeError(w, http.StatusBadRequest, "phone must be in E.164 format (e.g. +15551234567)")
+			return
+		}
+	}
 
 	resp, err := h.userClient.SendPhoneOTP(r.Context(), &userv1.SendPhoneOTPRequest{
-		UserId: claims.UserID,
+		UserId: userID,
 		Phone:  req.Phone,
 	})
 	if err != nil {
@@ -571,6 +604,12 @@ func (h *AuthHandler) SendPhoneOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]bool{"sent": resp.GetSent()})
+}
+
+// SendRegisterPhoneOTP is an alias of SendPhoneOTP for clients that still
+// post to /register-phone/send-otp.
+func (h *AuthHandler) SendRegisterPhoneOTP(w http.ResponseWriter, r *http.Request) {
+	h.SendPhoneOTP(w, r)
 }
 
 // --- Password reset ---
@@ -762,14 +801,8 @@ func (h *AuthHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if resp.GetRefreshToken() != "" {
-		h.setRefreshTokenCookie(w, resp.GetRefreshToken(), userIDFromJWT(resp.GetAccessToken()))
-	}
-
-	writeJSON(w, http.StatusOK, authResponse{
-		AccessToken:          resp.GetAccessToken(),
-		AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
-	})
+	userID := userIDFromJWT(resp.GetAccessToken())
+	h.completeSessionLogin(w, r, userID, resp.GetAccessToken(), resp.GetRefreshToken(), resp.GetAccessTokenExpiresAt())
 }
 
 type disableMFARequest struct {
@@ -881,7 +914,7 @@ func parseRoles(roles []string) []commonv1.UserRole {
 			result = append(result, commonv1.UserRole_USER_ROLE_CUSTOMER)
 		case "provider":
 			result = append(result, commonv1.UserRole_USER_ROLE_PROVIDER)
-		// "admin" intentionally excluded — self-registration cannot grant admin role.
+			// "admin" intentionally excluded — self-registration cannot grant admin role.
 		}
 	}
 	return result

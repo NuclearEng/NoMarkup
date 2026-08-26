@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 )
@@ -205,7 +206,7 @@ func TestApproveCompletion_releasesEscrowAsCustomer(t *testing.T) {
 			wantRelease: 0,
 		},
 		{
-			name:          "ReleaseEscrow FailedPrecondition still returns approved",
+			name:          "invalid-status FailedPrecondition still returns approved",
 			userID:        testCustomerID,
 			roles:         []string{"customer"},
 			paymentClient: true,
@@ -218,36 +219,77 @@ func TestApproveCompletion_releasesEscrowAsCustomer(t *testing.T) {
 			wantActor:     testCustomerID,
 		},
 		{
-			name:          "ListPayments error still returns approved",
+			name:          "provider not set up FailedPrecondition does not complete",
+			userID:        testCustomerID,
+			roles:         []string{"customer"},
+			paymentClient: true,
+			listPays:      []*paymentv1.Payment{escrowPayment(testApprovePaymentID, testContractID)},
+			releaseErr:    status.Error(codes.FailedPrecondition, "provider is not set up to receive payouts"),
+			wantStatus:    http.StatusServiceUnavailable,
+			wantApprove:   0,
+			wantList:      1,
+			wantRelease:   1,
+			wantActor:     testCustomerID,
+		},
+		{
+			name:          "transfers not ready FailedPrecondition does not complete",
+			userID:        testCustomerID,
+			roles:         []string{"customer"},
+			paymentClient: true,
+			listPays:      []*paymentv1.Payment{escrowPayment(testApprovePaymentID, testContractID)},
+			releaseErr:    status.Error(codes.FailedPrecondition, "connected account is not ready to receive transfers — complete Stripe onboarding"),
+			wantStatus:    http.StatusServiceUnavailable,
+			wantApprove:   0,
+			wantList:      1,
+			wantRelease:   1,
+			wantActor:     testCustomerID,
+		},
+		{
+			name:          "ListPayments error does not complete the contract",
 			userID:        testCustomerID,
 			roles:         []string{"customer"},
 			paymentClient: true,
 			listErr:       errors.New("payment mesh down"),
-			wantStatus:    http.StatusOK,
-			wantApprove:   1,
+			wantStatus:    http.StatusServiceUnavailable,
+			wantApprove:   0,
 			wantList:      1,
 			wantRelease:   0,
 		},
 		{
-			name:          "nil payment client still returns approved",
+			name:          "nil payment client does not complete the contract",
 			userID:        testCustomerID,
 			roles:         []string{"customer"},
 			paymentClient: false,
-			wantStatus:    http.StatusOK,
-			wantApprove:   1,
+			wantStatus:    http.StatusServiceUnavailable,
+			wantApprove:   0,
 			wantList:      0,
 			wantRelease:   0,
 		},
 		{
-			name:          "contract RPC failure does not touch escrow",
+			name:          "hard ReleaseEscrow error does not complete the contract",
+			userID:        testCustomerID,
+			roles:         []string{"customer"},
+			paymentClient: true,
+			listPays:      []*paymentv1.Payment{escrowPayment(testApprovePaymentID, testContractID)},
+			releaseErr:    status.Error(codes.Unavailable, "stripe timeout"),
+			wantStatus:    http.StatusServiceUnavailable,
+			wantApprove:   0,
+			wantList:      1,
+			wantRelease:   1,
+			wantActor:     testCustomerID,
+		},
+		{
+			name:          "contract RPC failure after escrow already attempted",
 			userID:        testCustomerID,
 			roles:         []string{"customer"},
 			contractErr:   status.Error(codes.FailedPrecondition, "contract is not active"),
 			paymentClient: true,
+			listPays:      []*paymentv1.Payment{escrowPayment(testApprovePaymentID, testContractID)},
 			wantStatus:    http.StatusUnprocessableEntity,
 			wantApprove:   1,
-			wantList:      0,
-			wantRelease:   0,
+			wantList:      1,
+			wantRelease:   1,
+			wantActor:     testCustomerID,
 		},
 		{
 			name:        "unauthorized",
@@ -337,5 +379,87 @@ func TestApproveCompletion_secondCallDoesNotDoubleReleaseWhenContractInactive(t 
 	rec2 := httptest.NewRecorder()
 	router.ServeHTTP(rec2, approveCompletionRequest(t, testCustomerID, []string{"customer"}))
 	assert.Equal(t, http.StatusUnprocessableEntity, rec2.Code)
-	assert.Equal(t, 1, pc.releaseN, "inactive second approve must not call ReleaseEscrow again")
+	// Release runs before ApproveCompletion; CAS + escrow-release:<id> make
+	// the second Stripe call a no-op rather than a double pay.
+	assert.Equal(t, 2, pc.releaseN)
+}
+
+func TestApproveCompletion_skippableEscrowReleaseErr(t *testing.T) {
+	t.Parallel()
+	assert.True(t, skippableApproveReleaseErr(nil))
+	assert.True(t, skippableApproveReleaseErr(status.Error(codes.FailedPrecondition, "invalid status")))
+	assert.True(t, skippableApproveReleaseErr(status.Error(codes.FailedPrecondition, "invalid status for this operation")))
+	assert.True(t, skippableApproveReleaseErr(status.Error(codes.NotFound, "payment not found")))
+	assert.False(t, skippableApproveReleaseErr(status.Error(codes.FailedPrecondition, "provider is not set up to receive payouts")))
+	assert.False(t, skippableApproveReleaseErr(status.Error(codes.FailedPrecondition, "connected account is not ready to receive transfers — complete Stripe onboarding")))
+	assert.False(t, skippableApproveReleaseErr(status.Error(codes.Unavailable, "stripe timeout")))
+	assert.False(t, skippableApproveReleaseErr(status.Error(codes.PermissionDenied, "provider cannot release")))
+	assert.False(t, skippableApproveReleaseErr(errors.New("network")))
+}
+
+func TestApproveCompletion_paginatesEscrowList(t *testing.T) {
+	t.Parallel()
+	cc := &mockApproveCompletionContractClient{}
+	pc := &mockApproveCompletionPaymentClient{
+		listFn: func(_ context.Context, req *paymentv1.ListPaymentsRequest) (*paymentv1.ListPaymentsResponse, error) {
+			page := req.GetPagination().GetPage()
+			assert.Equal(t, int32(escrowListPageSize), req.GetPagination().GetPageSize())
+			switch page {
+			case 1:
+				return &paymentv1.ListPaymentsResponse{
+					Payments:   []*paymentv1.Payment{escrowPayment("pay-page-1", testContractID)},
+					Pagination: &commonv1.PaginationResponse{Page: 1, PageSize: escrowListPageSize, HasNext: true},
+				}, nil
+			case 2:
+				return &paymentv1.ListPaymentsResponse{
+					Payments:   []*paymentv1.Payment{escrowPayment("pay-page-2", testContractID)},
+					Pagination: &commonv1.PaginationResponse{Page: 2, PageSize: escrowListPageSize, HasNext: false},
+				}, nil
+			default:
+				t.Fatalf("unexpected list page %d", page)
+				return nil, nil
+			}
+		},
+	}
+	h := NewContractHandler(cc, nil, nil)
+	h.SetPaymentClient(pc)
+
+	rec := httptest.NewRecorder()
+	approveCompletionRouter(h).ServeHTTP(rec, approveCompletionRequest(t, testCustomerID, []string{"customer"}))
+
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	assert.Equal(t, 1, cc.n)
+	assert.Equal(t, 2, pc.listN)
+	assert.Equal(t, 2, pc.releaseN)
+	require.Len(t, pc.releases, 2)
+	assert.Equal(t, "pay-page-1", pc.releases[0].GetPaymentId())
+	assert.Equal(t, "pay-page-2", pc.releases[1].GetPaymentId())
+}
+
+func TestApproveCompletion_truncatedEscrowListDoesNotComplete(t *testing.T) {
+	t.Parallel()
+	cc := &mockApproveCompletionContractClient{}
+	pc := &mockApproveCompletionPaymentClient{
+		listFn: func(_ context.Context, req *paymentv1.ListPaymentsRequest) (*paymentv1.ListPaymentsResponse, error) {
+			page := req.GetPagination().GetPage()
+			return &paymentv1.ListPaymentsResponse{
+				Payments: []*paymentv1.Payment{escrowPayment("pay-trunc", testContractID)},
+				Pagination: &commonv1.PaginationResponse{
+					Page:     page,
+					PageSize: escrowListPageSize,
+					HasNext:  true,
+				},
+			}, nil
+		},
+	}
+	h := NewContractHandler(cc, nil, nil)
+	h.SetPaymentClient(pc)
+
+	rec := httptest.NewRecorder()
+	approveCompletionRouter(h).ServeHTTP(rec, approveCompletionRequest(t, testCustomerID, []string{"customer"}))
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, "body=%s", rec.Body.String())
+	assert.Equal(t, 0, cc.n, "truncated list must not ApproveCompletion")
+	assert.Equal(t, maxEscrowListPages, pc.listN)
+	assert.Equal(t, 0, pc.releaseN, "truncated list must not start a partial release")
 }

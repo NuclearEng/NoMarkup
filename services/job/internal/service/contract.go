@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
@@ -12,8 +13,8 @@ import (
 )
 
 // escrowReleaser lists and releases held services-escrow payments. Used by
-// the 7-day auto-approve path as a System actor. Nil is valid: auto-approve
-// still completes the contract (unpaid / payment mesh unwired).
+// the 7-day auto-approve path as a System actor. Nil is fail-closed: the
+// sweeper must not complete the contract while money cannot be released.
 type escrowReleaser interface {
 	ListEscrowPaymentIDs(ctx context.Context, customerID, contractID string) ([]string, error)
 	ReleaseEscrow(ctx context.Context, paymentID, reason string) error
@@ -44,7 +45,7 @@ func (s *ContractService) SetPendingLocalTermsApplier(a PendingLocalTermsApplier
 }
 
 // SetEscrowReleaser wires the payment mesh for 7-day auto-approve escrow
-// release. Optional; nil keeps AutoReleaseCompletedContracts contract-only.
+// release. Required for the sweeper: a nil releaser is a hard error per row.
 func (s *ContractService) SetEscrowReleaser(r escrowReleaser) {
 	s.escrow = r
 }
@@ -423,6 +424,17 @@ func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) err
 			continue
 		}
 
+		// Customer approve-completion may have already flipped status to
+		// completed while escrow release failed. Those rows still need the
+		// money sweep but must not re-run ApproveCompletion.
+		if c.Status == "completed" {
+			slog.Info("auto released escrow on already-completed contract",
+				"contract_id", c.ID,
+				"job_id", c.JobID,
+			)
+			continue
+		}
+
 		// Finalise the contract (active+completed_at → completed), the same
 		// terminal transition a customer approval performs. Without this the
 		// contract would stay 'active' forever and be re-selected on every
@@ -453,12 +465,13 @@ func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) err
 }
 
 // releaseContractEscrowAsSystem lists escrow payments for the contract and
-// releases each with ReleaseActor.System. Nil releaser, no payments, and
-// skippable status errors (not escrow / not found) return nil so auto-approve
-// can still complete. A hard mesh/Stripe error is returned so the sweep retries.
+// releases each with ReleaseActor.System. No payments and skippable status
+// errors (not escrow / not found) return nil so auto-approve can still
+// complete. A nil releaser or hard mesh/Stripe error is returned so the
+// sweep retries and the row stays awaiting.
 func (s *ContractService) releaseContractEscrowAsSystem(ctx context.Context, contractID, customerID string) error {
 	if s.escrow == nil {
-		return nil
+		return fmt.Errorf("escrow releaser unset")
 	}
 
 	ids, err := s.escrow.ListEscrowPaymentIDs(ctx, customerID, contractID)
@@ -498,12 +511,12 @@ func skippableEscrowReleaseErr(err error) bool {
 	if !ok {
 		return false
 	}
-	switch st.Code() {
-	case codes.FailedPrecondition, codes.NotFound:
+	if st.Code() == codes.NotFound {
 		return true
-	default:
-		return false
 	}
+	// Only the already-released / wrong-state CAS. Provider-not-set-up and
+	// transfers-not-ready are also FailedPrecondition and must stay hard.
+	return st.Code() == codes.FailedPrecondition && strings.Contains(st.Message(), "invalid status")
 }
 
 // --- Change Order Methods ---

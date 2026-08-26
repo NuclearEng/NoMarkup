@@ -9,24 +9,27 @@ import (
 
 // Sentinel errors for the user domain.
 var (
-	ErrUserNotFound             = errors.New("user not found")
-	ErrEmailTaken               = errors.New("email already taken")
-	ErrInvalidCredentials       = errors.New("invalid credentials")
-	ErrTokenExpired             = errors.New("token expired")
-	ErrTokenRevoked             = errors.New("token revoked")
-	ErrAccountSuspended         = errors.New("account suspended")
-	ErrAccountBanned            = errors.New("account banned")
-	ErrCannotSuspendBanned      = errors.New("cannot suspend a banned account")
-	ErrAccountDeactivated       = errors.New("account deactivated")
-	ErrProviderProfileNotFound  = errors.New("provider profile not found")
-	ErrInvalidRole              = errors.New("invalid role")
-	ErrCategoryNotFound         = errors.New("category not found")
-	ErrInvalidToken             = errors.New("invalid or expired verification token")
-	ErrInvalidOTP               = errors.New("invalid OTP code")
-	ErrOTPExpired               = errors.New("OTP code expired")
-	ErrDocumentNotFound         = errors.New("document not found")
-	ErrInvalidDocumentType      = errors.New("invalid document type")
-	ErrMissingFileName          = errors.New("file_name is required")
+	ErrUserNotFound            = errors.New("user not found")
+	ErrEmailTaken              = errors.New("email already taken")
+	ErrInvalidCredentials      = errors.New("invalid credentials")
+	ErrTokenExpired            = errors.New("token expired")
+	ErrTokenRevoked            = errors.New("token revoked")
+	ErrAccountSuspended        = errors.New("account suspended")
+	ErrAccountBanned           = errors.New("account banned")
+	ErrCannotSuspendBanned     = errors.New("cannot suspend a banned account")
+	ErrAccountDeactivated      = errors.New("account deactivated")
+	ErrProviderProfileNotFound = errors.New("provider profile not found")
+	ErrInvalidRole             = errors.New("invalid role")
+	ErrCategoryNotFound        = errors.New("category not found")
+	ErrInvalidToken            = errors.New("invalid or expired verification token")
+	ErrInvalidOTP              = errors.New("invalid OTP code")
+	ErrOTPExpired              = errors.New("OTP code expired")
+	ErrOTPRateLimited          = errors.New("otp rate limited")
+	ErrInvalidPhone            = errors.New("invalid phone number")
+	ErrServiceUnavailable      = errors.New("service temporarily unavailable")
+	ErrDocumentNotFound        = errors.New("document not found")
+	ErrInvalidDocumentType     = errors.New("invalid document type")
+	ErrMissingFileName         = errors.New("file_name is required")
 	// ErrResubmissionLimitReached is FR-2.10 hard lockout: after 3 rejections
 	// for a document type, further uploads are refused (contact support).
 	ErrResubmissionLimitReached = errors.New("resubmission limit reached")
@@ -37,7 +40,7 @@ var (
 	ErrEmailNotVerified         = errors.New("email not verified")
 	ErrPropertyNotFound         = errors.New("property not found")
 	// ErrInvalidPropertyPhotos — not http(s), over max 5, or empty after trim when required.
-	ErrInvalidPropertyPhotos    = errors.New("invalid property photos")
+	ErrInvalidPropertyPhotos = errors.New("invalid property photos")
 
 	// GDPR / CCPA erasure pipeline.
 	ErrDeletionAlreadyRequested  = errors.New("account deletion already requested")
@@ -209,22 +212,22 @@ type TokenPair struct {
 // 031): they are nacl/secretbox ciphertext in the database and are decrypted by
 // the repository on read, so every field here is plaintext.
 type ProviderProfile struct {
-	ID                       string
-	UserID                   string
-	BusinessName             string
-	Bio                      string
-	ServiceAddress           string
-	EINTIN                   string
-	InsurancePolicyNumber    string
+	ID                    string
+	UserID                string
+	BusinessName          string
+	Bio                   string
+	ServiceAddress        string
+	EINTIN                string
+	InsurancePolicyNumber string
 	// InsuranceProvider is a carrier name (not encrypted — not personal data).
 	InsuranceProvider string
 	// InsuranceExpiry is YYYY-MM-DD when set; empty when unset.
 	InsuranceExpiry string
 	// InsuranceCoverageCents is liability limit in integer cents; 0 = unset.
-	InsuranceCoverageCents int64
-	Latitude               *float64
-	Longitude              *float64
-	ServiceRadiusKm        float64
+	InsuranceCoverageCents   int64
+	Latitude                 *float64
+	Longitude                *float64
+	ServiceRadiusKm          float64
 	DefaultPaymentTiming     string
 	DefaultMilestoneJSON     []byte
 	CancellationPolicy       string

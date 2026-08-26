@@ -905,9 +905,26 @@ func (s *PaymentService) loadPaymentForSoftReplay(ctx context.Context, input dom
 // Concurrency (MON-14): CAS pending→processing so only one caller captures;
 // Stripe capture carries a deterministic idempotency key so a retry after a
 // crash cannot double-capture.
-func (s *PaymentService) ProcessPayment(ctx context.Context, paymentID string, paymentMethodID string) (*domain.Payment, error) {
+func authorizeCapture(payment *domain.Payment, actor ReleaseActor) error {
+	if actor.System || actor.IsAdmin {
+		return nil
+	}
+	if actor.UserID == "" {
+		return fmt.Errorf("process payment: %w", domain.ErrNotAuthorizedActor)
+	}
+	if actor.UserID == payment.CustomerID {
+		return nil
+	}
+	return fmt.Errorf("process payment: %w", domain.ErrNotAuthorizedActor)
+}
+
+func (s *PaymentService) ProcessPayment(ctx context.Context, paymentID string, paymentMethodID string, actor ReleaseActor) (*domain.Payment, error) {
 	payment, err := s.repo.GetPayment(ctx, paymentID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := authorizeCapture(payment, actor); err != nil {
 		return nil, err
 	}
 
@@ -1173,22 +1190,24 @@ func (s *PaymentService) CreateRefund(ctx context.Context, paymentID string, amo
 		return nil, err
 	}
 
-	if payment.Status != "escrow" && payment.Status != "released" && payment.Status != "completed" &&
-		payment.Status != "partially_refunded" {
-		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidStatus)
+	// Completing an in-flight claim is not a new refund: resume before the
+	// status allowlist and the post-payout refuse so a Stripe timeout cannot
+	// trap remaining balance (status may already be refunded / partially_refunded).
+	pendingResume := strings.HasPrefix(payment.StripeRefundID, "pending:")
+
+	if !pendingResume {
+		if payment.Status != "escrow" && payment.Status != "released" && payment.Status != "completed" &&
+			payment.Status != "partially_refunded" {
+			return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidStatus)
+		}
 	}
 
-	// Actor authority. Payouts are separate charge + transfer: once a payment
-	// is released or completed, the provider already holds their transfer, so
-	// a refund at that point pulls from the PLATFORM balance and the platform
-	// eats the difference. That is a dispute-resolution decision, not
-	// something either party may trigger unilaterally.
-	//
-	// While the payment is still in escrow no transfer has happened, so a
-	// party-initiated refund is just returning held funds — allowed.
+	// Actor authority. Authorize against payout vs held funds, not the refund
+	// label: once a transfer exists or the payment is released/completed, a
+	// refund pulls from the PLATFORM balance and is admin-only. An escrow
+	// remainder (partially_refunded, empty transfer) is still held funds.
 	if !actor.System && !actor.IsAdmin {
-		switch payment.Status {
-		case "released", "completed", "partially_refunded":
+		if !pendingResume && refundPaidOut(payment) {
 			slog.Warn("post-payout refund refused for non-admin actor",
 				"payment_id", paymentID,
 				"actor_user_id", actor.UserID,
@@ -1197,6 +1216,9 @@ func (s *PaymentService) CreateRefund(ctx context.Context, paymentID string, amo
 			return nil, fmt.Errorf("create refund: %w", domain.ErrNotAuthorizedActor)
 		}
 		if actor.UserID == "" {
+			return nil, fmt.Errorf("create refund: %w", domain.ErrNotAuthorizedActor)
+		}
+		if actor.UserID != payment.CustomerID && actor.UserID != payment.ProviderID {
 			return nil, fmt.Errorf("create refund: %w", domain.ErrNotAuthorizedActor)
 		}
 	}
@@ -1208,6 +1230,10 @@ func (s *PaymentService) CreateRefund(ctx context.Context, paymentID string, amo
 	// what was ever escrowed. A negative amount is also rejected outright.
 	if amountCents < 0 {
 		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidAmount)
+	}
+
+	if pendingResume {
+		return s.resumePendingRefund(ctx, payment, amountCents, reason)
 	}
 
 	// Determine refund amount: 0 means full refund of the remaining (un-refunded)
@@ -1231,37 +1257,137 @@ func (s *PaymentService) CreateRefund(ctx context.Context, paymentID string, amo
 		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidAmount)
 	}
 
-	// The cumulative refunded total persisted on the payment.
 	totalRefunded := alreadyRefunded + refundAmount
-
-	// Deterministic Stripe key: payment + target cumulative so concurrent
-	// attempts at the same cumulative total dedupe; distinct amounts get
-	// distinct keys.
-	refundKey := fmt.Sprintf("refund:%s:%d", paymentID, totalRefunded)
-	refundID, err := s.stripe.CreateRefund(ctx, payment.StripePaymentIntentID, refundAmount, refundKey)
-	if err != nil {
-		return nil, fmt.Errorf("create refund stripe: %w", err)
-	}
-
-	// Determine status: full refund (cumulative reaches the held amount) or partial.
-	refundStatus := "refunded"
-	if totalRefunded < payment.AmountCents {
-		refundStatus = "partially_refunded"
-	}
-
+	refundStatus := refundStatusForTotal(totalRefunded, payment.AmountCents)
 	now := time.Now()
-	// CAS: only apply if refund_amount_cents is still the prior we based this on.
-	if err := s.repo.UpdateRefundCAS(ctx, paymentID, alreadyRefunded, totalRefunded, reason, now, refundID, refundStatus); err != nil {
-		// Concurrent refund may have already applied the same total (same Stripe key).
-		if cur, gerr := s.repo.GetPayment(ctx, paymentID); gerr == nil {
-			if cur.RefundAmountCents >= totalRefunded {
-				return cur, nil
-			}
-		}
+	originalStatus := payment.Status
+	pendingKey := pendingRefundID(originalStatus, alreadyRefunded, totalRefunded, payment.StripeRefundID)
+
+	// Claim the remaining amount in DB BEFORE Stripe. Two concurrent refunds
+	// of different amounts used to both pass the remaining check, hit Stripe
+	// with distinct idempotency keys, and over-refund. CAS-first serializes
+	// the claim; the loser never calls Stripe.
+	if err := s.repo.UpdateRefundCAS(ctx, paymentID, alreadyRefunded, totalRefunded, reason, now, pendingKey, refundStatus); err != nil {
 		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidAmount)
 	}
 
-	return s.repo.GetPayment(ctx, paymentID)
+	return s.stripeAndStampRefund(ctx, payment, refundAmount, totalRefunded, originalStatus, pendingKey, refundStatus, reason, now)
+}
+
+// refundPaidOut is true when funds have left escrow: a Connect transfer exists
+// or the payment is already released/completed. partially_refunded alone is
+// not payout — that label is also used for escrow remainders.
+func refundPaidOut(p *domain.Payment) bool {
+	if p.StripeTransferID != "" {
+		return true
+	}
+	switch p.Status {
+	case "released", "completed":
+		return true
+	}
+	return false
+}
+
+func refundStatusForTotal(total, amount int64) string {
+	if total < amount {
+		return "partially_refunded"
+	}
+	return "refunded"
+}
+
+func pendingRefundID(origStatus string, prior, total int64, prevID string) string {
+	if prevID == "" || strings.HasPrefix(prevID, "pending:") {
+		prevID = "-"
+	}
+	return fmt.Sprintf("pending:%s:%d:%d:%s", origStatus, prior, total, prevID)
+}
+
+func (s *PaymentService) resumePendingRefund(ctx context.Context, payment *domain.Payment, amountCents int64, reason string) (*domain.Payment, error) {
+	orig, prior, total, _, ok := parsePendingRefundID(payment.StripeRefundID)
+	if !ok || payment.RefundAmountCents != total {
+		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidAmount)
+	}
+	delta := total - prior
+	requested := amountCents
+	if requested == 0 {
+		requested = delta
+	}
+	if requested != delta {
+		return nil, fmt.Errorf("create refund: %w", domain.ErrInvalidAmount)
+	}
+	status := refundStatusForTotal(total, payment.AmountCents)
+	return s.stripeAndStampRefund(ctx, payment, delta, total, orig, payment.StripeRefundID, status, reason, time.Now())
+}
+
+func parsePendingRefundID(id string) (origStatus string, prior, total int64, prevID string, ok bool) {
+	parts := strings.Split(id, ":")
+	if len(parts) < 4 || parts[0] != "pending" {
+		return "", 0, 0, "", false
+	}
+	p, err1 := strconv.ParseInt(parts[2], 10, 64)
+	t, err2 := strconv.ParseInt(parts[3], 10, 64)
+	if err1 != nil || err2 != nil {
+		return "", 0, 0, "", false
+	}
+	prevID = ""
+	if len(parts) >= 5 {
+		prevID = parts[len(parts)-1]
+		if prevID == "-" {
+			prevID = ""
+		}
+	}
+	return parts[1], p, t, prevID, true
+}
+
+func previousRefundIDFromPending(pendingID string) string {
+	_, _, _, prev, ok := parsePendingRefundID(pendingID)
+	if !ok || strings.HasPrefix(prev, "pending:") {
+		return ""
+	}
+	return prev
+}
+
+func (s *PaymentService) stripeAndStampRefund(
+	ctx context.Context,
+	payment *domain.Payment,
+	delta, total int64,
+	originalStatus, pendingKey, refundStatus, reason string,
+	now time.Time,
+) (*domain.Payment, error) {
+	refundKey := fmt.Sprintf("refund:%s:%d", payment.ID, total)
+	refundID, err := s.stripe.CreateRefund(ctx, payment.StripePaymentIntentID, delta, refundKey)
+	if err != nil {
+		if rerr := s.repo.RevertRefundClaim(ctx, payment.ID, delta, pendingKey, originalStatus); rerr != nil {
+			slog.ErrorContext(ctx, "revert refund claim failed after stripe error",
+				"payment_id", payment.ID,
+				"pending_key", pendingKey,
+				"error", rerr,
+			)
+			return nil, fmt.Errorf("create refund stripe: %w (revert: %v)", err, rerr)
+		}
+		return nil, fmt.Errorf("create refund stripe: %w", err)
+	}
+
+	if err := s.repo.UpdateRefundCAS(ctx, payment.ID, total, total, reason, now, refundID, refundStatus); err != nil {
+		cur, gerr := s.repo.GetPayment(ctx, payment.ID)
+		if gerr == nil && cur.StripeRefundID == pendingKey {
+			if serr := s.repo.StampRefundID(ctx, payment.ID, pendingKey, refundID); serr != nil {
+				slog.ErrorContext(ctx, "stamp refund id failed after stripe success",
+					"payment_id", payment.ID,
+					"pending_key", pendingKey,
+					"error", serr,
+				)
+				return nil, fmt.Errorf("create refund stamp: %w", serr)
+			}
+			return s.repo.GetPayment(ctx, payment.ID)
+		}
+		if gerr == nil && cur.RefundAmountCents >= total && !strings.HasPrefix(cur.StripeRefundID, "pending:") {
+			return cur, nil
+		}
+		return nil, fmt.Errorf("create refund stamp: %w", err)
+	}
+
+	return s.repo.GetPayment(ctx, payment.ID)
 }
 
 // GetPayment retrieves a payment by ID.

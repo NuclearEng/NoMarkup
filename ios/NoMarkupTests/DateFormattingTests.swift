@@ -86,9 +86,19 @@ final class DateFormattingTests: XCTestCase {
         XCTAssertNotEqual(farLabel, absolute)
     }
 
-    func testParseISO() {
+    func testParseISO() throws {
         XCTAssertNotNil(CatalogDateFormat.parseISO("2026-07-27T12:00:00Z"))
         XCTAssertNotNil(CatalogDateFormat.parseISO("2026-07-27T12:00:00.123Z"))
+        XCTAssertNotNil(CatalogDateFormat.parseISO("2026-07-27T12:00:00.123456Z"))
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = CatalogDateFormat.jsonDateDecodingStrategy
+        let json = """
+        {"id":"00000000-0000-0000-0000-000000009102","auction_ends_at":"2026-04-01T12:00:00.123456Z"}
+        """
+        let row = try decoder.decode(ListingSummary.self, from: Data(json.utf8))
+        XCTAssertNotNil(row.auctionEndsAt)
         XCTAssertNil(CatalogDateFormat.parseISO(""))
         XCTAssertNil(CatalogDateFormat.parseISO("   "))
         XCTAssertNil(CatalogDateFormat.parseISO("not-a-date"))

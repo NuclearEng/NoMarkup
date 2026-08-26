@@ -225,6 +225,7 @@ var routeTiers = []struct {
 	// register-phone; listed explicitly for clarity.
 	{"/api/v1/auth/register", TierAuth},
 	{"/api/v1/auth/register-phone", TierAuth},
+	{"/api/v1/auth/send-phone-otp", TierAuth},
 	{"/api/v1/auth/login", TierAuth},
 	{"/api/v1/auth/verify-email", TierAuth},
 	{"/api/v1/auth/verify-phone", TierAuth},
@@ -259,7 +260,8 @@ var routeTiers = []struct {
 	{"/api/v1/rum", TierPublicRead},
 
 	// Strict tier — expensive operations.
-	{"/api/v1/auth/send-phone-otp", TierStrict},
+	{"/api/v1/auth/register-phone/send-otp", TierAuth},
+	{"/api/v1/auth/register-phone", TierAuth},
 	{"/api/v1/auth/request-password-reset", TierStrict},
 	{"/api/v1/auth/mfa/enable", TierStrict},
 	{"/api/v1/auth/mfa/verify-setup", TierStrict},

@@ -16,6 +16,23 @@ enum CatalogDateFormat {
         return formatter.date(from: trimmed)
     }
 
+    /// JSONDecoder strategy that accepts Postgres RFC3339 with or without
+    /// fractional seconds. Foundation `.iso8601` rejects micros and fails the
+    /// whole `GET /listings` decode.
+    static var jsonDateDecodingStrategy: JSONDecoder.DateDecodingStrategy {
+        .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let raw = try container.decode(String.self)
+            if let date = parseISO(raw) {
+                return date
+            }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid ISO-8601 date: \(raw)"
+            )
+        }
+    }
+
     static func friendlyDateTime(_ iso: String) -> String {
         guard let date = parseISO(iso) else { return iso }
         return date.formatted(date: .abbreviated, time: .shortened)

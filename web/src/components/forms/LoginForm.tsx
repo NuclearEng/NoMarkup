@@ -35,6 +35,9 @@ import { useAuthStore, MFARequiredError } from '@/stores/auth-store';
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
+const OAUTH_MFA_CHALLENGE_KEY = 'nomarkup:oauth_mfa_challenge';
+const POST_LOGIN_NEXT_KEY = 'nomarkup:post_login_next';
+
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -48,10 +51,18 @@ export function LoginForm() {
   const totpInputRef = useRef<HTMLInputElement>(null);
 
   // Gateway OAuth init/callback redirects land here with ?error=<code>.
+  // MFA-enabled OAuth accounts set a 60s oauth_mfa_challenge cookie (not a
+  // query param, which would log the challenge). Persist in sessionStorage so
+  // Strict Mode remount / refresh does not consume-and-lose the token.
   useEffect(() => {
     const message = messageForOAuthError(searchParams.get('error'));
     if (message) {
       setFormError(message);
+    }
+    const challenge = restoreOAuthMfaChallenge();
+    if (challenge) {
+      setMfaChallengeToken(challenge);
+      setMfaStep(true);
     }
   }, [searchParams]);
 
@@ -60,19 +71,26 @@ export function LoginForm() {
     defaultValues: {
       email: '',
       password: '',
-      rememberMe: false,
     },
   });
 
   const postLoginPath = safeInternalPath(
-    searchParams.get('next') ?? searchParams.get('returnTo'),
+    searchParams.get('next') ??
+      searchParams.get('returnTo') ??
+      readSessionItem(POST_LOGIN_NEXT_KEY),
   );
+
+  function finishLogin(): void {
+    clearOAuthMfaChallenge();
+    removeSessionItem(POST_LOGIN_NEXT_KEY);
+    router.push(postLoginPath as Route);
+  }
 
   async function onSubmit(values: LoginFormValues) {
     setFormError(null);
     try {
       await login(values.email, values.password);
-      router.push(postLoginPath as Route);
+      finishLogin();
     } catch (error) {
       if (error instanceof MFARequiredError) {
         setMfaChallengeToken(error.challengeToken);
@@ -91,12 +109,20 @@ export function LoginForm() {
     setMfaSubmitting(true);
     try {
       await completeMFALogin(mfaChallengeToken, totpCode);
-      router.push(postLoginPath as Route);
+      finishLogin();
     } catch (error) {
       setFormError(getApiErrorMessage(error, 'Invalid verification code'));
     } finally {
       setMfaSubmitting(false);
     }
+  }
+
+  function onMfaBack(): void {
+    setMfaStep(false);
+    setTotpCode('');
+    setFormError(null);
+    setMfaChallengeToken('');
+    clearOAuthMfaChallenge();
   }
 
   if (mfaStep) {
@@ -154,11 +180,7 @@ export function LoginForm() {
               type="button"
               variant="ghost"
               className="min-h-[44px] w-full text-white/60 hover:text-white"
-              onClick={() => {
-                setMfaStep(false);
-                setTotpCode('');
-                setFormError(null);
-              }}
+              onClick={onMfaBack}
             >
               Back to login
             </Button>
@@ -236,23 +258,7 @@ export function LoginForm() {
               )}
             />
 
-            <div className="flex min-h-[44px] items-center justify-between">
-              <FormField
-                control={form.control}
-                name="rememberMe"
-                render={({ field }) => (
-                  <label className="flex min-h-[44px] cursor-pointer items-center gap-2 py-1">
-                    <input
-                      type="checkbox"
-                      checked={field.value}
-                      onChange={field.onChange}
-                      aria-label="Remember me"
-                      className="h-5 w-5 rounded border-white/20 bg-white/5 accent-[var(--brand-gold)]"
-                    />
-                    <span className="text-sm text-white/65">Remember me</span>
-                  </label>
-                )}
-              />
+            <div className="flex min-h-[44px] items-center justify-end">
               <Link
                 href="/forgot-password"
                 className="flex min-h-[44px] items-center text-sm font-medium text-white/65 underline-offset-4 transition-colors hover:text-white hover:underline"
@@ -297,4 +303,66 @@ export function LoginForm() {
       </CardFooter>
     </Card>
   );
+}
+
+function readSessionItem(key: string): string | null {
+  try {
+    const value = sessionStorage.getItem(key);
+    return value && value.trim() !== '' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionItem(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // sessionStorage can throw in private mode.
+  }
+}
+
+function removeSessionItem(key: string): void {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
+function readCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(
+    new RegExp('(?:^|; )' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'),
+  );
+  const raw = match?.[1];
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function clearCookie(name: string): void {
+  if (typeof document === 'undefined') return;
+  const secure = location.protocol === 'https:' ? '; secure' : '';
+  document.cookie = name + '=; path=/; max-age=0; samesite=strict' + secure;
+}
+
+function restoreOAuthMfaChallenge(): string | null {
+  const stored = readSessionItem(OAUTH_MFA_CHALLENGE_KEY);
+  if (stored) return stored;
+  const cookie = readCookie('oauth_mfa_challenge');
+  if (!cookie || cookie.trim() === '') return null;
+  writeSessionItem(OAUTH_MFA_CHALLENGE_KEY, cookie);
+  // Cookie is short-lived (60s); storage is the source of truth until MFA
+  // succeeds or the user hits Back.
+  clearCookie('oauth_mfa_challenge');
+  return cookie;
+}
+
+function clearOAuthMfaChallenge(): void {
+  removeSessionItem(OAUTH_MFA_CHALLENGE_KEY);
+  clearCookie('oauth_mfa_challenge');
 }

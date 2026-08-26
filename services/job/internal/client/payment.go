@@ -47,41 +47,53 @@ func NewPaymentClient(addr string) (*PaymentClient, error) {
 	}, nil
 }
 
+const (
+	escrowListPageSize = 100
+	maxEscrowListPages = 20
+)
+
 // ListEscrowPaymentIDs returns ids of payments in escrow for contractID.
 // Payment ListPayments filters by user+status+contract_id in SQL; the
-// contract_id equality check below is belt-and-braces.
+// contract_id equality check below is belt-and-braces. Pages until !HasNext;
+// a truncated list is a hard error so auto-approve cannot complete on a
+// partial set.
 func (c *PaymentClient) ListEscrowPaymentIDs(ctx context.Context, customerID, contractID string) ([]string, error) {
 	if c == nil || c.client == nil {
-		return nil, nil
+		return nil, fmt.Errorf("payment client unset")
 	}
 	st := paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW
 	cid := contractID
-	resp, err := c.client.ListPayments(ctx, &paymentv1.ListPaymentsRequest{
-		UserId:       customerID,
-		ContractId:   &cid,
-		StatusFilter: &st,
-		Pagination: &commonv1.PaginationRequest{
-			Page:     1,
-			PageSize: 100,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list escrow payments: %w", err)
+	ids := make([]string, 0)
+	for page := int32(1); page <= maxEscrowListPages; page++ {
+		resp, err := c.client.ListPayments(ctx, &paymentv1.ListPaymentsRequest{
+			UserId:       customerID,
+			ContractId:   &cid,
+			StatusFilter: &st,
+			Pagination: &commonv1.PaginationRequest{
+				Page:     page,
+				PageSize: escrowListPageSize,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list escrow payments: %w", err)
+		}
+		for _, p := range resp.GetPayments() {
+			if p == nil || p.GetId() == "" {
+				continue
+			}
+			if contractID != "" && p.GetContractId() != contractID {
+				continue
+			}
+			if p.GetStatus() != paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW {
+				continue
+			}
+			ids = append(ids, p.GetId())
+		}
+		if !resp.GetPagination().GetHasNext() {
+			return ids, nil
+		}
 	}
-	ids := make([]string, 0, len(resp.GetPayments()))
-	for _, p := range resp.GetPayments() {
-		if p == nil || p.GetId() == "" {
-			continue
-		}
-		if contractID != "" && p.GetContractId() != contractID {
-			continue
-		}
-		if p.GetStatus() != paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW {
-			continue
-		}
-		ids = append(ids, p.GetId())
-	}
-	return ids, nil
+	return nil, fmt.Errorf("list escrow payments: truncated after %d pages", maxEscrowListPages)
 }
 
 // ReleaseEscrow releases a held payment as a trusted in-process System actor.
@@ -89,7 +101,7 @@ func (c *PaymentClient) ListEscrowPaymentIDs(ctx context.Context, customerID, co
 // party check without impersonating the customer.
 func (c *PaymentClient) ReleaseEscrow(ctx context.Context, paymentID, reason string) error {
 	if c == nil || c.client == nil {
-		return nil
+		return fmt.Errorf("payment client unset")
 	}
 	_, err := c.client.ReleaseEscrow(ctx, &paymentv1.ReleaseEscrowRequest{
 		PaymentId:       paymentID,

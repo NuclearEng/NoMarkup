@@ -4,38 +4,35 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/nomarkup/nomarkup/services/payment/internal/crypto"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
 
 // decryptTaxFormAddress returns the plaintext provider address for a tax-form
-// row read from storage. provider_address is written as plaintext by
-// GenerateTaxForm (which decrypts provider_profiles.service_address via
-// GetProviderProfile before persisting), but rows generated before that decrypt
-// step shipped — and any row copied straight from the still-encrypted profile
-// column — hold nacl/secretbox ciphertext. To guarantee every read path
-// (single GET, LIST, generate, HTML/download) returns plaintext consistently,
-// this helper decrypts on read *only when the value authenticates as
-// ciphertext*: a genuine plaintext street address fails secretbox auth (or
-// base64 decode) and is returned unchanged, so the helper is idempotent and
-// safe to apply unconditionally. Without a configured cipher the value is
-// passed through as-is (dev fallback, mirrors GetProviderProfile).
-func (r *PostgresRepository) decryptTaxFormAddress(addr string) string {
-	if addr == "" || r.cipher == nil {
-		return addr
+// row read from storage. Detection is PER VALUE (DecryptStringOrPassthrough),
+// never a row flag: a genuine street address is not our wire format and passes
+// through; authenticable ciphertext decrypts; secretbox-shaped bytes no key
+// opens are an error — the raw base64 is never returned to a caller (that is
+// the 1099 leak this helper exists to prevent).
+func (r *PostgresRepository) decryptTaxFormAddress(addr string) (string, error) {
+	if addr == "" {
+		return "", nil
 	}
-	plain, err := r.cipher.DecryptString(addr)
+	if r.cipher == nil {
+		// No key: we cannot open ciphertext, and emitting a possible nonce is
+		// the failure mode being prevented. Legacy plaintext still passes.
+		if crypto.LooksLikeCiphertext(addr) {
+			return "", fmt.Errorf("%w: no PII cipher configured for tax form provider_address", crypto.ErrKeyMissing)
+		}
+		return addr, nil
+	}
+	plain, err := r.cipher.DecryptStringOrPassthrough(addr)
 	if err != nil {
-		// Not authenticable ciphertext under the current/previous key — treat
-		// as already-plaintext (the common case for freshly generated rows).
-		slog.Debug("tax form provider_address not decryptable; treating as plaintext",
-			"error", err,
-		)
-		return addr
+		return "", err
 	}
-	return plain
+	return plain, nil
 }
 
 // CreateTaxForm inserts a new tax form record.
@@ -96,7 +93,11 @@ func (r *PostgresRepository) GetTaxForm(ctx context.Context, providerID string, 
 		}
 		return nil, fmt.Errorf("get tax form: %w", err)
 	}
-	tf.ProviderAddress = r.decryptTaxFormAddress(tf.ProviderAddress)
+	plain, derr := r.decryptTaxFormAddress(tf.ProviderAddress)
+	if derr != nil {
+		return nil, fmt.Errorf("get tax form: decrypt provider_address: %w", derr)
+	}
+	tf.ProviderAddress = plain
 	return tf, nil
 }
 
@@ -131,8 +132,12 @@ func (r *PostgresRepository) ListTaxForms(ctx context.Context, providerID string
 		}
 		// Decrypt provider_address on read so the LIST projection returns the
 		// same plaintext address as the single-form / generate / download paths.
-		// Previously the LIST leaked raw secretbox ciphertext for encrypted rows.
-		tf.ProviderAddress = r.decryptTaxFormAddress(tf.ProviderAddress)
+		// Fail closed on unopenable ciphertext — never emit the raw base64.
+		plain, derr := r.decryptTaxFormAddress(tf.ProviderAddress)
+		if derr != nil {
+			return nil, fmt.Errorf("list tax forms: decrypt provider_address: %w", derr)
+		}
+		tf.ProviderAddress = plain
 		forms = append(forms, tf)
 	}
 
@@ -313,13 +318,19 @@ func (r *PostgresRepository) GetPaymentsForContract(ctx context.Context, contrac
 }
 
 // GetProviderProfile returns the business name and service address for a provider.
+//
+// Detection is PER VALUE (crypto.DecryptStringOrPassthrough), not per row via
+// pii_encrypted_v1. The flag is a row-level boolean but encryption is a
+// column-level property, so a flagged-TRUE row can still hold a legacy
+// plaintext service_address (or an unflagged row can hold ciphertext). Branching
+// on the flag would either fail DecryptString on plaintext or leak raw
+// secretbox onto the 1099-NEC. Per-value authentication cannot drift that way.
 func (r *PostgresRepository) GetProviderProfile(ctx context.Context, providerID string) (string, string, error) {
 	var businessName, serviceAddress *string
-	var piiEncrypted bool
 	err := r.pool.QueryRow(ctx, `
-		SELECT pp.business_name, pp.service_address, pp.pii_encrypted_v1
+		SELECT pp.business_name, pp.service_address
 		FROM provider_profiles pp
-		WHERE pp.user_id = $1`, providerID).Scan(&businessName, &serviceAddress, &piiEncrypted)
+		WHERE pp.user_id = $1`, providerID).Scan(&businessName, &serviceAddress)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Fall back to the users table for the provider name.
@@ -350,19 +361,11 @@ func (r *PostgresRepository) GetProviderProfile(ctx context.Context, providerID 
 		addr = *serviceAddress
 	}
 
-	// service_address is stored as nacl/secretbox ciphertext once pii_encrypted_v1
-	// is set (migration 031). Decrypt it before it reaches the 1099-NEC form;
-	// otherwise the tax form renders raw AES/secretbox ciphertext and is unfileable.
-	if piiEncrypted && addr != "" {
-		if r.cipher == nil {
-			return "", "", fmt.Errorf("get provider profile: cannot decrypt service_address: cipher not configured")
-		}
-		plain, decErr := r.cipher.DecryptString(addr)
-		if decErr != nil {
-			return "", "", fmt.Errorf("get provider profile: decrypt service_address: %w", decErr)
-		}
-		addr = plain
+	plain, decErr := r.decryptTaxFormAddress(addr)
+	if decErr != nil {
+		return "", "", fmt.Errorf("get provider profile: decrypt service_address: %w", decErr)
 	}
+	addr = plain
 
 	// If no business name, fall back to user name.
 	if name == "" {

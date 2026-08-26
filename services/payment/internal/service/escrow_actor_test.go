@@ -49,6 +49,47 @@ func TestReleaseEscrow_providerCannotReleaseOwnEscrow(t *testing.T) {
 	assert.Zero(t, f.transferCalls, "must not move money")
 }
 
+func TestProcessPayment_providerCannotCapture(t *testing.T) {
+	t.Parallel()
+
+	payment := actorTestPayment("pay-actor-capture")
+	payment.Status = "pending"
+	f := newEscrowFixture(t, "pending", payment)
+
+	_, err := f.svc.ProcessPayment(context.Background(), payment.ID, "pm_test",
+		ReleaseActor{UserID: payment.ProviderID})
+
+	require.ErrorIs(t, err, domain.ErrNotAuthorizedActor)
+	assert.Zero(t, f.updateCalls["processing"])
+	assert.Zero(t, f.updateCalls["escrow"])
+}
+
+func TestProcessPayment_customerCanCapture(t *testing.T) {
+	t.Parallel()
+
+	payment := actorTestPayment("pay-actor-capture-ok")
+	payment.Status = "pending"
+	f := newEscrowFixture(t, "pending", payment)
+
+	got, err := f.svc.ProcessPayment(context.Background(), payment.ID, "pm_test",
+		ReleaseActor{UserID: payment.CustomerID})
+
+	require.NoError(t, err)
+	assert.Equal(t, "escrow", got.Status)
+}
+
+func TestProcessPayment_emptyActorRefused(t *testing.T) {
+	t.Parallel()
+
+	payment := actorTestPayment("pay-actor-capture-empty")
+	payment.Status = "pending"
+	f := newEscrowFixture(t, "pending", payment)
+
+	_, err := f.svc.ProcessPayment(context.Background(), payment.ID, "pm_test", ReleaseActor{})
+
+	require.ErrorIs(t, err, domain.ErrNotAuthorizedActor)
+}
+
 func TestReleaseEscrow_customerMayRelease(t *testing.T) {
 	t.Parallel()
 
@@ -118,16 +159,33 @@ func TestReleaseEscrow_strangerIsRefused(t *testing.T) {
 }
 
 // The other half of the drain: once the provider holds their transfer, a
-// refund comes out of the platform's balance.
+// refund comes out of the platform's balance. partially_refunded is denied
+// only with a transfer (or a released/completed origin) — an escrow remainder
+// is still held funds.
 func TestCreateRefund_customerCannotRefundAfterRelease(t *testing.T) {
 	t.Parallel()
 
-	for _, status := range []string{"released", "completed", "partially_refunded"} {
-		t.Run(status, func(t *testing.T) {
+	cases := []struct {
+		name       string
+		status     string
+		transferID string
+	}{
+		{name: "released", status: "released"},
+		{name: "completed", status: "completed"},
+		{name: "partially_refunded_with_transfer", status: "partially_refunded", transferID: "tr_paid_out"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			payment := actorTestPayment("pay-actor-refund-" + status)
-			f := newEscrowFixture(t, status, payment)
+			payment := actorTestPayment("pay-actor-refund-" + tc.name)
+			payment.StripeTransferID = tc.transferID
+			if tc.status == "partially_refunded" {
+				payment.RefundAmountCents = 10000
+				payment.StripeRefundID = "re_prior"
+			}
+			f := newEscrowFixture(t, tc.status, payment)
 
 			_, err := f.svc.CreateRefund(context.Background(), payment.ID, 0, "changed my mind",
 				ReleaseActor{UserID: payment.CustomerID})
@@ -136,6 +194,22 @@ func TestCreateRefund_customerCannotRefundAfterRelease(t *testing.T) {
 			assert.Zero(t, f.refundCalls, "must not issue a Stripe refund")
 		})
 	}
+}
+
+func TestCreateRefund_customerMayRefundEscrowRemainder(t *testing.T) {
+	t.Parallel()
+
+	payment := actorTestPayment("pay-actor-refund-remainder")
+	payment.RefundAmountCents = 10000
+	payment.StripeRefundID = "re_prior_partial"
+	f := newEscrowFixture(t, "partially_refunded", payment)
+
+	got, err := f.svc.CreateRefund(context.Background(), payment.ID, 0, "cancel remaining",
+		ReleaseActor{UserID: payment.CustomerID})
+
+	require.NoError(t, err)
+	assert.Equal(t, "refunded", got.Status)
+	assert.Greater(t, f.refundCalls, 0)
 }
 
 func TestCreateRefund_providerCannotRefundAfterRelease(t *testing.T) {
@@ -153,6 +227,19 @@ func TestCreateRefund_providerCannotRefundAfterRelease(t *testing.T) {
 
 // Still in escrow, no transfer has happened — returning held funds is a
 // legitimate party action.
+func TestCreateRefund_strangerCannotRefundEscrow(t *testing.T) {
+	t.Parallel()
+
+	payment := actorTestPayment("pay-actor-refund-stranger")
+	f := newEscrowFixture(t, "escrow", payment)
+
+	_, err := f.svc.CreateRefund(context.Background(), payment.ID, 0, "not my payment",
+		ReleaseActor{UserID: "bystander-9"})
+
+	require.ErrorIs(t, err, domain.ErrNotAuthorizedActor)
+	assert.Zero(t, f.refundCalls, "must not issue a Stripe refund")
+}
+
 func TestCreateRefund_customerMayRefundWhileInEscrow(t *testing.T) {
 	t.Parallel()
 

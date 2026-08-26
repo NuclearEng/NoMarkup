@@ -2154,8 +2154,13 @@ type ProcessPaymentRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	PaymentId       string                 `protobuf:"bytes,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
 	PaymentMethodId string                 `protobuf:"bytes,2,opt,name=payment_method_id,json=paymentMethodId,proto3" json:"payment_method_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Who is capturing. Required for caller-initiated captures so the payment
+	// service can refuse a provider pulling authorized funds into escrow even
+	// if a mesh peer skips the gateway party check.
+	ActorUserId   string `protobuf:"bytes,3,opt,name=actor_user_id,json=actorUserId,proto3" json:"actor_user_id,omitempty"`
+	ActorIsAdmin  bool   `protobuf:"varint,4,opt,name=actor_is_admin,json=actorIsAdmin,proto3" json:"actor_is_admin,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProcessPaymentRequest) Reset() {
@@ -2200,6 +2205,20 @@ func (x *ProcessPaymentRequest) GetPaymentMethodId() string {
 		return x.PaymentMethodId
 	}
 	return ""
+}
+
+func (x *ProcessPaymentRequest) GetActorUserId() string {
+	if x != nil {
+		return x.ActorUserId
+	}
+	return ""
+}
+
+func (x *ProcessPaymentRequest) GetActorIsAdmin() bool {
+	if x != nil {
+		return x.ActorIsAdmin
+	}
+	return false
 }
 
 type ProcessPaymentResponse struct {
@@ -10025,11 +10044,13 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	" \x01(\tR\x0eidempotencyKey\"t\n" +
 	"\x15CreatePaymentResponse\x126\n" +
 	"\apayment\x18\x01 \x01(\v2\x1c.nomarkup.payment.v1.PaymentR\apayment\x12#\n" +
-	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\"b\n" +
+	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\"\xac\x01\n" +
 	"\x15ProcessPaymentRequest\x12\x1d\n" +
 	"\n" +
 	"payment_id\x18\x01 \x01(\tR\tpaymentId\x12*\n" +
-	"\x11payment_method_id\x18\x02 \x01(\tR\x0fpaymentMethodId\"P\n" +
+	"\x11payment_method_id\x18\x02 \x01(\tR\x0fpaymentMethodId\x12\"\n" +
+	"\ractor_user_id\x18\x03 \x01(\tR\vactorUserId\x12$\n" +
+	"\x0eactor_is_admin\x18\x04 \x01(\bR\factorIsAdmin\"P\n" +
 	"\x16ProcessPaymentResponse\x126\n" +
 	"\apayment\x18\x01 \x01(\v2\x1c.nomarkup.payment.v1.PaymentR\apayment\"\xc2\x01\n" +
 	"\x14ReleaseEscrowRequest\x12\x1d\n" +

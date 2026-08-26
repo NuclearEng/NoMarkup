@@ -29,8 +29,9 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 
 // SetCipher wires the PII cipher used to decrypt at-rest provider PII (e.g.
 // provider_profiles.service_address when generating 1099-NEC tax forms). It is
-// set after construction so the constructor signature stays stable; when nil,
-// PII reads fall back to treating stored values as plaintext.
+// set after construction so the constructor signature stays stable. When nil,
+// plaintext-shaped values still pass through; secretbox-shaped values fail
+// closed rather than leaking ciphertext.
 func (r *PostgresRepository) SetCipher(c *crypto.Cipher) {
 	r.cipher = c
 }
@@ -508,6 +509,103 @@ func (r *PostgresRepository) UpdateRefundCAS(ctx context.Context, id string, exp
 		return fmt.Errorf("update refund cas: %w", domain.ErrInvalidAmount)
 	}
 	return nil
+}
+
+func (r *PostgresRepository) RevertRefundClaim(ctx context.Context, id string, delta int64, pendingID, statusIfZero string) error {
+	if delta <= 0 {
+		return fmt.Errorf("revert refund claim: %w", domain.ErrInvalidAmount)
+	}
+	prev := previousRefundIDFromPending(pendingID)
+	var restoreID *string
+	if prev != "" {
+		restoreID = &prev
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE payments SET
+			refund_amount_cents = refund_amount_cents - $2,
+			stripe_refund_id = CASE
+				WHEN refund_amount_cents - $2 = 0 THEN NULL
+				ELSE $5
+			END,
+			status = CASE
+				WHEN refund_amount_cents - $2 <= 0 THEN $4
+				WHEN refund_amount_cents - $2 < amount_cents THEN 'partially_refunded'
+				ELSE status
+			END,
+			updated_at = now()
+		WHERE id = $1
+		  AND stripe_refund_id = $3
+		  AND refund_amount_cents >= $2`,
+		id, delta, pendingID, statusIfZero, restoreID)
+	if err != nil {
+		return fmt.Errorf("revert refund claim: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("revert refund claim: %w", domain.ErrInvalidAmount)
+	}
+	return nil
+}
+
+// StampRefundID persists the real Stripe refund id only while stripe_refund_id
+// still equals pendingKey. Does not touch refund_amount_cents.
+func (r *PostgresRepository) StampRefundID(ctx context.Context, id, pendingKey, refundID string) error {
+	if pendingKey == "" || refundID == "" || strings.HasPrefix(refundID, "pending:") {
+		return fmt.Errorf("stamp refund id: %w", domain.ErrInvalidAmount)
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE payments SET
+			stripe_refund_id = $2,
+			updated_at = now()
+		WHERE id = $1
+		  AND stripe_refund_id = $3`,
+		id, refundID, pendingKey)
+	if err != nil {
+		return fmt.Errorf("stamp refund id: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("stamp refund id: %w", domain.ErrInvalidAmount)
+	}
+	return nil
+}
+
+// ConfirmRefundFromWebhook monotonically confirms a refund from a Stripe
+// charge.refunded event. It never decreases refund_amount_cents, never writes
+// above amount_cents, and never replaces a pending: CreateRefund claim.
+// RowsAffected == 0 is success (already confirmed, already higher, or an
+// in-flight claim owns the row).
+func (r *PostgresRepository) ConfirmRefundFromWebhook(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE payments SET
+			refund_amount_cents = $2,
+			refund_reason = $3,
+			refunded_at = $4,
+			stripe_refund_id = CASE WHEN $5 = '' THEN stripe_refund_id ELSE $5 END,
+			status = $6,
+			updated_at = now()
+		WHERE id = $1
+		  AND refund_amount_cents <= $2
+		  AND $2 <= amount_cents
+		  AND (stripe_refund_id IS NULL OR stripe_refund_id NOT LIKE 'pending:%')`,
+		id, refundAmountCents, refundReason, refundedAt, stripeRefundID, status)
+	if err != nil {
+		return fmt.Errorf("confirm refund from webhook: %w", err)
+	}
+	return nil
+}
+
+// previousRefundIDFromPending reads the prior Stripe refund id from
+// pending:{origStatus}:{prior}:{total}:{prevID}. Legacy 4-part tokens have no
+// prev id. "-" means empty. Never returns a pending: value.
+func previousRefundIDFromPending(pendingID string) string {
+	parts := strings.Split(pendingID, ":")
+	if len(parts) < 5 || parts[0] != "pending" {
+		return ""
+	}
+	prev := parts[len(parts)-1]
+	if prev == "" || prev == "-" || strings.HasPrefix(prev, "pending") {
+		return ""
+	}
+	return prev
 }
 
 // WithProviderAdvisoryLock serializes fn under a transaction-scoped advisory

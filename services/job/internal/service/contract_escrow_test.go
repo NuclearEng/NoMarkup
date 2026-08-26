@@ -192,12 +192,24 @@ func TestAutoReleaseCompletedContracts_releasesEscrowAsSystem(t *testing.T) {
 			wantRelease:  0,
 		},
 		{
-			name:         "nil escrow client still completes (unpaid / unwired)",
+			name:         "nil escrow client skips complete so next sweep retries",
 			escrow:       nil,
-			wantApproved: true,
-			wantJob:      true,
+			wantApproved: false,
+			wantJob:      false,
 			wantList:     0,
 			wantRelease:  0,
+		},
+		{
+			name: "provider not set up FailedPrecondition skips complete",
+			escrow: &mockEscrowReleaser{
+				ids:        []string{paymentID},
+				releaseErr: status.Error(codes.FailedPrecondition, "provider is not set up to receive payouts"),
+			},
+			wantApproved: false,
+			wantJob:      false,
+			wantList:     1,
+			wantRelease:  1,
+			wantReason:   "auto_release",
 		},
 		{
 			name: "not-in-escrow FailedPrecondition is fail-soft and still completes",
@@ -274,6 +286,28 @@ func TestAutoReleaseCompletedContracts_releasesEscrowAsSystem(t *testing.T) {
 	}
 }
 
+func TestAutoReleaseCompletedContracts_completedStatusReleasesWithoutReapprove(t *testing.T) {
+	t.Parallel()
+	const (
+		contractID = "c-stuck-1"
+		jobID      = "j-stuck-1"
+		customerID = "cust-1"
+		paymentID  = "pay-stuck-1"
+	)
+	c := awaitingContract(contractID, jobID, customerID)
+	c.Status = "completed"
+	repo := &autoReleaseRepo{awaiting: []domain.Contract{c}}
+	escrow := &mockEscrowReleaser{ids: []string{paymentID}}
+	svc := NewContractService(repo, nil)
+	svc.SetEscrowReleaser(escrow)
+
+	require.NoError(t, svc.AutoReleaseCompletedContracts(context.Background()))
+	assert.Equal(t, 1, escrow.releaseN)
+	assert.Equal(t, []string{paymentID}, escrow.released)
+	assert.Empty(t, repo.approved, "already-completed must not call ApproveCompletion")
+	assert.Empty(t, repo.jobsCompleted)
+}
+
 func TestAutoReleaseCompletedContracts_idempotentSecondSweep(t *testing.T) {
 	t.Parallel()
 	repo := &autoReleaseRepo{
@@ -298,7 +332,11 @@ func TestSkippableEscrowReleaseErr(t *testing.T) {
 	t.Parallel()
 	assert.True(t, skippableEscrowReleaseErr(nil))
 	assert.True(t, skippableEscrowReleaseErr(status.Error(codes.FailedPrecondition, "invalid status")))
+	assert.True(t, skippableEscrowReleaseErr(status.Error(codes.FailedPrecondition, "invalid status for this operation")))
 	assert.True(t, skippableEscrowReleaseErr(status.Error(codes.NotFound, "payment not found")))
+	assert.False(t, skippableEscrowReleaseErr(status.Error(codes.FailedPrecondition, "provider is not set up to receive payouts")))
+	assert.False(t, skippableEscrowReleaseErr(status.Error(codes.FailedPrecondition, "connected account is not ready to receive transfers — complete Stripe onboarding")))
+	assert.False(t, skippableEscrowReleaseErr(status.Error(codes.Unavailable, "stripe timeout")))
 	assert.False(t, skippableEscrowReleaseErr(status.Error(codes.PermissionDenied, "provider cannot release")))
 	assert.False(t, skippableEscrowReleaseErr(errors.New("network")))
 }

@@ -88,7 +88,11 @@ func (s *Server) Register(ctx context.Context, req *userv1.RegisterRequest) (*us
 		return nil, mapDomainError(err)
 	}
 
-	s.sendVerificationEmail(ctx, userID, input.Email, verificationToken)
+	if phone, ok := phoneFromSyntheticEmail(input.Email); ok {
+		s.attachVerifiedSignupPhone(ctx, userID, phone)
+	} else {
+		s.sendVerificationEmail(ctx, userID, input.Email, verificationToken)
+	}
 
 	return &userv1.RegisterResponse{
 		UserId:               userID,
@@ -96,6 +100,38 @@ func (s *Server) Register(ctx context.Context, req *userv1.RegisterRequest) (*us
 		RefreshToken:         pair.RefreshToken,
 		AccessTokenExpiresAt: timestamppb.New(pair.AccessTokenExpiresAt),
 	}, nil
+}
+
+const phoneNomarkupDomain = "@phone.nomarkup"
+
+func phoneFromSyntheticEmail(email string) (string, bool) {
+	email = strings.TrimSpace(email)
+	lower := strings.ToLower(email)
+	if !strings.HasSuffix(lower, phoneNomarkupDomain) {
+		return "", false
+	}
+	phone := email[:len(email)-len(phoneNomarkupDomain)]
+	if !strings.HasPrefix(phone, "+") || len(phone) < 9 {
+		return "", false
+	}
+	return phone, true
+}
+
+func (s *Server) attachVerifiedSignupPhone(ctx context.Context, userID, phone string) {
+	if s.phone == nil || s.profile == nil || userID == "" || phone == "" {
+		return
+	}
+	if !s.phone.ConsumeVerifiedPhoneClaim(ctx, phone) {
+		slog.Warn("register: phone-only email without verified OTP claim", "user_id", userID)
+		return
+	}
+	if _, err := s.profile.UpdateUser(ctx, userID, domain.UpdateUserInput{Phone: &phone}); err != nil {
+		slog.Error("register: persist verified phone failed", "user_id", userID, "error", err)
+		return
+	}
+	if err := s.phone.MarkPhoneVerified(ctx, userID); err != nil {
+		slog.Error("register: mark phone verified failed", "user_id", userID, "error", err)
+	}
 }
 
 func (s *Server) Login(ctx context.Context, req *userv1.LoginRequest) (*userv1.LoginResponse, error) {
@@ -146,6 +182,18 @@ func (s *Server) FindOrCreateByOAuth(ctx context.Context, req *userv1.FindOrCrea
 	}
 
 	userID, pair, isNewUser, err := s.auth.FindOrCreateByOAuth(ctx, input)
+	var mfa *service.MFARequiredError
+	if errors.As(err, &mfa) {
+		st, stErr := status.New(codes.FailedPrecondition, "mfa required").WithDetails(&userv1.LoginResponse{
+			UserId:            mfa.UserID,
+			MfaRequired:       true,
+			MfaChallengeToken: mfa.Challenge,
+		})
+		if stErr != nil {
+			return nil, status.Error(codes.FailedPrecondition, "mfa required")
+		}
+		return nil, st.Err()
+	}
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -319,9 +367,6 @@ func (s *Server) sendVerificationEmail(ctx context.Context, userID, email, verif
 }
 
 func (s *Server) SendPhoneOTP(ctx context.Context, req *userv1.SendPhoneOTPRequest) (*userv1.SendPhoneOTPResponse, error) {
-	if req.GetUserId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "user_id is required")
-	}
 	if req.GetPhone() == "" {
 		return nil, status.Error(codes.InvalidArgument, "phone is required")
 	}
@@ -1576,6 +1621,12 @@ func mapDomainError(err error) error {
 		return status.Error(codes.InvalidArgument, "invalid OTP code")
 	case errors.Is(err, domain.ErrOTPExpired):
 		return status.Error(codes.InvalidArgument, "OTP code expired")
+	case errors.Is(err, domain.ErrOTPRateLimited):
+		return status.Error(codes.ResourceExhausted, err.Error())
+	case errors.Is(err, domain.ErrInvalidPhone):
+		return status.Error(codes.InvalidArgument, "phone must be in E.164 format")
+	case errors.Is(err, domain.ErrServiceUnavailable):
+		return status.Error(codes.Unavailable, "service temporarily unavailable")
 	case errors.Is(err, domain.ErrDocumentNotFound):
 		return status.Error(codes.NotFound, "document not found")
 	case errors.Is(err, domain.ErrEmailNotVerified):

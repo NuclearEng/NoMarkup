@@ -147,6 +147,9 @@ type StripeService struct {
 	// tests only — never set in production). Used to prove MON-15: charge
 	// failure must not disburse the provider transfer.
 	testFailOffSession bool
+	// testFailRefund, when non-nil, is returned by CreateRefund instead of
+	// calling Stripe / DevStore (unit tests only — never set in production).
+	testFailRefund error
 }
 
 // NewStripeService creates a new StripeService for the given deployment
@@ -1089,6 +1092,9 @@ func (s *StripeService) CreatePlatformTransfer(ctx context.Context, amountCents 
 func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string, amountCents int64, idempotencyKey string) (string, error) {
 	if idempotencyKey == "" {
 		return "", fmt.Errorf("create refund: idempotency key required")
+	}
+	if s != nil && s.testFailRefund != nil {
+		return "", s.testFailRefund
 	}
 	if s.devMode {
 		slog.Info("dev mode: stub CreateRefund", "paymentIntentID", paymentIntentID, "idem", idempotencyKey)

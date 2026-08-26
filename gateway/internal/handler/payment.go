@@ -464,6 +464,8 @@ func (h *PaymentHandler) ProcessPayment(w http.ResponseWriter, r *http.Request) 
 	resp, err := h.paymentClient.ProcessPayment(r.Context(), &paymentv1.ProcessPaymentRequest{
 		PaymentId:       paymentID,
 		PaymentMethodId: req.PaymentMethodID,
+		ActorUserId:     claims.UserID,
+		ActorIsAdmin:    hasRole(claims, "admin"),
 	})
 	if err != nil {
 		writeGRPCError(w, err)

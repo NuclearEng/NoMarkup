@@ -29,7 +29,9 @@ actor APIClient {
         self.tokenStore = tokenStore ?? KeychainTokenStore()
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .iso8601
+        // Postgres RFC3339 often includes fractional seconds. Foundation's
+        // `.iso8601` strategy rejects those and fails the whole listings decode.
+        decoder.dateDecodingStrategy = CatalogDateFormat.jsonDateDecodingStrategy
         self.decoder = decoder
     }
 
@@ -211,7 +213,7 @@ actor APIClient {
         identityToken: String,
         fullName: String?,
         nonce: String? = nil
-    ) async throws -> AuthTokenPair {
+    ) async throws -> AuthLoginResult {
         let url = AppConfig.apiBaseURL.appending(path: "api/v1/auth/apple/native")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -229,19 +231,14 @@ actor APIClient {
 
         let (data, response) = try await session.data(for: request)
         try Self.throwIfNeeded(response: response, data: data)
-        let pair = try decoder.decode(AuthTokenPair.self, from: data)
-        try tokenStore.save(pair.accessToken, for: .accessToken)
-        if let refresh = pair.refreshToken {
-            try tokenStore.save(refresh, for: .refreshToken)
-        }
-        return pair
+        return try persistNativeOAuthSession(from: data)
     }
 
     /// POST /api/v1/auth/google/native — Google OIDC id_token from ASWebAuth + PKCE.
     ///
     /// The id_token must be a real Google-signed JWT (aud = GOOGLE_IOS_CLIENT_ID /
     /// GOOGLE_CLIENT_ID). Do not invent or self-sign tokens.
-    func signInWithGoogle(identityToken: String, fullName: String? = nil) async throws -> AuthTokenPair {
+    func signInWithGoogle(identityToken: String, fullName: String? = nil) async throws -> AuthLoginResult {
         let url = AppConfig.apiBaseURL.appending(path: "api/v1/auth/google/native")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -257,18 +254,13 @@ actor APIClient {
 
         let (data, response) = try await session.data(for: request)
         try Self.throwIfNeeded(response: response, data: data)
-        let pair = try decoder.decode(AuthTokenPair.self, from: data)
-        try tokenStore.save(pair.accessToken, for: .accessToken)
-        if let refresh = pair.refreshToken {
-            try tokenStore.save(refresh, for: .refreshToken)
-        }
-        return pair
+        return try persistNativeOAuthSession(from: data)
     }
 
     /// POST /api/v1/auth/facebook/native — authorization code (+ redirect_uri) server exchange.
     ///
     /// Client never holds FACEBOOK_CLIENT_SECRET. Code comes from ASWebAuthenticationSession.
-    func signInWithFacebook(authorizationCode: String, redirectURI: String) async throws -> AuthTokenPair {
+    func signInWithFacebook(authorizationCode: String, redirectURI: String) async throws -> AuthLoginResult {
         let url = AppConfig.apiBaseURL.appending(path: "api/v1/auth/facebook/native")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -284,12 +276,27 @@ actor APIClient {
 
         let (data, response) = try await session.data(for: request)
         try Self.throwIfNeeded(response: response, data: data)
-        let pair = try decoder.decode(AuthTokenPair.self, from: data)
-        try tokenStore.save(pair.accessToken, for: .accessToken)
-        if let refresh = pair.refreshToken {
+        return try persistNativeOAuthSession(from: data)
+    }
+
+    private func persistNativeOAuthSession(from data: Data) throws -> AuthLoginResult {
+        let response = try JSONDecoder().decode(AuthGatewayResponse.self, from: data)
+        if response.mfaRequired {
+            let challenge = response.mfaChallengeToken?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !challenge.isEmpty else {
+                throw APIClientError.decoding("MFA required but challenge token was empty")
+            }
+            return .mfaRequired(challengeToken: challenge, userID: response.userID)
+        }
+        let access = response.accessToken?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !access.isEmpty else {
+            throw APIClientError.decoding("Auth response missing access_token")
+        }
+        try tokenStore.save(access, for: .accessToken)
+        if let refresh = response.refreshToken, !refresh.isEmpty {
             try tokenStore.save(refresh, for: .refreshToken)
         }
-        return pair
+        return .signedIn(AuthTokenPair(accessToken: access, refreshToken: response.refreshToken))
     }
 
     /// DELETE /api/v1/users/me — schedule account deletion (30-day grace).

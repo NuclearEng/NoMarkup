@@ -81,7 +81,10 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       body,
     );
 
-    if (data.mfa_required && data.mfa_challenge_token) {
+    if (data.mfa_required) {
+      if (!data.mfa_challenge_token) {
+        throw new Error('MFA required but challenge missing');
+      }
       throw new MFARequiredError(data.user_id, data.mfa_challenge_token);
     }
 

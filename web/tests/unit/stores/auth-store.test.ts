@@ -409,7 +409,7 @@ describe('useAuthStore', () => {
       expect(setAccessToken).not.toHaveBeenCalled();
     });
 
-    it('does not throw MFARequiredError if challenge token is missing', async () => {
+    it('throws if MFA is required but the challenge token is missing', async () => {
       const mockToken = createMockJwt({
         sub: 'user-x',
         email: 'x@example.com',
@@ -418,8 +418,6 @@ describe('useAuthStore', () => {
         iat: Date.now() / 1000,
       });
 
-      // mfa_required true but no challenge token: short-circuits second condition;
-      // store falls through to set the user.
       vi.mocked(api.postUnauthed).mockResolvedValueOnce({
         user_id: 'user-x',
         access_token: mockToken,
@@ -427,17 +425,15 @@ describe('useAuthStore', () => {
         mfa_required: true,
         mfa_challenge_token: null,
       });
-      vi.mocked(parseJwtPayload).mockReturnValueOnce({
-        sub: 'user-x',
-        email: 'x@example.com',
-        roles: ['customer'],
-        exp: Date.now() / 1000 + 3600,
-        iat: Date.now() / 1000,
-      });
 
-      await useAuthStore.getState().login('x@example.com', 'p');
+      await expect(
+        useAuthStore.getState().login('x@example.com', 'p'),
+      ).rejects.toThrow(/MFA required but challenge missing/);
+
       const state = useAuthStore.getState();
-      expect(state.isAuthenticated).toBe(true);
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.user).toBeNull();
+      expect(setAccessToken).not.toHaveBeenCalled();
     });
   });
 

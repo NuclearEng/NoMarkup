@@ -84,10 +84,17 @@ function getCookie(name: string): string | null {
   const match = document.cookie.match(
     new RegExp('(?:^|; )' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'),
   );
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
+  const raw = match?.[1];
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 function deleteCookie(name: string): void {
   if (typeof document === 'undefined') return;
-  document.cookie = name + '=; path=/; max-age=0; samesite=strict';
+  const secure = location.protocol === 'https:' ? '; secure' : '';
+  document.cookie = name + '=; path=/; max-age=0; samesite=strict' + secure;
 }

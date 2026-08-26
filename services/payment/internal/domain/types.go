@@ -489,6 +489,23 @@ type PaymentRepository interface {
 	// UpdateRefundCAS persists a refund only when refund_amount_cents still equals
 	// expectedPrior. Returns ErrInvalidAmount on CAS failure (concurrent refund).
 	UpdateRefundCAS(ctx context.Context, id string, expectedPrior, newTotal int64, refundReason string, refundedAt time.Time, stripeRefundID, status string) error
+	// RevertRefundClaim subtracts delta cents only while stripe_refund_id is
+	// still this attempt's pending sentinel. A later stamp/webhook overwrites
+	// the sentinel so a late Stripe failure cannot clobber a stacked claim.
+	// After a successful revert the row must never keep a pending: prefix:
+	// restore the previous Stripe refund id encoded in the sentinel, or NULL
+	// when remaining is 0 / the previous id is empty.
+	RevertRefundClaim(ctx context.Context, id string, delta int64, pendingID, statusIfZero string) error
+	// StampRefundID writes stripe_refund_id = refundID only while the column
+	// still equals pendingKey. Used after a successful Stripe refund if the
+	// amount CAS stamp lost a race.
+	StampRefundID(ctx context.Context, id, pendingKey, refundID string) error
+	// ConfirmRefundFromWebhook monotonically confirms a Stripe refund. The
+	// stored refund_amount_cents may increase up to amount_cents but never
+	// decrease, and a pending: CreateRefund claim is never overwritten.
+	// Zero rows (lost race, already-higher amount, pending claim) is success:
+	// webhooks are idempotent.
+	ConfirmRefundFromWebhook(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
 	// WithProviderAdvisoryLock runs fn under pg_advisory_xact_lock(hashtext(providerID))
 	// so concurrent RequestAdvance credit checks serialize per provider.
 	WithProviderAdvisoryLock(ctx context.Context, providerID string, fn func(ctx context.Context) error) error

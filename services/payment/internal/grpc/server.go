@@ -319,7 +319,13 @@ func (s *Server) CreatePayment(ctx context.Context, req *paymentv1.CreatePayment
 }
 
 func (s *Server) ProcessPayment(ctx context.Context, req *paymentv1.ProcessPaymentRequest) (*paymentv1.ProcessPaymentResponse, error) {
-	payment, err := s.svc.ProcessPayment(ctx, req.GetPaymentId(), req.GetPaymentMethodId())
+	if err := requirePrivilegedMoneyPeer(ctx, req.GetActorIsAdmin(), false); err != nil {
+		return nil, err
+	}
+	payment, err := s.svc.ProcessPayment(ctx, req.GetPaymentId(), req.GetPaymentMethodId(), service.ReleaseActor{
+		UserID:  req.GetActorUserId(),
+		IsAdmin: req.GetActorIsAdmin(),
+	})
 	if err != nil {
 		return nil, mapDomainError(err)
 	}

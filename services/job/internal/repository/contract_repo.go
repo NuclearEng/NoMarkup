@@ -635,16 +635,17 @@ func (r *PostgresRepository) UpdateJobStatus(ctx context.Context, jobID string, 
 	return nil
 }
 
-// GetContractsAwaitingApproval returns contracts where the provider marked complete
-// and the completed_at timestamp is older than the specified duration.
-// This supports the auto-release scheduled job for Slice 8.
+// GetContractsAwaitingApproval returns contracts the auto-release cron should
+// process:
 //
-// A provider-marked-complete contract awaiting customer approval is status
-// 'active' with completed_at set (the customer-approval handshake flips it to
-// 'completed'). This query therefore selects active+completed_at contracts —
-// matching the half-open state MarkComplete produces — so the 7-day
-// auto-release can finalise contracts the customer never got around to
-// approving.
+//  1. Provider marked complete, customer never approved, older than olderThan
+//     (status active + completed_at set — the half-open handshake).
+//  2. Customer already approved (status completed) but a services payment is
+//     still in escrow — the gateway used to complete-then-fail-soft, so these
+//     rows never re-entered the 7-day active-only query.
+//
+// Disputed/cancelled are excluded. The completed branch has no age cutoff:
+// the customer already confirmed; money should not sit held.
 func (r *PostgresRepository) GetContractsAwaitingApproval(ctx context.Context, olderThan time.Duration) ([]domain.Contract, error) {
 	cutoff := time.Now().Add(-olderThan)
 	rows, err := r.pool.Query(ctx, `
@@ -654,8 +655,16 @@ func (r *PostgresRepository) GetContractsAwaitingApproval(ctx context.Context, o
 		       acceptance_deadline, accepted_at, started_at, completed_at,
 		       cancelled_at, created_at, updated_at
 		FROM contracts
-		WHERE status = 'active' AND completed_at IS NOT NULL AND completed_at <= $1
-		  AND deleted_at IS NULL`, cutoff)
+		WHERE deleted_at IS NULL
+		  AND (
+		    (status = 'active' AND completed_at IS NOT NULL AND completed_at <= $1)
+		    OR
+		    (status = 'completed' AND EXISTS (
+		       SELECT 1 FROM payments p
+		        WHERE p.contract_id = contracts.id
+		          AND p.status = 'escrow'
+		    ))
+		  )`, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("get contracts awaiting approval: %w", err)
 	}

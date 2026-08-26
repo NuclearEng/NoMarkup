@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
@@ -543,23 +544,90 @@ func (s *PaymentService) handleChargeRefunded(ctx context.Context, event stripe.
 	}
 
 	refundAmount := charge.AmountRefunded
-	refundStatus := "refunded"
-	if refundAmount < charge.Amount {
-		refundStatus = "partially_refunded"
+	refundStatus := refundStatusForTotal(refundAmount, payment.AmountCents)
+	var raw json.RawMessage
+	if event.Data != nil {
+		raw = event.Data.Raw
 	}
+	refundID := stripeRefundIDFromCharge(charge, raw)
 
-	refundID := ""
-	if charge.Refunds != nil && len(charge.Refunds.Data) > 0 {
-		refundID = charge.Refunds.Data[0].ID
+	// In-flight CreateRefund owns the row. Never call UpdateRefund / Confirm
+	// which could replace pending: or shrink the claimed total.
+	if strings.HasPrefix(payment.StripeRefundID, "pending:") {
+		if refundAmount >= payment.RefundAmountCents && strings.HasPrefix(refundID, "re_") {
+			if err := s.repo.StampRefundID(ctx, payment.ID, payment.StripeRefundID, refundID); err != nil {
+				if errors.Is(err, domain.ErrInvalidAmount) {
+					slog.InfoContext(ctx, "charge.refunded pending claim already resolved",
+						"payment_id", payment.ID,
+						"pending_key", payment.StripeRefundID,
+					)
+					return nil
+				}
+				return fmt.Errorf("stamp refund id from webhook: %w", err)
+			}
+			slog.InfoContext(ctx, "charge.refunded stamped stripe refund id onto pending claim",
+				"payment_id", payment.ID,
+				"refund_id", refundID,
+			)
+			return nil
+		}
+		slog.InfoContext(ctx, "charge.refunded ignored in-flight CreateRefund claim",
+			"payment_id", payment.ID,
+			"pending_key", payment.StripeRefundID,
+			"webhook_amount", refundAmount,
+			"claimed_amount", payment.RefundAmountCents,
+		)
+		return nil
 	}
 
 	now := time.Now()
-	if err := s.repo.UpdateRefund(ctx, payment.ID, refundAmount, "stripe webhook refund", now, refundID, refundStatus); err != nil {
-		return fmt.Errorf("update refund from webhook: %w", err)
+	if err := s.repo.ConfirmRefundFromWebhook(ctx, payment.ID, refundAmount, "stripe webhook refund", now, refundID, refundStatus); err != nil {
+		return fmt.Errorf("confirm refund from webhook: %w", err)
 	}
 	slog.Info("payment refunded via webhook", "payment_id", payment.ID, "amount", refundAmount)
 
 	return nil
+}
+
+// stripeRefundIDFromCharge returns the newest real Stripe refund id (re_ prefix)
+// on the charge. The SDK list is newest-first; we skip empty / non-re_ entries
+// rather than blindly taking Data[0]. Raw JSON is a fallback when the typed
+// list was not populated the same way as the event payload.
+func stripeRefundIDFromCharge(charge stripe.Charge, raw json.RawMessage) string {
+	if id := firstStripeRefundID(charge.Refunds); id != "" {
+		return id
+	}
+	if len(raw) == 0 {
+		return ""
+	}
+	var payload struct {
+		Refunds struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		} `json:"refunds"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ""
+	}
+	for _, r := range payload.Refunds.Data {
+		if strings.HasPrefix(r.ID, "re_") {
+			return r.ID
+		}
+	}
+	return ""
+}
+
+func firstStripeRefundID(list *stripe.RefundList) string {
+	if list == nil {
+		return ""
+	}
+	for _, r := range list.Data {
+		if r != nil && strings.HasPrefix(r.ID, "re_") {
+			return r.ID
+		}
+	}
+	return ""
 }
 
 // handleSetupIntentSucceeded persists a payment method the buyer just saved and

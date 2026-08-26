@@ -21,7 +21,6 @@ export const phoneSchema = z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone
 export const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, 'Password is required'),
-  rememberMe: z.boolean().default(false),
 });
 
 export const registerSchema = z

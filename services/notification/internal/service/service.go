@@ -574,6 +574,9 @@ func (s *Service) dispatchSMS(ctx context.Context, userID, title, body string, d
 	phone := ""
 	if data != nil {
 		phone = data["user_phone"]
+		if phone == "" {
+			phone = data["phone"]
+		}
 	}
 	if phone == "" {
 		slog.Warn("sms dispatch skipped: no user_phone in data",

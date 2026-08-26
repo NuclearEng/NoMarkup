@@ -188,18 +188,7 @@ func (a *Auth) FindOrCreateByOAuth(ctx context.Context, input domain.OAuthInput)
 	user, err := a.repo.FindUserByOAuth(ctx, input.Provider, input.ProviderID)
 	if err == nil {
 		// Found existing OAuth-linked user.
-		now := time.Now()
-		if updateErr := a.repo.UpdateLastLogin(ctx, user.ID, now); updateErr != nil {
-			slog.Warn("failed to update last login", "user_id", user.ID, "error", updateErr)
-		}
-
-		pair, err := a.generateTokenPair(ctx, user, "oauth-"+input.Provider, "", "", nil)
-		if err != nil {
-			return "", nil, false, fmt.Errorf("oauth find or create: %w", err)
-		}
-
-		slog.Info("user logged in via oauth", "user_id", user.ID, "provider", input.Provider)
-		return user.ID, pair, false, nil
+		return a.finishOAuthLogin(ctx, user, input.Provider, false)
 	}
 
 	if !errors.Is(err, domain.ErrUserNotFound) {
@@ -214,18 +203,7 @@ func (a *Auth) FindOrCreateByOAuth(ctx context.Context, input domain.OAuthInput)
 			return "", nil, false, fmt.Errorf("oauth link account: %w", linkErr)
 		}
 
-		now := time.Now()
-		if updateErr := a.repo.UpdateLastLogin(ctx, user.ID, now); updateErr != nil {
-			slog.Warn("failed to update last login", "user_id", user.ID, "error", updateErr)
-		}
-
-		pair, err := a.generateTokenPair(ctx, user, "oauth-"+input.Provider, "", "", nil)
-		if err != nil {
-			return "", nil, false, fmt.Errorf("oauth find or create: %w", err)
-		}
-
-		slog.Info("oauth account linked to existing user", "user_id", user.ID, "provider", input.Provider)
-		return user.ID, pair, false, nil
+		return a.finishOAuthLogin(ctx, user, input.Provider, false)
 	}
 
 	if !errors.Is(err, domain.ErrUserNotFound) {
@@ -254,6 +232,37 @@ func (a *Auth) FindOrCreateByOAuth(ctx context.Context, input domain.OAuthInput)
 
 	slog.Info("new user created via oauth", "user_id", newUser.ID, "provider", input.Provider)
 	return newUser.ID, pair, true, nil
+}
+
+// MFARequiredError is returned by FindOrCreateByOAuth when an existing user
+// has TOTP enabled. The gateway must issue a challenge, not a session.
+type MFARequiredError struct {
+	UserID    string
+	Challenge string
+}
+
+func (e *MFARequiredError) Error() string {
+	return "mfa required"
+}
+
+func (a *Auth) finishOAuthLogin(ctx context.Context, user *domain.User, provider string, isNew bool) (string, *domain.TokenPair, bool, error) {
+	if user.MFAEnabled && provider != "passkey" {
+		challenge := a.GenerateMFAChallengeToken(user.ID)
+		return user.ID, nil, isNew, &MFARequiredError{UserID: user.ID, Challenge: challenge}
+	}
+
+	now := time.Now()
+	if updateErr := a.repo.UpdateLastLogin(ctx, user.ID, now); updateErr != nil {
+		slog.Warn("failed to update last login", "user_id", user.ID, "error", updateErr)
+	}
+
+	pair, err := a.generateTokenPair(ctx, user, "oauth-"+provider, "", "", nil)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("oauth find or create: %w", err)
+	}
+
+	slog.Info("user logged in via oauth", "user_id", user.ID, "provider", provider)
+	return user.ID, pair, isNew, nil
 }
 
 // RefreshToken validates a refresh token, rotates it, and returns a new token pair.

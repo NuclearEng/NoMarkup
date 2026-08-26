@@ -161,6 +161,67 @@ func (c *Cipher) DecryptString(ciphertext string) (string, error) {
 	return "", ErrDecryptFailed
 }
 
+// LooksLikeCiphertext reports whether s has the STRUCTURE of a value produced
+// by EncryptString: standard base64 that decodes to at least
+// NonceSize+secretbox.Overhead (24+16 = 40) bytes.
+//
+// This is a shape test only — it says nothing about whether any key can open
+// the value. It exists so callers can tell the two failure modes apart:
+//
+//   - !LooksLikeCiphertext(s)  → s was never our ciphertext; it is legacy
+//     plaintext and must be passed through untouched.
+//   - LooksLikeCiphertext(s) but DecryptString fails → s IS our wire format
+//     but no configured key opens it. That is a KEY problem, never a
+//     "plaintext" one, and callers must fail loudly rather than pass the
+//     base64 through or (worse) encrypt it a second time.
+//
+// The 40-byte floor is what makes the shape test useful against the values it
+// guards: a base64 string must be at least 56 characters to decode to 40
+// bytes, whereas an EIN/TIN ("12-3456789") is 10 characters and contains '-',
+// which is not in the standard base64 alphabet, and insurance policy numbers
+// are similarly short and typically punctuated. Short values fail the length
+// gate; punctuated values fail the alphabet gate.
+func LooksLikeCiphertext(s string) bool {
+	if len(s) < base64.StdEncoding.EncodedLen(NonceSize+secretbox.Overhead) {
+		return false
+	}
+	raw, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return false
+	}
+	return len(raw) >= NonceSize+secretbox.Overhead
+}
+
+// DecryptStringOrPassthrough is the mixed-state read path. It returns:
+//
+//   - (plaintext, nil)              — s authenticated under primary or previous.
+//   - (s, nil)                      — s is not our wire format at all, so it is
+//     legacy plaintext written before the column was
+//     encrypted; return it unchanged.
+//   - ("", ErrDecryptFailed)        — s IS our wire format but no configured key
+//     opens it. Never return the raw ciphertext to a
+//     caller; that is the GDPR-export bug this
+//     function exists to prevent.
+//
+// Use this instead of a per-row pii_encrypted_v1 flag. The flag is per ROW but
+// encryption is per COLUMN, so a row whose service_address was re-written
+// through the encrypting update path is flagged TRUE even while its ein_tin is
+// still the plaintext the backfill never re-visited. Per-value detection cannot
+// drift that way.
+func (c *Cipher) DecryptStringOrPassthrough(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	plain, err := c.DecryptString(s)
+	if err == nil {
+		return plain, nil
+	}
+	if LooksLikeCiphertext(s) {
+		return "", fmt.Errorf("%w (value is secretbox-shaped but no configured key opens it)", ErrDecryptFailed)
+	}
+	return s, nil
+}
+
 // isDevelopmentEnv reports whether env names the development environment.
 // Trimmed and case-insensitive so a stray space or capital letter in a
 // ConfigMap cannot silently downgrade crypto; anything unrecognized is

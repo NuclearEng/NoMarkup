@@ -172,6 +172,16 @@ describe('AuthRestorer', () => {
     });
   });
 
+  it('uses the raw cookie value when decodeURIComponent fails', async () => {
+    parseJwtPayloadMock.mockReturnValue(null);
+    document.cookie = 'oauth_access_token=%E0%A4%A; path=/';
+    render(<AuthRestorer />);
+    await waitFor(() => {
+      expect(parseJwtPayloadMock).toHaveBeenCalledWith('%E0%A4%A');
+    });
+    expect(setAccessTokenMock).not.toHaveBeenCalled();
+  });
+
   it('returns null cookie value when no matching cookie exists (negative match path)', async () => {
     // Set an unrelated cookie so document.cookie is non-empty.
     document.cookie = 'unrelated=foo; path=/';

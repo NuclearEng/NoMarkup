@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -72,6 +73,42 @@ func (r *concurrentEscrowRepo) asMock() *mockPaymentRepo {
 			r.payment.Status = status
 			r.payment.StripeRefundID = refundID
 			atomic.AddInt32(&r.refunds, 1)
+			return nil
+		},
+		revertRefundClaimFn: func(_ context.Context, _ string, delta int64, pendingID, statusIfZero string) error {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if r.payment.StripeRefundID != pendingID {
+				return domain.ErrInvalidAmount
+			}
+			if delta <= 0 || r.payment.RefundAmountCents < delta {
+				return domain.ErrInvalidAmount
+			}
+			r.payment.RefundAmountCents -= delta
+			remaining := r.payment.RefundAmountCents
+			if remaining == 0 {
+				r.payment.StripeRefundID = ""
+				r.payment.Status = statusIfZero
+				return nil
+			}
+			r.payment.StripeRefundID = previousRefundIDFromPending(pendingID)
+			if remaining < r.payment.AmountCents {
+				r.payment.Status = "partially_refunded"
+			} else {
+				r.payment.Status = statusIfZero
+			}
+			return nil
+		},
+		stampRefundIDFn: func(_ context.Context, _ string, pendingKey, refundID string) error {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if r.payment.StripeRefundID != pendingKey {
+				return domain.ErrInvalidAmount
+			}
+			if refundID == "" || strings.HasPrefix(refundID, "pending:") {
+				return domain.ErrInvalidAmount
+			}
+			r.payment.StripeRefundID = refundID
 			return nil
 		},
 		getActiveAdvancesFn: func(_ context.Context, _ string) ([]*domain.Advance, error) {
@@ -218,6 +255,46 @@ func TestCreateRefund_Concurrent_PartialNoOverRefund(t *testing.T) {
 	// With 6000 requests, at most one 6000 can land if second sees remaining 4000 and rejects 6000.
 	// Or first 6000 + second fails. Either way never > 10000.
 	assert.GreaterOrEqual(t, store.payment.RefundAmountCents, int64(6000))
+	assert.LessOrEqual(t, svc.stripe.DevStore().RefundTotalCents(), int64(10000))
+}
+
+// TestCreateRefund_Concurrent_DistinctAmounts_NoOverRefundAtStripe is the
+// race the same-amount tests miss: 6000 and 7000 mint different Stripe keys
+// if both reach Stripe before CAS. Claim-first means only the winner calls Stripe.
+func TestCreateRefund_Concurrent_DistinctAmounts_NoOverRefundAtStripe(t *testing.T) {
+	t.Parallel()
+
+	store := &concurrentEscrowRepo{
+		payment: &domain.Payment{
+			ID:                    "pay-race-distinct",
+			Status:                "escrow",
+			AmountCents:           10000,
+			RefundAmountCents:     0,
+			StripePaymentIntentID: "pi_race_distinct",
+		},
+	}
+	svc := newTestPaymentService(store.asMock(), nil)
+	ss := svc.stripe
+
+	amounts := []int64{6000, 7000}
+	var wg sync.WaitGroup
+	wg.Add(len(amounts))
+	for _, amt := range amounts {
+		amt := amt
+		go func() {
+			defer wg.Done()
+			_, _ = svc.CreateRefund(context.Background(), "pay-race-distinct", amt, "distinct race", ReleaseActor{IsAdmin: true})
+		}()
+	}
+	wg.Wait()
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	assert.LessOrEqual(t, store.payment.RefundAmountCents, int64(10000))
+	assert.True(t, store.payment.RefundAmountCents == 6000 || store.payment.RefundAmountCents == 7000,
+		"winner is 6000 or 7000, got %d", store.payment.RefundAmountCents)
+	assert.Equal(t, 1, ss.DevStore().RefundCount())
+	assert.LessOrEqual(t, ss.DevStore().RefundTotalCents(), int64(10000))
 }
 
 // TestHandleWebhook_FailedThenRetrySucceeds pins MON-12: a handler failure
@@ -318,7 +395,7 @@ func TestProcessPayment_Concurrent_ExactlyOneCapture(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
-			_, _ = svc.ProcessPayment(context.Background(), "pay-race-capture", "pm_x")
+			_, _ = svc.ProcessPayment(context.Background(), "pay-race-capture", "pm_x", ReleaseActor{IsAdmin: true})
 		}()
 	}
 	wg.Wait()

@@ -190,6 +190,7 @@ func New(
 		// synthesizes a placeholder email until user-service ships a
 		// dedicated RegisterByPhone RPC — see auth.go::RegisterPhoneOnly.
 		r.Post("/register-phone", authHandler.RegisterPhoneOnly)
+		r.Post("/register-phone/send-otp", authHandler.SendRegisterPhoneOTP)
 
 		// MFA verify does not require auth (uses challenge token from login).
 		r.Post("/mfa/verify", authHandler.VerifyMFA)
@@ -203,9 +204,11 @@ func New(
 		// the client cache). Public, like /refresh, which is the symmetric path.
 		r.Post("/logout", authHandler.Logout)
 
-		// Phone verification requires authentication.
+		// Phone verification (confirm OTP) requires authentication.
+		// Send is dual-mode: optionalAuth so anonymous signup can request an
+		// OTP on the same path signed-in users use to verify an existing account.
 		r.With(authMW.Handler).Post("/verify-phone", authHandler.VerifyPhone)
-		r.With(authMW.Handler).Post("/send-phone-otp", authHandler.SendPhoneOTP)
+		r.Post("/send-phone-otp", optionalAuth(authMW, authHandler.SendPhoneOTP))
 
 		// MFA enable/disable/confirm require authentication.
 		r.With(authMW.Handler).Post("/mfa/enable", authHandler.EnableMFA)

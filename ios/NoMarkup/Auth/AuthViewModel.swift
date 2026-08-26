@@ -671,13 +671,8 @@ final class AuthViewModel: ObservableObject {
         do {
             let session = GoogleOAuthSession()
             let identityToken = try await session.signIn()
-            _ = try await api.signInWithGoogle(identityToken: identityToken)
-            beginNewSessionEpoch()
-            clearSensitiveInMemoryFields()
-            isScaffoldSession = false
-            isAuthenticated = true
-            statusMessage = "Signed in with Google."
-            notifyAuthSucceeded()
+            let result = try await api.signInWithGoogle(identityToken: identityToken)
+            applyOAuthLoginResult(result, successMessage: "Signed in with Google.")
         } catch let error as GoogleOAuthSession.SessionError {
             if case .canceled = error {
                 return
@@ -700,16 +695,11 @@ final class AuthViewModel: ObservableObject {
         do {
             let session = FacebookOAuthSession()
             let auth = try await session.signIn()
-            _ = try await api.signInWithFacebook(
+            let result = try await api.signInWithFacebook(
                 authorizationCode: auth.authorizationCode,
                 redirectURI: auth.redirectURI
             )
-            beginNewSessionEpoch()
-            clearSensitiveInMemoryFields()
-            isScaffoldSession = false
-            isAuthenticated = true
-            statusMessage = "Signed in with Facebook."
-            notifyAuthSucceeded()
+            applyOAuthLoginResult(result, successMessage: "Signed in with Facebook.")
         } catch let error as FacebookOAuthSession.SessionError {
             if case .canceled = error {
                 return
@@ -727,6 +717,26 @@ final class AuthViewModel: ObservableObject {
         return hasLetter && hasDigitOrSymbol
     }
 
+    private func applyOAuthLoginResult(_ result: AuthLoginResult, successMessage: String) {
+        switch result {
+        case .signedIn:
+            beginNewSessionEpoch()
+            clearSensitiveInMemoryFields()
+            isScaffoldSession = false
+            isAuthenticated = true
+            needsMFA = false
+            statusMessage = successMessage
+            notifyAuthSucceeded()
+        case .mfaRequired(let challengeToken, _):
+            password = ""
+            mfaChallengeToken = challengeToken
+            needsMFA = true
+            isAuthenticated = false
+            isScaffoldSession = false
+            statusMessage = "Enter the code from your authenticator app."
+        }
+    }
+
     /// - Parameter nonce: RAW request nonce (gateway re-hashes; required for native).
     private func exchangeAppleIdentityToken(
         _ identityToken: String,
@@ -737,21 +747,12 @@ final class AuthViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         do {
-            _ = try await api.signInWithApple(
+            let result = try await api.signInWithApple(
                 identityToken: identityToken,
                 fullName: fullName,
                 nonce: nonce
             )
-            beginNewSessionEpoch()
-            clearSensitiveInMemoryFields()
-            isScaffoldSession = false
-            isAuthenticated = true
-            if let emailHint = fullName, email.isEmpty {
-                // Prefer identity email from token when server returns it later.
-                _ = emailHint
-            }
-            statusMessage = "Signed in with Apple."
-            notifyAuthSucceeded()
+            applyOAuthLoginResult(result, successMessage: "Signed in with Apple.")
         } catch {
             errorMessage = error.localizedDescription
         }

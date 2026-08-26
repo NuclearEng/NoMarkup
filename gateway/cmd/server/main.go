@@ -423,6 +423,7 @@ func main() {
 	challengeHandler := handler.NewChallengeHandler(dbPool)
 	installmentHandler := handler.NewInstallmentHandler(paymentClient)
 	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie, sessionSecret)
+	oauthHandler.WithIdleSession(authMW)
 	// WebAuthn passkeys (IOS-SEC.2). Fails fast on invalid RP config (§12);
 	// routes are additionally gated behind the `passkeys` feature flag.
 	passkeyHandler, err := handler.NewPasskeyHandler(dbPool, cacheClient, userClient, authHandler)

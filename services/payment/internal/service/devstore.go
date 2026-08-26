@@ -22,6 +22,7 @@ type DevStore struct {
 	advanceKeys    map[string]string                 // idempotencyKey -> transfer id (dedup)
 	transferKeys   map[string]string                 // idempotencyKey -> transfer id (escrow release)
 	refundKeys     map[string]string                 // idempotencyKey -> refund id
+	refundAmounts  map[string]int64                  // idempotencyKey -> cents
 	captureKeys    map[string]string                 // idempotencyKey -> payment intent id
 	payoutKeys     map[string]string                 // idempotencyKey -> payout id
 	setupIntents   map[string]string                 // clientSecret -> customerKey
@@ -98,6 +99,7 @@ func newDevStore() *DevStore {
 		advanceKeys:    make(map[string]string),
 		transferKeys:   make(map[string]string),
 		refundKeys:     make(map[string]string),
+		refundAmounts:  make(map[string]int64),
 		captureKeys:    make(map[string]string),
 		payoutKeys:     make(map[string]string),
 		setupIntents:   make(map[string]string),
@@ -510,11 +512,15 @@ func (d *DevStore) RecordRefund(idempotencyKey, paymentIntentID string, amountCt
 	if d.refundKeys == nil {
 		d.refundKeys = make(map[string]string)
 	}
+	if d.refundAmounts == nil {
+		d.refundAmounts = make(map[string]int64)
+	}
 	if existing, ok := d.refundKeys[idempotencyKey]; ok {
 		return existing
 	}
 	id := "re_dev_" + uuid.NewString()
 	d.refundKeys[idempotencyKey] = id
+	d.refundAmounts[idempotencyKey] = amountCts
 	return id
 }
 
@@ -523,6 +529,17 @@ func (d *DevStore) RefundCount() int {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return len(d.refundKeys)
+}
+
+// RefundTotalCents sums recorded refund amounts (test helper).
+func (d *DevStore) RefundTotalCents() int64 {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var sum int64
+	for _, n := range d.refundAmounts {
+		sum += n
+	}
+	return sum
 }
 
 // RecordCapture records a dev-mode capture, deduped by key. Returns error only

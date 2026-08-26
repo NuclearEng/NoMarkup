@@ -610,16 +610,21 @@ func TestHandleWebhook_ChargeRefunded(t *testing.T) {
 		var capturedAmount int64
 		var capturedStatus string
 		var capturedRefundID string
+		var updateRefundCalled bool
 		repo := &mockPaymentRepo{
 			recordStripeEventStartFn: func(_ context.Context, _, _ string) (bool, error) { return false, nil },
 			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
 			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
 				return &domain.Payment{ID: "pmt-1", AmountCents: 50000, Status: "released"}, nil
 			},
-			updateRefundFn: func(_ context.Context, _ string, amt int64, _ string, _ time.Time, refundID, status string) error {
+			confirmRefundFromWebhookFn: func(_ context.Context, _ string, amt int64, _ string, _ time.Time, refundID, status string) error {
 				capturedAmount = amt
 				capturedStatus = status
 				capturedRefundID = refundID
+				return nil
+			},
+			updateRefundFn: func(_ context.Context, _ string, _ int64, _ string, _ time.Time, _, _ string) error {
+				updateRefundCalled = true
 				return nil
 			},
 		}
@@ -631,6 +636,7 @@ func TestHandleWebhook_ChargeRefunded(t *testing.T) {
 		assert.Equal(t, int64(50000), capturedAmount)
 		assert.Equal(t, "refunded", capturedStatus)
 		assert.Equal(t, "re_1", capturedRefundID)
+		assert.False(t, updateRefundCalled, "charge.refunded must not call unconditional UpdateRefund")
 	})
 
 	t.Run("partial_refund_flips_status_to_partially_refunded", func(t *testing.T) {
@@ -649,7 +655,7 @@ func TestHandleWebhook_ChargeRefunded(t *testing.T) {
 			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
 				return &domain.Payment{ID: "pmt-1", AmountCents: 50000, Status: "released"}, nil
 			},
-			updateRefundFn: func(_ context.Context, _ string, _ int64, _ string, _ time.Time, _, status string) error {
+			confirmRefundFromWebhookFn: func(_ context.Context, _ string, _ int64, _ string, _ time.Time, _, status string) error {
 				capturedStatus = status
 				return nil
 			},
@@ -660,6 +666,188 @@ func TestHandleWebhook_ChargeRefunded(t *testing.T) {
 		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
 		require.NoError(t, err)
 		assert.Equal(t, "partially_refunded", capturedStatus)
+	})
+
+	t.Run("skips_empty_refund_id_and_uses_first_re_prefix", func(t *testing.T) {
+		t.Parallel()
+		event := newEvent(t, "evt_ref_id_scan", "charge.refunded", stripe.Charge{
+			ID:             "ch_scan",
+			Amount:         50000,
+			AmountRefunded: 50000,
+			PaymentIntent:  &stripe.PaymentIntent{ID: "pi_scan"},
+			Refunds: &stripe.RefundList{
+				Data: []*stripe.Refund{{ID: ""}, {ID: "re_real"}},
+			},
+		})
+
+		var capturedRefundID string
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn: func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return &domain.Payment{ID: "pmt-1", AmountCents: 50000, Status: "released"}, nil
+			},
+			confirmRefundFromWebhookFn: func(_ context.Context, _ string, _ int64, _ string, _ time.Time, refundID, _ string) error {
+				capturedRefundID = refundID
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.Equal(t, "re_real", capturedRefundID)
+	})
+
+	t.Run("monotonic_increase_confirms_higher_total", func(t *testing.T) {
+		t.Parallel()
+		event := newEvent(t, "evt_ref_mono", "charge.refunded", stripe.Charge{
+			ID:             "ch_mono",
+			Amount:         50000,
+			AmountRefunded: 35000,
+			PaymentIntent:  &stripe.PaymentIntent{ID: "pi_mono"},
+			Refunds: &stripe.RefundList{
+				Data: []*stripe.Refund{{ID: "re_second"}},
+			},
+		})
+
+		var capturedAmount int64
+		var capturedRefundID string
+		var capturedStatus string
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn: func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return &domain.Payment{
+					ID:                "pmt-1",
+					AmountCents:       50000,
+					RefundAmountCents: 20000,
+					StripeRefundID:    "re_first",
+					Status:            "partially_refunded",
+				}, nil
+			},
+			confirmRefundFromWebhookFn: func(_ context.Context, _ string, amt int64, _ string, _ time.Time, refundID, status string) error {
+				capturedAmount = amt
+				capturedRefundID = refundID
+				capturedStatus = status
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.Equal(t, int64(35000), capturedAmount)
+		assert.Equal(t, "re_second", capturedRefundID)
+		assert.Equal(t, "partially_refunded", capturedStatus)
+	})
+
+	t.Run("pending_claim_keeps_pending_id", func(t *testing.T) {
+		t.Parallel()
+		pendingKey := "pending:escrow:0:50000:-"
+		payment := &domain.Payment{
+			ID:                "pmt-1",
+			AmountCents:       50000,
+			RefundAmountCents: 50000,
+			StripeRefundID:    pendingKey,
+			Status:            "refunded",
+		}
+		event := newEvent(t, "evt_ref_pending", "charge.refunded", stripe.Charge{
+			ID:             "ch_pending",
+			Amount:         50000,
+			AmountRefunded: 20000, // smaller than the in-flight claim
+			PaymentIntent:  &stripe.PaymentIntent{ID: "pi_pending"},
+			Refunds: &stripe.RefundList{
+				Data: []*stripe.Refund{{ID: "re_dashboard"}},
+			},
+		})
+
+		var confirmCalled, updateCalled, stampCalled bool
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn: func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return payment, nil
+			},
+			confirmRefundFromWebhookFn: func(_ context.Context, _ string, _ int64, _ string, _ time.Time, _, _ string) error {
+				confirmCalled = true
+				return nil
+			},
+			updateRefundFn: func(_ context.Context, _ string, _ int64, _ string, _ time.Time, _, _ string) error {
+				updateCalled = true
+				return nil
+			},
+			stampRefundIDFn: func(_ context.Context, _, _, _ string) error {
+				stampCalled = true
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.Equal(t, pendingKey, payment.StripeRefundID, "in-flight CreateRefund claim must keep pending id")
+		assert.Equal(t, int64(50000), payment.RefundAmountCents, "claimed cents must not shrink")
+		assert.False(t, confirmCalled, "must not confirm over a pending: claim")
+		assert.False(t, updateCalled, "must not call unconditional UpdateRefund")
+		assert.False(t, stampCalled, "must not stamp when webhook amount is below the claim")
+	})
+
+	t.Run("pending_claim_may_stamp_re_id_without_changing_cents", func(t *testing.T) {
+		t.Parallel()
+		pendingKey := "pending:escrow:0:50000:-"
+		payment := &domain.Payment{
+			ID:                "pmt-1",
+			AmountCents:       50000,
+			RefundAmountCents: 50000,
+			StripeRefundID:    pendingKey,
+			Status:            "refunded",
+		}
+		event := newEvent(t, "evt_ref_pending_stamp", "charge.refunded", stripe.Charge{
+			ID:             "ch_pending_stamp",
+			Amount:         50000,
+			AmountRefunded: 50000,
+			PaymentIntent:  &stripe.PaymentIntent{ID: "pi_pending_stamp"},
+			Refunds: &stripe.RefundList{
+				Data: []*stripe.Refund{{ID: "re_live"}},
+			},
+		})
+
+		var stampedPending, stampedRefundID string
+		var confirmCalled, updateCalled bool
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn: func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findByStripePIFn: func(_ context.Context, _ string) (*domain.Payment, error) {
+				return payment, nil
+			},
+			stampRefundIDFn: func(_ context.Context, _, pending, refundID string) error {
+				stampedPending = pending
+				stampedRefundID = refundID
+				return nil
+			},
+			confirmRefundFromWebhookFn: func(_ context.Context, _ string, _ int64, _ string, _ time.Time, _, _ string) error {
+				confirmCalled = true
+				return nil
+			},
+			updateRefundFn: func(_ context.Context, _ string, _ int64, _ string, _ time.Time, _, _ string) error {
+				updateCalled = true
+				return nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.Equal(t, pendingKey, stampedPending)
+		assert.Equal(t, "re_live", stampedRefundID)
+		assert.Equal(t, int64(50000), payment.RefundAmountCents, "stamp must not change claimed cents")
+		assert.False(t, confirmCalled)
+		assert.False(t, updateCalled)
 	})
 
 	t.Run("noop_when_no_payment_intent_attached", func(t *testing.T) {
@@ -673,6 +861,10 @@ func TestHandleWebhook_ChargeRefunded(t *testing.T) {
 		repo := &mockPaymentRepo{
 			recordStripeEventStartFn: func(_ context.Context, _, _ string) (bool, error) { return false, nil },
 			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			confirmRefundFromWebhookFn: func(_ context.Context, _ string, _ int64, _ string, _ time.Time, _, _ string) error {
+				refundCalled = true
+				return nil
+			},
 			updateRefundFn: func(_ context.Context, _ string, _ int64, _ string, _ time.Time, _, _ string) error {
 				refundCalled = true
 				return nil

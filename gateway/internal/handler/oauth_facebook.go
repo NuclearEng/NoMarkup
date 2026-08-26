@@ -56,6 +56,8 @@ func (h *OAuthHandler) InitFacebookOAuth(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	h.setOAuthNextCookie(w, r)
+
 	state, err := generateOAuthState()
 	if err != nil {
 		slog.Error("failed to generate oauth state", "error", err)
@@ -152,6 +154,9 @@ func (h *OAuthHandler) FacebookOAuthCallback(w http.ResponseWriter, r *http.Requ
 		AvatarUrl:  fbUser.PictureURL,
 	})
 	if err != nil {
+		if h.writeOAuthMFARedirect(w, r, err) {
+			return
+		}
 		slog.Error("failed to find or create oauth user", "provider", "facebook", "error", err)
 		http.Redirect(w, r, h.frontendURL+"/login?error=auth_failed", http.StatusTemporaryRedirect)
 		return
@@ -293,6 +298,9 @@ func (h *OAuthHandler) NativeFacebookSignIn(w http.ResponseWriter, r *http.Reque
 		AvatarUrl:  fbUser.PictureURL,
 	})
 	if err != nil {
+		if writeOAuthMFAJSON(w, err) {
+			return
+		}
 		slog.Error("native facebook sign-in: find or create user failed", "error", err)
 		writeGRPCError(w, err)
 		return
