@@ -224,6 +224,25 @@ describe('BidForm', () => {
     expect(input.value).toBe('110');
   });
 
+  it('increments from zero when the amount field is empty', async () => {
+    const user = userEvent.setup();
+    render(
+      <BidForm
+        jobId="job-1"
+        existingBid={null}
+        startingBidCents={50000}
+        offerAcceptedCents={null}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText('0.00');
+    await user.click(screen.getByLabelText('Increase bid by $10'));
+    if (!(input instanceof HTMLInputElement)) throw new Error('expected input element');
+    expect(input.value).toBe('10');
+  });
+
   it('decrements the bid amount when the minus button is clicked', async () => {
     const user = userEvent.setup();
     render(

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
+import { api, clearIdempotencyKey, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import type {
   RequestInsuranceQuotesInput,
   InsuranceQuoteRequestResponse,
@@ -36,13 +36,16 @@ export function useRequestQuotes() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: RequestInsuranceQuotesInput) =>
-      api.post<InsuranceQuoteRequestResponse>(
+    mutationFn: (input: RequestInsuranceQuotesInput) => {
+      const opKey = `insurance-quote:${input.product_type}:${String(input.coverage_cents)}`;
+      return api.post<InsuranceQuoteRequestResponse>(
         '/api/v1/insurance/quote-requests',
         input,
-        idempotencyHeader(),
-      ),
-    onSuccess: (data) => {
+        idempotencyHeader(opKey),
+      );
+    },
+    onSuccess: (data, input) => {
+      clearIdempotencyKey(`insurance-quote:${input.product_type}:${String(input.coverage_cents)}`);
       // Seed the detail query so a subsequent GET (or the comparison view)
       // reads the quotes we already have without an extra round-trip.
       queryClient.setQueryData<InsuranceQuoteRequestDetail>(
@@ -90,13 +93,16 @@ export function useSelectQuote(requestId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (quoteId: string) =>
-      api.post<SelectInsuranceQuoteResponse>(
+    mutationFn: (quoteId: string) => {
+      const opKey = `insurance-select:${requestId}:${quoteId}`;
+      return api.post<SelectInsuranceQuoteResponse>(
         `/api/v1/insurance/quote-requests/${requestId}/select`,
         { quote_id: quoteId },
-        idempotencyHeader(),
-      ),
-    onSuccess: () => {
+        idempotencyHeader(opKey),
+      );
+    },
+    onSuccess: (_data, quoteId) => {
+      clearIdempotencyKey(`insurance-select:${requestId}:${quoteId}`);
       toast.success('Policy bound — you are covered');
       void queryClient.invalidateQueries({ queryKey: QUOTE_REQUEST_KEY(requestId) });
       void queryClient.invalidateQueries({ queryKey: ['my-policies'] });

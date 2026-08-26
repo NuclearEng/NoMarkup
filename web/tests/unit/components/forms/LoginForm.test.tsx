@@ -91,6 +91,38 @@ describe('LoginForm', () => {
     });
   });
 
+  it('redirects to a same-origin next path after login', async () => {
+    searchParamsMock = new URLSearchParams('next=/orders');
+    loginMock.mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    render(createElement(LoginForm));
+
+    await user.type(screen.getByLabelText(/Email/), 'user@example.com');
+    await user.type(screen.getByLabelText(/Password/), 'Password123!');
+    await user.click(screen.getByRole('button', { name: /Sign in/ }));
+
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith('/orders');
+    });
+  });
+
+  it('ignores an absolute next URL and stays on /dashboard', async () => {
+    searchParamsMock = new URLSearchParams('next=https://evil.example/phish');
+    loginMock.mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    render(createElement(LoginForm));
+
+    await user.type(screen.getByLabelText(/Email/), 'user@example.com');
+    await user.type(screen.getByLabelText(/Password/), 'Password123!');
+    await user.click(screen.getByRole('button', { name: /Sign in/ }));
+
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith('/dashboard');
+    });
+  });
+
   it('shows the error message when login throws', async () => {
     loginMock.mockRejectedValue(new Error('Bad credentials'));
 

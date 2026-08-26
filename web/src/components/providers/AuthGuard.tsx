@@ -1,6 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import type { Route } from 'next';
 import { useEffect } from 'react';
 
 import { Skeleton } from '@/components/ui/skeleton';
@@ -62,15 +63,17 @@ function Loader() {
  */
 export function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isHydrating = useAuthStore((s) => s.isHydrating);
 
   useEffect(() => {
     if (isHydrating) return;
     if (!isAuthenticated) {
-      router.replace('/login');
+      const next = pathname && pathname.startsWith('/') ? pathname : '/dashboard';
+      router.replace(`/login?next=${encodeURIComponent(next)}` as Route);
     }
-  }, [isHydrating, isAuthenticated, router]);
+  }, [isHydrating, isAuthenticated, router, pathname]);
 
   if (isHydrating || !isAuthenticated) {
     return <Loader />;

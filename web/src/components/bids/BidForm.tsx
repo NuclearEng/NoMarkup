@@ -107,7 +107,8 @@ export function BidForm({
   }
 
   function adjustAmount(direction: 1 | -1) {
-    const current = form.getValues('amountDollars');
+    const raw = form.getValues('amountDollars');
+    const current = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
     const next = current + direction * stepDollars;
     // Clamp to the schema's minimum (0.01). The submit-time validator still
     // enforces the auction rules (must be below starting bid / existing bid).

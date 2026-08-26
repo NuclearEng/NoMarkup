@@ -46,14 +46,15 @@ const buttonVariants = cva(
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  'data-workflow'?: string;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, 'data-workflow': dataWorkflow, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
     const fromAria = props['aria-label'];
     const fromChildren = typeof props.children === 'string' ? props.children : undefined;
-    const workflow = props['data-workflow'] ?? fromAria ?? fromChildren;
+    const workflow = dataWorkflow ?? fromAria ?? fromChildren;
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}

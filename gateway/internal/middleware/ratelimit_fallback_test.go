@@ -186,6 +186,31 @@ func TestRateLimiterNilCacheStillLimits(t *testing.T) {
 	}
 }
 
+func TestMemoryLimiterCleanupKeepsAuthWindow(t *testing.T) {
+	t.Parallel()
+
+	if memoryLimiterRetention() != authRateLimitWindow {
+		t.Fatalf("retention = %s, want auth window %s", memoryLimiterRetention(), authRateLimitWindow)
+	}
+
+	ml := &memoryLimiter{stopCh: make(chan struct{})}
+	key := "auth:ip:203.0.113.9"
+	ml.entries.Store(key, &rateLimitEntry{
+		timestamps: []time.Time{time.Now().Add(-2 * time.Minute)},
+	})
+
+	cutoff := time.Now().Add(-memoryLimiterRetention())
+	val, ok := ml.entries.Load(key)
+	if !ok {
+		t.Fatal("expected stored auth entry")
+	}
+	entry := val.(*rateLimitEntry)
+	entry.timestamps = pruneOld(entry.timestamps, cutoff)
+	if len(entry.timestamps) != 1 {
+		t.Fatalf("auth timestamps 2 minutes old were pruned; retention=%s count=%d", memoryLimiterRetention(), len(entry.timestamps))
+	}
+}
+
 func TestErrRateLimitUnavailableWrapsCause(t *testing.T) {
 	t.Parallel()
 

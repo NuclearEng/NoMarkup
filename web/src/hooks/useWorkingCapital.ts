@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, ApiError, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
+import { api, ApiError, clearIdempotencyKey, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import type { AdvancesResponse, CreditLimit, WorkingCapitalAdvance } from '@/types';
 
 export function useMyAdvances() {
@@ -38,18 +38,21 @@ export function useRequestAdvance() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: { contract_id: string; advance_amount_cents: number }) =>
-      api
+    mutationFn: (variables: { contract_id: string; advance_amount_cents: number }) => {
+      const opKey = `advance-request:${variables.contract_id}:${String(variables.advance_amount_cents)}`;
+      return api
         .post<{ advance: WorkingCapitalAdvance }>(
           '/api/v1/providers/me/advances',
           {
             contract_id: variables.contract_id,
             amount_cents: variables.advance_amount_cents,
           },
-          idempotencyHeader(),
+          idempotencyHeader(opKey),
         )
-        .then((res) => res.advance),
-    onSuccess: () => {
+        .then((res) => res.advance);
+    },
+    onSuccess: (_data, variables) => {
+      clearIdempotencyKey(`advance-request:${variables.contract_id}:${String(variables.advance_amount_cents)}`);
       toast.success('Advance request submitted');
       void queryClient.invalidateQueries({ queryKey: ['my-advances'] });
       void queryClient.invalidateQueries({ queryKey: ['credit-limit'] });
@@ -67,15 +70,18 @@ export function useRepayAdvance() {
     // POST /api/v1/providers/me/advances/{id}/repay with { amount_cents }.
     // The gateway requires an Idempotency-Key on this payment mutation — the
     // api client attaches it via idempotencyHeader() (do NOT also add one).
-    mutationFn: (variables: { advanceId: string; amount_cents: number }) =>
-      api
+    mutationFn: (variables: { advanceId: string; amount_cents: number }) => {
+      const opKey = `advance-repay:${variables.advanceId}:${String(variables.amount_cents)}`;
+      return api
         .post<{ advance: WorkingCapitalAdvance }>(
           `/api/v1/providers/me/advances/${variables.advanceId}/repay`,
           { amount_cents: variables.amount_cents },
-          idempotencyHeader(),
+          idempotencyHeader(opKey),
         )
-        .then((res) => res.advance),
-    onSuccess: () => {
+        .then((res) => res.advance);
+    },
+    onSuccess: (_data, variables) => {
+      clearIdempotencyKey(`advance-repay:${variables.advanceId}:${String(variables.amount_cents)}`);
       toast.success('Repayment applied');
       void queryClient.invalidateQueries({ queryKey: ['my-advances'] });
       void queryClient.invalidateQueries({ queryKey: ['credit-limit'] });

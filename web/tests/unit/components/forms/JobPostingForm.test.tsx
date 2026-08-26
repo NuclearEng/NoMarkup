@@ -124,7 +124,7 @@ const fairPriceState: {
   isError: false,
 };
 
-const useFairPriceMock = vi.fn(() => fairPriceState);
+const useFairPriceMock = vi.fn((_args?: unknown) => fairPriceState);
 
 vi.mock('@/hooks/useAnalytics', () => ({
   useFairPrice: (args: unknown) => useFairPriceMock(args),

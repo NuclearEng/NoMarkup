@@ -35,6 +35,16 @@ type mockProcessPaymentClient struct {
 	lastProcReq *paymentv1.ProcessPaymentRequest
 }
 
+func (m *mockProcessPaymentClient) GetPayment(_ context.Context, req *paymentv1.GetPaymentRequest, _ ...grpc.CallOption) (*paymentv1.GetPaymentResponse, error) {
+	return &paymentv1.GetPaymentResponse{
+		Payment: &paymentv1.Payment{
+			Id:         req.GetPaymentId(),
+			CustomerId: testProcessCustomerID,
+			Status:     paymentv1.PaymentStatus_PAYMENT_STATUS_PENDING,
+		},
+	}, nil
+}
+
 func (m *mockProcessPaymentClient) ProcessPayment(ctx context.Context, req *paymentv1.ProcessPaymentRequest, _ ...grpc.CallOption) (*paymentv1.ProcessPaymentResponse, error) {
 	m.processN++
 	m.lastProcReq = req
@@ -343,4 +353,16 @@ func TestProcessPayment_configLookupFailsSoft(t *testing.T) {
 	assert.Equal(t, "escrow", body["status"])
 	assert.Equal(t, "config_lookup_failed", body["recurring_resume_residual"])
 	assert.Equal(t, 0, cc.resumeN)
+}
+
+func TestProcessPayment_providerCannotCapture(t *testing.T) {
+	t.Parallel()
+	pc := &mockProcessPaymentClient{}
+	h := NewPaymentHandler(pc, nil)
+
+	rec := httptest.NewRecorder()
+	processPaymentRouter(h).ServeHTTP(rec, newProcessPaymentHTTPRequest(t, testProcessPaymentID, "provider-not-the-customer"))
+
+	require.Equal(t, http.StatusForbidden, rec.Code, "body=%s", rec.Body.String())
+	assert.Equal(t, 0, pc.processN)
 }

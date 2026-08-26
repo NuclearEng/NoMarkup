@@ -287,13 +287,16 @@ export function useInstantPayout() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (amountCents: number) =>
-      api.post<InstantPayoutResponse>(
+    mutationFn: (amountCents: number) => {
+      const opKey = `instant-payout:${String(amountCents)}`;
+      return api.post<InstantPayoutResponse>(
         '/api/v1/payments/instant-payout',
         { amount_cents: amountCents },
-        idempotencyHeader(),
-      ),
-    onSuccess: () => {
+        idempotencyHeader(opKey),
+      );
+    },
+    onSuccess: (_data, amountCents) => {
+      clearIdempotencyKey(`instant-payout:${String(amountCents)}`);
       toast.success('Payout initiated — funds arriving within minutes');
       void queryClient.invalidateQueries({ queryKey: ['payments'] });
       void queryClient.invalidateQueries({ queryKey: ['provider-analytics'] });

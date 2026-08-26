@@ -91,8 +91,9 @@ describe('AuthRestorer', () => {
     document.cookie = 'oauth_access_token=bad-token; path=/';
     render(<AuthRestorer />);
     await waitFor(() => {
-      expect(setAccessTokenMock).toHaveBeenCalledWith('bad-token');
+      expect(setStateMock).toHaveBeenCalledWith({ isHydrating: false });
     });
+    expect(setAccessTokenMock).not.toHaveBeenCalled();
     // setState may be invoked elsewhere — but never with isAuthenticated:true
     const authedCall = setStateMock.mock.calls.find((args) => {
       const arg = args[0] as { isAuthenticated?: boolean } | undefined;

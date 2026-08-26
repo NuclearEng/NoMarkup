@@ -38,7 +38,7 @@ interface BuyItNowButtonProps {
  *
  * Auth handling: when the user is signed-out, the button is still
  * visible (so guests see the price as a CTA) but tapping routes to the
- * login page with a returnTo parameter. The actual mutation only fires
+ * login page with a next parameter. The actual mutation only fires
  * after a confirmed click on the modal "Buy now" button.
  *
  * PAYMENT: buy-now creates the order in `pending_payment` and returns a
@@ -75,7 +75,7 @@ export function BuyItNowButton({ listing, className }: BuyItNowButtonProps) {
   const handleClick = () => {
     if (!isAuthenticated) {
       router.push(
-        `/login?returnTo=${encodeURIComponent(`/marketplace/${listing.id}`)}` as Route,
+        `/login?next=${encodeURIComponent(`/marketplace/${listing.id}`)}` as Route,
       );
       return;
     }

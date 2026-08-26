@@ -729,12 +729,14 @@ func (h *InstantMatchHandler) providerMatchesInstantJob(
 
 	var ok bool
 	if err := h.db.QueryRow(ctx, q, args...).Scan(&ok); err != nil {
-		// Fail-open on SQL errors so a flaky PostGIS path does not blank the inbox.
-		slog.WarnContext(ctx, "instant match: provider job-match check failed (fail-open)",
+		// Fail-closed on SQL errors: a flaky PostGIS path must not treat an
+		// out-of-radius / wrong-category provider as eligible to accept Instant work.
+		// Nil DB still fails open above so schedule-only tests can run.
+		slog.WarnContext(ctx, "instant match: provider job-match check failed (fail-closed)",
 			"provider_id", providerUserID,
 			"error", err,
 		)
-		return true
+		return false
 	}
 	return ok
 }

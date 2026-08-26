@@ -130,7 +130,10 @@ func (ml *memoryLimiter) cleanup() {
 		select {
 		case <-ticker.C:
 			now := time.Now()
-			cutoff := now.Add(-rateLimitWindow)
+			// Retain the longest active window. Auth is 15 minutes; pruning
+			// against the 1-minute standard window would collapse the auth
+			// budget on the in-memory fallback.
+			cutoff := now.Add(-memoryLimiterRetention())
 			var removed int
 
 			ml.entries.Range(func(key, value any) bool {
@@ -154,6 +157,13 @@ func (ml *memoryLimiter) cleanup() {
 			return
 		}
 	}
+}
+
+func memoryLimiterRetention() time.Duration {
+	if authRateLimitWindow > rateLimitWindow {
+		return authRateLimitWindow
+	}
+	return rateLimitWindow
 }
 
 func (ml *memoryLimiter) allow(key string, limit int, window time.Duration) (bool, int) {

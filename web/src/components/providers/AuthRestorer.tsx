@@ -43,28 +43,32 @@ export function AuthRestorer() {
       deleteCookie('oauth_access_token');
       deleteCookie('oauth_token_expires');
 
-      setAccessToken(oauthToken);
       const payload = parseJwtPayload(oauthToken);
-
-      if (payload) {
-        useAuthStore.setState({
-          user: {
-            id: payload.sub,
-            email: payload.email,
-            displayName: '',
-            avatarUrl: null,
-            roles: payload.roles as UserRole[],
-            status: 'active',
-            emailVerified: true,
-            phoneVerified: false,
-            mfaEnabled: false,
-            createdAt: new Date().toISOString(),
-          },
-          accessToken: oauthToken,
-          isAuthenticated: true,
-          isHydrating: false,
-        });
+      if (!payload) {
+        // Malformed callback token must not leave AuthGuard on the hydrating
+        // skeleton forever — isHydrating starts true in the store.
+        useAuthStore.setState({ isHydrating: false });
+        return;
       }
+
+      setAccessToken(oauthToken);
+      useAuthStore.setState({
+        user: {
+          id: payload.sub,
+          email: payload.email,
+          displayName: '',
+          avatarUrl: null,
+          roles: payload.roles as UserRole[],
+          status: 'active',
+          emailVerified: true,
+          phoneVerified: false,
+          mfaEnabled: false,
+          createdAt: new Date().toISOString(),
+        },
+        accessToken: oauthToken,
+        isAuthenticated: true,
+        isHydrating: false,
+      });
       return;
     }
 

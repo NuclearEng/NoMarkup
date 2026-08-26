@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import type { Route } from 'next';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import type { z } from 'zod';
@@ -28,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { OAuthButtons, OAuthDivider } from '@/components/auth/oauth-buttons';
 import { getApiErrorMessage } from '@/lib/api';
 import { messageForOAuthError } from '@/lib/oauth-errors';
+import { safeInternalPath } from '@/lib/safe-internal-path';
 import { loginSchema } from '@/lib/validations';
 import { useAuthStore, MFARequiredError } from '@/stores/auth-store';
 
@@ -62,11 +64,15 @@ export function LoginForm() {
     },
   });
 
+  const postLoginPath = safeInternalPath(
+    searchParams.get('next') ?? searchParams.get('returnTo'),
+  );
+
   async function onSubmit(values: LoginFormValues) {
     setFormError(null);
     try {
       await login(values.email, values.password);
-      router.push('/dashboard');
+      router.push(postLoginPath as Route);
     } catch (error) {
       if (error instanceof MFARequiredError) {
         setMfaChallengeToken(error.challengeToken);
@@ -85,7 +91,7 @@ export function LoginForm() {
     setMfaSubmitting(true);
     try {
       await completeMFALogin(mfaChallengeToken, totpCode);
-      router.push('/dashboard');
+      router.push(postLoginPath as Route);
     } catch (error) {
       setFormError(getApiErrorMessage(error, 'Invalid verification code'));
     } finally {

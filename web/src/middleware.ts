@@ -70,10 +70,13 @@ const PROTECTED_PREFIXES: readonly string[] = [
   '/jobs/recurring',
   '/messages',
   '/notifications',
+  '/orders',
+  '/me',
   '/payments',
   '/profile',
   '/properties',
   '/provider',
+  '/sell',
   '/settings',
 ];
 

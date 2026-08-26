@@ -338,7 +338,10 @@ impl BiddingEngine {
         Ok(bid)
     }
 
-    /// Withdraw an active bid. Decrements the job's bid count.
+    /// Withdraw an active bid.
+    ///
+    /// `jobs.bid_count` is maintained solely by the AFTER-UPDATE trigger from
+    /// migration 030. App-level `bid_count - 1` here double-decremented.
     ///
     /// # Errors
     ///
@@ -356,18 +359,12 @@ impl BiddingEngine {
         let bid = sqlx::query_as::<_, Bid>(
             "UPDATE bids \
              SET status = 'withdrawn', withdrawn_at = now(), updated_at = now() \
-             WHERE id = $1 \
+             WHERE id = $1 AND status = 'active' \
              RETURNING *",
         )
         .bind(bid_id)
         .fetch_one(&self.pool)
         .await?;
-
-        // Decrement job bid count.
-        sqlx::query("UPDATE jobs SET bid_count = GREATEST(bid_count - 1, 0) WHERE id = $1")
-            .bind(existing.job_id)
-            .execute(&self.pool)
-            .await?;
 
         // Live auction: record withdrawal event
         let auction_type: String = sqlx::query_scalar(
@@ -455,6 +452,19 @@ impl BiddingEngine {
         let offer_cents = job
             .offer_accepted_cents
             .ok_or_else(|| BidError::InvalidAmount("job has no offer accepted price".into()))?;
+        if offer_cents <= 0 {
+            return Err(BidError::InvalidAmount(
+                "offer accepted price must be greater than zero".into(),
+            ));
+        }
+        if let Some(starting_bid) = job.starting_bid_cents
+            && offer_cents > starting_bid
+        {
+            return Err(BidError::AboveStartingBid {
+                amount: offer_cents,
+                starting_bid,
+            });
+        }
 
         // The job must still be open. A non-`active` status means it has already
         // been awarded/matched by a competing accept (or otherwise closed) — the
@@ -474,7 +484,7 @@ impl BiddingEngine {
         // catches the race even if the job-status transition below is ever
         // bypassed, and rejects with AlreadyBid → already_exists → 409 Conflict.
         let already_accepted: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM bids WHERE job_id = $1 AND is_offer_accepted = true AND status IN ('active', 'awarded'))",
+            "SELECT EXISTS(SELECT 1 FROM bids WHERE job_id = $1 AND status = 'awarded')",
         )
         .bind(job_id)
         .fetch_one(&mut *tx)
@@ -511,7 +521,7 @@ impl BiddingEngine {
         sqlx::query(
             "UPDATE jobs SET status = 'awarded', \
              awarded_provider_id = $1, awarded_bid_id = $2, awarded_at = now(), \
-             bid_count = bid_count + 1, updated_at = now() \
+             updated_at = now() \
              WHERE id = $3",
         )
         .bind(provider_id)
@@ -875,27 +885,46 @@ impl BiddingEngine {
     /// Returns `BidError` on database errors.
     #[allow(clippy::cast_possible_truncation)]
     pub async fn expire_auction(&self, job_id: Uuid) -> Result<i32, BidError> {
+        let mut tx = self.pool.begin().await?;
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM jobs WHERE id = $1 FOR UPDATE",
+        )
+        .bind(job_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        let Some(status) = status else {
+            return Err(BidError::JobNotFound);
+        };
+        // Never clobber an awarded/closed job. A late expire sweep must not
+        // rewrite `awarded` to `closed_zero_bids` just because active bids
+        // were already consumed by accept/award.
+        if status != "active" {
+            return Ok(0);
+        }
+
         let result = sqlx::query(
             "UPDATE bids SET status = 'expired', updated_at = now() \
              WHERE job_id = $1 AND status = 'active'",
         )
         .bind(job_id)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
 
         let expired_count = result.rows_affected() as i32;
 
-        // Update job status based on whether there were bids.
         let new_status = if expired_count > 0 {
             "closed"
         } else {
             "closed_zero_bids"
         };
-        sqlx::query("UPDATE jobs SET status = $1 WHERE id = $2")
+        sqlx::query("UPDATE jobs SET status = $1 WHERE id = $2 AND status = 'active'")
             .bind(new_status)
             .bind(job_id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+
+        tx.commit().await?;
 
         tracing::info!(job_id = %job_id, expired_count, "auction expired");
 

@@ -7,6 +7,7 @@ const replaceMock = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: replaceMock }),
+  usePathname: () => '/orders',
 }));
 
 vi.mock('@/stores/auth-store', () => ({
@@ -63,7 +64,7 @@ describe('AuthGuard', () => {
       </AuthGuard>,
     );
     await waitFor(() => {
-      expect(replaceMock).toHaveBeenCalledWith('/login');
+      expect(replaceMock).toHaveBeenCalledWith('/login?next=%2Forders');
     });
   });
 

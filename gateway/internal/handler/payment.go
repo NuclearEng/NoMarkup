@@ -428,7 +428,7 @@ type processPaymentRequest struct {
 // due. CreatePayment failure counting (pause at 3) is wired on approve/
 // auto-approve and scheduled retry; this path only resets the counter after capture.
 func (h *PaymentHandler) ProcessPayment(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -442,6 +442,22 @@ func (h *PaymentHandler) ProcessPayment(w http.ResponseWriter, r *http.Request) 
 
 	var req processPaymentRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	// RequirePartyAccess allows customer OR provider. Capture must be the
+	// paying customer only — a provider must not pull authorized funds into
+	// escrow. Look the payment up before ProcessPayment so a forbidden
+	// caller cannot trigger Stripe capture.
+	existing, err := h.paymentClient.GetPayment(r.Context(), &paymentv1.GetPaymentRequest{
+		PaymentId: paymentID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	if existing.GetPayment().GetCustomerId() != claims.UserID {
+		writeError(w, http.StatusForbidden, "only the paying customer can capture this payment")
 		return
 	}
 

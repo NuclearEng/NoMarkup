@@ -514,7 +514,7 @@ describe('useAuthStore', () => {
       expect(state.user?.id).toBe('jwt-sub-user');
     });
 
-    it('sets user to null when JWT payload cannot be parsed', async () => {
+    it('rejects the session when JWT payload cannot be parsed', async () => {
       vi.mocked(api.postUnauthed).mockResolvedValueOnce({
         user_id: 'user-no-jwt',
         access_token: 'not-a-jwt',
@@ -523,35 +523,33 @@ describe('useAuthStore', () => {
 
       vi.mocked(parseJwtPayload).mockReturnValueOnce(null);
 
-      await useAuthStore
-        .getState()
-        .completeMFALogin('challenge-3', '111111');
+      await expect(
+        useAuthStore.getState().completeMFALogin('challenge-3', '111111'),
+      ).rejects.toThrow(/session could not be restored/);
 
       const state = useAuthStore.getState();
-      // Per source: `user = payload ? userFromJwt(...) : null`
       expect(state.user).toBeNull();
-      expect(state.accessToken).toBe('not-a-jwt');
-      expect(state.isAuthenticated).toBe(true);
+      expect(state.isAuthenticated).toBe(false);
+      expect(setAccessToken).not.toHaveBeenCalled();
     });
 
-    it('uses empty string when both response user_id and payload are missing', async () => {
+    it('rejects the session when both response user_id and payload are missing', async () => {
       vi.mocked(api.postUnauthed).mockResolvedValueOnce({
         // No user_id
         access_token: 'opaque',
         access_token_expires_at: new Date(Date.now() + 3600000).toISOString(),
       });
 
-      // payload null too: forces `payload ? payload.sub : ''` to return ''
       vi.mocked(parseJwtPayload).mockReturnValueOnce(null);
 
-      await useAuthStore
-        .getState()
-        .completeMFALogin('challenge-empty', '222222');
+      await expect(
+        useAuthStore.getState().completeMFALogin('challenge-empty', '222222'),
+      ).rejects.toThrow(/session could not be restored/);
 
       const state = useAuthStore.getState();
       expect(state.user).toBeNull();
-      expect(state.accessToken).toBe('opaque');
-      expect(state.isAuthenticated).toBe(true);
+      expect(state.isAuthenticated).toBe(false);
+      expect(setAccessToken).not.toHaveBeenCalled();
     });
 
     it('throws and leaves state untouched on API error', async () => {

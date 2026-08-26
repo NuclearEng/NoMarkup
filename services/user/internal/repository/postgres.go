@@ -1613,28 +1613,24 @@ func (r *PostgresRepository) StoreMFASecret(ctx context.Context, userID, plainte
 	return nil
 }
 
-// GetMFASecret returns the decrypted TOTP secret for the given user. Rows that
-// predate the PII encryption rollout (pii_encrypted_v1 = false) return their
-// plaintext value, preserving backwards compatibility until the re-encryption
-// job runs.
+// GetMFASecret returns the TOTP secret for the given user.
+// Detection is per VALUE via DecryptStringOrPassthrough — never branch on
+// pii_encrypted_v1. Updating phone flips that row flag while a legacy
+// plaintext mfa_secret can remain, and DecryptString would lock the user out.
 func (r *PostgresRepository) GetMFASecret(ctx context.Context, userID string) (string, error) {
-	query := `SELECT mfa_secret, pii_encrypted_v1 FROM users WHERE id = $1 AND deleted_at IS NULL`
+	query := `SELECT mfa_secret FROM users WHERE id = $1 AND deleted_at IS NULL`
 	var secret *string
-	var encrypted bool
-	err := r.pool.QueryRow(ctx, query, userID).Scan(&secret, &encrypted)
+	err := r.pool.QueryRow(ctx, query, userID).Scan(&secret)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", fmt.Errorf("get mfa secret: %w", domain.ErrUserNotFound)
 		}
 		return "", fmt.Errorf("get mfa secret: %w", err)
 	}
-	if secret == nil {
+	if secret == nil || *secret == "" {
 		return "", fmt.Errorf("get mfa secret: %w", domain.ErrMFANotSetup)
 	}
-	if !encrypted || *secret == "" {
-		return *secret, nil
-	}
-	plaintext, err := r.cipher.DecryptString(*secret)
+	plaintext, err := r.cipher.DecryptStringOrPassthrough(*secret)
 	if err != nil {
 		return "", fmt.Errorf("get mfa secret: decrypt: %w", err)
 	}

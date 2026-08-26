@@ -109,18 +109,18 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       },
     );
 
-    setAccessToken(data.access_token);
-
     const payload = parseJwtPayload(data.access_token);
     // The MFA verify endpoint may not return user_id in the body,
     // so we extract it from the JWT payload (sub claim).
     const userId = data.user_id || (payload ? payload.sub : '');
-    const user = payload
-      ? userFromJwt(userId, payload)
-      : null;
+    if (!payload || userId === '') {
+      clearTokens();
+      throw new Error('Login succeeded but the session could not be restored. Please try again.');
+    }
 
+    setAccessToken(data.access_token);
     set({
-      user,
+      user: userFromJwt(userId, payload),
       accessToken: data.access_token,
       isAuthenticated: true,
       isHydrating: false,
