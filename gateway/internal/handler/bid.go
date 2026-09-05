@@ -1148,8 +1148,12 @@ func (h *BidHandler) GetBid(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetBidAnalytics handles GET /api/v1/bids/analytics.
+//
+// Sealed reverse-auction amounts are owner-only. The JWT subject is forwarded
+// as customer_id; the bidding engine compares it to jobs.customer_id and
+// returns PermissionDenied for anyone else (competing provider, random account).
 func (h *BidHandler) GetBidAnalytics(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -1162,7 +1166,8 @@ func (h *BidHandler) GetBidAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.bidClient.GetBidAnalytics(r.Context(), &bidv1.GetBidAnalyticsRequest{
-		JobId: jobID,
+		JobId:      jobID,
+		CustomerId: claims.UserID,
 	})
 	if err != nil {
 		writeGRPCError(w, err)

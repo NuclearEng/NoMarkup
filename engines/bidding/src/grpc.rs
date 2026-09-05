@@ -385,10 +385,19 @@ impl BidService for BidServiceImpl {
         let req = request.into_inner();
 
         let job_id = parse_uuid(&req.job_id, "job_id")?;
+        // Empty customer_id is denied, not parsed as a nil UUID. Mesh callers
+        // must not omit the owner check (PRD-AUTH-01).
+        if req.customer_id.is_empty() {
+            warn!(job_id = %job_id, "get_bid_analytics rejected: missing customer_id");
+            return Err(Status::permission_denied(
+                "customer_id is required to view bid analytics",
+            ));
+        }
+        let customer_id = parse_uuid(&req.customer_id, "customer_id")?;
 
         let analytics = self
             .engine
-            .get_bid_analytics(job_id)
+            .get_bid_analytics(job_id, customer_id)
             .await
             .map_err(bid_error_to_status)?;
 

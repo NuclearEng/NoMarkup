@@ -171,6 +171,7 @@ extension APIClient {
     }
 
     /// GET `/api/v1/bids/analytics?job_id=` — reverse-auction bid ladder stats for a job.
+    /// Owner-only (job customer). Competing providers receive 403.
     /// Gateway requires `job_id` query param (400 without it).
     func fetchBidAnalytics(jobId: String) async throws -> BidAnalytics {
         let trimmed = jobId.trimmingCharacters(in: .whitespacesAndNewlines)

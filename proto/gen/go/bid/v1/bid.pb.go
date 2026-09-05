@@ -1852,8 +1852,10 @@ func (x *CheckAuctionDeadlinesResponse) GetClosingSoonJobIds() []string {
 }
 
 type GetBidAnalyticsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	JobId string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	// Must match jobs.customer_id. Empty is denied (sealed-auction IDOR).
+	CustomerId    string `protobuf:"bytes,2,opt,name=customer_id,json=customerId,proto3" json:"customer_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1891,6 +1893,13 @@ func (*GetBidAnalyticsRequest) Descriptor() ([]byte, []int) {
 func (x *GetBidAnalyticsRequest) GetJobId() string {
 	if x != nil {
 		return x.JobId
+	}
+	return ""
+}
+
+func (x *GetBidAnalyticsRequest) GetCustomerId() string {
+	if x != nil {
+		return x.CustomerId
 	}
 	return ""
 }
@@ -2121,9 +2130,11 @@ const file_bid_v1_bid_proto_rawDesc = "" +
 	"\x06before\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x06before\"x\n" +
 	"\x1dCheckAuctionDeadlinesResponse\x12&\n" +
 	"\x0fexpired_job_ids\x18\x01 \x03(\tR\rexpiredJobIds\x12/\n" +
-	"\x14closing_soon_job_ids\x18\x02 \x03(\tR\x11closingSoonJobIds\"/\n" +
+	"\x14closing_soon_job_ids\x18\x02 \x03(\tR\x11closingSoonJobIds\"P\n" +
 	"\x16GetBidAnalyticsRequest\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"\xe4\x02\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1f\n" +
+	"\vcustomer_id\x18\x02 \x01(\tR\n" +
+	"customerId\"\xe4\x02\n" +
 	"\x17GetBidAnalyticsResponse\x12\x1d\n" +
 	"\n" +
 	"total_bids\x18\x01 \x01(\x05R\ttotalBids\x12(\n" +

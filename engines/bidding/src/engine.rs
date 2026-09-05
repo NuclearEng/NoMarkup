@@ -985,11 +985,36 @@ impl BiddingEngine {
 
     /// Get aggregate bid analytics for a job.
     ///
+    /// Sealed reverse-auction amounts (lowest / highest / median) are owner-only,
+    /// matching [`Self::list_bids_for_job`]. A competing provider must not
+    /// reconstruct the sealed ladder via this RPC.
+    ///
     /// # Errors
     ///
-    /// Returns `BidError` on database errors.
+    /// Returns `BidError::JobNotFound` if the job is missing,
+    /// `BidError::PermissionDenied` if `customer_id` is not the job owner,
+    /// or a database error.
     #[allow(clippy::cast_possible_truncation)]
-    pub async fn get_bid_analytics(&self, job_id: Uuid) -> Result<BidAnalytics, BidError> {
+    pub async fn get_bid_analytics(
+        &self,
+        job_id: Uuid,
+        customer_id: Uuid,
+    ) -> Result<BidAnalytics, BidError> {
+        let job = sqlx::query_as::<_, JobRow>(
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
+             FROM jobs WHERE id = $1",
+        )
+        .bind(job_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or(BidError::JobNotFound)?;
+
+        if job.customer_id != customer_id {
+            return Err(BidError::PermissionDenied(
+                "only the job owner can view bids".into(),
+            ));
+        }
+
         let stats: AnalyticsRow = sqlx::query_as(
             "SELECT \
                COUNT(*)::bigint as total_bids, \
@@ -1294,6 +1319,10 @@ mod tests {
         assert_eq!(
             BidError::AlreadyBid.to_string(),
             "provider already has an active bid on this job"
+        );
+        assert_eq!(
+            BidError::PermissionDenied("only the job owner can view bids".into()).to_string(),
+            "permission denied: only the job owner can view bids"
         );
     }
 
