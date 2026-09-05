@@ -14,7 +14,7 @@ export function ShareSavingsCard({ savingsCents, jobTitle, category }: ShareSavi
   const [copied, setCopied] = useState(false);
 
   const shareText = `I just saved ${formatCents(savingsCents)} on ${category} with NoMarkup!`;
-  const shareUrl = 'https://nomarkup.com';
+  const shareUrl = 'https://no-markup.com';
 
   async function handleCopyLink() {
     try {
@@ -67,7 +67,9 @@ export function ShareSavingsCard({ savingsCents, jobTitle, category }: ShareSavi
           Share on Facebook
         </button>
         <button
-          onClick={handleCopyLink}
+          onClick={() => {
+            void handleCopyLink();
+          }}
           className="hover:bg-accent inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-medium"
         >
           {copied ? 'Copied!' : 'Copy Link'}

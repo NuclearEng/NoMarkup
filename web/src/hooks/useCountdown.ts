@@ -7,16 +7,26 @@ interface CountdownResult {
 }
 
 export function useCountdown(endTime: string | Date | null | undefined): CountdownResult {
-  const [now, setNow] = useState(Date.now());
+  // `now` starts null so the SSR render and the first client render are
+  // deterministic (no Date.now() in initial render). It's filled in after mount;
+  // otherwise the countdown computed on the server differs from the client a
+  // moment later → React hydration mismatch.
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
     if (!endTime) return;
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
+    setNow(Date.now()); // first live value, post-mount
+    const interval = setInterval(() => { setNow(Date.now()); }, 1000);
+    return () => { clearInterval(interval); };
   }, [endTime]);
 
   if (!endTime) {
     return { timeLeft: '--:--', isExpired: true, totalSeconds: 0 };
+  }
+
+  // Pre-mount placeholder — identical on server and first client render.
+  if (now === null) {
+    return { timeLeft: '--:--', isExpired: false, totalSeconds: 0 };
   }
 
   const end = new Date(endTime).getTime();
@@ -34,11 +44,11 @@ export function useCountdown(endTime: string | Date | null | undefined): Countdo
 
   let timeLeft: string;
   if (days > 0) {
-    timeLeft = `${days}d ${hours}h`;
+    timeLeft = `${String(days)}d ${String(hours)}h`;
   } else if (hours > 0) {
-    timeLeft = `${hours}h ${minutes}m`;
+    timeLeft = `${String(hours)}h ${String(minutes)}m`;
   } else {
-    timeLeft = `${minutes}:${String(seconds).padStart(2, '0')}`;
+    timeLeft = `${String(minutes)}:${String(seconds).padStart(2, '0')}`;
   }
 
   return { timeLeft, isExpired: false, totalSeconds };

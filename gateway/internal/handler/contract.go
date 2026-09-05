@@ -1,24 +1,196 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"html"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	contractv1 "github.com/nomarkup/nomarkup/proto/contract/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // ContractHandler handles HTTP endpoints for contracts.
 type ContractHandler struct {
 	contractClient contractv1.ContractServiceClient
+	// userClient resolves the customer/provider display names that enrich a
+	// contract response, so the web client can render a human-readable party
+	// name instead of a raw UUID (mirrors the chat channel name enrichment).
+	// It may be nil in tests; enrichment then degrades to absent.
+	userClient userv1.UserServiceClient
+	// db is used to read fields that live on the contracts table but are not
+	// carried by the contract proto/domain (e.g. tip_amount_cents, added by the
+	// Wave 5 services-polish tip feature without a proto regen). It may be nil
+	// in tests; the tip enrichment degrades to absent rather than erroring.
+	// Also backs FR-16.7 partial payment_retry_count + next_retry_at on
+	// recurring_configs (migrations 112/113) without a proto regen.
+	db *pgxpool.Pool
+	// paymentClient creates a real Stripe PaymentIntent for recurring-instance
+	// approve (FR-18 residual). Optional: nil → approve still succeeds with
+	// status/timestamps only — never invent a payment_id or client_secret.
+	paymentClient paymentv1.PaymentServiceClient
+	// incrPaymentRetryFn / resetPaymentRetryFn override the SQL helpers for
+	// unit tests (production leaves them nil and uses h.db).
+	// incr returns (count, nextRetryAt); nextRetryAt is nil at/above threshold.
+	incrPaymentRetryFn  func(ctx context.Context, recurringID string) (int, *time.Time, error)
+	resetPaymentRetryFn func(ctx context.Context, recurringID string) error
+	// FR-16.7 scheduled retry hooks (unit tests); production uses SQL + payment client.
+	claimDueRecurringRetriesFn func(ctx context.Context, limit int) ([]dueRecurringRetry, error)
+	findUnpaidApprovedVisitFn  func(ctx context.Context, recurringID string) (*unpaidApprovedVisit, error)
 }
 
 // NewContractHandler creates a new ContractHandler.
-func NewContractHandler(contractClient contractv1.ContractServiceClient) *ContractHandler {
-	return &ContractHandler{contractClient: contractClient}
+func NewContractHandler(contractClient contractv1.ContractServiceClient, userClient userv1.UserServiceClient, db *pgxpool.Pool) *ContractHandler {
+	return &ContractHandler{contractClient: contractClient, userClient: userClient, db: db}
+}
+
+// SetPaymentClient wires CreatePayment for recurring-instance approve and for
+// auto-approve on complete (FR-18). Safe to leave unset in tests that never hit
+// the money path.
+func (h *ContractHandler) SetPaymentClient(c paymentv1.PaymentServiceClient) {
+	h.paymentClient = c
+}
+
+// resolvePartyNames resolves a set of user ids → public display_name via the
+// user gRPC service, deduping ids and resolving them in ONE batched round trip
+// (chunked at the server's cap) rather than one sequential GetUser per unique
+// party. It is fail-soft: a lookup error or empty display_name leaves that id
+// out of the map rather than failing the contract response. Only the
+// public-safe display_name is surfaced — no other PII. Returns nil when there
+// is no user client configured or no ids to resolve.
+func (h *ContractHandler) resolvePartyNames(ctx context.Context, ids ...string) map[string]string {
+	if h.userClient == nil {
+		return nil
+	}
+
+	unique := dedupeUserIDs(ids)
+	if len(unique) == 0 {
+		return nil
+	}
+
+	names, err := batchGetDisplayNames(ctx, h.userClient, unique)
+	if err != nil {
+		// fail soft — the failed chunk's names are simply absent.
+		slog.WarnContext(ctx, "contract: resolve party names failed", "error", err)
+	}
+
+	return names
+}
+
+// enrichPartyNames adds customer_name / provider_name to an already-projected
+// contract JSON map, given the resolved id→name lookup. A missing entry simply
+// leaves that name absent (the web client falls back to a truncated id).
+func enrichPartyNames(jc map[string]interface{}, names map[string]string) {
+	if names == nil {
+		return
+	}
+	if id, ok := jc["customer_id"].(string); ok {
+		if name := names[id]; name != "" {
+			jc["customer_name"] = name
+		}
+	}
+	if id, ok := jc["provider_id"].(string); ok {
+		if name := names[id]; name != "" {
+			jc["provider_name"] = name
+		}
+	}
+}
+
+// tipAmountsByContract reads tip_amount_cents for the given contract ids in a
+// single query. The tip lives on the contracts table directly (migration 046)
+// but is not part of the contract proto, so the gateway projects it in. A nil
+// db or query error returns an empty map — the tip simply won't be enriched,
+// which is the correct fail-soft behavior for a display-only field.
+func (h *ContractHandler) tipAmountsByContract(ctx context.Context, ids []string) map[string]int64 {
+	out := make(map[string]int64, len(ids))
+	if h.db == nil || len(ids) == 0 {
+		return out
+	}
+	rows, err := h.db.Query(ctx,
+		`SELECT id, tip_amount_cents FROM contracts WHERE id = ANY($1)`, ids)
+	if err != nil {
+		slog.ErrorContext(ctx, "tip enrichment query failed", "error", err)
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var tip int64
+		if err := rows.Scan(&id, &tip); err != nil {
+			slog.ErrorContext(ctx, "tip enrichment scan failed", "error", err)
+			return out
+		}
+		out[id] = tip
+	}
+	return out
+}
+
+// localTermsByContract reads contracts.terms_json→local_terms for display.
+// Chat Accept / award residual bind write a nested local_terms object (FR-5.4)
+// that is not on the contract proto. Only the local_terms sub-object is
+// projected (not the full terms_json blob). Fail-soft: nil/empty when missing.
+// Authorization is already enforced by GetContract party checks — this is
+// enrichment only for callers who already may see the contract.
+func (h *ContractHandler) localTermsByContract(ctx context.Context, contractID string) map[string]interface{} {
+	if h.db == nil || contractID == "" {
+		return nil
+	}
+	var raw []byte
+	err := h.db.QueryRow(ctx,
+		`SELECT COALESCE(terms_json, '{}'::jsonb) FROM contracts WHERE id = $1 AND deleted_at IS NULL`,
+		contractID,
+	).Scan(&raw)
+	if err != nil {
+		// NotFound / scan error → no enrichment (GetContract already authorized).
+		return nil
+	}
+	return projectLocalTermsJSON(raw)
+}
+
+// projectLocalTermsJSON extracts the local_terms object from a terms_json
+// document and keeps only scalar values for safe client projection.
+func projectLocalTermsJSON(raw []byte) map[string]interface{} {
+	if len(raw) == 0 {
+		return nil
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil
+	}
+	local, ok := root["local_terms"].(map[string]interface{})
+	if !ok || len(local) == 0 {
+		return nil
+	}
+	// Project only string/number/bool primitives for display safety — drop
+	// nested objects so the UI never renders unexpected structure.
+	out := make(map[string]interface{}, len(local))
+	for k, v := range local {
+		switch v.(type) {
+		case string, float64, bool, nil:
+			out[k] = v
+		case json.Number:
+			out[k] = v
+		default:
+			// Skip arrays/objects (e.g. unexpected nested blobs).
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // GetContract handles GET /api/v1/contracts/{id}.
@@ -30,8 +202,8 @@ func (h *ContractHandler) GetContract(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -45,6 +217,22 @@ func (h *ContractHandler) GetContract(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := protoContractToJSON(resp.GetContract())
+	// FR-16.7: enrich nested recurring with payment_retry fields when present.
+	if rec, ok := result["recurring"].(map[string]interface{}); ok {
+		attachPaymentRetryFieldsToConfig(r.Context(), h.db, rec)
+	}
+	if id := resp.GetContract().GetId(); id != "" {
+		result["tip_amount_cents"] = h.tipAmountsByContract(r.Context(), []string{id})[id]
+		// FR-5.4: surface chat/award-bound local terms for the contract detail UI.
+		if local := h.localTermsByContract(r.Context(), id); local != nil {
+			result["local_terms"] = local
+		}
+	}
+	// Enrich the "Parties" display with human-readable names so the UI shows the
+	// counterparty's display_name instead of a raw UUID.
+	c := resp.GetContract()
+	names := h.resolvePartyNames(r.Context(), c.GetCustomerId(), c.GetProviderId())
+	enrichPartyNames(result, names)
 	if len(resp.GetChangeOrders()) > 0 {
 		orders := make([]map[string]interface{}, 0, len(resp.GetChangeOrders()))
 		for _, co := range resp.GetChangeOrders() {
@@ -65,8 +253,8 @@ func (h *ContractHandler) AcceptContract(w http.ResponseWriter, r *http.Request)
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -91,8 +279,8 @@ func (h *ContractHandler) StartWork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -150,9 +338,25 @@ func (h *ContractHandler) ListContracts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	ids := make([]string, 0, len(resp.GetContracts()))
+	partyIDs := make([]string, 0, len(resp.GetContracts())*2)
+	for _, c := range resp.GetContracts() {
+		if id := c.GetId(); id != "" {
+			ids = append(ids, id)
+		}
+		partyIDs = append(partyIDs, c.GetCustomerId(), c.GetProviderId())
+	}
+	tips := h.tipAmountsByContract(r.Context(), ids)
+	// One batched, deduped resolve for every party across the page so each row
+	// can render the counterparty name instead of a raw UUID.
+	names := h.resolvePartyNames(r.Context(), partyIDs...)
+
 	contracts := make([]map[string]interface{}, 0, len(resp.GetContracts()))
 	for _, c := range resp.GetContracts() {
-		contracts = append(contracts, protoContractToJSON(c))
+		jc := protoContractToJSON(c)
+		jc["tip_amount_cents"] = tips[c.GetId()]
+		enrichPartyNames(jc, names)
+		contracts = append(contracts, jc)
 	}
 
 	result := map[string]interface{}{
@@ -161,7 +365,7 @@ func (h *ContractHandler) ListContracts(w http.ResponseWriter, r *http.Request) 
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -180,8 +384,8 @@ func (h *ContractHandler) SubmitMilestone(w http.ResponseWriter, r *http.Request
 	}
 
 	milestoneID := chi.URLParam(r, "id")
-	if milestoneID == "" {
-		writeError(w, http.StatusBadRequest, "milestone id required")
+	if !isValidUUID(milestoneID) {
+		writeError(w, http.StatusBadRequest, "invalid milestone id")
 		return
 	}
 
@@ -206,8 +410,8 @@ func (h *ContractHandler) ApproveMilestone(w http.ResponseWriter, r *http.Reques
 	}
 
 	milestoneID := chi.URLParam(r, "id")
-	if milestoneID == "" {
-		writeError(w, http.StatusBadRequest, "milestone id required")
+	if !isValidUUID(milestoneID) {
+		writeError(w, http.StatusBadRequest, "invalid milestone id")
 		return
 	}
 
@@ -220,7 +424,32 @@ func (h *ContractHandler) ApproveMilestone(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoMilestoneToJSON(resp.GetMilestone()))
+	// Notify the provider that the customer approved their milestone. The
+	// approver is always the customer, so the recipient is the contract's
+	// provider, resolved from the milestone's contract_id via the gateway pool.
+	// Fail-soft: a lookup miss skips the notification (the approval already
+	// committed); emitNotification guards nil-db + self-notify.
+	m := resp.GetMilestone()
+	if h.db != nil && m.GetContractId() != "" {
+		var providerID string
+		if err := h.db.QueryRow(r.Context(),
+			`SELECT provider_id::text FROM contracts WHERE id = $1`, m.GetContractId(),
+		).Scan(&providerID); err != nil {
+			slog.ErrorContext(r.Context(), "milestone approved notification: provider lookup failed",
+				"error", err, "contract_id", m.GetContractId())
+		} else {
+			emitNotification(r.Context(), h.db,
+				claims.UserID, providerID,
+				"milestone_approved",
+				"Milestone approved",
+				"The customer approved a milestone on your contract.",
+				"/contracts/"+m.GetContractId(),
+				"contract", m.GetContractId(),
+			)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, protoMilestoneToJSON(m))
 }
 
 type requestRevisionRequest struct {
@@ -236,14 +465,13 @@ func (h *ContractHandler) RequestRevision(w http.ResponseWriter, r *http.Request
 	}
 
 	milestoneID := chi.URLParam(r, "id")
-	if milestoneID == "" {
-		writeError(w, http.StatusBadRequest, "milestone id required")
+	if !isValidUUID(milestoneID) {
+		writeError(w, http.StatusBadRequest, "invalid milestone id")
 		return
 	}
 
 	var req requestRevisionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -269,8 +497,8 @@ func (h *ContractHandler) MarkComplete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -295,8 +523,23 @@ func (h *ContractHandler) ApproveCompletion(w http.ResponseWriter, r *http.Reque
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+
+	// Release escrow BEFORE completing the contract. Complete-then-fail-soft
+	// left held funds on rows the 7-day sweeper never selected. Hard money
+	// errors 503 so the customer can retry while the contract is still active.
+	// Unpaid / already-released / refunded (NotFound, or FailedPrecondition
+	// with "invalid status") still proceed to approve. Provider-not-set-up
+	// and transfers-not-ready stay hard.
+	if err := h.releaseServicesEscrowOnApprove(r.Context(), contractID, claims.UserID); err != nil {
+		slog.WarnContext(r.Context(), "approve-completion: escrow release failed; not completing contract",
+			"contract_id", contractID,
+			"error", err,
+		)
+		writeError(w, http.StatusServiceUnavailable, "could not release escrow; please try again")
 		return
 	}
 
@@ -312,6 +555,125 @@ func (h *ContractHandler) ApproveCompletion(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, protoContractToJSON(resp.GetContract()))
 }
 
+func skippableApproveReleaseErr(err error) bool {
+	if err == nil {
+		return true
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	if st.Code() == codes.NotFound {
+		return true
+	}
+	// Only the already-released / wrong-state CAS. Provider-not-set-up and
+	// transfers-not-ready are also FailedPrecondition and must stay hard.
+	return st.Code() == codes.FailedPrecondition && strings.Contains(st.Message(), "invalid status")
+}
+
+const (
+	escrowListPageSize = 100
+	maxEscrowListPages = 20
+)
+
+// releaseServicesEscrowOnApprove lists escrow payments for the contract and
+// releases each as the customer. CAS + Stripe idempotency key
+// escrow-release:<paymentID> make a retry a no-op, not a double pay.
+func (h *ContractHandler) releaseServicesEscrowOnApprove(ctx context.Context, contractID, customerID string) error {
+	if h.paymentClient == nil {
+		return fmt.Errorf("approve-completion: payment client unset")
+	}
+
+	escrowStatus := paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW
+	cid := contractID
+	var listed []*paymentv1.Payment
+	for page := int32(1); page <= maxEscrowListPages; page++ {
+		listResp, err := h.paymentClient.ListPayments(ctx, &paymentv1.ListPaymentsRequest{
+			UserId:       customerID,
+			ContractId:   &cid,
+			StatusFilter: &escrowStatus,
+			Pagination: &commonv1.PaginationRequest{
+				Page:     page,
+				PageSize: escrowListPageSize,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("list escrow payments: %w", err)
+		}
+		listed = append(listed, listResp.GetPayments()...)
+		if !listResp.GetPagination().GetHasNext() {
+			break
+		}
+		if page == maxEscrowListPages {
+			return fmt.Errorf("list escrow payments: truncated after %d pages", maxEscrowListPages)
+		}
+	}
+
+	var firstHard error
+	for _, p := range listed {
+		if p == nil || p.GetId() == "" {
+			continue
+		}
+		// Belt-and-braces: SQL already filters contract_id. Never release
+		// another contract's escrow if the page is mixed.
+		if p.GetContractId() != contractID {
+			continue
+		}
+		if p.GetStatus() != paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW {
+			slog.InfoContext(ctx, "approve-completion: payment not in escrow; skipping",
+				"contract_id", contractID,
+				"payment_id", p.GetId(),
+				"status", p.GetStatus().String(),
+			)
+			continue
+		}
+
+		rel, rerr := h.paymentClient.ReleaseEscrow(ctx, &paymentv1.ReleaseEscrowRequest{
+			PaymentId:   p.GetId(),
+			Reason:      "completion_approved",
+			ActorUserId: customerID,
+		})
+		if rerr != nil {
+			if skippableApproveReleaseErr(rerr) {
+				slog.InfoContext(ctx, "approve-completion: ReleaseEscrow skippable; continuing",
+					"contract_id", contractID,
+					"payment_id", p.GetId(),
+					"error", rerr,
+				)
+				continue
+			}
+			slog.WarnContext(ctx, "approve-completion: ReleaseEscrow failed",
+				"contract_id", contractID,
+				"payment_id", p.GetId(),
+				"error", rerr,
+			)
+			if firstHard == nil {
+				firstHard = rerr
+			}
+			continue
+		}
+
+		pay := rel.GetPayment()
+		if pay == nil {
+			pay = p
+		}
+		dollars := fmt.Sprintf("$%.2f", float64(pay.GetProviderPayoutCents())/100)
+		actionURL := "/payments/" + pay.GetId()
+		if pay.GetContractId() != "" {
+			actionURL = "/contracts/" + pay.GetContractId()
+		}
+		emitNotification(ctx, h.db,
+			customerID, pay.GetProviderId(),
+			"payout_sent",
+			"Payout released",
+			fmt.Sprintf("Escrow was released — your payout of %s is on the way.", dollars),
+			actionURL,
+			"payment", pay.GetId(),
+		)
+	}
+	return firstHard
+}
+
 type cancelContractRequest struct {
 	Reason string `json:"reason"`
 }
@@ -325,13 +687,17 @@ func (h *ContractHandler) CancelContract(w http.ResponseWriter, r *http.Request)
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
+	// The reason is optional — the decline action in the UI sends no body, and
+	// requiring one made an empty request fail with 400 ("invalid request body:
+	// EOF"). Tolerate an absent/empty body; only surface malformed JSON.
 	var req cancelContractRequest
-	if !decodeJSON(w, r, &req) {
+	if err := decodeJSONOptional(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 
@@ -351,8 +717,8 @@ func (h *ContractHandler) CancelContract(w http.ResponseWriter, r *http.Request)
 // --- Change Order handlers ---
 
 type createChangeOrderRequest struct {
-	Description        string `json:"description"`
-	AmountDeltaCents   int64  `json:"amount_delta_cents"`
+	Description      string `json:"description"`
+	AmountDeltaCents int64  `json:"amount_delta_cents"`
 }
 
 // CreateChangeOrder handles POST /api/v1/contracts/{id}/change-orders.
@@ -364,14 +730,13 @@ func (h *ContractHandler) CreateChangeOrder(w http.ResponseWriter, r *http.Reque
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
 	var req createChangeOrderRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -398,8 +763,8 @@ func (h *ContractHandler) ListChangeOrders(w http.ResponseWriter, r *http.Reques
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -436,14 +801,13 @@ func (h *ContractHandler) RespondToChangeOrder(w http.ResponseWriter, r *http.Re
 	}
 
 	orderID := chi.URLParam(r, "orderId")
-	if orderID == "" {
-		writeError(w, http.StatusBadRequest, "change order id required")
+	if !isValidUUID(orderID) {
+		writeError(w, http.StatusBadRequest, "invalid change order id")
 		return
 	}
 
 	var req respondChangeOrderRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -478,14 +842,13 @@ func (h *ContractHandler) OpenDispute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
 	var req openDisputeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -523,8 +886,8 @@ func (h *ContractHandler) SubmitGuaranteeClaim(w http.ResponseWriter, r *http.Re
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -574,8 +937,8 @@ func (h *ContractHandler) GetGuaranteeClaim(w http.ResponseWriter, r *http.Reque
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -629,8 +992,8 @@ func (h *ContractHandler) ReportNoShow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -655,8 +1018,8 @@ func (h *ContractHandler) ReportAbandonment(w http.ResponseWriter, r *http.Reque
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
@@ -672,9 +1035,12 @@ func (h *ContractHandler) ReportAbandonment(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, protoContractToJSON(resp.GetContract()))
 }
 
-// --- Contract PDF export ---
+// --- Contract PDF / document export ---
 
 // ExportPDF handles GET /api/v1/contracts/{id}/pdf.
+// Returns a relative path that clients resolve against the API base and fetch
+// with auth (see DownloadContractDocument). Absolute URLs are avoided so the
+// same response works for localhost, LAN, and production.
 func (h *ContractHandler) ExportPDF(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -683,22 +1049,1126 @@ func (h *ContractHandler) ExportPDF(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contractID := chi.URLParam(r, "id")
-	if contractID == "" {
-		writeError(w, http.StatusBadRequest, "contract id required")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
 		return
 	}
 
-	resp, err := h.contractClient.ExportContractPDF(r.Context(), &contractv1.ExportContractPDFRequest{
+	// Confirm the contract exists for this party (RequirePartyAccess already
+	// gated the route; still validate via service when available).
+	if _, err := h.contractClient.ExportContractPDF(r.Context(), &contractv1.ExportContractPDFRequest{
 		ContractId: contractID,
+	}); err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"pdf_url": "/api/v1/contracts/" + contractID + "/document.pdf",
+	})
+}
+
+// DownloadContractDocument handles GET /api/v1/contracts/{id}/document.pdf.
+// Serves an HTML contract summary (printable) with attachment disposition.
+// Auth is required; party access is enforced by router middleware.
+func (h *ContractHandler) DownloadContractDocument(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+
+	resp, err := h.contractClient.GetContract(r.Context(), &contractv1.GetContractRequest{
+		ContractId:       contractID,
+		RequestingUserId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	c := resp.GetContract()
+	if c == nil {
+		writeError(w, http.StatusNotFound, "contract not found")
+		return
+	}
+
+	body := buildContractDocumentHTML(c)
+	filenameID := contractID
+	if len(filenameID) > 8 {
+		filenameID = filenameID[:8]
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"contract-"+filenameID+".html\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(body))
+}
+
+func buildContractDocumentHTML(c *contractv1.Contract) string {
+	title := c.GetJobTitle()
+	if title == "" {
+		title = "Contract"
+	}
+	status := contractStatusToString(c.GetStatus())
+	num := c.GetContractNumber()
+	if num == "" {
+		num = c.GetId()
+	}
+	amount := formatCentsUSD(c.GetAmountCents())
+	created := formatTimestamp(c.GetCreatedAt())
+	completed := ""
+	if c.GetCompletedAt() != nil {
+		completed = formatTimestamp(c.GetCompletedAt())
+	}
+	esc := html.EscapeString
+	// Minimal printable HTML — clients open/share via authenticated download.
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contract ` + esc(num) + `</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 2rem; color: #111; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  .meta { color: #555; margin-bottom: 1.5rem; }
+  table { border-collapse: collapse; width: 100%; max-width: 36rem; }
+  th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #ddd; }
+  th { width: 40%; color: #555; font-weight: 600; }
+  .footer { margin-top: 2rem; font-size: 0.85rem; color: #777; }
+</style>
+</head>
+<body>
+  <h1>` + esc(title) + `</h1>
+  <p class="meta">NoMarkup contract summary · printable HTML</p>
+  <table>
+    <tr><th>Contract number</th><td>` + esc(num) + `</td></tr>
+    <tr><th>Status</th><td>` + esc(status) + `</td></tr>
+    <tr><th>Amount</th><td>` + esc(amount) + `</td></tr>
+    <tr><th>Customer ID</th><td>` + esc(c.GetCustomerId()) + `</td></tr>
+    <tr><th>Provider ID</th><td>` + esc(c.GetProviderId()) + `</td></tr>
+    <tr><th>Created</th><td>` + esc(created) + `</td></tr>
+    <tr><th>Completed</th><td>` + esc(completed) + `</td></tr>
+  </table>
+  <p class="footer">Generated for the signed-in party. Do not share publicly.</p>
+</body>
+</html>`
+}
+
+// --- Recurring (FR-18) ---
+
+// GetRecurringConfig handles GET /api/v1/contracts/{id}/recurring.
+func (h *ContractHandler) GetRecurringConfig(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	resp, err := h.contractClient.GetRecurringConfig(r.Context(), &contractv1.GetRecurringConfigRequest{
+		ContractId:       contractID,
+		RequestingUserId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	cfgJSON := protoRecurringConfigToJSON(resp.GetConfig())
+	// FR-16.7: surface payment_retry_count / next_retry_at for client UX (not on proto).
+	attachPaymentRetryFieldsToConfig(r.Context(), h.db, cfgJSON)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": cfgJSON,
+	})
+}
+
+// UpdateRecurringConfig handles PATCH /api/v1/contracts/{id}/recurring.
+func (h *ContractHandler) UpdateRecurringConfig(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+
+	var body struct {
+		ProposedRateCents *int64 `json:"proposed_rate_cents"`
+		AutoApprove       *bool  `json:"auto_approve"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+
+	cfg, err := h.resolveRecurringConfig(r, contractID)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	req := &contractv1.UpdateRecurringConfigRequest{
+		RecurringId: cfg.GetId(),
+		UserId:      claims.UserID,
+	}
+	if body.ProposedRateCents != nil {
+		req.ProposedRateCents = body.ProposedRateCents
+	}
+	if body.AutoApprove != nil {
+		req.AutoApprove = body.AutoApprove
+	}
+
+	resp, err := h.contractClient.UpdateRecurringConfig(r.Context(), req)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	cfgJSON := protoRecurringConfigToJSON(resp.GetConfig())
+	attachPaymentRetryFieldsToConfig(r.Context(), h.db, cfgJSON)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": cfgJSON,
+	})
+}
+
+// PauseRecurring handles POST /api/v1/contracts/{id}/recurring/pause.
+func (h *ContractHandler) PauseRecurring(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	cfg, err := h.resolveRecurringConfig(r, contractID)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	resp, err := h.contractClient.PauseRecurring(r.Context(), &contractv1.PauseRecurringRequest{
+		RecurringId: cfg.GetId(),
+		UserId:      claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	cfgJSON := protoRecurringConfigToJSON(resp.GetConfig())
+	attachPaymentRetryFieldsToConfig(r.Context(), h.db, cfgJSON)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": cfgJSON,
+	})
+}
+
+// ResumeRecurring handles POST /api/v1/contracts/{id}/recurring/resume.
+func (h *ContractHandler) ResumeRecurring(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	cfg, err := h.resolveRecurringConfig(r, contractID)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	resp, err := h.contractClient.ResumeRecurring(r.Context(), &contractv1.ResumeRecurringRequest{
+		RecurringId: cfg.GetId(),
+		UserId:      claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	cfgJSON := protoRecurringConfigToJSON(resp.GetConfig())
+	attachPaymentRetryFieldsToConfig(r.Context(), h.db, cfgJSON)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": cfgJSON,
+	})
+}
+
+// CancelRecurring handles POST /api/v1/contracts/{id}/recurring/cancel.
+func (h *ContractHandler) CancelRecurring(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	cfg, err := h.resolveRecurringConfig(r, contractID)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	resp, err := h.contractClient.CancelRecurring(r.Context(), &contractv1.CancelRecurringRequest{
+		RecurringId: cfg.GetId(),
+		UserId:      claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	cfgJSON := protoRecurringConfigToJSON(resp.GetConfig())
+	attachPaymentRetryFieldsToConfig(r.Context(), h.db, cfgJSON)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"config": cfgJSON,
+	})
+}
+
+// ListRecurringInstances handles GET /api/v1/contracts/{id}/recurring/instances.
+func (h *ContractHandler) ListRecurringInstances(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	cfg, err := h.resolveRecurringConfig(r, contractID)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	page := 1
+	pageSize := 20
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if ps := r.URL.Query().Get("page_size"); ps != "" {
+		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
+			pageSize = v
+		}
+	}
+
+	resp, err := h.contractClient.ListRecurringInstances(r.Context(), &contractv1.ListRecurringInstancesRequest{
+		RecurringId:      cfg.GetId(),
+		RequestingUserId: claims.UserID,
+		Pagination: &commonv1.PaginationRequest{
+			Page:     int32(page),
+			PageSize: int32(pageSize),
+		},
 	})
 	if err != nil {
 		writeGRPCError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"pdf_url": resp.GetPdfUrl(),
+	instances := make([]map[string]interface{}, 0, len(resp.GetInstances()))
+	for _, inst := range resp.GetInstances() {
+		instances = append(instances, protoRecurringInstanceToJSON(inst))
+	}
+	// Attach payment_id / payment_status / payment_funded so clients can hide
+	// Pay visit after escrow is funded (durable across reloads). Fail-soft.
+	h.attachRecurringInstancePaymentState(r.Context(), contractID, instances)
+	result := map[string]interface{}{
+		"instances": instances,
+	}
+	if p := resp.GetPagination(); p != nil {
+		result["pagination"] = map[string]interface{}{
+			"total_count": p.GetTotalCount(),
+			"page":        p.GetPage(),
+			"page_size":   p.GetPageSize(),
+			"total_pages": p.GetTotalPages(),
+			"has_next":    p.GetHasNext(),
+		}
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// CompleteRecurringInstance handles POST .../recurring/instances/{instanceId}/complete.
+//
+// Status completion is always durable via the contract service (provider-only).
+// When the recurring config has auto_approve, the job service marks the instance
+// approved in the same write. The gateway then best-effort creates a real
+// services PaymentIntent for the contract customer (CreatePayment requires the
+// contract customer — never the provider actor). Failure to create a PI does
+// NOT roll back completion/auto-approval and does NOT invent a stub payment_id.
+func (h *ContractHandler) CompleteRecurringInstance(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	instanceID := chi.URLParam(r, "instanceId")
+	if !isValidUUID(instanceID) {
+		writeError(w, http.StatusBadRequest, "invalid instance id")
+		return
+	}
+	resp, err := h.contractClient.CompleteRecurringInstance(r.Context(), &contractv1.CompleteRecurringInstanceRequest{
+		InstanceId: instanceID,
+		ProviderId: claims.UserID,
 	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	inst := resp.GetInstance()
+	result := map[string]interface{}{
+		"instance": protoRecurringInstanceToJSON(inst),
+	}
+	// Non-auto-approve path: provider marked complete only; customer will approve
+	// (and pay) separately. No money orchestration here.
+	if inst == nil || !inst.GetAutoApproved() {
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
+	// Auto-approve: create PI as the contract customer (not the provider caller).
+	customerID, custErr := h.resolveContractCustomerID(r.Context(), contractID, claims.UserID)
+	if custErr != nil || customerID == "" {
+		slog.WarnContext(r.Context(), "recurring instance complete auto-approve: customer unresolved (completion kept)",
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"error", custErr,
+		)
+		result["payment_residual"] = "customer_unresolved"
+		result["payment_error"] = "Visit completed and auto-approved, but customer could not be resolved for escrow PaymentIntent. Customer can pay via POST /payments with recurring_instance_id."
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+	h.attachRecurringInstancePayment(r.Context(), result, contractID, instanceID, customerID, inst.GetAmountCents(), "complete_auto_approve")
+	writeJSON(w, http.StatusOK, result)
+}
+
+// ApproveRecurringInstance handles POST .../recurring/instances/{instanceId}/approve.
+//
+// Status approval is always durable via the contract service. When a payment
+// client is wired, the gateway best-effort creates a real services PaymentIntent
+// for the instance amount (payments.recurring_instance_id FK — there is no
+// payment_id column on recurring_instances). CreatePayment refuses amount >
+// contract total and non-customer actors. Failure to create a PI does NOT roll
+// back approval and does NOT invent a stub payment_id (fail-safe residual —
+// no fake money).
+func (h *ContractHandler) ApproveRecurringInstance(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+	contractID := chi.URLParam(r, "id")
+	if !isValidUUID(contractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	instanceID := chi.URLParam(r, "instanceId")
+	if !isValidUUID(instanceID) {
+		writeError(w, http.StatusBadRequest, "invalid instance id")
+		return
+	}
+	resp, err := h.contractClient.ApproveRecurringInstance(r.Context(), &contractv1.ApproveRecurringInstanceRequest{
+		InstanceId: instanceID,
+		CustomerId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+	inst := resp.GetInstance()
+	result := map[string]interface{}{
+		"instance": protoRecurringInstanceToJSON(inst),
+	}
+	// Job service leaves payment_id empty today (orchestration residual). Prefer
+	// any id it does return; otherwise create a real PI when amount is known.
+	if pid := resp.GetPaymentId(); pid != "" {
+		result["payment_id"] = pid
+	}
+
+	amountCents := int64(0)
+	if inst != nil {
+		amountCents = inst.GetAmountCents()
+	}
+	// Customer is the authenticated approver — CreatePayment requires contract customer.
+	h.attachRecurringInstancePayment(r.Context(), result, contractID, instanceID, claims.UserID, amountCents, "approve")
+	writeJSON(w, http.StatusOK, result)
+}
+
+// resolveContractCustomerID loads the contract as requestingUserID (party) and
+// returns the customer id. Empty string + error when lookup fails.
+func (h *ContractHandler) resolveContractCustomerID(ctx context.Context, contractID, requestingUserID string) (string, error) {
+	if h.contractClient == nil {
+		return "", nil
+	}
+	resp, err := h.contractClient.GetContract(ctx, &contractv1.GetContractRequest{
+		ContractId:       contractID,
+		RequestingUserId: requestingUserID,
+	})
+	if err != nil {
+		return "", err
+	}
+	if c := resp.GetContract(); c != nil {
+		return c.GetCustomerId(), nil
+	}
+	return "", nil
+}
+
+// attachRecurringInstancePayment best-effort CreatePayment for an approved
+// recurring visit. Mutates result with payment_id / client_secret / residual.
+// Never invents payment_id or client_secret. customerID must be the contract
+// customer (payment service enforces ownership). Sticky idempotency key
+// recurring-instance-pay:{instanceID} dedupes approve + auto-approve complete.
+//
+// CreatePayment for recurring_instance_id performs ONE safe off-session attempt
+// when the customer has a default saved card: on success status is escrow and
+// client_secret is omitted; on skip/fail the on-session PI residual remains
+// (client_secret for PaymentSheet). Never invents money.
+//
+// On CreatePayment failure, FR-16.7 partial + FR-18.8: increment
+// recurring_configs.payment_retry_count (migration 112) and only PauseRecurring
+// when count >= 3 (contract stays intact; config pauses only). Charge-failure
+// after Stripe payment_intent.payment_failed is owned by the payment service
+// and uses the same 3-strike counter + next_retry_at (shared SQL). Day-3/day-7
+// auto-charge is ProcessDueRecurringPaymentRetries. Resume on successful visit
+// pay lives on PaymentHandler.ProcessPayment (FR-18.8) and resets the retry
+// counter. Residual: live Stripe dogfood of the full day-0/3/7 path; webhook-only
+// capture without ProcessPayment does not resume (services use manual capture +
+// POST /payments/{id}/process).
+func (h *ContractHandler) attachRecurringInstancePayment(
+	ctx context.Context,
+	result map[string]interface{},
+	contractID, instanceID, customerID string,
+	amountCents int64,
+	source string,
+) {
+	if h.paymentClient == nil {
+		// Honest residual: status stands; no money path without payment mesh.
+		result["payment_residual"] = "payment_service_unwired"
+		return
+	}
+	if amountCents <= 0 {
+		result["payment_residual"] = "instance_amount_missing"
+		return
+	}
+	if customerID == "" {
+		result["payment_residual"] = "customer_unresolved"
+		return
+	}
+
+	// Sticky server-side key: one PI per instance across approve retries and
+	// auto-approve complete. CreatePayment stores this as payments.idempotency_key.
+	// Migration 111 also UNIQUE(recurring_instance_id) so customer POST /payments
+	// with a different key still soft-replays the same PI (no dual authorization).
+	idemKey := "recurring-instance-pay:" + instanceID
+	createReq := &paymentv1.CreatePaymentRequest{
+		ContractId:          contractID,
+		RecurringInstanceId: instanceID,
+		CustomerId:          customerID,
+		AmountCents:         amountCents,
+		IdempotencyKey:      idemKey,
+	}
+	payResp, payErr := h.paymentClient.CreatePayment(ctx, createReq)
+	if payErr != nil {
+		// Dual-PI defense: CreatePayment soft-replays unique conflicts. If this
+		// RPC still failed (mesh blip after insert, or soft-replay refused), try
+		// load-by-instance via a second CreatePayment (same sticky key + instance
+		// → soft-replay returns existing payment + real client_secret). Never
+		// invent payment_id or client_secret.
+		if replay, replayErr := h.paymentClient.CreatePayment(ctx, createReq); replayErr == nil {
+			payResp, payErr = replay, nil
+			slog.InfoContext(ctx, "recurring instance: CreatePayment soft-replay on retry",
+				"source", source,
+				"instance_id", instanceID,
+				"contract_id", contractID,
+			)
+		} else if existing := h.findPaymentByRecurringInstance(ctx, customerID, instanceID); existing != nil {
+			// Real payment_id only — secret unavailable without Stripe re-read at
+			// gateway. Fail closed on secret; do not pause if money already exists.
+			if existing.GetId() != "" {
+				result["payment_id"] = existing.GetId()
+				result["payment"] = protoPaymentToJSON(existing)
+			}
+			// Already-funded visit (e.g. prior off-session success): no secret needed.
+			if recurringPaymentIsFunded(existing) {
+				result["off_session_charged"] = true
+				h.resetRecurringPaymentRetryAfterSuccess(ctx, contractID, instanceID, customerID, source)
+				return
+			}
+			slog.WarnContext(ctx, "recurring instance: existing payment found but client_secret unavailable (fail closed)",
+				"source", source,
+				"instance_id", instanceID,
+				"payment_id", existing.GetId(),
+				"create_error", payErr,
+				"replay_error", replayErr,
+			)
+			result["payment_residual"] = "client_secret_missing"
+			result["payment_error"] = "A payment already exists for this visit but client_secret could not be issued. Retry pay via POST /payments with recurring_instance_id."
+			return
+		} else {
+			// Status already committed — surface residual, never fake a payment.
+			// FR-16.7 partial: count setup failures; pause only at threshold.
+			slog.WarnContext(ctx, "recurring instance: CreatePayment failed (status kept; FR-16.7 retry count)",
+				"source", source,
+				"instance_id", instanceID,
+				"contract_id", contractID,
+				"amount_cents", amountCents,
+				"error", payErr,
+			)
+			result["payment_residual"] = "create_payment_failed"
+			result["payment_error"] = "Could not create escrow PaymentIntent for this visit. Visit is approved; pay via POST /payments with recurring_instance_id when ready."
+			// No PI was minted, so off-session was never attempted. FR-16.7
+			// day-0/3/7 scheduled charge retries remain residual (not this path).
+			result["off_session_charge_residual"] = "not_attempted_create_failed"
+			h.recordRecurringPaymentSetupFailure(ctx, result, contractID, instanceID, customerID, source)
+			return
+		}
+	}
+
+	if p := payResp.GetPayment(); p != nil && p.GetId() != "" {
+		result["payment_id"] = p.GetId()
+		result["payment"] = protoPaymentToJSON(p)
+	}
+	if secret := payResp.GetClientSecret(); secret != "" {
+		// Real Stripe (or dev-stack) secret for PaymentSheet — not invented.
+		// Present when off-session was skipped (no default PM) or failed
+		// (decline/SCA) — one safe attempt already ran inside CreatePayment.
+		result["client_secret"] = secret
+		result["off_session_charge_residual"] = "on_session_residual"
+	} else if p := payResp.GetPayment(); p != nil && recurringPaymentIsFunded(p) {
+		// Off-session confirm+capture succeeded (or soft-replay of funded row).
+		// Never invent a secret; client does not need PaymentSheet.
+		result["off_session_charged"] = true
+	} else {
+		// PI row may exist without a confirmable secret (misconfig / already held
+		// without status echo). Honest residual — never invent a secret.
+		result["payment_residual"] = "client_secret_missing"
+	}
+	// Successful visit PI setup (or funded capture) clears FR-16.7 partial strike count.
+	h.resetRecurringPaymentRetryAfterSuccess(ctx, contractID, instanceID, customerID, source)
+}
+
+// recurringPaymentIsFunded reports whether a visit payment no longer needs
+// PaymentSheet / client_secret (funds held or past escrow).
+func recurringPaymentIsFunded(p *paymentv1.Payment) bool {
+	if p == nil {
+		return false
+	}
+	switch p.GetStatus() {
+	case paymentv1.PaymentStatus_PAYMENT_STATUS_ESCROW,
+		paymentv1.PaymentStatus_PAYMENT_STATUS_RELEASED,
+		paymentv1.PaymentStatus_PAYMENT_STATUS_COMPLETED,
+		paymentv1.PaymentStatus_PAYMENT_STATUS_PROCESSING:
+		return true
+	default:
+		return false
+	}
+}
+
+// findPaymentByRecurringInstance best-effort loads an existing payment for a
+// visit via ListPayments. Used only when CreatePayment soft-replay failed so we
+// can still surface a real payment_id — never invents client_secret.
+func (h *ContractHandler) findPaymentByRecurringInstance(ctx context.Context, customerID, instanceID string) *paymentv1.Payment {
+	if h.paymentClient == nil || customerID == "" || instanceID == "" {
+		return nil
+	}
+	resp, err := h.paymentClient.ListPayments(ctx, &paymentv1.ListPaymentsRequest{
+		UserId: customerID,
+		Pagination: &commonv1.PaginationRequest{
+			Page:     1,
+			PageSize: 50,
+		},
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "recurring instance: ListPayments for soft-load failed",
+			"instance_id", instanceID,
+			"error", err,
+		)
+		return nil
+	}
+	for _, p := range resp.GetPayments() {
+		if p != nil && p.GetRecurringInstanceId() == instanceID {
+			return p
+		}
+	}
+	return nil
+}
+
+// recordRecurringPaymentSetupFailure implements FR-16.7 partial + FR-18.8:
+// on CreatePayment failure for a visit, increment payment_retry_count and only
+// PauseRecurring when count >= recurringPaymentRetryPauseThreshold. Never
+// cancels the contract or the recurring config. Fail-soft: counter/pause errors
+// only add residual fields — approval/completion already stands.
+//
+// When the counter cannot be tracked (nil db, migration 112 not applied, SQL
+// error), we document residual and do NOT pause on the first failure — pausing
+// without a durable count would re-introduce the old "pause immediately"
+// behavior without the 3-strike gate. Ops still has payment_residual logs.
+func (h *ContractHandler) recordRecurringPaymentSetupFailure(
+	ctx context.Context,
+	result map[string]interface{},
+	contractID, instanceID, customerID, source string,
+) {
+	if h.contractClient == nil {
+		result["recurring_pause_residual"] = "contract_service_unwired"
+		return
+	}
+	if customerID == "" {
+		result["recurring_pause_residual"] = "customer_unresolved"
+		slog.WarnContext(ctx, "FR-16.7: cannot record payment setup failure (no customer id; contract not cancelled)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+		)
+		return
+	}
+
+	cfgResp, err := h.contractClient.GetRecurringConfig(ctx, &contractv1.GetRecurringConfigRequest{
+		ContractId:       contractID,
+		RequestingUserId: customerID,
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "FR-16.7: GetRecurringConfig failed after payment setup failure (contract not cancelled)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"error", err,
+		)
+		result["recurring_pause_residual"] = "config_lookup_failed"
+		return
+	}
+	cfg := cfgResp.GetConfig()
+	if cfg == nil || cfg.GetId() == "" {
+		slog.WarnContext(ctx, "FR-16.7: no recurring config after payment setup failure (contract not cancelled)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+		)
+		result["recurring_pause_residual"] = "config_missing"
+		return
+	}
+
+	status := cfg.GetStatus()
+	result["recurring_id"] = cfg.GetId()
+	if status == "paused" {
+		// Already paused — still surface FR-18.8 intent; no further pause.
+		result["recurring_paused"] = true
+		result["recurring_status"] = "paused"
+		slog.InfoContext(ctx, "FR-16.7: recurring already paused after payment setup failure (contract not cancelled)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+		)
+		return
+	}
+	if status != "active" {
+		// cancelled / other — do not cancel further; leave alone.
+		result["recurring_status"] = status
+		result["recurring_pause_residual"] = "not_active"
+		slog.InfoContext(ctx, "FR-16.7: skip after payment setup failure — config not active (contract not cancelled)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+			"status", status,
+		)
+		return
+	}
+
+	// FR-16.7 partial: durable strike count + next_retry_at before pause.
+	count, nextRetryAt, incrErr := h.incrementPaymentRetry(ctx, cfg.GetId())
+	if incrErr != nil {
+		// Schema/db missing: document, do not invent a pause without a counter.
+		slog.WarnContext(ctx, "FR-16.7: payment_retry_count increment failed (not pausing without durable count)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+			"error", incrErr,
+		)
+		result["payment_retry_residual"] = "retry_count_untracked"
+		result["recurring_status"] = status
+		result["recurring_pause_residual"] = "retry_count_unavailable"
+		return
+	}
+	result["payment_retry_count"] = count
+	result["payment_retry_threshold"] = recurringPaymentRetryPauseThreshold
+	result["recurring_status"] = status
+	if nextRetryAt != nil {
+		result["next_retry_at"] = nextRetryAt.UTC().Format(time.RFC3339)
+	}
+
+	if count < recurringPaymentRetryPauseThreshold {
+		// Below threshold: leave schedule active; stamp next_retry_at for the
+		// day-3 / day-7 gateway worker (ProcessDueRecurringPaymentRetries →
+		// CreatePayment + off-session attempt-N). Customer can still pay the
+		// visit manually via PaymentSheet / POST /payments.
+		result["recurring_paused"] = false
+		logAttrs := []any{
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+			"payment_retry_count", count,
+			"threshold", recurringPaymentRetryPauseThreshold,
+		}
+		if nextRetryAt != nil {
+			logAttrs = append(logAttrs, "next_retry_at", nextRetryAt.UTC().Format(time.RFC3339))
+		}
+		slog.InfoContext(ctx, "FR-16.7: CreatePayment failure counted; schedule still active; next_retry_at stored",
+			logAttrs...,
+		)
+		return
+	}
+
+	// Threshold reached — FR-18.8 pause (never cancel contract).
+	pauseResp, pauseErr := h.contractClient.PauseRecurring(ctx, &contractv1.PauseRecurringRequest{
+		RecurringId: cfg.GetId(),
+		UserId:      customerID,
+	})
+	if pauseErr != nil {
+		slog.WarnContext(ctx, "FR-18.8: PauseRecurring failed after retry threshold (contract not cancelled; visit status kept)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", cfg.GetId(),
+			"payment_retry_count", count,
+			"error", pauseErr,
+		)
+		result["recurring_pause_residual"] = "pause_failed"
+		return
+	}
+
+	pausedCfg := pauseResp.GetConfig()
+	result["recurring_paused"] = true
+	result["recurring_status"] = "paused"
+	if pausedCfg != nil {
+		result["recurring_config"] = protoRecurringConfigToJSON(pausedCfg)
+		if st := pausedCfg.GetStatus(); st != "" {
+			result["recurring_status"] = st
+		}
+	}
+	slog.InfoContext(ctx, "FR-16.7/FR-18.8: recurring paused after CreatePayment failures reached threshold (contract not cancelled)",
+		"source", source,
+		"instance_id", instanceID,
+		"contract_id", contractID,
+		"recurring_id", cfg.GetId(),
+		"customer_id", customerID,
+		"payment_retry_count", count,
+	)
+
+	// FR-16.7 / FR-18.8: both parties notified on pause. Fail-soft — pause already
+	// committed; missing db / insert errors must not undo the pause decision.
+	h.notifyRecurringPausedForPaymentFailure(ctx, contractID, customerID, cfg.GetId())
+}
+
+// notifyRecurringPausedForPaymentFailure emits in-app payment_failed notifications
+// to the contract customer and provider after FR-18.8 pause-at-threshold.
+//
+// Actor is empty (system): emitNotification's self-notify guard would drop one
+// party if we used the customer as actor. Fully fail-soft via emitNotification
+// (nil db no-op, insert errors logged). Provider lookup failure still notifies
+// the customer; residual is logged when provider cannot be resolved.
+func (h *ContractHandler) notifyRecurringPausedForPaymentFailure(
+	ctx context.Context,
+	contractID, customerID, recurringID string,
+) {
+	if h.db == nil {
+		slog.WarnContext(ctx, "FR-16.7/FR-18.8 residual: recurring paused but in-app notify unavailable (gateway db unwired)",
+			"contract_id", contractID,
+			"recurring_id", recurringID,
+			"customer_id", customerID,
+		)
+		return
+	}
+
+	providerID := h.resolveContractProviderID(ctx, contractID, customerID)
+	actionURL := "/contracts/" + contractID
+
+	if customerID != "" {
+		emitNotification(ctx, h.db, "", customerID,
+			"payment_failed",
+			"Recurring payments paused",
+			"We couldn't charge your payment method after several tries. Recurring visits are paused until you update your payment method.",
+			actionURL,
+			"contract", contractID,
+		)
+	}
+	if providerID != "" {
+		emitNotification(ctx, h.db, "", providerID,
+			"payment_failed",
+			"Recurring schedule paused",
+			"The customer's payment could not be collected after several tries. Recurring visits are paused until payment is updated.",
+			actionURL,
+			"contract", contractID,
+		)
+	} else {
+		slog.WarnContext(ctx, "FR-16.7/FR-18.8 residual: recurring paused; provider not notified (provider_id unresolved)",
+			"contract_id", contractID,
+			"recurring_id", recurringID,
+			"customer_id", customerID,
+		)
+	}
+}
+
+// resolveContractProviderID best-effort loads the contract provider for
+// dual-party FR-18.8 pause notifications. Prefer GetContract as the customer
+// (party check passes); fall back to SQL when gRPC fails and h.db is set.
+func (h *ContractHandler) resolveContractProviderID(ctx context.Context, contractID, customerID string) string {
+	if h.contractClient != nil {
+		resp, err := h.contractClient.GetContract(ctx, &contractv1.GetContractRequest{
+			ContractId:       contractID,
+			RequestingUserId: customerID,
+		})
+		if err == nil {
+			if c := resp.GetContract(); c != nil {
+				if pid := c.GetProviderId(); pid != "" {
+					return pid
+				}
+			}
+		} else {
+			slog.WarnContext(ctx, "FR-18.8: GetContract for provider notify failed",
+				"contract_id", contractID,
+				"error", err,
+			)
+		}
+	}
+	if h.db != nil && contractID != "" {
+		var providerID string
+		if err := h.db.QueryRow(ctx,
+			`SELECT provider_id::text FROM contracts WHERE id = $1`, contractID,
+		).Scan(&providerID); err == nil {
+			return providerID
+		}
+	}
+	return ""
+}
+
+// incrementPaymentRetry uses the test hook when set; otherwise SQL via h.db.
+// Returns the new strike count and optional next_retry_at (nil at/above pause threshold).
+func (h *ContractHandler) incrementPaymentRetry(ctx context.Context, recurringID string) (int, *time.Time, error) {
+	if h.incrPaymentRetryFn != nil {
+		return h.incrPaymentRetryFn(ctx, recurringID)
+	}
+	return incrRecurringPaymentRetryCount(ctx, h.db, recurringID)
+}
+
+// resetRecurringPaymentRetryAfterSuccess clears payment_retry_count after a
+// successful visit PI create. Fail-soft: lookup/reset errors are logged only.
+// customerID is a contract party so GetRecurringConfig party check succeeds.
+func (h *ContractHandler) resetRecurringPaymentRetryAfterSuccess(
+	ctx context.Context,
+	contractID, instanceID, customerID, source string,
+) {
+	if contractID == "" || h.contractClient == nil {
+		return
+	}
+	if customerID == "" {
+		slog.WarnContext(ctx, "FR-16.7: cannot reset payment_retry_count (no customer id; PI kept)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+		)
+		return
+	}
+	cfgResp, err := h.contractClient.GetRecurringConfig(ctx, &contractv1.GetRecurringConfigRequest{
+		ContractId:       contractID,
+		RequestingUserId: customerID,
+	})
+	if err != nil || cfgResp.GetConfig() == nil || cfgResp.GetConfig().GetId() == "" {
+		if err != nil {
+			slog.WarnContext(ctx, "FR-16.7: GetRecurringConfig failed when resetting payment_retry_count (PI kept)",
+				"source", source,
+				"instance_id", instanceID,
+				"contract_id", contractID,
+				"error", err,
+			)
+		}
+		return
+	}
+	recurringID := cfgResp.GetConfig().GetId()
+	if resetErr := h.resetPaymentRetry(ctx, recurringID); resetErr != nil {
+		slog.WarnContext(ctx, "FR-16.7: payment_retry_count reset failed after successful CreatePayment (PI kept)",
+			"source", source,
+			"instance_id", instanceID,
+			"contract_id", contractID,
+			"recurring_id", recurringID,
+			"error", resetErr,
+		)
+		return
+	}
+	slog.DebugContext(ctx, "FR-16.7: payment_retry_count reset after successful CreatePayment",
+		"source", source,
+		"instance_id", instanceID,
+		"recurring_id", recurringID,
+	)
+}
+
+func (h *ContractHandler) resetPaymentRetry(ctx context.Context, recurringID string) error {
+	if h.resetPaymentRetryFn != nil {
+		return h.resetPaymentRetryFn(ctx, recurringID)
+	}
+	return resetRecurringPaymentRetryCount(ctx, h.db, recurringID)
+}
+
+func (h *ContractHandler) resolveRecurringConfig(r *http.Request, contractID string) (*contractv1.RecurringConfig, error) {
+	// Callers authenticate first; empty UserID fails closed in requireContractParty.
+	userID := ""
+	if claims, ok := middleware.GetClaims(r.Context()); ok {
+		userID = claims.UserID
+	}
+	resp, err := h.contractClient.GetRecurringConfig(r.Context(), &contractv1.GetRecurringConfigRequest{
+		ContractId:       contractID,
+		RequestingUserId: userID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetConfig(), nil
+}
+
+func protoRecurringConfigToJSON(cfg *contractv1.RecurringConfig) map[string]interface{} {
+	if cfg == nil {
+		return map[string]interface{}{}
+	}
+	result := map[string]interface{}{
+		"id":           cfg.GetId(),
+		"contract_id":  cfg.GetContractId(),
+		"frequency":    recurrenceFrequencyToString(cfg.GetFrequency()),
+		"rate_cents":   cfg.GetRateCents(),
+		"auto_approve": cfg.GetAutoApprove(),
+		"status":       cfg.GetStatus(),
+	}
+	if cfg.GetNextOccurrence() != nil {
+		result["next_occurrence"] = formatTimestamp(cfg.GetNextOccurrence())
+	}
+	return result
+}
+
+func protoRecurringInstanceToJSON(inst *contractv1.RecurringInstance) map[string]interface{} {
+	if inst == nil {
+		return map[string]interface{}{}
+	}
+	result := map[string]interface{}{
+		"id":            inst.GetId(),
+		"recurring_id":  inst.GetRecurringId(),
+		"status":        inst.GetStatus(),
+		"amount_cents":  inst.GetAmountCents(),
+		"auto_approved": inst.GetAutoApproved(),
+	}
+	if inst.GetOccurrenceDate() != nil {
+		result["occurrence_date"] = formatTimestamp(inst.GetOccurrenceDate())
+	}
+	if inst.GetCompletedAt() != nil {
+		result["completed_at"] = formatTimestamp(inst.GetCompletedAt())
+	}
+	if inst.GetApprovedAt() != nil {
+		result["approved_at"] = formatTimestamp(inst.GetApprovedAt())
+	}
+	return result
+}
+
+// attachRecurringInstancePaymentState enriches instance JSON with the linked
+// payments row (migration 111 UNIQUE recurring_instance_id). Fail-soft: no db
+// or SQL error leaves instances unchanged so the timeline still renders.
+//
+// payment_funded mirrors recurringPaymentIsFunded (escrow/released/completed/
+// processing) so clients hide residual Pay after money is held.
+func (h *ContractHandler) attachRecurringInstancePaymentState(
+	ctx context.Context,
+	contractID string,
+	instances []map[string]interface{},
+) {
+	if h == nil || h.db == nil || contractID == "" || len(instances) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(instances))
+	byID := make(map[string]map[string]interface{}, len(instances))
+	for _, inst := range instances {
+		if inst == nil {
+			continue
+		}
+		rawID, _ := inst["id"].(string)
+		if rawID == "" || !isValidUUID(rawID) {
+			continue
+		}
+		ids = append(ids, rawID)
+		byID[rawID] = inst
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	rows, err := h.db.Query(ctx, `
+		SELECT id::text, recurring_instance_id::text, status
+		  FROM payments
+		 WHERE contract_id = $1
+		   AND recurring_instance_id = ANY($2::uuid[])`,
+		contractID, ids,
+	)
+	if err != nil {
+		slog.WarnContext(ctx, "ListRecurringInstances: payment state lookup failed (instances returned without payment fields)",
+			"contract_id", contractID,
+			"error", err,
+		)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var paymentID, instanceID, status string
+		if scanErr := rows.Scan(&paymentID, &instanceID, &status); scanErr != nil {
+			slog.WarnContext(ctx, "ListRecurringInstances: payment row scan failed",
+				"contract_id", contractID,
+				"error", scanErr,
+			)
+			continue
+		}
+		inst, ok := byID[instanceID]
+		if !ok || inst == nil {
+			continue
+		}
+		inst["payment_id"] = paymentID
+		inst["payment_status"] = status
+		inst["payment_funded"] = recurringPaymentStatusIsFunded(status)
+	}
+	if err := rows.Err(); err != nil {
+		slog.WarnContext(ctx, "ListRecurringInstances: payment rows iteration error",
+			"contract_id", contractID,
+			"error", err,
+		)
+	}
+}
+
+// recurringPaymentStatusIsFunded is the string-status twin of recurringPaymentIsFunded
+// for SQL status columns on payments.
+func recurringPaymentStatusIsFunded(status string) bool {
+	switch status {
+	case "escrow", "released", "completed", "processing":
+		return true
+	default:
+		return false
+	}
 }
 
 // --- Proto to JSON conversion helpers ---
@@ -718,7 +2188,7 @@ func protoContractToJSON(c *contractv1.Contract) map[string]interface{} {
 		"bid_id":              c.GetBidId(),
 		"amount_cents":        c.GetAmountCents(),
 		"payment_timing":      contractPaymentTimingToString(c.GetPaymentTiming()),
-		"status":              contractStatusToString(c.GetStatus()),
+		"status":              effectiveContractStatus(contractStatusToString(c.GetStatus()), c.GetAcceptanceDeadline()),
 		"customer_accepted":   c.GetCustomerAccepted(),
 		"provider_accepted":   c.GetProviderAccepted(),
 		"acceptance_deadline": formatTimestamp(c.GetAcceptanceDeadline()),
@@ -740,6 +2210,10 @@ func protoContractToJSON(c *contractv1.Contract) map[string]interface{} {
 		milestones = append(milestones, protoMilestoneToJSON(m))
 	}
 	result["milestones"] = milestones
+
+	if rec := c.GetRecurring(); rec != nil && rec.GetId() != "" {
+		result["recurring"] = protoRecurringConfigToJSON(rec)
+	}
 
 	return result
 }
@@ -787,6 +2261,22 @@ func protoChangeOrderToJSON(co *contractv1.ChangeOrder) map[string]interface{} {
 }
 
 // --- Enum conversions ---
+
+// effectiveContractStatus lazily transitions a contract still awaiting
+// acceptance past its acceptance_deadline to 'abandoned'. The acceptance
+// window is enforced on the write path (ContractService.AcceptContract returns
+// ErrDeadlineExpired once the deadline passes), but no worker flips the stored
+// status, so the contract keeps displaying 'pending_acceptance' — a stale,
+// contradictory "awaiting acceptance" on a window that has already lapsed.
+//
+// 'abandoned' is an existing allowed status meaning the acceptance window
+// lapsed; this is display-only and does not mutate the contract or move funds.
+func effectiveContractStatus(rawStatus string, acceptanceDeadline *timestamppb.Timestamp) string {
+	if rawStatus == "pending_acceptance" && acceptanceDeadline != nil && acceptanceDeadline.AsTime().Before(time.Now()) {
+		return "abandoned"
+	}
+	return rawStatus
+}
 
 func contractStatusToString(s contractv1.ContractStatus) string {
 	switch s {

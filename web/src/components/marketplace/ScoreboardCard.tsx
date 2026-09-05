@@ -1,0 +1,241 @@
+'use client';
+
+import { Gavel, Heart, MapPin } from 'lucide-react';
+import Image from 'next/image';
+import Link from 'next/link';
+import type { Route } from 'next';
+import type { MouseEvent } from 'react';
+
+import { CountdownClock } from '@/components/marketplace/CountdownClock';
+import { WatcherBadge } from '@/components/marketplace/WatcherBadge';
+import { MonoPrice } from '@/components/ui/mono-price';
+import { useWatchListing } from '@/hooks/useWatchlist';
+import { canNextImageLoad, formatCents } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import type { Listing } from '@/types';
+
+// StockX-style condition labels + per-grade chip styling. Like-new uses
+// the brand emerald, "new" uses brand gold so it pops against the
+// scoreboard glow; the rest fall back to a neutral zinc treatment so
+// the card doesn't turn into a rainbow of badges.
+const CONDITION_LABELS: Record<NonNullable<Listing['condition']>, string> = {
+  new: 'New',
+  like_new: 'Like new',
+  very_good: 'Very good',
+  good: 'Good',
+  acceptable: 'Acceptable',
+  for_parts: 'For parts',
+};
+
+const CONDITION_CLASSES: Record<NonNullable<Listing['condition']>, string> = {
+  new: 'border-brand-gold/40 bg-brand-gold/15 text-brand-gold',
+  like_new: 'border-trust-high/40 bg-trust-high/15 text-trust-high',
+  very_good: 'border-zinc-600 bg-zinc-700/40 text-zinc-200',
+  good: 'border-zinc-600 bg-zinc-700/40 text-zinc-300',
+  acceptable: 'border-zinc-600 bg-zinc-700/40 text-zinc-300',
+  for_parts: 'border-zinc-600 bg-zinc-700/40 text-zinc-300',
+};
+
+interface ScoreboardCardProps {
+  listing: Listing & { watcher_count?: number };
+  /**
+   * Visual urgency band — drives border color, glow, and accent treatment.
+   *
+   * - `critical` for auctions ending in <10 min (red glow)
+   * - `urgent`   for 10–60 min (gold)
+   * - `normal`   for the rest (zinc, no glow)
+   */
+  urgency?: 'critical' | 'urgent' | 'normal';
+  /**
+   * Whether the signed-in user is watching this listing. Parent hydrates
+   * from `useWatchlist().data` and passes it down so we don't trigger one
+   * mutation per card.
+   */
+  watching?: boolean;
+  /**
+   * Whether to render the watch heart at all. Defaults to true. The browse
+   * grid passes `false` for logged-out visitors so the heart (an auth-only
+   * action) isn't shown to anonymous shoppers.
+   */
+  showWatch?: boolean;
+  /**
+   * Mark this card's hero image as the LCP candidate: next/image `priority`
+   * (eager load + fetchpriority=high + preload). The browse grid sets this on
+   * the first viewport row of cards only — the grid image is the measured LCP
+   * element on /marketplace (lab LCP 2.86–3.16s vs <2.5s budget, image load
+   * delay, CLAUDE.md §8/§14). Layout is unchanged (same aspect-ratio box), so
+   * CLS is unaffected.
+   */
+  imagePriority?: boolean;
+}
+
+/**
+ * Live-auction broadcast card. Mirrors a sports-scoreboard tile rather than
+ * a Pinterest-style product cell. The countdown ticks in real time, the
+ * watcher count is visible, and the styling escalates with urgency so the
+ * scoreboard reads like ESPN GameDay rather than a category catalog.
+ */
+export function ScoreboardCard({
+  listing,
+  urgency = 'normal',
+  watching = false,
+  showWatch = true,
+  imagePriority = false,
+}: ScoreboardCardProps) {
+  const rawPhoto = listing.photos[0]?.url ?? null;
+  // Only hand next/image a src it can actually optimize; an unconfigured
+  // remote host throws and crashes the page, so fall back to the placeholder.
+  const photo = rawPhoto && canNextImageLoad(rawPhoto) ? rawPhoto : null;
+  const location =
+    listing.pickup_city && listing.pickup_state
+      ? `${listing.pickup_city}, ${listing.pickup_state}`
+      : listing.pickup_zip;
+
+  const watchMutation = useWatchListing(listing.id);
+  const onHeartClick = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    watchMutation.mutate({ watching: !watching });
+  };
+
+  const borderClass =
+    urgency === 'critical'
+      ? 'border-destructive/50 shadow-[0_0_30px_hsl(var(--status-disputed)/0.18)] hover:shadow-[0_0_40px_hsl(var(--status-disputed)/0.32)]'
+      : urgency === 'urgent'
+        ? 'border-brand-gold/40 shadow-[0_0_24px_var(--brand-gold-glow)] hover:shadow-[0_0_36px_var(--brand-gold-glow)]'
+        : 'border-brand-gold/10 hover:border-brand-gold/25';
+
+  return (
+    <Link
+      href={`/marketplace/${listing.id}` as Route}
+      className={cn(
+        'glass glass-highlight group relative flex flex-col overflow-hidden rounded-xl border transition-all duration-200',
+        borderClass,
+      )}
+      aria-label={`${listing.title}, current bid ${formatCents(listing.current_bid_cents)}, ${String(listing.bid_count)} bids`}
+    >
+      {/* Hero image */}
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-white/[0.04]">
+        {photo ? (
+          <Image
+            src={photo}
+            alt={listing.title}
+            fill
+            priority={imagePriority}
+            sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
+            className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-zinc-700">
+            <Gavel className="h-10 w-10" aria-hidden="true" />
+          </div>
+        )}
+
+        {/* Live ribbon */}
+        {urgency !== 'normal' ? (
+          <span
+            className={cn(
+              'absolute top-2 left-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase',
+              urgency === 'critical'
+                ? 'bg-destructive text-destructive-foreground'
+                : 'bg-brand-gold text-background',
+            )}
+          >
+            <span className="relative flex h-2 w-2">
+              <span
+                className={cn(
+                  'absolute inline-flex h-full w-full animate-ping rounded-full opacity-75',
+                  urgency === 'critical' ? 'bg-destructive/60' : 'bg-brand-gold-dim',
+                )}
+              />
+              <span
+                className={cn(
+                  'relative inline-flex h-2 w-2 rounded-full',
+                  urgency === 'critical' ? 'bg-destructive/40' : 'bg-brand-gold-dim',
+                )}
+              />
+            </span>
+            {urgency === 'critical' ? 'Ending now' : 'Closing soon'}
+          </span>
+        ) : null}
+
+        {/* Snipe-extension badge */}
+        {listing.snipe_extension_count > 0 ? (
+          <span className="absolute top-2 right-12 inline-flex items-center gap-1 rounded-full bg-bid-winning/20 px-2 py-0.5 text-[10px] font-semibold text-bid-winning">
+            +30s ×{listing.snipe_extension_count}
+          </span>
+        ) : null}
+
+        {/* Watch heart — top-right corner. Stops propagation so clicking the
+            heart doesn't navigate into the listing. Hidden for logged-out
+            visitors (showWatch=false) since watching is an auth-only action. */}
+        {showWatch ? (
+          <button
+            type="button"
+            onClick={onHeartClick}
+            disabled={watchMutation.isPending}
+            aria-pressed={watching}
+            aria-label={watching ? 'Remove from watchlist' : 'Add to watchlist'}
+            className={cn(
+              'absolute top-2 right-2 inline-flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md transition-colors',
+              watching
+                ? 'border-destructive/50 bg-destructive/20 text-destructive hover:bg-destructive/30'
+                : 'border-white/10 bg-black/30 text-white/80 hover:border-white/30 hover:text-white',
+              watchMutation.isPending ? 'opacity-60' : '',
+            )}
+          >
+            <Heart className={cn('h-4 w-4', watching ? 'fill-current' : '')} aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+
+      {/* Body */}
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="line-clamp-2 text-base font-semibold text-zinc-100 group-hover:text-[var(--brand-gold)]">
+            {listing.title}
+          </h3>
+          <WatcherBadge count={listing.watcher_count ?? 0} />
+        </div>
+
+        <div className="flex items-baseline justify-between">
+          <div>
+            <p className="text-[11px] tracking-wider text-zinc-500 uppercase">Current bid</p>
+            <MonoPrice
+              cents={listing.current_bid_cents}
+              className="text-2xl font-bold text-zinc-100"
+            />
+          </div>
+          <div className="text-right">
+            <p className="text-[11px] tracking-wider text-zinc-500 uppercase">Closes in</p>
+            <CountdownClock endsAt={listing.auction_ends_at} />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-white/5 pt-3 text-xs text-zinc-400">
+          <div className="flex items-center gap-2 truncate">
+            <span className="inline-flex shrink-0 items-center gap-1">
+              <Gavel className="h-3 w-3" aria-hidden="true" />
+              {listing.bid_count} {listing.bid_count === 1 ? 'bid' : 'bids'}
+            </span>
+            {listing.condition ? (
+              <span
+                className={cn(
+                  'inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase',
+                  CONDITION_CLASSES[listing.condition],
+                )}
+                aria-label={`Condition: ${CONDITION_LABELS[listing.condition]}`}
+              >
+                {CONDITION_LABELS[listing.condition]}
+              </span>
+            ) : null}
+          </div>
+          <span className="inline-flex items-center gap-1 truncate">
+            <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
+            <span className="truncate">{location}</span>
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
+}

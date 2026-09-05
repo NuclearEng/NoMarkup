@@ -34,12 +34,13 @@ interface ConfettiParticle {
   decay: number;
 }
 
+/** CSS custom-property names resolved at confetti start (canvas needs concrete colors). */
 const TIER_CONFIGS: Record<
   CelebrationTier,
   {
     label: string;
     particleCount: number;
-    colors: string[];
+    colorVars: string[];
     showBurst: boolean;
     showEdgeGlow: boolean;
   }
@@ -47,32 +48,72 @@ const TIER_CONFIGS: Record<
   [CELEBRATION_TIER.NICE]: {
     label: 'Nice Savings!',
     particleCount: 24,
-    colors: ['#22c55e', '#16a34a', '#4ade80', '#86efac'],
+    colorVars: ['--brand-green', '--brand-green-dim', '--brand-teal'],
     showBurst: false,
     showEdgeGlow: false,
   },
   [CELEBRATION_TIER.GREAT]: {
     label: 'Great Deal!',
     particleCount: 48,
-    colors: ['#22c55e', '#16a34a', '#c9a84c', '#e0c060', '#3b82f6'],
+    colorVars: [
+      '--brand-green',
+      '--brand-green-dim',
+      '--brand-gold',
+      '--brand-gold-bright',
+      '--brand-teal',
+    ],
     showBurst: false,
     showEdgeGlow: false,
   },
   [CELEBRATION_TIER.AMAZING]: {
     label: 'Amazing Deal!',
     particleCount: 72,
-    colors: ['#c9a84c', '#e0c060', '#a08839', '#fbbf24', '#f59e0b'],
+    colorVars: [
+      '--brand-gold',
+      '--brand-gold-bright',
+      '--brand-gold-dim',
+      '--trust-medium',
+    ],
     showBurst: true,
     showEdgeGlow: false,
   },
   [CELEBRATION_TIER.LEGENDARY]: {
     label: 'Legendary Savings!',
     particleCount: 120,
-    colors: ['#c9a84c', '#e0c060', '#a08839', '#fbbf24', '#f59e0b', '#ef4444', '#f97316'],
+    colorVars: [
+      '--brand-gold',
+      '--brand-gold-bright',
+      '--brand-gold-dim',
+      '--trust-medium',
+      '--destructive',
+      '--brand-green',
+    ],
     showBurst: true,
     showEdgeGlow: true,
   },
 };
+
+/** Resolve a CSS custom property (and HSL-channel tokens) for canvas fillStyle. */
+function resolveTokenColor(varName: string): string {
+  if (typeof window === 'undefined') return '';
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  if (!raw) return '';
+  // Trust / status tokens are stored as HSL channels without the hsl() wrapper.
+  if (varName.startsWith('--trust-') || varName.startsWith('--status-') || varName.startsWith('--bid-')) {
+    return `hsl(${raw})`;
+  }
+  return raw;
+}
+
+function resolveConfettiColors(colorVars: string[]): string[] {
+  const resolved = colorVars.map(resolveTokenColor).filter((c) => c.length > 0);
+  // Canvas requires at least one fill — fall back to brand green via CSS when empty.
+  if (resolved.length === 0) {
+    const green = resolveTokenColor('--brand-green');
+    return green ? [green] : ['currentColor'];
+  }
+  return resolved;
+}
 
 function getTier(savingsPercent: number): CelebrationTier {
   if (savingsPercent >= 40) return CELEBRATION_TIER.LEGENDARY;
@@ -98,7 +139,7 @@ function createParticle(
     rotation: Math.random() * 360,
     rotationSpeed: (Math.random() - 0.5) * 10,
     size: Math.random() * 6 + 3,
-    color: colors[colorIndex] ?? '#c9a84c',
+    color: colors[colorIndex] ?? colors[0] ?? 'currentColor',
     shape: shapes[shapeIndex] ?? 'circle',
     opacity: 1,
     decay: 0.008 + Math.random() * 0.008,
@@ -175,8 +216,9 @@ export function SavingsCelebration({
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
+    const colors = resolveConfettiColors(config.colorVars);
     particlesRef.current = Array.from({ length: config.particleCount }, () =>
-      createParticle(canvas.width, canvas.height, config.colors),
+      createParticle(canvas.width, canvas.height, colors),
     );
 
     function animate() {
@@ -209,7 +251,7 @@ export function SavingsCelebration({
     }
 
     animFrameRef.current = requestAnimationFrame(animate);
-  }, [config.colors, config.particleCount, prefersReducedMotion]);
+  }, [config.colorVars, config.particleCount, prefersReducedMotion]);
 
   useEffect(() => {
     if (!isVisible) {
@@ -255,6 +297,7 @@ export function SavingsCelebration({
   if (!isVisible) return null;
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- overlay dismissal via click/keyboard
     <div
       className={cn(
         'fixed inset-0 z-50 flex items-center justify-center',

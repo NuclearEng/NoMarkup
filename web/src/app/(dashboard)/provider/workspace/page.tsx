@@ -1,14 +1,19 @@
 'use client';
 
-import { Briefcase, CalendarDays, Clock, MapPin, Wrench } from 'lucide-react';
+import { Briefcase, CalendarDays, CalendarPlus, Clock, ExternalLink, MapPin, Wrench } from 'lucide-react';
+import Link from 'next/link';
+import type { Route } from 'next';
+import { toast } from 'sonner';
 
 import { CheckInOut } from '@/components/providers/CheckInOut';
 import { CompletionPhotos } from '@/components/providers/CompletionPhotos';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageTransition } from '@/components/ui/page-transition';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useContracts } from '@/hooks/useContracts';
+import { api, getApiErrorMessage } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
 import { CONTRACT_STATUS } from '@/types';
 import type { Contract } from '@/types';
@@ -47,14 +52,15 @@ function isToday(dateStr: string | undefined | null): boolean {
   return toDateKey(dateStr) === today;
 }
 
-function isUpcoming(dateStr: string | undefined | null): boolean {
+/** True when the date falls within the next 7 days (excluding today). */
+function isWithinNext7Days(dateStr: string | undefined | null): boolean {
   if (!dateStr) return false;
-  const now = new Date();
-  const target = new Date(dateStr);
-  const todayStart = new Date(now.toISOString().slice(0, 10));
-  const sevenDaysOut = new Date(todayStart);
-  sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
-  return target > todayStart && target <= sevenDaysOut;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const horizon = new Date();
+  horizon.setUTCDate(horizon.getUTCDate() + 7);
+  const horizonKey = horizon.toISOString().slice(0, 10);
+  const key = toDateKey(dateStr);
+  return key > todayKey && key <= horizonKey;
 }
 
 function groupByDate(contracts: Contract[]): Array<{ dateKey: string; label: string; items: Contract[] }> {
@@ -93,29 +99,37 @@ interface JobCardProps {
 }
 
 function JobCard({ contract, showWorkSession = false }: JobCardProps) {
+  const contractHref = `/contracts/${contract.id}` as Route;
+
   return (
     <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
       <CardContent className="space-y-4 p-4">
         {/* Header row */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-sm font-semibold text-zinc-100">
-              {contract.job_title}
-            </h3>
-            <p className="mt-0.5 text-xs text-zinc-400">
-              Contract #{contract.contract_number}
-            </p>
+            <Link
+              href={contractHref}
+              className="group block min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold/60 rounded-md"
+            >
+              <h3 className="truncate text-sm font-semibold text-zinc-100 group-hover:text-brand-gold group-hover:underline">
+                {contract.job_title}
+              </h3>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                Contract #{contract.contract_number}
+              </p>
+            </Link>
           </div>
-          <Badge
-            variant="outline"
-            className={
-              contract.status === CONTRACT_STATUS.ACTIVE
-                ? 'border-sky-500/40 text-sky-300'
-                : 'border-amber-500/40 text-amber-300'
-            }
-          >
-            {contract.status === CONTRACT_STATUS.ACTIVE ? 'In Progress' : 'Awarded'}
-          </Badge>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <Badge variant="outline" className="border-sky-500/40 text-sky-300">
+              In Progress
+            </Badge>
+            <Button asChild variant="outline" size="sm" className="min-h-[44px]">
+              <Link href={contractHref}>
+                Open contract
+                <ExternalLink className="ml-1.5 h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {/* Meta row */}
@@ -137,7 +151,7 @@ function JobCard({ contract, showWorkSession = false }: JobCardProps) {
           </span>
         </div>
 
-        {/* Workspace actions — only shown for today's jobs */}
+        {/* Field tools for every active contract (not only "today") */}
         {showWorkSession ? (
           <div className="space-y-3 border-t border-zinc-800 pt-3">
             <CheckInOut contractId={contract.id} />
@@ -187,32 +201,75 @@ export default function ProviderWorkspacePage() {
 
   const allContracts = contractsData?.contracts ?? [];
 
-  // Split into today vs upcoming (next 7 days excl. today)
-  const todayContracts = allContracts.filter(
-    (c) =>
-      c.status === CONTRACT_STATUS.ACTIVE &&
-      (isToday(c.started_at) || isToday(c.created_at)),
+  const activeContracts = allContracts.filter(
+    (c) => c.status === CONTRACT_STATUS.ACTIVE,
   );
 
-  const upcomingContracts = allContracts.filter(
+  // Today's jobs.
+  const todayContracts = activeContracts.filter(
+    (c) => isToday(c.started_at) || isToday(c.created_at),
+  );
+
+  // Upcoming = active, not today, scheduled within the next 7 days.
+  const upcomingContracts = activeContracts.filter(
     (c) =>
-      c.status === CONTRACT_STATUS.ACTIVE &&
       !isToday(c.started_at) &&
-      !isToday(c.created_at),
+      !isToday(c.created_at) &&
+      isWithinNext7Days(c.started_at ?? c.created_at),
+  );
+
+  // Everything else active that falls in neither bucket (past schedule,
+  // far-future schedule, or flexible/no-date) must still be visible —
+  // otherwise an active contract can vanish entirely.
+  const otherActiveContracts = activeContracts.filter(
+    (c) =>
+      !isToday(c.started_at) &&
+      !isToday(c.created_at) &&
+      !isWithinNext7Days(c.started_at ?? c.created_at),
   );
 
   const upcomingGroups = groupByDate(upcomingContracts);
+  const otherActiveGroups = groupByDate(otherActiveContracts);
+
+  // Mint an opaque 90-day feed secret, then open the returned ICS URL.
+  // Never put the session JWT in the query string (history / proxy logs).
+  async function handleSubscribeCalendar(): Promise<void> {
+    try {
+      const { url } = await api.post<{ url: string }>('/api/v1/me/calendar-feed');
+      if (!url) {
+        toast.error('Could not create a calendar feed. Please try again.');
+        return;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+      toast.success('Opening your job calendar feed.');
+    } catch (err) {
+      toast.error(
+        getApiErrorMessage(err, 'Please sign in again to subscribe to your calendar.'),
+      );
+    }
+  }
 
   return (
     <PageTransition>
       <div className="space-y-8">
         {/* Page header */}
-        <div className="flex items-center gap-3">
-          <Wrench className="h-6 w-6 text-[var(--brand-gold)]" aria-hidden="true" />
-          <div>
-            <h1 className="gold-text text-2xl font-bold tracking-tight">Workspace</h1>
-            <p className="text-zinc-400 text-sm">Check in, upload photos, and mark jobs complete.</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Wrench className="h-6 w-6 text-[var(--brand-gold)]" aria-hidden="true" />
+            <div>
+              <h1 className="gold-text text-2xl font-bold tracking-tight">Workspace</h1>
+              <p className="text-zinc-400 text-sm">Check in, upload photos, and mark jobs complete.</p>
+            </div>
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleSubscribeCalendar}
+            className="border-[var(--brand-gold)]/30 text-zinc-200"
+          >
+            <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+            Add to calendar
+          </Button>
         </div>
 
         {/* ── Today's Jobs ── */}
@@ -291,13 +348,40 @@ export default function ProviderWorkspacePage() {
                 <div key={group.dateKey} className="space-y-3">
                   <h3 className="text-sm font-semibold text-zinc-400">{group.label}</h3>
                   {group.items.map((contract) => (
-                    <JobCard key={contract.id} contract={contract} showWorkSession={false} />
+                    <JobCard key={contract.id} contract={contract} />
                   ))}
                 </div>
               ))}
             </div>
           )}
         </section>
+
+        {/* ── All other active jobs (past schedule / far future / flexible) ── */}
+        {/* Catch-all so no active contract is ever dropped from the workspace. */}
+        {!isLoading && otherActiveGroups.length > 0 ? (
+          <section aria-labelledby="other-active-heading">
+            <div className="mb-4 flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+              <h2
+                className="text-base font-semibold text-zinc-200"
+                id="other-active-heading"
+              >
+                Other Active Jobs
+              </h2>
+            </div>
+
+            <div className="space-y-6">
+              {otherActiveGroups.map((group) => (
+                <div key={group.dateKey} className="space-y-3">
+                  <h3 className="text-sm font-semibold text-zinc-400">{group.label}</h3>
+                  {group.items.map((contract) => (
+                    <JobCard key={contract.id} contract={contract} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
     </PageTransition>
   );

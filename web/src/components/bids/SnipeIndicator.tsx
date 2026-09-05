@@ -24,12 +24,12 @@ export function SnipeIndicator({ count, max }: SnipeIndicatorProps) {
       {/* Shield icon + label */}
       <div className="flex items-center gap-1.5">
         <Shield
-          className={`h-4 w-4 ${isActive ? 'text-amber-400' : 'text-muted-foreground/50'}`}
+          className={`h-4 w-4 ${isActive ? 'text-trust-medium' : 'text-muted-foreground/50'}`}
           aria-hidden="true"
           fill={isActive ? 'currentColor' : 'none'}
         />
         <span
-          className={`text-xs font-medium ${isActive ? 'text-amber-400' : 'text-muted-foreground'}`}
+          className={`text-xs font-medium ${isActive ? 'text-trust-medium' : 'text-muted-foreground'}`}
         >
           {isActive ? 'Active' : 'Ready'}
         </span>
@@ -44,7 +44,7 @@ export function SnipeIndicator({ count, max }: SnipeIndicatorProps) {
               key={String(i)}
               className={`h-2.5 w-2.5 rounded-full border ${
                 used
-                  ? 'border-amber-400 bg-amber-400'
+                  ? 'border-trust-medium bg-trust-medium'
                   : 'border-muted-foreground/30 bg-transparent'
               }`}
               style={

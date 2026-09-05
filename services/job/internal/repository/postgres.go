@@ -5,22 +5,30 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/services/job/internal/crypto"
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
 
 // PostgresRepository implements domain.JobRepository using pgx.
 type PostgresRepository struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	cipher *crypto.Cipher
 }
 
-// NewPostgresRepository creates a new PostgreSQL-backed job repository.
-func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
-	return &PostgresRepository{pool: pool}
+// NewPostgresRepository creates a new PostgreSQL-backed job repository with the
+// given PII cipher. Pass a cipher built from crypto.FromEnv() — the at-rest PII
+// columns this service owns (jobs.service_address, a CUSTOMER HOME address, and
+// jobs.service_location_encrypted, the exact service point; migration 104) are
+// encrypted and decrypted through it, as is the linked property's address and
+// exact point (migrations 033 and 105).
+func NewPostgresRepository(pool *pgxpool.Pool, cipher *crypto.Cipher) *PostgresRepository {
+	return &PostgresRepository{pool: pool, cipher: cipher}
 }
 
 func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJobInput) (*domain.Job, error) {
@@ -31,20 +39,38 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 	defer tx.Rollback(ctx)
 
 	// Look up the property to get location data.
+	//
+	// properties.address has been secretbox-encrypted since migration 033 and
+	// properties.location is COARSENED at rest since migration 105, with the
+	// exact point preserved in properties.location_encrypted. Both therefore
+	// have to come back through the cipher before they can seed the job:
+	// copying the column verbatim would write ciphertext into
+	// jobs.service_address (which is what this code did before 104) and would
+	// silently downgrade the job's service point to the property's privacy
+	// grid.
 	var serviceAddress, serviceCity, serviceState, serviceZip *string
 	var propLng, propLat *float64
+	var propLocationEncrypted *string
 	if input.PropertyID != "" {
 		err := tx.QueryRow(ctx, `
 			SELECT address, city, state, zip_code,
-			       ST_X(location) AS lng, ST_Y(location) AS lat
+			       ST_X(location) AS lng, ST_Y(location) AS lat,
+			       location_encrypted
 			FROM properties
 			WHERE id = $1 AND deleted_at IS NULL`, input.PropertyID).
-			Scan(&serviceAddress, &serviceCity, &serviceState, &serviceZip, &propLng, &propLat)
+			Scan(&serviceAddress, &serviceCity, &serviceState, &serviceZip, &propLng, &propLat, &propLocationEncrypted)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, fmt.Errorf("create job: %w", domain.ErrPropertyNotFound)
 			}
 			return nil, fmt.Errorf("create job lookup property: %w", err)
+		}
+		if serviceAddress != nil {
+			plain, derr := r.cipher.DecryptStringOrPassthrough(*serviceAddress)
+			if derr != nil {
+				return nil, fmt.Errorf("create job decrypt property address: %w", derr)
+			}
+			serviceAddress = &plain
 		}
 	}
 
@@ -77,6 +103,11 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 	}
 
 	// Use property location, falling back to direct location input.
+	//
+	// The encrypted copy is preferred because the geometry is coarsened at rest
+	// (migration 105). Legacy rows written before 105 have a NULL
+	// location_encrypted and still hold an exact point in the geometry, so the
+	// fallback is not a degradation for them.
 	lng := 0.0
 	lat := 0.0
 	if propLng != nil {
@@ -84,6 +115,26 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 	}
 	if propLat != nil {
 		lat = *propLat
+	}
+	if propLocationEncrypted != nil && *propLocationEncrypted != "" {
+		plain, derr := r.cipher.DecryptStringOrPassthrough(*propLocationEncrypted)
+		if derr != nil {
+			// A key problem must be loud: silently falling back here would
+			// mask a mis-configured ENCRYPTION_KEY behind a slightly-off job
+			// location that nobody would ever notice.
+			return nil, fmt.Errorf("create job decrypt property location: %w", derr)
+		}
+		exactLat, exactLng, perr := domain.ParseExactPoint(plain)
+		if perr != nil {
+			// Corruption, not a key failure. The coarse geometry is still a
+			// usable point, so degrade rather than fail the job creation.
+			slog.Warn("create job: property location_encrypted is malformed; falling back to coarse geometry",
+				"property_id", input.PropertyID,
+				"error", perr,
+			)
+		} else {
+			lat, lng = exactLat, exactLng
+		}
 	}
 
 	// Override with direct location fields if provided (no property linked).
@@ -113,6 +164,37 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 		recurrenceFreq = input.RecurrenceFrequency
 	}
 
+	// ── At-rest PII for the two customer-home columns (migration 104) ────
+	//
+	// service_address is the street address of the place the customer LIVES.
+	// No index, constraint or predicate references it, so encryption costs no
+	// query. EncryptString maps "" to "", which keeps the COALESCE(...,'')
+	// reads behaving exactly as before for jobs with no address.
+	encAddr, err := r.cipher.EncryptString(addr)
+	if err != nil {
+		return nil, fmt.Errorf("create job encrypt service_address: %w", err)
+	}
+
+	// BOTH geometry columns get the COARSE point. approximate_location is the
+	// one projected to GET /api/v1/jobs/map, which is unauthenticated and
+	// edge-cached; before 104 this INSERT wrote the exact customer coordinate
+	// into it verbatim, publishing home locations to anonymous callers. It
+	// must never again be written from an un-coarsened point.
+	coarseLat, coarseLng := domain.CoarsenPoint(lat, lng)
+
+	// The exact point survives, encrypted, so the change stays reversible and
+	// GetJobLocation keeps its exact match centre. A job with no known
+	// location stores NULL rather than the ciphertext of "0,0" — 0,0 is a real
+	// place in the Gulf of Guinea and must not be mistaken for one.
+	var encLocation *string
+	if lat != 0 || lng != 0 {
+		sealed, eerr := r.cipher.EncryptString(domain.FormatExactPoint(lat, lng))
+		if eerr != nil {
+			return nil, fmt.Errorf("create job encrypt service_location: %w", eerr)
+		}
+		encLocation = &sealed
+	}
+
 	var jobID string
 	var createdAt, updatedAt time.Time
 	err = tx.QueryRow(ctx, `
@@ -125,7 +207,9 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 			is_recurring, recurrence_frequency,
 			starting_bid_cents, offer_accepted_cents,
 			auction_duration_hours, auction_ends_at, min_provider_rating,
-			status, auction_type
+			status, auction_type,
+			is_hourly, hourly_rate_cents, same_day_requested,
+			service_location_encrypted
 		) VALUES (
 			$1, NULLIF($2, '')::uuid, $3, $4,
 			$5, NULLIF($6, '')::uuid, NULLIF($7, '')::uuid,
@@ -136,18 +220,22 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 			$18, $19,
 			$20, $21,
 			$22, $23, $24,
-			$25, $26
+			$25, $26,
+			$27, $28, $29,
+			$30
 		)
 		RETURNING id, created_at, updated_at`,
 		input.CustomerID, input.PropertyID, input.Title, input.Description,
 		input.CategoryID, input.SubcategoryID, input.ServiceTypeID,
-		addr, city, state, zip,
-		lng, lat,
+		encAddr, city, state, zip,
+		coarseLng, coarseLat,
 		input.ScheduleType, input.ScheduledDate, input.ScheduleRangeStart, input.ScheduleRangeEnd,
 		input.IsRecurring, recurrenceFreq,
 		input.StartingBidCents, input.OfferAcceptedCents,
 		durationHours, auctionEndsAt, input.MinProviderRating,
 		status, auctionType,
+		input.IsHourly, input.HourlyRateCents, input.SameDayRequested,
+		encLocation,
 	).Scan(&jobID, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create job insert: %w", err)
@@ -180,15 +268,21 @@ func (r *PostgresRepository) CreateJob(ctx context.Context, input domain.CreateJ
 	return r.GetJob(ctx, jobID)
 }
 
-func (r *PostgresRepository) UpdateJob(ctx context.Context, jobID string, input domain.UpdateJobInput) (*domain.Job, error) {
-	// Verify job exists and is draft.
-	var currentStatus string
-	err := r.pool.QueryRow(ctx, `SELECT status FROM jobs WHERE id = $1 AND deleted_at IS NULL`, jobID).Scan(&currentStatus)
+func (r *PostgresRepository) UpdateJob(ctx context.Context, jobID string, customerID string, input domain.UpdateJobInput) (*domain.Job, error) {
+	// Verify job exists, is draft, and is owned by the authenticated caller.
+	var currentStatus, ownerID string
+	err := r.pool.QueryRow(ctx,
+		`SELECT status, customer_id FROM jobs WHERE id = $1 AND deleted_at IS NULL`, jobID).
+		Scan(&currentStatus, &ownerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("update job: %w", domain.ErrJobNotFound)
 		}
 		return nil, fmt.Errorf("update job get status: %w", err)
+	}
+	if ownerID != customerID {
+		// Return NotFound rather than NotOwner to avoid confirming existence.
+		return nil, fmt.Errorf("update job: %w", domain.ErrJobNotFound)
 	}
 	if currentStatus != "draft" {
 		return nil, fmt.Errorf("update job: %w", domain.ErrNotDraft)
@@ -241,6 +335,21 @@ func (r *PostgresRepository) UpdateJob(ctx context.Context, jobID string, input 
 	if input.AuctionDurationHours != nil {
 		setClauses = append(setClauses, fmt.Sprintf("auction_duration_hours = $%d", argIdx))
 		args = append(args, *input.AuctionDurationHours)
+		argIdx++
+	}
+	if input.IsHourly != nil {
+		setClauses = append(setClauses, fmt.Sprintf("is_hourly = $%d", argIdx))
+		args = append(args, *input.IsHourly)
+		argIdx++
+	}
+	if input.HourlyRateCents != nil {
+		setClauses = append(setClauses, fmt.Sprintf("hourly_rate_cents = $%d", argIdx))
+		args = append(args, *input.HourlyRateCents)
+		argIdx++
+	}
+	if input.SameDayRequested != nil {
+		setClauses = append(setClauses, fmt.Sprintf("same_day_requested = $%d", argIdx))
+		args = append(args, *input.SameDayRequested)
 		argIdx++
 	}
 
@@ -318,18 +427,28 @@ func (r *PostgresRepository) GetJobDetail(ctx context.Context, jobID string, req
 	return r.GetJob(ctx, jobID)
 }
 
-func (r *PostgresRepository) DeleteDraft(ctx context.Context, jobID string) error {
+func (r *PostgresRepository) DeleteDraft(ctx context.Context, jobID string, customerID string) error {
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE jobs SET deleted_at = now() WHERE id = $1 AND status = 'draft' AND deleted_at IS NULL`,
-		jobID)
+		`UPDATE jobs SET deleted_at = now()
+		 WHERE id = $1 AND customer_id = $2 AND status = 'draft' AND deleted_at IS NULL`,
+		jobID, customerID)
 	if err != nil {
 		return fmt.Errorf("delete draft: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		// Check if exists.
-		var exists bool
-		_ = r.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM jobs WHERE id = $1 AND deleted_at IS NULL)`, jobID).Scan(&exists)
-		if !exists {
+		// Distinguish not-found / not-owner / not-draft. We return NotFound when the
+		// authenticated caller is not the owner to avoid confirming the job's existence.
+		var ownerID, status string
+		err := r.pool.QueryRow(ctx,
+			`SELECT customer_id, status FROM jobs WHERE id = $1 AND deleted_at IS NULL`, jobID).
+			Scan(&ownerID, &status)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("delete draft: %w", domain.ErrJobNotFound)
+			}
+			return fmt.Errorf("delete draft check: %w", err)
+		}
+		if ownerID != customerID {
 			return fmt.Errorf("delete draft: %w", domain.ErrJobNotFound)
 		}
 		return fmt.Errorf("delete draft: %w", domain.ErrNotDraft)
@@ -337,26 +456,31 @@ func (r *PostgresRepository) DeleteDraft(ctx context.Context, jobID string) erro
 	return nil
 }
 
-func (r *PostgresRepository) PublishJob(ctx context.Context, jobID string) (*domain.Job, error) {
-	auctionEndsAt := time.Now()
+func (r *PostgresRepository) PublishJob(ctx context.Context, jobID string, customerID string) (*domain.Job, error) {
+	// Load current duration and verify ownership + existence in one query.
 	var durationHours int
+	var ownerID string
 	err := r.pool.QueryRow(ctx,
-		`SELECT auction_duration_hours FROM jobs WHERE id = $1 AND deleted_at IS NULL`, jobID).Scan(&durationHours)
+		`SELECT auction_duration_hours, customer_id FROM jobs WHERE id = $1 AND deleted_at IS NULL`, jobID).
+		Scan(&durationHours, &ownerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("publish job: %w", domain.ErrJobNotFound)
 		}
 		return nil, fmt.Errorf("publish job get duration: %w", err)
 	}
+	if ownerID != customerID {
+		return nil, fmt.Errorf("publish job: %w", domain.ErrJobNotFound)
+	}
 	if durationHours <= 0 {
 		durationHours = 72
 	}
-	auctionEndsAt = auctionEndsAt.Add(time.Duration(durationHours) * time.Hour)
+	auctionEndsAt := time.Now().Add(time.Duration(durationHours) * time.Hour)
 
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE jobs SET status = 'active', auction_ends_at = $1, updated_at = now()
-		 WHERE id = $2 AND status = 'draft' AND deleted_at IS NULL`,
-		auctionEndsAt, jobID)
+		 WHERE id = $2 AND customer_id = $3 AND status = 'draft' AND deleted_at IS NULL`,
+		auctionEndsAt, jobID, customerID)
 	if err != nil {
 		return nil, fmt.Errorf("publish job: %w", err)
 	}
@@ -422,21 +546,78 @@ func (r *PostgresRepository) CancelJob(ctx context.Context, jobID string, custom
 	return r.GetJob(ctx, jobID)
 }
 
+// categorySubtreeFilter builds a WHERE fragment that matches any job whose
+// category, subcategory, or service-type column falls anywhere within the
+// subtree(s) rooted at the supplied category ids. A recursive CTE expands each
+// id to itself plus all descendants, so filtering by a top-level category (e.g.
+// the `legal` root) correctly includes jobs filed under its children (matter
+// types like Consultation / Contract Review). Without this expansion an exact
+// `IN` match silently drops child-categorized jobs — see the legal landing's
+// "Open legal cases" query, which filters by the legal subtree root.
+//
+// It returns the SQL clause, the positional args to append, and the next free
+// placeholder index. startIdx is the first placeholder number to use.
+func categorySubtreeFilter(categoryIDs []string, startIdx int) (string, []interface{}, int) {
+	placeholders := make([]string, len(categoryIDs))
+	args := make([]interface{}, len(categoryIDs))
+	argIdx := startIdx
+	for i, catID := range categoryIDs {
+		placeholders[i] = fmt.Sprintf("$%d", argIdx)
+		args[i] = catID
+		argIdx++
+	}
+	ph := strings.Join(placeholders, ",")
+	// A correlated EXISTS over a recursive expansion of the requested category
+	// ids. The recursive CTE yields each requested id plus all descendants, and
+	// the row matches if any of the job's three category columns is in that set.
+	// This makes a top-level filter (e.g. the legal root) include child-filed
+	// jobs, which an exact IN match would drop.
+	clause := fmt.Sprintf(
+		`EXISTS (
+			WITH RECURSIVE cat_subtree AS (
+				SELECT id FROM service_categories WHERE id IN (%s)
+				UNION ALL
+				SELECT sc.id FROM service_categories sc
+				JOIN cat_subtree cs ON sc.parent_id = cs.id
+			)
+			SELECT 1 FROM cat_subtree
+			WHERE cat_subtree.id IN (j.category_id, j.subcategory_id, j.service_type_id)
+		)`, ph)
+	return clause, args, argIdx
+}
+
 func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.SearchJobsInput) ([]*domain.Job, *domain.Pagination, error) {
-	// Build the query dynamically.
-	where := []string{"j.status = 'active'", "j.deleted_at IS NULL"}
+	// Build the query dynamically. Public browse defaults to active; an
+	// explicit StatusFilter (from GET /jobs?status=) replaces that default.
+	where := []string{"j.deleted_at IS NULL"}
 	args := []interface{}{}
 	argIdx := 1
 
-	if len(input.CategoryIDs) > 0 {
-		placeholders := make([]string, len(input.CategoryIDs))
-		for i, catID := range input.CategoryIDs {
-			placeholders[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, catID)
-			argIdx++
+	status := "active"
+	if input.StatusFilter != nil {
+		sf := strings.ToLower(strings.TrimSpace(*input.StatusFilter))
+		if sf != "" && sf != "unspecified" {
+			if sf == "open" {
+				sf = "active"
+			}
+			status = sf
 		}
-		where = append(where, fmt.Sprintf("(j.category_id IN (%s) OR j.subcategory_id IN (%s) OR j.service_type_id IN (%s))",
-			strings.Join(placeholders, ","), strings.Join(placeholders, ","), strings.Join(placeholders, ",")))
+	}
+	where = append(where, fmt.Sprintf("j.status = $%d", argIdx))
+	args = append(args, status)
+	argIdx++
+	// status=open/active means a live bidding window, not "row still marked
+	// active after auction_ends_at". Gateway effectiveJobStatus maps those
+	// to closed; exclude them here so public browse totalCount matches.
+	if status == "active" {
+		where = append(where, "(j.auction_ends_at IS NULL OR j.auction_ends_at > now())")
+	}
+
+	if len(input.CategoryIDs) > 0 {
+		clause, clauseArgs, next := categorySubtreeFilter(input.CategoryIDs, argIdx)
+		where = append(where, clause)
+		args = append(args, clauseArgs...)
+		argIdx = next
 	}
 
 	if input.Latitude != 0 && input.Longitude != 0 && input.RadiusKm > 0 {
@@ -526,6 +707,17 @@ func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.Search
 		}
 	}
 
+	// FR-10.7: when geo-scoped, project distance_km from coarse approximate_location.
+	distanceSelect := "NULL::float8 AS distance_km"
+	if input.Latitude != 0 && input.Longitude != 0 {
+		distanceSelect = fmt.Sprintf(
+			"ST_Distance(j.approximate_location::geography, ST_SetSRID(ST_MakePoint($%d, $%d), 4326)::geography) / 1000.0 AS distance_km",
+			argIdx, argIdx+1,
+		)
+		args = append(args, input.Longitude, input.Latitude)
+		argIdx += 2
+	}
+
 	selectQuery := fmt.Sprintf(`
 		SELECT j.id, j.customer_id, COALESCE(j.property_id::text, ''), j.title, j.description,
 		       j.category_id, COALESCE(j.subcategory_id::text, ''), COALESCE(j.service_type_id::text, ''),
@@ -540,13 +732,15 @@ func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.Search
 		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
-		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
+		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
+		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
+		       %s
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
 		WHERE %s
 		ORDER BY %s
 		LIMIT $%d OFFSET $%d`,
-		whereClause, orderBy, argIdx, argIdx+1)
+		distanceSelect, whereClause, orderBy, argIdx, argIdx+1)
 
 	args = append(args, pageSize, offset)
 
@@ -558,7 +752,7 @@ func (r *PostgresRepository) SearchJobs(ctx context.Context, input domain.Search
 
 	var jobs []*domain.Job
 	for rows.Next() {
-		job, err := scanJobRow(rows)
+		job, err := scanJobRow(rows, r.cipher)
 		if err != nil {
 			return nil, nil, fmt.Errorf("search jobs scan: %w", err)
 		}
@@ -591,21 +785,21 @@ func (r *PostgresRepository) GetJobsOnMap(ctx context.Context, input domain.GetJ
 	}
 
 	if len(input.CategoryIDs) > 0 {
-		placeholders := make([]string, len(input.CategoryIDs))
-		for i, catID := range input.CategoryIDs {
-			placeholders[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, catID)
-			argIdx++
-		}
-		ph := strings.Join(placeholders, ",")
-		where = append(where, fmt.Sprintf(
-			"(j.category_id IN (%s) OR j.subcategory_id IN (%s) OR j.service_type_id IN (%s))",
-			ph, ph, ph))
+		clause, clauseArgs, next := categorySubtreeFilter(input.CategoryIDs, argIdx)
+		where = append(where, clause)
+		args = append(args, clauseArgs...)
+		argIdx = next
 	}
 
 	if input.MaxPriceCents != nil {
 		where = append(where, fmt.Sprintf("j.starting_bid_cents <= $%d", argIdx))
 		args = append(args, *input.MaxPriceCents)
+		argIdx++
+	}
+
+	if input.ScheduleType != nil && *input.ScheduleType != "" {
+		where = append(where, fmt.Sprintf("j.schedule_type = $%d", argIdx))
+		args = append(args, *input.ScheduleType)
 		argIdx++
 	}
 
@@ -642,19 +836,34 @@ func (r *PostgresRepository) GetJobsOnMap(ctx context.Context, input domain.GetJ
 	return pins, nil
 }
 
-func (r *PostgresRepository) ListCustomerJobs(ctx context.Context, customerID string, statusFilter *string, propertyID *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
+func (r *PostgresRepository) ListCustomerJobs(ctx context.Context, customerID string, filter domain.ListCustomerJobsFilter, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
 	where := []string{"j.customer_id = $1", "j.deleted_at IS NULL"}
 	args := []interface{}{customerID}
 	argIdx := 2
 
-	if statusFilter != nil && *statusFilter != "" {
+	if filter.StatusFilter != nil && *filter.StatusFilter != "" {
 		where = append(where, fmt.Sprintf("j.status = $%d", argIdx))
-		args = append(args, *statusFilter)
+		args = append(args, *filter.StatusFilter)
 		argIdx++
 	}
-	if propertyID != nil && *propertyID != "" {
+	if filter.PropertyID != nil && *filter.PropertyID != "" {
 		where = append(where, fmt.Sprintf("j.property_id = $%d", argIdx))
-		args = append(args, *propertyID)
+		args = append(args, *filter.PropertyID)
+		argIdx++
+	}
+	if filter.CategoryID != nil && *filter.CategoryID != "" {
+		where = append(where, fmt.Sprintf("j.category_id = $%d", argIdx))
+		args = append(args, *filter.CategoryID)
+		argIdx++
+	}
+	if filter.DateFrom != nil {
+		where = append(where, fmt.Sprintf("j.created_at >= $%d", argIdx))
+		args = append(args, *filter.DateFrom)
+		argIdx++
+	}
+	if filter.DateTo != nil {
+		where = append(where, fmt.Sprintf("j.created_at <= $%d", argIdx))
+		args = append(args, *filter.DateTo)
 		argIdx++
 	}
 
@@ -696,7 +905,9 @@ func (r *PostgresRepository) ListCustomerJobs(ctx context.Context, customerID st
 		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
-		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
+		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
+		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
+		       NULL::float8 AS distance_km
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
 		WHERE %s
@@ -713,7 +924,7 @@ func (r *PostgresRepository) ListCustomerJobs(ctx context.Context, customerID st
 
 	var jobs []*domain.Job
 	for rows.Next() {
-		job, err := scanJobRow(rows)
+		job, err := scanJobRow(rows, r.cipher)
 		if err != nil {
 			return nil, nil, fmt.Errorf("list customer jobs scan: %w", err)
 		}
@@ -744,7 +955,9 @@ func (r *PostgresRepository) ListDrafts(ctx context.Context, customerID string) 
 		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
-		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
+		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
+		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
+		       NULL::float8 AS distance_km
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
 		WHERE j.customer_id = $1 AND j.status = 'draft' AND j.deleted_at IS NULL
@@ -757,7 +970,7 @@ func (r *PostgresRepository) ListDrafts(ctx context.Context, customerID string) 
 
 	var jobs []*domain.Job
 	for rows.Next() {
-		job, err := scanJobRow(rows)
+		job, err := scanJobRow(rows, r.cipher)
 		if err != nil {
 			return nil, fmt.Errorf("list drafts scan: %w", err)
 		}
@@ -915,7 +1128,9 @@ func (r *PostgresRepository) AdminListJobs(ctx context.Context, statusFilter *st
 		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
-		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, '')
+		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
+		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
+		       NULL::float8 AS distance_km
 		FROM jobs j
 		LEFT JOIN service_categories c ON c.id = j.category_id
 		WHERE %s
@@ -932,7 +1147,7 @@ func (r *PostgresRepository) AdminListJobs(ctx context.Context, statusFilter *st
 
 	var jobs []*domain.Job
 	for rows.Next() {
-		job, err := scanJobRow(rows)
+		job, err := scanJobRow(rows, r.cipher)
 		if err != nil {
 			return nil, nil, fmt.Errorf("admin list jobs scan: %w", err)
 		}
@@ -1118,6 +1333,7 @@ func (r *PostgresRepository) scanJobWithCategories(ctx context.Context, jobID st
 		       COALESCE(j.auction_type, ''), j.snipe_extension_count, j.original_auction_ends_at,
 		       j.awarded_at, j.closed_at, j.completed_at, j.cancelled_at,
 		       j.created_at, j.updated_at, j.deleted_at,
+		       j.is_hourly, j.hourly_rate_cents, j.same_day_requested,
 		       COALESCE(c.name, ''), COALESCE(c.slug, ''), COALESCE(c.icon, ''),
 		       COALESCE(sc.id::text, ''), COALESCE(sc.name, ''), COALESCE(sc.slug, ''), COALESCE(sc.icon, ''),
 		       COALESCE(st.id::text, ''), COALESCE(st.name, ''), COALESCE(st.slug, ''), COALESCE(st.icon, '')
@@ -1149,6 +1365,7 @@ func (r *PostgresRepository) scanJobWithCategories(ctx context.Context, jobID st
 		&j.AuctionType, &j.SnipeExtensionCount, &j.OriginalAuctionEndsAt,
 		&j.AwardedAt, &j.ClosedAt, &j.CompletedAt, &j.CancelledAt,
 		&j.CreatedAt, &j.UpdatedAt, &j.DeletedAt,
+		&j.IsHourly, &j.HourlyRateCents, &j.SameDayRequested,
 		&catName, &catSlug, &catIcon,
 		&subID, &subName, &subSlug, &subIcon,
 		&stID, &stName, &stSlug, &stIcon,
@@ -1170,7 +1387,11 @@ func (r *PostgresRepository) scanJobWithCategories(ctx context.Context, jobID st
 		j.ServiceTypeID = serviceTypeID
 	}
 	if serviceAddress != "" {
-		j.ServiceAddress = serviceAddress
+		plain, derr := r.cipher.DecryptStringOrPassthrough(serviceAddress)
+		if derr != nil {
+			return nil, fmt.Errorf("get job decrypt service_address: %w", derr)
+		}
+		j.ServiceAddress = plain
 	}
 	j.RecurrenceFrequency = recurrenceFrequency
 	if awardedProviderID != "" {
@@ -1231,13 +1452,24 @@ func (r *PostgresRepository) getJobPhotos(ctx context.Context, jobID string) ([]
 	return photos, nil
 }
 
-// scanJobRow scans a job from a row that includes category name, slug, icon at the end.
-func scanJobRow(rows pgx.Rows) (*domain.Job, error) {
+// scanJobRow scans a job from a row that includes category name, slug, icon,
+// and optional distance_km at the end. Every caller SELECT must end with
+// `NULL::float8 AS distance_km` or a real ST_Distance expression (SearchJobs
+// when geo-scoped). FR-10.7.
+//
+// cipher decrypts jobs.service_address (migration 104). Detection is per VALUE,
+// not per row: `jobs` deliberately carries no pii_encrypted_v1 flag, because a
+// row flag over per-column encryption is exactly the drift bug migration 098
+// exists to document. DecryptStringOrPassthrough gives the three outcomes —
+// opens, legacy plaintext passes through, and secretbox-shaped-but-unopenable
+// escalates rather than leaking raw base64 to a caller.
+func scanJobRow(rows pgx.Rows, cipher *crypto.Cipher) (*domain.Job, error) {
 	var j domain.Job
 	var propertyID, subcategoryID, serviceTypeID, serviceAddress string
 	var awardedProviderID, awardedBidID, repostedFromID string
 	var recurrenceFrequency *string
 	var catName, catSlug, catIcon string
+	var distanceKm *float64
 
 	err := rows.Scan(
 		&j.ID, &j.CustomerID, &propertyID, &j.Title, &j.Description,
@@ -1253,11 +1485,14 @@ func scanJobRow(rows pgx.Rows) (*domain.Job, error) {
 		&j.AuctionType, &j.SnipeExtensionCount, &j.OriginalAuctionEndsAt,
 		&j.AwardedAt, &j.ClosedAt, &j.CompletedAt, &j.CancelledAt,
 		&j.CreatedAt, &j.UpdatedAt, &j.DeletedAt,
+		&j.IsHourly, &j.HourlyRateCents, &j.SameDayRequested,
 		&catName, &catSlug, &catIcon,
+		&distanceKm,
 	)
 	if err != nil {
 		return nil, err
 	}
+	j.DistanceKm = distanceKm
 
 	if propertyID != "" {
 		j.PropertyID = propertyID
@@ -1269,7 +1504,11 @@ func scanJobRow(rows pgx.Rows) (*domain.Job, error) {
 		j.ServiceTypeID = serviceTypeID
 	}
 	if serviceAddress != "" {
-		j.ServiceAddress = serviceAddress
+		plain, derr := cipher.DecryptStringOrPassthrough(serviceAddress)
+		if derr != nil {
+			return nil, fmt.Errorf("decrypt service_address: %w", derr)
+		}
+		j.ServiceAddress = plain
 	}
 	j.RecurrenceFrequency = recurrenceFrequency
 	if awardedProviderID != "" {

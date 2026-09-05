@@ -5,17 +5,21 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // InsuranceHandler handles HTTP endpoints for insurance.
+//
+// The insurance RPCs live on the unified PaymentService (the proto was
+// consolidated — there is no separate InsuranceService client).
 type InsuranceHandler struct {
-	client paymentv1.InsuranceServiceClient
+	client paymentv1.PaymentServiceClient
 }
 
 // NewInsuranceHandler creates a new InsuranceHandler.
-func NewInsuranceHandler(client paymentv1.InsuranceServiceClient) *InsuranceHandler {
+func NewInsuranceHandler(client paymentv1.PaymentServiceClient) *InsuranceHandler {
 	return &InsuranceHandler{client: client}
 }
 
@@ -51,13 +55,16 @@ func (h *InsuranceHandler) ListProducts(w http.ResponseWriter, r *http.Request) 
 }
 
 type getQuoteRequest struct {
-	ProductID           string `json:"product_id"`
-	ContractID          string `json:"contract_id"`
-	ContractAmountCents int64  `json:"contract_amount_cents"`
-	CategorySlug        string `json:"category_slug"`
+	ProductID  string `json:"product_id"`
+	ContractID string `json:"contract_id"`
 }
 
 // GetQuote handles POST /api/v1/insurance/quote.
+//
+// The premium is derived entirely server-side from the contract (amount +
+// category). The client supplies only product_id + contract_id — any
+// client-supplied amount is intentionally not accepted (price calc is
+// server-side, CLAUDE.md §6).
 func (h *InsuranceHandler) GetQuote(w http.ResponseWriter, r *http.Request) {
 	_, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -70,11 +77,20 @@ func (h *InsuranceHandler) GetQuote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate UUIDs up front so a malformed id returns a clear 400 rather than a
+	// 500 from a downstream cast/lookup failure.
+	if !isValidUUID(req.ProductID) {
+		writeError(w, http.StatusBadRequest, "invalid insurance product id")
+		return
+	}
+	if !isValidUUID(req.ContractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+
 	resp, err := h.client.GetInsuranceQuote(r.Context(), &paymentv1.GetInsuranceQuoteRequest{
-		ProductId:           req.ProductID,
-		ContractId:          req.ContractID,
-		ContractAmountCents: req.ContractAmountCents,
-		CategorySlug:        req.CategorySlug,
+		ProductId:  req.ProductID,
+		ContractId: req.ContractID,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -96,13 +112,18 @@ func (h *InsuranceHandler) GetQuote(w http.ResponseWriter, r *http.Request) {
 }
 
 type purchaseInsuranceRequest struct {
-	ProductID           string `json:"product_id"`
-	ContractID          string `json:"contract_id"`
-	ProviderID          string `json:"provider_id"`
-	ContractAmountCents int64  `json:"contract_amount_cents"`
+	ProductID       string `json:"product_id"`
+	ContractID      string `json:"contract_id"`
+	PaymentMethodID string `json:"payment_method_id"`
 }
 
 // PurchaseInsurance handles POST /api/v1/insurance/purchase.
+//
+// SECURITY: customer_id comes from the JWT (claims), and provider_id + the
+// premium amount are DERIVED server-side from the contract by the payment
+// service after verifying the caller owns the contract. The client supplies
+// only product_id, contract_id and (its own) payment_method_id — never a
+// provider or an amount. This closes the original IDOR / amount-tampering hole.
 func (h *InsuranceHandler) PurchaseInsurance(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
@@ -115,12 +136,25 @@ func (h *InsuranceHandler) PurchaseInsurance(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Validate UUIDs up front so a missing/malformed id returns a clear 400
+	// rather than a 500 from a downstream cast / FK lookup failure.
+	if !isValidUUID(req.ProductID) {
+		writeError(w, http.StatusBadRequest, "invalid insurance product id")
+		return
+	}
+	if !isValidUUID(req.ContractID) {
+		writeError(w, http.StatusBadRequest, "invalid contract id")
+		return
+	}
+	if req.PaymentMethodID == "" {
+		writeError(w, http.StatusBadRequest, "payment_method_id is required")
+		return
+	}
+
 	resp, err := h.client.PurchaseInsurance(r.Context(), &paymentv1.PurchaseInsuranceRequest{
-		ProductId:           req.ProductID,
-		ContractId:          req.ContractID,
-		CustomerId:          claims.UserID,
-		ProviderId:          req.ProviderID,
-		ContractAmountCents: req.ContractAmountCents,
+		ProductId:  req.ProductID,
+		ContractId: req.ContractID,
+		CustomerId: claims.UserID,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -157,7 +191,7 @@ func (h *InsuranceHandler) ListPolicies(w http.ResponseWriter, r *http.Request) 
 
 	resp, err := h.client.ListInsurancePolicies(r.Context(), &paymentv1.ListInsurancePoliciesRequest{
 		UserId: claims.UserID,
-		Pagination: &paymentv1.InsurancePaginationRequest{
+		Pagination: &commonv1.PaginationRequest{
 			Page:     page,
 			PageSize: pageSize,
 		},
@@ -190,7 +224,7 @@ func (h *InsuranceHandler) ListPolicies(w http.ResponseWriter, r *http.Request) 
 
 // GetPolicy handles GET /api/v1/insurance/policies/{id}.
 func (h *InsuranceHandler) GetPolicy(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -199,6 +233,10 @@ func (h *InsuranceHandler) GetPolicy(w http.ResponseWriter, r *http.Request) {
 	policyID := chi.URLParam(r, "id")
 	if policyID == "" {
 		writeError(w, http.StatusBadRequest, "policy id required")
+		return
+	}
+	if !isValidUUID(policyID) {
+		writeError(w, http.StatusBadRequest, "invalid insurance policy id")
 		return
 	}
 
@@ -210,7 +248,18 @@ func (h *InsuranceHandler) GetPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoInsurancePolicyToJSON(resp.GetPolicy()))
+	// Ownership check: a policy may only be read by its customer or provider,
+	// or by an admin. Return 404 (not 403) to non-owners so the endpoint does
+	// not leak the existence of other tenants' policies (IDOR fix).
+	policy := resp.GetPolicy()
+	if !hasRole(claims, "admin") &&
+		policy.GetCustomerId() != claims.UserID &&
+		policy.GetProviderId() != claims.UserID {
+		writeError(w, http.StatusNotFound, "insurance policy not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, protoInsurancePolicyToJSON(policy))
 }
 
 type fileClaimRequest struct {
@@ -234,6 +283,14 @@ func (h *InsuranceHandler) FileClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// policy_id is a UUID FK — reject a malformed value here so it never reaches
+	// the `WHERE id = $1` policy lookup, where a non-UUID string errors inside
+	// pgx and surfaces as a generic 500 instead of an actionable 400.
+	if !isValidUUID(req.PolicyID) {
+		writeError(w, http.StatusBadRequest, "invalid policy id")
+		return
+	}
+
 	resp, err := h.client.FileInsuranceClaim(r.Context(), &paymentv1.FileInsuranceClaimRequest{
 		PolicyId:           req.PolicyID,
 		ClaimantId:         claims.UserID,
@@ -252,7 +309,7 @@ func (h *InsuranceHandler) FileClaim(w http.ResponseWriter, r *http.Request) {
 
 // GetClaim handles GET /api/v1/insurance/claims/{id}.
 func (h *InsuranceHandler) GetClaim(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -261,6 +318,10 @@ func (h *InsuranceHandler) GetClaim(w http.ResponseWriter, r *http.Request) {
 	claimID := chi.URLParam(r, "id")
 	if claimID == "" {
 		writeError(w, http.StatusBadRequest, "claim id required")
+		return
+	}
+	if !isValidUUID(claimID) {
+		writeError(w, http.StatusBadRequest, "invalid insurance claim id")
 		return
 	}
 
@@ -272,7 +333,27 @@ func (h *InsuranceHandler) GetClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoInsuranceClaimToJSON(resp.GetClaim()))
+	claim := resp.GetClaim()
+
+	// Ownership check (IDOR fix): a claim may be read by the claimant who filed
+	// it, by either party on the underlying policy (customer/provider), or by an
+	// admin. Non-owners get 404 so the endpoint does not leak claim existence.
+	if !hasRole(claims, "admin") && claim.GetClaimantId() != claims.UserID {
+		polResp, err := h.client.GetInsurancePolicy(r.Context(), &paymentv1.GetInsurancePolicyRequest{
+			PolicyId: claim.GetPolicyId(),
+		})
+		if err != nil {
+			writeError(w, http.StatusNotFound, "insurance claim not found")
+			return
+		}
+		policy := polResp.GetPolicy()
+		if policy.GetCustomerId() != claims.UserID && policy.GetProviderId() != claims.UserID {
+			writeError(w, http.StatusNotFound, "insurance claim not found")
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, protoInsuranceClaimToJSON(claim))
 }
 
 // AdminListClaims handles GET /api/v1/admin/insurance/claims.
@@ -293,7 +374,7 @@ func (h *InsuranceHandler) AdminListClaims(w http.ResponseWriter, r *http.Reques
 	}
 
 	grpcReq := &paymentv1.AdminListInsuranceClaimsRequest{
-		Pagination: &paymentv1.InsurancePaginationRequest{
+		Pagination: &commonv1.PaginationRequest{
 			Page:     page,
 			PageSize: pageSize,
 		},
@@ -317,13 +398,9 @@ func (h *InsuranceHandler) AdminListClaims(w http.ResponseWriter, r *http.Reques
 		"claims": claimsList,
 	}
 	if pg := resp.GetPagination(); pg != nil {
-		result["pagination"] = map[string]interface{}{
-			"total_count": pg.TotalCount,
-			"page":        pg.Page,
-			"page_size":   pg.PageSize,
-			"total_pages": pg.TotalPages,
-			"has_next":    pg.HasNext,
-		}
+		// camelCase to match the PaginationResponse TS contract the admin
+		// DataTable reads (totalPages/hasNext). See admin advances for context.
+		result["pagination"] = paginationToJSON(pg)
 	}
 
 	writeJSON(w, http.StatusOK, result)
@@ -345,8 +422,10 @@ func (h *InsuranceHandler) AdminReviewClaim(w http.ResponseWriter, r *http.Reque
 	}
 
 	claimID := chi.URLParam(r, "id")
-	if claimID == "" {
-		writeError(w, http.StatusBadRequest, "claim id required")
+	if !isValidUUID(claimID) {
+		// claim_id keys a UUID column; a malformed value would error inside pgx
+		// (invalid uuid syntax) and bubble up as a 500. Mirror GetClaim's check.
+		writeError(w, http.StatusBadRequest, "invalid insurance claim id")
 		return
 	}
 

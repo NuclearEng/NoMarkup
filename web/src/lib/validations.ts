@@ -21,7 +21,6 @@ export const phoneSchema = z.string().regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone
 export const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, 'Password is required'),
-  rememberMe: z.boolean().default(false),
 });
 
 export const registerSchema = z
@@ -188,6 +187,42 @@ export const jobPostingSchema = z
 
 export type JobPostingFormValues = z.infer<typeof jobPostingSchema>;
 
+// Legal intake schema — a tight, legal-tailored alternative to the generic
+// job-posting wizard. Maps onto the same CreateJobInput at submit time (the
+// matter type IS a legal service category, so the created job lands in the
+// legal vertical). Money is dollars in the form, converted to integer cents
+// before the mutation (and re-validated server-side in the gateway).
+export const LEGAL_URGENCY = ['urgent', 'soon', 'flexible'] as const;
+export type LegalUrgency = (typeof LEGAL_URGENCY)[number];
+
+export const LEGAL_CONTACT_PREFERENCE = ['platform', 'phone', 'video'] as const;
+export type LegalContactPreference = (typeof LEGAL_CONTACT_PREFERENCE)[number];
+
+export const legalIntakeSchema = z.object({
+  // The matter type is a legal service category id (level-2 of the legal subtree).
+  matterCategoryId: z.string().min(1, 'Select the type of legal help you need'),
+  title: jobTitleSchema,
+  description: jobDescriptionSchema,
+  // 2-letter US state code — the jurisdiction the matter falls under.
+  jurisdiction: z
+    .string()
+    .min(1, 'Select the state your matter is in')
+    .max(2, 'Use the 2-letter state code'),
+  urgency: z.enum(LEGAL_URGENCY, { required_error: 'Choose a timeline' }),
+  // Budget is the customer's max — optional, positive whole dollars.
+  budgetDollars: z
+    .number({ invalid_type_error: 'Enter a number' })
+    .positive('Budget must be greater than $0')
+    .max(1_000_000, 'Budget is too large')
+    .optional()
+    .or(z.literal(0).transform(() => undefined)),
+  contactPreference: z.enum(LEGAL_CONTACT_PREFERENCE, {
+    required_error: 'Choose a contact preference',
+  }),
+});
+
+export type LegalIntakeFormValues = z.infer<typeof legalIntakeSchema>;
+
 // Bid schemas
 export const bidSchema = z.object({
   amountDollars: z.number().positive('Bid amount must be positive'),
@@ -204,10 +239,15 @@ export const revisionNotesSchema = z
 // Review schemas
 export const reviewSchema = z.object({
   overallRating: z.number().int().min(1).max(5),
+  // Customer → provider
   qualityRating: z.number().int().min(1).max(5).optional(),
   communicationRating: z.number().int().min(1).max(5).optional(),
   timelinessRating: z.number().int().min(1).max(5).optional(),
   valueRating: z.number().int().min(1).max(5).optional(),
+  // Provider → customer (FR-6.2)
+  paymentPromptnessRating: z.number().int().min(1).max(5).optional(),
+  scopeAccuracyRating: z.number().int().min(1).max(5).optional(),
+  accessRating: z.number().int().min(1).max(5).optional(),
   comment: z
     .string()
     .min(50, 'Comment must be at least 50 characters')
@@ -264,10 +304,11 @@ export const changePasswordSchema = z
 
 export type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;
 
-// Property schemas
+// Property schemas — `street` is the form field; the API nests it inside
+// `address: { street, city, state, zip_code, ... }`.
 export const propertySchema = z.object({
   nickname: z.string().min(1, 'Nickname is required').max(100),
-  address: z.string().min(1, 'Address is required'),
+  street: z.string().min(1, 'Street is required'),
   city: z.string().min(1, 'City is required'),
   state: z.string().min(1, 'State is required').max(2),
   zip_code: z.string().regex(/^\d{5}(-\d{4})?$/, 'Invalid zip code'),
@@ -275,6 +316,46 @@ export const propertySchema = z.object({
 });
 
 export type PropertyFormValues = z.infer<typeof propertySchema>;
+
+// Listing (goods marketplace) schemas
+export const listingTitleSchema = z
+  .string()
+  .min(5, 'Title must be at least 5 characters')
+  .max(120, 'Title must be at most 120 characters');
+
+export const listingDescriptionSchema = z
+  .string()
+  .min(20, 'Description must be at least 20 characters')
+  .max(5000, 'Description must be at most 5000 characters');
+
+export const listingZipSchema = z
+  .string()
+  .regex(/^\d{5}(-\d{4})?$/, 'Pickup zip must be a valid 5-digit zip code');
+
+export const listingPostingSchema = z.object({
+  categoryId: z.string().min(1, 'Category is required'),
+  title: listingTitleSchema,
+  description: listingDescriptionSchema,
+  photoUrls: z
+    .array(z.string().url('Each photo must be a valid URL'))
+    .min(1, 'At least one photo is required')
+    .max(10, 'You can upload up to 10 photos'),
+  pickupZip: listingZipSchema,
+  pickupAddress: z.string().max(200).optional().or(z.literal('')),
+  startingPriceDollars: z
+    .number()
+    .positive('Starting price must be greater than $0')
+    .max(1_000_000, 'Starting price is too large'),
+  auctionDurationHours: z.union([z.literal(24), z.literal(48), z.literal(168)], {
+    required_error: 'Pick an auction duration',
+  }),
+  // Condition is optional — empty string = "seller didn't say".
+  condition: z
+    .enum(['', 'new', 'like_new', 'very_good', 'good', 'acceptable', 'for_parts'])
+    .optional(),
+});
+
+export type ListingPostingFormValues = z.infer<typeof listingPostingSchema>;
 
 // Employee schemas
 export const addEmployeeSchema = z.object({

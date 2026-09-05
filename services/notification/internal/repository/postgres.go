@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -275,8 +278,12 @@ func (r *PostgresRepository) SaveDeviceToken(ctx context.Context, userID, token,
 }
 
 func (r *PostgresRepository) DeleteDeviceToken(ctx context.Context, userID, deviceID string) error {
+	// The gateway DELETE /notifications/devices/{token} route carries the token
+	// string (the natural per-user unique key), while native clients may instead
+	// supply an opaque device_id. Match on either so register-by-token can be
+	// undone with the same token value.
 	tag, err := r.pool.Exec(ctx, `
-		DELETE FROM device_tokens WHERE user_id = $1 AND device_id = $2`,
+		DELETE FROM device_tokens WHERE user_id = $1 AND (token = $2 OR device_id = $2)`,
 		userID, deviceID,
 	)
 	if err != nil {
@@ -286,6 +293,87 @@ func (r *PostgresRepository) DeleteDeviceToken(ctx context.Context, userID, devi
 		return fmt.Errorf("delete device token: %w", domain.ErrDeviceTokenNotFound)
 	}
 	return nil
+}
+
+// --- Send Ledger Repository (IOS-SYS.NT.1) ---
+
+// sendLedgerRetention is how long ledger rows stay queryable. Every cooldown
+// window (24h promotional, 1h transactional) is far inside it.
+const sendLedgerRetention = 7 * 24 * time.Hour
+
+// RecordSend appends one notification_send_ledger row for a successful
+// dispatch, then opportunistically prunes this user's rows older than the
+// retention window so the table stays bounded without a dedicated sweeper.
+func (r *PostgresRepository) RecordSend(ctx context.Context, userID, notificationType, channel string) error {
+	if _, err := r.pool.Exec(ctx, `
+		INSERT INTO notification_send_ledger (user_id, notification_type, channel)
+		VALUES ($1, $2, $3)`,
+		userID, notificationType, channel,
+	); err != nil {
+		return fmt.Errorf("record send: %w", err)
+	}
+
+	// Best-effort retention prune: failure must not fail the send that was
+	// already recorded — the next RecordSend for this user retries it.
+	if _, err := r.pool.Exec(ctx, `
+		DELETE FROM notification_send_ledger
+		WHERE user_id = $1 AND sent_at < $2`,
+		userID, time.Now().UTC().Add(-sendLedgerRetention),
+	); err != nil {
+		slog.WarnContext(ctx, "send ledger retention prune failed",
+			"user_id", userID,
+			"error", err,
+		)
+	}
+	return nil
+}
+
+// CountSendsForType counts ledger rows for one exact notification type on one
+// channel since the given instant. Backs the promotional per-type cooldown.
+func (r *PostgresRepository) CountSendsForType(ctx context.Context, userID, notificationType, channel string, since time.Time) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM notification_send_ledger
+		WHERE user_id = $1 AND notification_type = $2 AND channel = $3 AND sent_at >= $4`,
+		userID, notificationType, channel, since,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count sends for type: %w", err)
+	}
+	return count, nil
+}
+
+// CountSendsMatching counts ledger rows on `channel` since `since` whose
+// notification-type membership in `class` equals `matchClass`. The class
+// arrives as exact names + prefixes (service-side single source of truth);
+// prefixes become escaped LIKE patterns so `_` in a type name stays literal.
+func (r *PostgresRepository) CountSendsMatching(ctx context.Context, userID, channel string, class domain.SendTypeClass, matchClass bool, since time.Time) (int, error) {
+	patterns := make([]string, 0, len(class.Prefixes))
+	for _, prefix := range class.Prefixes {
+		patterns = append(patterns, likePrefixPattern(prefix))
+	}
+
+	var count int
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM notification_send_ledger
+		WHERE user_id = $1 AND channel = $2 AND sent_at >= $3
+		  AND ((notification_type = ANY($4) OR notification_type LIKE ANY($5)) = $6)`,
+		userID, channel, since, class.ExactTypes, patterns, matchClass,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count sends matching class: %w", err)
+	}
+	return count, nil
+}
+
+// likePrefixPattern turns a literal prefix into a LIKE pattern, escaping the
+// LIKE metacharacters so "welcome_day_" matches only a literal underscore
+// (unescaped `_` is a single-character wildcard).
+func likePrefixPattern(prefix string) string {
+	escaper := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return escaper.Replace(prefix) + "%"
 }
 
 func (r *PostgresRepository) GetDeviceTokens(ctx context.Context, userID string) ([]domain.DeviceToken, error) {

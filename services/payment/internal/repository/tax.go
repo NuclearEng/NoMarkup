@@ -6,8 +6,34 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/nomarkup/nomarkup/services/payment/internal/crypto"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
+
+// decryptTaxFormAddress returns the plaintext provider address for a tax-form
+// row read from storage. Detection is PER VALUE (DecryptStringOrPassthrough),
+// never a row flag: a genuine street address is not our wire format and passes
+// through; authenticable ciphertext decrypts; secretbox-shaped bytes no key
+// opens are an error — the raw base64 is never returned to a caller (that is
+// the 1099 leak this helper exists to prevent).
+func (r *PostgresRepository) decryptTaxFormAddress(addr string) (string, error) {
+	if addr == "" {
+		return "", nil
+	}
+	if r.cipher == nil {
+		// No key: we cannot open ciphertext, and emitting a possible nonce is
+		// the failure mode being prevented. Legacy plaintext still passes.
+		if crypto.LooksLikeCiphertext(addr) {
+			return "", fmt.Errorf("%w: no PII cipher configured for tax form provider_address", crypto.ErrKeyMissing)
+		}
+		return addr, nil
+	}
+	plain, err := r.cipher.DecryptStringOrPassthrough(addr)
+	if err != nil {
+		return "", err
+	}
+	return plain, nil
+}
 
 // CreateTaxForm inserts a new tax form record.
 func (r *PostgresRepository) CreateTaxForm(ctx context.Context, tf *domain.TaxForm) error {
@@ -67,6 +93,11 @@ func (r *PostgresRepository) GetTaxForm(ctx context.Context, providerID string, 
 		}
 		return nil, fmt.Errorf("get tax form: %w", err)
 	}
+	plain, derr := r.decryptTaxFormAddress(tf.ProviderAddress)
+	if derr != nil {
+		return nil, fmt.Errorf("get tax form: decrypt provider_address: %w", derr)
+	}
+	tf.ProviderAddress = plain
 	return tf, nil
 }
 
@@ -99,6 +130,14 @@ func (r *PostgresRepository) ListTaxForms(ctx context.Context, providerID string
 		if err != nil {
 			return nil, fmt.Errorf("list tax forms scan: %w", err)
 		}
+		// Decrypt provider_address on read so the LIST projection returns the
+		// same plaintext address as the single-form / generate / download paths.
+		// Fail closed on unopenable ciphertext — never emit the raw base64.
+		plain, derr := r.decryptTaxFormAddress(tf.ProviderAddress)
+		if derr != nil {
+			return nil, fmt.Errorf("list tax forms: decrypt provider_address: %w", derr)
+		}
+		tf.ProviderAddress = plain
 		forms = append(forms, tf)
 	}
 
@@ -145,8 +184,8 @@ func (r *PostgresRepository) GetContractDetail(ctx context.Context, contractID s
 	err := r.pool.QueryRow(ctx, `
 		SELECT c.id, c.contract_number,
 		       COALESCE(j.title, 'Untitled Job'),
-		       COALESCE(cu.first_name || ' ' || cu.last_name, cu.email),
-		       COALESCE(pu.first_name || ' ' || pu.last_name, pu.email),
+		       COALESCE(NULLIF(cu.display_name, ''), cu.email),
+		       COALESCE(NULLIF(pu.display_name, ''), pu.email),
 		       c.amount_cents, c.payment_timing, c.status,
 		       c.accepted_at, c.completed_at, c.created_at
 		FROM contracts c
@@ -168,6 +207,44 @@ func (r *PostgresRepository) GetContractDetail(ctx context.Context, contractID s
 		return nil, fmt.Errorf("get contract detail: %w", err)
 	}
 	return cd, nil
+}
+
+// GetContractForPayment loads the parties + amount of a non-deleted contract so
+// the payment and installment flows can reconcile client-supplied values
+// (amount, provider) against the source of truth instead of trusting the body.
+func (r *PostgresRepository) GetContractForPayment(ctx context.Context, contractID string) (*domain.ContractForPayment, error) {
+	c := &domain.ContractForPayment{}
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, customer_id, provider_id, amount_cents, status,
+		       COALESCE(tip_amount_cents, 0)
+		FROM contracts
+		WHERE id = $1 AND deleted_at IS NULL`, contractID).Scan(
+		&c.ID, &c.CustomerID, &c.ProviderID, &c.AmountCents, &c.Status, &c.TipAmountCents,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get contract for payment: %w", domain.ErrContractNotFound)
+		}
+		return nil, fmt.Errorf("get contract for payment: %w", err)
+	}
+	return c, nil
+}
+
+// SetContractTipIfZero CAS-sets tip_amount_cents only when still 0.
+// Returns true when this call won the race and recorded the tip.
+func (r *PostgresRepository) SetContractTipIfZero(ctx context.Context, contractID string, tipAmountCents int64) (bool, error) {
+	if tipAmountCents <= 0 {
+		return false, fmt.Errorf("set contract tip: amount must be positive")
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE contracts
+		   SET tip_amount_cents = $2, updated_at = now()
+		 WHERE id = $1 AND COALESCE(tip_amount_cents, 0) = 0 AND deleted_at IS NULL`,
+		contractID, tipAmountCents)
+	if err != nil {
+		return false, fmt.Errorf("set contract tip: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // GetMilestonesForContract fetches milestones for a contract.
@@ -241,6 +318,13 @@ func (r *PostgresRepository) GetPaymentsForContract(ctx context.Context, contrac
 }
 
 // GetProviderProfile returns the business name and service address for a provider.
+//
+// Detection is PER VALUE (crypto.DecryptStringOrPassthrough), not per row via
+// pii_encrypted_v1. The flag is a row-level boolean but encryption is a
+// column-level property, so a flagged-TRUE row can still hold a legacy
+// plaintext service_address (or an unflagged row can hold ciphertext). Branching
+// on the flag would either fail DecryptString on plaintext or leak raw
+// secretbox onto the 1099-NEC. Per-value authentication cannot drift that way.
 func (r *PostgresRepository) GetProviderProfile(ctx context.Context, providerID string) (string, string, error) {
 	var businessName, serviceAddress *string
 	err := r.pool.QueryRow(ctx, `
@@ -250,21 +334,15 @@ func (r *PostgresRepository) GetProviderProfile(ctx context.Context, providerID 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Fall back to the users table for the provider name.
-			var firstName, lastName *string
+			var displayName *string
 			err2 := r.pool.QueryRow(ctx, `
-				SELECT first_name, last_name FROM users WHERE id = $1`, providerID).Scan(&firstName, &lastName)
+				SELECT display_name FROM users WHERE id = $1`, providerID).Scan(&displayName)
 			if err2 != nil {
 				return "", "", fmt.Errorf("get provider profile fallback: %w", err2)
 			}
 			name := ""
-			if firstName != nil {
-				name = *firstName
-			}
-			if lastName != nil {
-				if name != "" {
-					name += " "
-				}
-				name += *lastName
+			if displayName != nil {
+				name = *displayName
 			}
 			if name == "" {
 				name = "Provider"
@@ -283,21 +361,19 @@ func (r *PostgresRepository) GetProviderProfile(ctx context.Context, providerID 
 		addr = *serviceAddress
 	}
 
+	plain, decErr := r.decryptTaxFormAddress(addr)
+	if decErr != nil {
+		return "", "", fmt.Errorf("get provider profile: decrypt service_address: %w", decErr)
+	}
+	addr = plain
+
 	// If no business name, fall back to user name.
 	if name == "" {
-		var firstName, lastName *string
+		var displayName *string
 		err2 := r.pool.QueryRow(ctx, `
-			SELECT first_name, last_name FROM users WHERE id = $1`, providerID).Scan(&firstName, &lastName)
-		if err2 == nil {
-			if firstName != nil {
-				name = *firstName
-			}
-			if lastName != nil {
-				if name != "" {
-					name += " "
-				}
-				name += *lastName
-			}
+			SELECT display_name FROM users WHERE id = $1`, providerID).Scan(&displayName)
+		if err2 == nil && displayName != nil {
+			name = *displayName
 		}
 		if name == "" {
 			name = "Provider"

@@ -1,18 +1,26 @@
 'use client';
 
 import { ArrowLeft } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 
+import { BlockButton } from '@/components/chat/BlockButton';
 import { ChannelList } from '@/components/chat/ChannelList';
 import { MessageInput } from '@/components/chat/MessageInput';
 import { MessageThread } from '@/components/chat/MessageThread';
+import { RelayBanner } from '@/components/chat/RelayBanner';
+import { ReportButton } from '@/components/chat/ReportButton';
+import { ShareContactButton } from '@/components/chat/ShareContactButton';
 import { TypingIndicator } from '@/components/chat/TypingIndicator';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageTransition } from '@/components/ui/page-transition';
 import { useChannel } from '@/hooks/useChannels';
+import { useMyBlocks } from '@/hooks/useUserBlocks';
 import { CONNECTION_STATUS } from '@/lib/websocket';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/stores/auth-store';
 import { useChatStore } from '@/stores/chat-store';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -26,6 +34,10 @@ const STATUS_COLOR: Record<string, string> = {
   [CONNECTION_STATUS.CONNECTING]: 'bg-yellow-500',
   [CONNECTION_STATUS.DISCONNECTED]: 'bg-red-500',
 };
+
+/** Loose UUID check for deep-link `?channel=` (fail closed on garbage). */
+const CHANNEL_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function ConnectionStatusDot() {
   const connectionStatus = useChatStore((s) => s.connectionStatus);
@@ -43,12 +55,72 @@ function ConnectionStatusDot() {
 function ActiveThread({ channelId }: { channelId: string }) {
   const { data } = useChannel(channelId);
   const channelStatus = data?.channel.status ?? 'active';
+  const me = useAuthStore((s) => s.user);
+  const blocksQuery = useMyBlocks();
+
+  // The "other party" is whoever isn't us. With both sides redacted,
+  // the BlockButton hides itself.
+  const otherPartyId = (() => {
+    if (!data?.channel || !me) return null;
+    if (data.channel.customer_id === me.id) return data.channel.provider_id;
+    return data.channel.customer_id;
+  })();
+
+  // The other party's display name (resolved by the gateway). Falls back to a
+  // friendly placeholder, never a raw UUID.
+  const otherPartyName = (() => {
+    if (!data?.channel || !me) return null;
+    const name =
+      data.channel.customer_id === me.id
+        ? data.channel.provider_name
+        : data.channel.customer_name;
+    return name && name.trim() ? name : 'Conversation';
+  })();
+
+  // Propose Terms is provider-only (UI gate). Server still enforces party checks
+  // on POST …/proposed-terms; never rely on this alone for authorization.
+  const canProposeTerms =
+    !!me?.id && !!data?.channel?.provider_id && me.id === data.channel.provider_id;
+
+  const isBlocked = (() => {
+    if (!otherPartyId) return false;
+    return (blocksQuery.data?.blocks ?? []).some(
+      (b) => b.blocked_id === otherPartyId,
+    );
+  })();
 
   return (
     <div className="flex h-full flex-col">
+      <RelayBanner />
+      {otherPartyId ? (
+        <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-1.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <div
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-sm font-medium"
+              aria-hidden="true"
+            >
+              {(otherPartyName ?? 'C').charAt(0).toUpperCase()}
+            </div>
+            <span className="truncate text-sm font-medium">{otherPartyName}</span>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-1">
+            <ShareContactButton channelId={channelId} />
+            <ReportButton
+              userId={otherPartyId}
+              displayName={otherPartyName ?? undefined}
+              channelId={channelId}
+            />
+            <BlockButton userId={otherPartyId} isBlocked={isBlocked} />
+          </div>
+        </div>
+      ) : null}
       <MessageThread channelId={channelId} />
-      <TypingIndicator channelId={channelId} />
-      <MessageInput channelId={channelId} channelStatus={channelStatus} />
+      <TypingIndicator channelId={channelId} otherPartyName={otherPartyName} />
+      <MessageInput
+        channelId={channelId}
+        channelStatus={channelStatus}
+        canProposeTerms={canProposeTerms}
+      />
     </div>
   );
 }
@@ -69,6 +141,14 @@ function NoConversationSelected() {
 export default function MessagesPage() {
   const activeChannelId = useChatStore((state) => state.activeChannelId);
   const setActiveChannel = useChatStore((state) => state.setActiveChannel);
+  const searchParams = useSearchParams();
+
+  // FR-8.1 deep-link: /messages?channel=<uuid> opens that thread.
+  useEffect(() => {
+    const channel = searchParams.get('channel')?.trim() ?? '';
+    if (!channel || !CHANNEL_ID_RE.test(channel)) return;
+    setActiveChannel(channel);
+  }, [searchParams, setActiveChannel]);
 
   return (
     <PageTransition>
@@ -100,7 +180,7 @@ export default function MessagesPage() {
         </div>
 
         {/* Main thread area */}
-        <div className={cn('flex-1', activeChannelId ? 'block' : 'hidden md:block')}>
+        <div className={cn('min-w-0 flex-1', activeChannelId ? 'block' : 'hidden md:block')}>
           {activeChannelId ? (
             <div className="flex h-full flex-col">
               {/* Mobile back button */}

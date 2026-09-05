@@ -6,30 +6,19 @@ import (
 
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
-	"github.com/nomarkup/nomarkup/services/payment/internal/service"
-	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// InstallmentServer implements the InstallmentPlanServiceServer gRPC interface.
-type InstallmentServer struct {
-	paymentv1.UnimplementedInstallmentPlanServiceServer
-	svc *service.InstallmentService
-}
+// Installment (BNPL) RPCs. Methods live on *Server so the proto's single
+// PaymentService surface stays intact; the installment domain service is
+// injected via Server.SetInstallmentService.
 
-// NewInstallmentServer creates a new gRPC server for the installment service.
-func NewInstallmentServer(svc *service.InstallmentService) *InstallmentServer {
-	return &InstallmentServer{svc: svc}
-}
-
-// RegisterInstallmentServer registers the installment service with a gRPC server.
-func RegisterInstallmentServer(s *grpclib.Server, srv *InstallmentServer) {
-	paymentv1.RegisterInstallmentPlanServiceServer(s, srv)
-}
-
-func (s *InstallmentServer) CreateInstallmentPlan(ctx context.Context, req *paymentv1.CreateInstallmentPlanRequest) (*paymentv1.CreateInstallmentPlanResponse, error) {
+func (s *Server) CreateInstallmentPlan(ctx context.Context, req *paymentv1.CreateInstallmentPlanRequest) (*paymentv1.CreateInstallmentPlanResponse, error) {
+	if s.installmentSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "installment service not configured")
+	}
 	if req.GetContractId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "contract_id is required")
 	}
@@ -56,7 +45,7 @@ func (s *InstallmentServer) CreateInstallmentPlan(ctx context.Context, req *paym
 		IdempotencyKey:   req.GetIdempotencyKey(),
 	}
 
-	plan, clientSecret, err := s.svc.CreateInstallmentPlan(ctx, input)
+	plan, clientSecret, err := s.installmentSvc.CreateInstallmentPlan(ctx, input)
 	if err != nil {
 		return nil, mapInstallmentError(err)
 	}
@@ -67,12 +56,21 @@ func (s *InstallmentServer) CreateInstallmentPlan(ctx context.Context, req *paym
 	}, nil
 }
 
-func (s *InstallmentServer) GetInstallmentPlan(ctx context.Context, req *paymentv1.GetInstallmentPlanRequest) (*paymentv1.GetInstallmentPlanResponse, error) {
+func (s *Server) GetInstallmentPlan(ctx context.Context, req *paymentv1.GetInstallmentPlanRequest) (*paymentv1.GetInstallmentPlanResponse, error) {
+	if s.installmentSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "installment service not configured")
+	}
 	if req.GetPlanId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "plan_id is required")
 	}
+	// caller_user_id is the gateway-supplied identity from the verified JWT.
+	// It is required so the service can enforce per-plan ownership (an
+	// admin caller still passes caller_is_admin=true to bypass the check).
+	if req.GetCallerUserId() == "" && !req.GetCallerIsAdmin() {
+		return nil, status.Error(codes.InvalidArgument, "caller_user_id is required")
+	}
 
-	plan, err := s.svc.GetInstallmentPlan(ctx, req.GetPlanId())
+	plan, err := s.installmentSvc.GetInstallmentPlan(ctx, req.GetPlanId(), req.GetCallerUserId(), req.GetCallerIsAdmin())
 	if err != nil {
 		return nil, mapInstallmentError(err)
 	}
@@ -82,7 +80,10 @@ func (s *InstallmentServer) GetInstallmentPlan(ctx context.Context, req *payment
 	}, nil
 }
 
-func (s *InstallmentServer) ListInstallmentPlans(ctx context.Context, req *paymentv1.ListInstallmentPlansRequest) (*paymentv1.ListInstallmentPlansResponse, error) {
+func (s *Server) ListInstallmentPlans(ctx context.Context, req *paymentv1.ListInstallmentPlansRequest) (*paymentv1.ListInstallmentPlansResponse, error) {
+	if s.installmentSvc == nil {
+		return nil, status.Error(codes.Unimplemented, "installment service not configured")
+	}
 	if req.GetUserId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "user_id is required")
 	}
@@ -92,7 +93,7 @@ func (s *InstallmentServer) ListInstallmentPlans(ctx context.Context, req *payme
 		statusFilter = *req.StatusFilter
 	}
 
-	plans, _, err := s.svc.ListInstallmentPlans(ctx, req.GetUserId(), statusFilter, 1, 100)
+	plans, _, err := s.installmentSvc.ListInstallmentPlans(ctx, req.GetUserId(), statusFilter, 1, 100)
 	if err != nil {
 		return nil, mapInstallmentError(err)
 	}
@@ -163,12 +164,21 @@ func mapInstallmentError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrInstallmentPlanNotFound):
 		return status.Error(codes.NotFound, "installment plan not found")
+	case errors.Is(err, domain.ErrInstallmentPlanExists):
+		// One active plan per contract. The provider is paid in full on plan
+		// creation, so a duplicate would double-pay — reject as a conflict, not a
+		// 500. AlreadyExists → 409 at the gateway.
+		return status.Error(codes.AlreadyExists, "an active installment plan already exists for this contract")
 	case errors.Is(err, domain.ErrInvalidInstallmentCount):
 		return status.Error(codes.InvalidArgument, "installment count must be 3 or 6")
 	case errors.Is(err, domain.ErrInvalidAmount):
 		return status.Error(codes.InvalidArgument, "invalid amount")
 	case errors.Is(err, domain.ErrStripeAccountNotFound):
-		return status.Error(codes.NotFound, "stripe account not found")
+		// Provider hasn't completed payout (Stripe Connect) onboarding — a
+		// precondition for the immediate provider transfer, not a missing
+		// resource. FailedPrecondition → 422 (consistent with mapAdvanceError),
+		// with a message that doesn't read as "plan not found".
+		return status.Error(codes.FailedPrecondition, "this provider isn't set up to receive installment payments yet")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

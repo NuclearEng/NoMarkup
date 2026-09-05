@@ -100,6 +100,7 @@ export default function AdminReviewsPage() {
     {
       key: 'status',
       header: 'Status',
+      className: 'whitespace-nowrap',
       render: (flag) => (
         <Badge
           variant="outline"
@@ -112,12 +113,14 @@ export default function AdminReviewsPage() {
     {
       key: 'flagged_at',
       header: 'Flagged',
+      className: 'whitespace-nowrap',
       render: (flag) => (
         <span className="text-zinc-300">{formatDate(flag.created_at)}</span>
       ),
     },
     {
       key: 'actions',
+      sticky: true,
       header: 'Actions',
       className: 'text-right',
       render: (flag) => (

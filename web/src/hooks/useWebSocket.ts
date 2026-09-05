@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
 
 import {
+  CONNECTION_STATUS,
   WS_SERVER_MSG,
   wsManager,
   type ConnectionStatus,
@@ -48,13 +49,28 @@ export function useWebSocket(): void {
   }, [isAuthenticated, isHydrating]);
 
   // ─── Listen for connection status changes ───────────────────────
+  // Track whether we've been connected before so we can distinguish the very
+  // first connect from a RECONNECT. On a reconnect, messages/channels may have
+  // changed while we were down (and the socket received nothing), so we refetch
+  // them — the live subscription alone won't backfill the gap (BUG 1).
+  const hasConnectedRef = useRef(false);
   useEffect(() => {
     const unsubscribe = wsManager.onStatusChange((status: ConnectionStatus) => {
       setConnectionStatus(status);
+
+      if (status === CONNECTION_STATUS.CONNECTED) {
+        if (hasConnectedRef.current) {
+          // Reconnect: refetch anything that may have changed while offline.
+          void queryClient.invalidateQueries({ queryKey: ['messages'] });
+          void queryClient.invalidateQueries({ queryKey: ['channels'] });
+          void queryClient.invalidateQueries({ queryKey: ['unread-count'] });
+        }
+        hasConnectedRef.current = true;
+      }
     });
 
     return unsubscribe;
-  }, [setConnectionStatus]);
+  }, [setConnectionStatus, queryClient]);
 
   // ─── Handle incoming WebSocket messages ─────────────────────────
   useEffect(() => {
@@ -77,6 +93,34 @@ export function useWebSocket(): void {
           void queryClient.invalidateQueries({ queryKey: ['channels'] });
           void queryClient.invalidateQueries({ queryKey: ['channel', msg.channel_id] });
           break;
+
+        case WS_SERVER_MSG.READ_RECEIPT: {
+          // Patch peer MarkRead watermark on the channel query so MessageThread
+          // can flip Sent → Seen without waiting for a full channel refetch.
+          const channelKey = ['channel', msg.channel_id] as const;
+          queryClient.setQueryData(channelKey, (prev: unknown) => {
+            if (!prev || typeof prev !== 'object') return prev;
+            const root = prev as { channel?: Record<string, unknown> };
+            const channel = root.channel;
+            if (!channel || typeof channel !== 'object') return prev;
+            const customerId = channel.customer_id;
+            const providerId = channel.provider_id;
+            const next = { ...channel };
+            if (msg.user_id && msg.user_id === customerId && msg.last_read_at) {
+              next.customer_last_read_at = msg.last_read_at;
+            } else if (msg.user_id && msg.user_id === providerId && msg.last_read_at) {
+              next.provider_last_read_at = msg.last_read_at;
+            } else if (msg.last_read_at) {
+              // Role unknown in cache — invalidate so next fetch brings both watermarks.
+              return prev;
+            }
+            return { ...root, channel: next };
+          });
+          // Always invalidate so list previews + stale shapes reconcile.
+          void queryClient.invalidateQueries({ queryKey: ['channel', msg.channel_id] });
+          void queryClient.invalidateQueries({ queryKey: ['channels'] });
+          break;
+        }
       }
     });
 

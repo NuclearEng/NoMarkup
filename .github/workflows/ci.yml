@@ -5,53 +5,82 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Optional nightly: engines-bench-nightly, lighthouse-budget,
+    # e2e-cross-browser (firefox/webkit), k6-smoke (when K6_BASE_URL set),
+    # cdn-ttfb-sample (when CDN_TTFB_BASE_URL set) — 06:00 UTC daily.
+    - cron: "0 6 * * *"
+  # Manual re-run of optional PERF / cross-browser E2E / k6 / CDN TTFB jobs.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.22"
+  GO_VERSION: "1.26.5"
   NODE_VERSION: 22
 
 jobs:
+  # ── Migrations ────────────────────────────────────────────────
+  # Cheap fail-closed gate: duplicate or gapped NNN_* migration numbers
+  # (two branches inventing the same next version). See provisioning-checklist.
+
+  migration-sequence:
+    name: Migration Sequence Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Check migration numbering
+        run: bash scripts/check-migration-sequence.sh
+
   # ── Frontend ──────────────────────────────────────────────────
 
   web-lint-typecheck:
     name: Web Lint & Typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: cd web && npm ci
       - run: cd web && npm run lint
+      # FE-03 — ban arbitrary raw hex in components/app (allowlist for Mapbox/OAuth/OG icons)
+      - run: cd web && npm run check:hex
       - run: cd web && npm run typecheck
+      # catalog.yaml is SSOT; catalog.json must be generated (no drift).
+      - name: Check catalog.json is generated from catalog.yaml
+        run: make check-catalog
 
   web-test:
     name: Web Tests
     needs: web-lint-typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: cd web && npm ci
-      - run: cd web && npm run test -- --coverage --coverage.thresholds.lines=80 --coverage.thresholds.functions=80 --coverage.thresholds.branches=80 --coverage.thresholds.statements=80
+      # Honest coverage gate. Thresholds + `coverage.all` live in
+      # web/vitest.config.mts so the % reflects the WHOLE app, not just
+      # test-touched files (the old inline 93% override measured only touched
+      # files and was misleading). Target is 80% per CLAUDE.md; the config floors
+      # are the current real floor and must RATCHET UP, never down — see TODOS-27.
+      - run: cd web && npm run test -- --coverage
 
   e2e-test:
     name: Playwright E2E Tests
     needs: [web-lint-typecheck]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -62,9 +91,90 @@ jobs:
       - name: Install Playwright browsers
         working-directory: web
         run: npx playwright install --with-deps chromium
+      # Backendless catalog VCR: fixture completeness + mocked API hops.
+      # Required check via `build.needs: e2e-test`. Live stack (SEED_PASSWORD)
+      # is skipped here; mutations still assert via frozen fixtures.
+      - name: Catalog VCR (backendless)
+        working-directory: web
+        run: npx playwright test tests/e2e/catalog --project=chromium
+      # PR/push gate: Chromium only (QA-08). Installs match --project so we do
+      # not run firefox/webkit without browser deps. Specs are backend-tolerant
+      # (no stack in this job). Cross-browser coverage is the optional
+      # e2e-cross-browser job (schedule + workflow_dispatch only).
       - name: Run E2E tests
         working-directory: web
-        run: npx playwright test
+        run: npx playwright test --project=chromium
+
+  # ── Optional cross-browser E2E (QA-08) ─────────────────────────
+  # Firefox + WebKit smoke against the same backendless specs as e2e-test.
+  # Not a PR gate and not in build.needs — nightly + manual dispatch only so
+  # merge is never blocked by engine-specific flakes or longer install time.
+  # fail-fast: false so one browser's failure still surfaces the other.
+
+  e2e-cross-browser:
+    name: Playwright E2E Cross-Browser (${{ matrix.project }})
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+      - name: Install Playwright browsers
+        working-directory: web
+        run: npx playwright install --with-deps ${{ matrix.project }}
+      - name: Run E2E tests (${{ matrix.project }})
+        working-directory: web
+        run: npx playwright test --project=${{ matrix.project }}
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report-${{ matrix.project }}-${{ github.run_id }}
+          path: |
+            web/playwright-report/
+            web/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ── Proto Drift Guard ─────────────────────────────────────────
+  # Ensures generated proto code matches the .proto sources. A broken or
+  # drifted .proto would otherwise hide behind hand-written stand-in files
+  # (audit S8): the Stripe webhook regression on this branch went unnoticed
+  # for weeks because of exactly this failure mode.
+
+  verify-proto:
+    name: Verify Proto Generation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Install protoc + plugins
+        run: |
+          PROTOC_VERSION=34.1
+          curl -sSL -o /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          sudo unzip -o /tmp/protoc.zip -d /usr/local
+          # Pin codegen plugins to the versions that produced the committed
+          # proto/gen stubs (headers: protoc-gen-go v1.36.11, grpc v1.6.1) so the
+          # drift check is deterministic — @latest had bumped grpc to 1.6.2.
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
+      - run: make verify-proto
 
   # ── Go Gateway ────────────────────────────────────────────────
 
@@ -72,13 +182,22 @@ jobs:
     name: Gateway Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: gateway/go.sum
       - run: cd gateway && go vet ./...
+      # QA-02: coverprofile was already written; the gate was missing.
+      # Measured 2026-07-27 (local, -race -count=1): total statements 15.2%
+      # (handler ~12%, middleware ~68%, vault ~78%, router/cmd/cache 0%).
+      # Floor 12% = modest regression bar under measured, ~3pt headroom.
+      # RATCHET UP only (toward 40% then docs' 80%); never lower without a
+      # measured reason. Not the aspirational 80% — whole-module totals are
+      # dragged down by untested handler/router surface.
       - run: cd gateway && go test ./... -race -coverprofile=coverage.out
+      - name: Gateway coverage floor (QA-02)
+        run: scripts/check-go-coverage.sh gateway/coverage.out 12
 
   # ── Go Microservices (matrix) ─────────────────────────────────
 
@@ -90,13 +209,327 @@ jobs:
       matrix:
         service: [user, job, payment, chat, notification]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: services/${{ matrix.service }}/go.sum
       - run: cd services/${{ matrix.service }} && go vet ./...
-      - run: cd services/${{ matrix.service }} && go test ./... -race
+      # QA-02 optional pilot: payment is the money path and the strongest
+      # service-layer culture (~75% service package). Other matrix legs stay
+      # ungated until measured floors are chosen per service.
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          cd "services/${{ matrix.service }}"
+          if [ "${{ matrix.service }}" = "payment" ]; then
+            go test ./... -race -coverprofile=coverage.out
+          else
+            go test ./... -race
+          fi
+      - name: Payment coverage floor (QA-02)
+        if: matrix.service == 'payment'
+        run: |
+          # Measured 2026-07-27 (local, -race -count=1): total statements 41.4%
+          # (service ~74.9%, observability ~73.9%, repository/domain/crypto 0%).
+          # Floor 40% ≈ measured −1.4pt; ratchet toward 50% then 80%.
+          scripts/check-go-coverage.sh services/payment/coverage.out 40
+      # The database module holds a THIRD copy of the geo-coarsening code
+      # (database/cmd/encrypt-pii/geo.go) whose golden-vector guard must
+      # bit-match the other two and the SQL function. CI ran `go run` in
+      # that module but never `go test`, so that guard would never have
+      # executed — a guard that does not run is decoration. Pinned to one
+      # matrix leg so it runs exactly once rather than five times.
+      - name: Database module tests (geo golden vectors)
+        if: matrix.service == 'user'
+        run: cd database && go vet ./... && go test ./... -race
+
+  # ── Go Integration Tests ──────────────────────────────────────
+  # Runs the `//go:build integration` suites that previously never ran in
+  # CI (CLAUDE.md §7 mandates integration coverage). One PostGIS container +
+  # one migration pass, then each module's suite sequentially:
+  #   gateway          — mock-gRPC based, no DB needed
+  #   services/user    — GDPR repo tests against real Postgres
+  #   services/job     — repo/service tests against real Postgres (-short
+  #                      skips the live-gateway bid-race test)
+  #   services/payment — -short skips the live-gateway idempotency test
+  #
+  # QA-11 (documented gap, intentional): services/chat and services/notification
+  # have NO `//go:build integration` packages today. They still run unit/vet in
+  # the services-test matrix above. Do not add empty `go test -tags integration`
+  # steps here — that would greenwash coverage. When real chat/notification
+  # integration suites land, add steps and update docs/conventions.md § testing.
+  #
+  # NOTE: the tests/integration module drives a LIVE full stack over HTTP
+  # (gateway + all services), so it is not runnable here — it runs in the
+  # `fullstack-security-test` job below, which boots the docker-compose stack.
+
+  go-integration-test:
+    name: Go Integration Tests
+    needs: [gateway-test, services-test]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Same image:tag as docker-compose.yml — migrations need PostGIS.
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: nomarkup
+          # Throwaway credential for the ephemeral CI container only.
+          POSTGRES_PASSWORD: nomarkup
+          POSTGRES_DB: nomarkup_itest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nomarkup -d nomarkup_itest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://nomarkup:nomarkup@localhost:5432/nomarkup_itest?sslmode=disable
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: |
+            gateway/go.sum
+            services/user/go.sum
+            services/job/go.sum
+            services/payment/go.sum
+            database/go.sum
+      # Pinned via Go module checksum DB (same integrity model as the pinned
+      # protoc-gen-* installs in verify-proto). v4.19.1 matches the version
+      # validated locally against these migrations.
+      - name: Install golang-migrate (pinned)
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+      - name: Run migrations
+        run: migrate -path database/migrations -database "$DATABASE_URL" up
+      # The job-service auction/lifecycle suites assert against seeded dev
+      # users ("need 2 seed users in DB — run `make seed`"), and the payment
+      # suite's seed accounts use the seeder's local-dev default password.
+      # The @localhost DSN keeps the seeder in local-dev mode; no SEED_*
+      # secrets are needed for an ephemeral CI database.
+      - name: Seed database
+        run: cd database && go run ./cmd/seed
+      # services/user crypto.FromEnv() wants a base64 32-byte ENCRYPTION_KEY;
+      # generate a throwaway one per run (never committed) so every test in
+      # the job shares one key instead of per-process ephemeral fallbacks.
+      - name: Generate throwaway encryption key
+        run: echo "ENCRYPTION_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+      - name: Gateway integration tests
+        run: cd gateway && go test -tags integration -short -count=1 ./...
+      - name: User service integration tests
+        run: cd services/user && go test -tags integration -short -count=1 ./...
+      - name: Job service integration tests
+        run: cd services/job && go test -tags integration -short -count=1 ./...
+      - name: Payment service integration tests
+        run: cd services/payment && go test -tags integration -short -count=1 ./...
+
+  # ── Full-stack Tier-1 security tests ──────────────────────────
+  # The suites in `tests/integration/` are the highest-value tests in the repo
+  # — TestAuthBypass_* (4), TestDoubleSpend_ParallelAwardsCreateOneContract,
+  # TestOwnership_CrossAccountReadIsRejected — and until this job existed they
+  # ran NOWHERE: every file is behind `//go:build integration`, so plain
+  # `go test ./...` reports "matched no packages" and auth-bypass, double-spend
+  # and IDOR were unverified on every commit.
+  #
+  # They drive a LIVE stack over HTTP (tests/integration/common_test.go:5-14),
+  # so this job boots the real docker-compose stack on the runner:
+  #
+  #   infra (postgres/pgbouncer/redis/meilisearch/jaeger) -> wait for real
+  #   readiness -> migrate -> seed -> app services + gateway -> wait for
+  #   gateway /readyz AND the gateway->user gRPC login path -> run the suites.
+  #
+  # Scope (QA-11 honesty): `web`, `chat`, `imaging` and `minio` are deliberately
+  # NOT started — no Tier-1 suite touches them, the gateway dials backends lazily,
+  # and skipping imaging avoids pulling in minio. `notification` IS started
+  # (compose/build list) but has no dedicated integration package under
+  # services/notification; coverage is unit-only + whatever gateway paths exercise
+  # it. The Rust engines all come out of the one multi-target engines.Dockerfile,
+  # which compiles the workspace once, so the extra engines cost almost nothing
+  # on top of the first.
+  #
+  # Cost: this is the long pole of CI (Docker build of 5 Go services + the Rust
+  # workspace). That is the price of the Tier-1 security tests actually running;
+  # "we know it's untested" is not the same as tested.
+
+  fullstack-security-test:
+    name: Full-Stack Tier-1 Security Tests
+    needs: [gateway-test, services-test, engines-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Both compose files for every `docker compose` invocation in this job.
+      # The project directory is the first file's directory (repo root), so the
+      # overlay living under tests/integration/ does not move build contexts.
+      COMPOSE_FILE: docker-compose.yml:tests/integration/docker-compose.ci.yml
+      COMPOSE_PROJECT_NAME: nomarkup-ci
+      # engines.Dockerfile uses `# syntax=docker/dockerfile:1` and
+      # `--mount=type=cache`, which require BuildKit. It is the default on
+      # current runners; set explicitly so a daemon-default change can't
+      # silently break the build.
+      DOCKER_BUILDKIT: "1"
+      # Host-side DSN. docker-compose.yml publishes postgres on 5433 (not 5432)
+      # and uses the throwaway `nomarkup:password` credential for the ephemeral
+      # local/CI database only. The @localhost host matters twice over: it is
+      # what tests/integration/common_test.go:44-49 expects, and it keeps
+      # database/cmd/seed in local-dev mode so the seeded accounts get the
+      # well-known dev password the suite logs in with (no SEED_PASSWORD
+      # secret needed for a throwaway database).
+      DATABASE_URL: postgres://nomarkup:password@localhost:5433/nomarkup?sslmode=disable
+      # common_test.go defaults to :8081 (the bin/dev layout); compose publishes
+      # the gateway on :8080.
+      NOMARKUP_GATEWAY_URL: http://localhost:8080
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: |
+            tests/integration/go.sum
+            services/payment/go.sum
+            database/go.sum
+
+      # keys/ is gitignored (.gitignore:30) and bind-mounted into the user +
+      # gateway containers by docker-compose.yml, so CI must mint its own.
+      - name: Generate throwaway JWT keypair
+        run: |
+          set -euo pipefail
+          mkdir -p keys
+          openssl genrsa -out keys/private.pem 4096
+          openssl rsa -in keys/private.pem -pubout -out keys/public.pem
+          # The containers run as uid 10001 (deploy/docker/user.Dockerfile:41-44,
+          # gateway.Dockerfile:41-44); openssl's default 0600 would make the
+          # bind-mounted key unreadable inside them.
+          chmod 0644 keys/private.pem keys/public.pem
+          # Lets TestAuthBypass_ExpiredJWTRejected mint a validly-signed but
+          # expired token instead of t.Skip()-ing (common_test.go:167-185).
+          echo "JWT_PRIVATE_KEY_PATH=${GITHUB_WORKSPACE}/keys/private.pem" >> "$GITHUB_ENV"
+
+      # Both are `${VAR:-}` in docker-compose.yml, i.e. EMPTY unless exported
+      # here, and both are startup-fatal:
+      #   SESSION_SECRET        — services/user/cmd/server/main.go:133-137
+      #   STRIPE_WEBHOOK_SECRET — services/payment/cmd/server/main.go:144-148
+      # Generated fresh per run; never committed, never reused.
+      - name: Generate throwaway stack secrets
+        run: |
+          set -euo pipefail
+          {
+            echo "SESSION_SECRET=$(openssl rand -hex 32)"
+            echo "STRIPE_WEBHOOK_SECRET=whsec_$(openssl rand -hex 24)"
+          } >> "$GITHUB_ENV"
+
+      - name: Build stack images
+        run: |
+          set -euo pipefail
+          docker compose build --progress plain \
+            gateway user job payment notification \
+            bidding fraud trust underwriting pricing
+
+      - name: Start infrastructure
+        run: docker compose up -d --no-deps postgres pgbouncer redis meilisearch jaeger
+
+      # Real readiness, never `sleep N`. Each probe uses a tool guaranteed to
+      # exist where it runs (inside the container for pg/redis/pgbouncer, on the
+      # runner for HTTP) and fails with an ::error:: naming the component.
+      - name: Wait for infrastructure
+        run: |
+          set -euo pipefail
+          wait_for() { # name  attempts  cmd...
+            local name="$1" tries="$2"; shift 2
+            local i
+            for i in $(seq 1 "$tries"); do
+              if "$@" >/dev/null 2>&1; then
+                echo "ready: ${name} (attempt ${i})"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "::error::${name} never became ready after $((tries * 2))s"
+            return 1
+          }
+          wait_for postgres    60 docker compose exec -T postgres pg_isready -U nomarkup -d nomarkup
+          wait_for pgbouncer   60 docker compose exec -T pgbouncer pg_isready -h 127.0.0.1 -p 5432
+          wait_for redis       30 docker compose exec -T redis redis-cli ping
+          wait_for meilisearch 60 curl -fsS http://localhost:7700/health
+
+      # Same pinned migrate version as go-integration-test.
+      - name: Install golang-migrate (pinned)
+        run: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1
+      - name: Run migrations
+        run: migrate -path database/migrations -database "$DATABASE_URL" up
+      # Seeds the accounts the suite logs in as (admin/customer/provider/
+      # provider2), the plumbing category + property the double-spend test
+      # posts against, and the contracts the ownership + payment-idempotency
+      # tests look for.
+      - name: Seed database
+        run: cd database && go run ./cmd/seed
+
+      - name: Start application services
+        run: |
+          set -euo pipefail
+          # --no-deps: infra is already up and verified above. It also stops
+          # compose from pulling in `imaging` -> `minio`, which no Tier-1 test
+          # touches. Backend gRPC dials are lazy, so the gateway boots fine
+          # without chat/imaging.
+          docker compose up -d --no-deps \
+            notification user job payment bidding fraud trust underwriting pricing
+          docker compose up -d --no-deps gateway
+          docker compose ps
+
+      - name: Wait for gateway and user service
+        run: |
+          set -euo pipefail
+          # 1. Gateway process + its own Postgres/Redis dependencies
+          #    (gateway/internal/router/router.go:147 readinessHandler).
+          code=""
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/readyz || true)
+            [ "$code" = "200" ] && { echo "gateway /readyz 200 (attempt ${i})"; break; }
+            [ "$i" -eq 90 ] && { echo "::error::gateway /readyz never returned 200 (last=${code})"; exit 1; }
+            sleep 2
+          done
+          # 2. The gateway -> user-service gRPC path, which /readyz does NOT
+          #    cover. A deliberately bogus account must come back 401/404
+          #    (writeGRPCError maps Unauthenticated->401, NotFound->404); while
+          #    the user service is unreachable the same call is 503
+          #    (codes.Unavailable). No real credential is used by this probe.
+          for i in $(seq 1 90); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H 'Content-Type: application/json' \
+              -d '{"email":"readiness-probe@invalid.test","password":"readiness-probe-not-a-credential"}' \
+              http://localhost:8080/api/v1/auth/login || true)
+            case "$code" in
+              401|404) echo "gateway->user login path live (attempt ${i}, status ${code})"; break ;;
+            esac
+            [ "$i" -eq 90 ] && { echo "::error::gateway->user login path not ready (last=${code})"; exit 1; }
+            sleep 2
+          done
+
+      # The whole point of this job: auth bypass, double spend, IDOR.
+      - name: Tier-1 security suites (auth bypass / double spend / ownership)
+        run: cd tests/integration && go test -tags=integration -count=1 -timeout=20m -v ./...
+
+      # TestIdempotency_PaymentDoubleSubmit lives in services/payment behind the
+      # same `integration` tag but is a LIVE-STACK test (it logs in through the
+      # gateway and POSTs /api/v1/payments five times —
+      # services/payment/internal/service/idempotency_test.go:96-142). It is
+      # skipped by -short in go-integration-test and never compiled at all by
+      # money-race-tests, so this is the only place it actually executes.
+      - name: Payment idempotency (live stack)
+        run: |
+          cd services/payment
+          go test -tags integration -race -run 'Idempotency' -count=1 -timeout=10m ./internal/service/...
+
+      - name: Stack state on failure
+        if: failure()
+        run: |
+          docker compose ps -a || true
+          docker compose logs --no-color --timestamps --tail 400 || true
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v --remove-orphans || true
 
   # ── Rust Engines ──────────────────────────────────────────────
 
@@ -104,100 +537,616 @@ jobs:
     name: Rust Engine Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      # SHA-pinned: the toolchain can no longer come from the ref name
+      # (@stable), so it MUST be passed via the `toolchain` input (required at v1).
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
+          toolchain: stable
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: engines
+      # The engines' build.rs uses prost-build, which shells out to protoc at
+      # compile time — clippy/test fail with "Could not find protoc" without it.
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=34.1
+          curl -sSL -o /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          sudo unzip -o /tmp/protoc.zip -d /usr/local
       - run: cd engines && cargo fmt --all -- --check
       - run: cd engines && cargo clippy --all-targets -- -D warnings
       - run: cd engines && cargo test --all
+
+  # ── Optional nightly cargo bench (performance budgets) ────────
+  # Not a PR gate — schedule only. Fails soft if no bench harness is wired.
+
+  engines-bench-nightly:
+    name: Rust Engine Benches (nightly)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: engines
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=34.1
+          curl -sSL -o /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          sudo unzip -o /tmp/protoc.zip -d /usr/local
+      - name: cargo bench
+        run: |
+          set -euo pipefail
+          cd engines
+          cargo bench --all -- --quick || {
+            echo "::warning::cargo bench failed or no benches defined — not blocking PR CI"
+            exit 0
+          }
+
+  # ── Money-path race / idempotency tests (in-process) ──────────
+  # Focused payment-service suite: concurrent access, double-submit and
+  # idempotency regressions that run entirely in-process against fakes —
+  # TestReleaseEscrow_Concurrent_ExactlyOneTransfer,
+  # TestCreateRefund_Concurrent_{No,Partial}OverRefund,
+  # TestProcessPayment_Concurrent_ExactlyOneCapture, the deterministic
+  # Stripe-key tests, TestDevStore_ConcurrentAccess. No database, no stack.
+  #
+  # `-tags integration` is passed deliberately even though nothing tagged runs
+  # here: without it, idempotency_test.go is not part of the build at all, so a
+  # compile error or signature drift in the one test named after this job's
+  # purpose would go unnoticed until the full-stack job ran. `-short` then makes
+  # it skip at runtime (idempotency_test.go:97-99) because it needs a live
+  # gateway + seeded contract, not just a DATABASE_URL — giving it a Postgres
+  # service container here would NOT be enough. It executes for real in
+  # `fullstack-security-test`.
+
+  money-race-tests:
+    name: Payment Money Race Tests (in-process)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: services/payment/go.sum
+      - name: Money race / idempotency tests
+        run: |
+          set -euo pipefail
+          cd services/payment
+          go test ./internal/service/ -tags integration -short -race \
+            -run 'Concurrent|Race|Double|Idempotency' -count=1 -timeout=10m
+
+  # ── Optional k6 smoke against staging/edge (PERF-10 Partial) ──
+  # Public-catalog smoke only (`tests/load/smoke.js`). Not a PR gate, not in
+  # `build` needs, not capacity proof. Runs on schedule + workflow_dispatch
+  # only when repo variable `K6_BASE_URL` (or secret `K6_BASE_URL`) is set;
+  # otherwise the job no-ops successfully so default CI stays green without
+  # a live stack. Full load profiles (jobs/bids/search/…) stay local/manual.
+  # Promote PERF-10 to Done only with real staging load artifacts + thresholds.
+
+  k6-smoke:
+    name: k6 Smoke (PERF-10)
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Soft-fail: missing staging or flaky edge must not break the workflow run
+    # identity. When BASE_URL is set, failures still show as job failed (orange
+    # X on the job) while continue-on-error keeps the overall workflow green.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Resolve BASE_URL
+        id: target
+        env:
+          # Prefer non-secret repo variable (staging URL is not a credential).
+          # Secret fallback for orgs that only expose secrets to Actions.
+          K6_BASE_URL_VAR: ${{ vars.K6_BASE_URL }}
+          K6_BASE_URL_SECRET: ${{ secrets.K6_BASE_URL }}
+        run: |
+          set -euo pipefail
+          BASE="${K6_BASE_URL_VAR:-}"
+          if [ -z "${BASE}" ]; then
+            BASE="${K6_BASE_URL_SECRET:-}"
+          fi
+          # Normalize: strip trailing slashes so paths never become //healthz.
+          BASE="${BASE%/}"
+          mkdir -p artifacts/k6
+          if [ -z "${BASE}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "# k6 smoke skipped (PERF-10)"
+              echo
+              echo "\`K6_BASE_URL\` (repo var or secret) is unset."
+              echo "Set it to a public staging/edge API base URL to enable this optional job."
+              echo
+              echo "This skip is intentional — default CI stays green without a live stack."
+            } > artifacts/k6/SKIPPED.md
+            echo "K6_BASE_URL unset — skipping k6 smoke (PERF-10 optional; set repo var K6_BASE_URL to enable)."
+            {
+              echo "## k6 smoke (PERF-10)"
+              echo "Skipped: \`K6_BASE_URL\` unset."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            # Do not echo the full URL (may include staging host); host-only for summary.
+            HOST="$(printf '%s' "$BASE" | sed -E 's#^[a-zA-Z]+://##' | cut -d/ -f1)"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "base_url=${BASE}" >> "$GITHUB_OUTPUT"
+            echo "host=${HOST}" >> "$GITHUB_OUTPUT"
+            echo "Running k6 smoke against configured BASE_URL (host=${HOST})."
+            {
+              echo "## k6 smoke (PERF-10)"
+              echo "Target host: \`${HOST}\`"
+              echo
+              echo "Script: \`tests/load/smoke.js\` (1 VU × 5 iter, public GETs only)."
+              echo "Not capacity proof; thresholds are availability-oriented only."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Install k6
+        if: steps.target.outputs.skip != 'true'
+        env:
+          K6_VERSION: v0.54.0
+        run: |
+          set -euo pipefail
+          ARCHIVE="k6-${K6_VERSION}-linux-amd64.tar.gz"
+          curl -sSL -o "/tmp/${ARCHIVE}" \
+            "https://github.com/grafana/k6/releases/download/${K6_VERSION}/${ARCHIVE}"
+          # Basic integrity: non-empty gzip that extracts a k6 binary.
+          test -s "/tmp/${ARCHIVE}"
+          tar -xzf "/tmp/${ARCHIVE}" -C /tmp
+          test -x "/tmp/k6-${K6_VERSION}-linux-amd64/k6"
+          sudo mv "/tmp/k6-${K6_VERSION}-linux-amd64/k6" /usr/local/bin/k6
+          k6 version | tee artifacts/k6/k6-version.txt
+      - name: Preflight healthz
+        if: steps.target.outputs.skip != 'true'
+        id: preflight
+        env:
+          BASE_URL: ${{ steps.target.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          # Cheap reachability check so k6 failures distinguish "down" vs threshold.
+          CODE="$(curl -sS -o /dev/null -w '%{http_code}' -m 15 "${BASE_URL}/healthz" || echo "000")"
+          echo "http_code=${CODE}" >> "$GITHUB_OUTPUT"
+          echo "preflight /healthz → HTTP ${CODE}" | tee artifacts/k6/preflight.txt
+          if [ "${CODE}" != "200" ]; then
+            echo "Preflight non-200; k6 smoke will still run and surface check failures." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: k6 smoke (public catalog)
+        if: steps.target.outputs.skip != 'true'
+        id: k6run
+        env:
+          BASE_URL: ${{ steps.target.outputs.base_url }}
+          # Optional real token for future authed smokes; smoke.js is public-only today.
+          AUTH_TOKEN: ${{ secrets.K6_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/k6
+          set +e
+          K6_ARGS=(
+            run
+            --summary-export=artifacts/k6/smoke-summary.json
+            -e "BASE_URL=${BASE_URL}"
+          )
+          if [ -n "${AUTH_TOKEN:-}" ]; then
+            K6_ARGS+=(-e "AUTH_TOKEN=${AUTH_TOKEN}")
+          fi
+          k6 "${K6_ARGS[@]}" tests/load/smoke.js 2>&1 | tee artifacts/k6/console.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=${RC}" >> "$GITHUB_OUTPUT"
+          {
+            echo "# k6 smoke artifact (PERF-10)"
+            echo
+            echo "| File | Contents |"
+            echo "|------|----------|"
+            echo "| \`smoke-summary.json\` | k6 \`--summary-export\` thresholds + metrics |"
+            echo "| \`console.log\` | Full k6 stdout/stderr |"
+            echo "| \`preflight.txt\` | curl /healthz status before k6 |"
+            echo "| \`k6-version.txt\` | binary version |"
+            echo "| \`README.md\` | This file |"
+            echo
+            echo "- **Exit code:** ${RC}"
+            echo "- **Preflight /healthz:** ${{ steps.preflight.outputs.http_code }}"
+            echo "- **Host:** \`${{ steps.target.outputs.host }}\`"
+            echo
+            echo "Not capacity proof. Full profiles under \`tests/load/\` are manual."
+          } > artifacts/k6/README.md
+          {
+            echo ""
+            echo "### Result"
+            echo "- k6 exit: \`${RC}\`"
+            echo "- Artifact: \`k6-smoke-${{ github.run_id }}\` (14d retention)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "${RC}"
+      - name: Upload k6 smoke artifact
+        # Always upload when we intended to run (or skip note for audit).
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: k6-smoke-${{ github.run_id }}
+          path: artifacts/k6/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ── Optional CDN / TTFB JSON sample (PERF-13 Partial) ─────────
+  # Measurement recipe against a configured public API base. Not a PR gate,
+  # not capacity proof, not field RUM. Runs on schedule + workflow_dispatch
+  # when `CDN_TTFB_BASE_URL` (var or secret) is set; otherwise no-ops.
+  # Soft TTFB budget is report-only; non-2xx HTTP fails the job step
+  # (continue-on-error keeps the workflow green).
+
+  cdn-ttfb-sample:
+    name: CDN TTFB Sample (PERF-13)
+    if: >
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Resolve BASE_URL
+        id: target
+        env:
+          CDN_TTFB_BASE_URL_VAR: ${{ vars.CDN_TTFB_BASE_URL }}
+          CDN_TTFB_BASE_URL_SECRET: ${{ secrets.CDN_TTFB_BASE_URL }}
+          # Optional fallback: reuse k6 staging URL when CDN-specific var unset.
+          K6_BASE_URL_VAR: ${{ vars.K6_BASE_URL }}
+          K6_BASE_URL_SECRET: ${{ secrets.K6_BASE_URL }}
+        run: |
+          set -euo pipefail
+          BASE="${CDN_TTFB_BASE_URL_VAR:-}"
+          if [ -z "${BASE}" ]; then
+            BASE="${CDN_TTFB_BASE_URL_SECRET:-}"
+          fi
+          if [ -z "${BASE}" ]; then
+            BASE="${K6_BASE_URL_VAR:-}"
+          fi
+          if [ -z "${BASE}" ]; then
+            BASE="${K6_BASE_URL_SECRET:-}"
+          fi
+          BASE="${BASE%/}"
+          mkdir -p artifacts/cdn-ttfb
+          if [ -z "${BASE}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "# CDN TTFB sample skipped (PERF-13)"
+              echo
+              echo "No \`CDN_TTFB_BASE_URL\` (or fallback \`K6_BASE_URL\`) configured."
+              echo "Set a public edge/API base URL to enable optional CI sampling."
+            } > artifacts/cdn-ttfb/SKIPPED.md
+            echo "CDN_TTFB_BASE_URL unset — skipping (PERF-13 optional)."
+            {
+              echo "## CDN TTFB sample (PERF-13)"
+              echo "Skipped: no base URL configured."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            HOST="$(printf '%s' "$BASE" | sed -E 's#^[a-zA-Z]+://##' | cut -d/ -f1)"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "base_url=${BASE}" >> "$GITHUB_OUTPUT"
+            echo "host=${HOST}" >> "$GITHUB_OUTPUT"
+            {
+              echo "## CDN TTFB sample (PERF-13)"
+              echo "Target host: \`${HOST}\`"
+              echo
+              echo "Script: \`scripts/cdn-ttfb-sample.sh\` → \`artifacts/cdn-ttfb/\`."
+              echo "Soft TTFB budget is report-only; not live CDN proof unless this host is edge."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Sample public JSON TTFB
+        if: steps.target.outputs.skip != 'true'
+        env:
+          BASE_URL: ${{ steps.target.outputs.base_url }}
+          # Fewer samples in CI than local default (20) to keep the job short.
+          SAMPLES: "10"
+          WARM: "1"
+          BUDGET_TTFB_MS: "100"
+          ARTIFACT_DIR: artifacts/cdn-ttfb
+        run: |
+          set -euo pipefail
+          chmod +x scripts/cdn-ttfb-sample.sh
+          # Non-zero on HTTP health fail only; budget overshoot is soft.
+          ./scripts/cdn-ttfb-sample.sh --artifact-dir artifacts/cdn-ttfb
+      - name: Upload CDN TTFB artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cdn-ttfb-${{ github.run_id }}
+          path: artifacts/cdn-ttfb/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ── Optional Lighthouse budgets (PERF-02 Partial) ─────────────
+  # Lab Lighthouse against a production `next start` for `/`, `/marketplace`,
+  # `/jobs`. Thresholds in web/lighthouserc.cjs are **regression floors**
+  # (loose — lab LCP is multi-second today), not North Star. Not a hard PR
+  # gate: continue-on-error on pull_request; schedule/workflow_dispatch fail
+  # the job when floors break so nightly still signals. Does NOT join the
+  # `build` needs chain. Reports always uploaded as `lighthouse-reports-<run_id>`.
+
+  lighthouse-budget:
+    name: Lighthouse Budget (PERF-02)
+    # Run on PR for signal, nightly via existing workflow schedule, and
+    # manual dispatch. Skip pure `push` to main to avoid doubling cost with
+    # the PR run that already landed (push after merge still has schedule).
+    if: >
+      github.event_name == 'pull_request' ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch'
+    # Partial: never block merge. Nightly hard-fails for visibility.
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+      # Same Chromium + system deps as e2e-test; run-lighthouse-ci.mjs sets
+      # CHROME_PATH from Playwright when system Chrome is absent.
+      - name: Install Playwright Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Prepare report directories
+        working-directory: web
+        run: |
+          set -euo pipefail
+          # Ensure upload paths exist even if LHCI aborts before filesystem upload.
+          mkdir -p lighthouse-reports .lighthouseci
+          {
+            echo "# Lighthouse CI reports (PERF-02)"
+            echo
+            echo "Produced by \`npm run lighthouse:ci\` (\`@lhci/cli\` + \`scripts/run-lighthouse-ci.mjs\`)."
+            echo
+            echo "| Path | Contents |"
+            echo "|------|----------|"
+            echo "| \`lighthouse-reports/\` | HTML + JSON per URL + \`manifest.json\` (LHCI filesystem upload) |"
+            echo "| \`.lighthouseci/\` | Raw LHR copies + \`assertion-results.json\` |"
+            echo
+            echo "**Floors (honest Partial):** performance ≥ 0.30, a11y ≥ 0.70, LCP ≤ 12s, CLS ≤ 0.50."
+            echo "Not North Star. Not field RUM. PR runs are soft-fail; schedule hard-fails floors."
+          } > lighthouse-reports/README.md
+      - name: Lighthouse CI (/, /marketplace, /jobs)
+        id: lhci
+        working-directory: web
+        env:
+          # Wrapper builds into .next-lhci (isolated from any default .next),
+          # boots standalone server.js on LHCI_PORT, asserts floors in
+          # lighthouserc.cjs. Placeholders satisfy production env fail-fast;
+          # public routes fail-soft without a live gateway.
+          LHCI_FORCE_BUILD: "1"
+          LHCI_NUMBER_OF_RUNS: "1"
+          LHCI_PORT: "3011"
+          NEXT_DIST_DIR: .next-lhci
+          API_URL: http://127.0.0.1:8080
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:8080
+          NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3011
+          NEXT_PUBLIC_MAPBOX_TOKEN: pk.lhci_placeholder_not_a_real_token
+          NEXT_PUBLIC_WS_URL: ws://127.0.0.1:8080
+        run: npm run lighthouse:ci
+      - name: Inventory Lighthouse reports
+        if: always()
+        working-directory: web
+        run: |
+          set -euo pipefail
+          {
+            echo "## Lighthouse budget (PERF-02)"
+            echo
+            echo "Artifact: \`lighthouse-reports-${{ github.run_id }}\` (14-day retention)."
+            echo
+            echo "### Regression floors (asserted)"
+            echo "| Metric | Floor |"
+            echo "|--------|-------|"
+            echo "| Performance | ≥ 0.30 |"
+            echo "| Accessibility | ≥ 0.70 |"
+            echo "| LCP (lab) | ≤ 12s |"
+            echo "| CLS (lab) | ≤ 0.50 |"
+            echo
+            echo "Not North Star. Not field RUM."
+            echo
+            echo "### Report files"
+            echo '```'
+            find lighthouse-reports .lighthouseci -type f 2>/dev/null | sort || true
+            echo '```'
+            if [ -f lighthouse-reports/manifest.json ]; then
+              echo
+              echo "\`manifest.json\` present."
+            else
+              echo
+              echo "⚠️ \`manifest.json\` missing — LHCI may have failed before filesystem upload."
+            fi
+            if [ -f .lighthouseci/assertion-results.json ]; then
+              echo
+              echo "### Assertion results"
+              echo '```json'
+              head -c 8000 .lighthouseci/assertion-results.json || true
+              echo
+              echo '```'
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY" > lighthouse-reports/CI_INVENTORY.md
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lighthouse-reports-${{ github.run_id }}
+          path: |
+            web/lighthouse-reports/
+            web/.lighthouseci/
+          # Warn (not error): early abort before collect still uploads README + inventory.
+          if-no-files-found: warn
+          retention-days: 14
 
   # ── Build & Docker Images ────────────────────────────────────
 
   build:
     name: Build All
-    needs: [web-test, e2e-test, gateway-test, services-test, engines-test]
+    # go-integration-test and fullstack-security-test transitively require
+    # gateway-test + services-test (+ engines-test), giving the CLAUDE.md §10
+    # order: lint → unit → integration → build. verify-proto,
+    # money-race-tests and the Tier-1 auth-bypass / double-spend / IDOR suites
+    # are hard gates before any image is built.
+    #
+    # QA-10 — security-scan is intentionally NOT listed here:
+    #   • Scanners live in `.github/workflows/security-scan.yml` (separate
+    #     workflow: PR + weekly cron for CVEs without code changes).
+    #   • GitHub Actions `needs` cannot reference jobs in another workflow.
+    #   • Folding scanners into this DAG would block "Build All" on
+    #     cargo-audit install + govulncheck×6 on every PR path of an already
+    #     long CI graph (fullstack-security-test timeout 90m is the long pole).
+    # Merge gate for scanners = branch protection required check
+    # **"Security Gate"** (security-scan.yml). That setting is Founder-Action
+    # (GitHub UI / API only — not enforceable from this YAML). See also
+    # docs/conventions.md “Security scan / dependency policy” and the tracker
+    # row QA-10. Do not claim dependency audits block merge until that check
+    # is required on `main`.
+    needs:
+      - web-test
+      - e2e-test
+      - go-integration-test
+      - fullstack-security-test
+      - engines-test
+      - verify-proto
+      - money-race-tests
     runs-on: ubuntu-latest
+    # packages:write required for main-branch GHCR push via GITHUB_TOKEN
+    # (OPS-21). contents:read is the default we keep explicit.
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # ── Build verification (non-Docker) ──
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: cd web && npm ci && npm run build
+      # PERF-07 / PERF-08: First Load JS budgets (shared ≤190 kB, routes ≤300 kB
+      # with documented allowlist). Runs only here, after a production next build
+      # — web-lint/web-test/e2e do not produce .next production manifests.
+      - name: Check First Load JS budgets (PERF-07)
+        run: node web/scripts/check-bundle-size.mjs
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: ${{ env.GO_VERSION }}
+          # setup-go caches by default (since v4); without a path it looks for a
+          # repo-root go.sum that doesn't exist in this monorepo.
+          cache-dependency-path: gateway/go.sum
       - run: cd gateway && go build ./cmd/server
 
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: engines
+      # Same as engines-test: prost build.rs needs protoc at compile time.
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=34.1
+          curl -sSL -o /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          sudo unzip -o /tmp/protoc.zip -d /usr/local
       - run: cd engines && cargo build --release
 
       # ── Docker image builds ──
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
+      # The Rust engines share ONE multi-target Dockerfile (engines.Dockerfile,
+      # third field = build target) — per-engine Dockerfiles do not exist.
       - name: Build Docker images (PR — no push)
         if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
           images=(
-            "web:deploy/docker/web.Dockerfile"
-            "gateway:deploy/docker/gateway.Dockerfile"
-            "user:deploy/docker/user.Dockerfile"
-            "job:deploy/docker/job.Dockerfile"
-            "payment:deploy/docker/payment.Dockerfile"
-            "chat:deploy/docker/chat.Dockerfile"
-            "notification:deploy/docker/notification.Dockerfile"
-            "bidding:deploy/docker/bidding.Dockerfile"
-            "fraud:deploy/docker/fraud.Dockerfile"
-            "trust:deploy/docker/trust.Dockerfile"
-            "imaging:deploy/docker/imaging.Dockerfile"
+            "web:deploy/docker/web.Dockerfile:"
+            "gateway:deploy/docker/gateway.Dockerfile:"
+            "user:deploy/docker/user.Dockerfile:"
+            "job:deploy/docker/job.Dockerfile:"
+            "payment:deploy/docker/payment.Dockerfile:"
+            "chat:deploy/docker/chat.Dockerfile:"
+            "notification:deploy/docker/notification.Dockerfile:"
+            "bidding:deploy/docker/engines.Dockerfile:bidding"
+            "fraud:deploy/docker/engines.Dockerfile:fraud"
+            "trust:deploy/docker/engines.Dockerfile:trust"
+            "imaging:deploy/docker/engines.Dockerfile:imaging"
+            "underwriting:deploy/docker/engines.Dockerfile:underwriting"
+            "pricing:deploy/docker/engines.Dockerfile:pricing"
           )
           for entry in "${images[@]}"; do
             name="${entry%%:*}"
-            dockerfile="${entry#*:}"
+            rest="${entry#*:}"
+            dockerfile="${rest%%:*}"
+            target="${rest#*:}"
+            args=(-f "${dockerfile}" -t "nomarkup/${name}:ci")
+            if [ -n "${target}" ]; then args+=(--target "${target}"); fi
             echo "::group::Building nomarkup/${name}"
-            docker build -f "${dockerfile}" -t "nomarkup/${name}:ci" .
+            docker build "${args[@]}" .
             echo "::endgroup::"
           done
 
-      - name: Build & push Docker images (main — push to registry)
+      # OPS-21: real registry login + push on main (not build-only theater).
+      # Default path is GHCR with GITHUB_TOKEN (packages:write above) — no
+      # extra secrets. Optional overrides for a private/external registry:
+      #   vars.DOCKER_REGISTRY       (default ghcr.io)
+      #   vars.DOCKER_IMAGE_PREFIX   (default <owner>/nomarkup — same as deploy.yml)
+      #   secrets.REGISTRY_USERNAME  (default github.actor)
+      #   secrets.REGISTRY_PASSWORD  (default GITHUB_TOKEN)
+      # Tags: :<sha8> only (release tags stay on deploy.yml / v* pushes).
+      - name: Log in to container registry
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ vars.DOCKER_REGISTRY || 'ghcr.io' }}
+          username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+
+      - name: Build & push Docker images (main)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         env:
           REGISTRY: ${{ vars.DOCKER_REGISTRY || 'ghcr.io' }}
-          IMAGE_PREFIX: ${{ github.repository }}
+          IMAGE_PREFIX: ${{ vars.DOCKER_IMAGE_PREFIX || format('{0}/nomarkup', github.repository_owner) }}
         run: |
           set -euo pipefail
           images=(
-            "web:deploy/docker/web.Dockerfile"
-            "gateway:deploy/docker/gateway.Dockerfile"
-            "user:deploy/docker/user.Dockerfile"
-            "job:deploy/docker/job.Dockerfile"
-            "payment:deploy/docker/payment.Dockerfile"
-            "chat:deploy/docker/chat.Dockerfile"
-            "notification:deploy/docker/notification.Dockerfile"
-            "bidding:deploy/docker/bidding.Dockerfile"
-            "fraud:deploy/docker/fraud.Dockerfile"
-            "trust:deploy/docker/trust.Dockerfile"
-            "imaging:deploy/docker/imaging.Dockerfile"
+            "web:deploy/docker/web.Dockerfile:"
+            "gateway:deploy/docker/gateway.Dockerfile:"
+            "user:deploy/docker/user.Dockerfile:"
+            "job:deploy/docker/job.Dockerfile:"
+            "payment:deploy/docker/payment.Dockerfile:"
+            "chat:deploy/docker/chat.Dockerfile:"
+            "notification:deploy/docker/notification.Dockerfile:"
+            "bidding:deploy/docker/engines.Dockerfile:bidding"
+            "fraud:deploy/docker/engines.Dockerfile:fraud"
+            "trust:deploy/docker/engines.Dockerfile:trust"
+            "imaging:deploy/docker/engines.Dockerfile:imaging"
+            "underwriting:deploy/docker/engines.Dockerfile:underwriting"
+            "pricing:deploy/docker/engines.Dockerfile:pricing"
           )
           for entry in "${images[@]}"; do
             name="${entry%%:*}"
-            dockerfile="${entry#*:}"
+            rest="${entry#*:}"
+            dockerfile="${rest%%:*}"
+            target="${rest#*:}"
             tag="${REGISTRY}/${IMAGE_PREFIX}/${name}:${GITHUB_SHA::8}"
-            echo "::group::Building and tagging ${tag}"
-            docker build -f "${dockerfile}" -t "${tag}" .
-            echo "Built ${tag} — push step requires docker login (configure DOCKER_REGISTRY secret)"
+            args=(-f "${dockerfile}" -t "${tag}")
+            if [ -n "${target}" ]; then args+=(--target "${target}"); fi
+            echo "::group::Build+push ${tag}"
+            docker build "${args[@]}" .
+            docker push "${tag}"
+            echo "Pushed ${tag}"
             echo "::endgroup::"
           done

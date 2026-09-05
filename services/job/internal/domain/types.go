@@ -20,53 +20,83 @@ var (
 	ErrMissingDescription  = errors.New("description is required")
 	ErrMissingCategory     = errors.New("category is required")
 	ErrInvalidDuration     = errors.New("auction duration must be between 1 and 168 hours")
+	ErrInvalidAuctionType  = errors.New("auction type must be one of: sealed, live")
+	ErrInvalidStartingBid  = errors.New("starting bid must be a positive amount in cents")
 	ErrDraftLimitExceeded  = errors.New("maximum of 10 draft jobs allowed")
 	ErrNotRepostable       = errors.New("job must be in closed or expired status to repost")
 	ErrNotAwarded          = errors.New("job is not in awarded status")
 	ErrNotCompleted        = errors.New("job is not in completed status")
 )
 
+// Allowed auction_type values. These MUST match the DB CHECK constraint on
+// jobs.auction_type (migration 010_live_auction): IN ('sealed', 'live').
+const (
+	AuctionTypeSealed = "sealed"
+	AuctionTypeLive   = "live"
+)
+
+// ValidAuctionTypes is the set of accepted auction_type values, used to
+// validate input before insert so an invalid value yields a 400 rather than a
+// surfaced DB CHECK-constraint violation (500).
+var ValidAuctionTypes = map[string]struct{}{
+	AuctionTypeSealed: {},
+	AuctionTypeLive:   {},
+}
+
 // Job represents a service job posting.
 type Job struct {
-	ID                   string
-	CustomerID           string
-	PropertyID           string
-	Title                string
-	Description          string
-	CategoryID           string
-	SubcategoryID        string
-	ServiceTypeID        string
-	ServiceAddress       string
-	ServiceCity          string
-	ServiceState         string
-	ServiceZip           string
-	ScheduleType         string
-	ScheduledDate        *time.Time
-	ScheduleRangeStart   *time.Time
-	ScheduleRangeEnd     *time.Time
-	IsRecurring          bool
-	RecurrenceFrequency  *string
-	StartingBidCents     *int64
-	OfferAcceptedCents   *int64
-	AuctionDurationHours int
-	AuctionEndsAt        *time.Time
-	MinProviderRating    *float64
-	Status               string
-	BidCount             int
-	AwardedProviderID    *string
-	AwardedBidID         *string
-	RepostedFromID       *string
-	RepostCount          int
-	AuctionType          string
-	SnipeExtensionCount  int32
+	ID                    string
+	CustomerID            string
+	PropertyID            string
+	Title                 string
+	Description           string
+	CategoryID            string
+	SubcategoryID         string
+	ServiceTypeID         string
+	ServiceAddress        string
+	ServiceCity           string
+	ServiceState          string
+	ServiceZip            string
+	ScheduleType          string
+	ScheduledDate         *time.Time
+	ScheduleRangeStart    *time.Time
+	ScheduleRangeEnd      *time.Time
+	IsRecurring           bool
+	RecurrenceFrequency   *string
+	StartingBidCents      *int64
+	OfferAcceptedCents    *int64
+	AuctionDurationHours  int
+	AuctionEndsAt         *time.Time
+	MinProviderRating     *float64
+	Status                string
+	BidCount              int
+	AwardedProviderID     *string
+	AwardedBidID          *string
+	RepostedFromID        *string
+	RepostCount           int
+	AuctionType           string
+	SnipeExtensionCount   int32
 	OriginalAuctionEndsAt *time.Time
-	AwardedAt            *time.Time
-	ClosedAt             *time.Time
-	CompletedAt          *time.Time
-	CancelledAt          *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
-	DeletedAt            *time.Time
+	AwardedAt             *time.Time
+	ClosedAt              *time.Time
+	CompletedAt           *time.Time
+	CancelledAt           *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	DeletedAt             *time.Time
+
+	// Wave 5 services-polish (migration 046).
+	// IsHourly toggles flat-rate vs. hourly billing on the job posting.
+	// HourlyRateCents is set when IsHourly=true (nil otherwise).
+	// SameDayRequested is the Thumbtack-style "I need this today" SLA flag —
+	// downstream matcher prioritizes providers with same_day_available=true.
+	IsHourly         bool
+	HourlyRateCents  *int64
+	SameDayRequested bool
+
+	// FR-10.7: set only when SearchJobs was geo-scoped (caller lat/lng).
+	// Distance is from jobs.approximate_location (coarse grid), never exact.
+	DistanceKm *float64
 
 	// Populated via JOINs
 	Photos      []JobPhoto
@@ -145,6 +175,11 @@ type CreateJobInput struct {
 	LocationAddress      string
 	LocationLat          *float64
 	LocationLng          *float64
+
+	// Wave 5 services-polish (migration 046).
+	IsHourly         bool
+	HourlyRateCents  *int64
+	SameDayRequested bool
 }
 
 // UpdateJobInput holds optional fields for updating a draft job.
@@ -159,6 +194,11 @@ type UpdateJobInput struct {
 	OfferAcceptedCents   *int64
 	AuctionDurationHours *int
 	PhotoURLs            []string // nil means don't change, empty means clear
+
+	// Wave 5 services-polish (migration 046).
+	IsHourly         *bool
+	HourlyRateCents  *int64
+	SameDayRequested *bool
 }
 
 // SearchJobsInput defines job search parameters.
@@ -172,6 +212,7 @@ type SearchJobsInput struct {
 	ScheduleType  *string
 	RecurringOnly *bool
 	TextQuery     string
+	StatusFilter  *string
 	SortField     string
 	SortDesc      bool
 	Page          int
@@ -185,6 +226,16 @@ type Pagination struct {
 	PageSize   int
 	TotalPages int
 	HasNext    bool
+}
+
+// ListCustomerJobsFilter holds optional filters for a customer's job list (FR-19.3).
+// Zero values / nil pointers mean "no filter". DateFrom/DateTo bound jobs.created_at.
+type ListCustomerJobsFilter struct {
+	StatusFilter *string
+	PropertyID   *string
+	CategoryID   *string
+	DateFrom     *time.Time
+	DateTo       *time.Time
 }
 
 // JobMapPin represents a lightweight job pin for map display.
@@ -206,18 +257,19 @@ type GetJobsOnMapInput struct {
 	RadiusKm      float64
 	CategoryIDs   []string
 	MaxPriceCents *int64
+	ScheduleType  *string
 }
 
 // MatchedProvider represents a provider matched to a job by the pre-matching engine.
 type MatchedProvider struct {
-	ProviderID    string
-	DisplayName   string
-	TrustScore    float64
-	TrustTier     string
-	DistanceKm    float64
-	WinRate       float64
+	ProviderID     string
+	DisplayName    string
+	TrustScore     float64
+	TrustTier      string
+	DistanceKm     float64
+	WinRate        float64
 	AvgResponseMin int
-	MatchScore    float64
+	MatchScore     float64
 }
 
 // MatchingRepository defines persistence operations for provider matching.
@@ -229,16 +281,16 @@ type MatchingRepository interface {
 // JobRepository defines persistence operations for jobs.
 type JobRepository interface {
 	CreateJob(ctx context.Context, input CreateJobInput) (*Job, error)
-	UpdateJob(ctx context.Context, jobID string, input UpdateJobInput) (*Job, error)
+	UpdateJob(ctx context.Context, jobID string, customerID string, input UpdateJobInput) (*Job, error)
 	GetJob(ctx context.Context, jobID string) (*Job, error)
 	GetJobDetail(ctx context.Context, jobID string, requestingUserID string) (*Job, error)
-	DeleteDraft(ctx context.Context, jobID string) error
-	PublishJob(ctx context.Context, jobID string) (*Job, error)
+	DeleteDraft(ctx context.Context, jobID string, customerID string) error
+	PublishJob(ctx context.Context, jobID string, customerID string) (*Job, error)
 	CloseAuction(ctx context.Context, jobID string, customerID string) (*Job, error)
 	CancelJob(ctx context.Context, jobID string, customerID string) (*Job, error)
 	SearchJobs(ctx context.Context, input SearchJobsInput) ([]*Job, *Pagination, error)
 	GetJobsOnMap(ctx context.Context, input GetJobsOnMapInput) ([]JobMapPin, error)
-	ListCustomerJobs(ctx context.Context, customerID string, statusFilter *string, propertyID *string, page, pageSize int) ([]*Job, *Pagination, error)
+	ListCustomerJobs(ctx context.Context, customerID string, filter ListCustomerJobsFilter, page, pageSize int) ([]*Job, *Pagination, error)
 	ListDrafts(ctx context.Context, customerID string) ([]*Job, error)
 	ListServiceCategories(ctx context.Context, level *int, parentID *string) ([]ServiceCategory, error)
 	GetCategoryTree(ctx context.Context) ([]ServiceCategory, error)
@@ -260,4 +312,7 @@ type JobRepository interface {
 	AdminSuspendJob(ctx context.Context, jobID, reason string) error
 	AdminRemoveJob(ctx context.Context, jobID, reason string) error
 	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error
+
+	// Match notify ledger (F2). Idempotent: ON CONFLICT DO NOTHING.
+	RecordJobMatchNotification(ctx context.Context, jobID, providerID string) error
 }

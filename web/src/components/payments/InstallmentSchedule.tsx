@@ -55,8 +55,8 @@ export function InstallmentSchedule({ installments, className }: InstallmentSche
                   <div
                     className={cn(
                       'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-                      state === 'paid' && 'bg-green-500/10 text-green-300',
-                      state === 'current' && 'bg-blue-500/10 text-blue-300',
+                      state === 'paid' && 'bg-status-completed/10 text-status-completed',
+                      state === 'current' && 'bg-status-open/10 text-status-open',
                       state === 'upcoming' && 'bg-muted text-muted-foreground',
                     )}
                     aria-label={`Installment ${String(installment.installment_number)}: ${state}`}
@@ -72,8 +72,8 @@ export function InstallmentSchedule({ installments, className }: InstallmentSche
                   {!isLast ? (
                     <div
                       className={cn(
-                        'w-0.5 flex-1 min-h-[24px]',
-                        state === 'paid' ? 'bg-green-500/20' : 'bg-muted',
+                        'min-h-[24px] w-0.5 flex-1',
+                        state === 'paid' ? 'bg-status-completed/20' : 'bg-muted',
                       )}
                     />
                   ) : null}
@@ -88,11 +88,11 @@ export function InstallmentSchedule({ installments, className }: InstallmentSche
                         {String(installment.total_installments)}
                       </p>
                       {installment.paid_at ? (
-                        <p className="text-xs text-green-600 dark:text-green-400">
+                        <p className="whitespace-nowrap text-xs text-status-completed">
                           Paid {formatDate(installment.paid_at)}
                         </p>
                       ) : installment.due_date ? (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="whitespace-nowrap text-xs text-muted-foreground">
                           Due {formatDate(installment.due_date)}
                         </p>
                       ) : (

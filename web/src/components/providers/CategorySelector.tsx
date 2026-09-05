@@ -82,7 +82,17 @@ export function CategorySelector({ selected, onChange }: CategorySelectorProps) 
     return <p className="text-sm text-muted-foreground">No categories available.</p>;
   }
 
-  const isLeafLevel = currentLevel >= 2 || (filtered.length > 0 && !filtered[0]?.children?.length);
+  // Whether a given category row should render as a selectable leaf
+  // (checkbox) vs. a drill-down (chevron). Decided per-row by that row's
+  // OWN children — never from a single representative sibling, since
+  // siblings at the same level can have mixed depth (some leaf, some with
+  // children). A level-wide heuristic misclassified mixed levels: leaf
+  // rows became inert drill buttons, and parent rows became checkboxes
+  // whose subcategories were then unreachable. currentLevel >= 2 still
+  // forces leaf because the tree is at most 3 levels deep.
+  function isLeafRow(cat: ServiceCategory): boolean {
+    return currentLevel >= 2 || !cat.children || cat.children.length === 0;
+  }
 
   return (
     <div className="space-y-4">
@@ -145,10 +155,10 @@ export function CategorySelector({ selected, onChange }: CategorySelectorProps) 
       />
 
       {/* Category list */}
-      <ul className="space-y-1" aria-label="Categories">
+      <ul className="max-h-[300px] space-y-1 overflow-y-auto" aria-label="Categories">
         {filtered.map((cat) => (
           <li key={cat.id}>
-            {isLeafLevel ? (
+            {isLeafRow(cat) ? (
               <label className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 hover:bg-muted">
                 <Checkbox
                   checked={selected.includes(cat.id)}

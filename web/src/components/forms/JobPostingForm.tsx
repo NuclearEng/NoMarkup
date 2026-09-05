@@ -3,11 +3,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ChevronLeft, ChevronRight, ImagePlus, MapPin, Mic, MicOff, X, Zap } from 'lucide-react';
 import type { Route } from 'next';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { ImageAnalysisButton } from '@/components/forms/ImageAnalysisButton';
+import { PreQuoteQuestions } from '@/components/forms/PreQuoteQuestions';
 import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { CategorySelector } from '@/components/providers/CategorySelector';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +25,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { MonoPrice } from '@/components/ui/mono-price';
 import { Progress } from '@/components/ui/progress';
 import {
   Select,
@@ -32,15 +34,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
+import { useFairPrice } from '@/hooks/useAnalytics';
 import { useCategories } from '@/hooks/useCategories';
 import { useCreateJob } from '@/hooks/useJobs';
+import { useProperties, type Property } from '@/hooks/useProperties';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { api } from '@/lib/api';
-import { formatCents } from '@/lib/utils';
 import { jobPostingSchema, type JobPostingFormValues } from '@/lib/validations';
-import { AUCTION_TYPE, type CreateJobInput, type MarketRange } from '@/types';
+import { AUCTION_TYPE, type CreateJobInput, type MarketRange, type SubmitAnswerInput } from '@/types';
 
 const STEPS = [
   { title: 'Category', description: 'What type of service do you need?' },
@@ -66,35 +70,99 @@ const STEP_FIELDS: Record<number, (keyof JobPostingFormValues)[]> = {
   6: [],
 };
 
-// Example market range for the review step (would come from API in production)
-const EXAMPLE_MARKET_RANGE: MarketRange = {
-  low_cents: 5000,
-  median_cents: 12500,
-  high_cents: 25000,
-  sample_size: 0,
-};
+const NONE_PROPERTY_VALUE = '__none__';
+
+function formatPropertyAddress(property: Property): string {
+  const { street, city, state, zip_code } = property.address;
+  return `${street}, ${city}, ${state} ${zip_code}`;
+}
+
+function extractZipFromAddress(address: string | undefined): string | undefined {
+  if (!address) return undefined;
+  const match = /\b(\d{5})(?:-\d{4})?\b/.exec(address);
+  return match?.[1];
+}
+
+function fairPriceToMarketRange(fairPrice: {
+  has_data: boolean;
+  p25_cents?: number;
+  price_cents?: number;
+  p75_cents?: number;
+  n_eff?: number;
+} | undefined): MarketRange | null {
+  if (!fairPrice?.has_data || !fairPrice.n_eff || fairPrice.n_eff <= 0) return null;
+  if (
+    fairPrice.p25_cents === undefined ||
+    fairPrice.price_cents === undefined ||
+    fairPrice.p75_cents === undefined
+  ) {
+    return null;
+  }
+  return {
+    low_cents: fairPrice.p25_cents,
+    median_cents: fairPrice.price_cents,
+    high_cents: fairPrice.p75_cents,
+    sample_size: fairPrice.n_eff,
+  };
+}
 
 export function JobPostingForm() {
   const [step, setStep] = useState(0);
   const [photos, setPhotos] = useState<File[]>([]);
   const [useInstantMatch, setUseInstantMatch] = useState(false);
+  // Wave 5 services-polish state — kept outside react-hook-form because
+  // these fields aren't covered by jobPostingSchema (Zod schema lives
+  // in lib/validations.ts which isn't owned by this wave). The handler
+  // serializes them onto CreateJobInput at publish time.
+  const [isHourly, setIsHourly] = useState(false);
+  const [hourlyRateDollars, setHourlyRateDollars] = useState<number | undefined>(undefined);
+  const [sameDayRequested, setSameDayRequested] = useState(false);
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, SubmitAnswerInput>>({});
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Allow deep-linking a pre-selected category, e.g. the /legal vertical's
+  // "Post a legal job" CTA passes ?category_id=<legal subtree id>. Empty when
+  // absent, so the normal blank flow is unchanged.
+  // FR-18.7 residual: recurring cancel CTA can also pass title / is_recurring /
+  // recurrence_frequency / description so remaining visits can be re-auctioned.
+  const presetCategoryId = searchParams.get('category_id') ?? '';
+  const presetTitle = (searchParams.get('title') ?? '').trim().slice(0, 200);
+  const presetDescription = (searchParams.get('description') ?? '').trim().slice(0, 5000);
+  const presetIsRecurring =
+    searchParams.get('is_recurring') === 'true' || searchParams.get('is_recurring') === '1';
+  const rawFreq = (searchParams.get('recurrence_frequency') ?? '').trim().toLowerCase();
+  const presetFrequency =
+    rawFreq === 'weekly' ||
+    rawFreq === 'biweekly' ||
+    rawFreq === 'monthly' ||
+    rawFreq === 'quarterly'
+      ? (rawFreq as JobPostingFormValues['recurrenceFrequency'])
+      : undefined;
+  // FR-18.7 deepen: optional property + starting bid from recurring cancel CTA.
+  const presetPropertyId = (searchParams.get('property_id') ?? '').trim();
+  const [selectedPropertyId, setSelectedPropertyId] = useState(presetPropertyId);
+  const rawStartingBidCents = (searchParams.get('starting_bid_cents') ?? '').trim();
+  const parsedStartingBidCents = Number(rawStartingBidCents);
+  const presetStartingBidDollars =
+    Number.isFinite(parsedStartingBidCents) && parsedStartingBidCents > 0
+      ? Math.round(parsedStartingBidCents) / 100
+      : undefined;
   const createJob = useCreateJob();
 
   const form = useForm<JobPostingFormValues>({
     resolver: zodResolver(jobPostingSchema),
     defaultValues: {
-      categoryId: '',
-      title: '',
-      description: '',
+      categoryId: presetCategoryId,
+      title: presetTitle,
+      description: presetDescription,
       scheduleType: 'flexible',
       scheduledDate: '',
-      isRecurring: false,
-      recurrenceFrequency: undefined,
+      isRecurring: presetIsRecurring,
+      recurrenceFrequency: presetIsRecurring ? presetFrequency : undefined,
       locationAddress: '',
       locationLat: undefined,
       locationLng: undefined,
-      startingBidDollars: undefined,
+      startingBidDollars: presetStartingBidDollars,
       offerAcceptedDollars: undefined,
       auctionDurationHours: 72,
       auctionType: AUCTION_TYPE.SEALED,
@@ -139,6 +207,7 @@ export function JobPostingForm() {
       location_address: values.locationAddress || undefined,
       location_lat: values.locationLat,
       location_lng: values.locationLng,
+      property_id: selectedPropertyId || undefined,
       starting_bid_cents: values.startingBidDollars
         ? Math.round(values.startingBidDollars * 100)
         : undefined,
@@ -148,6 +217,13 @@ export function JobPostingForm() {
       auction_duration_hours: values.auctionDurationHours,
       auction_type: values.auctionType,
       photo_urls: values.photoUrls && values.photoUrls.length > 0 ? values.photoUrls : undefined,
+      // Wave 5 services-polish (Section H) — hourly billing + same-day SLA.
+      is_hourly: isHourly || undefined,
+      hourly_rate_cents:
+        isHourly && hourlyRateDollars
+          ? Math.round(hourlyRateDollars * 100)
+          : undefined,
+      same_day_requested: sameDayRequested || undefined,
     };
   }
 
@@ -161,12 +237,26 @@ export function JobPostingForm() {
       input.publish = true;
       const createdJob = await createJob.mutateAsync(input);
 
-      if (useInstantMatch && createdJob?.id) {
+      if (useInstantMatch && createdJob.id) {
         // Call instant match directly using the new job ID (avoids stale closure).
         try {
           await api.post<{ status: string; expires_at: string }>(`/api/v1/jobs/${createdJob.id}/instant-match`);
         } catch {
           // Non-fatal — job was created, instant match just didn't fire.
+        }
+      }
+
+      // Best-effort post the customer's pre-quote answers. Non-fatal:
+      // the job is created; missing answers just mean providers will
+      // chat-clarify scope (which is the pre-Wave-5 status quo).
+      const answersList = Object.values(questionAnswers);
+      if (createdJob.id && answersList.length > 0) {
+        try {
+          await api.post<{ saved: number }>(`/api/v1/jobs/${createdJob.id}/answers`, {
+            answers: answersList,
+          });
+        } catch {
+          // swallow
         }
       }
 
@@ -249,23 +339,62 @@ export function JobPostingForm() {
               className="space-y-6"
             >
               {step === 0 ? <StepCategory form={form} /> : null}
-              {step === 1 ? <StepDetails form={form} /> : null}
-              {step === 2 ? <StepLocation form={form} /> : null}
-              {step === 3 ? <StepSchedule form={form} /> : null}
+              {step === 1 ? (
+                <StepDetails
+                  form={form}
+                  questionAnswers={questionAnswers}
+                  onQuestionAnswersChange={setQuestionAnswers}
+                />
+              ) : null}
+              {step === 2 ? (
+                <StepLocation
+                  form={form}
+                  selectedPropertyId={selectedPropertyId}
+                  onPropertyChange={setSelectedPropertyId}
+                />
+              ) : null}
+              {step === 3 ? (
+                <StepSchedule
+                  form={form}
+                  sameDayRequested={sameDayRequested}
+                  onSameDayChange={setSameDayRequested}
+                />
+              ) : null}
               {step === 4 ? <StepPhotos photos={photos} onPhotosChange={setPhotos} /> : null}
-              {step === 5 ? <StepAuction form={form} /> : null}
+              {step === 5 ? (
+                <StepAuction
+                  form={form}
+                  isHourly={isHourly}
+                  onIsHourlyChange={setIsHourly}
+                  hourlyRateDollars={hourlyRateDollars}
+                  onHourlyRateChange={setHourlyRateDollars}
+                />
+              ) : null}
               {step === 6 ? (
                 <StepReview
                   form={form}
-                  marketRange={EXAMPLE_MARKET_RANGE}
                   photoCount={photos.length}
                   useInstantMatch={useInstantMatch}
                   onInstantMatchChange={setUseInstantMatch}
+                  isHourly={isHourly}
+                  hourlyRateDollars={hourlyRateDollars}
+                  sameDayRequested={sameDayRequested}
+                  questionAnswerCount={Object.keys(questionAnswers).length}
                 />
               ) : null}
 
+              {form.formState.errors.root ? (
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-3 text-sm text-destructive"
+                >
+                  {form.formState.errors.root.message}
+                </div>
+              ) : null}
+
               {/* Navigation buttons */}
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 {step > 0 ? (
                   <Button type="button" variant="outline" onClick={goPrev} className="min-h-[44px]">
                     <ChevronLeft className="mr-1 h-4 w-4" aria-hidden="true" />
@@ -284,6 +413,7 @@ export function JobPostingForm() {
                   <>
                     <Button
                       type="button"
+                      variant="default"
                       onClick={() => void handlePublish()}
                       disabled={isPending}
                       className="min-h-[44px]"
@@ -312,6 +442,19 @@ export function JobPostingForm() {
 
 // -- Step 1: Category --
 type FormType = ReturnType<typeof useForm<JobPostingFormValues>>;
+
+function applyPropertyToForm(form: FormType, property: Property): void {
+  form.setValue('locationAddress', formatPropertyAddress(property), {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+  if (property.address.latitude !== undefined) {
+    form.setValue('locationLat', property.address.latitude);
+  }
+  if (property.address.longitude !== undefined) {
+    form.setValue('locationLng', property.address.longitude);
+  }
+}
 
 function StepCategory({ form }: { form: FormType }) {
   const categoryId = form.watch('categoryId');
@@ -368,10 +511,17 @@ function getSpeechRecognitionConstructor(): (new () => SpeechRecognitionInstance
 }
 
 // -- Step 2: Details --
-function StepDetails({ form }: { form: FormType }) {
+interface StepDetailsProps {
+  form: FormType;
+  questionAnswers: Record<string, SubmitAnswerInput>;
+  onQuestionAnswersChange: (next: Record<string, SubmitAnswerInput>) => void;
+}
+
+function StepDetails({ form, questionAnswers, onQuestionAnswersChange }: StepDetailsProps) {
   const { data: categories } = useCategories();
   const [isListening, setIsListening] = useState(false);
   const hasSpeechRecognition = getSpeechRecognitionConstructor() !== null;
+  const categoryId = form.watch('categoryId');
 
   function startVoiceInput() {
     const SpeechRecognitionCtor = getSpeechRecognitionConstructor();
@@ -472,16 +622,34 @@ function StepDetails({ form }: { form: FormType }) {
           </FormItem>
         )}
       />
+
+      {/* Wave 5 services-polish — Thumbtack-style pre-quote questions
+          render below the description so providers can quote off real
+          scope. Hides itself when the category has no questions. */}
+      <PreQuoteQuestions
+        categoryId={categoryId}
+        value={questionAnswers}
+        onChange={onQuestionAnswersChange}
+      />
     </div>
   );
 }
 
 // -- Step 3: Location --
-function StepLocation({ form }: { form: FormType }) {
+function StepLocation({
+  form,
+  selectedPropertyId,
+  onPropertyChange,
+}: {
+  form: FormType;
+  selectedPropertyId: string;
+  onPropertyChange: (propertyId: string) => void;
+}) {
   const [geocoding, setGeocoding] = useState(false);
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapboxToken = process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ?? '';
+  const { data: properties, isLoading: propertiesLoading } = useProperties();
 
   const lat = form.watch('locationLat');
   const lng = form.watch('locationLng');
@@ -492,7 +660,8 @@ function StepLocation({ form }: { form: FormType }) {
       if (!address || address.length < 5 || !mapboxToken) return;
 
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(async () => {
+      debounceRef.current = setTimeout(() => {
+        void (async () => {
         setGeocoding(true);
         setGeocodeError(null);
         try {
@@ -521,13 +690,72 @@ function StepLocation({ form }: { form: FormType }) {
         } finally {
           setGeocoding(false);
         }
+        })();
       }, 600);
     },
     [mapboxToken, form],
   );
 
+  // Inherit address when a property is preselected via ?property_id= and
+  // the list arrives (or when the field is still empty).
+  useEffect(() => {
+    if (!selectedPropertyId || !properties || properties.length === 0) return;
+    const property = properties.find((p) => p.id === selectedPropertyId);
+    if (!property) return;
+    if (form.getValues('locationAddress')) return;
+    applyPropertyToForm(form, property);
+    if (property.address.latitude === undefined || property.address.longitude === undefined) {
+      geocodeAddress(formatPropertyAddress(property));
+    }
+  }, [selectedPropertyId, properties, form, geocodeAddress]);
+
+  function handlePropertySelect(value: string) {
+    if (value === NONE_PROPERTY_VALUE) {
+      onPropertyChange('');
+      return;
+    }
+    onPropertyChange(value);
+    const property = properties?.find((p) => p.id === value);
+    if (!property) return;
+    applyPropertyToForm(form, property);
+    if (property.address.latitude === undefined || property.address.longitude === undefined) {
+      geocodeAddress(formatPropertyAddress(property));
+    }
+  }
+
+  const hasProperties = (properties?.length ?? 0) > 0;
+
   return (
     <div className="space-y-6">
+      {propertiesLoading ? (
+        <Skeleton className="h-11 w-full" />
+      ) : hasProperties ? (
+        <div className="space-y-2">
+          <label htmlFor="job-property" className="text-sm font-medium">
+            Saved property
+          </label>
+          <Select
+            value={selectedPropertyId || NONE_PROPERTY_VALUE}
+            onValueChange={handlePropertySelect}
+          >
+            <SelectTrigger id="job-property" className="min-h-[44px]" aria-label="Saved property">
+              <SelectValue placeholder="Use a saved property" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE_PROPERTY_VALUE}>Enter address manually</SelectItem>
+              {properties?.map((property) => (
+                <SelectItem key={property.id} value={property.id}>
+                  {property.nickname} — {property.address.street}, {property.address.city}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-muted-foreground text-sm">
+            Choosing a property fills the service address. You can still edit it.
+          </p>
+        </div>
+      ) : null}
+
       <FormField
         control={form.control}
         name="locationAddress"
@@ -550,13 +778,29 @@ function StepLocation({ form }: { form: FormType }) {
                 ? 'Looking up address...'
                 : 'Where should the service provider come? Leave blank for remote work.'}
             </FormDescription>
-            {geocodeError ? <p className="text-destructive text-sm">{geocodeError}</p> : null}
+            {geocodeError ? (
+              <div
+                role="alert"
+                className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                {geocodeError}
+              </div>
+            ) : null}
             <FormMessage />
           </FormItem>
         )}
       />
 
-      {hasCoords ? (
+      {geocoding ? (
+        <div
+          className="space-y-2 rounded-md border p-3"
+          role="status"
+          aria-label="Looking up address"
+        >
+          <Skeleton className="h-[200px] w-full" variant="card" />
+          <Skeleton className="h-3 w-40" variant="text" />
+        </div>
+      ) : hasCoords ? (
         <div className="relative overflow-hidden rounded-md border">
           <img
             src={`https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/pin-l+d4a017(${String(lng)},${String(lat)})/${String(lng)},${String(lat)},14,0/600x300@2x?access_token=${mapboxToken}`}
@@ -564,9 +808,9 @@ function StepLocation({ form }: { form: FormType }) {
             className="h-[200px] w-full object-cover"
             loading="lazy"
           />
-          <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-zinc-900/80 px-2.5 py-1 text-xs text-zinc-200 backdrop-blur-sm">
+          <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-zinc-900/80 px-2.5 py-1 font-mono text-xs tabular-nums text-zinc-200 backdrop-blur-sm">
             <MapPin className="h-3 w-3 text-[var(--brand-gold)]" aria-hidden="true" />
-            {String(lat.toFixed(4))}, {String(lng.toFixed(4))}
+            {lat.toFixed(4)}, {lng.toFixed(4)}
           </div>
         </div>
       ) : (
@@ -582,7 +826,13 @@ function StepLocation({ form }: { form: FormType }) {
 }
 
 // -- Step 4: Schedule --
-function StepSchedule({ form }: { form: FormType }) {
+interface StepScheduleProps {
+  form: FormType;
+  sameDayRequested: boolean;
+  onSameDayChange: (value: boolean) => void;
+}
+
+function StepSchedule({ form, sameDayRequested, onSameDayChange }: StepScheduleProps) {
   const scheduleType = form.watch('scheduleType');
   const isRecurring = form.watch('isRecurring');
 
@@ -671,6 +921,32 @@ function StepSchedule({ form }: { form: FormType }) {
           )}
         />
       ) : null}
+
+      {/* Wave 5 services-polish — Thumbtack-style "I need this today"
+          SLA flag. Downstream matcher prioritizes providers with
+          same_day_available=true on their availability profile.
+          Plain div instead of FormItem/FormControl — this checkbox
+          isn't tied to react-hook-form state, so wrapping in a
+          FormField context is unnecessary and would error. */}
+      <label
+        htmlFor="same-day-toggle"
+        className="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/5 p-3"
+      >
+        <Checkbox
+          id="same-day-toggle"
+          checked={sameDayRequested}
+          onCheckedChange={(c) => {
+            onSameDayChange(c === true);
+          }}
+          aria-label="I need this done today"
+        />
+        <div>
+          <span className="text-sm font-medium">I need this done today</span>
+          <p className="text-muted-foreground text-xs">
+            We&apos;ll prioritize providers who can show up the same day. Higher rates may apply.
+          </p>
+        </div>
+      </label>
     </div>
   );
 }
@@ -804,7 +1080,7 @@ function StepPhotos({ photos, onPhotosChange }: StepPhotosProps) {
               key={`${file.name}-${String(file.lastModified)}-${String(index)}`}
               className="group bg-muted relative aspect-square overflow-hidden rounded-md border"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {/* Local blob preview — using img intentionally, not next/image */}
               <img
                 src={URL.createObjectURL(file)}
                 alt={file.name}
@@ -829,11 +1105,96 @@ function StepPhotos({ photos, onPhotosChange }: StepPhotosProps) {
 }
 
 // -- Step 6: Auction --
-function StepAuction({ form }: { form: FormType }) {
+interface StepAuctionProps {
+  form: FormType;
+  isHourly: boolean;
+  onIsHourlyChange: (value: boolean) => void;
+  hourlyRateDollars: number | undefined;
+  onHourlyRateChange: (value: number | undefined) => void;
+}
+
+function StepAuction({
+  form,
+  isHourly,
+  onIsHourlyChange,
+  hourlyRateDollars,
+  onHourlyRateChange,
+}: StepAuctionProps) {
   const durationHours = form.watch('auctionDurationHours');
 
   return (
     <div className="space-y-6">
+      {/* Wave 5 services-polish — flat-rate vs. hourly toggle. When
+          hourly is selected, the budget inputs become a single hourly
+          rate field; the auction still runs as usual. */}
+      <div className="space-y-2 rounded-md border p-3">
+        <p className="text-sm font-medium" id="billing-mode-label">
+          Billing
+        </p>
+        <div className="flex gap-4" role="radiogroup" aria-labelledby="billing-mode-label">
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="billingMode"
+              value="flat"
+              checked={!isHourly}
+              onChange={() => {
+                onIsHourlyChange(false);
+              }}
+              className="h-4 w-4"
+            />
+            <span className="text-sm">Flat rate</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="billingMode"
+              value="hourly"
+              checked={isHourly}
+              onChange={() => {
+                onIsHourlyChange(true);
+              }}
+              className="h-4 w-4"
+            />
+            <span className="text-sm">Hourly</span>
+          </label>
+        </div>
+        {isHourly ? (
+          <div className="pt-2">
+            <label htmlFor="hourly-rate" className="text-sm font-medium">
+              Target hourly rate (USD)
+            </label>
+            <div className="relative mt-1">
+              <span className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2">
+                $
+              </span>
+              <Input
+                id="hourly-rate"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step={0.5}
+                placeholder="65.00"
+                value={hourlyRateDollars ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '') {
+                    onHourlyRateChange(undefined);
+                    return;
+                  }
+                  const n = Number(v);
+                  if (Number.isFinite(n)) onHourlyRateChange(n);
+                }}
+                className="min-h-[44px] pl-8 font-mono tabular-nums"
+              />
+            </div>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Providers will quote against this rate. Actual hours are tracked on the contract.
+            </p>
+          </div>
+        ) : null}
+      </div>
+
       {ENABLE_LIVE_AUCTION ? (
         <div className="space-y-2">
           <p className="text-sm font-medium" id="auction-type-label">
@@ -888,7 +1249,7 @@ function StepAuction({ form }: { form: FormType }) {
                     const val = e.target.value ? Number(e.target.value) : undefined;
                     field.onChange(val);
                   }}
-                  className="min-h-[44px] pl-8"
+                  className="min-h-[44px] pl-8 font-mono tabular-nums"
                 />
               </div>
             </FormControl>
@@ -922,7 +1283,7 @@ function StepAuction({ form }: { form: FormType }) {
                     const val = e.target.value ? Number(e.target.value) : undefined;
                     field.onChange(val);
                   }}
-                  className="min-h-[44px] pl-8"
+                  className="min-h-[44px] pl-8 font-mono tabular-nums"
                 />
               </div>
             </FormControl>
@@ -975,18 +1336,29 @@ function StepAuction({ form }: { form: FormType }) {
 // -- Step 7: Review --
 function StepReview({
   form,
-  marketRange,
   photoCount,
   useInstantMatch,
   onInstantMatchChange,
+  isHourly,
+  hourlyRateDollars,
+  sameDayRequested,
+  questionAnswerCount,
 }: {
   form: FormType;
-  marketRange: MarketRange;
   photoCount: number;
   useInstantMatch: boolean;
   onInstantMatchChange: (value: boolean) => void;
+  isHourly: boolean;
+  hourlyRateDollars: number | undefined;
+  sameDayRequested: boolean;
+  questionAnswerCount: number;
 }) {
   const values = form.getValues();
+  const categoryId = form.watch('categoryId');
+  const locationAddress = form.watch('locationAddress');
+  const zip = extractZipFromAddress(locationAddress);
+  const { data: fairPrice } = useFairPrice({ categoryId, zip });
+  const marketRange = fairPriceToMarketRange(fairPrice);
 
   return (
     <div className="space-y-6">
@@ -1030,8 +1402,39 @@ function StepReview({
             {values.isRecurring && values.recurrenceFrequency ? (
               <Badge variant="secondary">Recurring: {values.recurrenceFrequency}</Badge>
             ) : null}
+            {sameDayRequested ? (
+              <Badge variant="default" className="bg-amber-500/20 text-amber-600">
+                Same-day
+              </Badge>
+            ) : null}
           </div>
         </div>
+
+        {isHourly ? (
+          <div>
+            <h3 className="text-muted-foreground text-sm font-medium">Billing</h3>
+            <p className="text-sm">
+              Hourly
+              {hourlyRateDollars !== undefined ? (
+                <>
+                  {' — '}
+                  <MonoPrice
+                    cents={Math.round(hourlyRateDollars * 100)}
+                    className="text-sm font-semibold"
+                  />
+                  /hr
+                </>
+              ) : null}
+            </p>
+          </div>
+        ) : null}
+
+        {questionAnswerCount > 0 ? (
+          <div>
+            <h3 className="text-muted-foreground text-sm font-medium">Project details</h3>
+            <p className="text-sm">{String(questionAnswerCount)} questions answered</p>
+          </div>
+        ) : null}
 
         <div>
           <h3 className="text-muted-foreground text-sm font-medium">Photos</h3>
@@ -1054,12 +1457,24 @@ function StepReview({
               {String(values.auctionDurationHours % 24)}h)
             </p>
             {values.startingBidDollars ? (
-              <p>Starting bid: {formatCents(Math.round(values.startingBidDollars * 100))}</p>
+              <p>
+                Starting bid:{' '}
+                <MonoPrice
+                  cents={Math.round(values.startingBidDollars * 100)}
+                  className="font-semibold"
+                />
+              </p>
             ) : (
               <p>Starting bid: Open</p>
             )}
             {values.offerAcceptedDollars ? (
-              <p>Instant accept: {formatCents(Math.round(values.offerAcceptedDollars * 100))}</p>
+              <p>
+                Instant accept:{' '}
+                <MonoPrice
+                  cents={Math.round(values.offerAcceptedDollars * 100)}
+                  className="font-semibold"
+                />
+              </p>
             ) : null}
           </div>
         </div>
@@ -1081,7 +1496,7 @@ function StepReview({
               name="matchMode"
               value="auction"
               checked={!useInstantMatch}
-              onChange={() => onInstantMatchChange(false)}
+              onChange={() => { onInstantMatchChange(false); }}
               className="mt-0.5 h-4 w-4"
               aria-label="Run an auction"
             />
@@ -1102,7 +1517,7 @@ function StepReview({
               name="matchMode"
               value="instant"
               checked={useInstantMatch}
-              onChange={() => onInstantMatchChange(true)}
+              onChange={() => { onInstantMatchChange(true); }}
               className="mt-0.5 h-4 w-4"
               aria-label="Find me someone fast"
             />
@@ -1114,13 +1529,19 @@ function StepReview({
               <p className="mt-0.5 text-xs text-zinc-400">
                 We&apos;ll match you with a top-rated provider immediately. No waiting for bids.
               </p>
+              <p className="mt-1.5 text-xs text-amber-200/90">
+                Honest pricing: Instant often lands around 1.5–2× a typical reverse-auction
+                result for similar work — you pay for speed and someone who can start now.
+              </p>
             </div>
           </label>
         </div>
       </div>
 
-      {/* Market range display */}
-      {marketRange.sample_size > 0 ? <MarketRangeDisplay marketRange={marketRange} /> : null}
+      {/* Live fair-price band — hidden when the cell has no data (FR-11.2). */}
+      {marketRange && marketRange.sample_size > 0 ? (
+        <MarketRangeDisplay marketRange={marketRange} />
+      ) : null}
     </div>
   );
 }

@@ -1,0 +1,678 @@
+# NoMarkup — capital-light production stack (single VPS + Docker Compose + Caddy)
+#
+# Lean default: postgres, redis, meilisearch, migrate, user, job, payment, gateway, web, caddy.
+# Optional profiles (start later when RAM allows):
+#   --profile chat           chat gRPC + WS backend
+#   --profile notification   email/SMS/push dispatcher
+#   --profile engines        bidding, fraud, trust, imaging, underwriting, pricing
+#   --profile storage        MinIO (local S3 stand-in; prefer real S3/R2 in prod)
+#
+# Usage (from repo root):
+#   cp deploy/prod/.env.example deploy/prod/.env   # fill secrets
+#   docker compose -f deploy/prod/docker-compose.yml --env-file deploy/prod/.env up -d --build
+#
+# Host ports: only Caddy binds 80/443. Everything else is internal.
+
+name: nomarkup-prod
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Shared build context = monorepo root (compose file lives in deploy/prod/).
+x-build-root: &build-root
+  context: ../..
+
+services:
+  # ── Edge ────────────────────────────────────────────────────
+
+  caddy:
+    <<: *restart
+    image: caddy:2.8-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      # Optional: expose HTTPS on 443/udp for HTTP/3
+      - "443:443/udp"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    networks:
+      - edge
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Data plane ──────────────────────────────────────────────
+
+  postgres:
+    <<: *restart
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nomarkup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-nomarkup}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # No host ports — mesh-only.
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-nomarkup} -d $${POSTGRES_DB:-nomarkup}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    logging: *default-logging
+    # Capital-light: cap shared_buffers-friendly footprint on a small VPS.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=100
+      - -c
+      - log_min_duration_statement=500
+
+  redis:
+    <<: *restart
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      - --maxmemory-policy
+      - allkeys-lru
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - redisdata:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    logging: *default-logging
+
+  meilisearch:
+    <<: *restart
+    image: getmeili/meilisearch:v1.6
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY:?MEILISEARCH_API_KEY is required}
+      # Cap index size on a small disk; raise when you outgrow the VPS.
+      MEILI_MAX_INDEXING_MEMORY: ${MEILI_MAX_INDEXING_MEMORY:-256Mb}
+    volumes:
+      - meilidata:/meili_data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *default-logging
+
+  # ── Schema (one-shot, blocks app start until green) ─────────
+
+  migrate:
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/migrate:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/migrate.Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+    # golang-migrate image entrypoint is `migrate`. Compose interpolates
+    # DATABASE_URL from deploy/prod/.env before the container starts.
+    command:
+      - -path=/migrations
+      - -database
+      - ${DATABASE_URL:?DATABASE_URL is required}
+      - up
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: "no"
+    logging: *default-logging
+
+  # ── Lean Go services ────────────────────────────────────────
+
+  user:
+    <<: *restart
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/user:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/user.Dockerfile
+    environment:
+      ENVIRONMENT: production
+      APP_ENV: production
+      APP_VERSION: ${APP_VERSION:-prod}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      USER_SERVICE_PORT: "50051"
+      JWT_PRIVATE_KEY_PATH: /keys/private.pem
+      JWT_PUBLIC_KEY_PATH: /keys/public.pem
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      ENCRYPTION_KEY_PREVIOUS: ${ENCRYPTION_KEY_PREVIOUS:-}
+      VERIFICATION_SECRET: ${VERIFICATION_SECRET:-}
+      BASE_URL: ${BASE_URL:-https://no-markup.com}
+      FRONTEND_URL: ${FRONTEND_URL:-https://no-markup.com}
+      # Optional mesh peers (lazy dial; safe if profile not running).
+      NOTIFICATION_SERVICE_ADDR: ${NOTIFICATION_SERVICE_ADDR:-notification:50059}
+      PAYMENT_SERVICE_ADDR: payment:50054
+      IMAGING_SERVICE_ADDR: ${IMAGING_SERVICE_ADDR:-imaging:50058}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-8}
+      DB_MIN_CONNS: ${DB_MIN_CONNS:-1}
+    volumes:
+      - ${JWT_KEYS_DIR:-./keys}:/keys:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    healthcheck:
+      # Observability HTTP = SERVICE_PORT + 1000 (see services/*/observability).
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:51051/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+
+  job:
+    <<: *restart
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/job:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/job.Dockerfile
+    environment:
+      ENVIRONMENT: production
+      APP_ENV: production
+      APP_VERSION: ${APP_VERSION:-prod}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      JOB_SERVICE_PORT: "50052"
+      PAYMENT_SERVICE_ADDR: payment:50054
+      MEILISEARCH_URL: ${MEILISEARCH_URL:-http://meilisearch:7700}
+      MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      ENCRYPTION_KEY_PREVIOUS: ${ENCRYPTION_KEY_PREVIOUS:-}
+      # Fair-price is optional; leave empty until engines profile is up.
+      PRICING_ENGINE_ADDR: ${PRICING_ENGINE_ADDR:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-8}
+      DB_MIN_CONNS: ${DB_MIN_CONNS:-1}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      meilisearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:51052/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+
+  payment:
+    <<: *restart
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/payment:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/payment.Dockerfile
+    environment:
+      ENVIRONMENT: production
+      APP_ENV: production
+      APP_VERSION: ${APP_VERSION:-prod}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      PAYMENT_SERVICE_PORT: "50054"
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY is required}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET is required}
+      STRIPE_CONNECT_CLIENT_ID: ${STRIPE_CONNECT_CLIENT_ID:-}
+      JOB_SERVICE_ADDR: job:50052
+      # Lazy dials — underwriting fails closed if engines profile is off.
+      TRUST_ENGINE_ADDR: ${TRUST_ENGINE_ADDR:-trust:50057}
+      UNDERWRITING_ENGINE_ADDR: ${UNDERWRITING_ENGINE_ADDR:-underwriting:50060}
+      NOTIFICATION_SERVICE_ADDR: ${NOTIFICATION_SERVICE_ADDR:-notification:50059}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-8}
+      DB_MIN_CONNS: ${DB_MIN_CONNS:-1}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      job:
+        condition: service_started
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:51054/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+
+  # ── API gateway + web ───────────────────────────────────────
+
+  gateway:
+    <<: *restart
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/gateway:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/gateway.Dockerfile
+    environment:
+      ENVIRONMENT: production
+      APP_ENV: production
+      APP_VERSION: ${APP_VERSION:-prod}
+      GATEWAY_PORT: "8080"
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL_REPLICA: ${DATABASE_URL_REPLICA:-}
+      REDIS_URL: ${REDIS_URL}
+      JWT_PUBLIC_KEY_PATH: /keys/public.pem
+      SESSION_SECRET: ${SESSION_SECRET}
+      HAS_SESSION_SECRET: ${HAS_SESSION_SECRET:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      ENCRYPTION_KEY_PREVIOUS: ${ENCRYPTION_KEY_PREVIOUS:-}
+      MEILISEARCH_URL: ${MEILISEARCH_URL:-http://meilisearch:7700}
+      MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY}
+      # CORS / cookies / proxy trust (Cloudflare → Caddy → gateway).
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://no-markup.com,https://www.no-markup.com}
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-no-markup.com,www.no-markup.com}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      SECURE_COOKIES: ${SECURE_COOKIES:-true}
+      FRONTEND_URL: ${FRONTEND_URL:-https://no-markup.com}
+      OAUTH_REDIRECT_BASE: ${OAUTH_REDIRECT_BASE:-https://api.no-markup.com}
+      # Mesh addresses (gRPC NewClient is lazy — missing peers fail at RPC time).
+      USER_SERVICE_ADDR: user:50051
+      JOB_SERVICE_ADDR: job:50052
+      PAYMENT_SERVICE_ADDR: payment:50054
+      BID_ENGINE_ADDR: ${BID_ENGINE_ADDR:-bidding:50053}
+      CHAT_SERVICE_ADDR: ${CHAT_SERVICE_ADDR:-chat:50055}
+      CHAT_WS_ADDR: ${CHAT_WS_ADDR:-chat:50065}
+      FRAUD_ENGINE_ADDR: ${FRAUD_ENGINE_ADDR:-fraud:50056}
+      TRUST_ENGINE_ADDR: ${TRUST_ENGINE_ADDR:-trust:50057}
+      IMAGING_SERVICE_ADDR: ${IMAGING_SERVICE_ADDR:-imaging:50058}
+      NOTIFICATION_SERVICE_ADDR: ${NOTIFICATION_SERVICE_ADDR:-notification:50059}
+      INTERNAL_WS_SECRET: ${INTERNAL_WS_SECRET:-}
+      # Stripe (webhook signature verified on gateway + payment).
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_CONNECT_CLIENT_ID: ${STRIPE_CONNECT_CLIENT_ID:-}
+      # Object storage (real S3/R2 — not MinIO unless storage profile is on).
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
+      # OAuth / email optional at launch (features degrade).
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
+      JWT_ISSUER: ${JWT_ISSUER:-https://auth.no-markup.com}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-nomarkup-api}
+      METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      ENABLE_LIVE_AUCTION: ${ENABLE_LIVE_AUCTION:-false}
+      # Leave OTEL unset on a single-box launch (no Jaeger).
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: api-gateway
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-8}
+      DB_MIN_CONNS: ${DB_MIN_CONNS:-1}
+      EXPECTED_SCHEMA_VERSION: ${EXPECTED_SCHEMA_VERSION:-}
+    volumes:
+      - ${JWT_KEYS_DIR:-./keys}:/keys:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      user:
+        condition: service_healthy
+      job:
+        condition: service_healthy
+      payment:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    networks:
+      - internal
+      - edge
+    healthcheck:
+      # Liveness path is dependency-independent (/health always 200).
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    logging: *default-logging
+
+  web:
+    <<: *restart
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/web:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/web.Dockerfile
+      # NEXT_PUBLIC_* are inlined into the client bundle at `next build`.
+      # Rebuild the web image whenever these change. Runtime env still needed
+      # for server-side validation (web/src/lib/server/env.ts).
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.no-markup.com}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-wss://api.no-markup.com}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://no-markup.com}
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+        NEXT_PUBLIC_MAPBOX_TOKEN: ${NEXT_PUBLIC_MAPBOX_TOKEN:-}
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+        NEXT_PUBLIC_ENABLE_LIVE_AUCTION: ${NEXT_PUBLIC_ENABLE_LIVE_AUCTION:-false}
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      APP_ENV: production
+      APP_VERSION: ${APP_VERSION:-prod}
+      # Server-side gateway origin (in-network; never the public hostname).
+      API_URL: ${API_URL:-http://gateway:8080}
+      API_INTERNAL_URL: ${API_INTERNAL_URL:-http://gateway:8080}
+      # Required at runtime for fail-fast instrumentation (also used client-side if baked).
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.no-markup.com}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-wss://api.no-markup.com}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://no-markup.com}
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+      NEXT_PUBLIC_MAPBOX_TOKEN: ${NEXT_PUBLIC_MAPBOX_TOKEN:?NEXT_PUBLIC_MAPBOX_TOKEN is required}
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+      NEXT_PUBLIC_ENABLE_LIVE_AUCTION: ${NEXT_PUBLIC_ENABLE_LIVE_AUCTION:-false}
+      JWT_PUBLIC_KEY_PATH: /keys/public.pem
+      SESSION_SECRET: ${SESSION_SECRET}
+      HAS_SESSION_SECRET: ${HAS_SESSION_SECRET:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    volumes:
+      - ${JWT_KEYS_DIR:-./keys}:/keys:ro
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+      - edge
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *default-logging
+
+  # ── Optional: chat ──────────────────────────────────────────
+
+  chat:
+    <<: *restart
+    profiles: ["chat"]
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/chat:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/chat.Dockerfile
+    environment:
+      ENVIRONMENT: production
+      APP_ENV: production
+      APP_VERSION: ${APP_VERSION:-prod}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CHAT_SERVICE_PORT: "50055"
+      CHAT_WS_PORT: "50065"
+      INTERNAL_WS_SECRET: ${INTERNAL_WS_SECRET:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-6}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:51055/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+
+  # ── Optional: notification ──────────────────────────────────
+
+  notification:
+    <<: *restart
+    profiles: ["notification"]
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/notification:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/notification.Dockerfile
+    environment:
+      ENVIRONMENT: production
+      APP_ENV: production
+      APP_VERSION: ${APP_VERSION:-prod}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      NOTIFICATION_SERVICE_PORT: "50059"
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-noreply@no-markup.com}
+      SENDGRID_FROM_NAME: ${SENDGRID_FROM_NAME:-NoMarkup}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@no-markup.com}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-6}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:51059/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
+
+  # ── Optional: Rust engines ──────────────────────────────────
+
+  bidding:
+    <<: *restart
+    profiles: ["engines"]
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/bidding:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: bidding
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL}
+      BID_ENGINE_PORT: "50053"
+      RUST_LOG: ${RUST_LOG:-info}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-4}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    logging: *default-logging
+
+  fraud:
+    <<: *restart
+    profiles: ["engines"]
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/fraud:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: fraud
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL}
+      FRAUD_ENGINE_PORT: "50056"
+      RUST_LOG: ${RUST_LOG:-info}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-4}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    logging: *default-logging
+
+  trust:
+    <<: *restart
+    profiles: ["engines"]
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/trust:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: trust
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL}
+      TRUST_ENGINE_PORT: "50057"
+      RUST_LOG: ${RUST_LOG:-info}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-4}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    logging: *default-logging
+
+  imaging:
+    <<: *restart
+    profiles: ["engines"]
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/imaging:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: imaging
+    environment:
+      ENVIRONMENT: production
+      IMAGING_SERVICE_PORT: "50058"
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${S3_REGION:-auto}
+      RUST_LOG: ${RUST_LOG:-info}
+    networks:
+      - internal
+    logging: *default-logging
+
+  underwriting:
+    <<: *restart
+    profiles: ["engines"]
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/underwriting:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: underwriting
+    environment:
+      ENVIRONMENT: production
+      UNDERWRITING_ENGINE_PORT: "50060"
+      RUST_LOG: ${RUST_LOG:-info}
+    networks:
+      - internal
+    logging: *default-logging
+
+  pricing:
+    <<: *restart
+    profiles: ["engines"]
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/pricing:${IMAGE_TAG:-latest}
+    build:
+      <<: *build-root
+      dockerfile: deploy/docker/engines.Dockerfile
+      target: pricing
+    environment:
+      ENVIRONMENT: production
+      PRICING_ENGINE_PORT: "50061"
+      RUST_LOG: ${RUST_LOG:-info}
+    networks:
+      - internal
+    logging: *default-logging
+
+  # ── Optional: local object storage (prefer Cloudflare R2 / S3) ─
+
+  minio:
+    <<: *restart
+    profiles: ["storage"]
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+    volumes:
+      - miniodata:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+
+networks:
+  # Public edge: caddy + web + gateway (HTTP only via caddy host ports).
+  edge:
+    driver: bridge
+  # Private mesh: data + gRPC. No published ports.
+  internal:
+    driver: bridge
+    internal: false
+
+volumes:
+  pgdata:
+  redisdata:
+  meilidata:
+  caddy_data:
+  caddy_config:
+  miniodata:

@@ -46,6 +46,10 @@ const PREFERENCE_CATEGORIES: CategoryGroup[] = [
       { type: NOTIFICATION_TYPE.PAYMENT_RECEIVED, label: 'Payment received' },
       { type: NOTIFICATION_TYPE.PAYMENT_RELEASED, label: 'Payment released' },
       { type: NOTIFICATION_TYPE.PAYMENT_FAILED, label: 'Payment failed' },
+      {
+        type: NOTIFICATION_TYPE.PAYMENT_AUTHENTICATION_REQUIRED,
+        label: 'Bank authentication (3DS)',
+      },
       { type: NOTIFICATION_TYPE.PAYOUT_SENT, label: 'Payout sent' },
     ],
   },
@@ -91,6 +95,27 @@ function getDefaultPreference(type: NotificationType): NotificationPreference {
   };
 }
 
+/** FR-17.3 — payment failures, disputes, guarantee, account flags cannot be disabled. */
+function isCriticalNotificationType(type: string): boolean {
+  const t = type.trim().toLowerCase();
+  if (!t) return false;
+  if (t === 'payment_failed') return true;
+  if (t.startsWith('dispute_')) return true;
+  if (t.includes('guarantee')) return true;
+  if (t === 'account_flag' || t.startsWith('account_flag')) return true;
+  return false;
+}
+
+function forceCriticalEnabled(pref: NotificationPreference): NotificationPreference {
+  if (!isCriticalNotificationType(pref.notification_type)) return pref;
+  return {
+    ...pref,
+    push_enabled: true,
+    email_enabled: true,
+    in_app_enabled: true,
+  };
+}
+
 export default function NotificationPreferencesPage() {
   const { data, isLoading, isError } = useNotificationPreferences();
   const updatePreferences = useUpdatePreferences();
@@ -117,6 +142,10 @@ export default function NotificationPreferencesPage() {
   }
 
   function updatePref(type: NotificationType, field: keyof Omit<NotificationPreference, 'notification_type'>, value: boolean) {
+    if (isCriticalNotificationType(type) && value === false) {
+      // FR-17.3 — critical types stay on.
+      return;
+    }
     setPreferenceMap((prev) => {
       const next = new Map(prev);
       const current = next.get(type) ?? getDefaultPreference(type);
@@ -130,7 +159,7 @@ export default function NotificationPreferencesPage() {
     const allPrefs: NotificationPreference[] = [];
     for (const category of PREFERENCE_CATEGORIES) {
       for (const item of category.types) {
-        allPrefs.push(getPreference(item.type));
+        allPrefs.push(forceCriticalEnabled(getPreference(item.type)));
       }
     }
 
@@ -150,7 +179,8 @@ export default function NotificationPreferencesPage() {
         <div>
           <h1 className="gold-text text-2xl font-bold tracking-tight">Notification Preferences</h1>
           <p className="mt-1 text-zinc-300">
-            Choose how and when you want to be notified.
+            Choose how and when you want to be notified. Payment failures, disputes, and
+            guarantee alerts are required and cannot be turned off.
           </p>
         </div>
         <div className="space-y-4">
@@ -266,17 +296,32 @@ export default function NotificationPreferencesPage() {
               <div className="space-y-1">
                 {category.types.map((item, idx) => {
                   const pref = getPreference(item.type);
+                  const critical = isCriticalNotificationType(item.type);
                   return (
                     <div key={item.type}>
                       {idx > 0 ? <div className="glass-divider my-1" aria-hidden="true" /> : null}
                       <div className="flex min-h-[44px] flex-col gap-2 py-2 sm:flex-row sm:items-center sm:gap-4">
-                        <p className="flex-1 text-sm font-medium">{item.label}</p>
+                        <div className="flex flex-1 flex-col gap-0.5">
+                          <p className="text-sm font-medium">
+                            {item.label}
+                            {critical ? (
+                              <span className="ml-2 text-xs font-semibold text-[var(--brand-gold)]">
+                                Required
+                              </span>
+                            ) : null}
+                          </p>
+                          {critical ? (
+                            <p className="text-xs text-zinc-400">
+                              Critical alert — cannot be turned off.
+                            </p>
+                          ) : null}
+                        </div>
                         <div className="flex items-center gap-4">
                           {/* In-App: always on */}
                           <div className="flex w-16 flex-col items-center gap-1">
                             <span className="text-xs text-zinc-300 sm:hidden">In-App</span>
                             <Switch
-                              checked={pref.in_app_enabled}
+                              checked={critical ? true : pref.in_app_enabled}
                               disabled
                               aria-label={`In-app notification for ${item.label}`}
                             />
@@ -285,20 +330,20 @@ export default function NotificationPreferencesPage() {
                           <div className="flex w-16 flex-col items-center gap-1">
                             <span className="text-xs text-zinc-300 sm:hidden">Email</span>
                             <Switch
-                              checked={pref.email_enabled && globalEmail}
-                              disabled={!globalEmail}
+                              checked={critical ? true : pref.email_enabled && globalEmail}
+                              disabled={critical || !globalEmail}
                               onCheckedChange={(checked) => { updatePref(item.type, 'email_enabled', checked); }}
-                              aria-label={`Email notification for ${item.label}`}
+                              aria-label={`Email notification for ${item.label}${critical ? ' (required)' : ''}`}
                             />
                           </div>
                           {/* Push */}
                           <div className="flex w-16 flex-col items-center gap-1">
                             <span className="text-xs text-zinc-300 sm:hidden">Push</span>
                             <Switch
-                              checked={pref.push_enabled && globalPush}
-                              disabled={!globalPush}
+                              checked={critical ? true : pref.push_enabled && globalPush}
+                              disabled={critical || !globalPush}
                               onCheckedChange={(checked) => { updatePref(item.type, 'push_enabled', checked); }}
-                              aria-label={`Push notification for ${item.label}`}
+                              aria-label={`Push notification for ${item.label}${critical ? ' (required)' : ''}`}
                             />
                           </div>
                         </div>

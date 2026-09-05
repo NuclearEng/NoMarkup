@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { Shield, Smartphone, Copy, Check } from 'lucide-react';
+import QRCode from 'qrcode';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,15 +18,58 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import { changePasswordSchema } from '@/lib/validations';
 import type { ChangePasswordFormValues } from '@/lib/validations';
+import { ConnectedAccounts } from '@/components/settings/ConnectedAccounts';
 import { useProfile } from '@/hooks/useProfile';
 import {
   useEnableMFA,
   useVerifyMFASetup,
   useDisableMFA,
 } from '@/hooks/useMFA';
+
+function LocalMfaQr({ otpauth }: { otpauth: string }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDataUrl(null);
+    setFailed(false);
+    void QRCode.toDataURL(otpauth, { width: 200, margin: 1, errorCorrectionLevel: 'M' })
+      .then((url) => {
+        if (!cancelled) setDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [otpauth]);
+
+  if (failed) {
+    return (
+      <p className="text-sm text-zinc-300">
+        Could not render the QR code. Use the manual entry key below.
+      </p>
+    );
+  }
+
+  if (!dataUrl) {
+    return <Skeleton className="h-[200px] w-[200px]" />;
+  }
+
+  return (
+    <img
+      src={dataUrl}
+      alt="Scan this QR code with your authenticator app"
+      width={200}
+      height={200}
+    />
+  );
+}
 
 function MFASection() {
   const { data: profile, isLoading } = useProfile();
@@ -70,9 +114,7 @@ function MFASection() {
       const data = await enableMFA.mutateAsync();
       setSetupData(data);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to start MFA setup';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Failed to start MFA setup'));
     }
   }
 
@@ -88,9 +130,7 @@ function MFASection() {
       setVerifyCode('');
       setSuccess('Two-factor authentication has been enabled.');
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Invalid verification code';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Invalid verification code'));
     }
   }
 
@@ -102,9 +142,7 @@ function MFASection() {
       setDisableCode('');
       setSuccess('Two-factor authentication has been disabled.');
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Invalid verification code';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Invalid verification code'));
     }
   }
 
@@ -112,7 +150,7 @@ function MFASection() {
     if (!setupData) return;
     void navigator.clipboard.writeText(setupData.backup_codes.join('\n'));
     setCopiedCodes(true);
-    setTimeout(() => setCopiedCodes(false), 2000);
+    setTimeout(() => { setCopiedCodes(false); }, 2000);
   }
 
   return (
@@ -152,15 +190,9 @@ function MFASection() {
               code below to confirm.
             </p>
 
-            {/* QR code via otpauth URI rendered as an image */}
+            {/* QR rendered locally so the otpauth secret never leaves the device. */}
             <div className="flex justify-center rounded-lg border bg-white p-4">
-              {/* eslint-disable-next-line @next/next/no-img-element -- QR code from external API */}
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(setupData.qr_code_url)}`}
-                alt="Scan this QR code with your authenticator app"
-                width={200}
-                height={200}
-              />
+              <LocalMfaQr otpauth={setupData.qr_code_url} />
             </div>
 
             <div className="space-y-1">
@@ -227,7 +259,7 @@ function MFASection() {
                 placeholder="000000"
                 maxLength={6}
                 value={verifyCode}
-                onChange={(e) => setVerifyCode(e.target.value)}
+                onChange={(e) => { setVerifyCode(e.target.value); }}
                 className="max-w-[200px] text-center text-lg tracking-widest"
               />
             </div>
@@ -281,7 +313,7 @@ function MFASection() {
                   placeholder="000000"
                   maxLength={6}
                   value={disableCode}
-                  onChange={(e) => setDisableCode(e.target.value)}
+                  onChange={(e) => { setDisableCode(e.target.value); }}
                   className="max-w-[200px] text-center text-lg tracking-widest"
                   aria-label="Enter your authenticator code"
                 />
@@ -370,9 +402,7 @@ export default function SecuritySettingsPage() {
       setPasswordSuccess(true);
       form.reset();
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to change password';
-      setPasswordError(message);
+      setPasswordError(getApiErrorMessage(error, 'Failed to change password'));
     }
   }
 
@@ -494,6 +524,11 @@ export default function SecuritySettingsPage() {
 
       {/* MFA */}
       <MFASection />
+
+      <div className="glass-divider" role="separator" />
+
+      {/* Connected OAuth accounts (ASR-5.1.1.v) */}
+      <ConnectedAccounts />
 
       <div className="glass-divider" role="separator" />
 

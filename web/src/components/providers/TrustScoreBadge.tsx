@@ -97,6 +97,7 @@ export function TrustScoreBadge({ tier, score, size = 'md' }: TrustScoreBadgePro
               colors.border,
             )}
             aria-label={`Trust tier: ${label}${scorePercent !== undefined ? `, score: ${String(scorePercent)}%` : ''}`}
+            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
             tabIndex={0}
           >
             <span aria-hidden="true">{icon}</span>
@@ -120,6 +121,7 @@ export function TrustScoreBadge({ tier, score, size = 'md' }: TrustScoreBadgePro
               colors.border,
             )}
             aria-label={`Trust tier: ${label}${scorePercent !== undefined ? `, score: ${String(scorePercent)}%` : ''}`}
+            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
             tabIndex={0}
           >
             <span className="text-xl" aria-hidden="true">
@@ -152,6 +154,7 @@ export function TrustScoreBadge({ tier, score, size = 'md' }: TrustScoreBadgePro
             colors.border,
           )}
           aria-label={`Trust tier: ${label}${scorePercent !== undefined ? `, score: ${String(scorePercent)}%` : ''}`}
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focusable for tooltip accessibility
           tabIndex={0}
         >
           <span aria-hidden="true">{icon}</span>

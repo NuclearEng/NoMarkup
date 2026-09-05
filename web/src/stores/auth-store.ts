@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import { api, ApiError } from '@/lib/api';
 import { clearTokens, parseJwtPayload, setAccessToken } from '@/lib/auth';
+import { queryClient } from '@/lib/query-client';
 import type {
   AuthResponse,
   LoginInput,
@@ -80,7 +81,10 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       body,
     );
 
-    if (data.mfa_required && data.mfa_challenge_token) {
+    if (data.mfa_required) {
+      if (!data.mfa_challenge_token) {
+        throw new Error('MFA required but challenge missing');
+      }
       throw new MFARequiredError(data.user_id, data.mfa_challenge_token);
     }
 
@@ -108,18 +112,18 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       },
     );
 
-    setAccessToken(data.access_token);
-
     const payload = parseJwtPayload(data.access_token);
     // The MFA verify endpoint may not return user_id in the body,
     // so we extract it from the JWT payload (sub claim).
     const userId = data.user_id || (payload ? payload.sub : '');
-    const user = payload
-      ? userFromJwt(userId, payload)
-      : null;
+    if (!payload || userId === '') {
+      clearTokens();
+      throw new Error('Login succeeded but the session could not be restored. Please try again.');
+    }
 
+    setAccessToken(data.access_token);
     set({
-      user,
+      user: userFromJwt(userId, payload),
       accessToken: data.access_token,
       isAuthenticated: true,
       isHydrating: false,
@@ -167,6 +171,11 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       }
     }
     clearTokens();
+    // Drop all cached per-user server state so the next account that logs in
+    // in this tab doesn't inherit the previous user's notifications, etc.
+    // (Root cause of the notification mark-read 404: stale notification ids
+    // from a prior user were sent under the new user's token.)
+    queryClient.clear();
     set({ ...initialState, isHydrating: false });
   },
 

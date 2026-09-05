@@ -1,195 +1,166 @@
-'use client';
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 
-import { useParams } from 'next/navigation';
+import type { PublicProvider } from '@/hooks/useProviders';
+import { sanitizeJsonLd } from '@/lib/json-ld';
 
-import { ResponseTimeBadge } from '@/components/providers/ResponseTimeBadge';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { usePublicProviderProfile } from '@/hooks/useProviders';
-import { useReviewsForUser } from '@/hooks/useReviews';
+import { ProviderProfileClient } from './ProviderProfileClient';
+import { serverFetch } from '@/lib/server-fetch';
 
-export default function ProviderProfilePage() {
-  const params = useParams<{ id: string }>();
-  const { data: provider, isLoading, isError, refetch } = usePublicProviderProfile(params.id);
-  const { data: reviewsData } = useReviewsForUser(provider?.user_id ?? '', {
-    direction: 'customer_to_provider',
-    per_page: 5,
-  });
+// Server-side API origin. Mirror marketplace/[id] + jobs/[id]: prefer the
+// server-only API_URL, fall back to the public var, then localhost for dev.
+// Public read (provider profile needs no auth/cookies), so plain server fetch.
+const API_URL =
+  process.env['API_URL'] ?? process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8081';
 
-  if (isLoading) {
-    return (
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="space-y-6">
-          <div className="glass glass-highlight h-32 animate-pulse rounded-xl border border-[var(--brand-gold)]/10" />
-          <div className="glass glass-highlight h-24 animate-pulse rounded-xl border border-[var(--brand-gold)]/10" />
-          <div className="glass glass-highlight h-64 animate-pulse rounded-xl border border-[var(--brand-gold)]/10" />
-        </div>
-      </div>
-    );
+// Public site origin — drives canonical + absolute openGraph URLs. Same
+// resolution as layout.tsx / sitemap.ts / robots.ts.
+const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
+
+/**
+ * Server-fetch a provider profile for the detail page.
+ *
+ * Profiles change slowly (reviews/trust drift over hours), so a 60s revalidate
+ * window comfortably absorbs crawler/duplicate hits while keeping the seeded
+ * first paint fresh; the client island refetches anyway. The gateway returns
+ * the provider at the top level (not wrapped). Returns null on 404 / not-ok /
+ * network error so the caller can decide notFound() vs. metadata fallbacks.
+ */
+async function fetchProvider(id: string): Promise<PublicProvider | null> {
+  try {
+    const res = await serverFetch(`${API_URL}/api/v1/providers/${id}`, {
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return null;
+    const provider = (await res.json()) as PublicProvider | null;
+    // A valid profile always carries an id; guard against an empty/null body.
+    if (!provider || !provider.id) return null;
+    return provider;
+  } catch {
+    return null;
+  }
+}
+
+/** Display name prefers the business name, falling back to the person name. */
+function providerName(provider: PublicProvider): string {
+  return provider.business_name ?? provider.display_name;
+}
+
+/** Clamp a description to a tidy meta length. */
+function clampDescription(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length > 160 ? `${trimmed.slice(0, 157)}...` : trimmed;
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const provider = await fetchProvider(id);
+
+  if (!provider) {
+    return {
+      title: 'Provider not found',
+      description: 'This provider could not be found.',
+    };
   }
 
-  if (isError || !provider) {
-    return (
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="glass glass-highlight rounded-xl border border-red-500/20 p-8 text-center">
-          <p className="text-red-400">Failed to load provider profile.</p>
-          <Button
-            variant="outline"
-            className="mt-4 min-h-[44px] border-[var(--brand-gold)]/15 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
-            onClick={() => { void refetch(); }}
-          >
-            Retry
-          </Button>
-        </div>
-      </div>
-    );
+  const name = providerName(provider);
+  const categories = provider.service_categories.map((c) => c.name).join(', ');
+  const rating = provider.review_summary
+    ? `Rated ${provider.review_summary.average_rating.toFixed(1)} from ${provider.review_summary.review_count.toString()} review${provider.review_summary.review_count === 1 ? '' : 's'}. `
+    : '';
+  const description = clampDescription(
+    provider.bio ??
+      `${rating}${categories ? `Services: ${categories}. ` : ''}${provider.jobs_completed.toString()} jobs completed on NoMarkup.`,
+  );
+  const canonical = `/providers/${id}`;
+  const ogImage = provider.avatar_url ?? undefined;
+
+  return {
+    title: name,
+    description,
+    alternates: { canonical },
+    openGraph: {
+      title: name,
+      description,
+      type: 'profile',
+      url: `${SITE_URL}${canonical}`,
+      ...(ogImage ? { images: [{ url: ogImage }] } : {}),
+    },
+  };
+}
+
+/**
+ * Build schema.org LocalBusiness JSON-LD for a provider.
+ *
+ * `aggregateRating` is only included when there are real reviews (schema.org
+ * requires reviewCount > 0). `areaServed` lists the provider's service
+ * categories so search engines understand what they do.
+ */
+function buildProviderJsonLd(provider: PublicProvider, url: string): Record<string, unknown> {
+  const ld: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'LocalBusiness',
+    name: providerName(provider),
+    url,
+  };
+
+  if (provider.bio) {
+    ld['description'] = provider.bio;
   }
 
-  const reviews = reviewsData?.reviews ?? [];
+  if (provider.avatar_url) {
+    ld['image'] = provider.avatar_url;
+  }
+
+  if (provider.review_summary && provider.review_summary.review_count > 0) {
+    ld['aggregateRating'] = {
+      '@type': 'AggregateRating',
+      ratingValue: provider.review_summary.average_rating,
+      reviewCount: provider.review_summary.review_count,
+      bestRating: 5,
+      worstRating: 1,
+    };
+  }
+
+  if (provider.service_categories.length > 0) {
+    ld['areaServed'] = provider.service_categories.map((c) => c.name);
+  }
+
+  return ld;
+}
+
+export default async function ProviderProfilePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const provider = await fetchProvider(id);
+
+  if (!provider) {
+    notFound();
+  }
+
+  const canonicalUrl = `${SITE_URL}/providers/${id}`;
+  const jsonLd = buildProviderJsonLd(provider, canonicalUrl);
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Hero / header */}
-      <div className="glass glass-highlight mb-6 rounded-xl border border-[var(--brand-gold)]/10 p-6">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-          {/* Avatar */}
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-[var(--brand-gold)]/10 text-2xl font-bold text-[var(--brand-gold)]">
-            {(provider.business_name ?? provider.display_name).charAt(0).toUpperCase()}
-          </div>
-
-          {/* Info */}
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="gold-text text-2xl font-bold">
-                {provider.business_name ?? provider.display_name}
-              </h1>
-              {provider.verified ? (
-                <Badge className="border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 text-xs text-[var(--brand-gold)]">
-                  Verified
-                </Badge>
-              ) : null}
-            </div>
-            {provider.business_name ? (
-              <p className="text-zinc-400">{provider.display_name}</p>
-            ) : null}
-            {provider.bio ? (
-              <p className="mt-2 text-sm text-zinc-300">{provider.bio}</p>
-            ) : null}
-            <p className="mt-1 text-xs text-zinc-500">
-              Member since{' '}
-              {new Date(provider.member_since).toLocaleDateString('en-US', {
-                month: 'long',
-                year: 'numeric',
-              })}
-            </p>
-            {provider.response_time_label ? (
-              <div className="mt-2">
-                <ResponseTimeBadge label={provider.response_time_label} />
-              </div>
-            ) : null}
-          </div>
-
-          {/* Trust score — prominent gold accent */}
-          {provider.trust_score ? (
-            <div className="flex flex-col items-center gap-1 rounded-xl border border-[var(--brand-gold)]/15 bg-[var(--brand-gold)]/5 px-5 py-3 text-center">
-              <p className="text-3xl font-bold text-[var(--brand-gold)]">
-                {String(provider.trust_score.overall_score)}
-              </p>
-              <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">Trust Score</p>
-              <Badge className="mt-0.5 border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 text-xs text-[var(--brand-gold)]">
-                {provider.trust_score.tier.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-              </Badge>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">
-          <p className="text-2xl font-bold text-zinc-100">{String(provider.jobs_completed)}</p>
-          <p className="text-xs text-zinc-500">Jobs Completed</p>
-        </div>
-        {provider.review_summary ? (
-          <>
-            <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">
-              <p className="text-2xl font-bold text-zinc-100">
-                {provider.review_summary.average_rating.toFixed(1)}
-              </p>
-              <p className="text-xs text-zinc-500">
-                Rating ({String(provider.review_summary.review_count)})
-              </p>
-            </div>
-            <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">
-              <p className="text-2xl font-bold text-zinc-100">
-                {Math.round(provider.review_summary.on_time_rate * 100)}%
-              </p>
-              <p className="text-xs text-zinc-500">On-Time Rate</p>
-            </div>
-          </>
-        ) : null}
-        <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-4 text-center">
-          <p className="text-2xl font-bold text-[var(--brand-gold)]">
-            {provider.trust_score ? String(provider.trust_score.overall_score) : '--'}
-          </p>
-          <p className="text-xs text-zinc-500">Trust Score</p>
-        </div>
-      </div>
-
-      {/* Service Categories */}
-      {provider.service_categories.length > 0 ? (
-        <div className="glass glass-highlight mb-6 rounded-xl border border-[var(--brand-gold)]/10 p-5">
-          <h2 className="mb-3 text-base font-semibold text-zinc-200">Service Categories</h2>
-          <div className="flex flex-wrap gap-2">
-            {provider.service_categories.map((cat) => (
-              <Badge key={cat.id} className="border-white/10 bg-white/[0.06] text-zinc-300">
-                {cat.name}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {/* Reviews */}
-      <div className="glass glass-highlight rounded-xl border border-[var(--brand-gold)]/10 p-5">
-        <h2 className="mb-4 text-base font-semibold text-zinc-200">Reviews</h2>
-        {reviews.length === 0 ? (
-          <p className="text-sm text-zinc-500">No reviews yet.</p>
-        ) : (
-          <div className="space-y-5">
-            {reviews.map((review, idx) => (
-              <div key={review.id}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-[var(--brand-gold)]">
-                      {review.overall_rating.toFixed(1)} ★
-                    </span>
-                    <span className="text-xs text-zinc-500">
-                      {new Date(review.created_at).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </span>
-                  </div>
-                </div>
-                <p className="mt-1.5 text-sm text-zinc-300">{review.comment}</p>
-                {review.response ? (
-                  <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.03] p-3 text-sm">
-                    <p className="mb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-                      Provider Response
-                    </p>
-                    <p className="text-zinc-400">{review.response.comment}</p>
-                  </div>
-                ) : null}
-                {idx < reviews.length - 1 ? (
-                  <div className="glass-divider mt-4" />
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+    <>
+      {/* LocalBusiness structured data — server-rendered + crawlable. The
+          payload carries provider-controlled free text (business_name,
+          display_name, bio), so it goes through sanitizeJsonLd: plain
+          JSON.stringify leaves `<` and `>` intact and a business name
+          containing a closing script tag would break out of this block into
+          live markup. See web/src/lib/json-ld.ts. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: sanitizeJsonLd(jsonLd) }}
+      />
+      <ProviderProfileClient providerId={id} initialProvider={provider} />
+    </>
   );
 }

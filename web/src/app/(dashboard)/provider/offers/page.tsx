@@ -2,12 +2,18 @@
 
 import { CheckCircle2, Clock, XCircle, Zap } from 'lucide-react';
 
+import { InstantAvailabilityCard } from '@/components/providers/InstantAvailabilityCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCountdown } from '@/hooks/useCountdown';
-import { useAcceptOffer, useDeclineOffer, useProviderOffers } from '@/hooks/useInstantMatch';
+import {
+  formatApproxTravel,
+  useAcceptOffer,
+  useDeclineOffer,
+  useProviderOffers,
+} from '@/hooks/useInstantMatch';
 import { formatCents } from '@/lib/utils';
 
 interface OfferCardProps {
@@ -15,6 +21,7 @@ interface OfferCardProps {
   jobTitle: string;
   expiresAt: string;
   amountCents: number;
+  approxTravelMinutes?: number;
 }
 
 function OfferCountdown({ expiresAt }: { expiresAt: string }) {
@@ -28,18 +35,22 @@ function OfferCountdown({ expiresAt }: { expiresAt: string }) {
         : 'text-emerald-400';
 
   return (
-    <span className={`font-mono text-sm font-semibold tabular-nums ${urgencyClass}`}>
+    <span
+      className={`font-mono text-sm font-semibold tabular-nums ${urgencyClass}`}
+      aria-label={isExpired ? 'Offer expired' : `Offer expires in ${timeLeft}`}
+    >
       {isExpired ? 'Expired' : timeLeft}
     </span>
   );
 }
 
-function OfferCard({ jobId, jobTitle, expiresAt, amountCents }: OfferCardProps) {
+function OfferCard({ jobId, jobTitle, expiresAt, amountCents, approxTravelMinutes }: OfferCardProps) {
   const accept = useAcceptOffer(jobId);
   const decline = useDeclineOffer(jobId);
   const { isExpired } = useCountdown(expiresAt);
 
   const isPending = accept.isPending || decline.isPending;
+  const travelLabel = formatApproxTravel(approxTravelMinutes);
 
   return (
     <Card className="border-border/50 bg-card/60 backdrop-blur-sm transition-all duration-200 hover:border-border">
@@ -55,13 +66,19 @@ function OfferCard({ jobId, jobTitle, expiresAt, amountCents }: OfferCardProps) 
                 </Badge>
               ) : null}
 
-              <span
-                className="flex items-center gap-1 text-xs text-zinc-400"
-                aria-label={`Offer expires in ${expiresAt}`}
-              >
+              <span className="flex items-center gap-1 text-xs text-zinc-400">
                 <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                 <OfferCountdown expiresAt={expiresAt} />
               </span>
+              {travelLabel ? (
+                <span
+                  className="text-xs text-zinc-400"
+                  title="Estimated drive time only — not live GPS tracking"
+                  aria-label={travelLabel}
+                >
+                  {travelLabel}
+                </span>
+              ) : null}
             </div>
           </div>
 
@@ -69,7 +86,7 @@ function OfferCard({ jobId, jobTitle, expiresAt, amountCents }: OfferCardProps) 
             <div className="flex shrink-0 gap-2">
               <Button
                 size="sm"
-                className="min-h-[36px] bg-emerald-600 text-white hover:bg-emerald-700"
+                className="min-h-[44px] bg-emerald-600 px-4 text-white hover:bg-emerald-700"
                 onClick={() => void accept.mutateAsync()}
                 disabled={isPending}
                 aria-label={`Accept offer for ${jobTitle}`}
@@ -80,7 +97,7 @@ function OfferCard({ jobId, jobTitle, expiresAt, amountCents }: OfferCardProps) 
               <Button
                 size="sm"
                 variant="outline"
-                className="min-h-[36px]"
+                className="min-h-[44px] px-4"
                 onClick={() => void decline.mutateAsync()}
                 disabled={isPending}
                 aria-label={`Decline offer for ${jobTitle}`}
@@ -112,8 +129,8 @@ function OffersSkeleton() {
                 <Skeleton className="h-4 w-1/3" />
               </div>
               <div className="flex shrink-0 gap-2">
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
+                <Skeleton className="h-11 w-20" />
+                <Skeleton className="h-11 w-20" />
               </div>
             </div>
           </CardContent>
@@ -144,6 +161,8 @@ export default function ProviderOffersPage() {
           </p>
         </div>
       </div>
+
+      <InstantAvailabilityCard />
 
       {isLoading ? (
         <OffersSkeleton />
@@ -179,6 +198,7 @@ export default function ProviderOffersPage() {
               jobTitle={offer.job_title || 'Untitled Job'}
               expiresAt={offer.expires_at}
               amountCents={offer.amount_cents}
+              approxTravelMinutes={offer.approx_travel_minutes}
             />
           ))}
         </div>

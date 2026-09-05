@@ -1,0 +1,11 @@
+{
+  "method": "GET",
+  "path": "/api/v1/providers/me/stripe/status",
+  "status": 200,
+  "contentType": "application/json",
+  "body": {
+    "charges_enabled": false,
+    "payouts_enabled": false,
+    "details_submitted": false
+  }
+}

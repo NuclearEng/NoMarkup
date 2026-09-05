@@ -17,6 +17,10 @@ import {
 } from '@/hooks/useJobs';
 import type { Job, JobDetail, JobsResponse } from '@/types';
 
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
 // Mock the api module
 vi.mock('@/lib/api', () => ({
   api: {
@@ -26,9 +30,21 @@ vi.mock('@/lib/api', () => ({
     patch: vi.fn(),
     delete: vi.fn(),
   },
+  ApiError: class ApiError extends Error {
+    code = 'ERR';
+    userMessage(fallback: string) {
+      return this.message || fallback;
+    }
+  },
 }));
 
-const { api } = await import('@/lib/api');
+vi.mock('@/lib/auth', () => ({
+  getAccessToken: vi.fn(() => null),
+}));
+
+const { api, ApiError: FakeApiError } = await import('@/lib/api');
+const { getAccessToken } = await import('@/lib/auth');
+const { toast } = await import('sonner');
 
 function createTestQueryClient(): QueryClient {
   return new QueryClient({
@@ -118,7 +134,7 @@ describe('useSearchJobs', () => {
       { wrapper: createWrapper(queryClient) },
     );
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.jobs).toHaveLength(1);
     expect(result.current.data?.jobs[0]?.id).toBe('job-1');
@@ -134,7 +150,7 @@ describe('useSearchJobs', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith('/api/v1/jobs');
   });
@@ -146,7 +162,7 @@ describe('useSearchJobs', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
 
     expect(result.current.error).toBeDefined();
   });
@@ -168,6 +184,7 @@ describe('useJob', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(getAccessToken).mockReturnValue(null);
     queryClient = createTestQueryClient();
   });
 
@@ -176,18 +193,35 @@ describe('useJob', () => {
   });
 
   it('fetches a single job by id', async () => {
-    // /api/v1/jobs/:id is public — useJob goes through api.getPublic,
-    // not api.get, to skip the auth token + 401 retry cycle.
+    // Signed-out: public GET so we do not trip the 401 refresh/login cycle.
+    // GET /api/v1/jobs/{id} wraps the body in `{ job: ... }`.
+    vi.mocked(getAccessToken).mockReturnValue(null);
     vi.mocked(api.getPublic).mockResolvedValueOnce({ job: mockJobDetail });
 
     const { result } = renderHook(() => useJob('job-1'), {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.id).toBe('job-1');
     expect(result.current.data?.customer_display_name).toBe('Test Customer');
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith('/api/v1/jobs/job-1');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+  });
+
+  it('uses the authed GET when a token is present so owner liquidity can attach', async () => {
+    vi.mocked(getAccessToken).mockReturnValue('tok');
+    vi.mocked(api.get).mockResolvedValueOnce({ job: mockJobDetail });
+
+    const { result } = renderHook(() => useJob('job-1'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/jobs/job-1');
+    expect(vi.mocked(api.getPublic)).not.toHaveBeenCalled();
   });
 
   it('does not fetch when id is empty', () => {
@@ -206,7 +240,7 @@ describe('useJob', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -223,7 +257,7 @@ describe('useCreateJob', () => {
   });
 
   it('creates a job and invalidates queries', async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ job: mockJob });
+    vi.mocked(api.post).mockResolvedValueOnce(mockJob);
 
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
@@ -240,7 +274,7 @@ describe('useCreateJob', () => {
       auction_duration_hours: 48,
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.id).toBe('job-1');
     expect(invalidateSpy).toHaveBeenCalledWith({
@@ -264,7 +298,7 @@ describe('useCreateJob', () => {
       auction_duration_hours: 48,
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -282,7 +316,7 @@ describe('useUpdateJob', () => {
 
   it('updates a job', async () => {
     const updatedJob = { ...mockJob, title: 'Updated title for the job' };
-    vi.mocked(api.patch).mockResolvedValueOnce({ job: updatedJob });
+    vi.mocked(api.patch).mockResolvedValueOnce(updatedJob);
 
     const { result } = renderHook(() => useUpdateJob(), {
       wrapper: createWrapper(queryClient),
@@ -293,7 +327,7 @@ describe('useUpdateJob', () => {
       input: { title: 'Updated title for the job' },
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.title).toBe('Updated title for the job');
   });
@@ -313,7 +347,7 @@ describe('usePublishJob', () => {
 
   it('publishes a draft job', async () => {
     const publishedJob = { ...mockJob, status: 'active' as const };
-    vi.mocked(api.post).mockResolvedValueOnce({ job: publishedJob });
+    vi.mocked(api.post).mockResolvedValueOnce(publishedJob);
 
     const { result } = renderHook(() => usePublishJob(), {
       wrapper: createWrapper(queryClient),
@@ -321,7 +355,7 @@ describe('usePublishJob', () => {
 
     result.current.mutate('job-1');
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.status).toBe('active');
   });
@@ -350,7 +384,7 @@ describe('useDeleteDraft', () => {
 
     result.current.mutate('job-1');
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['jobs'],
@@ -372,7 +406,7 @@ describe('useCloseAuction', () => {
 
   it('closes an auction', async () => {
     const closedJob = { ...mockJob, status: 'closed' as const };
-    vi.mocked(api.post).mockResolvedValueOnce({ job: closedJob });
+    vi.mocked(api.post).mockResolvedValueOnce(closedJob);
 
     const { result } = renderHook(() => useCloseAuction(), {
       wrapper: createWrapper(queryClient),
@@ -380,7 +414,7 @@ describe('useCloseAuction', () => {
 
     result.current.mutate('job-1');
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.status).toBe('closed');
   });
@@ -400,7 +434,7 @@ describe('useCancelJob', () => {
 
   it('cancels a job', async () => {
     const cancelledJob = { ...mockJob, status: 'cancelled' as const };
-    vi.mocked(api.post).mockResolvedValueOnce({ job: cancelledJob });
+    vi.mocked(api.post).mockResolvedValueOnce(cancelledJob);
 
     const { result } = renderHook(() => useCancelJob(), {
       wrapper: createWrapper(queryClient),
@@ -408,7 +442,7 @@ describe('useCancelJob', () => {
 
     result.current.mutate('job-1');
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.status).toBe('cancelled');
   });
@@ -434,7 +468,7 @@ describe('useCustomerJobs', () => {
       { wrapper: createWrapper(queryClient) },
     );
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.jobs).toHaveLength(1);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
@@ -449,9 +483,40 @@ describe('useCustomerJobs', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/jobs/mine');
+  });
+
+  it('forwards FR-19.3 property + category + date filters', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(mockJobsResponse);
+
+    const { result } = renderHook(
+      () =>
+        useCustomerJobs({
+          property_id: 'prop-1',
+          category_id: 'cat-9',
+          date_from: '2026-01-01',
+          date_to: '2026-06-30',
+          page_size: 100,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/jobs/mine?property_id=prop-1&category_id=cat-9&date_from=2026-01-01&date_to=2026-06-30&page_size=100',
+    );
+  });
+
+  it('respects enabled: false (no request)', async () => {
+    const { result } = renderHook(
+      () => useCustomerJobs({ property_id: 'prop-1', enabled: false }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
   });
 });
 
@@ -474,7 +539,7 @@ describe('useCustomerDrafts', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       '/api/v1/jobs/mine?status=draft&page=1',
@@ -488,10 +553,140 @@ describe('useCustomerDrafts', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       '/api/v1/jobs/mine?status=draft',
     );
+  });
+});
+
+// --- onError toast paths (covers explainFailure ApiError vs generic branches) ---
+
+describe('useJobs error toasts', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('useCreateJob: shows ApiError userMessage when error is an ApiError', async () => {
+    const apiErr = new (FakeApiError as unknown as new (msg: string) => Error)(
+      'contract violation',
+    );
+    vi.mocked(api.post).mockRejectedValueOnce(apiErr);
+
+    const { result } = renderHook(() => useCreateJob(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      category_id: 'cat-1',
+      title: 'Fix kitchen sink plumbing issue',
+      description: 'A'.repeat(50),
+      schedule_type: 'flexible',
+      is_recurring: false,
+      auction_duration_hours: 48,
+    });
+
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('contract violation');
+  });
+
+  it('useCreateJob: falls back to fallback message for non-ApiError errors', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('network down'));
+
+    const { result } = renderHook(() => useCreateJob(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      category_id: 'cat-1',
+      title: 'Fix kitchen sink plumbing issue',
+      description: 'A'.repeat(50),
+      schedule_type: 'flexible',
+      is_recurring: false,
+      auction_duration_hours: 48,
+    });
+
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to create job');
+  });
+
+  it('useDeleteDraft: shows the draft-specific failure toast on error', async () => {
+    vi.mocked(api.delete).mockRejectedValueOnce(new Error('boom'));
+
+    const { result } = renderHook(() => useDeleteDraft(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate('job-1');
+
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Failed to delete draft');
+  });
+});
+
+// --- buildSearchParams branch coverage ---
+
+describe('buildSearchParams branches via useSearchJobs', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    queryClient = createTestQueryClient();
+  });
+
+  afterEach(() => {
+    queryClient.clear();
+  });
+
+  it('encodes every supported param simultaneously', async () => {
+    vi.mocked(api.getPublic).mockResolvedValueOnce(mockJobsResponse);
+
+    const { result } = renderHook(
+      () =>
+        useSearchJobs({
+          category_id: 'cat-1',
+          query: 'sink',
+          schedule_type: 'flexible',
+          is_recurring: true,
+          min_price_cents: 1000,
+          max_price_cents: 50000,
+          location_lat: 40.7,
+          location_lng: -74.006,
+          radius_km: 25,
+          sort_by: 'price',
+          sort_order: 'asc',
+          page: 2,
+          page_size: 50,
+        }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    const calledWith = vi.mocked(api.getPublic).mock.calls[0]?.[0] ?? '';
+    expect(calledWith).toContain('category_ids=cat-1');
+    expect(calledWith).toContain('q=sink');
+    expect(calledWith).toContain('schedule_type=flexible');
+    expect(calledWith).toContain('recurring_only=true');
+    expect(calledWith).toContain('min_price_cents=1000');
+    expect(calledWith).toContain('max_price_cents=50000');
+    expect(calledWith).toContain('latitude=40.7');
+    expect(calledWith).toContain('longitude=-74.006');
+    expect(calledWith).toContain('radius_km=25');
+    expect(calledWith).toContain('sort=price');
+    expect(calledWith).toContain('sort_dir=asc');
+    expect(calledWith).toContain('page=2');
+    expect(calledWith).toContain('page_size=50');
   });
 });

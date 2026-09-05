@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import type { Dispute, GuaranteeClaim, PaginationResponse } from '@/types';
 
 // ─── Customer-facing hooks ─────────────────────────────
@@ -35,8 +35,8 @@ export function useSubmitGuaranteeClaim() {
         queryKey: ['guarantee-claim', variables.contractId],
       });
     },
-    onError: () => {
-      toast.error('Failed to submit guarantee claim');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to submit guarantee claim'));
     },
   });
 }
@@ -101,8 +101,8 @@ export function useReviewGuaranteeClaim() {
         queryKey: ['admin', 'guarantee-claims'],
       });
     },
-    onError: () => {
-      toast.error('Failed to review guarantee claim');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to review guarantee claim'));
     },
   });
 }

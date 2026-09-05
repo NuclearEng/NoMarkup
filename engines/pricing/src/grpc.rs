@@ -1,0 +1,103 @@
+//! gRPC surface for the pricing engine. Thin: converts the proto request into
+//! the model types, runs the pure estimator, and maps the result back.
+
+use tonic::{Request, Response, Status};
+
+use crate::model::{self, Side};
+use crate::proto::pricing_service_server::PricingService;
+use crate::proto::{
+    ComputeFairPriceRequest, ComputeFairPriceResponse, MarketSide, Transaction as ProtoTxn,
+};
+
+#[derive(Debug, Default)]
+pub struct PricingServer;
+
+fn side_from_proto(v: i32) -> Side {
+    match MarketSide::try_from(v).unwrap_or(MarketSide::Unspecified) {
+        MarketSide::Service => Side::Service,
+        MarketSide::Good => Side::Good,
+        MarketSide::Unspecified => Side::Unspecified,
+    }
+}
+
+impl From<&ProtoTxn> for model::Txn {
+    fn from(t: &ProtoTxn) -> Self {
+        Self {
+            category_id: t.category_id.clone(),
+            parent_category_id: t.parent_category_id.clone(),
+            market_id: t.market_id.clone(),
+            zip: t.zip.clone(),
+            cleared_price_cents: t.cleared_price_cents,
+            settled_at: t.settled_at,
+            trust_tier: t.trust_tier,
+            instant_match: t.instant_match,
+            condition: t.condition,
+            side: side_from_proto(t.side),
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl PricingService for PricingServer {
+    // Instrumented here rather than inside `model::fair_price`: the model is a
+    // pure numeric kernel with a criterion bench on it, and the counts an
+    // operator needs (how many transactions were in the comparable set, which
+    // geographic level the estimator fell back to) are only visible once the
+    // request is decoded. No span inside the per-transaction loop.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            transaction_count = tracing::field::Empty,
+            has_data = tracing::field::Empty,
+            level_used = tracing::field::Empty,
+            n_eff = tracing::field::Empty,
+        )
+    )]
+    async fn compute_fair_price(
+        &self,
+        request: Request<ComputeFairPriceRequest>,
+    ) -> Result<Response<ComputeFairPriceResponse>, Status> {
+        let req = request.into_inner();
+        tracing::Span::current().record("transaction_count", req.transactions.len());
+        let q = req
+            .query
+            .ok_or_else(|| Status::invalid_argument("query is required"))?;
+
+        let query = model::Query {
+            category_id: q.category_id,
+            parent_category_id: q.parent_category_id,
+            zip: q.zip,
+            market_id: q.market_id,
+            as_of: q.as_of,
+            side: side_from_proto(q.side),
+            want_instant: q.want_instant,
+            want_condition: q.want_condition,
+            want_trust_tier_min: q.want_trust_tier_min,
+        };
+        let txns: Vec<model::Txn> = req.transactions.iter().map(model::Txn::from).collect();
+
+        let started = std::time::Instant::now();
+        let fp = model::fair_price(&txns, &query);
+        crate::metrics::REQUEST_DURATION.observe(started.elapsed().as_secs_f64());
+        crate::metrics::REQUESTS_TOTAL.inc();
+
+        let span = tracing::Span::current();
+        span.record("has_data", fp.has_data);
+        span.record("level_used", fp.level_used);
+        span.record("n_eff", fp.n_eff);
+
+        Ok(Response::new(ComputeFairPriceResponse {
+            has_data: fp.has_data,
+            price_cents: fp.price_cents,
+            p25_cents: fp.p25_cents,
+            p75_cents: fp.p75_cents,
+            ci_lo_cents: fp.ci_lo_cents,
+            ci_hi_cents: fp.ci_hi_cents,
+            n_eff: fp.n_eff,
+            confidence: fp.confidence,
+            confidence_label: fp.confidence_label.to_string(),
+            level_used: fp.level_used,
+            model_version: fp.model_version.to_string(),
+        }))
+    }
+}

@@ -31,6 +31,30 @@ var (
 		[]string{"method", "path"},
 	)
 
+	// grpcRequestsTotal counts outbound gRPC calls from the gateway to backend
+	// services. Required by CLAUDE.md §11. Wired via a tonic interceptor in
+	// each gRPC client (otelgrpc handles tracing; this captures counts).
+	//
+	// Status values follow Google gRPC status codes (e.g. "OK", "NotFound",
+	// "Unauthenticated") to keep cardinality bounded and align with Jaeger.
+	GRPCRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "grpc_requests_total",
+			Help: "Total number of outbound gRPC calls from the gateway.",
+		},
+		[]string{"service", "method", "status"},
+	)
+
+	// GRPCRequestDuration measures outbound gRPC call latency.
+	GRPCRequestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "grpc_request_duration_seconds",
+			Help:    "Duration of outbound gRPC calls in seconds.",
+			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5},
+		},
+		[]string{"service", "method"},
+	)
+
 	// uuidPattern matches UUIDs (v4, v7, etc.) in URL path segments.
 	uuidPattern = regexp.MustCompile(
 		`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`,

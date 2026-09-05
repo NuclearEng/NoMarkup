@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
@@ -67,7 +67,7 @@ func (h *AdminReviewsHandler) ListFlaggedReviews(w http.ResponseWriter, r *http.
 	}
 
 	result := map[string]interface{}{
-		"flagged_reviews": flagged,
+		"flags": flagged,
 	}
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = paginationToJSON(pg)
@@ -79,8 +79,8 @@ func (h *AdminReviewsHandler) ListFlaggedReviews(w http.ResponseWriter, r *http.
 // ResolveFlag handles POST /api/v1/admin/reviews/flags/{id}/resolve.
 func (h *AdminReviewsHandler) ResolveFlag(w http.ResponseWriter, r *http.Request) {
 	flagID := chi.URLParam(r, "id")
-	if flagID == "" {
-		writeError(w, http.StatusBadRequest, "flag id required")
+	if !isValidUUID(flagID) {
+		writeError(w, http.StatusBadRequest, "invalid flag id")
 		return
 	}
 
@@ -90,20 +90,44 @@ func (h *AdminReviewsHandler) ResolveFlag(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// The admin UI posts {action: "uphold"|"dismiss", notes}. Accept that as
+	// the primary contract while staying backward-compatible with the original
+	// {uphold: bool, resolution_notes} shape so older callers keep working.
+	// Without this, the UI's "Uphold & Remove Review" silently resolved every
+	// flag as a dismiss (uphold defaulted false) and dropped the notes.
 	var body struct {
+		Action          string `json:"action"`
+		Notes           string `json:"notes"`
 		Uphold          bool   `json:"uphold"`
 		ResolutionNotes string `json:"resolution_notes"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
+	}
+
+	uphold := body.Uphold
+	if action := strings.ToLower(strings.TrimSpace(body.Action)); action != "" {
+		switch action {
+		case "uphold":
+			uphold = true
+		case "dismiss":
+			uphold = false
+		default:
+			writeError(w, http.StatusBadRequest, "action must be 'uphold' or 'dismiss'")
+			return
+		}
+	}
+
+	notes := body.ResolutionNotes
+	if notes == "" {
+		notes = body.Notes
 	}
 
 	resp, err := h.reviewClient.AdminResolveFlag(r.Context(), &reviewv1.AdminResolveFlagRequest{
 		FlagId:          flagID,
 		AdminId:         claims.UserID,
-		Uphold:          body.Uphold,
-		ResolutionNotes: body.ResolutionNotes,
+		Uphold:          uphold,
+		ResolutionNotes: notes,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -118,8 +142,8 @@ func (h *AdminReviewsHandler) ResolveFlag(w http.ResponseWriter, r *http.Request
 // RemoveReview handles DELETE /api/v1/admin/reviews/{id}.
 func (h *AdminReviewsHandler) RemoveReview(w http.ResponseWriter, r *http.Request) {
 	reviewID := chi.URLParam(r, "id")
-	if reviewID == "" {
-		writeError(w, http.StatusBadRequest, "review id required")
+	if !isValidUUID(reviewID) {
+		writeError(w, http.StatusBadRequest, "invalid review id")
 		return
 	}
 
@@ -132,8 +156,7 @@ func (h *AdminReviewsHandler) RemoveReview(w http.ResponseWriter, r *http.Reques
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Reason == "" {
@@ -164,18 +187,31 @@ func flaggedReviewToJSON(fr *reviewv1.FlaggedReview) map[string]interface{} {
 	if fr == nil {
 		return map[string]interface{}{}
 	}
-	result := map[string]interface{}{
-		"flag_id":    fr.GetFlagId(),
-		"flagged_by": fr.GetFlaggedBy(),
-		"reason":     flagReasonToString(fr.GetReason()),
-		"details":    fr.GetDetails(),
-		"status":     flagStatusToString(fr.GetStatus()),
-		"flagged_at": formatTimestamp(fr.GetFlaggedAt()),
+	// Flatten flag + review into the shape the admin UI consumes
+	// (web/src/types/index.ts FlaggedReview). The proto doesn't carry the
+	// reviewer's display name, so fall back to the reviewer id until the
+	// review service includes it in the gRPC response.
+	rev := fr.GetReview()
+	var reviewID, reviewContent, reviewerID string
+	var reviewRating int32
+	if rev != nil {
+		reviewID = rev.GetId()
+		reviewContent = rev.GetComment()
+		reviewerID = rev.GetReviewerId()
+		reviewRating = rev.GetOverallRating()
 	}
-	if fr.GetReview() != nil {
-		result["review"] = adminReviewSummaryToJSON(fr.GetReview())
+	return map[string]interface{}{
+		"id":             fr.GetFlagId(),
+		"review_id":      reviewID,
+		"flagged_by":     fr.GetFlaggedBy(),
+		"reason":         flagReasonToString(fr.GetReason()),
+		"details":        fr.GetDetails(),
+		"status":         flagStatusToString(fr.GetStatus()),
+		"created_at":     formatTimestamp(fr.GetFlaggedAt()),
+		"review_content": reviewContent,
+		"reviewer_name":  reviewerID,
+		"review_rating":  reviewRating,
 	}
-	return result
 }
 
 func adminReviewSummaryToJSON(r *reviewv1.Review) map[string]interface{} {

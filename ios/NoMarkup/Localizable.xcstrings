@@ -1,0 +1,2865 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    " — highest bid leads" : {},
+    " — lowest trusted bid can win" : {},
+    "#%lld" : {},
+    "$" : {},
+    "%@" : {},
+    "%@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "%@ %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$lld"
+          }
+        }
+      }
+    },
+    "%@ available" : {},
+    "%@ end time" : {},
+    "%@ flag is currently off on the server" : {},
+    "%@ start time" : {},
+    "%@ · ends %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · ends %2$@"
+          }
+        }
+      }
+    },
+    "%@ •••• %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ •••• %2$@"
+          }
+        }
+      }
+    },
+    "%@%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$@"
+          }
+        }
+      }
+    },
+    "%@, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "%@, %@, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@, %3$@"
+          }
+        }
+      }
+    },
+    "%@, %@. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@. %3$@"
+          }
+        }
+      }
+    },
+    "%@, API %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, API %2$@"
+          }
+        }
+      }
+    },
+    "%@, max %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, max %2$@"
+          }
+        }
+      }
+    },
+    "%@, score %@, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, score %2$@, %3$@"
+          }
+        }
+      }
+    },
+    "%@, weight %@, score %@ out of 100" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, weight %2$@, score %3$@ out of 100"
+          }
+        }
+      }
+    },
+    "%@. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@. %2$@"
+          }
+        }
+      }
+    },
+    "%@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "%lld" : {},
+    "%lld %@ jobs" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld %2$@ jobs"
+          }
+        }
+      }
+    },
+    "%lld / 5" : {},
+    "%lld / 50 min" : {},
+    "%lld / 50 minimum" : {},
+    "%lld / 500 · minimum 10" : {},
+    "%lld available providers" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld available provider"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld available providers"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld bid%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld bid%2$@"
+          }
+        }
+      }
+    },
+    "%lld bids" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld bid"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld bids"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld blocked" : {},
+    "%lld completed jobs" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld completed job"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld completed jobs"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld contract%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld contract%2$@"
+          }
+        }
+      }
+    },
+    "%lld contracts" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld contract"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld contracts"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld current" : {},
+    "%lld data point%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld data point%2$@"
+          }
+        }
+      }
+    },
+    "%lld data points" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld data point"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld data points"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld days" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld day"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld days"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld document%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld document%2$@"
+          }
+        }
+      }
+    },
+    "%lld documents" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld document"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld documents"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld documents expire within 30 days. Renew them before they lapse." : {},
+    "%lld documents have expired. Upload renewed copies to restore verified status for new bids." : {},
+    "%lld draft%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld draft%2$@"
+          }
+        }
+      }
+    },
+    "%lld drafts" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld draft"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld drafts"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld images" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld image"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld images"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld job%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld job%2$@"
+          }
+        }
+      }
+    },
+    "%lld jobs" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld job"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jobs"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld jobs completed" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld job completed"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld jobs completed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld listing%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld listing%2$@"
+          }
+        }
+      }
+    },
+    "%lld listings" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld listing"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld listings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld live" : {},
+    "%lld market%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld market%2$@"
+          }
+        }
+      }
+    },
+    "%lld markets" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld market"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld markets"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld minutes" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minute"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "%lld open" : {},
+    "%lld order%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld order%2$@"
+          }
+        }
+      }
+    },
+    "%lld orders" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld order"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld orders"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld payments · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld payments · %2$@"
+          }
+        }
+      }
+    },
+    "%lld pending" : {},
+    "%lld people watching live" : {},
+    "%lld percent" : {},
+    "%lld photo%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld photo%2$@"
+          }
+        }
+      }
+    },
+    "%lld photos" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld photo"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld photos"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld propert%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld propert%2$@"
+          }
+        }
+      }
+    },
+    "%lld properties" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld property"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld properties"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld provider%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld provider%2$@"
+          }
+        }
+      }
+    },
+    "%lld providers" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld provider"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld providers"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld review%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld review%2$@"
+          }
+        }
+      }
+    },
+    "%lld reviews" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld review"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld reviews"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld seller%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld seller%2$@"
+          }
+        }
+      }
+    },
+    "%lld sellers" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld seller"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sellers"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld shown" : {},
+    "%lld subcategories" : {},
+    "%lld template%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld template%2$@"
+          }
+        }
+      }
+    },
+    "%lld templates" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld template"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld templates"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld unread" : {},
+    "%lld unread messages" : {},
+    "%lld watching" : {},
+    "%lld%%" : {},
+    "%lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "%lldh default" : {},
+    "/ 100" : {},
+    "0 = not at all likely · 10 = extremely likely" : {},
+    "0 on a numeric limit means unlimited. Boolean features show On / Off. There is no upgrade or purchase button in this app." : {},
+    "1 document expires within 30 days. Renew it before it lapses." : {},
+    "1 document has expired. Upload a renewed copy to restore verified status for new bids." : {},
+    "1 job" : {},
+    "1 unread message" : {},
+    "6-digit code" : {},
+    "98101" : {},
+    "99+" : {},
+    "A newer Terms of Service version is available" : {},
+    "A valid covered ZIP is required to publish so the listing appears in radius search." : {},
+    "API" : {},
+    "API: %@" : {},
+    "AUCTION" : {},
+    "AUCTION LIVE" : {},
+    "About" : {},
+    "Accept" : {},
+    "Accept by" : {},
+    "Accept counter" : {},
+    "Accept counter offer %@" : {},
+    "Accept current terms" : {},
+    "Accept offer" : {},
+    "Accept offer %@" : {},
+    "Accept offer at %@" : {},
+    "Accept offer for %@" : {},
+    "Accept offer price?" : {},
+    "Accept offer · %@" : {},
+    "Accept or decline emergency Instant match requests" : {},
+    "Accept proposed terms" : {},
+    "Accept this job at the customer’s instant price of %@. This places a bid at that amount." : {},
+    "Accept, reject, or counter pending offers. Accepting mints an order awaiting payment." : {},
+    "Accept-now price is what providers are awarded if they accept. Keep it at or below your starting budget. Instant match cannot run without it." : {},
+    "Accepted" : {},
+    "Accepted at" : {},
+    "Accepting records the current version against your account. You can re-read the full document any time." : {},
+    "Account" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuenta"
+          }
+        }
+      }
+    },
+    "Actions" : {},
+    "Active" : {},
+    "Active auctions from sellers you follow" : {},
+    "Active auctions from sellers you follow, closing soonest first." : {},
+    "Add" : {},
+    "Add a card during order checkout (Stripe). This screen is manage-only — remove outdated cards here." : {},
+    "Add a display name and phone, or enable provider — takes a minute." : {},
+    "Add a passkey" : {},
+    "Add a saved property address" : {},
+    "Add a time-based authenticator (TOTP) for sign-in. You’ll scan or enter a secret, then confirm a 6-digit code to finish." : {},
+    "Add expense" : {},
+    "Add from library" : {},
+    "Add more from library" : {},
+    "Add property" : {},
+    "Add to watchlist" : {},
+    "Add to wishlist" : {},
+    "Adding passkey…" : {},
+    "Additional details" : {},
+    "Address" : {},
+    "Address (read-only)" : {},
+    "Address is optional. Add properties under Account → Properties to reuse site addresses." : {},
+    "Adds the provider role in addition to customer" : {},
+    "Adds the provider role so you can bid on service jobs" : {},
+    "Adjustment" : {},
+    "Advances" : {},
+    "Age not verified" : {},
+    "Age verification" : {},
+    "Age verified" : {},
+    "Agreed local terms" : {},
+    "Alert frequency" : {},
+    "Alerts · %@" : {},
+    "Already have an account? Sign in" : {},
+    "Already read" : {},
+    "Also available" : {},
+    "Also register as a provider" : {},
+    "Amount" : {},
+    "Amount adjustment direction" : {},
+    "Amount notes" : {},
+    "Amount notes %@" : {},
+    "Analytics date range" : {},
+    "Answer pending Net Promoter Score surveys" : {},
+    "Approve completion" : {},
+    "Approve completion finalizes the contract status. Releasing held escrow is a separate customer action (POST /payments/{id}/release). Providers cannot self-release. Amounts are server-side only." : {},
+    "Approve completion?" : {},
+    "Approve milestone" : {},
+    "Approve this milestone?" : {},
+    "Approve visit" : {},
+    "Approved" : {},
+    "Approves the milestone on the contract. Escrow release still uses the payment release action when funds are held." : {},
+    "Area" : {},
+    "Ask the provider to revise this milestone before you approve it" : {},
+    "At least 8 characters with letters and a number or symbol" : {},
+    "At least 8 characters with letters and a number or symbol." : {},
+    "At most 80 characters. Public on bids and chat." : {},
+    "Attach photo" : {},
+    "Auction" : {},
+    "Auction %@" : {},
+    "Auction Type" : {},
+    "Auction duration" : {},
+    "Auction ended without an award, or you cancelled. Repost starts a fresh bidding window with the same details (FR-3.10)." : {},
+    "Auction ended without an award, or you cancelled. Repost starts a fresh bidding window with the same details." : {},
+    "Auction ends" : {},
+    "Auction floor" : {},
+    "Auction length" : {},
+    "Auction lets providers compete on price. Instant match notifies available providers immediately." : {},
+    "Auction · bid ladder" : {},
+    "Authenticator URL" : {},
+    "Authenticator code" : {},
+    "Authenticator verification code" : {},
+    "Authorize a card for the bid bond, then place your bid" : {},
+    "Authorizing bid bond" : {},
+    "Authorizing bid bond…" : {},
+    "Auto-approve" : {},
+    "Auto-approved" : {},
+    "Auto-refreshes about every %lld seconds. First provider to accept wins." : {},
+    "Availability" : {},
+    "Available" : {},
+    "Available credit" : {},
+    "Available now" : {},
+    "Average rating" : {},
+    "Award %@ to %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Award %1$@ to %2$@"
+          }
+        }
+      }
+    },
+    "Award job to %@ for %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Award job to %1$@ for %2$@"
+          }
+        }
+      }
+    },
+    "Award leading bid" : {},
+    "Award this bid" : {},
+    "Award this bid?" : {},
+    "Awarded" : {},
+    "Awarded bid" : {},
+    "Awards the job at %@" : {},
+    "BNPL, insurance, advances, instant payout, expenses, and tax — full web parity" : {},
+    "Back to sign in" : {},
+    "Backup codes" : {},
+    "Best Offer is separate from the public bid ladder. The seller has 24 hours to respond." : {},
+    "Bid bond required" : {},
+    "Bid down" : {},
+    "Bid on service jobs and complete reverse-auction contracts. Admin cannot be self-assigned." : {},
+    "Bid type" : {},
+    "Bid up" : {},
+    "Bidders" : {},
+    "Bids" : {},
+    "Bids received" : {},
+    "Bio" : {},
+    "Block" : {},
+    "Block this user?" : {},
+    "Block user" : {},
+    "Blocked users" : {},
+    "Blocked users can’t message you. Unblocking restores chat if you share a channel again." : {},
+    "Blocking mutes chat. Reports go to platform moderation — false reports may lead to account action." : {},
+    "Blocks this user from messaging you" : {},
+    "Body" : {},
+    "Breakdown" : {},
+    "Browse and follow service providers" : {},
+    "Browse insurance products" : {},
+    "Browse launched city markets for services and goods" : {},
+    "Browse local service providers. Reverse-auction jobs let them compete on price — fair market rates, not lead-gen markup." : {},
+    "Browse marketplace" : {},
+    "Browse open jobs" : {},
+    "Browse the category tree and pick the best match. The selected category id is sent to the API." : {},
+    "Browse without signing in" : {},
+    "Browse-only mode can’t send messages. Sign out and sign in with a real account." : {},
+    "Browse-only mode has no API credentials. Sign in against a live gateway for Best Offers." : {},
+    "Browse-only mode has no API credentials. Sign in against a live gateway to pay." : {},
+    "Browse-only mode has no API credentials. Sign in against a live gateway to place bids." : {},
+    "Browse-only session" : {},
+    "Business & finance" : {},
+    "Business expenses" : {},
+    "Business name" : {},
+    "Buy now" : {},
+    "Buy now %@" : {},
+    "Buy now for %@ with Apple Pay" : {},
+    "Buy now is only available while the auction is active." : {},
+    "Buyer-only. Allowed while funds are held or shortly after pickup confirmation. Support reviews and may reverse escrow." : {},
+    "Buyers bid " : {},
+    "Buyers bid up · pickup within 25 mi" : {},
+    "By accepting, you agree to the Terms of Service version shown above." : {},
+    "By continuing you agree to NoMarkup’s Terms and acknowledge the Privacy Policy." : {},
+    "By job" : {},
+    "By type" : {},
+    "Calendar export" : {},
+    "Calls POST /payments/%@/release with your auth and an Idempotency-Key. Server amount: %@. Providers cannot self-release." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Calls POST /payments/%1$@/release with your auth and an Idempotency-Key. Server amount: %2$@. Providers cannot self-release."
+          }
+        }
+      }
+    },
+    "Calls POST /payments/{id}/release with Idempotency-Key; pays the provider from held escrow" : {},
+    "Camera Access Needed" : {},
+    "Camera access is turned off. Enable it in Settings, or choose a photo from your library instead." : {},
+    "Cancel" : {},
+    "Cancel contract" : {},
+    "Cancel job" : {},
+    "Cancel listing" : {},
+    "Cancel schedule" : {},
+    "Cancel setup" : {},
+    "Cancel this contract?" : {},
+    "Cancel this job?" : {},
+    "Cancel this listing?" : {},
+    "Cancel this recurring schedule?" : {},
+    "Cancellation policy" : {},
+    "Cancellation takes effect after the next scheduled occurrence (1-visit notice). Completed visits stay on the timeline." : {},
+    "Cancels the auction and notifies bidders. This cannot be undone from the app." : {},
+    "Cancels this job auction and notifies bidders" : {},
+    "Cancels your goods listing if there are no active bids" : {},
+    "Cancels your open offer before the seller responds" : {},
+    "Capture a photo with the camera for this conversation" : {},
+    "Cards" : {},
+    "Categories" : {},
+    "Category" : {},
+    "Category membership is managed here as read-only. Full taxonomy edit remains on web for now." : {},
+    "Category rank #%lld" : {},
+    "Category: %@" : {},
+    "Centers the map on your location when permitted" : {},
+    "Change from library" : {},
+    "Change orders" : {},
+    "Change password" : {},
+    "Change password and view age verification status" : {},
+    "Charges the server contract amount (%@) via Stripe PaymentSheet (Apple Pay when available). Funds stay in escrow until you release them after approving work. Sticky Idempotency-Key on create + process." : {},
+    "Check In" : {},
+    "Check In to Job" : {},
+    "Check in to ${contract}" : {},
+    "Checking MFA status…" : {},
+    "Checking age status…" : {},
+    "Checking eligibility…" : {},
+    "Checking…" : {},
+    "Choose a reverse auction from the list." : {},
+    "Choose a saved property or leave None and type an optional address. Exact address is only revealed to the awarded provider after award." : {},
+    "Choose a thread from your inbox." : {},
+    "Choose an item from the marketplace list." : {},
+    "Choose document type and pick a photo to submit for review" : {},
+    "Choose from library" : {},
+    "Choose push, email, and in-app channels per notification type" : {},
+    "City" : {},
+    "Claims are reviewed by support. When support approves a payout, the platform refunds the contract payment server-side (no client money math). Evidence uploads are available on the web dashboard." : {},
+    "Clear" : {},
+    "Clear category filter" : {},
+    "Close" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close"
+          }
+        }
+      }
+    },
+    "Close bidding" : {},
+    "Close bidding?" : {},
+    "Close setup and continue using the app. You can finish later from Account." : {},
+    "Code to disable MFA" : {},
+    "Columns: order_id, listing_title, sold_at, gross_cents, fee_cents, net_cents, buyer_anonymized, escrow_status. Large histories may truncate at 10,000 rows." : {},
+    "Comment" : {},
+    "Comment (required, 50+ characters)" : {},
+    "Communication %lld/5" : {},
+    "Community Guidelines" : {},
+    "Compare current Terms version with what you accepted" : {},
+    "Compare free and paid provider plan limits. Paid digital plans are not sold in this app." : {},
+    "Complete" : {},
+    "Complete Stripe onboarding so escrow can pay out to your bank." : {},
+    "Composite" : {},
+    "Composite score is weighted Feedback 35%, Risk 25%, Volume 20%, Fraud 20%." : {},
+    "Computed" : {},
+    "Condition" : {},
+    "Condition details, dimensions, pickup notes…" : {},
+    "Confirm" : {},
+    "Confirm and enable MFA" : {},
+    "Confirm before approving this milestone payment step" : {},
+    "Confirm handoff as seller?" : {},
+    "Confirm new password" : {},
+    "Confirm password" : {},
+    "Confirm pickup" : {},
+    "Confirm the buyer took possession. When both sides confirm, escrow can release." : {},
+    "Confirm you picked up this item?" : {},
+    "Confirming…" : {},
+    "Confirms the PaymentIntent for this visit amount, then captures into escrow" : {},
+    "Confirms the handoff as the seller; mutual confirm releases escrow on the server" : {},
+    "Confirms the selected category and closes the picker" : {},
+    "Confirms you picked up the item; mutual confirm releases escrow on the server" : {},
+    "Confirms, then starts the reverse auction for providers" : {},
+    "Connect Stripe and view payout readiness for providers" : {},
+    "Connected" : {},
+    "Connected accounts" : {},
+    "Continue" : {},
+    "Continue with Google" : {},
+    "Contract" : {},
+    "Contract %@" : {},
+    "Contract ID" : {},
+    "Contract to check in to. Leave empty to pick one in the app." : {},
+    "Contracts" : {},
+    "Contracts are the service side of NoMarkup: reverse-auction awards, milestones, and mutual completion. Local goods orders live under Orders." : {},
+    "Conversation actions" : {},
+    "Conversation updates every few seconds" : {},
+    "Couldn’t load map pins" : {},
+    "Counter" : {},
+    "Counter amount (USD)" : {},
+    "Counter offer %@" : {},
+    "Counter offer amount in dollars" : {},
+    "Create" : {},
+    "Create Stripe account" : {},
+    "Create a free account to post jobs, bid on goods, and message with escrow protection." : {},
+    "Create account" : {},
+    "Create and manage reusable service bid quote templates" : {},
+    "Create quote template" : {},
+    "Created" : {},
+    "Creates a PaymentIntent for this auto-approved visit, confirms, then captures into escrow" : {},
+    "Creates a PaymentIntent for this contract amount, opens PaymentSheet, then captures into escrow" : {},
+    "Creates a Stripe Express account for payouts if you do not have one yet" : {},
+    "Creates a bid at the offer price. The customer still awards a bid to form a contract." : {},
+    "Creates a new reverse auction from this job. Previous bids do not carry over." : {},
+    "Creates a new reverse auction with the same details. Previous bids do not carry over. You can edit the new job after it is posted." : {},
+    "Creates a passkey for this account with %@ and saves it to iCloud Keychain" : {},
+    "Creates an order and opens payment when a client secret is returned" : {},
+    "Creates or soft-replays a PaymentIntent for this visit, confirms, then captures into escrow" : {},
+    "Creates the goods listing on the server" : {},
+    "Creates the job and requests Instant match from available providers" : {},
+    "Creates the reverse-auction job on the server" : {},
+    "Creating…" : {},
+    "Credit balance" : {},
+    "Credit limit" : {},
+    "Current bid" : {},
+    "Current password" : {},
+    "Current version" : {},
+    "Currently selected" : {},
+    "Customer" : {},
+    "Customer accepted" : {},
+    "Customers can bid and buy. Enabling the provider role lets you bid on service jobs and complete reverse-auction contracts." : {},
+    "Customers post home-service jobs. Qualified providers compete in real-time reverse auctions. Prices drop to fair market rates. Everyone wins except the middleman." : {},
+    "Customers post jobs. Providers compete on price (descending reverse auction). Fair market rates — not lead-gen markup." : {},
+    "Customers see business name and bio on your provider profile and bid cards." : {},
+    "DRAFT" : {},
+    "Daily revenue" : {},
+    "Data points" : {},
+    "Date of birth" : {},
+    "Decline" : {},
+    "Decline offer for %@" : {},
+    "Default" : {},
+    "Default amount (optional)" : {},
+    "Default contract terms" : {},
+    "Default payment" : {},
+    "Default payment method" : {},
+    "Default payment timing" : {},
+    "Delete" : {},
+    "Delete Account" : {},
+    "Delete expense" : {},
+    "Delete property" : {},
+    "Delete saved search" : {},
+    "Delete template" : {},
+    "Describe scope of work" : {},
+    "Describe the issue" : {},
+    "Describe the scope or price change" : {},
+    "Describe the work and set a starting budget. Providers bid down in a reverse auction — fair market rates, not lead-gen markup." : {},
+    "Describe what the provider should fix. This sets the milestone back to revision requested." : {},
+    "Describe what went wrong (min 50 characters)" : {},
+    "Description" : {},
+    "Description (min 20 characters)" : {},
+    "Details" : {},
+    "Details (optional)" : {},
+    "Device lock" : {},
+    "Digital feature unlocks are free-tier only in this app. Paid Pro / Business plans are not sold here (no In-App Purchase)." : {},
+    "Digital feature unlocks are free-tier only in this app. Paid plans are not sold here." : {},
+    "Disable MFA" : {},
+    "Disable MFA…" : {},
+    "Disconnect" : {},
+    "Disconnect %@" : {},
+    "Display name" : {},
+    "Display name is public on bids and chat. Email stays private for sign-in." : {},
+    "Dispute" : {},
+    "Dispute description" : {},
+    "Dispute reason" : {},
+    "Document type" : {},
+    "Documents" : {},
+    "Documents expiring soon warning" : {},
+    "Dollars only — for example 125.00" : {},
+    "Done" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        }
+      }
+    },
+    "Download a CSV of your completed marketplace sales (held, pickup-confirmed, and released escrow). Buyer names are anonymized to initials." : {},
+    "Download an iCal file of contracts and jobs" : {},
+    "Download an iCal file of jobs, contracts, and pickups" : {},
+    "Download completed marketplace sales as CSV" : {},
+    "Download completed sales as a CSV file and share it" : {},
+    "Downloads an authenticated HTML summary or invoice and opens the share sheet so you can Save/Print/AirDrop." : {},
+    "Downloads an iCal file and opens the system share sheet" : {},
+    "Downloads sales CSV from the server and opens the share sheet" : {},
+    "Downloads your account data export and opens the system share sheet." : {},
+    "Draft saved" : {},
+    "Draft, not published" : {},
+    "Duration must be 24 hours, 48 hours, or 7 days. Pick a real category from the taxonomy tree." : {},
+    "Edit" : {},
+    "Edit display name and view account profile" : {},
+    "Edit nickname, notes, or primary flag" : {},
+    "Edit property" : {},
+    "Edit provider bio, availability, streaks, and licenses" : {},
+    "Effective" : {},
+    "Eligibility" : {},
+    "Email" : {},
+    "Email for password reset" : {},
+    "Email is used to sign in and cannot be changed here" : {},
+    "Email notifications" : {},
+    "Email resend and phone OTP in a dedicated screen" : {},
+    "Email verification token (from link)" : {},
+    "Emergency Instant requests from customers. Accept awards the job at the listed accept-now price and may open a contract." : {},
+    "Emergency intake: describe the issue, set an accept-now price, and we’ll notify available Instant providers. First to accept wins at that price." : {},
+    "Enable MFA" : {},
+    "Enable provider role" : {},
+    "Enable provider role in Profile" : {},
+    "Enable the provider role so you can use this workspace" : {},
+    "Enabled" : {},
+    "Enabling…" : {},
+    "End" : {},
+    "Ended" : {
+      "comment" : "Auction countdown when the close time has passed",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ended"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finalizado"
+          }
+        }
+      }
+    },
+    "Ends" : {},
+    "Ends %@" : {
+      "comment" : "Auction countdown when close is two weeks or more away; argument is an abbreviated date",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ends %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Termina %@"
+          }
+        }
+      }
+    },
+    "Ends in %@" : {
+      "comment" : "Auction countdown; argument is a compact duration such as 45m or 2h",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ends in %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Termina en %@"
+          }
+        }
+      }
+    },
+    "Ends this auction for buyers. Listings with active bids cannot be cancelled from the app." : {},
+    "Enter a code from a friend who invited you. Each account can redeem once." : {},
+    "Enter a dollar amount (example 125.00) — not cents" : {},
+    "Enter dollars and cents, for example 125.00. Do not enter cents alone." : {},
+    "Enter dollars only (example 1,500.00). The app converts to integer cents before sending — never paste raw cents." : {},
+    "Enter floor" : {},
+    "Enter the 6-digit code from your authenticator app to finish enabling MFA" : {},
+    "Enter the 6-digit code from your authenticator app to finish signing in." : {},
+    "Error: %@" : {},
+    "Escrow" : {},
+    "Escrow funded" : {},
+    "Est. savings vs market median" : {},
+    "Est. savings vs starting" : {},
+    "Estimated savings versus market median %@" : {},
+    "Estimated savings versus starting %@" : {},
+    "Estimated tax %lld" : {},
+    "Exact address is only shown to contract parties after award." : {},
+    "Exact address is only shown to you as the job owner or awarded provider." : {},
+    "Expenses" : {},
+    "Expiration" : {},
+    "Expired %@" : {},
+    "Expired documents warning" : {},
+    "Expired on %@. Upload a renewed document." : {},
+    "Expires %@" : {},
+    "Expires %@ · %@ left" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Expires %1$@ · %2$@ left"
+          }
+        }
+      }
+    },
+    "Expires %@, within 30 days. %@ remaining." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Expires %1$@, within 30 days. %2$@ remaining."
+          }
+        }
+      }
+    },
+    "Explains bid alerts, then requests notification permission" : {},
+    "Export" : {},
+    "Export Data" : {},
+    "Export an .ics calendar of your service contracts, marketplace pickups, and auction-end deadlines. Open it in Apple Calendar, Google Calendar, or Outlook." : {},
+    "Exports and templates help run your provider practice without the full web Business OS." : {},
+    "Fair market price range for the selected category" : {},
+    "Feature flag status" : {},
+    "Feature flags" : {},
+    "Fee breakdown (server)" : {},
+    "Fee lines load from POST /payments/calculate-fees when available." : {},
+    "Feedback surveys" : {},
+    "Fetches the next page and appends to the list" : {},
+    "File dispute" : {},
+    "Filed %@" : {},
+    "Files a NoMarkup Guarantee claim on this completed contract. Attach photo evidence of the issue." : {},
+    "Filter listings by status" : {},
+    "Filters marketplace by this category" : {},
+    "Finalizes the contract as completed. This does not by itself transfer escrow — use Release escrow when funds are held." : {},
+    "Finish setup" : {},
+    "Flag" : {},
+    "Flag off" : {},
+    "Flag this review for fraud or abuse moderation" : {},
+    "Flagged for review" : {},
+    "Flags enter the admin moderation queue. False reports may affect your trust standing." : {},
+    "Follow" : {},
+    "Followed %@" : {},
+    "Followers" : {},
+    "Following" : {},
+    "Following feed" : {},
+    "Follows this seller so their auctions appear in your feed" : {},
+    "Forgot password" : {},
+    "Forgot password?" : {},
+    "Forgot your password?" : {},
+    "Forms" : {},
+    "Forward auction · goods" : {},
+    "Forward auction, goods" : {},
+    "Forward auction: highest bid leads. Winning high bids can be retracted within 60 seconds of placement." : {},
+    "Forward auctions you sell. Open a row for bids, Best Offers, and auction status. Local pickup only." : {},
+    "Forward auctions you’re following. Open a row for bid ladder, buy now, or to unwatch." : {},
+    "Frequency" : {},
+    "Friend’s code" : {},
+    "From %@" : {},
+    "Full breakdown · Feedback, Risk, Volume, Fraud" : {},
+    "G" : {},
+    "Gate codes, parking tips, or unit details for providers — not shown publicly." : {},
+    "Generate calendar (.ics)" : {},
+    "Generate sales CSV" : {},
+    "Get Directions" : {},
+    "Global" : {},
+    "Global channels are server-managed. Edit per-type rows below, then save." : {},
+    "Global email is set by the server; per-type rows below can be edited when present" : {},
+    "Global push is set by the server; per-type rows below can be edited when present" : {},
+    "Global toggles update every per-type row. Save to apply on the server." : {},
+    "Goods are forward auctions — enter dollars (for example 95.00), not cents. Bid above the current high to take the lead. First-time bidders may need a refundable bid bond." : {},
+    "Goods you are watching or wishlisted" : {},
+    "Gross includes held, pickup-confirmed, and released escrow orders. Sell-through is sold vs listed in the same window." : {},
+    "Guarantee claim" : {},
+    "Has map coordinates" : {},
+    "Held in escrow" : {},
+    "Hide change order form" : {},
+    "High" : {},
+    "Home" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inicio"
+          }
+        }
+      }
+    },
+    "Home, Office…" : {},
+    "How likely to recommend?" : {},
+    "How provider trust scores and ladder requirements work" : {},
+    "How tiers work" : {},
+    "How to find a provider" : {},
+    "How you appear to others" : {},
+    "I already have a reset token" : {},
+    "I need help now" : {},
+    "I understand this cannot be undone after the grace period ends." : {},
+    "Identity" : {},
+    "If you already subscribe on the web, manage billing and plan changes there. This app does not start a digital subscription purchase." : {},
+    "Important" : {},
+    "In-app" : {},
+    "Inbox" : {},
+    "Incomplete" : {},
+    "Industry data" : {},
+    "Instant accept" : {},
+    "Instant available" : {},
+    "Instant jobs use a short window and require an accept-now price. Providers see that price; the first verified provider to accept is awarded." : {},
+    "Instant match" : {},
+    "Instant match window %@" : {},
+    "Instant offers" : {},
+    "Instant offers inbox" : {},
+    "Instant payout" : {},
+    "Instant price" : {},
+    "Instant program" : {},
+    "Insurance" : {},
+    "Insurance catalog" : {},
+    "Insurance products" : {},
+    "Invite friends" : {},
+    "Invite friends and track referral rewards" : {},
+    "Item" : {},
+    "JPEG, PNG, or WebP up to 10 MB. MIME type is re-checked server-side; only files you upload under your account can be registered. Insurance and licenses with an expiry date should be renewed before they expire so you can keep bidding on new jobs." : {},
+    "Job" : {},
+    "Job contract" : {},
+    "Job description" : {},
+    "Job drafts" : {},
+    "Job title" : {},
+    "Jobs" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jobs"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trabajos"
+          }
+        }
+      }
+    },
+    "Jobs & listings" : {},
+    "Jobs and goods create flows include photo library and camera capture in-app." : {},
+    "Jobs and local goods use Apple Pay / Stripe escrow (not App Store IAP). The market sets the price — not a platform markup." : {},
+    "Jobs completed" : {},
+    "Jobs map" : {},
+    "Jobs posted" : {},
+    "Jobs section" : {},
+    "Jobs you posted (including drafts if the mine feed includes them). Open a row for detail; publish drafts from Account → Job drafts." : {},
+    "Join NoMarkup" : {},
+    "Keep as draft" : {},
+    "Keep contract" : {},
+    "Keep job" : {},
+    "Keep listing" : {},
+    "Keep open" : {},
+    "Keep schedule" : {},
+    "Keyword" : {},
+    "LIVE" : {},
+    "LIVE REVERSE AUCTION" : {},
+    "LIVE · OPEN FLOOR" : {},
+    "LIVE · REVERSE AUCTION" : {},
+    "LIVE · forward auction" : {},
+    "Ladder" : {},
+    "Layout preview only — API mutations and chat send stay disabled until you sign in with a real account." : {},
+    "Leading" : {},
+    "Leading bid" : {},
+    "Leave blank if the amount varies by job. Dollars only — for example 150.00." : {},
+    "Leave review" : {},
+    "Ledger" : {},
+    "Legal & support" : {},
+    "Library or camera. JPEG, PNG, WebP. Max 10 MB. PDF is not accepted on this path." : {},
+    "Licenses" : {},
+    "Licenses are reviewed by the platform. Submit new credentials from the web legal vertical when available." : {},
+    "Lifetime savings" : {},
+    "Lifetime savings %@" : {},
+    "Limits by plan" : {},
+    "List item" : {},
+    "Listing" : {},
+    "Listing category" : {},
+    "Listing description" : {},
+    "Listing live" : {},
+    "Listing options" : {},
+    "Listing title" : {},
+    "Listings" : {},
+    "Listings you are watching for auction updates" : {},
+    "Live" : {},
+    "Live auction WebSocket connected" : {},
+    "Live conversation connection" : {},
+    "Live feed" : {},
+    "Live feed on" : {},
+    "Live forward auction" : {},
+    "Live open-floor reverse auction %@, budget %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Live open-floor reverse auction %1$@, budget %2$@"
+          }
+        }
+      }
+    },
+    "Live open-floor reverse auctions" : {},
+    "Live stream connected" : {},
+    "Load more" : {},
+    "Load more jobs" : {},
+    "Load more listings" : {},
+    "Loading Instant offers…" : {},
+    "Loading Stripe status…" : {},
+    "Loading analytics…" : {},
+    "Loading bid ladder…" : {},
+    "Loading bids…" : {},
+    "Loading blocked users…" : {},
+    "Loading categories…" : {},
+    "Loading connected accounts…" : {},
+    "Loading contracts…" : {},
+    "Loading contract…" : {},
+    "Loading documents…" : {},
+    "Loading drafts…" : {},
+    "Loading feed…" : {},
+    "Loading following…" : {},
+    "Loading jobs…" : {},
+    "Loading listings…" : {},
+    "Loading map…" : {},
+    "Loading markets…" : {},
+    "Loading messages…" : {},
+    "Loading more listings" : {},
+    "Loading notifications…" : {},
+    "Loading offers…" : {},
+    "Loading orders…" : {},
+    "Loading payment methods…" : {},
+    "Loading plan limits…" : {},
+    "Loading plans…" : {},
+    "Loading policies…" : {},
+    "Loading preferences…" : {},
+    "Loading products…" : {},
+    "Loading profile…" : {},
+    "Loading properties…" : {},
+    "Loading provider workspace…" : {},
+    "Loading providers…" : {},
+    "Loading provider…" : {},
+    "Loading referral code…" : {},
+    "Loading reviews…" : {},
+    "Loading saved searches…" : {},
+    "Loading savings…" : {},
+    "Loading similar listings…" : {},
+    "Loading surveys…" : {},
+    "Loading templates…" : {},
+    "Loading terms…" : {},
+    "Loading trust score…" : {},
+    "Loading trust tiers…" : {},
+    "Loading watchlist…" : {},
+    "Loading wishlist…" : {},
+    "Loading your jobs…" : {},
+    "Loading…" : {},
+    "Local goods · buyers bid up · pickup within 25 mi. Escrow holds funds until pickup — fair price discovery, no middleman markup." : {},
+    "Local pickup only (≈25 mi). Buyers bid up in a forward auction. Escrow holds payment until pickup — no platform markup on the bid." : {},
+    "Local pickup only · buyers bid up · heart toggle lives on listing detail." : {},
+    "Local pickup only · pull to refresh · follow more sellers from Account → Following." : {},
+    "Location" : {},
+    "Location for nearby jobs" : {},
+    "Low" : {},
+    "Lower" : {},
+    "Lower bid" : {},
+    "Lower bid · %@" : {},
+    "Lower service bid" : {},
+    "Lower service bid of %@" : {},
+    "Lower to %@" : {},
+    "Lower your bid (dollars)" : {},
+    "Lowest dollar bid leads. Rank follows the selected sort; Leading badge stays on lowest price. Bids are sealed from other providers." : {},
+    "MFA is enabled" : {},
+    "Make an offer" : {},
+    "Manage auction" : {},
+    "Manage listing" : {},
+    "Manage marketplace search alerts" : {},
+    "Manage on web" : {},
+    "Manage saved service addresses for jobs" : {},
+    "Map" : {},
+    "Mark all read" : {},
+    "Mark complete" : {},
+    "Mark this job complete?" : {},
+    "Mark visit complete" : {},
+    "Marked complete" : {},
+    "Market range" : {},
+    "Marketplace" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Marketplace"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mercado"
+          }
+        }
+      }
+    },
+    "Marketplace listing" : {},
+    "Marketplace listings" : {},
+    "Markets" : {},
+    "Marks every notification as read" : {},
+    "Marks this as the default address when posting jobs" : {},
+    "Marks this notification as read" : {},
+    "Markup" : {},
+    "Matching" : {},
+    "Median" : {},
+    "Member since" : {},
+    "Message" : {},
+    "Message (optional)" : {},
+    "Messages" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Messages"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mensajes"
+          }
+        }
+      }
+    },
+    "Messages arrive in real time while this thread is open" : {},
+    "Messages refresh automatically while this thread is open" : {},
+    "Milestones" : {},
+    "Milestones %@" : {},
+    "Minimum $1.00. Tips require payment capture on the server; if tipping is not yet available you will see a clear message." : {},
+    "Money rails" : {},
+    "Must be at least 18 years old. Date is stored securely and never shown publicly." : {},
+    "Must be strictly less than %@. Server rejects raises." : {},
+    "Must match a supported verification type. Review is handled by the platform." : {},
+    "My Bids" : {},
+    "My bids" : {},
+    "My jobs" : {},
+    "My listings" : {},
+    "My location" : {},
+    "NPS score from 0 to 10" : {},
+    "Name" : {},
+    "Name and body are required. Body max 4000 characters." : {},
+    "Native form to list a local goods item for auction" : {},
+    "Native form to post a reverse-auction service job" : {},
+    "Need help now" : {},
+    "Network & safety" : {},
+    "New alert" : {},
+    "New amount (dollars)" : {},
+    "New expense" : {},
+    "New password" : {},
+    "New reverse auctions appear here as customers list work." : {},
+    "New saved search" : {},
+    "New template" : {},
+    "New terms available" : {},
+    "Next" : {},
+    "Next auto-retry" : {},
+    "Next automatic payment retry %@" : {},
+    "Next step" : {},
+    "Next: approve completion to finalize the job, then release escrow if funds are still held." : {},
+    "Next: pay & hold escrow below (server contract amount) so funds are secured before or during work." : {},
+    "Next: release escrow below to pay the provider. Approve-completion does not move money by itself." : {},
+    "Nickname" : {},
+    "No" : {},
+    "No advances yet. Request from a funded contract." : {},
+    "No bids yet — be first to bid" : {},
+    "No bids yet — be first to compete" : {},
+    "No change orders yet." : {},
+    "No conversations yet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No conversations yet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay conversaciones"
+          }
+        }
+      }
+    },
+    "No expenses yet." : {},
+    "No held escrow payment found for this contract yet. When a payment is in escrow, you can release it here after work is approved." : {},
+    "No held escrow payment found for this contract yet. When funds are held, only the customer can release them to you." : {},
+    "No jobs linked to this property yet. Post a reverse-auction job and pick this address." : {},
+    "No jobs yet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No jobs yet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay trabajos"
+          }
+        }
+      }
+    },
+    "No listings nearby" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No listings nearby"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay anuncios cerca"
+          }
+        }
+      }
+    },
+    "No messages yet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No messages yet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay mensajes"
+          }
+        }
+      }
+    },
+    "No occurrences yet. The first instance is created when both parties accept a recurring job." : {},
+    "No offers yet." : {},
+    "No open jobs right now" : {},
+    "No open reverse auctions" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No open reverse auctions"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay subastas inversas abiertas"
+          }
+        }
+      }
+    },
+    "No pending offers right now" : {},
+    "No professional licenses on file." : {},
+    "No recent bid activity on the live stream yet" : {},
+    "No recent bid activity on the live stream yet." : {},
+    "No recent bid activity yet" : {},
+    "No recent bid activity yet." : {},
+    "No sales in this range yet. List items under Account → Sell an item to start building your stats." : {},
+    "No saved payment methods" : {},
+    "No saved searches yet." : {},
+    "No social accounts connected. You sign in with email and password (or Sign in with Apple / Google when you use them)." : {},
+    "No successful referrals yet. Share your code to start earning credit." : {},
+    "No tax forms generated yet." : {},
+    "No unread" : {},
+    "No watched listings" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No watched listings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay anuncios en seguimiento"
+          }
+        }
+      }
+    },
+    "No win streaks yet. Streaks build when you win reverse-auction jobs." : {},
+    "No wishlist items yet." : {},
+    "No-show" : {},
+    "NoMarkup" : {},
+    "NoMarkup Guarantee" : {},
+    "NoMarkup is locked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NoMarkup is locked"
+          }
+        }
+      }
+    },
+    "NoMarkup requires all users to be at least %lld years old. Your date of birth is stored securely and never shown publicly." : {},
+    "NoMarkup requires users to be 18+. Your date of birth is encrypted at rest and never shown publicly." : {},
+    "NoMarkup runs local reverse-auction services and goods markets city by city. Browse launched markets below." : {},
+    "None" : {},
+    "Not The Markup." : {},
+    "Not available" : {},
+    "Not enabled" : {},
+    "Not now" : {},
+    "Not signed in" : {},
+    "Not verified" : {},
+    "Not yet" : {},
+    "Not yet accepted" : {},
+    "Notes" : {},
+    "Notes %@" : {},
+    "Notes (optional)" : {},
+    "Notes: %@" : {},
+    "Notification preferences" : {},
+    "Notifications" : {},
+    "Notifies nearby Instant providers at your accept-now price. Auction stays open until a provider accepts." : {},
+    "Notifies nearby Instant providers. Auction stays open until a provider accepts." : {},
+    "Notifies nearby providers at your Instant Accept price (%@). Auction stays open until a provider accepts." : {},
+    "Number" : {},
+    "OFF" : {},
+    "OK" : {},
+    "ON" : {},
+    "OTP code" : {},
+    "Offer accepted price" : {},
+    "Offer amount (USD)" : {},
+    "Offer amount in dollars" : {},
+    "Offers are only accepted while the listing is active." : {},
+    "Offers received" : {},
+    "Offline" : {},
+    "On" : {},
+    "One milestone per line" : {},
+    "One milestone per line, for example Initial deposit - 20%" : {},
+    "One public response per review. Content is filtered server-side; keep it professional." : {},
+    "One-time bid bond %@ is required before this bid." : {},
+    "One-time passcode" : {},
+    "Only report a no-show if the other party failed to appear during the agreed pickup window while funds are still held in escrow." : {},
+    "Only use this if the provider failed to appear for scheduled work. This may cancel or suspend the contract." : {},
+    "Only use this if the provider started work and then left without finishing. Support may review." : {},
+    "Open %@" : {},
+    "Open Business & finance" : {},
+    "Open My Bids" : {},
+    "Open Profile settings" : {},
+    "Open Settings" : {},
+    "Open Watchlist" : {},
+    "Open a conversation for live updates (WebSocket when available, otherwise a few-second refresh). Attach photos from the thread composer. Inbox refreshes when you pull down." : {},
+    "Open a form to propose local payment terms to the customer" : {},
+    "Open dispute" : {},
+    "Open floor — bid amounts are public. Feed refreshes every few seconds while open." : {},
+    "Open full form on web" : {},
+    "Open full verification center" : {},
+    "Open jobs" : {},
+    "Open on web" : {},
+    "Open onboarding" : {},
+    "Open web account settings" : {},
+    "Opening…" : {},
+    "Opens Apple Maps or Google Maps with the service address" : {},
+    "Opens Apple Pay or card checkout for this order" : {},
+    "Opens NoMarkup so you can check in at a job site for dispute protection." : {},
+    "Opens Stripe Connect onboarding in Safari" : {},
+    "Opens a form to dispute this order with support" : {},
+    "Opens a formal dispute on this contract. Attach photo evidence when possible." : {},
+    "Opens a secure browser window to sign in with your Google account" : {},
+    "Opens conversation" : {},
+    "Opens emergency Instant match: post a job and notify available providers" : {},
+    "Opens full reviews for this provider" : {},
+    "Opens full trust score breakdown for %@" : {},
+    "Opens full trust score breakdown with four weighted dimensions" : {},
+    "Opens iOS Settings for NoMarkup" : {},
+    "Opens job detail" : {},
+    "Opens listing detail" : {},
+    "Opens platform trust tier requirements" : {},
+    "Opens profile settings where you can enable the provider role" : {},
+    "Opens property detail and job history" : {},
+    "Opens provider profile" : {},
+    "Opens related %@; marks read" : {},
+    "Opens reviews for this provider" : {},
+    "Opens score and comment form" : {},
+    "Opens similar listing" : {},
+    "Opens subcategories for %@" : {},
+    "Opens the Jobs tab" : {},
+    "Opens the Marketplace tab" : {},
+    "Opens the camera to capture a photo for this job or listing" : {},
+    "Opens the camera to photograph your document" : {},
+    "Opens the category tree picker" : {},
+    "Opens the current Terms of Service document" : {},
+    "Opens the guided setup wizard" : {},
+    "Opens the live reverse auction floor" : {},
+    "Opens the native post-a-job form" : {},
+    "Opens the native sell form" : {},
+    "Opens the photo library. JPEG, PNG, or WebP up to 10 MB." : {},
+    "Opens the system share sheet with review text and a NoMarkup link" : {},
+    "Opens the system share sheet with savings text and a NoMarkup link" : {},
+    "Opens the system share sheet with your referral link" : {},
+    "Opens the tab shell without calling the API. For design and layout review only." : {},
+    "Opens the web subscription settings page in Safari. Not a purchase button." : {},
+    "Opens web subscription management. Not a purchase." : {},
+    "Optional comment" : {},
+    "Optional contract UUID to open directly." : {},
+    "Optional day windows (local time, HH:MM) sent with Instant availability. Available now still works without a schedule. Saved windows load from your profile on open." : {},
+    "Optional feedback comment" : {},
+    "Optional message to the seller" : {},
+    "Optional notes" : {},
+    "Optional service address" : {},
+    "Optional — you can skip and finish later." : {},
+    "Optional. Adds the provider role in addition to customer" : {},
+    "Optional. Library or camera. JPEG/PNG/WebP up to 10 MB each. Photos upload before submit." : {},
+    "Optional. Links the job to a saved property address." : {},
+    "Order" : {},
+    "Orders" : {},
+    "Orders, bids & alerts" : {},
+    "Original review" : {},
+    "Outbid / active" : {},
+    "Outstanding %@" : {},
+    "Outstanding requirements" : {},
+    "Overall trust score %@ out of 100" : {},
+    "Overview" : {},
+    "PRIMARY" : {},
+    "Paid digital subscriptions are web-only (no StoreKit IAP). BNPL, insurance, advances, and instant payout use server flags — open Business & finance when enabled." : {},
+    "Paid plans (web)" : {},
+    "Parties" : {},
+    "Passkeys" : {},
+    "Passkeys are not available yet; shows coming soon message" : {},
+    "Passkeys sign you in with %@ — nothing to type or phish. Saved to iCloud Keychain and synced across your devices." : {},
+    "Password" : {},
+    "Password reset token" : {},
+    "Pause stops new visits; cancel ends the schedule after the next occurrence notice. Approving a visit may open PaymentSheet for that visit’s server amount (held escrow). Money is never invented client-side." : {},
+    "Pay %@" : {},
+    "Pay & hold escrow · %@" : {},
+    "Pay and hold escrow?" : {},
+    "Pay the contract amount to hold funds in escrow. Apple Pay / card via Stripe PaymentSheet. Charge amount is the server contract total — not client fee math." : {},
+    "Pay visit · %@" : {},
+    "Pay with Apple Pay" : {},
+    "Pay with Apple Pay. In-app subscriptions aren’t sold here — free digital features only; paid plans are on the web." : {},
+    "Pay → hold in escrow → buyer confirm pickup + seller confirm. Escrow releases automatically on the server when both confirm (no separate release button on goods). Amounts shown are server-side only." : {},
+    "Payment" : {},
+    "Payment %@…" : {},
+    "Payment %@… — authorization pending capture." : {},
+    "Payment methods" : {},
+    "Payment plans" : {},
+    "Payment retries" : {},
+    "Payment retries %lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Payment retries %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "Payment setup failed previously; the platform retries CreatePayment on a day-3/day-7 schedule (pauses at 3 failures). Pause stops new visits; cancel ends after the next occurrence notice. Money is never invented client-side." : {},
+    "Payment terms accepted in chat and applied when the contract was created." : {},
+    "Payment terms accepted in chat." : {},
+    "Payment type" : {},
+    "Payment type %@" : {},
+    "Payout" : {},
+    "Payouts require the provider role. Enable it in Profile settings if you only have a customer role. Stripe Connect Express holds escrow and pays out after completion." : {},
+    "Pays %@ via Apple Pay (or card). Funds are held in escrow until you confirm pickup. Local pickup only." : {},
+    "Pending (%lld)" : {},
+    "Per-invite credit" : {},
+    "Per-type prefs appear when server returns rows" : {},
+    "Phone" : {},
+    "Phone (E.164 preferred)" : {},
+    "Phone (E.164 preferred, e.g. +15551234567)" : {},
+    "Phone OTP requires a signed-in session. SMS delivery depends on gateway/user-service config." : {},
+    "Phone number" : {},
+    "Phone on file: %@" : {},
+    "Photo" : {},
+    "Photo selected" : {},
+    "Photo unavailable" : {},
+    "Photos" : {},
+    "Physical goods with escrow" : {},
+    "Pickup" : {},
+    "Pickup ZIP" : {},
+    "Pickup ZIP code" : {},
+    "Place a bid (dollars)" : {},
+    "Place bid" : {},
+    "Place bid · %@" : {},
+    "Place reverse bid" : {},
+    "Place reverse bid · %@" : {},
+    "Places a bid at the customer’s instant price of %@. You can still lower that bid later." : {},
+    "Places a bid at the customer’s instant-accept price" : {},
+    "Places a bid at the customer’s instant-accept price." : {},
+    "Plan limits" : {},
+    "Platform terms" : {},
+    "Portfolio" : {},
+    "Post Job" : {},
+    "Post a Job" : {},
+    "Post a job" : {},
+    "Post a public response to this review, maximum 500 characters" : {},
+    "Post bond" : {},
+    "Post bond on web instead" : {},
+    "Posts proposed local terms for the customer to accept or reject" : {},
+    "Premium %@" : {},
+    "Price & pickup" : {},
+    "Price alerts fire when matching marketplace goods go active. Swipe left, long-press, or tap Edit to remove an alert." : {},
+    "Price alerts fire when matching marketplace goods go active. Swipe to remove an alert." : {},
+    "Primary property" : {},
+    "Privacy" : {},
+    "Privacy Policy" : {},
+    "Profile" : {},
+    "Profile completeness" : {},
+    "Profile settings" : {},
+    "Prompted" : {},
+    "Prompted %@" : {},
+    "Properties" : {},
+    "Property" : {},
+    "Property for this job" : {},
+    "Property nickname" : {},
+    "Proposals do not bind the contract until the customer Accepts. Reject leaves terms open for a new proposal." : {},
+    "Propose a price below asking. The seller can accept, reject, or counter within 24 hours." : {},
+    "Propose change order" : {},
+    "Propose terms" : {},
+    "Propose terms, report or block the other person, or open this chat on the web" : {},
+    "Proposed Terms" : {},
+    "Proposed by %@…" : {},
+    "Provider" : {},
+    "Provider accepted" : {},
+    "Provider business OS" : {},
+    "Provider inbox: accept or decline emergency Instant match jobs" : {},
+    "Provider payout (server): %@" : {},
+    "Provider role" : {},
+    "Provider role already enabled" : {},
+    "Provider role: enabled" : {},
+    "Provider workspace" : {},
+    "Provider workspace is a lite surface — employees, tax, expenses, and working capital stay on web Business OS." : {},
+    "Providers" : {},
+    "Providers bid " : {},
+    "Providers bid down in public. Lowest trusted bid leads." : {},
+    "Providers bid down · lowest trusted bid leads" : {},
+    "Providers bid down — lowest trusted bid can win" : {},
+    "Providers can bid on service jobs. You can always add this later." : {},
+    "Providers earn trust by completing jobs, collecting strong reviews, and staying verified. Higher tiers unlock more visibility and lower friction on NoMarkup." : {},
+    "Providers submit work; customers approve each milestone. For milestone payment timing, all must be approved before final completion." : {},
+    "Public business name" : {},
+    "Public live feed connected, briefly delayed" : {},
+    "Public profile" : {},
+    "Publish" : {},
+    "Publish %@" : {},
+    "Publish immediately" : {},
+    "Publish this job?" : {},
+    "Publish “%@”" : {},
+    "Publishes “%@” as an active reverse auction so providers can bid down. You can still manage the job after it goes live." : {},
+    "Publishing makes the job visible to providers. Edit on the web if you need photos or advanced options first." : {},
+    "Push" : {},
+    "Push notifications" : {},
+    "Push notifications on" : {},
+    "Quality %lld/5" : {},
+    "Quote templates" : {},
+    "Quote wording customers see" : {},
+    "REVERSE-AUCTION SERVICE MARKETPLACE" : {},
+    "Rail A: Apple Pay via Stripe. StoreKit / IAP intentionally omitted (digital free-tier only)." : {},
+    "Range" : {},
+    "Rank %lld, %@, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rank %1$lld, %2$@, %3$@"
+          }
+        }
+      }
+    },
+    "Rank %lld, leading, %@, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rank %1$lld, leading, %2$@, %3$@"
+          }
+        }
+      }
+    },
+    "Rank %lld, winning, %@, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rank %1$lld, winning, %2$@, %3$@"
+          }
+        }
+      }
+    },
+    "Rate" : {},
+    "Rate NoMarkup" : {},
+    "Rate how likely you are to recommend NoMarkup (0 = not at all, 10 = extremely likely). Your score helps us improve reverse auctions and local goods." : {},
+    "Rating" : {},
+    "Rating %lld of 5 stars" : {},
+    "Read full terms" : {},
+    "Reason" : {},
+    "Recent history" : {},
+    "Recording…" : {},
+    "Records that you accept the current Terms of Service version" : {},
+    "Recurring" : {},
+    "Recurring job" : {},
+    "Recurring schedule" : {},
+    "Redeem" : {},
+    "Redeem code" : {},
+    "Reduce" : {},
+    "Referral code to redeem" : {},
+    "Referrals" : {},
+    "Refresh" : {},
+    "Reject" : {},
+    "Reject counter offer %@" : {},
+    "Reject offer %@" : {},
+    "Reject proposed terms" : {},
+    "Release escrow" : {},
+    "Release escrow to the provider?" : {},
+    "Release escrow · %@" : {},
+    "Releases held escrow to the provider. Server amounts only." : {},
+    "Remove %@ ending in %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Remove %1$@ ending in %2$@"
+          }
+        }
+      }
+    },
+    "Remove %@ •••• %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Remove %1$@ •••• %2$@"
+          }
+        }
+      }
+    },
+    "Remove alert" : {},
+    "Remove from watchlist" : {},
+    "Remove photo %lld" : {},
+    "Remove this card?" : {},
+    "Removes %@ ending in %@ from your account. You can add a card again during checkout." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Removes %1$@ ending in %2$@ from your account. You can add a card again during checkout."
+          }
+        }
+      }
+    },
+    "Removes this social sign-in method. Blocked if it is your only way to sign in." : {},
+    "Repay" : {},
+    "Repeated no-shows can trigger a temporary bidding cooldown for the absent party." : {},
+    "Report" : {},
+    "Report abandonment" : {},
+    "Report abandonment?" : {},
+    "Report listing" : {},
+    "Report no-show" : {},
+    "Report provider no-show?" : {},
+    "Report reason" : {},
+    "Report review" : {},
+    "Report user" : {},
+    "Reports" : {},
+    "Reports help keep NoMarkup safe. False reports may lead to account action." : {},
+    "Reports help keep the marketplace safe. False reports may lead to account action." : {},
+    "Reports that the other party did not show up for pickup" : {},
+    "Repost" : {},
+    "Repost auction" : {},
+    "Repost job" : {},
+    "Repost this job?" : {},
+    "Request Instant match" : {},
+    "Request account deletion" : {},
+    "Request instant payout" : {},
+    "Request milestone revision" : {},
+    "Request reset email" : {},
+    "Request revision" : {},
+    "Requesting deletion schedules permanent removal of your NoMarkup account after a grace period (typically 30 days on the server). You can cancel during the grace window on web or a future app build." : {},
+    "Requesting instant match" : {},
+    "Requests a new authenticator secret and backup codes from the server" : {},
+    "Require %@ for sensitive actions" : {},
+    "Required so buyers can search by distance. Must be a ZIP we cover to publish." : {},
+    "Required · 18+" : {},
+    "Required. Summarize what is included in these terms" : {},
+    "Requires verification" : {},
+    "Resend SMS code" : {},
+    "Resend always returns a generic success (anti-enumeration). Paste the token from the email link if deep-link open is unavailable." : {},
+    "Resend email verification and complete phone OTP" : {},
+    "Resend verification email" : {},
+    "Reset password" : {},
+    "Reset token" : {},
+    "Respond" : {},
+    "Response" : {},
+    "Resubmissions: %lld" : {},
+    "Retract" : {},
+    "Retract bid" : {},
+    "Retract bid (%llds)" : {},
+    "Retract goods bid" : {},
+    "Retract your high bid within 60 seconds of placing it" : {},
+    "Retry" : {},
+    "Reusable bid wording and default amounts" : {},
+    "Reverse auction rule: new amount must be strictly below your current bid. Server rejects raises." : {},
+    "Reverse auction: providers compete down. Lower price is more competitive. Swipe right to lower, left to withdraw active bids." : {},
+    "Reverse auction: you can only lower this bid, never raise it." : {},
+    "Reverse · bid down" : {},
+    "Reverse-auction services. Local goods with escrow. Fair market rates — everyone wins except the middleman." : {},
+    "Review" : {},
+    "Review accounts you have blocked" : {},
+    "Review unpublished service job drafts and publish them" : {},
+    "Reviews" : {},
+    "Reviews are double-blind: they become visible once both parties have submitted. Window is 90 days after completion. Category ratings are optional on the server but recommended." : {},
+    "Roles" : {},
+    "Run an auction" : {},
+    "Safety" : {},
+    "Sales export" : {},
+    "Sales export (CSV)" : {},
+    "Save" : {},
+    "Save changes" : {},
+    "Save default terms" : {},
+    "Save draft" : {},
+    "Save phone & send SMS code" : {},
+    "Save portfolio (%lld/20)" : {},
+    "Save preferences" : {},
+    "Save profile" : {},
+    "Save property" : {},
+    "Save search" : {},
+    "Save weekly schedule" : {},
+    "Saved %@ vs starting (%lld%%)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Saved %1$@ vs starting (%2$lld%%)"
+          }
+        }
+      }
+    },
+    "Saved search name" : {},
+    "Saved searches" : {},
+    "Saves business name and bio to the server" : {},
+    "Saves this listing to your watchlist" : {},
+    "Saving schedule…" : {},
+    "Savings" : {},
+    "Savings = market median − awarded bid (when positive). Amounts are in USD. Share uses your referral link when available." : {},
+    "Saving…" : {},
+    "Schedule" : {},
+    "Scope" : {},
+    "Scope or price adjustments require the other party’s approval before the contract amount changes." : {},
+    "Score" : {},
+    "Scores and thresholds are set by the platform. Your personal score appears on provider profiles after jobs complete." : {},
+    "Sealed auction — other providers cannot see bid amounts. Only the job owner sees the full ladder." : {},
+    "Sealed · reverse" : {},
+    "Search cities or regions" : {},
+    "Search is browse-only" : {},
+    "Search jobs" : {},
+    "Search keywords" : {},
+    "Search listings" : {},
+    "Search providers" : {},
+    "Search query keywords" : {},
+    "Search this conversation" : {},
+    "Searching…" : {},
+    "Secret" : {},
+    "Security" : {},
+    "Seen" : {},
+    "Seen by the other party" : {},
+    "Select a conversation" : {},
+    "Select a job" : {},
+    "Select a listing" : {},
+    "Select this category" : {},
+    "Selected" : {},
+    "Selected property %@" : {},
+    "Selected: %lld / 10" : {},
+    "Selection" : {},
+    "Selects %@" : {},
+    "Selects %@ without drilling further" : {},
+    "Self-service only grants customer or provider. Admin cannot be self-assigned." : {},
+    "Sell an item" : {},
+    "Seller" : {},
+    "Seller analytics" : {},
+    "Seller confirm" : {},
+    "Seller payouts" : {},
+    "Sellers you follow" : {},
+    "Send SMS code" : {},
+    "Send counter" : {},
+    "Send message" : {},
+    "Send offer" : {},
+    "Send password reset email" : {},
+    "Send proposal" : {},
+    "Send proposal · %@" : {},
+    "Send request" : {},
+    "Send reset email" : {},
+    "Send tip" : {},
+    "Send tip · %@" : {},
+    "Sending proposal…" : {},
+    "Sends a Best Offer to the seller" : {},
+    "Sends your date of birth to the server. Age is verified server-side; DOB is never returned." : {},
+    "Sends your new password to the server after verifying the current one" : {},
+    "Sent" : {},
+    "Server feature flags for BNPL, insurance, advances, and related rails" : {},
+    "Server flags" : {},
+    "Service address" : {},
+    "Service address %@" : {},
+    "Service address (optional)" : {},
+    "Service category" : {},
+    "Service job" : {},
+    "Service jobs" : {},
+    "Services are reverse auctions — enter dollars (for example 350.00), not cents. Lower than the leading bid wins. Provider role required." : {},
+    "Services: customer pays via POST /payments + PaymentSheet + POST /payments/{id}/process (sticky Idempotency-Key). Release is POST /payments/{id}/release. Amounts are server fields only — no client fee math. Goods orders use Orders pickup handshake, not this control." : {},
+    "Session" : {},
+    "Set new password" : {},
+    "Setup %lld percent complete" : {},
+    "Setup complete" : {},
+    "Several people are typing…" : {},
+    "Share invite link" : {},
+    "Share invite message" : {},
+    "Shop goods" : {},
+    "Short public bio" : {},
+    "Show appreciation for great work. Tips are optional and separate from the contract amount." : {},
+    "Show as ready for instant-match job offers." : {},
+    "Shows conversation in the side panel" : {},
+    "Shows job detail in the side panel" : {},
+    "Shows jobs and listings you are watching in NoMarkup." : {},
+    "Shows listing detail in the side panel" : {},
+    "Shows open jobs on a map" : {},
+    "Shows your active service and marketplace bids in NoMarkup." : {},
+    "Sign in" : {},
+    "Sign in as a provider to place a bid on this job." : {},
+    "Sign in to block or report this user." : {},
+    "Sign in to buy now with Apple Pay." : {},
+    "Sign in to follow this seller." : {},
+    "Sign in to make a Best Offer or manage offers on this listing." : {},
+    "Sign in to place a bid on this listing." : {},
+    "Sign in with Apple" : {},
+    "Sign in with Passkey" : {},
+    "Sign in with email and password" : {},
+    "Sign out" : {},
+    "Signed in" : {},
+    "Signed in as %@" : {},
+    "Similar listings" : {},
+    "Skip this step. You can complete it later from Account." : {},
+    "Snapshots of how this score changed over time." : {},
+    "Social" : {},
+    "Social sign-in providers linked to this account. Disconnect is blocked server-side if it would leave you with no way to sign in." : {},
+    "Someone is typing" : {},
+    "Sort" : {},
+    "Sort bid ladder by price or trust" : {},
+    "Sort bids" : {},
+    "Sort service bids" : {},
+    "Speed" : {},
+    "Start" : {},
+    "Start a new reverse-auction service job on NoMarkup." : {},
+    "Started" : {},
+    "Started at %@" : {},
+    "Starting MFA…" : {},
+    "Starting bid is the maximum you’re willing to open at. Providers compete by bidding lower. Optional offer-accepted price lets providers lock that amount without auto-award." : {},
+    "State" : {},
+    "Stats" : {},
+    "Status" : {},
+    "Status %@" : {},
+    "Status and credit for people who signed up with your code." : {},
+    "Step %lld: %@. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Step %1$lld: %2$@. %3$@"
+          }
+        }
+      }
+    },
+    "Stops following this seller" : {},
+    "Stops new bids and opens the award window for this reverse auction" : {},
+    "Stops new reverse bids and opens the award window. You can still award a bid afterward." : {},
+    "Stops watching this listing" : {},
+    "Store these offline before confirming. Each code works once." : {},
+    "Streaks" : {},
+    "Street" : {},
+    "Street address" : {},
+    "Street address cannot be changed after create. Add a new property if the location moved." : {},
+    "Street, city, or neighborhood" : {},
+    "Stripe Connect" : {},
+    "Stripe key" : {},
+    "Stripe onboarding" : {},
+    "Subcategories" : {},
+    "Submit" : {},
+    "Submit a higher dollar bid to lead this forward auction" : {},
+    "Submit a lower dollar amount for your existing bid" : {},
+    "Submit a lower dollar bid to compete in this reverse auction" : {},
+    "Submit an abuse report to NoMarkup" : {},
+    "Submit change order" : {},
+    "Submit dispute" : {},
+    "Submit email token" : {},
+    "Submit milestone" : {},
+    "Submit no-show report" : {},
+    "Submit report" : {},
+    "Submit score" : {},
+    "Submit verification document" : {},
+    "Submits your date of birth. The server verifies you are at least 18." : {},
+    "Submitting…" : {},
+    "Subscriptions" : {},
+    "Suggestions" : {},
+    "Suggestions based on this item’s category and market." : {},
+    "Summary · last %lld days" : {},
+    "Support" : {},
+    "Survey" : {},
+    "Take photo" : {},
+    "Take photo with camera" : {},
+    "Tap a name to open their provider profile. Unfollow anytime." : {},
+    "Tap a property for job history. Active and upcoming counts use jobs linked to that address. PostJob still lets you pick which property a new auction is for." : {},
+    "Tap a row to open the related job/contract/messages when the server includes an action URL; unread rows are marked read." : {},
+    "Tax center" : {},
+    "Template" : {},
+    "Template body" : {},
+    "Template name" : {},
+    "Templates are private to your account. Apply them when placing service bids on the web or job detail flows." : {},
+    "Terms" : {},
+    "Terms acceptance" : {},
+    "Terms acceptance is up to date" : {},
+    "Terms of Service" : {},
+    "The Market Sets\nThe Price.\n" : {},
+    "The Market Sets The Price. Not The Markup." : {},
+    "The NoMarkup Guarantee covers eligible completed jobs when work is not as agreed." : {},
+    "The current version is what new signups and re-acceptance must match." : {},
+    "The customer will be asked to approve completion. Escrow release is a separate customer step after approval." : {},
+    "These rails follow live server flags. Open Business & finance to use enabled products." : {},
+    "These surfaces match the web provider portal and customer payment tools. Availability follows live feature flags from the server." : {},
+    "These terms apply to new awards unless you change them on a specific contract." : {},
+    "They won’t be able to message you. You can unblock later from Account → Blocked users." : {},
+    "This awards the job to %@ at %@ and starts the contract. Other bidders are notified they were not selected." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "This awards the job to %1$@ at %2$@ and starts the contract. Other bidders are notified they were not selected."
+          }
+        }
+      }
+    },
+    "This cannot be undone. Escrow rules on the server still apply." : {},
+    "This contract is under dispute. Resolution is handled by support." : {},
+    "This device has no Face ID, Touch ID, or passcode enrolled. The toggle is saved but authentication cannot run until you set one up in iOS Settings." : {},
+    "This is a one-shot download. For continuous calendar subscription from a desktop app, use the web feed URL with a long-lived token." : {},
+    "This report includes this conversation so moderators can review context. You can also block the user separately." : {},
+    "This screen compares free and paid provider limits so you know what each tier includes. Physical goods and service jobs still use Apple Pay / Stripe escrow — not App Store subscriptions." : {},
+    "This tells the seller you’ve received the goods and advances the escrow handshake." : {},
+    "Tier %@" : {},
+    "Timeline" : {},
+    "Timeliness %lld/5" : {},
+    "Tip" : {},
+    "Tip your provider" : {},
+    "Title" : {},
+    "Title max 120 characters · description max 5000." : {},
+    "Title, description, and category are required. Title max 200 characters." : {},
+    "Toggle available-now and manage your Instant profile" : {},
+    "Toggles instant availability for job offers" : {},
+    "Tools" : {},
+    "Top categories" : {},
+    "Trust" : {},
+    "Trust %@" : {},
+    "Trust score" : {},
+    "Trust tiers" : {},
+    "Trust · %@" : {},
+    "Try again" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intentar de nuevo"
+          }
+        }
+      }
+    },
+    "Turn Available now on to receive Instant jobs. Open the inbox to accept or decline live offers." : {},
+    "Turns email on or off for all notification types below" : {},
+    "Turns push on or off for all notification types below" : {},
+    "Two-factor" : {},
+    "Two-factor authentication" : {},
+    "Type" : {},
+    "Type %@ to confirm" : {},
+    "Typing…" : {},
+    "Unblock" : {},
+    "Unblock %@" : {},
+    "Unfollow" : {},
+    "Unfollow %@" : {},
+    "Unlock" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock"
+          }
+        }
+      }
+    },
+    "Unpublished service jobs. Open a row for detail, or publish to start the reverse auction so providers can bid down." : {},
+    "Unread counts come from each channel’s server unread_count (your party only). Open a conversation for live updates (WebSocket when available, otherwise a few-second refresh). Attach photos from the thread composer. Inbox refreshes when you leave a thread or pull down." : {},
+    "Unread: %@. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Unread: %1$@. %2$@"
+          }
+        }
+      }
+    },
+    "Up to %@" : {},
+    "Up to 20 past-work photos. Saving replaces your full portfolio set." : {},
+    "Up to date" : {},
+    "Update password" : {},
+    "Update password with reset token" : {},
+    "Updates notification channels on the server" : {},
+    "Updates per-type notification channels on the server" : {},
+    "Updates your display name on the server" : {},
+    "Updating every few seconds" : {},
+    "Updating…" : {},
+    "Upload a photo from your library to this conversation" : {},
+    "Upload another document" : {},
+    "Upload document" : {},
+    "Upload verification document" : {},
+    "Uploads weekly Instant availability windows to the server" : {},
+    "Use %@ to continue." : {},
+    "Use Pay & hold escrow above to complete authorization and capture." : {},
+    "Use an authenticator app (1Password, Authy, Google Authenticator). Store backup codes offline — each works once." : {},
+    "Use at least 8 characters with letters and a number or symbol. Changing password ends other sessions." : {},
+    "Use these only when the provider did not appear or walked away mid-job. This may suspend or cancel the contract per platform rules." : {},
+    "Use “%@”" : {},
+    "Used %lld times" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Used once"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Used %lld times"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "User" : {},
+    "User ID" : {},
+    "Uses %@ (or device passcode) before destructive account and payment actions, and optionally locks the app when returning from background." : {},
+    "Uses a passkey stored on this device or iCloud Keychain" : {},
+    "Value %lld/5" : {},
+    "Verification docs" : {},
+    "Verification documents" : {},
+    "Verified" : {},
+    "Verifies the code and activates two-factor authentication on your account" : {},
+    "Verify account" : {},
+    "Verify age" : {},
+    "Verify and sign in" : {},
+    "Verify authenticator code and sign in" : {},
+    "Verify code" : {},
+    "Verify email & phone" : {},
+    "Verify email and phone before posting jobs or transacting. Codes are delivered by the user service (SMS in environments with SMS configured)." : {},
+    "Verify phone" : {},
+    "Verify your age" : {},
+    "Verifying…" : {},
+    "Version" : {},
+    "View" : {},
+    "View account notifications and mark them read" : {},
+    "View all jobs" : {},
+    "View and remove saved cards used at checkout" : {},
+    "View goods and service bids you have placed" : {},
+    "View goods listings you have posted as a seller" : {},
+    "View job" : {},
+    "View job details" : {},
+    "View lifetime reverse-auction savings versus market median" : {},
+    "View listing" : {},
+    "View marketplace orders, pay pending ones, and confirm escrow pickup" : {},
+    "View reviews" : {},
+    "View sales revenue, sell-through, and top categories" : {},
+    "View service contracts from awarded job bids, milestones, and completion" : {},
+    "View status and upload insurance, license, or ID documents" : {},
+    "View status and upload provider verification documents" : {},
+    "Waiting for customer to approve completion. Escrow release is a separate customer step after approval." : {},
+    "Waiting for the buyer to respond to your counter." : {},
+    "Waiting for the customer to release escrow. You cannot release your own payout." : {},
+    "Warranty terms" : {},
+    "Watchlist" : {},
+    "WebSocket connected" : {},
+    "Weekly schedule" : {},
+    "Weighted composite: Feedback %@, Risk %@, Volume %@, Fraud %@. Higher is better on every bar." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Weighted composite: Feedback %1$@, Risk %2$@, Volume %3$@, Fraud %4$@. Higher is better on every bar."
+          }
+        }
+      }
+    },
+    "We’ll email a reset link if an account exists for that address. You can also paste a token from the email and set a new password here." : {},
+    "We’ll match new local listings against your keywords and alert you on the schedule you pick." : {},
+    "We’ll notify you when a local goods listing matches your keyword and is at or below your max price. Forward auctions only — local pickup." : {},
+    "What happens" : {},
+    "What needs doing, access notes, preferred timing…" : {},
+    "What needs to change?" : {},
+    "What you paid versus market median on awarded reverse-auction jobs — not platform markup." : {},
+    "When a customer requests Instant match, live offers appear here. Turn on Available now in Provider workspace and keep your categories up to date." : {},
+    "When a flag is off, the server returns 503 for that rail — UI stays visible but actions explain the gate." : {},
+    "When on, %@ is required to unlock the app, delete your account, and remove payment methods." : {},
+    "Why are you disputing?" : {},
+    "Why are you reporting this?" : {},
+    "Why are you reporting?" : {},
+    "Will submit %@" : {},
+    "Window" : {},
+    "Winning" : {},
+    "Winning bid" : {},
+    "Wishlist" : {},
+    "Wishlist keyword" : {},
+    "Withdraw" : {},
+    "Withdraw bid" : {},
+    "Withdraw my bid" : {},
+    "Withdraw offer" : {},
+    "Withdraw service bid" : {},
+    "Withdraw service bid of %@" : {},
+    "Withdraw your bid of %@" : {},
+    "Withdrawing…" : {},
+    "Withdrawn" : {},
+    "Withdrawn bid" : {},
+    "Working capital" : {},
+    "Yes" : {},
+    "You" : {},
+    "You accepted — waiting for the other party." : {},
+    "You and your friend both earn credit when they sign up with your code. No markup on the market — just referral credit." : {},
+    "You can only lower your bid, never raise it." : {},
+    "You can reconnect later by signing in with that provider. Disconnecting is blocked if it would leave you with no way to sign in — set a password first if this is your only method." : {},
+    "You have %lld active bids." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "You have %lld active bid."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "You have %lld active bids."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "You have not accepted the Terms of Service yet" : {},
+    "You own this job. Award a bid to create the contract. Sort by Price (lowest wins) or Trust. Leading badge always follows lowest price." : {},
+    "You own this job. Close bidding to award, or cancel if you no longer need the work." : {},
+    "You own this listing. Cancel only works for draft/active auctions with no active bids." : {},
+    "You pay the contract total. Platform and guarantee fees come from the provider payout (server math)." : {},
+    "You tipped %@ — thank you." : {},
+    "You won’t see their messages. You can unblock later from Blocked users." : {},
+    "You're offline — some actions won't work until connection returns." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're offline — some actions won't work until connection returns."
+          }
+        }
+      }
+    },
+    "Your Stripe account can charge and receive payouts." : {},
+    "Your acceptance" : {},
+    "Your bid" : {},
+    "Your code" : {},
+    "Your current bid" : {},
+    "Your data" : {},
+    "Your public response" : {},
+    "Your referrals" : {},
+    "Your version" : {},
+    "Yours" : {},
+    "You’ll be asked for an authenticator code when you sign in." : {},
+    "ZIP" : {},
+    "ZIP code" : {},
+    "best %lld · %lld wins" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "best %1$lld · %2$lld wins"
+          }
+        }
+      }
+    },
+    "budget · bid down" : {},
+    "down" : {},
+    "e.g. 4 wheeler, dining table" : {},
+    "e.g. Drain unclog standard" : {},
+    "e.g. Fix kitchen sink leak" : {},
+    "e.g. Mid-century oak dresser" : {},
+    "ends in %lld hours" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ends in %lld hour"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ends in %lld hours"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ends in %lld minutes" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ends in %lld minute"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ends in %lld minutes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "instant_payout flag is off. Enable the flag to request instant Connect payouts." : {},
+    "or" : {},
+    "to" : {},
+    "up" : {},
+    "working_capital flag is off on the server." : {},
+    "·" : {},
+    "· %@" : {},
+    "· %lld bid%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "· %1$lld bid%2$@"
+          }
+        }
+      }
+    },
+    "· %lld bids" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "· %lld bid"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "· %lld bids"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "· not published" : {},
+    "“%@” is ready. Local buyers can bid up or use Buy Now if you set a price." : {},
+    "• %@" : {}
+  },
+  "version" : "1.0"
+}

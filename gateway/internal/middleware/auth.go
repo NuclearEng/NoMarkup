@@ -3,12 +3,17 @@ package middleware
 import (
 	"context"
 	"crypto/rsa"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 )
 
 type contextKey string
@@ -16,24 +21,61 @@ type contextKey string
 const (
 	// ClaimsContextKey is the context key for storing JWT claims.
 	ClaimsContextKey contextKey = "claims"
+
+	// defaultJWTIssuer is the expected `iss` claim when JWT_ISSUER is unset.
+	defaultJWTIssuer = "https://auth.nomarkup.com"
+	// defaultJWTAudience is the expected `aud` claim when JWT_AUDIENCE is unset.
+	defaultJWTAudience = "nomarkup-api"
 )
+
+// expectedJWTIssuer returns the JWT_ISSUER env value or the default.
+func expectedJWTIssuer() string {
+	if v := strings.TrimSpace(os.Getenv("JWT_ISSUER")); v != "" {
+		return v
+	}
+	return defaultJWTIssuer
+}
+
+// expectedJWTAudience returns the JWT_AUDIENCE env value or the default.
+func expectedJWTAudience() string {
+	if v := strings.TrimSpace(os.Getenv("JWT_AUDIENCE")); v != "" {
+		return v
+	}
+	return defaultJWTAudience
+}
 
 // Claims represents the JWT claims extracted from an access token.
 type Claims struct {
 	UserID string
 	Email  string
 	Roles  []string
+	// ExpiresAt is the token's `exp` claim as a wall-clock time. Zero when the
+	// token carried no expiry. WebSocket proxies use this to bound a long-lived
+	// socket's lifetime to the token (close at exp), so a revoked/expired
+	// session cannot keep streaming privileged real-time data past expiry.
+	ExpiresAt time.Time
 }
 
 // AuthMiddleware validates RS256 JWT tokens and injects claims into the request context.
 type AuthMiddleware struct {
 	publicKey *rsa.PublicKey
+	// cache backs the role-based idle-session sliding window. It is nil-safe:
+	// when nil (Redis disabled/unavailable) the idle-timeout layer is skipped
+	// entirely (fail open). See idle_session.go.
+	cache *cache.Client
 }
 
 // NewAuthMiddleware creates a new AuthMiddleware with the given RSA public key.
-func NewAuthMiddleware(publicKey *rsa.PublicKey) *AuthMiddleware {
-	return &AuthMiddleware{publicKey: publicKey}
+// cacheClient backs the role-based idle-session timeout (CLAUDE.md §6) and may
+// be nil — pass nil to disable idle tracking (fail open).
+func NewAuthMiddleware(publicKey *rsa.PublicKey, cacheClient *cache.Client) *AuthMiddleware {
+	return &AuthMiddleware{publicKey: publicKey, cache: cacheClient}
 }
+
+// errInvalidClaims is returned when the token's iss or aud does not match
+// the gateway's expected values. We surface a distinct error code so clients
+// can distinguish claim-mismatch from expired/invalid-signature.
+var errInvalidClaims = errors.New("invalid claims")
 
 // Handler returns the HTTP middleware handler.
 func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
@@ -61,6 +103,15 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 
 		claims, err := m.validateToken(tokenStr)
 		if err != nil {
+			if errors.Is(err, errInvalidClaims) {
+				slog.WarnContext(r.Context(), "auth rejected: invalid iss/aud claim",
+					"path", r.URL.Path,
+					"remote_addr", r.RemoteAddr,
+					"error", err,
+				)
+				http.Error(w, `{"error":"invalid token","code":"auth_invalid_claims"}`, http.StatusUnauthorized)
+				return
+			}
 			slog.WarnContext(r.Context(), "auth rejected: invalid or expired token",
 				"path", r.URL.Path,
 				"remote_addr", r.RemoteAddr,
@@ -69,6 +120,13 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
 			http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 			return
 		}
+
+		// Sliding idle-session window: every authenticated request resets the
+		// user's idle TTL (role-based, most-restrictive — CLAUDE.md §6). This is
+		// the activity heartbeat that keeps an actively-browsing user from being
+		// timed out at their next token refresh. Fail-open: a nil/erroring cache
+		// is a no-op (see touchIdleSession).
+		touchIdleSession(r.Context(), m.cache, claims.UserID, claims.Roles)
 
 		ctx := context.WithValue(r.Context(), ClaimsContextKey, claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -87,13 +145,29 @@ func (m *AuthMiddleware) ValidateToken(tokenStr string) (*Claims, error) {
 }
 
 func (m *AuthMiddleware) validateToken(tokenStr string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &tokenClaims{}, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
-		}
-		return m.publicKey, nil
-	})
+	wantIss := expectedJWTIssuer()
+	wantAud := expectedJWTAudience()
+
+	// SEC-16: pin RS256 only — reject RS384/RS512, HS*/none/alg-confusion.
+	token, err := jwt.ParseWithClaims(
+		tokenStr,
+		&tokenClaims{},
+		func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
+			return m.publicKey, nil
+		},
+		jwt.WithValidMethods([]string{"RS256"}),
+		jwt.WithIssuer(wantIss),
+		jwt.WithAudience(wantAud),
+	)
 	if err != nil {
+		// jwt/v5 returns typed sentinel errors for iss/aud mismatch. Wrap them
+		// so the handler can return a distinct auth_invalid_claims response.
+		if errors.Is(err, jwt.ErrTokenInvalidIssuer) || errors.Is(err, jwt.ErrTokenInvalidAudience) {
+			return nil, fmt.Errorf("%w: %w", errInvalidClaims, err)
+		}
 		return nil, fmt.Errorf("parse token: %w", err)
 	}
 
@@ -102,10 +176,16 @@ func (m *AuthMiddleware) validateToken(tokenStr string) (*Claims, error) {
 		return nil, fmt.Errorf("invalid token claims")
 	}
 
+	var expiresAt time.Time
+	if tc.ExpiresAt != nil {
+		expiresAt = tc.ExpiresAt.Time
+	}
+
 	return &Claims{
-		UserID: tc.Subject,
-		Email:  tc.Email,
-		Roles:  tc.Roles,
+		UserID:    tc.Subject,
+		Email:     tc.Email,
+		Roles:     tc.Roles,
+		ExpiresAt: expiresAt,
 	}, nil
 }
 

@@ -110,6 +110,8 @@ export interface User {
   status: UserStatus;
   emailVerified: boolean;
   phoneVerified: boolean;
+  /** Present on GET /users/me for the caller (PII). Used to prefill phone OTP. */
+  phone?: string | null;
   mfaEnabled: boolean;
   createdAt: string;
 }
@@ -188,39 +190,68 @@ export interface ServiceCategorySummary {
   name: string;
   slug: string;
   level: number;
-  parentName: string | null;
+  parent_name: string | null;
 }
 
 export interface PortfolioImage {
   id: string;
-  imageUrl: string;
+  image_url: string;
   caption: string | null;
-  sortOrder: number;
+  sort_order: number;
+}
+
+/** Instant weekly window from GET/PUT `/providers/me` (`day` = mon…sun, times HH:MM). */
+export interface ProviderAvailabilityWindow {
+  day: string;
+  start_time: string;
+  end_time: string;
 }
 
 export interface ProviderProfile {
   id: string;
-  userId: string;
-  businessName: string | null;
+  user_id: string;
+  business_name: string | null;
   bio: string | null;
-  serviceAddress: string | null;
-  serviceLocation: { latitude: number; longitude: number } | null;
-  serviceRadiusKm: number;
-  defaultPaymentTiming: PaymentTiming;
-  defaultMilestones: MilestoneTemplate[];
-  cancellationPolicy: string | null;
-  warrantyTerms: string | null;
-  instantEnabled: boolean;
-  instantAvailable: boolean;
-  jobsCompleted: number;
-  avgResponseTimeMinutes: number | null;
-  onTimeRate: number | null;
-  profileCompleteness: number;
-  stripeOnboardingComplete: boolean;
-  serviceCategories: ServiceCategorySummary[];
+  service_address: string | null;
+  service_location: { latitude: number; longitude: number } | null;
+  service_radius_km: number;
+  default_payment_timing: PaymentTiming;
+  default_milestones: MilestoneTemplate[];
+  cancellation_policy: string | null;
+  warranty_terms: string | null;
+  instant_enabled: boolean;
+  instant_available: boolean;
+  /**
+   * Owner GET only (`GET /providers/me`). Weekly Instant windows from SQL
+   * `instant_schedule`. Empty array when none / DB unavailable. Never on
+   * public provider profiles.
+   */
+  schedule?: ProviderAvailabilityWindow[];
+  /**
+   * Owner GET/PATCH only. Encrypted at rest (secretbox). Never on public
+   * `GET /providers/{id}`. Empty string when not set.
+   */
+  ein_tin?: string | null;
+  /**
+   * Owner GET/PATCH only. Encrypted at rest (secretbox). Never on public
+   * profiles. Empty string when not set.
+   */
+  insurance_policy_number?: string | null;
+  /** Owner GET/PATCH only. Carrier name (not encrypted). */
+  insurance_provider?: string | null;
+  /** Owner GET/PATCH only. YYYY-MM-DD or empty. */
+  insurance_expiry?: string | null;
+  /** Owner GET/PATCH only. Liability limit in integer cents. */
+  insurance_coverage_cents?: number | null;
+  jobs_completed: number;
+  avg_response_time_minutes: number | null;
+  on_time_rate: number | null;
+  profile_completeness: number;
+  stripe_onboarding_complete: boolean;
+  service_categories: ServiceCategorySummary[];
   portfolio: PortfolioImage[];
-  memberSince: string;
-  responseTimeLabel?: string;
+  member_since: string;
+  response_time_label?: string;
 }
 
 export interface ServiceCategory {
@@ -233,6 +264,22 @@ export interface ServiceCategory {
   icon: string | null;
   sortOrder: number;
   children?: ServiceCategory[];
+}
+
+// Market = one city/region NoMarkup can operate in (craigslist-style coverage).
+// Served by GET /api/v1/markets (gateway markets handler, table from migration
+// 051). Field names are snake_case to match the raw JSON — the API client does
+// NOT case-transform responses.
+export interface Market {
+  id: string;
+  slug: string; // craigslist subdomain, e.g. 'sfbay'
+  name: string; // display name, e.g. 'SF bay area'
+  region: string | null; // US state name / 'Territories'; null for MX
+  region_code: string | null; // 2-letter US state code; null otherwise
+  country: 'US' | 'MX';
+  is_active: boolean; // launched here yet? (catalog markets default false)
+  lat: number | null;
+  lng: number | null;
 }
 
 export interface UpdateUserInput {
@@ -248,6 +295,14 @@ export interface UpdateProviderInput {
   service_address?: string;
   service_location?: { latitude: number; longitude: number };
   service_radius_km?: number;
+  /** EIN/TIN — PII at rest; omit to leave unchanged; empty string clears. */
+  ein_tin?: string;
+  /** Insurance policy number — PII at rest; omit to leave unchanged. */
+  insurance_policy_number?: string;
+  insurance_provider?: string;
+  /** YYYY-MM-DD */
+  insurance_expiry?: string;
+  insurance_coverage_cents?: number;
 }
 
 export interface GlobalTermsInput {
@@ -301,6 +356,26 @@ export interface Job {
   original_auction_ends_at: string | null;
   created_at: string;
   updated_at: string;
+  // Wave 5 services-polish (Section H). Optional because legacy
+  // payloads pre-migration 046 omit them; the form treats undefined as
+  // false / null.
+  is_hourly?: boolean;
+  hourly_rate_cents?: number | null;
+  same_day_requested?: boolean;
+  /** Present on owner-scoped mine list when the job is tied to a saved property (FR-19). */
+  property_id?: string;
+  /**
+   * FR-10.7: present on public search when the request included latitude/longitude.
+   * Null/undefined when the search was not geo-scoped.
+   */
+  distance_km?: number | null;
+}
+
+export interface JobLiquidity {
+  notified_count: number;
+  first_bid_at: string | null;
+  minutes_to_first_bid?: number;
+  bid_count: number;
 }
 
 export interface JobDetail extends Job {
@@ -308,6 +383,8 @@ export interface JobDetail extends Job {
   customer_avatar_url: string | null;
   customer_member_since: string;
   customer_jobs_posted: number;
+  /** Owner-only. Omitted for every other caller. */
+  liquidity?: JobLiquidity;
 }
 
 export interface CreateJobInput {
@@ -321,12 +398,21 @@ export interface CreateJobInput {
   location_address?: string;
   location_lat?: number;
   location_lng?: number;
+  /** Optional saved property link (FR-19). */
+  property_id?: string;
   starting_bid_cents?: number;
   offer_accepted_cents?: number;
   auction_duration_hours: number;
   auction_type?: AuctionType;
   photo_urls?: string[];
   publish?: boolean;
+  // Wave 5 services-polish (Section H). is_hourly toggles the form
+  // between flat-rate and hourly billing; hourly_rate_cents carries
+  // the rate when is_hourly=true. same_day_requested is the Thumbtack-
+  // style "I need this today" SLA flag.
+  is_hourly?: boolean;
+  hourly_rate_cents?: number;
+  same_day_requested?: boolean;
 }
 
 export interface UpdateJobInput {
@@ -395,7 +481,9 @@ export interface TrustScoreSummary {
 export interface ReviewSummary {
   average_rating: number;
   review_count: number;
-  on_time_rate: number;
+  // null when on-time rate is unknown (no review carries a timeliness rating);
+  // the UI hides the stat in that case rather than showing a misleading "0%".
+  on_time_rate: number | null;
 }
 
 export interface BidWithProvider {
@@ -507,6 +595,91 @@ export interface Milestone {
   approved_at?: string;
 }
 
+/**
+ * FR-5.4 local terms snapshot bound from chat Accept (live or award residual).
+ * Gateway projects only scalar fields from contracts.terms_json.local_terms.
+ */
+export interface ContractLocalTerms {
+  payment_type?: string;
+  payment_timing?: string;
+  amount?: string;
+  milestones?: string;
+  description?: string;
+  accepted_by?: string;
+  accepted_at?: string;
+  source?: string;
+  channel_id?: string;
+  proposed_message_id?: string;
+  bound_at?: string;
+  /** Allow additional scalar keys without breaking display. */
+  [key: string]: string | number | boolean | undefined;
+}
+
+/**
+ * Nested recurring schedule on contract detail / GET …/recurring (FR-18).
+ * payment_retry_* fields are gateway DB enrichment (FR-16.7), not on the proto.
+ */
+export interface ContractRecurringConfig {
+  id: string;
+  contract_id?: string;
+  frequency?: string;
+  rate_cents?: number;
+  auto_approve?: boolean;
+  status?: string;
+  next_occurrence?: string;
+  /** Consecutive CreatePayment setup failures (gateway projects when > 0). */
+  payment_retry_count?: number;
+  /** When the gateway will re-attempt CreatePayment (RFC3339). */
+  next_retry_at?: string;
+  /** Pause threshold (usually 3). Present with retry count. */
+  payment_retry_threshold?: number;
+}
+
+/** PATCH /api/v1/contracts/{id}/recurring — FR-18.3 / FR-18.4. */
+export interface UpdateRecurringConfigInput {
+  auto_approve?: boolean;
+  /** Future visit rate. Gateway field is proposed_rate_cents, not rate_cents. */
+  proposed_rate_cents?: number;
+}
+
+/** One occurrence from GET …/recurring/instances (FR-18.2). */
+export interface ContractRecurringInstance {
+  id: string;
+  recurring_id?: string;
+  occurrence_date?: string;
+  status?: string;
+  amount_cents?: number;
+  auto_approved?: boolean;
+  completed_at?: string;
+  /** Customer approve timestamp — durable hide-Approve across reloads. */
+  approved_at?: string;
+  /** Linked payments.id when a visit PI exists (gateway enrichment). */
+  payment_id?: string;
+  /** payments.status when linked (pending, escrow, …). */
+  payment_status?: string;
+  /** True when payment is escrow/released/completed/processing — hide Pay. */
+  payment_funded?: boolean;
+}
+
+/**
+ * Approve/complete visit envelope. Money fields present only when gateway
+ * CreatePayment succeeds — never invent payment_id / client_secret client-side.
+ */
+export interface RecurringInstanceActionResult {
+  instance: ContractRecurringInstance;
+  payment_id?: string;
+  client_secret?: string;
+  payment_residual?: string;
+  payment_error?: string;
+  payment?: Payment;
+  /** True when CreatePayment confirmed+captured off-session (default PM). */
+  off_session_charged?: boolean;
+  off_session_charge_residual?: string;
+  recurring_paused?: boolean;
+  recurring_status?: string;
+  recurring_config?: ContractRecurringConfig;
+}
+
 export interface Contract {
   id: string;
   contract_number: string;
@@ -514,6 +687,11 @@ export interface Contract {
   job_title: string;
   customer_id: string;
   provider_id: string;
+  // Gateway-enriched display names for the contract parties (resolved from the
+  // user service). Optional + fail-soft: absent when the lookup misses, in which
+  // case the UI falls back to a truncated id.
+  customer_name?: string;
+  provider_name?: string;
   bid_id: string;
   amount_cents: number;
   payment_timing: string;
@@ -526,6 +704,13 @@ export interface Contract {
   started_at?: string;
   completed_at?: string;
   created_at: string;
+  // Wave 5 services-polish (Section H). Post-completion gratuity. 0
+  // means "no tip yet"; once non-zero the tip widget hides.
+  tip_amount_cents?: number;
+  /** Chat/award-bound local terms (FR-5.4). Absent when never accepted. */
+  local_terms?: ContractLocalTerms | null;
+  /** FR-18 recurring schedule when this contract is recurring. */
+  recurring?: ContractRecurringConfig | null;
 }
 
 export interface ChangeOrder {
@@ -552,6 +737,10 @@ export interface ContractsResponse {
 export interface Payment {
   id: string;
   contract_id: string;
+  // Friendly NM-… contract reference, enriched server-side by joining the
+  // contracts table. Absent (fail-soft) if the lookup misses; UI falls back to
+  // a truncated contract_id.
+  contract_number?: string;
   milestone_id?: string;
   recurring_instance_id?: string;
   customer_id: string;
@@ -580,6 +769,9 @@ export interface PaymentBreakdown {
   provider_payout_cents: number;
   fee_percentage: number;
   guarantee_percentage: number;
+  // Lead-gen fee — additive fee on won contracts. Zero when not applicable.
+  lead_gen_fee_cents: number;
+  lead_gen_percentage: number;
 }
 
 export interface PaymentMethod {
@@ -597,7 +789,21 @@ export interface StripeAccountStatus {
   charges_enabled: boolean;
   payouts_enabled: boolean;
   details_submitted: boolean;
-  requirements: string[];
+  // The gateway returns null (not []) when there are no pending requirements.
+  requirements: string[] | null;
+  /** Separate charges + transfers readiness (Accounts v2 stripe_transfers). */
+  transfers_ready?: boolean;
+  stripe_transfers_status?: string;
+  /** express | full | none when known */
+  dashboard?: string;
+  /** "v2" | "v1" when inferred */
+  accounts_api?: string;
+}
+
+/** Connect embedded AccountSession (single-use client_secret). */
+export interface StripeAccountSession {
+  client_secret: string;
+  expires_at?: string;
 }
 
 export interface PaymentsResponse {
@@ -608,8 +814,16 @@ export interface PaymentsResponse {
 export interface CreatePaymentInput {
   contract_id: string;
   milestone_id?: string;
+  /** FR-18 visit payment — sticky UNIQUE(recurring_instance_id) on server. */
+  recurring_instance_id?: string;
+  provider_id?: string;
+  /**
+   * Server-authoritative amount in cents. For recurring visits this MUST be
+   * the instance amount from the API — never client fee math.
+   */
   amount_cents: number;
-  payment_method_id: string;
+  /** Optional; not required when PaymentElement will confirm the PI. */
+  payment_method_id?: string;
 }
 
 export interface FeeCalculationInput {
@@ -637,13 +851,21 @@ export interface Review {
   id: string;
   contract_id: string;
   reviewer_id: string;
+  // Reviewer's public display name, enriched server-side via the user service.
+  // Absent (fail-soft) if the lookup misses; UI falls back to a truncated id.
+  reviewer_name?: string;
   reviewee_id: string;
   direction: string;
   overall_rating: number;
+  // Customer → provider category ratings (FR-6.2)
   quality_rating?: number;
   communication_rating?: number;
   timeliness_rating?: number;
   value_rating?: number;
+  // Provider → customer category ratings (FR-6.2)
+  payment_promptness_rating?: number;
+  scope_accuracy_rating?: number;
+  access_rating?: number;
   comment: string;
   photo_urls: string[];
   response?: ReviewResponseData;
@@ -655,6 +877,9 @@ export interface ReviewResponseData {
   id: string;
   review_id: string;
   responder_id: string;
+  // Responder's public display name, enriched server-side via the user service.
+  // Absent (fail-soft) if the lookup misses; UI falls back to a truncated id.
+  responder_name?: string;
   comment: string;
   created_at: string;
 }
@@ -674,10 +899,15 @@ export interface ReviewsForUserResponse {
 
 export interface CreateReviewInput {
   overall_rating: number;
+  // Customer → provider (optional 1–5)
   quality_rating?: number;
   communication_rating?: number;
   timeliness_rating?: number;
   value_rating?: number;
+  // Provider → customer (optional 1–5) — FR-6.2
+  payment_promptness_rating?: number;
+  scope_accuracy_rating?: number;
+  access_rating?: number;
   comment: string;
   photo_urls?: string[];
 }
@@ -685,6 +915,8 @@ export interface CreateReviewInput {
 // Chat types
 export const CHANNEL_TYPE = {
   PRE_AWARD: 'pre_award',
+  /** FR-8.1 pre-bid Q&A (no active bid required). */
+  INQUIRY: 'inquiry',
   CONTRACT: 'contract',
   SUPPORT: 'support',
 } as const;
@@ -704,6 +936,12 @@ export const MESSAGE_TYPE = {
   FILE: 'file',
   SYSTEM: 'system',
   CONTACT_SHARE: 'contact_share',
+  /** Provider local-terms proposal (POST …/proposed-terms). */
+  PROPOSED_TERMS: 'proposed_terms',
+  /** Customer Accept of proposed terms (POST …/terms/respond accepted:true). */
+  TERMS_ACCEPTED: 'terms_accepted',
+  /** Customer Reject of proposed terms (POST …/terms/respond accepted:false). */
+  TERMS_REJECTED: 'terms_rejected',
 } as const;
 export type MessageType = (typeof MESSAGE_TYPE)[keyof typeof MESSAGE_TYPE];
 
@@ -712,6 +950,10 @@ export interface Channel {
   job_id: string;
   customer_id: string;
   provider_id: string;
+  /** Public display name of the customer, resolved by the gateway. May be absent if unresolved. */
+  customer_name?: string;
+  /** Public display name of the provider, resolved by the gateway. May be absent if unresolved. */
+  provider_name?: string;
   status: string;
   channel_type: string;
   last_message?: ChatMessage;
@@ -719,6 +961,10 @@ export interface Channel {
   message_count: number;
   created_at: string;
   updated_at: string;
+  /** MarkRead watermark for the customer party (ISO-8601). Peer uses this for Seen. */
+  customer_last_read_at?: string;
+  /** MarkRead watermark for the provider party (ISO-8601). Peer uses this for Seen. */
+  provider_last_read_at?: string;
 }
 
 export interface ChatMessage {
@@ -747,6 +993,55 @@ export interface MessagesResponse {
 export interface UnreadCountResponse {
   total_unread: number;
   channels: { channel_id: string; unread_count: number }[];
+}
+
+// Communication polish (Wave 5 / Agent P) — chat relay aliases, user
+// blocks, quick-reply templates. Mirror the JSON shapes returned by the
+// gateway handlers (chat_relay.go / user_blocks.go / chat_templates.go).
+export interface ChatAlias {
+  id: string;
+  user_id: string;
+  context_type: 'listing' | 'job';
+  context_id: string;
+  email_alias: string;
+  twilio_proxy_phone: string | null;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export interface ChatAliasesResponse {
+  aliases: ChatAlias[];
+  twilio_configured: boolean;
+}
+
+export interface CreateChatAliasInput {
+  context_type: 'listing' | 'job';
+  context_id: string;
+}
+
+export interface UserBlock {
+  blocked_id: string;
+  display_name: string;
+  avatar_url: string | null;
+  reason: string | null;
+  blocked_at: string;
+}
+
+export interface UserBlocksResponse {
+  blocks: UserBlock[];
+  pagination: PaginationResponse;
+}
+
+export interface MessageTemplate {
+  id: string;
+  body: string;
+  use_count: number;
+  created_at: string;
+}
+
+export interface MessageTemplatesResponse {
+  templates: MessageTemplate[];
+  defaults: string[];
 }
 
 export interface SendMessageInput {
@@ -902,6 +1197,8 @@ export const NOTIFICATION_TYPE = {
   PAYMENT_RECEIVED: 'payment_received',
   PAYMENT_RELEASED: 'payment_released',
   PAYMENT_FAILED: 'payment_failed',
+  /** SCA/3DS — buyer must authenticate (not a hard decline). */
+  PAYMENT_AUTHENTICATION_REQUIRED: 'payment_authentication_required',
   PAYOUT_SENT: 'payout_sent',
   NEW_MESSAGE: 'new_message',
   REVIEW_RECEIVED: 'review_received',
@@ -912,6 +1209,13 @@ export const NOTIFICATION_TYPE = {
   TIER_DOWNGRADE: 'tier_downgrade',
   // Pre-matching
   JOB_MATCHED: 'job_matched',
+  // Marketplace wishlist
+  WISHLIST_MATCH: 'wishlist_match',
+  // Goods auction: a higher bid landed on a listing you were winning
+  BID_OUTBID: 'bid_outbid',
+  // Goods Best-Offer chain
+  OFFER_RECEIVED: 'offer_received',
+  OFFER_COUNTERED: 'offer_countered',
 } as const;
 export type NotificationType = (typeof NOTIFICATION_TYPE)[keyof typeof NOTIFICATION_TYPE];
 
@@ -975,6 +1279,8 @@ export const UPLOAD_CONTEXT = {
   JOB_PHOTO: 'job_photo',
   DOCUMENT: 'document',
   REVIEW_PHOTO: 'review_photo',
+  LISTING: 'listing',
+  CHAT_ATTACHMENT: 'chat_attachment',
 } as const;
 export type UploadContext = (typeof UPLOAD_CONTEXT)[keyof typeof UPLOAD_CONTEXT];
 
@@ -1093,6 +1399,10 @@ export interface ChangeTierInput {
 
 // Analytics types
 export interface AnalyticsMarketRange {
+  // false when no market range has been computed for this category yet — a
+  // predictable empty state, not an error. The full fields below are only
+  // present when has_data is true.
+  has_data: boolean;
   category_id: string;
   subcategory_id: string;
   service_type_id: string;
@@ -1104,6 +1414,48 @@ export interface AnalyticsMarketRange {
   source: string;
   confidence: number;
   computed_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Fair-Price engine (confidence-scored price band)
+// ---------------------------------------------------------------------------
+// The gateway's Fair-Price endpoint returns a robust point estimate for a
+// (category × geo) cell, a dispersion band (p25–p75), a confidence interval,
+// the effective sample size, and a 0..1 confidence score. `has_data === false`
+// is a predictable empty state (a fresh cell with no settled prices yet), not
+// an error — the numeric fields are only meaningful when `has_data` is true.
+export const CONFIDENCE_LABEL = {
+  HIGH: 'high',
+  MEDIUM: 'medium',
+  LOW: 'low',
+} as const;
+export type ConfidenceLabel = (typeof CONFIDENCE_LABEL)[keyof typeof CONFIDENCE_LABEL];
+
+// Geo fallback ladder the engine walked to find enough data. 0 = the exact
+// requested zip; anything > 0 means the band is borrowed from a wider area, so
+// the UI surfaces an honest "based on metro-wide data" note.
+export const FAIR_PRICE_LEVEL = {
+  ZIP: 0,
+  METRO: 1,
+  METRO_PARENT: 2,
+  NATIONAL: 3,
+  NATIONAL_PARENT: 4,
+  SIDE: 5,
+} as const;
+export type FairPriceLevel = (typeof FAIR_PRICE_LEVEL)[keyof typeof FAIR_PRICE_LEVEL];
+
+export interface FairPrice {
+  has_data: boolean;
+  price_cents: number;
+  p25_cents: number;
+  p75_cents: number;
+  ci_lo_cents: number;
+  ci_hi_cents: number;
+  n_eff: number;
+  confidence: number;
+  confidence_label: ConfidenceLabel;
+  level_used: number;
+  model_version: string;
 }
 
 export interface ProviderAnalytics {
@@ -1229,21 +1581,41 @@ export interface AdminProviderProfile {
 export interface VerificationDocument {
   id: string;
   user_id: string;
-  user_name: string;
+  user_email: string;
+  user_display_name: string;
   document_type: string;
   status: string;
-  submitted_at: string;
-  reviewed_at?: string;
-  reviewer_notes?: string;
+  file_name: string;
+  file_url: string;
+  created_at?: string;
+}
+
+/** Provider self-service verification doc from GET /providers/me/documents (FR-2.10). */
+export interface ProviderVerificationDocument {
+  id?: string;
+  document_type: string;
+  status: string;
+  /** Rejection / re-upload attempts for this type. Locked at >= 3. */
+  resubmission_count?: number;
+  rejection_reason?: string;
+  expires_at?: string;
 }
 
 export interface Dispute {
   id: string;
   contract_id: string;
-  initiated_by: string;
+  // The contract service identifies the filer as `opened_by`. Older gateway
+  // responses (and the standalone dispute endpoint) also alias it as
+  // `initiated_by`; both are optional so a missing value never crashes the UI.
+  opened_by?: string;
+  initiated_by?: string;
   initiator_name?: string;
   respondent_name?: string;
-  reason: string;
+  // The contract service describes the dispute via `dispute_type` + `description`.
+  // `reason` is the legacy alias some gateway responses still emit.
+  dispute_type?: string;
+  description?: string;
+  reason?: string;
   status: DisputeStatus;
   resolution_type?: DisputeResolutionType;
   resolution_notes?: string;
@@ -1403,10 +1775,97 @@ export interface FeeConfig {
   guarantee_percentage: number;
   min_fee_cents: number;
   max_fee_cents: number;
+  // Lead-gen fee — an ADDITIVE fee charged on won contracts, on top of the
+  // platform + guarantee fees. Sent/returned in the same units as the sibling
+  // fields above: whole-number percentage (e.g. 10.0 means 10%) and integer
+  // cents. `lead_gen_max_fee_cents` is null when there is no cap.
+  lead_gen_enabled: boolean;
+  lead_gen_percentage: number;
+  lead_gen_min_fee_cents: number;
+  lead_gen_max_fee_cents: number | null;
+}
+
+// FeeConfigSummary is the read-only shape returned by GET
+// /api/v1/admin/payments/fee-config. Unlike the FeeConfig write payload (whose
+// percentages are whole numbers entered in the form), the stored/active config
+// returns percentages as 0..1 FRACTIONS (e.g. 0.08 = 8%) and all fee bounds as
+// integer cents. `min_fee_cents` / `max_fee_cents` are 0 when unset.
+export interface FeeConfigSummary {
+  fee_percentage: number;
+  guarantee_percentage: number;
+  min_fee_cents: number;
+  max_fee_cents: number;
+  lead_gen_enabled: boolean;
+  lead_gen_percentage: number;
+  lead_gen_min_fee_cents: number;
+  lead_gen_max_fee_cents: number | null;
+}
+
+/** Admin-named additive platform fee. rate_bps is integer basis points (500 = 5%). */
+export interface CustomFee {
+  id: string;
+  name: string;
+  rate_bps: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomFeesResponse {
+  fees: CustomFee[];
+}
+
+export interface CreateCustomFeeInput {
+  name: string;
+  rate_bps: number;
+}
+
+export interface UpdateCustomFeeInput {
+  name?: string;
+  rate_bps?: number;
+  active?: boolean;
 }
 
 export interface CategoryMetricsResponse {
   categories: CategoryMetric[];
+}
+
+// ────────────────────────────────────────
+// Platform banking (admin) — where all platform fees route
+// ────────────────────────────────────────
+
+export const BANK_ACCOUNT_HOLDER_TYPE = {
+  INDIVIDUAL: 'individual',
+  COMPANY: 'company',
+} as const;
+export type BankAccountHolderType =
+  (typeof BANK_ACCOUNT_HOLDER_TYPE)[keyof typeof BANK_ACCOUNT_HOLDER_TYPE];
+
+export interface PlatformBankAccount {
+  id: string;
+  bank_name: string;
+  account_holder_name: string;
+  account_holder_type: BankAccountHolderType;
+  last4: string;
+  routing_last4: string;
+  currency: string;
+  country: string;
+  status: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlatformBankingResponse {
+  account: PlatformBankAccount | null;
+}
+
+// Sent to our backend AFTER tokenizing with Stripe.js. Raw account/routing
+// numbers MUST NOT appear here — only the Stripe bank-account token (btok_...).
+export interface CreatePlatformBankAccountInput {
+  bank_account_token: string;
+  account_holder_name: string;
+  account_holder_type: BankAccountHolderType;
 }
 
 // ────────────────────────────────────────
@@ -1441,11 +1900,76 @@ export interface WorkingCapitalAdvance {
   created_at: string;
 }
 
+/** Underwriting tier returned by the credit-limit decision engine. */
+export const ADVANCE_TIER = {
+  INELIGIBLE: 'ineligible',
+  STARTER: 'starter',
+  STANDARD: 'standard',
+  PREMIUM: 'premium',
+  ELITE: 'elite',
+} as const;
+export type AdvanceTier = (typeof ADVANCE_TIER)[keyof typeof ADVANCE_TIER];
+
+/** Why the credit line lands where it does (the binding constraint). */
+export const ADVANCE_BINDING_CAP = {
+  ABSOLUTE_MAX: 'absolute_max',
+  REVENUE_35PCT: 'revenue_35pct',
+  RISK_MULTIPLE: 'risk_multiple',
+} as const;
+export type AdvanceBindingCap = (typeof ADVANCE_BINDING_CAP)[keyof typeof ADVANCE_BINDING_CAP];
+
+/**
+ * A single signed contributor to the underwriting decision. `contribution` is
+ * signed: positive raises risk (hurts the line), negative lowers it (helps).
+ */
+export interface CreditDecisionReason {
+  code: string;
+  label: string;
+  contribution: number;
+}
+
 export interface CreditLimit {
   max_advance_cents: number;
   total_outstanding_cents: number;
+  /**
+   * Legacy field name for headroom. The new decision engine returns
+   * `available_advance_cents`; older gateways return `available_cents`.
+   * Read both with a fallback.
+   */
   available_cents: number;
+  /**
+   * Probability-of-default-like score, 0..1, higher = riskier. (Older
+   * responses sent an unbounded/0..100 score; the page only renders the
+   * derived tier/fee, so the raw value is not surfaced directly.)
+   */
   risk_score: number;
+
+  // ── Decision-engine fields (additive; optional so legacy responses parse) ──
+  approved?: boolean;
+  tier?: AdvanceTier;
+  /** Preferred headroom field from the decision engine. */
+  available_advance_cents?: number;
+  /** Advance fee in basis points (600..1800). */
+  fee_bps?: number;
+  /** Repayment multiplier on principal (1.06..1.18). */
+  factor_rate?: number;
+  /** Percent of each future payout auto-collected to repay (8..20). */
+  holdback_pct?: number;
+  /** Which constraint is binding the limit. */
+  binding_cap?: AdvanceBindingCap;
+  /** When declined, the decisive reason in plain language. */
+  binding_gate?: string;
+  /** Signed explainability factors (+ raises risk, − lowers it). */
+  reasons?: CreditDecisionReason[];
+  /** Stable hash of the decision inputs/outputs for audit. */
+  decision_hash?: string;
+  /** Underwriting model version, e.g. "uw-2026.06.1". */
+  model_version?: string;
+
+  // ── Underwriting inputs the engine may echo back (optional). ──
+  jobs_completed?: number;
+  total_earnings_cents?: number;
+  on_time_rate?: number | null;
 }
 
 export interface AdvancesResponse {
@@ -1757,12 +2281,17 @@ export const INSURANCE_POLICY_STATUS = {
 export type InsurancePolicyStatus =
   (typeof INSURANCE_POLICY_STATUS)[keyof typeof INSURANCE_POLICY_STATUS];
 
+// Values MUST match the insurance_claims.status DB CHECK constraint
+// (migration 022): filed, under_review, approved, denied, paid_out, appealed,
+// closed. The backend marks a paid claim 'paid_out' (not 'paid').
 export const INSURANCE_CLAIM_STATUS = {
   FILED: 'filed',
   UNDER_REVIEW: 'under_review',
   APPROVED: 'approved',
   DENIED: 'denied',
-  PAID: 'paid',
+  PAID_OUT: 'paid_out',
+  APPEALED: 'appealed',
+  CLOSED: 'closed',
 } as const;
 export type InsuranceClaimStatus =
   (typeof INSURANCE_CLAIM_STATUS)[keyof typeof INSURANCE_CLAIM_STATUS];
@@ -1793,7 +2322,10 @@ export interface InsuranceQuote {
 export interface InsurancePolicy {
   id: string;
   policy_number: string;
-  product: InsuranceProduct;
+  // The gateway returns a FLAT policy carrying only product_id — the product
+  // object is looked up client-side (useInsuranceProducts). It is not nested in
+  // the policy response.
+  product_id: string;
   contract_id: string;
   coverage_amount_cents: number;
   premium_cents: number;
@@ -1838,6 +2370,90 @@ export interface InsuranceClaimsResponse {
 }
 
 // ────────────────────────────────────────
+// Competitive insurance marketplace types
+// (request quotes → compare competing insurers → bind one)
+// ────────────────────────────────────────
+
+// Must match the product_type values carriers actually offer (insurer_products,
+// migration 063) and the gateway fan-out query — otherwise a quote request finds
+// no matching carrier and returns 0 quotes. Same taxonomy as per-job insurance.
+export const INSURANCE_PRODUCT_TYPE = {
+  COMPLETION_GUARANTEE: 'completion_guarantee',
+  PROPERTY_DAMAGE: 'property_damage',
+  WORKMANSHIP_WARRANTY: 'workmanship_warranty',
+  LIABILITY: 'liability',
+} as const;
+export type InsuranceProductType =
+  (typeof INSURANCE_PRODUCT_TYPE)[keyof typeof INSURANCE_PRODUCT_TYPE];
+
+export interface RequestInsuranceQuotesInput {
+  product_type: string;
+  coverage_cents: number;
+  contract_id?: string;
+}
+
+/** A single competing offer from one insurer. */
+export interface InsuranceCompetitiveQuote {
+  quote_id: string;
+  insurer_id: string;
+  insurer_name: string;
+  premium_cents: number;
+  deductible_cents: number;
+  terms: string;
+  expires_at: string;
+}
+
+export interface InsuranceQuoteRequest {
+  id: string;
+  product_type: string;
+  coverage_cents: number;
+  contract_id: string | null;
+  status: string;
+  created_at: string;
+}
+
+/** POST /quote-requests response. Quotes are sorted by premium ascending. */
+export interface InsuranceQuoteRequestResponse {
+  request_id: string;
+  quotes: InsuranceCompetitiveQuote[];
+  // Echoed request fields (optional — present when the gateway returns them).
+  product_type?: string;
+  coverage_cents?: number;
+  contract_id?: string | null;
+  status?: string;
+  created_at?: string;
+}
+
+/** GET /quote-requests/{id} response. */
+export interface InsuranceQuoteRequestDetail {
+  request: InsuranceQuoteRequest;
+  quotes: InsuranceCompetitiveQuote[];
+}
+
+/**
+ * POST /quote-requests/{id}/select response — the bound marketplace policy.
+ * The gateway returns the full policy object (marketplacePolicyJSON) keyed by
+ * `id` (NOT `policy_id`); the bind-confirmation UI reads `id`/`status`.
+ */
+export interface SelectInsuranceQuoteResponse {
+  id: string;
+  request_id: string;
+  quote_id: string;
+  insurer_id: string;
+  insurer_name: string;
+  customer_id: string;
+  contract_id: string | null;
+  product_type: string;
+  coverage_amount_cents: number;
+  premium_cents: number;
+  deductible_cents: number;
+  terms: string;
+  status: string;
+  effective_date: string;
+  expiration_date: string | null;
+}
+
+// ────────────────────────────────────────
 // Tax Form types
 // ────────────────────────────────────────
 
@@ -1847,10 +2463,652 @@ export interface TaxForm {
   tax_year: number;
   form_type: string;
   status: string;
-  generated_at: string;
-  download_url: string | null;
+  // Gateway returns the standard created_at/updated_at timestamps (see
+  // protoTaxFormToJSON in gateway/internal/handler/tax.go) — there is no
+  // `generated_at` field. The download link is served under `pdf_url`.
+  created_at: string;
+  updated_at: string;
+  pdf_url: string;
 }
 
 export interface TaxFormsResponse {
   forms: TaxForm[];
+}
+
+/**
+ * Authoritative server-side tax estimate (gateway computes this in integer
+ * cents — see gateway/internal/handler/tax_estimate_calc.go). All `_cents`
+ * fields are integers; `effective_rate` / `*_rate` are fractions in 0..1.
+ */
+export interface TaxEstimate {
+  tax_year: number;
+  net_earnings_cents: number;
+  se_calc_base_cents: number; // 92.35% of net (Schedule SE basis)
+  se_tax_cents: number;
+  se_tax_rate: number;
+  half_se_tax_deduction_cents: number;
+  standard_deduction_cents: number;
+  federal_taxable_cents: number;
+  federal_income_tax_cents: number;
+  state_code: string; // USPS 2-letter, or '' when unknown
+  state_tax_rate: number;
+  state_income_tax_cents: number;
+  has_state_data: boolean;
+  total_tax_cents: number;
+  effective_rate: number; // total_tax / net_earnings, 0..1
+}
+
+export interface TaxEstimateResponse {
+  tax_estimate: TaxEstimate;
+}
+
+// ────────────────────────────────────────
+// Goods Marketplace (Forward Auction) types
+// ────────────────────────────────────────
+
+export const LISTING_STATUS = {
+  DRAFT: 'draft',
+  ACTIVE: 'active',
+  // ENDED is a read-time effective status emitted by the gateway for an
+  // auction whose deadline has passed but which no close-worker has swept to
+  // sold/expired yet. It is display-only (never persisted) and means "bidding
+  // is over, awaiting settlement" — distinct from EXPIRED (closed with no bids).
+  ENDED: 'ended',
+  SOLD: 'sold',
+  EXPIRED: 'expired',
+  CANCELLED: 'cancelled',
+} as const;
+export type ListingStatus = (typeof LISTING_STATUS)[keyof typeof LISTING_STATUS];
+
+export const LISTING_DURATION_HOURS = {
+  DAY: 24,
+  TWO_DAYS: 48,
+  WEEK: 168,
+} as const;
+export type ListingDurationHours =
+  (typeof LISTING_DURATION_HOURS)[keyof typeof LISTING_DURATION_HOURS];
+
+export const LISTING_ORDER_STATUS = {
+  PENDING: 'pending',
+  PAID: 'paid',
+  PICKED_UP: 'picked_up',
+  COMPLETED: 'completed',
+  DISPUTED: 'disputed',
+  CANCELLED: 'cancelled',
+} as const;
+export type ListingOrderStatus =
+  (typeof LISTING_ORDER_STATUS)[keyof typeof LISTING_ORDER_STATUS];
+
+export interface ListingPhoto {
+  id: string;
+  url: string;
+  blur_hash: string | null;
+  sort_order: number;
+}
+
+export interface Listing {
+  id: string;
+  seller_id: string;
+  category_id: string;
+  category_name: string;
+  category_slug: string;
+  title: string;
+  description: string;
+  status: ListingStatus;
+  photos: ListingPhoto[];
+  pickup_zip: string;
+  pickup_city: string | null;
+  pickup_state: string | null;
+  pickup_address: string | null; // only present after winner is chosen
+  pickup_lat: number | null;
+  pickup_lng: number | null;
+  starting_price_cents: number;
+  current_bid_cents: number;
+  min_increment_cents: number;
+  /** Hidden minimum to actually win. null = no reserve. */
+  reserve_price_cents?: number | null;
+  /** Optional fixed-price closeout. null = auction-only. */
+  buy_now_price_cents?: number | null;
+  /**
+   * Whether the current high bid meets the reserve. null when the listing
+   * has no reserve set (most demo listings); true once `current_bid_cents`
+   * crosses `reserve_price_cents`; false until then.
+   */
+  reserve_met?: boolean | null;
+  bidder_count: number;
+  bid_count: number;
+  auction_duration_hours: number;
+  auction_ends_at: string | null;
+  snipe_extension_count: number;
+  distance_km: number | null;
+  is_user_winning: boolean;
+  was_outbid: boolean;
+  /**
+   * StockX-style condition grade. null = seller didn't say. When set the
+   * scoreboard surfaces a condition pill on the listing card.
+   */
+  condition?:
+    | 'new'
+    | 'like_new'
+    | 'very_good'
+    | 'good'
+    | 'acceptable'
+    | 'for_parts'
+    | null;
+  /**
+   * Live spectator count from the gateway's Redis sorted-set aggregator.
+   * Optional because legacy responses may omit it; the scoreboard treats
+   * undefined as zero.
+   */
+  watcher_count?: number;
+  /**
+   * Highest pending Best-Offer + the buyer who made it. null when no
+   * pending offer exists. Surfaced inline so the marketplace card and
+   * detail page can render the offer banner without a second roundtrip.
+   */
+  current_offer_amount_cents?: number | null;
+  current_offer_buyer_id?: string | null;
+  /**
+   * Wave 5 power-seller flags. Set when the seller pays for placement
+   * via `POST /listings/{id}/promote`. The scoreboard renders a small
+   * "Promoted" pill in the corner when both fields are truthy AND
+   * `promoted_until` is still in the future.
+   */
+  is_promoted?: boolean;
+  promoted_until?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ListingDetail extends Listing {
+  seller_display_name: string;
+  seller_member_since: string;
+  seller_listings_count: number;
+  seller_trust_tier: TrustTier | null;
+  seller_trust_score: number | null;
+  /**
+   * FE-14: published buyer→seller goods review aggregate from
+   * `listing_order_reviews`. Null average when the seller has no reviews yet.
+   */
+  seller_average_rating: number | null;
+  seller_review_count: number;
+}
+
+// ────────────────────────────────────────
+// Best-Offer / counter-offer chain
+// ────────────────────────────────────────
+
+export const OFFER_STATUS = {
+  PENDING: 'pending',
+  ACCEPTED: 'accepted',
+  REJECTED: 'rejected',
+  COUNTERED: 'countered',
+  WITHDRAWN: 'withdrawn',
+  EXPIRED: 'expired',
+} as const;
+export type OfferStatus = (typeof OFFER_STATUS)[keyof typeof OFFER_STATUS];
+
+/**
+ * Represents a single offer (or counter-offer) in the Best-Offer chain.
+ * Counter-offers carry parent_offer_id pointing back at the offer they
+ * respond to; the parent flips to status='countered' the moment the
+ * seller posts the counter.
+ */
+export interface Offer {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  amount_cents: number;
+  status: OfferStatus;
+  parent_offer_id: string | null;
+  expires_at: string;
+  message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OffersResponse {
+  offers: Offer[];
+}
+
+// ────────────────────────────────────────
+// Auction replay (goods side)
+// ────────────────────────────────────────
+
+export type AuctionReplayEventType =
+  | 'bid_placed'
+  | 'snipe_extension'
+  | 'auto_bid_cascade';
+
+export interface AuctionReplayEvent {
+  type: AuctionReplayEventType;
+  at: string;
+  amount_cents?: number;
+  anonymized_bidder?: string;
+  extended_to?: string;
+  from?: number;
+  to?: number;
+}
+
+export interface ListingAuctionReplay {
+  listing_id: string;
+  started_at: string;
+  ended_at: string | null;
+  winner_id: string | null;
+  events: AuctionReplayEvent[];
+}
+
+export interface ListingBid {
+  id: string;
+  listing_id: string;
+  bidder_id: string;
+  bidder_display_name: string;
+  amount_cents: number;
+  is_winning: boolean;
+  created_at: string;
+}
+
+export interface ListingBidHistory {
+  bids: ListingBid[];
+  current_bid_cents: number;
+  bidder_count: number;
+}
+
+export interface CreateListingInput {
+  category_id: string;
+  title: string;
+  description: string;
+  photo_urls: string[];
+  pickup_zip: string;
+  pickup_address?: string;
+  pickup_lat?: number;
+  pickup_lng?: number;
+  starting_price_cents: number;
+  /** Hidden minimum to actually win. Omit for no-reserve auctions. */
+  reserve_price_cents?: number;
+  /** Optional fixed-price closeout. Omit for auction-only listings. */
+  buy_now_price_cents?: number;
+  /** Optional StockX-style condition grade. Omit for "seller didn't say". */
+  condition?:
+    | 'new'
+    | 'like_new'
+    | 'very_good'
+    | 'good'
+    | 'acceptable'
+    | 'for_parts'
+    | null;
+  auction_duration_hours: ListingDurationHours;
+  publish?: boolean;
+}
+
+export interface UpdateListingInput {
+  title?: string;
+  description?: string;
+  photo_urls?: string[];
+  pickup_zip?: string;
+  pickup_address?: string;
+  starting_price_cents?: number;
+  auction_duration_hours?: ListingDurationHours;
+}
+
+export interface PlaceListingBidInput {
+  amount_cents: number;
+  max_bid_cents?: number;
+}
+
+export interface PlaceListingBidResponse {
+  bid: ListingBid;
+  current_bid_cents: number;
+  bidder_count: number;
+  /** New auction end time when a snipe extension was triggered */
+  snipe_extension_applied: boolean;
+  new_auction_ends_at: string | null;
+}
+
+export interface SearchListingsParams {
+  query?: string;
+  category_id?: string;
+  /** Slug alternative to category_id — the gateway accepts either. Used by the
+   *  autocomplete category suggestions, which only carry a slug. */
+  category_slug?: string;
+  pickup_zip?: string;
+  radius_km?: number;
+  min_price_cents?: number;
+  max_price_cents?: number;
+  ending_soon?: boolean;
+  sort_by?: 'ending_soon' | 'newest' | 'lowest_price' | 'highest_price' | 'distance' | 'trending';
+  lat?: number;
+  lng?: number;
+  page?: number;
+  page_size?: number;
+}
+
+export interface ListingsResponse {
+  listings: Listing[];
+  pagination: PaginationResponse;
+}
+
+/**
+ * Autocomplete suggestion from /api/v1/listings/autocomplete.
+ *
+ * Two flavors are returned in a single, sorted list:
+ *   - type='category' carries `category_slug` + `label`
+ *   - type='listing'  carries `id`, `title`, `category_slug`, `starting_price_cents`
+ *
+ * The component layer (SearchBar) renders them with different affordances
+ * (chip vs. row) but treats the dropdown as a single keyboard list.
+ */
+export interface AutocompleteSuggestion {
+  type: 'listing' | 'category';
+  id?: string;
+  title?: string;
+  category_slug?: string;
+  label?: string;
+  starting_price_cents?: number;
+}
+
+export interface AutocompleteResponse {
+  suggestions: AutocompleteSuggestion[];
+}
+
+/**
+ * Response from /api/v1/listings/{id}/similar — up to 12 fully-hydrated
+ * Listing rows ranked by Meilisearch relevance against the source.
+ */
+export interface SimilarListingsResponse {
+  listings: Listing[];
+}
+
+export interface MyListingsResponse {
+  listings: Listing[];
+  pagination: PaginationResponse;
+}
+
+export interface MyListingBid {
+  bid: ListingBid;
+  listing: Listing;
+}
+
+export interface MyListingBidsResponse {
+  bids: MyListingBid[];
+  pagination: PaginationResponse;
+}
+
+export interface ListingOrder {
+  id: string;
+  listing_id: string;
+  listing_title: string;
+  listing_photo_url: string | null;
+  buyer_id: string;
+  seller_id: string;
+  seller_display_name: string;
+  pickup_address: string;
+  pickup_zip: string;
+  pickup_city: string;
+  pickup_state: string;
+  amount_cents: number;
+  platform_fee_cents: number;
+  status: ListingOrderStatus;
+  channel_id: string | null;
+  paid_at: string | null;
+  picked_up_at: string | null;
+  // seller_confirmed_at is the seller half of the mutual pickup handshake
+  // (set by POST /orders/{id}/seller-confirm). picked_up_at is the buyer
+  // half (POST /orders/{id}/confirm-pickup). Escrow releases only once both
+  // are set; the order page uses them to gate each party's confirm button.
+  seller_confirmed_at: string | null;
+  completed_at: string | null;
+  dispute_window_ends_at: string | null;
+  created_at: string;
+}
+
+// FE-14 goods order review MVP (overall rating only; not services double-blind).
+export interface ListingOrderReview {
+  id: string;
+  order_id: string;
+  listing_id: string;
+  reviewer_id: string;
+  reviewee_id: string;
+  reviewer_role: 'buyer' | 'seller';
+  overall_rating: number;
+  comment: string;
+  status: string;
+  review_window_ends_at: string;
+  created_at: string;
+}
+
+export interface ListingOrderReviewEligibility {
+  eligible: boolean;
+  already_reviewed: boolean;
+  review_window_closes_at?: string;
+}
+
+export interface ListingOrderReviewsResponse {
+  reviews: ListingOrderReview[];
+}
+
+export interface CreateListingOrderReviewInput {
+  overall_rating: number;
+  comment?: string;
+}
+
+// ────────────────────────────────────────
+// AI auto-fill: listing image analysis
+// ────────────────────────────────────────
+
+export type ListingAnalysisCondition =
+  | 'new'
+  | 'like_new'
+  | 'very_good'
+  | 'good'
+  | 'acceptable'
+  | 'for_parts';
+
+export type ListingAnalysisConfidence = 'low' | 'medium' | 'high';
+
+export interface ListingImageAnalysisResult {
+  categorySlug: string;
+  title: string;
+  description: string;
+  suggestedStartingPriceCents: number;
+  condition: ListingAnalysisCondition;
+  confidence: ListingAnalysisConfidence;
+}
+
+// ────────────────────────────────────────
+// Wave 5 — power-seller analytics + paid promotions
+// ────────────────────────────────────────
+
+export interface SellerAnalyticsDailyPoint {
+  date: string;
+  gross_cents: number;
+  order_count: number;
+}
+
+export interface SellerAnalyticsTopCategory {
+  category_id: string;
+  category_name: string;
+  count: number;
+}
+
+export interface SellerAnalytics {
+  range_days: number;
+  daily_revenue: SellerAnalyticsDailyPoint[];
+  sell_through_rate: number;
+  avg_sale_price_cents: number;
+  total_gross_cents: number;
+  total_sold: number;
+  total_listed: number;
+  top_categories: SellerAnalyticsTopCategory[];
+}
+
+export const PROMOTION_DURATION_HOURS = {
+  ONE_DAY: 24,
+  THREE_DAYS: 72,
+  ONE_WEEK: 168,
+} as const;
+export type PromotionDurationHours =
+  (typeof PROMOTION_DURATION_HOURS)[keyof typeof PROMOTION_DURATION_HOURS];
+
+export const PROMOTION_TIERS: ReadonlyArray<{
+  duration_hours: PromotionDurationHours;
+  amount_cents: number;
+  label: string;
+}> = [
+  { duration_hours: 24, amount_cents: 500, label: '24 hours' },
+  { duration_hours: 72, amount_cents: 1200, label: '3 days' },
+  { duration_hours: 168, amount_cents: 2500, label: '1 week' },
+];
+
+export interface PromoteListingInput {
+  duration_hours: PromotionDurationHours;
+  payment_method_id?: string;
+}
+
+export interface PromoteListingResponse {
+  charge_id: string;
+  listing_id: string;
+  duration_hours: number;
+  amount_cents: number;
+  stripe_client_secret: string;
+  promoted_until_estimate: string;
+  status: 'pending' | 'succeeded' | 'failed' | 'cancelled';
+}
+
+export interface ConfirmPromotionResponse {
+  charge_id: string;
+  listing_id: string;
+  is_promoted: boolean;
+  promoted_until: string;
+  status: 'succeeded';
+}
+
+// Wave 5 pickup polish — buyer + seller mutual handshake.
+export interface ConfirmPickupInput {
+  pickup_code?: string;
+  selfie_url?: string;
+  handoff_photo_url?: string;
+}
+
+export interface ConfirmPickupResponse {
+  order_id: string;
+  escrow_status: string;
+  seller_payout_cents: number;
+  pickup_confirmed_at: string;
+  both_confirmed: boolean;
+}
+
+export interface SellerConfirmResponse {
+  order_id: string;
+  escrow_status: string;
+  seller_confirmed_at: string;
+  both_confirmed: boolean;
+}
+
+export interface ReportNoShowResponse {
+  order_id: string;
+  reported_user_id: string;
+  new_no_show_count: number;
+  cooldown_until: string;
+  shadow_ban_triggered: boolean;
+}
+
+// ────────────────────────────────────────
+// Wave 5 services-polish (Section H)
+// ────────────────────────────────────────
+
+export const CATEGORY_QUESTION_TYPE = {
+  TEXT: 'text',
+  NUMBER: 'number',
+  SELECT: 'select',
+  MULTISELECT: 'multiselect',
+  BOOLEAN: 'boolean',
+  DATE: 'date',
+} as const;
+export type CategoryQuestionType =
+  (typeof CATEGORY_QUESTION_TYPE)[keyof typeof CATEGORY_QUESTION_TYPE];
+
+/**
+ * Pre-quote question tied to a service category. Customers answer
+ * these on the post-job form so providers can quote off real scope.
+ *
+ * `options` is the raw JSONB payload — for select/multiselect it's a
+ * string array (e.g. ["Single fixture","Whole bathroom"]); other
+ * types ignore it.
+ */
+export interface CategoryQuestion {
+  id: string;
+  category_id: string;
+  question: string;
+  question_type: CategoryQuestionType;
+  options?: string[] | null;
+  required: boolean;
+  display_order: number;
+  created_at: string;
+}
+
+export interface CategoryQuestionsResponse {
+  questions: CategoryQuestion[];
+}
+
+/**
+ * One customer-submitted answer. Exactly one of answer_text /
+ * answer_json is populated — text/select/date use answer_text;
+ * multiselect/number/boolean round-trip as answer_json.
+ */
+export interface JobQuestionAnswer {
+  id: string;
+  job_id: string;
+  question_id: string;
+  answer_text?: string | null;
+  answer_json?: unknown;
+  created_at: string;
+}
+
+export interface SubmitAnswerInput {
+  question_id: string;
+  answer_text?: string;
+  answer_json?: unknown;
+}
+
+export interface SubmitAnswersInput {
+  answers: SubmitAnswerInput[];
+}
+
+/** Provider's reusable quote boilerplate. */
+export interface QuoteTemplate {
+  id: string;
+  user_id: string;
+  name: string;
+  body: string;
+  default_amount_cents?: number | null;
+  default_duration_hours?: number | null;
+  use_count: number;
+  created_at: string;
+}
+
+export interface QuoteTemplatesResponse {
+  templates: QuoteTemplate[];
+}
+
+export interface CreateQuoteTemplateInput {
+  name: string;
+  body: string;
+  default_amount_cents?: number;
+  default_duration_hours?: number;
+}
+
+export interface UpdateQuoteTemplateInput {
+  name?: string;
+  body?: string;
+  default_amount_cents?: number;
+  default_duration_hours?: number;
+}
+
+export interface ContractTipInput {
+  amount_cents: number;
+}
+
+export interface ContractTipResponse {
+  tip_amount_cents: number;
 }

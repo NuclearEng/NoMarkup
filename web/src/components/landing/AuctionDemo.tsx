@@ -14,7 +14,7 @@ interface BidEntry {
   delay: number;
 }
 
-const BIDS: BidEntry[] = [
+const BIDS: readonly [BidEntry, BidEntry, BidEntry] = [
   { name: "Mike's Plumbing", price: 210000, trustScore: 92, delay: 1500 },
   { name: 'ProBuild Co.', price: 180000, trustScore: 88, delay: 3000 },
   { name: 'Elite Renovations', price: 145000, trustScore: 95, delay: 4500 },
@@ -86,25 +86,25 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
       // Bid 1
       const t1 = setTimeout(() => {
         setVisibleBids(1);
-        setCurrentPrice(BIDS[0]?.price ?? STARTING_PRICE);
+        setCurrentPrice(BIDS[0].price);
         setFlashActive(true);
         setShimmerKey((k) => k + 1);
         setTimeout(() => { setFlashActive(false); }, 400);
-      }, BIDS[0]?.delay ?? 1500);
+      }, BIDS[0].delay);
 
       // Bid 2
       const t2 = setTimeout(() => {
         setVisibleBids(2);
-        setCurrentPrice(BIDS[1]?.price ?? STARTING_PRICE);
+        setCurrentPrice(BIDS[1].price);
         setFlashActive(true);
         setShimmerKey((k) => k + 1);
         setTimeout(() => { setFlashActive(false); }, 400);
-      }, BIDS[1]?.delay ?? 3000);
+      }, BIDS[1].delay);
 
       // Bid 3 — winning bid with ripple
       const t3 = setTimeout(() => {
         setVisibleBids(3);
-        setCurrentPrice(BIDS[2]?.price ?? STARTING_PRICE);
+        setCurrentPrice(BIDS[2].price);
         setFlashActive(true);
         setShimmerKey((k) => k + 1);
         setRippleActive(true);
@@ -112,7 +112,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
           setFlashActive(false);
           setShowSavings(true);
         }, 400);
-      }, BIDS[2]?.delay ?? 4500);
+      }, BIDS[2].delay);
 
       // Schedule next cycle
       cycleRef.current = setTimeout(runCycle, CYCLE_DURATION);
@@ -130,7 +130,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
   }, []);
 
   const savingsPercent = Math.round(
-    ((STARTING_PRICE - (BIDS[2]?.price ?? STARTING_PRICE)) / STARTING_PRICE) * 100,
+    ((STARTING_PRICE - BIDS[2].price) / STARTING_PRICE) * 100,
   );
 
   const timerMinutes = Math.floor(timer / 60);
@@ -237,7 +237,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
                 className="animate-savings-bounce inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold"
                 style={{
                   background: 'linear-gradient(135deg, rgba(201,168,76,0.25), rgba(201,168,76,0.08))',
-                  color: '#e4c566',
+                  color: 'var(--brand-gold-bright)',
                   border: '1px solid rgba(201,168,76,0.35)',
                   boxShadow: '0 0 12px rgba(201,168,76,0.15)',
                 }}
@@ -281,7 +281,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
                   className={cn(
                     'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold',
                     isWinner
-                      ? 'bg-[rgba(201,168,76,0.2)] text-[#e4c566] ring-1 ring-[rgba(201,168,76,0.3)]'
+                      ? 'bg-[rgba(201,168,76,0.2)] text-brand-gold-bright ring-1 ring-[rgba(201,168,76,0.3)]'
                       : 'bg-white/10 text-white/70',
                   )}
                 >
@@ -293,7 +293,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
                     <span
                       className={cn(
                         'truncate text-sm font-medium',
-                        isWinner ? 'text-[#e4c566]' : 'text-white/90',
+                        isWinner ? 'text-brand-gold-bright' : 'text-white/90',
                       )}
                     >
                       {bid.name}
@@ -305,7 +305,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
                 <span
                   className={cn(
                     'shrink-0 text-sm font-bold tabular-nums',
-                    isWinner ? 'text-[#e4c566]' : 'text-emerald-400',
+                    isWinner ? 'text-brand-gold-bright' : 'text-emerald-400',
                   )}
                 >
                   {formatDollars(bid.price)}
@@ -313,7 +313,7 @@ export function AuctionDemo({ className }: AuctionDemoProps) {
 
                 {/* Winner crown icon */}
                 {isWinner ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#e4c566" aria-hidden="true" className="shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--brand-gold-bright)" aria-hidden="true" className="shrink-0">
                     <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5z" />
                     <path d="M5 19h14v2H5z" />
                   </svg>

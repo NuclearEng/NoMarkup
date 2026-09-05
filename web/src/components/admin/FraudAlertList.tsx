@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useFraudAlerts } from '@/hooks/useFraud';
 import { FRAUD_ALERT_STATUS_CLASSES, FRAUD_RISK_CLASSES } from '@/lib/status-badge-classes';
 import { cn } from '@/lib/utils';
@@ -36,17 +37,31 @@ const RISK_LABELS: Record<RiskLevel, string> = {
   critical: 'Critical',
 };
 
-function truncateId(id: string): string {
+function truncateId(id: string | null | undefined): string {
+  if (!id) return '—';
   if (id.length <= 12) return id;
   return id.slice(0, 8) + '...';
 }
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', {
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return 'N/A';
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return 'N/A';
+  return parsed.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
+}
+
+function riskLabel(risk: RiskLevel | null | undefined): string {
+  if (risk && risk in RISK_LABELS) return RISK_LABELS[risk];
+  return 'Unknown';
+}
+
+function statusLabel(status: AlertStatus | null | undefined): string {
+  if (status && status in STATUS_LABELS) return STATUS_LABELS[status];
+  return 'Unknown';
 }
 
 export function FraudAlertList() {
@@ -87,17 +102,17 @@ export function FraudAlertList() {
           onStatusChange={handleStatusChange}
           onRiskChange={handleRiskChange}
         />
-        <div className="space-y-3">
+        <div className="space-y-3" aria-busy="true" aria-label="Loading fraud alerts">
           {[1, 2, 3, 4, 5].map((i) => (
             <Card key={i}>
               <CardContent className="py-4">
                 <div className="flex items-center gap-4">
-                  <div className="h-4 w-24 animate-pulse rounded bg-muted" />
-                  <div className="h-5 w-16 animate-pulse rounded bg-muted" />
-                  <div className="h-5 w-20 animate-pulse rounded bg-muted" />
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-5 w-16" />
+                  <Skeleton className="h-5 w-20" />
                   <div className="flex-1" />
-                  <div className="h-4 w-12 animate-pulse rounded bg-muted" />
-                  <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+                  <Skeleton className="h-4 w-12" />
+                  <Skeleton className="h-4 w-24" />
                 </div>
               </CardContent>
             </Card>
@@ -169,15 +184,21 @@ export function FraudAlertList() {
                   </span>
                   <Badge
                     variant="outline"
-                    className={cn('w-fit text-xs', FRAUD_RISK_CLASSES[alert.aggregate_risk_level])}
+                    className={cn(
+                      'w-fit text-xs',
+                      FRAUD_RISK_CLASSES[alert.aggregate_risk_level],
+                    )}
                   >
-                    {RISK_LABELS[alert.aggregate_risk_level]}
+                    {riskLabel(alert.aggregate_risk_level)}
                   </Badge>
                   <Badge
                     variant="outline"
-                    className={cn('w-fit text-xs', FRAUD_ALERT_STATUS_CLASSES[alert.status])}
+                    className={cn(
+                      'w-fit text-xs',
+                      FRAUD_ALERT_STATUS_CLASSES[alert.status],
+                    )}
                   >
-                    {STATUS_LABELS[alert.status]}
+                    {statusLabel(alert.status)}
                   </Badge>
                   <span className="w-16 text-center text-sm tabular-nums">
                     {String(alert.signals.length)}

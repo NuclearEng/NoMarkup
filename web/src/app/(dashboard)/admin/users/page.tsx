@@ -83,7 +83,7 @@ export default function AdminUsersPage() {
       render: (user) => (
         <Link
           href={`/admin/users/${user.id}` as Route}
-          className="text-primary font-medium hover:underline"
+          className="text-primary -my-2 -mx-2 inline-flex min-h-[44px] items-center px-2 py-2 font-medium hover:underline"
         >
           {user.display_name || user.email}
         </Link>
@@ -92,7 +92,14 @@ export default function AdminUsersPage() {
     {
       key: 'email',
       header: 'Email',
-      render: (user) => <span className="text-zinc-300">{user.email}</span>,
+      render: (user) => (
+        <span
+          className="block max-w-[16rem] truncate text-zinc-300"
+          title={user.email}
+        >
+          {user.email}
+        </span>
+      ),
     },
     {
       key: 'roles',
@@ -125,8 +132,9 @@ export default function AdminUsersPage() {
     },
     {
       key: 'actions',
+      sticky: true,
       header: 'Actions',
-      className: 'text-right',
+      className: 'text-right whitespace-nowrap',
       render: (user) => (
         <div className="flex justify-end gap-2">
           <Button
@@ -138,7 +146,7 @@ export default function AdminUsersPage() {
               e.stopPropagation();
               setActionTarget({ user, action: 'suspend' });
             }}
-            aria-label={`Suspend ${user.first_name} ${user.last_name}`}
+            aria-label={`Suspend ${user.first_name ?? ''} ${user.last_name ?? ''}`}
           >
             Suspend
           </Button>
@@ -151,7 +159,7 @@ export default function AdminUsersPage() {
               e.stopPropagation();
               setActionTarget({ user, action: 'ban' });
             }}
-            aria-label={`Ban ${user.first_name} ${user.last_name}`}
+            aria-label={`Ban ${user.first_name ?? ''} ${user.last_name ?? ''}`}
           >
             Ban
           </Button>

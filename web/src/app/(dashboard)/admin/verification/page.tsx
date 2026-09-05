@@ -51,7 +51,7 @@ export default function AdminVerificationPage() {
       header: 'User',
       render: (doc) => (
         <div>
-          <p className="font-medium">{doc.user_name}</p>
+          <p className="font-medium">{doc.user_display_name || doc.user_email}</p>
           <p className="text-xs text-zinc-300 font-mono">{doc.user_id.slice(0, 8)}...</p>
         </div>
       ),
@@ -68,6 +68,7 @@ export default function AdminVerificationPage() {
     {
       key: 'status',
       header: 'Status',
+      className: 'whitespace-nowrap',
       render: (doc) => (
         <Badge variant="outline" className={VERIFICATION_STATUS_CLASSES[doc.status] ?? ''}>
           {doc.status}
@@ -77,12 +78,14 @@ export default function AdminVerificationPage() {
     {
       key: 'submitted',
       header: 'Submitted',
+      className: 'whitespace-nowrap',
       render: (doc) => (
-        <span className="text-zinc-300">{formatDate(doc.submitted_at)}</span>
+        <span className="text-zinc-300">{doc.created_at ? formatDate(doc.created_at) : '—'}</span>
       ),
     },
     {
       key: 'actions',
+      sticky: true,
       header: 'Actions',
       className: 'text-right',
       render: (doc) => (
@@ -96,7 +99,7 @@ export default function AdminVerificationPage() {
               e.stopPropagation();
               setReviewTarget({ doc, approved: true });
             }}
-            aria-label={`Approve document from ${doc.user_name}`}
+            aria-label={`Approve document from ${doc.user_display_name || doc.user_email}`}
           >
             Approve
           </Button>
@@ -109,7 +112,7 @@ export default function AdminVerificationPage() {
               e.stopPropagation();
               setReviewTarget({ doc, approved: false });
             }}
-            aria-label={`Reject document from ${doc.user_name}`}
+            aria-label={`Reject document from ${doc.user_display_name || doc.user_email}`}
           >
             Reject
           </Button>
@@ -166,8 +169,8 @@ export default function AdminVerificationPage() {
         }
         description={
           reviewTarget?.approved
-            ? `Approve the ${reviewTarget.doc.document_type.replace(/_/g, ' ')} for ${reviewTarget.doc.user_name}?`
-            : `Reject the ${reviewTarget?.doc.document_type.replace(/_/g, ' ') ?? ''} for ${reviewTarget?.doc.user_name ?? ''}? Please provide a reason.`
+            ? `Approve the ${reviewTarget.doc.document_type.replace(/_/g, ' ')} for ${reviewTarget.doc.user_display_name || reviewTarget.doc.user_email}?`
+            : `Reject the ${reviewTarget?.doc.document_type.replace(/_/g, ' ') ?? ''} for ${reviewTarget?.doc.user_display_name || reviewTarget?.doc.user_email || ''}? Please provide a reason.`
         }
         confirmLabel={reviewTarget?.approved ? 'Approve' : 'Reject'}
         destructive={!reviewTarget?.approved}

@@ -7,6 +7,58 @@ resources:
   - ../../base
   - hpa.yaml
 
+# Image pinning (OPS-08 / OPS-21) — FAIL-CLOSED
+# ---------------------------------------------------------------------------
+# Base Deployments reference `ghcr.io/nomarkup/<svc>:latest`. This overlay
+# rewrites every image to an EXPLICIT tag so production never ships floating
+# `:latest` (unlike non-prod base defaults).
+#
+# The tags below are NOT a real release. They are intentional placeholders so
+# a raw `kubectl apply -k overlays/production` cannot silently pull a random
+# latest image. Real deploys MUST stamp CI-built tags first:
+#
+#   # deploy.yml (on v* tag, when DEPLOY_PROVISIONED=true) does:
+#   kustomize edit set image \
+#     "ghcr.io/nomarkup/<svc>=ghcr.io/<owner>/nomarkup/<svc>:<VERSION>"
+#
+# Registry path after push (OPS-21 / deploy.yml):
+#   ghcr.io/<github.repository_owner>/nomarkup/<svc>:<tag|sha8>
+# Optional overrides: vars.DOCKER_REGISTRY, vars.DOCKER_IMAGE_PREFIX.
+#
+# DO NOT invent digests or "real" tags in this file. DO NOT apply this overlay
+# to a live cluster without the CI stamp step (or an equivalent local
+# `kustomize edit set image` with a tag you actually pushed).
+# ---------------------------------------------------------------------------
+images:
+  - name: ghcr.io/nomarkup/gateway
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/web
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/user
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/job
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/payment
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/chat
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/notification
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/bidding
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/fraud
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/imaging
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/pricing
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/trust
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/underwriting
+    newTag: require-ci-stamp
+  - name: ghcr.io/nomarkup/migrate
+    newTag: require-ci-stamp
+
 patches:
   # Gateway: 3 replicas in production
   - target:
@@ -89,6 +141,20 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 2
+  - target:
+      kind: Deployment
+      name: pricing
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 2
+  - target:
+      kind: Deployment
+      name: underwriting
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 2
   # Production: use Always imagePullPolicy
   - target:
       kind: Deployment
@@ -102,5 +168,21 @@ configMapGenerator:
     literals:
       - ENVIRONMENT=production
       - LOG_LEVEL=info
+      # CI overwrites APP_VERSION to the release tag (category cache bust + Sentry).
+      # Placeholder only — never a claim that this string is a shipped release.
+      - APP_VERSION=require-ci-stamp
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - MEILISEARCH_URL=http://meilisearch:7700
+      # Audit S2 — mandatory env vars (services fail-closed without these).
+      - JWT_ISSUER=https://auth.no-markup.com
+      - JWT_AUDIENCE=nomarkup-production
+      # CSWSH defense — only these origins may upgrade to a WebSocket.
+      - WS_ALLOWED_ORIGINS=https://no-markup.com,https://app.no-markup.com
+      # XFF trust boundary — only requests from these CIDRs may set the
+      # X-Forwarded-For header that the rate limiter / audit log trusts.
+      - TRUSTED_PROXIES=10.0.0.0/8
+      # Apple OAuth aud (bundle id). Google client ID is NOT in this ConfigMap:
+      # it is provisioned into nomarkup-secrets (see SECRETS.md +
+      # externalsecret.sample.yaml) and injected via gateway envFrom secretRef.
+      # Never invent a real Google client id/secret in-repo (OPS-08).
+      - APPLE_CLIENT_ID=com.nomarkup.app

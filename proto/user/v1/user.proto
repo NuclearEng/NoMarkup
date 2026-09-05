@@ -23,6 +23,10 @@ service UserService {
   rpc SendPhoneOTP(SendPhoneOTPRequest) returns (SendPhoneOTPResponse);
   rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
   rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
+  // ChangePassword is the authenticated, self-service password change. Unlike
+  // ResetPassword (token-driven, for users who can't sign in) it re-authenticates
+  // the caller by requiring their current password, then rotates all sessions.
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse);
 
   // OAuth
   rpc FindOrCreateByOAuth(FindOrCreateByOAuthRequest) returns (FindOrCreateByOAuthResponse);
@@ -35,9 +39,33 @@ service UserService {
 
   // User profile
   rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  // BatchGetUsers resolves many user ids in ONE round trip (and one database
+  // query). It exists to kill the serial N+1 display-name fan-outs in the
+  // gateway, where a job with 50 unique bidders cost 50 sequential GetUser
+  // calls and alone blew the p95 < 200ms budget.
+  //
+  // It returns PublicUser, NOT User: strictly the fields that survive the
+  // gateway's PII strip for a non-self, non-admin caller. There is no caller
+  // identity on this RPC and therefore no per-caller widening — a batch
+  // endpoint that could return more than the single-user endpoint would be a
+  // privilege escalation, so it is structurally incapable of doing so.
+  //
+  // Unknown / soft-deleted ids are omitted from the response rather than
+  // failing the call. Additive to v1 (CLAUDE.md §15).
+  rpc BatchGetUsers(BatchGetUsersRequest) returns (BatchGetUsersResponse);
   rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
   rpc EnableRole(EnableRoleRequest) returns (EnableRoleResponse);
   rpc DeactivateAccount(DeactivateAccountRequest) returns (DeactivateAccountResponse);
+
+  // GDPR / CCPA right-to-erasure pipeline.
+  // RequestAccountDeletion starts a 30-day grace window during which the user
+  // can rescind by calling CancelAccountDeletion. After the grace deadline,
+  // a worker calls FinalizeAccountDeletion to perform the actual erasure
+  // cascade. Admins can also call FinalizeAccountDeletion directly to
+  // expedite (compliance / legal hold release).
+  rpc RequestAccountDeletion(RequestAccountDeletionRequest) returns (RequestAccountDeletionResponse);
+  rpc CancelAccountDeletion(CancelAccountDeletionRequest) returns (CancelAccountDeletionResponse);
+  rpc FinalizeAccountDeletion(FinalizeAccountDeletionRequest) returns (FinalizeAccountDeletionResponse);
 
   // Provider profile
   rpc GetProviderProfile(GetProviderProfileRequest) returns (GetProviderProfileResponse);
@@ -67,7 +95,9 @@ service UserService {
   rpc AdminSearchUsers(AdminSearchUsersRequest) returns (AdminSearchUsersResponse);
   rpc AdminSuspendUser(AdminSuspendUserRequest) returns (AdminSuspendUserResponse);
   rpc AdminBanUser(AdminBanUserRequest) returns (AdminBanUserResponse);
+  rpc AdminReactivateUser(AdminReactivateUserRequest) returns (AdminReactivateUserResponse);
   rpc AdminReviewDocument(AdminReviewDocumentRequest) returns (AdminReviewDocumentResponse);
+  rpc AdminListPendingDocuments(AdminListPendingDocumentsRequest) returns (AdminListPendingDocumentsResponse);
 
   // Search
   rpc SearchProviders(SearchProvidersRequest) returns (SearchProvidersResponse);
@@ -171,6 +201,16 @@ message ResetPasswordResponse {
   bool success = 1;
 }
 
+message ChangePasswordRequest {
+  string user_id = 1;
+  string current_password = 2;
+  string new_password = 3;
+}
+
+message ChangePasswordResponse {
+  bool success = 1;
+}
+
 // ============================================================
 // MFA Messages
 // ============================================================
@@ -262,6 +302,34 @@ message GetUserResponse {
   User user = 1;
 }
 
+// PublicUser is the non-PII projection of User. It intentionally has NO email,
+// phone, email_verified, phone_verified or mfa_enabled field — matching exactly
+// what gateway/internal/handler/user.go leaves after stripping PII for a
+// non-self, non-admin caller. Field numbers are independent of User: this is a
+// separate message, not a subset view, so User can never accidentally widen it.
+message PublicUser {
+  string id = 1;
+  string display_name = 2;
+  string avatar_url = 3;
+  repeated nomarkup.common.v1.UserRole roles = 4;
+  nomarkup.common.v1.UserStatus status = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp last_active_at = 7;
+}
+
+message BatchGetUsersRequest {
+  // Duplicates are de-duplicated server-side. Capped server-side at 200; a
+  // longer list is rejected with InvalidArgument rather than truncated, so a
+  // caller never silently gets a partial answer.
+  repeated string user_ids = 1;
+}
+
+message BatchGetUsersResponse {
+  // Contains only the ids that resolved to a live user, in unspecified order.
+  // Callers must index by id and tolerate absences.
+  repeated PublicUser users = 1;
+}
+
 message UpdateUserRequest {
   string user_id = 1;
   optional string display_name = 2;
@@ -289,6 +357,59 @@ message DeactivateAccountRequest {
 }
 
 message DeactivateAccountResponse {}
+
+// ============================================================
+// GDPR / CCPA Account Erasure Messages
+// ============================================================
+
+message RequestAccountDeletionRequest {
+  string user_id = 1;
+  // Free-text reason supplied by the user. Optional but encouraged for
+  // exit-survey insights.
+  string reason = 2;
+  // Confirmation phrase the client must echo (e.g. "DELETE"). Server
+  // re-validates as a guard against accidental requests.
+  string confirmation = 3;
+}
+
+message RequestAccountDeletionResponse {
+  // When the cron will finalize the deletion (request_time + 30 days).
+  google.protobuf.Timestamp grace_deadline = 1;
+  // True if the request was newly created. False on idempotent re-call
+  // (request already pending). Either way grace_deadline is populated.
+  bool created = 2;
+}
+
+message CancelAccountDeletionRequest {
+  string user_id = 1;
+}
+
+message CancelAccountDeletionResponse {
+  // True if a pending request was cleared; false if no pending request
+  // existed (no-op). Returns FailedPrecondition if the request has
+  // already been finalized.
+  bool cancelled = 1;
+}
+
+message FinalizeAccountDeletionRequest {
+  string user_id = 1;
+  // When true (admin override), the erasure runs even if the grace
+  // period has not elapsed. When false (normal cron path), the worker
+  // must wait for grace_deadline.
+  bool force = 2;
+  // Admin user ID for audit trail when force=true.
+  string admin_id = 3;
+}
+
+message FinalizeAccountDeletionResponse {
+  google.protobuf.Timestamp finalized_at = 1;
+  // Per-table row anonymization counts for the audit trail.
+  map<string, int64> rows_affected = 2;
+  // Stripe deletion outcome ("deleted", "skipped_no_id", "skipped_balance",
+  // "error: <reason>"). Stored verbatim in the audit log.
+  string stripe_customer_outcome = 3;
+  string stripe_account_outcome = 4;
+}
 
 // ============================================================
 // Provider Profile Messages
@@ -324,6 +445,16 @@ message ProviderProfile {
   TrustScoreSummary trust_score = 22;
   ReviewSummary review_summary = 23;
   google.protobuf.Timestamp member_since = 24;
+  // Owner-only PII (CLAUDE.md §6 / migration 031). Encrypted at rest in
+  // provider_profiles; gateway must strip these from public GET /providers/{id}.
+  // Empty string means "not set". Never expose on unauthenticated surfaces.
+  string ein_tin = 25;
+  string insurance_policy_number = 26;
+  // Insurance metadata (migration 012). Carrier name is not PII; still owner-only
+  // on HTTP to avoid leaking business details on public profiles.
+  string insurance_provider = 27;
+  string insurance_expiry = 28; // YYYY-MM-DD or empty
+  int64 insurance_coverage_cents = 29;
 }
 
 message MilestoneTemplate {
@@ -383,6 +514,13 @@ message UpdateProviderProfileRequest {
   optional string service_address = 4;
   optional nomarkup.common.v1.Location service_location = 5;
   optional double service_radius_km = 6;
+  // PII-at-rest (migration 031). When set (including empty string to clear),
+  // the user service encrypts before write. Omitted = leave existing value.
+  optional string ein_tin = 7;
+  optional string insurance_policy_number = 8;
+  optional string insurance_provider = 9;
+  optional string insurance_expiry = 10; // YYYY-MM-DD or "" to clear
+  optional int64 insurance_coverage_cents = 11;
 }
 
 message UpdateProviderProfileResponse {
@@ -481,6 +619,8 @@ message Property {
   string notes = 5;
   bool is_primary = 6;
   google.protobuf.Timestamp created_at = 7;
+  // Public CDN URLs (0–5). See properties.photo_urls.
+  repeated string photo_urls = 8;
 }
 
 message CreatePropertyRequest {
@@ -489,6 +629,8 @@ message CreatePropertyRequest {
   nomarkup.common.v1.Address address = 3;
   string notes = 4;
   bool is_primary = 5;
+  // Optional; 0–5 public CDN URLs from the imaging pipeline.
+  repeated string photo_urls = 6;
 }
 
 message CreatePropertyResponse {
@@ -500,6 +642,9 @@ message UpdatePropertyRequest {
   optional string nickname = 2;
   optional string notes = 3;
   optional bool is_primary = 4;
+  // When true, replace photo_urls with the list below (may be empty to clear).
+  optional bool update_photo_urls = 5;
+  repeated string photo_urls = 6;
 }
 
 message UpdatePropertyResponse {
@@ -604,6 +749,16 @@ message AdminBanUserResponse {
   User user = 1;
 }
 
+message AdminReactivateUserRequest {
+  string user_id = 1;
+  string admin_id = 2;
+  string note = 3;     // optional reason / note for audit log
+}
+
+message AdminReactivateUserResponse {
+  User user = 1;
+}
+
 message AdminReviewDocumentRequest {
   string document_id = 1;
   bool approved = 2;
@@ -613,6 +768,29 @@ message AdminReviewDocumentRequest {
 
 message AdminReviewDocumentResponse {
   nomarkup.common.v1.VerificationStatus status = 1;
+}
+
+message AdminListPendingDocumentsRequest {
+  nomarkup.common.v1.PaginationRequest pagination = 1;
+}
+
+// PendingDocument is a verification document awaiting admin review, enriched
+// with the owning user's identity so the admin queue is actionable.
+message PendingDocument {
+  string id = 1;
+  string user_id = 2;
+  string user_email = 3;
+  string user_display_name = 4;
+  string document_type = 5;
+  nomarkup.common.v1.VerificationStatus status = 6;
+  string file_name = 7;
+  string file_url = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message AdminListPendingDocumentsResponse {
+  repeated PendingDocument documents = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
 }
 
 // ============================================================

@@ -2,7 +2,7 @@
 ///
 /// Module hierarchy mirrors proto package paths so relative imports resolve correctly.
 
-#[allow(clippy::all, clippy::pedantic, dead_code)]
+#[allow(clippy::all, clippy::pedantic, clippy::nursery, dead_code)]
 pub mod nomarkup {
     pub mod common {
         pub mod v1 {
@@ -26,7 +26,7 @@ use tonic::{Request, Response, Status};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::engine::FraudDetector;
+use crate::engine::{FraudDetector, email_domain};
 use crate::models::{
     FraudError, FraudSignalRow, RiskLevel, SignalType, UserRiskProfileData, UserSessionRow,
 };
@@ -38,7 +38,7 @@ pub struct FraudServiceImpl {
 
 impl FraudServiceImpl {
     #[must_use]
-    pub fn new(engine: Arc<FraudDetector>) -> Self {
+    pub const fn new(engine: Arc<FraudDetector>) -> Self {
         Self { engine }
     }
 }
@@ -108,7 +108,12 @@ impl FraudService for FraudServiceImpl {
         {
             Ok(result) => {
                 info!(
-                    email = %req.email,
+                    // Was `email = %req.email`. Now that the engines export
+                    // spans, a `tracing` field is not just a log line — it is
+                    // shipped to the OpenTelemetry collector and fans out to
+                    // every downstream trace backend. The domain carries the
+                    // diagnostic signal; the address is PII.
+                    email_domain = %email_domain(&req.email),
                     decision = ?result.decision,
                     risk_level = ?result.risk_level,
                     "grpc check_registration completed"
@@ -120,7 +125,7 @@ impl FraudService for FraudServiceImpl {
                 }))
             }
             Err(e) => {
-                warn!(email = %req.email, error = %e, "grpc check_registration failed");
+                warn!(email_domain = %email_domain(&req.email), error = %e, "grpc check_registration failed");
                 Err(fraud_error_to_status(e))
             }
         }
@@ -200,13 +205,9 @@ impl FraudService for FraudServiceImpl {
         let mut signals = Vec::with_capacity(req.signals.len());
         for s in &req.signals {
             let user_id = parse_uuid(&s.user_id, "user_id")?;
-            let signal_type =
-                SignalType::from_proto_i32(s.signal_type).ok_or_else(|| {
-                    Status::invalid_argument(format!(
-                        "invalid signal_type: {}",
-                        s.signal_type
-                    ))
-                })?;
+            let signal_type = SignalType::from_proto_i32(s.signal_type).ok_or_else(|| {
+                Status::invalid_argument(format!("invalid signal_type: {}", s.signal_type))
+            })?;
 
             signals.push((
                 user_id,
@@ -355,11 +356,11 @@ impl FraudService for FraudServiceImpl {
 
         // Map optional proto status filter to DB status strings.
         let status_filter: Option<Vec<&str>> = req.status_filter.map(|s| match s {
-            1 => vec!["pending"],                        // OPEN
-            2 => vec!["confirmed"],                      // INVESTIGATING
-            3 => vec!["actioned"],                       // RESOLVED_FRAUD
-            4 => vec!["dismissed"],                      // RESOLVED_LEGITIMATE
-            5 => vec!["dismissed"],                      // DISMISSED
+            1 => vec!["pending"],   // OPEN
+            2 => vec!["confirmed"], // INVESTIGATING
+            3 => vec!["actioned"],  // RESOLVED_FRAUD
+            4 => vec!["dismissed"], // RESOLVED_LEGITIMATE
+            5 => vec!["dismissed"], // DISMISSED
             _ => vec!["pending", "confirmed", "actioned", "dismissed"],
         });
 
@@ -382,13 +383,19 @@ impl FraudService for FraudServiceImpl {
         let alerts: Vec<fraud_proto::FraudAlert> = rows
             .iter()
             .map(|row| {
-                let signal = signal_row_to_proto(row);
+                // Alerts are synthesized 1:1 from fraud_signal rows (there is no
+                // separate alert entity). Keep `FraudAlert.id == row.id` so the
+                // review-by-id path (`admin_review_fraud_alert` → `WHERE id = $4`)
+                // resolves unchanged, but give the nested signal its own stable,
+                // distinct sub-id so the UI no longer sees `signal.id == alert.id`.
+                let mut signal = signal_row_to_proto(row);
+                signal.id = format!("signal-{}", row.id);
                 let risk_level = RiskLevel::from_db_severity(&row.severity);
                 let alert_status = match row.status.as_str() {
-                    "pending" => 1,    // OPEN
-                    "confirmed" => 2,  // INVESTIGATING
-                    "actioned" => 3,   // RESOLVED_FRAUD
-                    "dismissed" => 4,  // RESOLVED_LEGITIMATE
+                    "pending" => 1,   // OPEN
+                    "confirmed" => 2, // INVESTIGATING
+                    "actioned" => 3,  // RESOLVED_FRAUD
+                    "dismissed" => 4, // RESOLVED_LEGITIMATE
                     _ => 0,
                 };
 
@@ -442,9 +449,9 @@ impl FraudService for FraudServiceImpl {
 
         // Map proto AlertStatus to DB status string.
         let new_status = match req.new_status {
-            3 => "actioned",           // RESOLVED_FRAUD
-            4 | 5 => "dismissed",      // RESOLVED_LEGITIMATE / DISMISSED
-            2 => "confirmed",          // INVESTIGATING
+            3 => "actioned",      // RESOLVED_FRAUD
+            4 | 5 => "dismissed", // RESOLVED_LEGITIMATE / DISMISSED
+            2 => "confirmed",     // INVESTIGATING
             _ => return Err(Status::invalid_argument("invalid new_status")),
         };
 
@@ -463,7 +470,11 @@ impl FraudService for FraudServiceImpl {
             .await
             .map_err(fraud_error_to_status)?;
 
-        let signal = signal_row_to_proto(&row);
+        // Same id model as the list path: alert.id stays the row UUID (so the
+        // caller can re-review by the same id), the nested signal gets a stable
+        // distinct sub-id so `signal.id != alert.id`.
+        let mut signal = signal_row_to_proto(&row);
+        signal.id = format!("signal-{}", row.id);
         let risk_level = RiskLevel::from_db_severity(&row.severity);
         let alert_status = match row.status.as_str() {
             "pending" => 1,
@@ -499,32 +510,30 @@ impl FraudService for FraudServiceImpl {
             .await
             .map_err(fraud_error_to_status)?;
 
-        Ok(Response::new(
-            fraud_proto::AdminGetFraudDashboardResponse {
-                total_alerts: stats.total_alerts,
-                open_alerts: stats.open_alerts,
-                critical_alerts: stats.critical_alerts,
-                users_restricted: stats.users_restricted,
-                users_banned: stats.users_banned,
-                signal_breakdown: stats
-                    .signal_breakdown
-                    .into_iter()
-                    .map(|(signal_type, count)| {
-                        let percentage = if stats.total_alerts > 0 {
-                            f64::from(count) / f64::from(stats.total_alerts)
-                        } else {
-                            0.0
-                        };
-                        fraud_proto::FraudSignalBreakdown {
-                            signal_type: signal_type.to_proto_i32(),
-                            count,
-                            percentage,
-                        }
-                    })
-                    .collect(),
-                false_positive_rate: stats.false_positive_rate,
-            },
-        ))
+        Ok(Response::new(fraud_proto::AdminGetFraudDashboardResponse {
+            total_alerts: stats.total_alerts,
+            open_alerts: stats.open_alerts,
+            critical_alerts: stats.critical_alerts,
+            users_restricted: stats.users_restricted,
+            users_banned: stats.users_banned,
+            signal_breakdown: stats
+                .signal_breakdown
+                .into_iter()
+                .map(|(signal_type, count)| {
+                    let percentage = if stats.total_alerts > 0 {
+                        f64::from(count) / f64::from(stats.total_alerts)
+                    } else {
+                        0.0
+                    };
+                    fraud_proto::FraudSignalBreakdown {
+                        signal_type: signal_type.to_proto_i32(),
+                        count,
+                        percentage,
+                    }
+                })
+                .collect(),
+            false_positive_rate: stats.false_positive_rate,
+        }))
     }
 }
 
@@ -639,7 +648,7 @@ fn risk_profile_to_proto(profile: &UserRiskProfileData) -> fraud_proto::UserRisk
     clippy::cast_sign_loss,
     clippy::cast_possible_wrap
 )]
-fn datetime_to_proto(dt: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
+const fn datetime_to_proto(dt: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
     prost_types::Timestamp {
         seconds: dt.timestamp(),
         nanos: dt.timestamp_subsec_nanos() as i32,

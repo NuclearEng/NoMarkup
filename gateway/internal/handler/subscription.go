@@ -1,15 +1,47 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	subscriptionv1 "github.com/nomarkup/nomarkup/proto/subscription/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
+
+// Free-tier digital caps from services/payment/internal/service/subscription.go
+// GetUsage defaults. Applied to iOS while APP_STORE_IAP_VERIFY is off so a
+// website Stripe plan cannot unlock digital entitlements on iOS (ASR-3.1.3.b.1).
+const (
+	iosFreeMaxActiveBids        int32   = 3
+	iosFreeMaxServiceCategories int32   = 1
+	iosFreeMaxPortfolioImages   int32   = 5
+	iosFreeFeePercentage        float64 = 0.10
+)
+
+const noMarkupClientHeader = "X-NoMarkup-Client"
+
+func isIOSClientWithoutIAPVerify(r *http.Request) bool {
+	if r == nil || appStoreIAPVerifyEnabled() {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get(noMarkupClientHeader)), "ios")
+}
+
+// iosFreeTierPaidFeature is the free-tier CheckFeatureAccess mapping for
+// Stripe-paid digital features. Unknown/basic features are not gated here.
+func iosFreeTierPaidFeature(feature string) (requiredTier string, paid bool) {
+	switch feature {
+	case "analytics":
+		return "pro", true
+	case "featured_placement", "instant":
+		return "business", true
+	default:
+		return "", false
+	}
+}
 
 // SubscriptionHandler handles HTTP endpoints for subscriptions.
 type SubscriptionHandler struct {
@@ -46,6 +78,10 @@ func (h *SubscriptionHandler) GetTier(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "tier id required")
 		return
 	}
+	if !isValidUUID(tierID) {
+		writeError(w, http.StatusBadRequest, "invalid subscription tier id")
+		return
+	}
 
 	resp, err := h.client.GetTier(r.Context(), &subscriptionv1.GetTierRequest{
 		TierId: tierID,
@@ -74,7 +110,7 @@ func (h *SubscriptionHandler) GetSubscription(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if resp.GetSubscription() == nil {
+	if isIOSClientWithoutIAPVerify(r) || resp.GetSubscription() == nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"subscription": nil,
 		})
@@ -101,8 +137,13 @@ func (h *SubscriptionHandler) CreateSubscription(w http.ResponseWriter, r *http.
 	}
 
 	var req createSubscriptionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	// Validate the tier id up front like GetTier/ChangeTier do; a malformed UUID
+	// otherwise reaches the uuid-typed tier lookup and 500s on this money path.
+	if !isValidUUID(req.TierID) {
+		writeError(w, http.StatusBadRequest, "invalid subscription tier id")
 		return
 	}
 
@@ -174,8 +215,15 @@ func (h *SubscriptionHandler) ChangeTier(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req changeTierRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	// Validate the UUID before the gRPC call so a malformed new_tier_id
+	// returns 400 (not a 500 from the downstream service). A valid-but-missing
+	// UUID still correctly 404s downstream.
+	if !isValidUUID(req.NewTierID) {
+		writeError(w, http.StatusBadRequest, "invalid tier id")
 		return
 	}
 
@@ -211,14 +259,25 @@ func (h *SubscriptionHandler) GetUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	maxActiveBids := resp.GetMaxActiveBids()
+	maxServiceCategories := resp.GetMaxServiceCategories()
+	maxPortfolioImages := resp.GetMaxPortfolioImages()
+	feePercentage := resp.GetCurrentFeePercentage()
+	if isIOSClientWithoutIAPVerify(r) {
+		maxActiveBids = iosFreeMaxActiveBids
+		maxServiceCategories = iosFreeMaxServiceCategories
+		maxPortfolioImages = iosFreeMaxPortfolioImages
+		feePercentage = iosFreeFeePercentage
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"active_bids":            resp.GetActiveBids(),
-		"max_active_bids":        resp.GetMaxActiveBids(),
+		"max_active_bids":        maxActiveBids,
 		"service_categories":     resp.GetServiceCategories(),
-		"max_service_categories": resp.GetMaxServiceCategories(),
+		"max_service_categories": maxServiceCategories,
 		"portfolio_images":       resp.GetPortfolioImages(),
-		"max_portfolio_images":   resp.GetMaxPortfolioImages(),
-		"current_fee_percentage": resp.GetCurrentFeePercentage(),
+		"max_portfolio_images":   maxPortfolioImages,
+		"current_fee_percentage": feePercentage,
 	})
 }
 
@@ -245,9 +304,18 @@ func (h *SubscriptionHandler) CheckFeatureAccess(w http.ResponseWriter, r *http.
 		return
 	}
 
+	hasAccess := resp.GetHasAccess()
+	requiredTier := resp.GetRequiredTier()
+	if isIOSClientWithoutIAPVerify(r) {
+		if required, paid := iosFreeTierPaidFeature(feature); paid && hasAccess {
+			hasAccess = false
+			requiredTier = required
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"has_access":    resp.GetHasAccess(),
-		"required_tier": resp.GetRequiredTier(),
+		"has_access":    hasAccess,
+		"required_tier": requiredTier,
 	})
 }
 
@@ -296,7 +364,7 @@ func (h *SubscriptionHandler) ListInvoices(w http.ResponseWriter, r *http.Reques
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),

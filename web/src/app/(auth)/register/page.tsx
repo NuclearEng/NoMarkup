@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 
 import { RegisterForm } from '@/components/forms/RegisterForm';
 
@@ -7,5 +8,10 @@ export const metadata: Metadata = {
 };
 
 export default function RegisterPage() {
-  return <RegisterForm />;
+  // RegisterForm reads ?error= / ?ref= via useSearchParams.
+  return (
+    <Suspense fallback={<div className="text-center text-sm text-white/60">Loading…</div>}>
+      <RegisterForm />
+    </Suspense>
+  );
 }

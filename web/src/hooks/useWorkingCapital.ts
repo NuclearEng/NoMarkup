@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, clearIdempotencyKey, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import type { AdvancesResponse, CreditLimit, WorkingCapitalAdvance } from '@/types';
 
 export function useMyAdvances() {
@@ -22,7 +22,15 @@ export function useMyAdvances() {
 export function useCreditLimit() {
   return useQuery({
     queryKey: ['credit-limit'],
-    queryFn: () => api.get<CreditLimit>('/api/v1/providers/me/credit-limit'),
+    // The gateway wraps the payload in { credit_limit: {...} } — unwrap it so
+    // consumers read the fields directly (previously everything fell through
+    // to client-side fallbacks because the wrapper had no matching keys).
+    queryFn: async () => {
+      const res = await api.get<{ credit_limit: CreditLimit }>(
+        '/api/v1/providers/me/credit-limit',
+      );
+      return res.credit_limit;
+    },
   });
 }
 
@@ -30,17 +38,58 @@ export function useRequestAdvance() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: { contract_id: string; advance_amount_cents: number }) =>
-      api
-        .post<{ advance: WorkingCapitalAdvance }>('/api/v1/providers/me/advances', variables)
-        .then((res) => res.advance),
-    onSuccess: () => {
+    mutationFn: (variables: { contract_id: string; advance_amount_cents: number }) => {
+      const opKey = `advance-request:${variables.contract_id}:${String(variables.advance_amount_cents)}`;
+      return api
+        .post<{ advance: WorkingCapitalAdvance }>(
+          '/api/v1/providers/me/advances',
+          {
+            contract_id: variables.contract_id,
+            amount_cents: variables.advance_amount_cents,
+          },
+          idempotencyHeader(opKey),
+        )
+        .then((res) => res.advance);
+    },
+    onSuccess: (_data, variables) => {
+      clearIdempotencyKey(`advance-request:${variables.contract_id}:${String(variables.advance_amount_cents)}`);
       toast.success('Advance request submitted');
       void queryClient.invalidateQueries({ queryKey: ['my-advances'] });
       void queryClient.invalidateQueries({ queryKey: ['credit-limit'] });
     },
-    onError: () => {
-      toast.error('Failed to request advance');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to request advance'));
+    },
+  });
+}
+
+export function useRepayAdvance() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    // POST /api/v1/providers/me/advances/{id}/repay with { amount_cents }.
+    // The gateway requires an Idempotency-Key on this payment mutation — the
+    // api client attaches it via idempotencyHeader() (do NOT also add one).
+    mutationFn: (variables: { advanceId: string; amount_cents: number }) => {
+      const opKey = `advance-repay:${variables.advanceId}:${String(variables.amount_cents)}`;
+      return api
+        .post<{ advance: WorkingCapitalAdvance }>(
+          `/api/v1/providers/me/advances/${variables.advanceId}/repay`,
+          { amount_cents: variables.amount_cents },
+          idempotencyHeader(opKey),
+        )
+        .then((res) => res.advance);
+    },
+    onSuccess: (_data, variables) => {
+      clearIdempotencyKey(`advance-repay:${variables.advanceId}:${String(variables.amount_cents)}`);
+      toast.success('Repayment applied');
+      void queryClient.invalidateQueries({ queryKey: ['my-advances'] });
+      void queryClient.invalidateQueries({ queryKey: ['credit-limit'] });
+    },
+    onError: (err) => {
+      // Surfaces the gateway's real reason, e.g. the 422
+      // "Repayment amount exceeds the outstanding balance".
+      toast.error(getApiErrorMessage(err, 'Failed to apply repayment'));
     },
   });
 }
@@ -79,8 +128,8 @@ export function useReviewAdvance() {
       toast.success('Advance reviewed');
       void queryClient.invalidateQueries({ queryKey: ['admin-advances'] });
     },
-    onError: () => {
-      toast.error('Failed to review advance');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to review advance'));
     },
   });
 }
@@ -99,8 +148,8 @@ export function useDisburseAdvance() {
       toast.success('Advance disbursed successfully');
       void queryClient.invalidateQueries({ queryKey: ['admin-advances'] });
     },
-    onError: () => {
-      toast.error('Failed to disburse advance');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to disburse advance'));
     },
   });
 }

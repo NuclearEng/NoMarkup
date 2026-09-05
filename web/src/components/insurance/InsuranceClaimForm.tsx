@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, Upload } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
@@ -18,15 +19,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useImageUpload } from '@/hooks/useImageUpload';
 import { useFileInsuranceClaim } from '@/hooks/useInsurance';
 import { formatCents } from '@/lib/utils';
+import { UPLOAD_CONTEXT } from '@/types';
 
+// Values MUST match the insurance_claims.claim_type DB CHECK constraint
+// (migration 022): property_damage, workmanship_defect, incomplete_work,
+// liability_incident. Any other value fails the insert with a 500.
 const CLAIM_TYPES = [
-  { value: 'damage', label: 'Property Damage' },
+  { value: 'property_damage', label: 'Property Damage' },
+  { value: 'workmanship_defect', label: 'Workmanship Defect' },
   { value: 'incomplete_work', label: 'Incomplete Work' },
-  { value: 'quality_defect', label: 'Quality Defect' },
-  { value: 'contractor_abandonment', label: 'Contractor Abandonment' },
-  { value: 'other', label: 'Other' },
+  { value: 'liability_incident', label: 'Liability Incident' },
 ] as const;
 
 const claimSchema = z.object({
@@ -60,6 +65,12 @@ export function InsuranceClaimForm({
   const [evidenceUrls, setEvidenceUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
 
+  // Claim evidence goes through the image pipeline as documents (same path as
+  // guarantee claims) so we get confirmed S3 URLs, not blob: placeholders.
+  const { upload: uploadEvidence } = useImageUpload({
+    context: UPLOAD_CONTEXT.DOCUMENT,
+  });
+
   const {
     register,
     handleSubmit,
@@ -80,23 +91,31 @@ export function InsuranceClaimForm({
   const claimedAmountCents = Math.round(parseFloat(claimedAmountDollars || '0') * 100);
   const exceedsCoverage = claimedAmountCents > coverageAmountCents;
 
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const handleFileUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
 
-    setUploading(true);
-    // In production, this would upload to S3 via the image pipeline
-    // For now, we create object URLs as placeholders for the upload flow
-    const newUrls: string[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      if (file) {
-        newUrls.push(URL.createObjectURL(file));
+      // Snapshot + reset so the same file can be re-selected after a failure.
+      const fileList = Array.from(files);
+      e.target.value = '';
+
+      setUploading(true);
+      try {
+        for (const file of fileList) {
+          const outcome = await uploadEvidence(file);
+          if (outcome.ok) {
+            setEvidenceUrls((prev) => [...prev, outcome.result.confirmedUrl]);
+          } else {
+            toast.error(outcome.error || `Failed to upload ${file.name}`);
+          }
+        }
+      } finally {
+        setUploading(false);
       }
-    }
-    setEvidenceUrls((prev) => [...prev, ...newUrls]);
-    setUploading(false);
-  }, []);
+    },
+    [uploadEvidence],
+  );
 
   function onSubmit(data: ClaimFormValues) {
     const amountCents = Math.round(parseFloat(data.claimed_amount_dollars) * 100);
@@ -127,7 +146,12 @@ export function InsuranceClaimForm({
         <CardTitle className="text-base">File a Claim</CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form
+          onSubmit={(e) => {
+            void handleSubmit(onSubmit)(e);
+          }}
+          className="space-y-4"
+        >
           {/* Claim Type */}
           <div className="space-y-2">
             <Label htmlFor="claim-type">Claim Type</Label>
@@ -137,7 +161,13 @@ export function InsuranceClaimForm({
                 setValue('claim_type', val, { shouldValidate: true });
               }}
             >
-              <SelectTrigger id="claim-type" className="min-h-[44px]" aria-label="Select claim type">
+              <SelectTrigger
+                id="claim-type"
+                className="min-h-[44px]"
+                aria-label="Select claim type"
+                aria-invalid={errors.claim_type ? true : undefined}
+                aria-describedby={errors.claim_type ? 'claim-type-error' : undefined}
+              >
                 <SelectValue placeholder="Select claim type" />
               </SelectTrigger>
               <SelectContent>
@@ -149,7 +179,7 @@ export function InsuranceClaimForm({
               </SelectContent>
             </Select>
             {errors.claim_type ? (
-              <p className="text-xs text-destructive" role="alert">
+              <p id="claim-type-error" className="text-xs text-destructive" role="alert">
                 {errors.claim_type.message}
               </p>
             ) : null}
@@ -197,11 +227,19 @@ export function InsuranceClaimForm({
                 accept="image/*"
                 multiple
                 className="sr-only"
-                onChange={(e) => { void handleFileUpload(e); }}
+                onChange={(e) => {
+                  void handleFileUpload(e);
+                }}
+                disabled={uploading}
               />
               {evidenceUrls.length > 0 ? (
                 <span className="text-xs text-zinc-400">
                   {String(evidenceUrls.length)} file{evidenceUrls.length !== 1 ? 's' : ''} attached
+                </span>
+              ) : null}
+              {uploading ? (
+                <span className="text-xs text-zinc-400" role="status">
+                  Uploading…
                 </span>
               ) : null}
             </div>

@@ -5,7 +5,6 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
-  CreditCard,
   Loader2,
   RefreshCw,
   XCircle,
@@ -23,7 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useInstallmentPlan } from '@/hooks/useInstallments';
 import { cn, formatCents } from '@/lib/utils';
 import type { InstallmentPlanStatus, ScheduledInstallmentStatus } from '@/types';
-import { INSTALLMENT_PLAN_STATUS, SCHEDULED_INSTALLMENT_STATUS } from '@/types';
+import { SCHEDULED_INSTALLMENT_STATUS } from '@/types';
 
 const PLAN_STATUS_CLASSES: Record<InstallmentPlanStatus, string> = {
   active: 'bg-blue-500/10 text-blue-300 border-blue-500/30',

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,10 +25,14 @@ type mockUserRepo struct {
 	getUserByEmailFn        func(ctx context.Context, email string) (*domain.User, error)
 	updateLastLoginFn       func(ctx context.Context, userID string, at time.Time) error
 	updateEmailVerifiedFn   func(ctx context.Context, userID string, verified bool) error
-	createRefreshTokenFn    func(ctx context.Context, token *domain.RefreshToken) error
-	getRefreshTokenFn       func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
-	revokeRefreshTokenFn    func(ctx context.Context, tokenHash string) error
-	revokeAllUserTokensFn   func(ctx context.Context, userID string) error
+	updatePasswordFn        func(ctx context.Context, userID, passwordHash string) error
+	createRefreshTokenFn         func(ctx context.Context, token *domain.RefreshToken) error
+	getRefreshTokenFn            func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
+	revokeRefreshTokenFn         func(ctx context.Context, tokenHash string) error
+	rotateRefreshTokenIfActiveFn func(ctx context.Context, tokenHash string) (bool, error)
+	revokeRefreshTokenFamilyFn   func(ctx context.Context, familyID string) (int64, error)
+	revokeAllUserTokensFn        func(ctx context.Context, userID string) error
+	getPublicUsersByIDsFn        func(ctx context.Context, ids []string) ([]domain.PublicUser, error)
 	updateUserFn            func(ctx context.Context, userID string, input domain.UpdateUserInput) (*domain.User, error)
 	enableRoleFn            func(ctx context.Context, userID string, role string) (*domain.User, error)
 	createProviderProfileFn func(ctx context.Context, userID string) (*domain.ProviderProfile, error)
@@ -44,7 +50,12 @@ type mockUserRepo struct {
 	suspendUserFn           func(ctx context.Context, userID, reason, adminID string) error
 	banUserFn               func(ctx context.Context, userID, reason, adminID string) error
 	insertAuditLogFn        func(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
-	adminSearchUsersFn      func(ctx context.Context, query, status string, page, pageSize int) ([]domain.User, int, error)
+	adminSearchUsersFn      func(ctx context.Context, query, status, role string, page, pageSize int) ([]domain.User, int, error)
+	createDocumentFn        func(ctx context.Context, doc *domain.Document) error
+	listDocumentsFn         func(ctx context.Context, userID string) ([]domain.Document, error)
+	getDocumentFn           func(ctx context.Context, documentID string) (*domain.Document, error)
+	getDocumentByUserTypeFn func(ctx context.Context, userID string, docType domain.DocumentType) (*domain.Document, error)
+	updateDocumentStatusFn  func(ctx context.Context, documentID string, status domain.DocumentStatus, rejectionReason string) error
 }
 
 func (m *mockUserRepo) CreateUser(ctx context.Context, user *domain.User) error {
@@ -65,6 +76,12 @@ func (m *mockUserRepo) UpdateLastLogin(ctx context.Context, userID string, at ti
 func (m *mockUserRepo) UpdateEmailVerified(ctx context.Context, userID string, verified bool) error {
 	return m.updateEmailVerifiedFn(ctx, userID, verified)
 }
+func (m *mockUserRepo) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
+	if m.updatePasswordFn != nil {
+		return m.updatePasswordFn(ctx, userID, passwordHash)
+	}
+	return nil
+}
 func (m *mockUserRepo) CreateRefreshToken(ctx context.Context, token *domain.RefreshToken) error {
 	return m.createRefreshTokenFn(ctx, token)
 }
@@ -73,6 +90,21 @@ func (m *mockUserRepo) GetRefreshToken(ctx context.Context, tokenHash string) (*
 }
 func (m *mockUserRepo) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
 	return m.revokeRefreshTokenFn(ctx, tokenHash)
+}
+func (m *mockUserRepo) RotateRefreshTokenIfActive(ctx context.Context, tokenHash string) (bool, error) {
+	return m.rotateRefreshTokenIfActiveFn(ctx, tokenHash)
+}
+func (m *mockUserRepo) RevokeRefreshTokenFamily(ctx context.Context, familyID string) (int64, error) {
+	if m.revokeRefreshTokenFamilyFn != nil {
+		return m.revokeRefreshTokenFamilyFn(ctx, familyID)
+	}
+	return 0, nil
+}
+func (m *mockUserRepo) GetPublicUsersByIDs(ctx context.Context, ids []string) ([]domain.PublicUser, error) {
+	if m.getPublicUsersByIDsFn != nil {
+		return m.getPublicUsersByIDsFn(ctx, ids)
+	}
+	return nil, nil
 }
 func (m *mockUserRepo) RevokeAllUserTokens(ctx context.Context, userID string) error {
 	if m.revokeAllUserTokensFn != nil {
@@ -134,35 +166,81 @@ func (m *mockUserRepo) BanUser(ctx context.Context, userID, reason, adminID stri
 	}
 	return nil
 }
+func (m *mockUserRepo) SuspendUserAndRevokeTokens(ctx context.Context, userID, reason, adminID string) error {
+	if m.suspendUserFn != nil {
+		if err := m.suspendUserFn(ctx, userID, reason, adminID); err != nil {
+			return err
+		}
+	}
+	if m.revokeAllUserTokensFn != nil {
+		return m.revokeAllUserTokensFn(ctx, userID)
+	}
+	return nil
+}
+func (m *mockUserRepo) BanUserAndRevokeTokens(ctx context.Context, userID, reason, adminID string) error {
+	if m.banUserFn != nil {
+		if err := m.banUserFn(ctx, userID, reason, adminID); err != nil {
+			return err
+		}
+	}
+	if m.revokeAllUserTokensFn != nil {
+		return m.revokeAllUserTokensFn(ctx, userID)
+	}
+	return nil
+}
+func (m *mockUserRepo) ReactivateUser(ctx context.Context, userID, adminID string) error {
+	// No mock hook needed today — admin tests exercise the full Admin service
+	// directly and do not assert on this path. Return nil so the interface is
+	// satisfied without changing existing test expectations.
+	return nil
+}
 func (m *mockUserRepo) InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error {
 	if m.insertAuditLogFn != nil {
 		return m.insertAuditLogFn(ctx, adminID, action, targetType, targetID, details, ipAddress)
 	}
 	return nil
 }
-func (m *mockUserRepo) AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]domain.User, int, error) {
+func (m *mockUserRepo) AdminSearchUsers(ctx context.Context, query, status, role string, page, pageSize int) ([]domain.User, int, error) {
 	if m.adminSearchUsersFn != nil {
-		return m.adminSearchUsersFn(ctx, query, status, page, pageSize)
+		return m.adminSearchUsersFn(ctx, query, status, role, page, pageSize)
 	}
 	return nil, 0, nil
 }
 func (m *mockUserRepo) UpdatePhoneVerified(_ context.Context, _ string, _ bool) error {
 	return nil
 }
-func (m *mockUserRepo) CreateDocument(_ context.Context, _ *domain.Document) error {
+func (m *mockUserRepo) CreateDocument(ctx context.Context, doc *domain.Document) error {
+	if m.createDocumentFn != nil {
+		return m.createDocumentFn(ctx, doc)
+	}
 	return nil
 }
-func (m *mockUserRepo) GetDocument(_ context.Context, _ string) (*domain.Document, error) {
+func (m *mockUserRepo) GetDocument(ctx context.Context, documentID string) (*domain.Document, error) {
+	if m.getDocumentFn != nil {
+		return m.getDocumentFn(ctx, documentID)
+	}
 	return nil, domain.ErrDocumentNotFound
 }
-func (m *mockUserRepo) GetDocumentByUserAndType(_ context.Context, _ string, _ domain.DocumentType) (*domain.Document, error) {
+func (m *mockUserRepo) GetDocumentByUserAndType(ctx context.Context, userID string, docType domain.DocumentType) (*domain.Document, error) {
+	if m.getDocumentByUserTypeFn != nil {
+		return m.getDocumentByUserTypeFn(ctx, userID, docType)
+	}
 	return nil, domain.ErrDocumentNotFound
 }
-func (m *mockUserRepo) ListDocuments(_ context.Context, _ string) ([]domain.Document, error) {
+func (m *mockUserRepo) ListDocuments(ctx context.Context, userID string) ([]domain.Document, error) {
+	if m.listDocumentsFn != nil {
+		return m.listDocumentsFn(ctx, userID)
+	}
 	return nil, nil
 }
-func (m *mockUserRepo) UpdateDocumentStatus(_ context.Context, _ string, _ domain.DocumentStatus, _ string) error {
+func (m *mockUserRepo) UpdateDocumentStatus(ctx context.Context, documentID string, status domain.DocumentStatus, rejectionReason string) error {
+	if m.updateDocumentStatusFn != nil {
+		return m.updateDocumentStatusFn(ctx, documentID, status, rejectionReason)
+	}
 	return nil
+}
+func (m *mockUserRepo) ListPendingDocuments(_ context.Context, _, _ int) ([]domain.PendingDocument, int, error) {
+	return nil, 0, nil
 }
 func (m *mockUserRepo) FindUserByOAuth(_ context.Context, _, _ string) (*domain.User, error) {
 	return nil, domain.ErrUserNotFound
@@ -202,6 +280,24 @@ func (m *mockUserRepo) UpdateProperty(_ context.Context, _ string, _ domain.Upda
 }
 func (m *mockUserRepo) DeleteProperty(_ context.Context, _ string) error {
 	return nil
+}
+
+// --- GDPR / CCPA erasure stubs (full mocks live in deletion_test.go) ---
+
+func (m *mockUserRepo) MarkDeletionRequested(_ context.Context, _, _ string, _ time.Time) error {
+	return nil
+}
+func (m *mockUserRepo) ClearDeletionRequest(_ context.Context, _ string) error {
+	return nil
+}
+func (m *mockUserRepo) GetUserDeletionState(_ context.Context, _ string) (*time.Time, *time.Time, error) {
+	return nil, nil, nil
+}
+func (m *mockUserRepo) ListPendingFinalizations(_ context.Context, _ time.Time, _ int) ([]domain.PendingDeletion, error) {
+	return nil, nil
+}
+func (m *mockUserRepo) FinalizeAccountDeletion(_ context.Context, _ string) (domain.ErasureCounts, error) {
+	return nil, nil
 }
 
 // --- helpers ---
@@ -467,12 +563,12 @@ func TestAuth_RefreshToken(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name             string
-		getRefreshToken  func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
-		revokeRefreshFn  func(ctx context.Context, tokenHash string) error
-		getUserByIDFn    func(ctx context.Context, id string) (*domain.User, error)
-		wantErr          bool
-		errContain       string
+		name            string
+		getRefreshToken func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
+		revokeIfActive  func(ctx context.Context, tokenHash string) (bool, error)
+		getUserByIDFn   func(ctx context.Context, id string) (*domain.User, error)
+		wantErr         bool
+		errContain      string
 	}{
 		{
 			name: "successful_refresh_rotates_token",
@@ -483,7 +579,8 @@ func TestAuth_RefreshToken(t *testing.T) {
 					ExpiresAt: time.Now().Add(time.Hour),
 				}, nil
 			},
-			revokeRefreshFn: func(_ context.Context, _ string) error { return nil },
+			// Active token: the atomic revoke affects exactly one row.
+			revokeIfActive: func(_ context.Context, _ string) (bool, error) { return true, nil },
 			getUserByIDFn: func(_ context.Context, _ string) (*domain.User, error) {
 				return &domain.User{
 					ID:    "user-1",
@@ -503,8 +600,10 @@ func TestAuth_RefreshToken(t *testing.T) {
 					RevokedAt: &now,
 				}, nil
 			},
-			wantErr:    true,
-			errContain: "token revoked",
+			// Already revoked: the gated revoke affects zero rows -> reject.
+			revokeIfActive: func(_ context.Context, _ string) (bool, error) { return false, nil },
+			wantErr:        true,
+			errContain:     "token revoked",
 		},
 		{
 			name: "expired_token_returns_error",
@@ -525,9 +624,9 @@ func TestAuth_RefreshToken(t *testing.T) {
 			t.Parallel()
 
 			repo := &mockUserRepo{
-				getRefreshTokenFn:    tt.getRefreshToken,
-				revokeRefreshTokenFn: tt.revokeRefreshFn,
-				getUserByIDFn:        tt.getUserByIDFn,
+				getRefreshTokenFn:            tt.getRefreshToken,
+				rotateRefreshTokenIfActiveFn: tt.revokeIfActive,
+				getUserByIDFn:                tt.getUserByIDFn,
 				createRefreshTokenFn: func(_ context.Context, _ *domain.RefreshToken) error {
 					return nil
 				},
@@ -552,15 +651,69 @@ func TestAuth_RefreshToken(t *testing.T) {
 	}
 }
 
+// TestAuth_RefreshToken_ConcurrentSingleWinner proves the atomic-revoke gate:
+// when N goroutines refresh the SAME single-use token at once, exactly one
+// succeeds (mints a new pair) and the rest are rejected with ErrTokenRevoked.
+// The mock emulates the DB's `UPDATE ... WHERE revoked_at IS NULL` semantics
+// with an atomic compare-and-swap so the first caller wins and later callers
+// see zero rows affected.
+func TestAuth_RefreshToken_ConcurrentSingleWinner(t *testing.T) {
+	t.Parallel()
+
+	const n = 12
+
+	// revoked is flipped 0 -> 1 exactly once; only that caller "affected a row".
+	var revoked int32
+	repo := &mockUserRepo{
+		getRefreshTokenFn: func(_ context.Context, _ string) (*domain.RefreshToken, error) {
+			return &domain.RefreshToken{
+				ID:        "rt-shared",
+				UserID:    "user-shared",
+				ExpiresAt: time.Now().Add(time.Hour),
+			}, nil
+		},
+		rotateRefreshTokenIfActiveFn: func(_ context.Context, _ string) (bool, error) {
+			return atomic.CompareAndSwapInt32(&revoked, 0, 1), nil
+		},
+		getUserByIDFn: func(_ context.Context, _ string) (*domain.User, error) {
+			return &domain.User{ID: "user-shared", Email: "s@example.com", Roles: []string{"customer"}}, nil
+		},
+		createRefreshTokenFn: func(_ context.Context, _ *domain.RefreshToken) error { return nil },
+	}
+	auth := newTestAuth(t, repo)
+
+	var wg sync.WaitGroup
+	var successes, revokedErrs int32
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			pair, err := auth.RefreshToken(context.Background(), "raw-refresh-token")
+			if err == nil {
+				require.NotNil(t, pair)
+				atomic.AddInt32(&successes, 1)
+				return
+			}
+			if errors.Is(err, domain.ErrTokenRevoked) {
+				atomic.AddInt32(&revokedErrs, 1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	assert.Equal(t, int32(1), atomic.LoadInt32(&successes), "exactly one refresh must win")
+	assert.Equal(t, int32(n-1), atomic.LoadInt32(&revokedErrs), "all losers must get ErrTokenRevoked")
+}
+
 // --- Auth.Logout tests ---
 
 func TestAuth_Logout(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		revokeFn  func(ctx context.Context, tokenHash string) error
-		wantErr   bool
+		name     string
+		revokeFn func(ctx context.Context, tokenHash string) error
+		wantErr  bool
 	}{
 		{
 			name:     "successful_logout",
@@ -691,6 +844,201 @@ func TestGenerateAndValidateVerificationToken(t *testing.T) {
 	_, err = otherAuth.ValidateVerificationToken(token)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
+}
+
+func TestGenerateAndValidatePasswordResetToken(t *testing.T) {
+	t.Parallel()
+
+	auth := newTestAuth(t, &mockUserRepo{})
+
+	const currentHash = "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA"
+	token := auth.GeneratePasswordResetToken("user-xyz-789", currentHash)
+	assert.NotEmpty(t, token)
+
+	// Valid token verified against the SAME (current) hash returns the userID.
+	userID, err := auth.ValidatePasswordResetToken(token, currentHash)
+	require.NoError(t, err)
+	assert.Equal(t, "user-xyz-789", userID)
+
+	// Hash binding: once the password hash changes, the same token no longer
+	// verifies -> single-use semantics for free.
+	_, err = auth.ValidatePasswordResetToken(token, currentHash+"-changed")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
+
+	// A token signed with a different key is rejected.
+	otherAuth := NewAuth(nil, nil, "different-hmac-key-value-here", false)
+	_, err = otherAuth.ValidatePasswordResetToken(token, currentHash)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
+
+	// A verification token must NOT be accepted as a password-reset token
+	// (purpose namespacing).
+	verifyToken := auth.GenerateVerificationToken("user-xyz-789")
+	_, err = auth.ValidatePasswordResetToken(verifyToken, currentHash)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidToken))
+}
+
+func TestAuth_RequestPasswordReset(t *testing.T) {
+	t.Parallel()
+
+	t.Run("known email returns token and matched=true", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockUserRepo{
+			getUserByEmailFn: func(_ context.Context, email string) (*domain.User, error) {
+				return &domain.User{ID: "user-1", Email: email}, nil
+			},
+		}
+		auth := newTestAuth(t, repo)
+
+		user, token, matched, err := auth.RequestPasswordReset(context.Background(), "real@example.com")
+		require.NoError(t, err)
+		assert.True(t, matched)
+		assert.NotNil(t, user)
+		assert.NotEmpty(t, token)
+	})
+
+	t.Run("unknown email is a no-op success (anti-enumeration)", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockUserRepo{
+			getUserByEmailFn: func(_ context.Context, _ string) (*domain.User, error) {
+				return nil, domain.ErrUserNotFound
+			},
+		}
+		auth := newTestAuth(t, repo)
+
+		user, token, matched, err := auth.RequestPasswordReset(context.Background(), "nobody@example.com")
+		require.NoError(t, err)
+		assert.False(t, matched)
+		assert.Nil(t, user)
+		assert.Empty(t, token)
+	})
+}
+
+func TestAuth_ResetPassword(t *testing.T) {
+	t.Parallel()
+
+	// originalHash is the password hash in effect when the reset token is
+	// minted. The token is HMAC-bound to it.
+	const originalHash = "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$b3JpZ2luYWw"
+
+	t.Run("valid token updates password and revokes sessions", func(t *testing.T) {
+		t.Parallel()
+		var storedHash string
+		var revoked bool
+		repo := &mockUserRepo{
+			getUserByIDFn: func(_ context.Context, id string) (*domain.User, error) {
+				return &domain.User{ID: id, PasswordHash: originalHash}, nil
+			},
+			updatePasswordFn: func(_ context.Context, _ string, hash string) error {
+				storedHash = hash
+				return nil
+			},
+			revokeAllUserTokensFn: func(_ context.Context, _ string) error {
+				revoked = true
+				return nil
+			},
+		}
+		auth := newTestAuth(t, repo)
+		token := auth.GeneratePasswordResetToken("user-42", originalHash)
+
+		err := auth.ResetPassword(context.Background(), token, "NewPassword123!")
+		require.NoError(t, err)
+		assert.NotEmpty(t, storedHash)
+		assert.True(t, verifyPassword("NewPassword123!", storedHash))
+		assert.True(t, revoked)
+	})
+
+	t.Run("token is single-use: rejected on replay after password changed", func(t *testing.T) {
+		t.Parallel()
+		// Simulate stateful storage: the first reset mutates the stored hash,
+		// so the second use validates against the NEW hash and the token's
+		// HMAC (bound to originalHash) no longer matches.
+		currentHash := originalHash
+		repo := &mockUserRepo{
+			getUserByIDFn: func(_ context.Context, id string) (*domain.User, error) {
+				return &domain.User{ID: id, PasswordHash: currentHash}, nil
+			},
+			updatePasswordFn: func(_ context.Context, _ string, hash string) error {
+				currentHash = hash // password rotates -> binding fingerprint changes
+				return nil
+			},
+		}
+		auth := newTestAuth(t, repo)
+		token := auth.GeneratePasswordResetToken("user-99", originalHash)
+
+		// First use succeeds.
+		require.NoError(t, auth.ResetPassword(context.Background(), token, "FirstNewPass1!"))
+
+		// Replay of the SAME token must now fail (token bound to the old hash).
+		err := auth.ResetPassword(context.Background(), token, "AttackerPass2!")
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrInvalidToken))
+	})
+
+	t.Run("invalid token returns ErrInvalidToken, not a 500", func(t *testing.T) {
+		t.Parallel()
+		auth := newTestAuth(t, &mockUserRepo{})
+
+		err := auth.ResetPassword(context.Background(), "not-a-real-token", "NewPassword123!")
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrInvalidToken))
+	})
+}
+
+func TestAuth_ChangePassword(t *testing.T) {
+	t.Parallel()
+
+	// A real argon2id hash of the known current password so verifyPassword
+	// inside ChangePassword exercises the genuine re-auth gate.
+	currentHash, err := hashPassword("CurrentPass1!")
+	require.NoError(t, err)
+
+	t.Run("correct current password updates hash and revokes sessions", func(t *testing.T) {
+		t.Parallel()
+		var storedHash string
+		var revoked bool
+		repo := &mockUserRepo{
+			getUserByIDFn: func(_ context.Context, id string) (*domain.User, error) {
+				return &domain.User{ID: id, PasswordHash: currentHash}, nil
+			},
+			updatePasswordFn: func(_ context.Context, _ string, hash string) error {
+				storedHash = hash
+				return nil
+			},
+			revokeAllUserTokensFn: func(_ context.Context, _ string) error {
+				revoked = true
+				return nil
+			},
+		}
+		auth := newTestAuth(t, repo)
+
+		err := auth.ChangePassword(context.Background(), "user-1", "CurrentPass1!", "BrandNewPass2!")
+		require.NoError(t, err)
+		assert.True(t, verifyPassword("BrandNewPass2!", storedHash))
+		assert.True(t, revoked, "all sessions must be revoked after a password change")
+	})
+
+	t.Run("wrong current password is rejected with ErrInvalidCredentials and does not write", func(t *testing.T) {
+		t.Parallel()
+		wrote := false
+		repo := &mockUserRepo{
+			getUserByIDFn: func(_ context.Context, id string) (*domain.User, error) {
+				return &domain.User{ID: id, PasswordHash: currentHash}, nil
+			},
+			updatePasswordFn: func(_ context.Context, _ string, _ string) error {
+				wrote = true
+				return nil
+			},
+		}
+		auth := newTestAuth(t, repo)
+
+		err := auth.ChangePassword(context.Background(), "user-1", "WrongPass9!", "BrandNewPass2!")
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, domain.ErrInvalidCredentials))
+		assert.False(t, wrote, "password must not be updated when the current password is wrong")
+	})
 }
 
 // --- Profile tests ---
@@ -991,7 +1339,7 @@ func TestAuth_generateTokenPair_stores_refresh_token(t *testing.T) {
 		Roles: []string{"customer"},
 	}
 
-	pair, err := auth.generateTokenPair(context.Background(), user, "Chrome/100", "192.168.1.1")
+	pair, err := auth.generateTokenPair(context.Background(), user, "Chrome/100", "192.168.1.1", "", nil)
 	require.NoError(t, err)
 	require.NotNil(t, pair)
 
@@ -1001,4 +1349,38 @@ func TestAuth_generateTokenPair_stores_refresh_token(t *testing.T) {
 	assert.True(t, net.ParseIP("192.168.1.1").Equal(storedToken.IPAddress))
 	assert.NotEmpty(t, storedToken.TokenHash)
 	assert.True(t, storedToken.ExpiresAt.After(time.Now()))
+	// A session root carries no lineage: the DB mints the family (COALESCE to
+	// gen_random_uuid()), so the service must NOT invent one.
+	assert.Empty(t, storedToken.FamilyID, "session root must let the DB mint the family id")
+	assert.Nil(t, storedToken.ParentID, "session root has no parent")
+}
+
+// TestAuth_generateTokenPair_rotation_inherits_lineage pins the other half of
+// the contract: a rotation must extend the existing family, not start a new
+// one. If this regresses, reuse detection silently stops working — every token
+// becomes its own family and revoking a family revokes nothing.
+func TestAuth_generateTokenPair_rotation_inherits_lineage(t *testing.T) {
+	t.Parallel()
+
+	var storedToken *domain.RefreshToken
+	repo := &mockUserRepo{
+		createRefreshTokenFn: func(_ context.Context, token *domain.RefreshToken) error {
+			storedToken = token
+			return nil
+		},
+	}
+
+	key := testKeyPair(t)
+	auth := NewAuth(repo, NewJWTManager(key), testHMACKey(), false)
+
+	user := &domain.User{ID: "user-1", Email: "test@example.com", Roles: []string{"customer"}}
+	parentID := "parent-token-id"
+
+	_, err := auth.generateTokenPair(context.Background(), user, "Chrome/100", "", "fam-1", &parentID)
+	require.NoError(t, err)
+
+	require.NotNil(t, storedToken)
+	assert.Equal(t, "fam-1", storedToken.FamilyID, "rotation must inherit the parent's family")
+	require.NotNil(t, storedToken.ParentID)
+	assert.Equal(t, parentID, *storedToken.ParentID)
 }

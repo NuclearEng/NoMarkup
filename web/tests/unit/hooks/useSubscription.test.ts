@@ -22,9 +22,17 @@ import type {
 vi.mock('@/lib/api', () => ({
   api: {
     get: vi.fn(),
+    getPublic: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
+  },
+  idempotencyHeader: () => ({ 'Idempotency-Key': 'test-idem-key' }),
+  ApiError: class ApiError extends Error {
+    code = 'ERR';
+    userMessage(fallback: string) {
+      return this.message || fallback;
+    }
   },
 }));
 
@@ -121,7 +129,7 @@ describe('useTiers', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.tiers).toHaveLength(1);
     expect(result.current.data?.tiers[0]?.name).toBe('Pro');
@@ -147,7 +155,7 @@ describe('useTiers', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -172,7 +180,7 @@ describe('useSubscription', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.subscription.id).toBe('sub-1');
     expect(result.current.data?.subscription.status).toBe('active');
@@ -188,7 +196,7 @@ describe('useSubscription', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -221,7 +229,7 @@ describe('useCreateSubscription', () => {
       payment_method_id: 'pm_test123',
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.id).toBe('sub-1');
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
@@ -231,6 +239,7 @@ describe('useCreateSubscription', () => {
         billing_interval: 'monthly',
         payment_method_id: 'pm_test123',
       },
+      { 'Idempotency-Key': 'test-idem-key' },
     );
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['subscription'],
@@ -255,7 +264,7 @@ describe('useCreateSubscription', () => {
       payment_method_id: 'pm_bad',
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -273,7 +282,9 @@ describe('useCancelSubscription', () => {
 
   it('cancels a subscription and invalidates queries', async () => {
     const cancelledSub = { ...mockSubscription, status: 'cancelled' as const };
-    vi.mocked(api.delete).mockResolvedValueOnce({
+    // Cancel is a POST to /subscriptions/cancel (not DELETE /subscriptions/me)
+    // — matches the gateway router (`r.Post("/cancel", ...)`).
+    vi.mocked(api.post).mockResolvedValueOnce({
       subscription: cancelledSub,
     });
 
@@ -288,12 +299,13 @@ describe('useCancelSubscription', () => {
       cancel_immediately: false,
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.subscription.status).toBe('cancelled');
-    expect(vi.mocked(api.delete)).toHaveBeenCalledWith(
-      '/api/v1/subscriptions/me',
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/subscriptions/cancel',
       { reason: 'No longer needed', cancel_immediately: false },
+      { 'Idempotency-Key': 'test-idem-key' },
     );
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['subscription'],
@@ -301,7 +313,7 @@ describe('useCancelSubscription', () => {
   });
 
   it('handles cancellation error', async () => {
-    vi.mocked(api.delete).mockRejectedValueOnce(
+    vi.mocked(api.post).mockRejectedValueOnce(
       new Error('Cannot cancel during trial'),
     );
 
@@ -314,7 +326,7 @@ describe('useCancelSubscription', () => {
       cancel_immediately: true,
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -332,8 +344,12 @@ describe('useChangeTier', () => {
 
   it('changes the subscription tier', async () => {
     const upgradedSub = { ...mockSubscription, tier_id: 'tier-2' };
-    vi.mocked(api.patch).mockResolvedValueOnce({
+    // ChangeTier is a POST to /subscriptions/change-tier (not PATCH) —
+    // matches the gateway router (`r.Post("/change-tier", ...)`). The hook
+    // returns the full response so the UI can surface the proration amount.
+    vi.mocked(api.post).mockResolvedValueOnce({
       subscription: upgradedSub,
+      proration_amount_cents: 1234,
     });
 
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -347,12 +363,14 @@ describe('useChangeTier', () => {
       billing_interval: 'annual',
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
-    expect(result.current.data?.tier_id).toBe('tier-2');
-    expect(vi.mocked(api.patch)).toHaveBeenCalledWith(
-      '/api/v1/subscriptions/me/tier',
+    expect(result.current.data?.subscription.tier_id).toBe('tier-2');
+    expect(result.current.data?.proration_amount_cents).toBe(1234);
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith(
+      '/api/v1/subscriptions/change-tier',
       { new_tier_id: 'tier-2', billing_interval: 'annual' },
+      { 'Idempotency-Key': 'test-idem-key' },
     );
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['subscription'],
@@ -363,7 +381,9 @@ describe('useChangeTier', () => {
   });
 
   it('handles tier change error', async () => {
-    vi.mocked(api.patch).mockRejectedValueOnce(
+    // ChangeTier is a POST (matches the gateway router), so the failure must be
+    // injected on api.post — not api.patch.
+    vi.mocked(api.post).mockRejectedValueOnce(
       new Error('Downgrade not allowed'),
     );
 
@@ -376,7 +396,7 @@ describe('useChangeTier', () => {
       billing_interval: 'monthly',
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -399,7 +419,7 @@ describe('useUsage', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.active_bids).toBe(5);
     expect(result.current.data?.max_active_bids).toBe(20);
@@ -426,7 +446,7 @@ describe('useUsage', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -451,7 +471,7 @@ describe('useInvoices', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.invoices).toHaveLength(1);
     expect(result.current.data?.invoices[0]?.amount_cents).toBe(2999);
@@ -467,7 +487,7 @@ describe('useInvoices', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.invoices).toHaveLength(0);
   });
@@ -479,6 +499,6 @@ describe('useInvoices', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });

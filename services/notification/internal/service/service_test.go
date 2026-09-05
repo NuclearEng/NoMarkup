@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/nomarkup/nomarkup/services/notification/internal/domain"
 	"github.com/stretchr/testify/assert"
@@ -79,17 +81,24 @@ func (m *mockNotifRepo) DisableEmailByToken(_ context.Context, token string) (st
 }
 
 // mockDeviceRepo implements domain.DeviceTokenRepository for testing.
+// deleted records every DeleteDeviceToken identifier so 410-prune tests can
+// assert against it.
 type mockDeviceRepo struct {
-	tokens []domain.DeviceToken
-	err    error
+	tokens  []domain.DeviceToken
+	err     error
+	deleted []string
 }
 
 func (m *mockDeviceRepo) SaveDeviceToken(_ context.Context, _ string, _ string, _ string, _ string) error {
 	return m.err
 }
 
-func (m *mockDeviceRepo) DeleteDeviceToken(_ context.Context, _ string, _ string) error {
-	return m.err
+func (m *mockDeviceRepo) DeleteDeviceToken(_ context.Context, _ string, deviceID string) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.deleted = append(m.deleted, deviceID)
+	return nil
 }
 
 func (m *mockDeviceRepo) GetDeviceTokens(_ context.Context, _ string) ([]domain.DeviceToken, error) {
@@ -99,8 +108,89 @@ func (m *mockDeviceRepo) GetDeviceTokens(_ context.Context, _ string) ([]domain.
 	return m.tokens, nil
 }
 
+// mockSendLedger implements domain.SendLedgerRepository in memory.
+// RecordSend stamps time.Now(); tests age entries by rewriting `at`.
+type ledgerEntry struct {
+	userID    string
+	notifType string
+	channel   string
+	at        time.Time
+}
+
+type mockSendLedger struct {
+	entries   []ledgerEntry
+	recordErr error
+	countErr  error
+}
+
+func (m *mockSendLedger) RecordSend(_ context.Context, userID, notificationType, channel string) error {
+	if m.recordErr != nil {
+		return m.recordErr
+	}
+	m.entries = append(m.entries, ledgerEntry{userID: userID, notifType: notificationType, channel: channel, at: time.Now()})
+	return nil
+}
+
+func (m *mockSendLedger) CountSendsForType(_ context.Context, userID, notificationType, channel string, since time.Time) (int, error) {
+	if m.countErr != nil {
+		return 0, m.countErr
+	}
+	count := 0
+	for _, e := range m.entries {
+		if e.userID == userID && e.notifType == notificationType && e.channel == channel && !e.at.Before(since) {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (m *mockSendLedger) CountSendsMatching(_ context.Context, userID, channel string, class domain.SendTypeClass, matchClass bool, since time.Time) (int, error) {
+	if m.countErr != nil {
+		return 0, m.countErr
+	}
+	inClass := func(t string) bool {
+		for _, exact := range class.ExactTypes {
+			if t == exact {
+				return true
+			}
+		}
+		for _, prefix := range class.Prefixes {
+			if strings.HasPrefix(t, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+	count := 0
+	for _, e := range m.entries {
+		if e.userID == userID && e.channel == channel && !e.at.Before(since) && inClass(e.notifType) == matchClass {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// ageAll rewrites every entry's timestamp to `age` ago — simulates the
+// cooldown window elapsing without a clock injection.
+func (m *mockSendLedger) ageAll(age time.Duration) {
+	for i := range m.entries {
+		m.entries[i].at = time.Now().Add(-age)
+	}
+}
+
+// seed appends an entry `age` old.
+func (m *mockSendLedger) seed(userID, notifType, channel string, age time.Duration) {
+	m.entries = append(m.entries, ledgerEntry{userID: userID, notifType: notifType, channel: channel, at: time.Now().Add(-age)})
+}
+
 func newTestService(repo *mockNotifRepo, deviceRepo *mockDeviceRepo) *Service {
-	return New(repo, deviceRepo, NewEmailDispatcher("", "", ""), NewPushDispatcher("", ""), NewSMSDispatcher("", "", ""))
+	return newTestServiceWithLedger(repo, deviceRepo, &mockSendLedger{})
+}
+
+func newTestServiceWithLedger(repo *mockNotifRepo, deviceRepo *mockDeviceRepo, ledger domain.SendLedgerRepository) *Service {
+	// nil WebPushDispatcher → web-push fan-out is skipped (mirrors a deploy
+	// without VAPID_PRIVATE_KEY). Tests still exercise the FCM path.
+	return New(repo, deviceRepo, ledger, NewEmailDispatcher("", "", ""), NewPushDispatcher("", "", nil), nil, NewSMSDispatcher("", "", ""))
 }
 
 func TestSendNotification(t *testing.T) {
@@ -169,6 +259,96 @@ func TestSendNotification(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSendNotification_ExplicitChannelsRespectPrefs proves that an explicit
+// channel set (as the welcome / re-engagement / NPS schedulers pass) is still
+// filtered against a user's explicitly-stored per-type preference, while
+// transactional sends with no stored preference for the type pass through.
+func TestSendNotification_ExplicitChannelsRespectPrefs(t *testing.T) {
+	t.Parallel()
+
+	emailEnabled := func(deliveries []ChannelDelivery) (present, delivered bool) {
+		for _, d := range deliveries {
+			if d.Channel == "email" {
+				return true, d.Delivered
+			}
+		}
+		return false, false
+	}
+
+	t.Run("explicit email dropped when user disabled email for type", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockNotifRepo{
+			prefs: &domain.NotificationPreferences{
+				UserID: "user-1",
+				Preferences: map[string]domain.ChannelPrefs{
+					// User turned OFF email for the welcome cadence.
+					"welcome_day_1": {InApp: true, Email: false, Push: false, SMS: false},
+				},
+			},
+		}
+		svc := newTestService(repo, &mockDeviceRepo{})
+
+		_, deliveries, err := svc.SendNotification(
+			context.Background(), "user-1", "welcome_day_1",
+			"Welcome", "body", "/marketplace",
+			map[string]string{"user_email": "user@example.com"},
+			[]string{"in_app", "email"}, // scheduler's explicit intent
+		)
+		require.NoError(t, err)
+		present, _ := emailEnabled(deliveries)
+		assert.False(t, present, "email channel must be filtered out when user disabled it for this type")
+	})
+
+	t.Run("explicit email kept when no stored pref for type (transactional)", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockNotifRepo{
+			prefs: &domain.NotificationPreferences{
+				UserID: "user-1",
+				Preferences: map[string]domain.ChannelPrefs{
+					// Pref exists for an UNRELATED type; none for "unspecified".
+					"new_bid": {InApp: true, Email: false},
+				},
+			},
+		}
+		svc := newTestService(repo, &mockDeviceRepo{})
+
+		_, deliveries, err := svc.SendNotification(
+			context.Background(), "user-1", "unspecified",
+			"Reset your password", "link", "/reset",
+			map[string]string{"user_email": "user@example.com"},
+			[]string{"email"}, // password-reset transactional intent
+		)
+		require.NoError(t, err)
+		present, delivered := emailEnabled(deliveries)
+		assert.True(t, present, "transactional email must pass through when user has no pref for this type")
+		assert.True(t, delivered, "email should be delivered (dev-mode no-op succeeds)")
+	})
+
+	t.Run("explicit email kept when user enabled email for type", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockNotifRepo{
+			prefs: &domain.NotificationPreferences{
+				UserID: "user-1",
+				Preferences: map[string]domain.ChannelPrefs{
+					"welcome_day_1": {InApp: true, Email: true},
+				},
+			},
+		}
+		svc := newTestService(repo, &mockDeviceRepo{})
+
+		_, deliveries, err := svc.SendNotification(
+			context.Background(), "user-1", "welcome_day_1",
+			"Welcome", "body", "/marketplace",
+			map[string]string{"user_email": "user@example.com"},
+			[]string{"in_app", "email"},
+		)
+		require.NoError(t, err)
+		present, delivered := emailEnabled(deliveries)
+		assert.True(t, present, "email must be kept when user enabled it for this type")
+		assert.True(t, delivered)
+	})
 }
 
 func TestSendBulkNotification(t *testing.T) {

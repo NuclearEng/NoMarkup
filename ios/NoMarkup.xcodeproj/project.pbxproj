@@ -1,0 +1,1562 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A100000000000000000000ED /* AdminModerationOpsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000ED /* AdminModerationOpsViews.swift */; };
+		A100000000000000000000AF /* DirectionsHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AF /* DirectionsHelper.swift */; };
+		A100000000000000000000B6 /* ChatWebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B6 /* ChatWebSocketClient.swift */; };
+		A100000000000000000000B9 /* AuctionWebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B9 /* AuctionWebSocketClient.swift */; };
+		A100000000000000000000BB /* SpectatorWebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BB /* SpectatorWebSocketClient.swift */; };
+		A100000000000000000000BC /* MarketplaceSpectatorWebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BC /* MarketplaceSpectatorWebSocketClient.swift */; };
+		A100000000000000000000B5 /* ShareCardText.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B5 /* ShareCardText.swift */; };
+		A100000000000000000000B0 /* VerificationCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B0 /* VerificationCenterView.swift */; };
+		A100000000000000000000B1 /* MarketRangeBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B1 /* MarketRangeBar.swift */; };
+		A100000000000000000000B4 /* ProviderInstantOffersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B4 /* ProviderInstantOffersView.swift */; };
+		A100000000000000000000B7 /* GoogleOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B7 /* GoogleOAuthSession.swift */; };
+		A100000000000000000000B8 /* GoogleSignInButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B8 /* GoogleSignInButton.swift */; };
+		A100000000000000000000BD0 /* FacebookOAuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD0 /* FacebookOAuthSession.swift */; };
+		A100000000000000000000BD1 /* FacebookSignInButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD1 /* FacebookSignInButton.swift */; };
+		A100000000000000000000BD2 /* EmployeesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD2 /* EmployeesView.swift */; };
+		A100000000000000000000BD3 /* ChallengesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD3 /* ChallengesView.swift */; };
+		A100000000000000000000BD4 /* LegalServicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD4 /* LegalServicesView.swift */; };
+		A100000000000000000000BD5 /* SpectateTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD5 /* SpectateTerminalView.swift */; };
+		A100000000000000000000BD6 /* AuctionReplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD6 /* AuctionReplayView.swift */; };
+		A100000000000000000000BD7 /* ProviderInvoicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BD7 /* ProviderInvoicesView.swift */; };
+		A100000000000000000000B2 /* PropertyDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B2 /* PropertyDetailView.swift */; };
+		A100000000000000000000B3 /* OnboardingWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B3 /* OnboardingWizardView.swift */; };
+		A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AE /* BusinessFeaturesHubView.swift */; };
+		A100000000000000000000E9 /* ParitySurfacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000E9 /* ParitySurfacesView.swift */; };
+		A100000000000000000000EA /* APIClient+Admin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000EA /* APIClient+Admin.swift */; };
+		A100000000000000000000EC /* AdminOpsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000EC /* AdminOpsViews.swift */; };
+		A100000000000000000000EB /* RecurringJobsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000EB /* RecurringJobsView.swift */; };
+		A100000000000000000000AD /* Models+RegulatedRails.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AD /* Models+RegulatedRails.swift */; };
+		A100000000000000000000AC /* APIClient+RegulatedRails.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AC /* APIClient+RegulatedRails.swift */; };
+		A100000000000000000000AB /* CameraImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AB /* CameraImagePicker.swift */; };
+		A10000000000000000000001 /* NoMarkupApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* NoMarkupApp.swift */; };
+		A10000000000000000000002 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* AppConfig.swift */; };
+A100000000000000000000EE /* GitRevision.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000EE /* GitRevision.swift */; };
+A100000000000000000000EF /* DevAPIBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000EF /* DevAPIBase.swift */; };
+A100000000000000000000F0 /* LazyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F0 /* LazyView.swift */; };
+		A100000000000000000000F4 /* ClientActionLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F4 /* ClientActionLog.swift */; };
+		A100000000000000000000F5 /* ClientActionLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F5 /* ClientActionLogView.swift */; };
+		A100000000000000000000F6 /* ActionAuditProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F6 /* ActionAuditProbe.swift */; };
+		T1000000000000000000000F /* ClientActionLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001F /* ClientActionLogTests.swift */; };
+		A100000000000000000000D0 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000D0 /* StoreKitManager.swift */; };
+		A100000000000000000000D1 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B100000000000000000000D1 /* StoreKit.framework */; };
+		A10000000000000000000003 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* KeychainTokenStore.swift */; };
+		A10000000000000000000004 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* APIClient.swift */; };
+		A10000000000000000000005 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* AuthViewModel.swift */; };
+		A10000000000000000000006 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* LoginView.swift */; };
+		A10000000000000000000007 /* SignInWithAppleButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* SignInWithAppleButton.swift */; };
+		A10000000000000000000008 /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* RootTabView.swift */; };
+		A10000000000000000000009 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* HomeView.swift */; };
+		A1000000000000000000000A /* MarketplaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* MarketplaceView.swift */; };
+		A1000000000000000000000B /* JobsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000B /* JobsView.swift */; };
+		A1000000000000000000000C /* MessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* MessagesView.swift */; };
+		A1000000000000000000000D /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* AccountView.swift */; };
+		A1000000000000000000000E /* LegalWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* LegalWebView.swift */; };
+		A1000000000000000000000F /* AccountDeletionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* AccountDeletionView.swift */; };
+		A10000000000000000000010 /* LocationPurposeCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* LocationPurposeCopy.swift */; };
+		A100000000000000000000BE /* JobSiteLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BE /* JobSiteLocationProvider.swift */; };
+		A10000000000000000000011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* Assets.xcassets */; };
+		A10000000000000000000012 /* AuthenticationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* AuthenticationServices.framework */; };
+		A10000000000000000000013 /* SafariServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* SafariServices.framework */; };
+		A10000000000000000000014 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* Security.framework */; };
+		A10000000000000000000015 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* Models.swift */; };
+		A10000000000000000000016 /* ListingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* ListingDetailView.swift */; };
+		A10000000000000000000017 /* JobDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* JobDetailView.swift */; };
+		A10000000000000000000020 /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* FeatureFlags.swift */; };
+		A10000000000000000000021 /* RailACheckout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* RailACheckout.swift */; };
+		A10000000000000000000022 /* MyOrdersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* MyOrdersView.swift */; };
+		A10000000000000000000023 /* PassKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000023 /* PassKit.framework */; };
+		A10000000000000000000024 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = P10000000000000000000002 /* StripePaymentSheet */; };
+		A10000000000000000000025 /* BrandTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000025 /* BrandTheme.swift */; };
+		A10000000000000000000026 /* MyBidsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000026 /* MyBidsView.swift */; };
+		A10000000000000000000027 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000027 /* NotificationsView.swift */; };
+		A10000000000000000000028 /* NoMarkupIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000028 /* NoMarkupIcon.swift */; };
+		A100000000000000000000E5 /* BrandHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000E5 /* BrandHaptics.swift */; };
+		A100000000000000000000E6 /* MarketTickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000E6 /* MarketTickerView.swift */; };
+		A100000000000000000000E7 /* ShowcaseAuctionChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000E7 /* ShowcaseAuctionChrome.swift */; };
+		A100000000000000000000E8 /* SpotlightIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000E8 /* SpotlightIndex.swift */; };
+		A10000000000000000000029 /* PostJobView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000029 /* PostJobView.swift */; };
+		A1000000000000000000002A /* CreateListingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002A /* CreateListingView.swift */; };
+		A1000000000000000000002B /* WatchlistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002B /* WatchlistView.swift */; };
+		A1000000000000000000002C /* APIClient+Auth.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002C /* APIClient+Auth.swift */; };
+		A1000000000000000000002D /* RegisterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002D /* RegisterView.swift */; };
+		A1000000000000000000002E /* ForgotPasswordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000002E /* ForgotPasswordView.swift */; };
+		A10000000000000000000040 /* APIClient+Commerce.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000040 /* APIClient+Commerce.swift */; };
+		A10000000000000000000041 /* SavedSearchesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000041 /* SavedSearchesView.swift */; };
+		A10000000000000000000042 /* SellerAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000042 /* SellerAnalyticsView.swift */; };
+		A10000000000000000000043 /* MyListingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000043 /* MyListingsView.swift */; };
+		A10000000000000000000030 /* Models+Contracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000030 /* Models+Contracts.swift */; };
+		A10000000000000000000031 /* APIClient+Contracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000031 /* APIClient+Contracts.swift */; };
+		A10000000000000000000032 /* ContractsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000032 /* ContractsView.swift */; };
+		A10000000000000000000033 /* ContractDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000033 /* ContractDetailView.swift */; };
+		A10000000000000000000050 /* APIClient+Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000050 /* APIClient+Platform.swift */; };
+		A10000000000000000000058 /* APIClient+Jobs.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000058 /* APIClient+Jobs.swift */; };
+		A10000000000000000000051 /* JobsMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000051 /* JobsMapView.swift */; };
+		A10000000000000000000052 /* PushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000052 /* PushRegistration.swift */; };
+		A10000000000000000000053 /* ImageUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000053 /* ImageUploader.swift */; };
+		A100000000000000000000F2 /* ModeratedAsyncImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F2 /* ModeratedAsyncImage.swift */; };
+		A10000000000000000000054 /* ProfileSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000054 /* ProfileSettingsView.swift */; };
+		A10000000000000000000055 /* MapKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000055 /* MapKit.framework */; };
+		A100000000000000000000F3 /* SensitiveContentAnalysis.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F3 /* SensitiveContentAnalysis.framework */; };
+		A10000000000000000000056 /* CoreLocation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000056 /* CoreLocation.framework */; };
+		A10000000000000000000057 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000057 /* UserNotifications.framework */; };
+		A10000000000000000000059 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000059 /* NetworkMonitor.swift */; };
+		A1000000000000000000005A /* Network.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B1000000000000000000005A /* Network.framework */; };
+		A10000000000000000000061 /* SecuritySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000061 /* SecuritySettingsView.swift */; };
+		A100000000000000000000BA /* AgeGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000BA /* AgeGateView.swift */; };
+		A10000000000000000000062 /* NotificationPreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000062 /* NotificationPreferencesView.swift */; };
+		A10000000000000000000063 /* PaymentMethodsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000063 /* PaymentMethodsView.swift */; };
+		A10000000000000000000064 /* SellerPayoutsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000064 /* SellerPayoutsView.swift */; };
+		U10000000000000000000001 /* NoMarkupUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U10000000000000000000002 /* NoMarkupUITests.swift */; };
+		U20000000000000000000001 /* ScreenshotWalkUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U20000000000000000000002 /* ScreenshotWalkUITests.swift */; };
+		U30000000000000000000001 /* TabAuditUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U30000000000000000000002 /* TabAuditUITests.swift */; };
+		U40000000000000000000001 /* DeviceCapabilityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U40000000000000000000002 /* DeviceCapabilityUITests.swift */; };
+		A10000000000000000000070 /* Models+Extras.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000070 /* Models+Extras.swift */; };
+		A10000000000000000000071 /* APIClient+Extras.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000071 /* APIClient+Extras.swift */; };
+		A10000000000000000000072 /* ProvidersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000072 /* ProvidersView.swift */; };
+		A10000000000000000000073 /* ProviderDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000073 /* ProviderDetailView.swift */; };
+		A10000000000000000000074 /* PropertiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000074 /* PropertiesView.swift */; };
+		A10000000000000000000075 /* WishlistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000075 /* WishlistView.swift */; };
+		A10000000000000000000076 /* BlockedUsersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000076 /* BlockedUsersView.swift */; };
+		A10000000000000000000077 /* ReferralsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000077 /* ReferralsView.swift */; };
+		A10000000000000000000078 /* APIClient+Provider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000078 /* APIClient+Provider.swift */; };
+		A10000000000000000000079 /* ProviderWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000079 /* ProviderWorkspaceView.swift */; };
+		A1000000000000000000007B /* NPSSurveysView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000007B /* NPSSurveysView.swift */; };
+		A1000000000000000000007C /* MarketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000007C /* MarketsView.swift */; };
+		A1000000000000000000007D /* SavingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000007D /* SavingsView.swift */; };
+		A10000000000000000000080 /* FollowingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000080 /* FollowingView.swift */; };
+		A10000000000000000000081 /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000081 /* FeedView.swift */; };
+		A10000000000000000000082 /* UserReviewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000082 /* UserReviewsView.swift */; };
+		A10000000000000000000083 /* CategoryPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000083 /* CategoryPickerView.swift */; };
+		A100000000000000000000A1 /* JobDraftsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A1 /* JobDraftsView.swift */; };
+		A100000000000000000000A2 /* TrustTiersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A2 /* TrustTiersView.swift */; };
+		A100000000000000000000A3 /* PlanLimitsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A3 /* PlanLimitsView.swift */; };
+		A100000000000000000000AA /* RegulatedRailsStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AA /* RegulatedRailsStatusView.swift */; };
+		A100000000000000000000A4 /* TermsAcceptanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A4 /* TermsAcceptanceView.swift */; };
+		A100000000000000000000A5 /* SalesExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A5 /* SalesExportView.swift */; };
+		A100000000000000000000A6 /* CalendarExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A6 /* CalendarExportView.swift */; };
+		A100000000000000000000A7 /* QuoteTemplatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A7 /* QuoteTemplatesView.swift */; };
+		A100000000000000000000A8 /* VerificationDocumentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A8 /* VerificationDocumentsView.swift */; };
+		A100000000000000000000A9 /* TrustScoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A9 /* TrustScoreView.swift */; };
+		T10000000000000000000001 /* MoneyFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000011 /* MoneyFormatTests.swift */; };
+		T10000000000000000000002 /* AppConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000012 /* AppConfigTests.swift */; };
+		T10000000000000000000003 /* NotificationDeepLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000013 /* NotificationDeepLinkTests.swift */; };
+		T10000000000000000000004 /* ImageUploaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000014 /* ImageUploaderTests.swift */; };
+		T10000000000000000000005 /* DateFormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000015 /* DateFormattingTests.swift */; };
+		T10000000000000000000006 /* LocalizedPluralsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000016 /* LocalizedPluralsTests.swift */; };
+		T10000000000000000000007 /* APIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000017 /* APIClientTests.swift */; };
+		T10000000000000000000008 /* SoftTravelETATests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000018 /* SoftTravelETATests.swift */; };
+		T10000000000000000000009 /* CreateJobScheduleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000019 /* CreateJobScheduleTests.swift */; };
+		T1000000000000000000000A /* WidgetSharedStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001A /* WidgetSharedStoreTests.swift */; };
+		T1000000000000000000000B /* ChatMediaURLTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001B /* ChatMediaURLTests.swift */; };
+		T1000000000000000000000C /* WorkEvidenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001C /* WorkEvidenceTests.swift */; };
+		T1000000000000000000000D /* NotificationPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001D /* NotificationPreferencesTests.swift */; };
+		T1000000000000000000000E /* AgeGateMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001E /* AgeGateMathTests.swift */; };
+		A100000000000000000000C0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C0 /* PrivacyInfo.xcprivacy */; };
+		A100000000000000000000CD /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CD /* Localizable.xcstrings */; };
+		A100000000000000000000C3 /* PasskeyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C3 /* PasskeyAuth.swift */; };
+		A100000000000000000000C4 /* BiometricGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C4 /* BiometricGate.swift */; };
+		A100000000000000000000C5 /* AuctionLiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C5 /* AuctionLiveActivityController.swift */; };
+		A100000000000000000000C6 /* WidgetSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C6 /* WidgetSharedStore.swift */; };
+		A100000000000000000000C7 /* AuctionActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C7 /* AuctionActivityAttributes.swift */; };
+		A100000000000000000000C8 /* CheckInToJobIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C8 /* CheckInToJobIntent.swift */; };
+		A100000000000000000000C9 /* OpenWatchlistIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C9 /* OpenWatchlistIntent.swift */; };
+		A100000000000000000000CA /* OpenMyBidsIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CA /* OpenMyBidsIntent.swift */; };
+		A100000000000000000000CB /* NoMarkupAppShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CB /* NoMarkupAppShortcuts.swift */; };
+		A100000000000000000000CC /* OpenPostJobIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CC /* OpenPostJobIntent.swift */; };
+		A100000000000000000000CE /* SearchNoMarkupIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CE /* SearchNoMarkupIntent.swift */; };
+		A100000000000000000000CF /* ListingVisualIntelligence.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CF /* ListingVisualIntelligence.swift */; };
+
+		W10000000000000000000001 /* NoMarkupWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000011 /* NoMarkupWidgetBundle.swift */; };
+		W10000000000000000000002 /* ActiveBidsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000012 /* ActiveBidsWidget.swift */; };
+		W10000000000000000000003 /* NextClosingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000013 /* NextClosingWidget.swift */; };
+		W10000000000000000000004 /* AuctionLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000014 /* AuctionLiveActivityWidget.swift */; };
+		W10000000000000000000005 /* AuctionActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C7 /* AuctionActivityAttributes.swift */; };
+		W10000000000000000000006 /* WidgetSharedStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C6 /* WidgetSharedStore.swift */; };
+		W10000000000000000000007 /* NoMarkupWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = W10000000000000000000020 /* NoMarkupWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		W10000000000000000000008 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = W10000000000000000000021 /* WidgetKit.framework */; };
+		W10000000000000000000009 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = W10000000000000000000022 /* SwiftUI.framework */; };
+		W1000000000000000000000A /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = W10000000000000000000023 /* ActivityKit.framework */; };
+		W1000000000000000000000B /* LocalAuthentication.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = W10000000000000000000024 /* LocalAuthentication.framework */; };
+		W1000000000000000000000C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000017 /* PrivacyInfo.xcprivacy */; };
+		W1000000000000000000000D /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = W10000000000000000000018 /* Localizable.xcstrings */; };
+		A100000000000000000000C1 /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C1 /* DeepLinkRouter.swift */; };
+		A100000000000000000000C2 /* NotificationPermissionCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C2 /* NotificationPermissionCopy.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B100000000000000000000B4 /* ProviderInstantOffersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderInstantOffersView.swift; sourceTree = "<group>"; };
+		B100000000000000000000B5 /* ShareCardText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCardText.swift; sourceTree = "<group>"; };
+		B100000000000000000000B7 /* GoogleOAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleOAuthSession.swift; sourceTree = "<group>"; };
+		B100000000000000000000B8 /* GoogleSignInButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignInButton.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD0 /* FacebookOAuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FacebookOAuthSession.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD1 /* FacebookSignInButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FacebookSignInButton.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD2 /* EmployeesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmployeesView.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD3 /* ChallengesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengesView.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD4 /* LegalServicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalServicesView.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD5 /* SpectateTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectateTerminalView.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD6 /* AuctionReplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuctionReplayView.swift; sourceTree = "<group>"; };
+		B100000000000000000000BD7 /* ProviderInvoicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderInvoicesView.swift; sourceTree = "<group>"; };
+		B100000000000000000000AE /* BusinessFeaturesHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessFeaturesHubView.swift; sourceTree = "<group>"; };
+		B100000000000000000000E9 /* ParitySurfacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParitySurfacesView.swift; sourceTree = "<group>"; };
+		B100000000000000000000EA /* APIClient+Admin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Admin.swift"; sourceTree = "<group>"; };
+		B100000000000000000000EC /* AdminOpsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminOpsViews.swift; sourceTree = "<group>"; };
+		B100000000000000000000ED /* AdminModerationOpsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminModerationOpsViews.swift; sourceTree = "<group>"; };
+		B100000000000000000000EB /* RecurringJobsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringJobsView.swift; sourceTree = "<group>"; };
+		B100000000000000000000AD /* Models+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+RegulatedRails.swift"; sourceTree = "<group>"; };
+		B100000000000000000000AC /* APIClient+RegulatedRails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+RegulatedRails.swift"; sourceTree = "<group>"; };
+		B100000000000000000000AB /* CameraImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraImagePicker.swift; sourceTree = "<group>"; };
+		B10000000000000000000001 /* NoMarkupApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupApp.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+B100000000000000000000EE /* GitRevision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitRevision.swift; sourceTree = "<group>"; };
+B100000000000000000000EF /* DevAPIBase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevAPIBase.swift; sourceTree = "<group>"; };
+B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LazyView.swift; sourceTree = "<group>"; };
+		B100000000000000000000D0 /* StoreKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitManager.swift; sourceTree = "<group>"; };
+		B100000000000000000000D1 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
+		B10000000000000000000003 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		B10000000000000000000005 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
+		B10000000000000000000006 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		B10000000000000000000007 /* SignInWithAppleButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInWithAppleButton.swift; sourceTree = "<group>"; };
+		B10000000000000000000008 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
+		B10000000000000000000009 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000A /* MarketplaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketplaceView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000B /* JobsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000C /* MessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000D /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000E /* LegalWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalWebView.swift; sourceTree = "<group>"; };
+		B1000000000000000000000F /* AccountDeletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletionView.swift; sourceTree = "<group>"; };
+		B10000000000000000000010 /* LocationPurposeCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationPurposeCopy.swift; sourceTree = "<group>"; };
+		B100000000000000000000BE /* JobSiteLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobSiteLocationProvider.swift; sourceTree = "<group>"; };
+		B10000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B10000000000000000000012 /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
+		B10000000000000000000013 /* SafariServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SafariServices.framework; path = System/Library/Frameworks/SafariServices.framework; sourceTree = SDKROOT; };
+		B10000000000000000000014 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		B10000000000000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B100000000000000000000F1 /* Info-Debug.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-Debug.plist"; sourceTree = "<group>"; };
+		B10000000000000000000016 /* NoMarkup.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NoMarkup.entitlements; sourceTree = "<group>"; };
+		B10000000000000000000017 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		B10000000000000000000018 /* ListingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingDetailView.swift; sourceTree = "<group>"; };
+		B10000000000000000000019 /* JobDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobDetailView.swift; sourceTree = "<group>"; };
+		B10000000000000000000020 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* RailACheckout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RailACheckout.swift; sourceTree = "<group>"; };
+		B10000000000000000000022 /* MyOrdersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyOrdersView.swift; sourceTree = "<group>"; };
+		B10000000000000000000023 /* PassKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PassKit.framework; path = System/Library/Frameworks/PassKit.framework; sourceTree = SDKROOT; };
+		B10000000000000000000025 /* BrandTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandTheme.swift; sourceTree = "<group>"; };
+		B10000000000000000000026 /* MyBidsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyBidsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000027 /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000028 /* NoMarkupIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupIcon.swift; sourceTree = "<group>"; };
+		B100000000000000000000E5 /* BrandHaptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandHaptics.swift; sourceTree = "<group>"; };
+		B100000000000000000000E6 /* MarketTickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketTickerView.swift; sourceTree = "<group>"; };
+		B100000000000000000000E7 /* ShowcaseAuctionChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShowcaseAuctionChrome.swift; sourceTree = "<group>"; };
+		B100000000000000000000E8 /* SpotlightIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotlightIndex.swift; sourceTree = "<group>"; };
+		B10000000000000000000029 /* PostJobView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostJobView.swift; sourceTree = "<group>"; };
+		B1000000000000000000002A /* CreateListingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateListingView.swift; sourceTree = "<group>"; };
+		B1000000000000000000002B /* WatchlistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistView.swift; sourceTree = "<group>"; };
+		B1000000000000000000002C /* APIClient+Auth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Auth.swift"; sourceTree = "<group>"; };
+		B1000000000000000000002D /* RegisterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegisterView.swift; sourceTree = "<group>"; };
+		B1000000000000000000002E /* ForgotPasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordView.swift; sourceTree = "<group>"; };
+		B10000000000000000000040 /* APIClient+Commerce.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Commerce.swift"; sourceTree = "<group>"; };
+		B10000000000000000000041 /* SavedSearchesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedSearchesView.swift; sourceTree = "<group>"; };
+		B10000000000000000000042 /* SellerAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SellerAnalyticsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000043 /* MyListingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyListingsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000030 /* Models+Contracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+Contracts.swift"; sourceTree = "<group>"; };
+		B10000000000000000000031 /* APIClient+Contracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Contracts.swift"; sourceTree = "<group>"; };
+		B10000000000000000000032 /* ContractsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContractsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000033 /* ContractDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContractDetailView.swift; sourceTree = "<group>"; };
+		C10000000000000000000001 /* NoMarkup.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NoMarkup.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000050 /* APIClient+Platform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Platform.swift"; sourceTree = "<group>"; };
+		B10000000000000000000058 /* APIClient+Jobs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Jobs.swift"; sourceTree = "<group>"; };
+		B10000000000000000000051 /* JobsMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsMapView.swift; sourceTree = "<group>"; };
+		B10000000000000000000052 /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
+		B10000000000000000000053 /* ImageUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageUploader.swift; sourceTree = "<group>"; };
+		B100000000000000000000F2 /* ModeratedAsyncImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeratedAsyncImage.swift; sourceTree = "<group>"; };
+		B10000000000000000000054 /* ProfileSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSettingsView.swift; sourceTree = "<group>"; };
+		B100000000000000000000F3 /* SensitiveContentAnalysis.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SensitiveContentAnalysis.framework; path = System/Library/Frameworks/SensitiveContentAnalysis.framework; sourceTree = SDKROOT; };
+		B10000000000000000000055 /* MapKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MapKit.framework; path = System/Library/Frameworks/MapKit.framework; sourceTree = SDKROOT; };
+		B10000000000000000000056 /* CoreLocation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreLocation.framework; path = System/Library/Frameworks/CoreLocation.framework; sourceTree = SDKROOT; };
+		B10000000000000000000057 /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
+		B10000000000000000000059 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		B1000000000000000000005A /* Network.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
+		B10000000000000000000061 /* SecuritySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecuritySettingsView.swift; sourceTree = "<group>"; };
+		B100000000000000000000BA /* AgeGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgeGateView.swift; sourceTree = "<group>"; };
+		B10000000000000000000062 /* NotificationPreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreferencesView.swift; sourceTree = "<group>"; };
+		B10000000000000000000063 /* PaymentMethodsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentMethodsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000064 /* SellerPayoutsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SellerPayoutsView.swift; sourceTree = "<group>"; };
+		U10000000000000000000002 /* NoMarkupUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupUITests.swift; sourceTree = "<group>"; };
+		U20000000000000000000002 /* ScreenshotWalkUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotWalkUITests.swift; sourceTree = "<group>"; };
+		U30000000000000000000002 /* TabAuditUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabAuditUITests.swift; sourceTree = "<group>"; };
+		U40000000000000000000002 /* DeviceCapabilityUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCapabilityUITests.swift; sourceTree = "<group>"; };
+		U10000000000000000000003 /* NoMarkupUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000070 /* Models+Extras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Models+Extras.swift"; sourceTree = "<group>"; };
+		B10000000000000000000071 /* APIClient+Extras.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Extras.swift"; sourceTree = "<group>"; };
+		B10000000000000000000072 /* ProvidersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersView.swift; sourceTree = "<group>"; };
+		B10000000000000000000073 /* ProviderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderDetailView.swift; sourceTree = "<group>"; };
+		B10000000000000000000074 /* PropertiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PropertiesView.swift; sourceTree = "<group>"; };
+		B10000000000000000000075 /* WishlistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WishlistView.swift; sourceTree = "<group>"; };
+		B10000000000000000000076 /* BlockedUsersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockedUsersView.swift; sourceTree = "<group>"; };
+		B10000000000000000000077 /* ReferralsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferralsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000078 /* APIClient+Provider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "APIClient+Provider.swift"; sourceTree = "<group>"; };
+		B10000000000000000000079 /* ProviderWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderWorkspaceView.swift; sourceTree = "<group>"; };
+		B1000000000000000000007B /* NPSSurveysView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NPSSurveysView.swift; sourceTree = "<group>"; };
+		B1000000000000000000007C /* MarketsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketsView.swift; sourceTree = "<group>"; };
+		B1000000000000000000007D /* SavingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavingsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000080 /* FollowingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowingView.swift; sourceTree = "<group>"; };
+		B10000000000000000000081 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
+		B10000000000000000000082 /* UserReviewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserReviewsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000083 /* CategoryPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryPickerView.swift; sourceTree = "<group>"; };
+		B100000000000000000000A2 /* TrustTiersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustTiersView.swift; sourceTree = "<group>"; };
+		B100000000000000000000A3 /* PlanLimitsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanLimitsView.swift; sourceTree = "<group>"; };
+		B100000000000000000000AA /* RegulatedRailsStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegulatedRailsStatusView.swift; sourceTree = "<group>"; };
+		B100000000000000000000A4 /* TermsAcceptanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TermsAcceptanceView.swift; sourceTree = "<group>"; };
+		B100000000000000000000A1 /* JobDraftsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobDraftsView.swift; sourceTree = "<group>"; };
+		B100000000000000000000A5 /* SalesExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SalesExportView.swift; sourceTree = "<group>"; };
+		B100000000000000000000A6 /* CalendarExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarExportView.swift; sourceTree = "<group>"; };
+		B100000000000000000000A7 /* QuoteTemplatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteTemplatesView.swift; sourceTree = "<group>"; };
+		B100000000000000000000A8 /* VerificationDocumentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationDocumentsView.swift; sourceTree = "<group>"; };
+		B100000000000000000000A9 /* TrustScoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustScoreView.swift; sourceTree = "<group>"; };
+		B100000000000000000000AF /* DirectionsHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionsHelper.swift; sourceTree = "<group>"; };
+		B100000000000000000000B6 /* ChatWebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatWebSocketClient.swift; sourceTree = "<group>"; };
+		B100000000000000000000B9 /* AuctionWebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuctionWebSocketClient.swift; sourceTree = "<group>"; };
+		B100000000000000000000BB /* SpectatorWebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectatorWebSocketClient.swift; sourceTree = "<group>"; };
+		B100000000000000000000BC /* MarketplaceSpectatorWebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketplaceSpectatorWebSocketClient.swift; sourceTree = "<group>"; };
+		B100000000000000000000C0 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B100000000000000000000CD /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		B100000000000000000000B0 /* VerificationCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationCenterView.swift; sourceTree = "<group>"; };
+		B100000000000000000000B3 /* OnboardingWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWizardView.swift; sourceTree = "<group>"; };
+		B100000000000000000000B1 /* MarketRangeBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketRangeBar.swift; sourceTree = "<group>"; };
+		B100000000000000000000B2 /* PropertyDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PropertyDetailView.swift; sourceTree = "<group>"; };
+		T10000000000000000000011 /* MoneyFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoneyFormatTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000012 /* AppConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000013 /* NotificationDeepLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDeepLinkTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000014 /* ImageUploaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageUploaderTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000015 /* DateFormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFormattingTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000016 /* LocalizedPluralsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizedPluralsTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000017 /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000018 /* SoftTravelETATests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftTravelETATests.swift; sourceTree = "<group>"; };
+		T10000000000000000000019 /* CreateJobScheduleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateJobScheduleTests.swift; sourceTree = "<group>"; };
+		T1000000000000000000001A /* WidgetSharedStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSharedStoreTests.swift; sourceTree = "<group>"; };
+		T1000000000000000000001B /* ChatMediaURLTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMediaURLTests.swift; sourceTree = "<group>"; };
+		T1000000000000000000001C /* WorkEvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkEvidenceTests.swift; sourceTree = "<group>"; };
+		T1000000000000000000001D /* NotificationPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreferencesTests.swift; sourceTree = "<group>"; };
+		T1000000000000000000001E /* AgeGateMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgeGateMathTests.swift; sourceTree = "<group>"; };
+		T1000000000000000000001F /* ClientActionLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientActionLogTests.swift; sourceTree = "<group>"; };
+		B100000000000000000000F4 /* ClientActionLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientActionLog.swift; sourceTree = "<group>"; };
+		B100000000000000000000F5 /* ClientActionLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientActionLogView.swift; sourceTree = "<group>"; };
+		B100000000000000000000F6 /* ActionAuditProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionAuditProbe.swift; sourceTree = "<group>"; };
+		T10000000000000000000020 /* NoMarkupTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NoMarkupTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B100000000000000000000C3 /* PasskeyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasskeyAuth.swift; sourceTree = "<group>"; };
+		B100000000000000000000C4 /* BiometricGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricGate.swift; sourceTree = "<group>"; };
+		B100000000000000000000C5 /* AuctionLiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuctionLiveActivityController.swift; sourceTree = "<group>"; };
+		B100000000000000000000C6 /* WidgetSharedStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSharedStore.swift; sourceTree = "<group>"; };
+		B100000000000000000000C7 /* AuctionActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuctionActivityAttributes.swift; sourceTree = "<group>"; };
+		B100000000000000000000C8 /* CheckInToJobIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInToJobIntent.swift; sourceTree = "<group>"; };
+		B100000000000000000000C9 /* OpenWatchlistIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenWatchlistIntent.swift; sourceTree = "<group>"; };
+		B100000000000000000000CA /* OpenMyBidsIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenMyBidsIntent.swift; sourceTree = "<group>"; };
+		B100000000000000000000CB /* NoMarkupAppShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupAppShortcuts.swift; sourceTree = "<group>"; };
+		B100000000000000000000CC /* OpenPostJobIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenPostJobIntent.swift; sourceTree = "<group>"; };
+		B100000000000000000000CE /* SearchNoMarkupIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchNoMarkupIntent.swift; sourceTree = "<group>"; };
+		B100000000000000000000CF /* ListingVisualIntelligence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingVisualIntelligence.swift; sourceTree = "<group>"; };
+		B100000000000000000000C1 /* DeepLinkRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkRouter.swift; sourceTree = "<group>"; };
+		B100000000000000000000C2 /* NotificationPermissionCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPermissionCopy.swift; sourceTree = "<group>"; };
+
+		W10000000000000000000011 /* NoMarkupWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoMarkupWidgetBundle.swift; sourceTree = "<group>"; };
+		W10000000000000000000012 /* ActiveBidsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveBidsWidget.swift; sourceTree = "<group>"; };
+		W10000000000000000000013 /* NextClosingWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextClosingWidget.swift; sourceTree = "<group>"; };
+		W10000000000000000000014 /* AuctionLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuctionLiveActivityWidget.swift; sourceTree = "<group>"; };
+		W10000000000000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		W10000000000000000000016 /* NoMarkupWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NoMarkupWidget.entitlements; sourceTree = "<group>"; };
+		W10000000000000000000017 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		W10000000000000000000018 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		W10000000000000000000020 /* NoMarkupWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NoMarkupWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		W10000000000000000000021 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		W10000000000000000000022 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		W10000000000000000000023 /* ActivityKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ActivityKit.framework; path = System/Library/Frameworks/ActivityKit.framework; sourceTree = SDKROOT; };
+		W10000000000000000000024 /* LocalAuthentication.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = LocalAuthentication.framework; path = System/Library/Frameworks/LocalAuthentication.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXContainerItemProxy section */
+		W10000000000000000000030 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F10000000000000000000005 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = W10000000000000000000040;
+			remoteInfo = NoMarkupWidget;
+		};
+		U10000000000000000000009 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F10000000000000000000005 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F10000000000000000000001;
+			remoteInfo = NoMarkup;
+		};
+		T10000000000000000000050 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F10000000000000000000005 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F10000000000000000000001;
+			remoteInfo = NoMarkup;
+		};
+/* End PBXContainerItemProxy section */
+
+
+/* Begin PBXCopyFilesBuildPhase section */
+		W10000000000000000000050 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				W10000000000000000000007 /* NoMarkupWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D10000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000012 /* AuthenticationServices.framework in Frameworks */,
+				A100000000000000000000D1 /* StoreKit.framework in Frameworks */,
+				A10000000000000000000013 /* SafariServices.framework in Frameworks */,
+				A10000000000000000000014 /* Security.framework in Frameworks */,
+				A10000000000000000000023 /* PassKit.framework in Frameworks */,
+				A10000000000000000000055 /* MapKit.framework in Frameworks */,
+				A10000000000000000000056 /* CoreLocation.framework in Frameworks */,
+				A10000000000000000000057 /* UserNotifications.framework in Frameworks */,
+				A1000000000000000000005A /* Network.framework in Frameworks */,
+				A100000000000000000000F3 /* SensitiveContentAnalysis.framework in Frameworks */,
+				A10000000000000000000024 /* StripePaymentSheet in Frameworks */,
+				W1000000000000000000000B /* LocalAuthentication.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		U10000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		T10000000000000000000042 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+		W10000000000000000000060 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				W10000000000000000000008 /* WidgetKit.framework in Frameworks */,
+				W10000000000000000000009 /* SwiftUI.framework in Frameworks */,
+				W1000000000000000000000A /* ActivityKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		E10000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				E10000000000000000000002 /* NoMarkup */,
+				U10000000000000000000007 /* NoMarkupUITests */,
+				W10000000000000000000070 /* NoMarkupWidget */,
+				T10000000000000000000030 /* NoMarkupTests */,
+				E10000000000000000000003 /* Frameworks */,
+				E10000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		E10000000000000000000002 /* NoMarkup */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000001 /* NoMarkupApp.swift */,
+				B10000000000000000000015 /* Info.plist */,
+				B100000000000000000000F1 /* Info-Debug.plist */,
+				B10000000000000000000016 /* NoMarkup.entitlements */,
+				B100000000000000000000C0 /* PrivacyInfo.xcprivacy */,
+				B100000000000000000000CD /* Localizable.xcstrings */,
+				B10000000000000000000011 /* Assets.xcassets */,
+				E10000000000000000000005 /* Core */,
+				E10000000000000000000006 /* Auth */,
+				E10000000000000000000007 /* Features */,
+				E10000000000000000000008 /* Location */,
+				E1000000000000000000000A /* Intents */,
+			);
+			path = NoMarkup;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000003 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000012 /* AuthenticationServices.framework */,
+				B100000000000000000000D1 /* StoreKit.framework */,
+				B10000000000000000000013 /* SafariServices.framework */,
+				B10000000000000000000014 /* Security.framework */,
+				B10000000000000000000023 /* PassKit.framework */,
+				B10000000000000000000055 /* MapKit.framework */,
+				B10000000000000000000056 /* CoreLocation.framework */,
+				B10000000000000000000057 /* UserNotifications.framework */,
+				B1000000000000000000005A /* Network.framework */,
+				B100000000000000000000F3 /* SensitiveContentAnalysis.framework */,
+				W10000000000000000000021 /* WidgetKit.framework */,
+				W10000000000000000000022 /* SwiftUI.framework */,
+				W10000000000000000000023 /* ActivityKit.framework */,
+				W10000000000000000000024 /* LocalAuthentication.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C10000000000000000000001 /* NoMarkup.app */,
+				U10000000000000000000003 /* NoMarkupUITests.xctest */,
+				W10000000000000000000020 /* NoMarkupWidget.appex */,
+				T10000000000000000000020 /* NoMarkupTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		U10000000000000000000007 /* NoMarkupUITests */ = {
+			isa = PBXGroup;
+			children = (
+				U10000000000000000000002 /* NoMarkupUITests.swift */,
+				U20000000000000000000002 /* ScreenshotWalkUITests.swift */,
+				U30000000000000000000002 /* TabAuditUITests.swift */,
+				U40000000000000000000002 /* DeviceCapabilityUITests.swift */,
+			);
+			path = NoMarkupUITests;
+			sourceTree = "<group>";
+		};
+		T10000000000000000000030 /* NoMarkupTests */ = {
+			isa = PBXGroup;
+			children = (
+				T10000000000000000000011 /* MoneyFormatTests.swift */,
+				T10000000000000000000012 /* AppConfigTests.swift */,
+				T10000000000000000000013 /* NotificationDeepLinkTests.swift */,
+				T10000000000000000000014 /* ImageUploaderTests.swift */,
+				T10000000000000000000015 /* DateFormattingTests.swift */,
+				T10000000000000000000016 /* LocalizedPluralsTests.swift */,
+				T10000000000000000000017 /* APIClientTests.swift */,
+				T10000000000000000000018 /* SoftTravelETATests.swift */,
+				T10000000000000000000019 /* CreateJobScheduleTests.swift */,
+				T1000000000000000000001A /* WidgetSharedStoreTests.swift */,
+				T1000000000000000000001B /* ChatMediaURLTests.swift */,
+				T1000000000000000000001C /* WorkEvidenceTests.swift */,
+				T1000000000000000000001D /* NotificationPreferencesTests.swift */,
+				T1000000000000000000001E /* AgeGateMathTests.swift */,
+				T1000000000000000000001F /* ClientActionLogTests.swift */,
+			);
+			path = NoMarkupTests;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000005 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000002 /* AppConfig.swift */,
+				B100000000000000000000EE /* GitRevision.swift */,
+				B100000000000000000000EF /* DevAPIBase.swift */,
+				B100000000000000000000F0 /* LazyView.swift */,
+				B100000000000000000000D0 /* StoreKitManager.swift */,
+				B100000000000000000000C7 /* AuctionActivityAttributes.swift */,
+				B100000000000000000000C6 /* WidgetSharedStore.swift */,
+				B100000000000000000000C2 /* NotificationPermissionCopy.swift */,
+				B100000000000000000000C1 /* DeepLinkRouter.swift */,
+				B100000000000000000000C5 /* AuctionLiveActivityController.swift */,
+				B100000000000000000000C4 /* BiometricGate.swift */,
+				B10000000000000000000003 /* KeychainTokenStore.swift */,
+				B10000000000000000000004 /* APIClient.swift */,
+				B100000000000000000000F4 /* ClientActionLog.swift */,
+				B100000000000000000000F6 /* ActionAuditProbe.swift */,
+				B1000000000000000000002C /* APIClient+Auth.swift */,
+				B10000000000000000000040 /* APIClient+Commerce.swift */,
+				B10000000000000000000031 /* APIClient+Contracts.swift */,
+				B10000000000000000000050 /* APIClient+Platform.swift */,
+				B10000000000000000000058 /* APIClient+Jobs.swift */,
+				B10000000000000000000017 /* Models.swift */,
+				B10000000000000000000030 /* Models+Contracts.swift */,
+				B10000000000000000000020 /* FeatureFlags.swift */,
+				B10000000000000000000021 /* RailACheckout.swift */,
+				B10000000000000000000025 /* BrandTheme.swift */,
+				B10000000000000000000028 /* NoMarkupIcon.swift */,
+				B100000000000000000000E5 /* BrandHaptics.swift */,
+				B100000000000000000000E6 /* MarketTickerView.swift */,
+				B100000000000000000000E7 /* ShowcaseAuctionChrome.swift */,
+				B100000000000000000000E8 /* SpotlightIndex.swift */,
+				B10000000000000000000052 /* PushRegistration.swift */,
+				B10000000000000000000053 /* ImageUploader.swift */,
+				B100000000000000000000F2 /* ModeratedAsyncImage.swift */,
+				B100000000000000000000AD /* Models+RegulatedRails.swift */,
+				B100000000000000000000AC /* APIClient+RegulatedRails.swift */,
+				B100000000000000000000AB /* CameraImagePicker.swift */,
+				B10000000000000000000059 /* NetworkMonitor.swift */,
+				B100000000000000000000AF /* DirectionsHelper.swift */,
+				B100000000000000000000B5 /* ShareCardText.swift */,
+				B100000000000000000000B6 /* ChatWebSocketClient.swift */,
+				B100000000000000000000B9 /* AuctionWebSocketClient.swift */,
+				B100000000000000000000BB /* SpectatorWebSocketClient.swift */,
+				B100000000000000000000BC /* MarketplaceSpectatorWebSocketClient.swift */,
+				B10000000000000000000071 /* APIClient+Extras.swift */,
+				B10000000000000000000078 /* APIClient+Provider.swift */,
+				B10000000000000000000070 /* Models+Extras.swift */,
+				B100000000000000000000EA /* APIClient+Admin.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000006 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000005 /* AuthViewModel.swift */,
+				B10000000000000000000006 /* LoginView.swift */,
+				B1000000000000000000002D /* RegisterView.swift */,
+				B1000000000000000000002E /* ForgotPasswordView.swift */,
+				B10000000000000000000007 /* SignInWithAppleButton.swift */,
+				B100000000000000000000C3 /* PasskeyAuth.swift */,
+				B100000000000000000000B7 /* GoogleOAuthSession.swift */,
+				B100000000000000000000B8 /* GoogleSignInButton.swift */,
+				B100000000000000000000BD0 /* FacebookOAuthSession.swift */,
+				B100000000000000000000BD1 /* FacebookSignInButton.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000007 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000008 /* RootTabView.swift */,
+				B10000000000000000000009 /* HomeView.swift */,
+				B1000000000000000000000A /* MarketplaceView.swift */,
+				B10000000000000000000018 /* ListingDetailView.swift */,
+				B1000000000000000000000B /* JobsView.swift */,
+				B10000000000000000000051 /* JobsMapView.swift */,
+				B10000000000000000000019 /* JobDetailView.swift */,
+				B100000000000000000000B1 /* MarketRangeBar.swift */,
+				B100000000000000000000A1 /* JobDraftsView.swift */,
+				B1000000000000000000000C /* MessagesView.swift */,
+				B1000000000000000000000D /* AccountView.swift */,
+				B100000000000000000000F5 /* ClientActionLogView.swift */,
+				B100000000000000000000B3 /* OnboardingWizardView.swift */,
+				B100000000000000000000B0 /* VerificationCenterView.swift */,
+				B10000000000000000000054 /* ProfileSettingsView.swift */,
+				B10000000000000000000079 /* ProviderWorkspaceView.swift */,
+				B100000000000000000000B4 /* ProviderInstantOffersView.swift */,
+				B10000000000000000000061 /* SecuritySettingsView.swift */,
+				B100000000000000000000BA /* AgeGateView.swift */,
+				B10000000000000000000062 /* NotificationPreferencesView.swift */,
+				B10000000000000000000063 /* PaymentMethodsView.swift */,
+				B10000000000000000000064 /* SellerPayoutsView.swift */,
+				B10000000000000000000022 /* MyOrdersView.swift */,
+				B10000000000000000000032 /* ContractsView.swift */,
+				B100000000000000000000EB /* RecurringJobsView.swift */,
+				B10000000000000000000033 /* ContractDetailView.swift */,
+				B10000000000000000000026 /* MyBidsView.swift */,
+				B10000000000000000000043 /* MyListingsView.swift */,
+				B10000000000000000000077 /* ReferralsView.swift */,
+				B1000000000000000000007B /* NPSSurveysView.swift */,
+				B1000000000000000000007C /* MarketsView.swift */,
+				B1000000000000000000007D /* SavingsView.swift */,
+				B10000000000000000000076 /* BlockedUsersView.swift */,
+				B10000000000000000000075 /* WishlistView.swift */,
+				B10000000000000000000074 /* PropertiesView.swift */,
+				B100000000000000000000B2 /* PropertyDetailView.swift */,
+				B10000000000000000000073 /* ProviderDetailView.swift */,
+				B10000000000000000000072 /* ProvidersView.swift */,
+				B10000000000000000000080 /* FollowingView.swift */,
+				B10000000000000000000081 /* FeedView.swift */,
+				B10000000000000000000082 /* UserReviewsView.swift */,
+				B100000000000000000000A2 /* TrustTiersView.swift */,
+				B100000000000000000000A9 /* TrustScoreView.swift */,
+				B100000000000000000000A3 /* PlanLimitsView.swift */,
+				B100000000000000000000AA /* RegulatedRailsStatusView.swift */,
+				B100000000000000000000AE /* BusinessFeaturesHubView.swift */,
+				B100000000000000000000BD7 /* ProviderInvoicesView.swift */,
+				B100000000000000000000E9 /* ParitySurfacesView.swift */,
+				B100000000000000000000EC /* AdminOpsViews.swift */,
+				B100000000000000000000ED /* AdminModerationOpsViews.swift */,
+				B100000000000000000000A4 /* TermsAcceptanceView.swift */,
+				B10000000000000000000027 /* NotificationsView.swift */,
+				B1000000000000000000002B /* WatchlistView.swift */,
+				B10000000000000000000041 /* SavedSearchesView.swift */,
+				B10000000000000000000042 /* SellerAnalyticsView.swift */,
+				B100000000000000000000A5 /* SalesExportView.swift */,
+				B100000000000000000000A6 /* CalendarExportView.swift */,
+				B100000000000000000000A7 /* QuoteTemplatesView.swift */,
+				B100000000000000000000BD2 /* EmployeesView.swift */,
+				B100000000000000000000BD3 /* ChallengesView.swift */,
+				B100000000000000000000BD4 /* LegalServicesView.swift */,
+				B100000000000000000000BD5 /* SpectateTerminalView.swift */,
+				B100000000000000000000BD6 /* AuctionReplayView.swift */,
+				B100000000000000000000A8 /* VerificationDocumentsView.swift */,
+				B1000000000000000000000E /* LegalWebView.swift */,
+				B1000000000000000000000F /* AccountDeletionView.swift */,
+				B10000000000000000000029 /* PostJobView.swift */,
+				B1000000000000000000002A /* CreateListingView.swift */,
+				B10000000000000000000083 /* CategoryPickerView.swift */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		E10000000000000000000008 /* Location */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000010 /* LocationPurposeCopy.swift */,
+				B100000000000000000000BE /* JobSiteLocationProvider.swift */,
+			);
+			path = Location;
+			sourceTree = "<group>";
+		};
+		E1000000000000000000000A /* Intents */ = {
+			isa = PBXGroup;
+			children = (
+				B100000000000000000000CC /* OpenPostJobIntent.swift */,
+				B100000000000000000000CE /* SearchNoMarkupIntent.swift */,
+				B100000000000000000000CF /* ListingVisualIntelligence.swift */,
+				B100000000000000000000CB /* NoMarkupAppShortcuts.swift */,
+				B100000000000000000000CA /* OpenMyBidsIntent.swift */,
+				B100000000000000000000C9 /* OpenWatchlistIntent.swift */,
+				B100000000000000000000C8 /* CheckInToJobIntent.swift */,
+			);
+			path = Intents;
+			sourceTree = "<group>";
+		};
+
+		W10000000000000000000070 /* NoMarkupWidget */ = {
+			isa = PBXGroup;
+			children = (
+				W10000000000000000000011 /* NoMarkupWidgetBundle.swift */,
+				W10000000000000000000012 /* ActiveBidsWidget.swift */,
+				W10000000000000000000013 /* NextClosingWidget.swift */,
+				W10000000000000000000014 /* AuctionLiveActivityWidget.swift */,
+				W10000000000000000000015 /* Info.plist */,
+				W10000000000000000000016 /* NoMarkupWidget.entitlements */,
+				W10000000000000000000017 /* PrivacyInfo.xcprivacy */,
+				W10000000000000000000018 /* Localizable.xcstrings */,
+			);
+			path = NoMarkupWidget;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F10000000000000000000001 /* NoMarkup */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10000000000000000000004 /* Build configuration list for PBXNativeTarget "NoMarkup" */;
+			buildPhases = (
+				F10000000000000000000002 /* Sources */,
+				D10000000000000000000001 /* Frameworks */,
+				F10000000000000000000003 /* Resources */,
+				W10000000000000000000050 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				W10000000000000000000031 /* PBXTargetDependency */,
+			);
+			name = NoMarkup;
+			packageProductDependencies = (
+				P10000000000000000000002 /* StripePaymentSheet */,
+			);
+			productName = NoMarkup;
+			productReference = C10000000000000000000001 /* NoMarkup.app */;
+			productType = "com.apple.product-type.application";
+		};
+		U10000000000000000000008 /* NoMarkupUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = U1000000000000000000000D /* Build configuration list for PBXNativeTarget "NoMarkupUITests" */;
+			buildPhases = (
+				U10000000000000000000004 /* Sources */,
+				U10000000000000000000005 /* Frameworks */,
+				U10000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				U1000000000000000000000A /* PBXTargetDependency */,
+			);
+			name = NoMarkupUITests;
+			packageProductDependencies = (
+			);
+			productName = NoMarkupUITests;
+			productReference = U10000000000000000000003 /* NoMarkupUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		T10000000000000000000040 /* NoMarkupTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = T10000000000000000000062 /* Build configuration list for PBXNativeTarget "NoMarkupTests" */;
+			buildPhases = (
+				T10000000000000000000041 /* Sources */,
+				T10000000000000000000042 /* Frameworks */,
+				T10000000000000000000043 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				T10000000000000000000051 /* PBXTargetDependency */,
+			);
+			name = NoMarkupTests;
+			packageProductDependencies = (
+			);
+			productName = NoMarkupTests;
+			productReference = T10000000000000000000020 /* NoMarkupTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+
+		W10000000000000000000040 /* NoMarkupWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = W10000000000000000000090 /* Build configuration list for PBXNativeTarget "NoMarkupWidget" */;
+			buildPhases = (
+				W10000000000000000000061 /* Sources */,
+				W10000000000000000000060 /* Frameworks */,
+				W10000000000000000000062 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NoMarkupWidget;
+			packageProductDependencies = (
+			);
+			productName = NoMarkupWidget;
+			productReference = W10000000000000000000020 /* NoMarkupWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F10000000000000000000005 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					F10000000000000000000001 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					W10000000000000000000040 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					U10000000000000000000008 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = F10000000000000000000001;
+					};
+					T10000000000000000000040 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = F10000000000000000000001;
+					};
+				};
+			};
+			buildConfigurationList = F10000000000000000000006 /* Build configuration list for PBXProject "NoMarkup" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			); /* v1 English-only; incomplete es was IOS-L10N.3 */
+			mainGroup = E10000000000000000000001;
+			packageReferences = (
+				P10000000000000000000001 /* XCRemoteSwiftPackageReference "stripe-ios" */,
+			);
+			productRefGroup = E10000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F10000000000000000000001 /* NoMarkup */,
+				W10000000000000000000040 /* NoMarkupWidget */,
+				T10000000000000000000040 /* NoMarkupTests */,
+				U10000000000000000000008 /* NoMarkupUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F10000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000011 /* Assets.xcassets in Resources */,
+				A100000000000000000000C0 /* PrivacyInfo.xcprivacy in Resources */,
+				A100000000000000000000CD /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		U10000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		T10000000000000000000043 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+		W10000000000000000000062 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				W1000000000000000000000C /* PrivacyInfo.xcprivacy in Resources */,
+				W1000000000000000000000D /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F10000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* NoMarkupApp.swift in Sources */,
+				A10000000000000000000002 /* AppConfig.swift in Sources */,
+				A100000000000000000000EE /* GitRevision.swift in Sources */,
+				A100000000000000000000EF /* DevAPIBase.swift in Sources */,
+				A100000000000000000000F0 /* LazyView.swift in Sources */,
+				A100000000000000000000D0 /* StoreKitManager.swift in Sources */,
+				A100000000000000000000CC /* OpenPostJobIntent.swift in Sources */,
+				A100000000000000000000CE /* SearchNoMarkupIntent.swift in Sources */,
+				A100000000000000000000CF /* ListingVisualIntelligence.swift in Sources */,
+				A100000000000000000000CB /* NoMarkupAppShortcuts.swift in Sources */,
+				A100000000000000000000CA /* OpenMyBidsIntent.swift in Sources */,
+				A100000000000000000000C9 /* OpenWatchlistIntent.swift in Sources */,
+				A100000000000000000000C8 /* CheckInToJobIntent.swift in Sources */,
+				A100000000000000000000C7 /* AuctionActivityAttributes.swift in Sources */,
+				A100000000000000000000C6 /* WidgetSharedStore.swift in Sources */,
+				A100000000000000000000C2 /* NotificationPermissionCopy.swift in Sources */,
+				A100000000000000000000C1 /* DeepLinkRouter.swift in Sources */,
+				A100000000000000000000C5 /* AuctionLiveActivityController.swift in Sources */,
+				A100000000000000000000C4 /* BiometricGate.swift in Sources */,
+				A10000000000000000000025 /* BrandTheme.swift in Sources */,
+				A100000000000000000000E5 /* BrandHaptics.swift in Sources */,
+				A100000000000000000000E6 /* MarketTickerView.swift in Sources */,
+				A100000000000000000000E7 /* ShowcaseAuctionChrome.swift in Sources */,
+				A100000000000000000000E8 /* SpotlightIndex.swift in Sources */,
+				A10000000000000000000003 /* KeychainTokenStore.swift in Sources */,
+				A10000000000000000000004 /* APIClient.swift in Sources */,
+				A100000000000000000000F4 /* ClientActionLog.swift in Sources */,
+				A100000000000000000000F5 /* ClientActionLogView.swift in Sources */,
+				A100000000000000000000F6 /* ActionAuditProbe.swift in Sources */,
+				A10000000000000000000005 /* AuthViewModel.swift in Sources */,
+				A10000000000000000000006 /* LoginView.swift in Sources */,
+				A10000000000000000000007 /* SignInWithAppleButton.swift in Sources */,
+				A100000000000000000000C3 /* PasskeyAuth.swift in Sources */,
+				A100000000000000000000B7 /* GoogleOAuthSession.swift in Sources */,
+				A100000000000000000000B8 /* GoogleSignInButton.swift in Sources */,
+				A100000000000000000000BD0 /* FacebookOAuthSession.swift in Sources */,
+				A100000000000000000000BD1 /* FacebookSignInButton.swift in Sources */,
+				A100000000000000000000BD2 /* EmployeesView.swift in Sources */,
+				A100000000000000000000BD3 /* ChallengesView.swift in Sources */,
+				A100000000000000000000BD4 /* LegalServicesView.swift in Sources */,
+				A100000000000000000000BD5 /* SpectateTerminalView.swift in Sources */,
+				A100000000000000000000BD6 /* AuctionReplayView.swift in Sources */,
+				A10000000000000000000008 /* RootTabView.swift in Sources */,
+				A10000000000000000000009 /* HomeView.swift in Sources */,
+				A1000000000000000000000A /* MarketplaceView.swift in Sources */,
+				A1000000000000000000000B /* JobsView.swift in Sources */,
+				A1000000000000000000000C /* MessagesView.swift in Sources */,
+				A1000000000000000000000D /* AccountView.swift in Sources */,
+				A1000000000000000000000E /* LegalWebView.swift in Sources */,
+				A1000000000000000000000F /* AccountDeletionView.swift in Sources */,
+				A10000000000000000000010 /* LocationPurposeCopy.swift in Sources */,
+				A100000000000000000000BE /* JobSiteLocationProvider.swift in Sources */,
+				A10000000000000000000015 /* Models.swift in Sources */,
+				A10000000000000000000016 /* ListingDetailView.swift in Sources */,
+				A10000000000000000000017 /* JobDetailView.swift in Sources */,
+				A10000000000000000000020 /* FeatureFlags.swift in Sources */,
+				A10000000000000000000021 /* RailACheckout.swift in Sources */,
+				A10000000000000000000022 /* MyOrdersView.swift in Sources */,
+				A10000000000000000000026 /* MyBidsView.swift in Sources */,
+				A10000000000000000000043 /* MyListingsView.swift in Sources */,
+				A10000000000000000000027 /* NotificationsView.swift in Sources */,
+				A10000000000000000000028 /* NoMarkupIcon.swift in Sources */,
+				A10000000000000000000029 /* PostJobView.swift in Sources */,
+				A1000000000000000000002A /* CreateListingView.swift in Sources */,
+				A1000000000000000000002B /* WatchlistView.swift in Sources */,
+				A10000000000000000000040 /* APIClient+Commerce.swift in Sources */,
+				A10000000000000000000041 /* SavedSearchesView.swift in Sources */,
+				A10000000000000000000042 /* SellerAnalyticsView.swift in Sources */,
+				A1000000000000000000002C /* APIClient+Auth.swift in Sources */,
+				A1000000000000000000002D /* RegisterView.swift in Sources */,
+				A1000000000000000000002E /* ForgotPasswordView.swift in Sources */,
+				A10000000000000000000030 /* Models+Contracts.swift in Sources */,
+				A10000000000000000000031 /* APIClient+Contracts.swift in Sources */,
+				A10000000000000000000032 /* ContractsView.swift in Sources */,
+				A100000000000000000000EB /* RecurringJobsView.swift in Sources */,
+				A10000000000000000000033 /* ContractDetailView.swift in Sources */,
+				A10000000000000000000050 /* APIClient+Platform.swift in Sources */,
+				A10000000000000000000058 /* APIClient+Jobs.swift in Sources */,
+				A10000000000000000000051 /* JobsMapView.swift in Sources */,
+				A10000000000000000000052 /* PushRegistration.swift in Sources */,
+				A10000000000000000000053 /* ImageUploader.swift in Sources */,
+				A100000000000000000000F2 /* ModeratedAsyncImage.swift in Sources */,
+				A10000000000000000000054 /* ProfileSettingsView.swift in Sources */,
+				A10000000000000000000059 /* NetworkMonitor.swift in Sources */,
+				A10000000000000000000077 /* ReferralsView.swift in Sources */,
+				A1000000000000000000007B /* NPSSurveysView.swift in Sources */,
+				A1000000000000000000007C /* MarketsView.swift in Sources */,
+				A1000000000000000000007D /* SavingsView.swift in Sources */,
+				A10000000000000000000076 /* BlockedUsersView.swift in Sources */,
+				A10000000000000000000075 /* WishlistView.swift in Sources */,
+				A10000000000000000000074 /* PropertiesView.swift in Sources */,
+				A100000000000000000000B2 /* PropertyDetailView.swift in Sources */,
+				A10000000000000000000073 /* ProviderDetailView.swift in Sources */,
+				A10000000000000000000072 /* ProvidersView.swift in Sources */,
+				A10000000000000000000080 /* FollowingView.swift in Sources */,
+				A10000000000000000000081 /* FeedView.swift in Sources */,
+				A10000000000000000000082 /* UserReviewsView.swift in Sources */,
+				A10000000000000000000083 /* CategoryPickerView.swift in Sources */,
+				A100000000000000000000A1 /* JobDraftsView.swift in Sources */,
+				A100000000000000000000A2 /* TrustTiersView.swift in Sources */,
+				A100000000000000000000A9 /* TrustScoreView.swift in Sources */,
+				A100000000000000000000A3 /* PlanLimitsView.swift in Sources */,
+				A100000000000000000000AA /* RegulatedRailsStatusView.swift in Sources */,
+				A100000000000000000000AE /* BusinessFeaturesHubView.swift in Sources */,
+				A100000000000000000000BD7 /* ProviderInvoicesView.swift in Sources */,
+				A100000000000000000000E9 /* ParitySurfacesView.swift in Sources */,
+				A100000000000000000000EA /* APIClient+Admin.swift in Sources */,
+				A100000000000000000000EC /* AdminOpsViews.swift in Sources */,
+				A100000000000000000000ED /* AdminModerationOpsViews.swift in Sources */,
+				A100000000000000000000AF /* DirectionsHelper.swift in Sources */,
+				A100000000000000000000B5 /* ShareCardText.swift in Sources */,
+				A100000000000000000000B6 /* ChatWebSocketClient.swift in Sources */,
+				A100000000000000000000B9 /* AuctionWebSocketClient.swift in Sources */,
+				A100000000000000000000BB /* SpectatorWebSocketClient.swift in Sources */,
+				A100000000000000000000BC /* MarketplaceSpectatorWebSocketClient.swift in Sources */,
+				A100000000000000000000B0 /* VerificationCenterView.swift in Sources */,
+				A100000000000000000000B3 /* OnboardingWizardView.swift in Sources */,
+				A100000000000000000000B4 /* ProviderInstantOffersView.swift in Sources */,
+				A100000000000000000000B1 /* MarketRangeBar.swift in Sources */,
+				A100000000000000000000AD /* Models+RegulatedRails.swift in Sources */,
+				A100000000000000000000AC /* APIClient+RegulatedRails.swift in Sources */,
+				A100000000000000000000AB /* CameraImagePicker.swift in Sources */,
+				A100000000000000000000A4 /* TermsAcceptanceView.swift in Sources */,
+				A10000000000000000000071 /* APIClient+Extras.swift in Sources */,
+				A10000000000000000000078 /* APIClient+Provider.swift in Sources */,
+				A10000000000000000000079 /* ProviderWorkspaceView.swift in Sources */,
+				A10000000000000000000070 /* Models+Extras.swift in Sources */,
+				A10000000000000000000061 /* SecuritySettingsView.swift in Sources */,
+				A100000000000000000000BA /* AgeGateView.swift in Sources */,
+				A10000000000000000000062 /* NotificationPreferencesView.swift in Sources */,
+				A10000000000000000000063 /* PaymentMethodsView.swift in Sources */,
+				A10000000000000000000064 /* SellerPayoutsView.swift in Sources */,
+				A100000000000000000000A5 /* SalesExportView.swift in Sources */,
+				A100000000000000000000A6 /* CalendarExportView.swift in Sources */,
+				A100000000000000000000A7 /* QuoteTemplatesView.swift in Sources */,
+				A100000000000000000000A8 /* VerificationDocumentsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		U10000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				U10000000000000000000001 /* NoMarkupUITests.swift in Sources */,
+				U20000000000000000000001 /* ScreenshotWalkUITests.swift in Sources */,
+				U30000000000000000000001 /* TabAuditUITests.swift in Sources */,
+				U40000000000000000000001 /* DeviceCapabilityUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		T10000000000000000000041 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				T10000000000000000000001 /* MoneyFormatTests.swift in Sources */,
+				T10000000000000000000002 /* AppConfigTests.swift in Sources */,
+				T10000000000000000000003 /* NotificationDeepLinkTests.swift in Sources */,
+				T10000000000000000000004 /* ImageUploaderTests.swift in Sources */,
+				T10000000000000000000005 /* DateFormattingTests.swift in Sources */,
+				T10000000000000000000006 /* LocalizedPluralsTests.swift in Sources */,
+				T10000000000000000000007 /* APIClientTests.swift in Sources */,
+				T10000000000000000000008 /* SoftTravelETATests.swift in Sources */,
+				T10000000000000000000009 /* CreateJobScheduleTests.swift in Sources */,
+				T1000000000000000000000A /* WidgetSharedStoreTests.swift in Sources */,
+				T1000000000000000000000B /* ChatMediaURLTests.swift in Sources */,
+				T1000000000000000000000C /* WorkEvidenceTests.swift in Sources */,
+				T1000000000000000000000D /* NotificationPreferencesTests.swift in Sources */,
+				T1000000000000000000000E /* AgeGateMathTests.swift in Sources */,
+				T1000000000000000000000F /* ClientActionLogTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+		W10000000000000000000061 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				W10000000000000000000001 /* NoMarkupWidgetBundle.swift in Sources */,
+				W10000000000000000000002 /* ActiveBidsWidget.swift in Sources */,
+				W10000000000000000000003 /* NextClosingWidget.swift in Sources */,
+				W10000000000000000000004 /* AuctionLiveActivityWidget.swift in Sources */,
+				W10000000000000000000005 /* AuctionActivityAttributes.swift in Sources */,
+				W10000000000000000000006 /* WidgetSharedStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		U1000000000000000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F10000000000000000000001 /* NoMarkup */;
+			targetProxy = U10000000000000000000009 /* PBXContainerItemProxy */;
+		};
+		T10000000000000000000051 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F10000000000000000000001 /* NoMarkup */;
+			targetProxy = T10000000000000000000050 /* PBXContainerItemProxy */;
+		};
+
+		W10000000000000000000031 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = W10000000000000000000040 /* NoMarkupWidget */;
+			targetProxy = W10000000000000000000030 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		F10000000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		F10000000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 6.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		F10000000000000000000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ENABLE_TESTABILITY = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = NoMarkup/NoMarkup.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 6L6565278C;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "NoMarkup/Info-Debug.plist";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nomarkup.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F1000000000000000000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = NoMarkup/NoMarkup.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 6L6565278C;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NoMarkup/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nomarkup.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		U1000000000000000000000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 6L6565278C;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nomarkup.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = NoMarkup;
+			};
+			name = Debug;
+		};
+		U1000000000000000000000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 6L6565278C;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nomarkup.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = NoMarkup;
+			};
+			name = Release;
+		};
+		T10000000000000000000060 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 6L6565278C;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nomarkup.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NoMarkup.app/NoMarkup";
+				BUNDLE_LOADER = "$(TEST_HOST)";
+			};
+			name = Debug;
+		};
+		T10000000000000000000061 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 6L6565278C;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nomarkup.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NoMarkup.app/NoMarkup";
+				BUNDLE_LOADER = "$(TEST_HOST)";
+			};
+			name = Release;
+		};
+
+		W10000000000000000000080 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NoMarkupWidget/NoMarkupWidget.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 6L6565278C;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NoMarkupWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nomarkup.app.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		W10000000000000000000081 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NoMarkupWidget/NoMarkupWidget.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = 6L6565278C;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = NoMarkupWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nomarkup.app.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F10000000000000000000004 /* Build configuration list for PBXNativeTarget "NoMarkup" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000009 /* Debug */,
+				F1000000000000000000000A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F10000000000000000000006 /* Build configuration list for PBXProject "NoMarkup" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000007 /* Debug */,
+				F10000000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		U1000000000000000000000D /* Build configuration list for PBXNativeTarget "NoMarkupUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				U1000000000000000000000B /* Debug */,
+				U1000000000000000000000C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		T10000000000000000000062 /* Build configuration list for PBXNativeTarget "NoMarkupTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				T10000000000000000000060 /* Debug */,
+				T10000000000000000000061 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+
+		W10000000000000000000090 /* Build configuration list for PBXNativeTarget "NoMarkupWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				W10000000000000000000080 /* Debug */,
+				W10000000000000000000081 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		P10000000000000000000001 /* XCRemoteSwiftPackageReference "stripe-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stripe/stripe-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 24.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		P10000000000000000000002 /* StripePaymentSheet */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P10000000000000000000001 /* XCRemoteSwiftPackageReference "stripe-ios" */;
+			productName = StripePaymentSheet;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F10000000000000000000005 /* Project object */;
+}

@@ -32,33 +32,43 @@ func RegisterReview(s *grpclib.Server, srv *ReviewServer) {
 }
 
 func (s *ReviewServer) CreateReview(ctx context.Context, req *reviewv1.CreateReviewRequest) (*reviewv1.CreateReviewResponse, error) {
-	var qualityRating, communicationRating, timelinessRating, valueRating *int
+	in := service.CreateReviewInput{
+		ContractID:    req.GetContractId(),
+		ReviewerID:    req.GetReviewerId(),
+		OverallRating: int(req.GetOverallRating()),
+		Comment:       req.GetComment(),
+		PhotoURLs:     req.GetPhotoUrls(),
+	}
 	if req.QualityRating != nil {
 		v := int(req.GetQualityRating())
-		qualityRating = &v
+		in.QualityRating = &v
 	}
 	if req.CommunicationRating != nil {
 		v := int(req.GetCommunicationRating())
-		communicationRating = &v
+		in.CommunicationRating = &v
 	}
 	if req.TimelinessRating != nil {
 		v := int(req.GetTimelinessRating())
-		timelinessRating = &v
+		in.TimelinessRating = &v
 	}
 	if req.ValueRating != nil {
 		v := int(req.GetValueRating())
-		valueRating = &v
+		in.ValueRating = &v
+	}
+	if req.PaymentPromptnessRating != nil {
+		v := int(req.GetPaymentPromptnessRating())
+		in.PaymentPromptnessRating = &v
+	}
+	if req.ScopeAccuracyRating != nil {
+		v := int(req.GetScopeAccuracyRating())
+		in.ScopeAccuracyRating = &v
+	}
+	if req.AccessRating != nil {
+		v := int(req.GetAccessRating())
+		in.AccessRating = &v
 	}
 
-	review, err := s.svc.CreateReview(
-		ctx,
-		req.GetContractId(),
-		req.GetReviewerId(),
-		int(req.GetOverallRating()),
-		qualityRating, communicationRating, timelinessRating, valueRating,
-		req.GetComment(),
-		req.GetPhotoUrls(),
-	)
+	review, err := s.svc.CreateReview(ctx, in)
 	if err != nil {
 		return nil, mapReviewDomainError(err)
 	}
@@ -245,16 +255,17 @@ func domainReviewToProto(r *domain.Review) *reviewv1.Review {
 		return nil
 	}
 
+	// Direction and IsFlagged are derived (not persisted columns) — see review_types.go.
 	pb := &reviewv1.Review{
 		Id:            r.ID,
 		ContractId:    r.ContractID,
 		ReviewerId:    r.ReviewerID,
 		RevieweeId:    r.RevieweeID,
-		Direction:     stringToProtoReviewDirection(r.Direction),
+		Direction:     stringToProtoReviewDirection(r.Direction()),
 		OverallRating: int32(r.OverallRating),
-		Comment:       r.Comment,
+		Comment:       r.ReviewText,
 		PhotoUrls:     r.PhotoURLs,
-		IsFlagged:     r.IsFlagged,
+		IsFlagged:     r.IsFlagged(),
 		CreatedAt:     timestamppb.New(r.CreatedAt),
 	}
 
@@ -269,6 +280,15 @@ func domainReviewToProto(r *domain.Review) *reviewv1.Review {
 	}
 	if r.ValueRating != nil {
 		pb.ValueRating = int32(*r.ValueRating)
+	}
+	if r.PaymentPromptnessRating != nil {
+		pb.PaymentPromptnessRating = int32(*r.PaymentPromptnessRating)
+	}
+	if r.ScopeAccuracyRating != nil {
+		pb.ScopeAccuracyRating = int32(*r.ScopeAccuracyRating)
+	}
+	if r.AccessRating != nil {
+		pb.AccessRating = int32(*r.AccessRating)
 	}
 
 	if r.Response != nil {
@@ -417,6 +437,8 @@ func mapReviewDomainError(err error) error {
 		return status.Error(codes.FailedPrecondition, "flag already resolved")
 	case errors.Is(err, domain.ErrReviewAlreadyRemoved):
 		return status.Error(codes.FailedPrecondition, "review already removed")
+	case errors.Is(err, domain.ErrInvalidReviewPhotos):
+		return status.Error(codes.InvalidArgument, err.Error())
 	default:
 		// Check for validation errors (contain known messages).
 		msg := err.Error()

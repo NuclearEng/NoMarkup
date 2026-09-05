@@ -3,28 +3,92 @@ package grpc
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/nomarkup/nomarkup/pkg/grpmtls"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 	"github.com/nomarkup/nomarkup/services/payment/internal/service"
 	grpclib "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// requirePrivilegedMoneyPeer gates ActorIsAdmin / SystemInitiated on release & refund.
+//
+// Default (MESH_PRIVILEGED_MONEY_PEERS unset): trust private-network mesh (current
+// posture when mTLS is off). When set to a comma list (e.g. "gateway"), admin or
+// system money actors must present a mesh peer identity in that list — so a
+// random pod cannot forge admin release by dialing payment with body flags.
+// When the env is set and peer identity is missing (plaintext mesh), deny.
+func requirePrivilegedMoneyPeer(ctx context.Context, isAdmin, system bool) error {
+	if !isAdmin && !system {
+		return nil
+	}
+	raw := strings.TrimSpace(os.Getenv("MESH_PRIVILEGED_MONEY_PEERS"))
+	if raw == "" {
+		return nil
+	}
+	allow := grpmtls.ParsePeerAllowlist(raw)
+	if len(allow) == 0 {
+		return nil
+	}
+	p, ok := peer.FromContext(ctx)
+	if !ok || p == nil {
+		return status.Error(codes.PermissionDenied, "privileged money actor requires mesh peer identity (set MESH_PRIVILEGED_MONEY_PEERS and arm mTLS)")
+	}
+	name := grpmtls.PeerServiceName(p)
+	if name == "" {
+		return status.Error(codes.PermissionDenied, "privileged money actor requires mesh peer identity")
+	}
+	if _, ok := allow[name]; !ok {
+		return status.Errorf(codes.PermissionDenied, "mesh peer %q not allowed for privileged money actor", name)
+	}
+	return nil
+}
+
 // Server implements the PaymentService gRPC server.
+//
+// The proto defines a single PaymentService with all payment/installment/
+// insurance/tax/invoice RPCs bundled together. At the service layer we keep
+// separate domain services (PaymentService, InstallmentService, InsuranceService,
+// etc.) for separation of concerns; this struct is the thin gRPC aggregate that
+// delegates each RPC to the appropriate domain service. Individual RPC methods
+// live in per-concern files (installment_server.go, insurance_server.go, etc.)
+// but all share this Server receiver so we register a single gRPC service.
 type Server struct {
 	paymentv1.UnimplementedPaymentServiceServer
-	svc *service.PaymentService
+	svc            *service.PaymentService
+	installmentSvc *service.InstallmentService
+	insuranceSvc   *service.InsuranceService
+	marketplaceSvc *service.MarketplaceService
+	stripeDeleter  *service.StripeDeleter
 }
 
 // NewServer creates a new gRPC server for the payment service.
+//
+// installmentSvc and insuranceSvc may be nil in tests that only exercise the
+// core payment flows — the corresponding RPCs will return Unimplemented-style
+// errors if invoked without a backing service.
 func NewServer(svc *service.PaymentService) *Server {
 	return &Server{svc: svc}
+}
+
+// SetInstallmentService wires the installment (BNPL) domain service into the
+// aggregate gRPC server.
+func (s *Server) SetInstallmentService(svc *service.InstallmentService) {
+	s.installmentSvc = svc
+}
+
+// SetInsuranceService wires the insurance domain service into the aggregate
+// gRPC server.
+func (s *Server) SetInsuranceService(svc *service.InsuranceService) {
+	s.insuranceSvc = svc
 }
 
 // Register registers the payment service with a gRPC server, including tax/invoice RPCs.
@@ -56,10 +120,14 @@ func (s *Server) GetStripeAccountStatus(ctx context.Context, req *paymentv1.GetS
 		return nil, mapDomainError(err)
 	}
 	return &paymentv1.GetStripeAccountStatusResponse{
-		ChargesEnabled:   acctStatus.ChargesEnabled,
-		PayoutsEnabled:   acctStatus.PayoutsEnabled,
-		DetailsSubmitted: acctStatus.DetailsSubmitted,
-		Requirements:     acctStatus.Requirements,
+		ChargesEnabled:        acctStatus.ChargesEnabled,
+		PayoutsEnabled:        acctStatus.PayoutsEnabled,
+		DetailsSubmitted:      acctStatus.DetailsSubmitted,
+		Requirements:          acctStatus.Requirements,
+		TransfersReady:        acctStatus.TransfersReady,
+		StripeTransfersStatus: acctStatus.StripeTransfersStatus,
+		Dashboard:             acctStatus.Dashboard,
+		AccountsApi:           acctStatus.AccountsAPI,
 	}, nil
 }
 
@@ -71,6 +139,18 @@ func (s *Server) GetStripeDashboardLink(ctx context.Context, req *paymentv1.GetS
 	return &paymentv1.GetStripeDashboardLinkResponse{DashboardUrl: url}, nil
 }
 
+func (s *Server) CreateStripeAccountSession(ctx context.Context, req *paymentv1.CreateStripeAccountSessionRequest) (*paymentv1.CreateStripeAccountSessionResponse, error) {
+	secret, expiresAt, err := s.svc.CreateStripeAccountSession(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	resp := &paymentv1.CreateStripeAccountSessionResponse{ClientSecret: secret}
+	if !expiresAt.IsZero() {
+		resp.ExpiresAt = timestamppb.New(expiresAt)
+	}
+	return resp, nil
+}
+
 // --- Customer Payment Methods ---
 
 func (s *Server) CreateSetupIntent(ctx context.Context, req *paymentv1.CreateSetupIntentRequest) (*paymentv1.CreateSetupIntentResponse, error) {
@@ -79,6 +159,57 @@ func (s *Server) CreateSetupIntent(ctx context.Context, req *paymentv1.CreateSet
 		return nil, mapDomainError(err)
 	}
 	return &paymentv1.CreateSetupIntentResponse{ClientSecret: clientSecret}, nil
+}
+
+func (s *Server) GetSetupIntentStatus(ctx context.Context, req *paymentv1.GetSetupIntentStatusRequest) (*paymentv1.GetSetupIntentStatusResponse, error) {
+	status, err := s.svc.GetSetupIntentStatus(ctx, req.GetClientSecret(), req.GetCustomerId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.GetSetupIntentStatusResponse{
+		Status:          status.Status,
+		Succeeded:       status.Succeeded,
+		PaymentMethodId: status.PaymentMethodID,
+	}, nil
+}
+
+func (s *Server) ChargePromotion(ctx context.Context, req *paymentv1.ChargePromotionRequest) (*paymentv1.ChargePromotionResponse, error) {
+	piID, status, ok, err := s.svc.ChargePromotion(
+		ctx,
+		req.GetCustomerId(),
+		req.GetClientSecret(),
+		req.GetAmountCents(),
+		req.GetIdempotencyKey(),
+		req.GetListingId(),
+	)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.ChargePromotionResponse{
+		PaymentIntentId: piID,
+		Status:          status,
+		Succeeded:       ok,
+	}, nil
+}
+
+func (s *Server) ChargeContractTip(ctx context.Context, req *paymentv1.ChargeContractTipRequest) (*paymentv1.ChargeContractTipResponse, error) {
+	paymentID, piID, tipCents, st, ok, err := s.svc.ChargeContractTip(
+		ctx,
+		req.GetContractId(),
+		req.GetCustomerId(),
+		req.GetAmountCents(),
+		req.GetIdempotencyKey(),
+	)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.ChargeContractTipResponse{
+		PaymentId:       paymentID,
+		PaymentIntentId: piID,
+		TipAmountCents:  tipCents,
+		Status:          st,
+		Succeeded:       ok,
+	}, nil
 }
 
 func (s *Server) ListPaymentMethods(ctx context.Context, req *paymentv1.ListPaymentMethodsRequest) (*paymentv1.ListPaymentMethodsResponse, error) {
@@ -104,10 +235,48 @@ func (s *Server) ListPaymentMethods(ctx context.Context, req *paymentv1.ListPaym
 }
 
 func (s *Server) DeletePaymentMethod(ctx context.Context, req *paymentv1.DeletePaymentMethodRequest) (*paymentv1.DeletePaymentMethodResponse, error) {
-	if err := s.svc.DeletePaymentMethod(ctx, req.GetPaymentMethodId()); err != nil {
+	// customer_id is required so deletion is scoped to the OWNER. Without it the
+	// service detaches a payment method by id alone — an IDOR letting any user
+	// delete another user's card by id (security audit 2026-04). The gateway
+	// always sends the verified JWT subject.
+	if req.GetCustomerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "customer_id is required")
+	}
+	if err := s.svc.DeletePaymentMethod(ctx, req.GetCustomerId(), req.GetPaymentMethodId()); err != nil {
 		return nil, mapDomainError(err)
 	}
 	return &paymentv1.DeletePaymentMethodResponse{}, nil
+}
+
+func (s *Server) SetDefaultPaymentMethod(ctx context.Context, req *paymentv1.SetDefaultPaymentMethodRequest) (*paymentv1.SetDefaultPaymentMethodResponse, error) {
+	// customer_id is required so defaulting is scoped to the OWNER. The
+	// gateway always sends the verified JWT subject — never a client body field.
+	if req.GetCustomerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "customer_id is required")
+	}
+	if req.GetPaymentMethodId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "payment_method_id is required")
+	}
+	if err := s.svc.SetDefaultPaymentMethod(ctx, req.GetCustomerId(), req.GetPaymentMethodId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.SetDefaultPaymentMethodResponse{}, nil
+}
+
+func (s *Server) AddDevPaymentMethod(ctx context.Context, req *paymentv1.AddDevPaymentMethodRequest) (*paymentv1.AddDevPaymentMethodResponse, error) {
+	pm, err := s.svc.AddDevPaymentMethod(ctx, req.GetCustomerId(), req.GetBrand(), req.GetLastFour(), req.GetExpMonth(), req.GetExpYear())
+	if err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return &paymentv1.AddDevPaymentMethodResponse{Method: &paymentv1.PaymentMethod{
+		Id:        pm.ID,
+		Type:      pm.Type,
+		LastFour:  pm.LastFour,
+		Brand:     pm.Brand,
+		ExpMonth:  pm.ExpMonth,
+		ExpYear:   pm.ExpYear,
+		IsDefault: pm.IsDefault,
+	}}, nil
 }
 
 // --- Payments ---
@@ -150,7 +319,13 @@ func (s *Server) CreatePayment(ctx context.Context, req *paymentv1.CreatePayment
 }
 
 func (s *Server) ProcessPayment(ctx context.Context, req *paymentv1.ProcessPaymentRequest) (*paymentv1.ProcessPaymentResponse, error) {
-	payment, err := s.svc.ProcessPayment(ctx, req.GetPaymentId(), req.GetPaymentMethodId())
+	if err := requirePrivilegedMoneyPeer(ctx, req.GetActorIsAdmin(), false); err != nil {
+		return nil, err
+	}
+	payment, err := s.svc.ProcessPayment(ctx, req.GetPaymentId(), req.GetPaymentMethodId(), service.ReleaseActor{
+		UserID:  req.GetActorUserId(),
+		IsAdmin: req.GetActorIsAdmin(),
+	})
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -158,7 +333,14 @@ func (s *Server) ProcessPayment(ctx context.Context, req *paymentv1.ProcessPayme
 }
 
 func (s *Server) ReleaseEscrow(ctx context.Context, req *paymentv1.ReleaseEscrowRequest) (*paymentv1.ReleaseEscrowResponse, error) {
-	payment, err := s.svc.ReleaseEscrow(ctx, req.GetPaymentId(), req.GetReason())
+	if err := requirePrivilegedMoneyPeer(ctx, req.GetActorIsAdmin(), req.GetSystemInitiated()); err != nil {
+		return nil, err
+	}
+	payment, err := s.svc.ReleaseEscrow(ctx, req.GetPaymentId(), req.GetReason(), service.ReleaseActor{
+		UserID:  req.GetActorUserId(),
+		IsAdmin: req.GetActorIsAdmin(),
+		System:  req.GetSystemInitiated(),
+	})
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -202,7 +384,7 @@ func (s *Server) ListPayments(ctx context.Context, req *paymentv1.ListPaymentsRe
 		}
 	}
 
-	payments, totalCount, err := s.svc.ListPayments(ctx, req.GetUserId(), statusFilter, int(page), int(pageSize))
+	payments, totalCount, err := s.svc.ListPayments(ctx, req.GetUserId(), statusFilter, req.GetContractId(), int(page), int(pageSize))
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -232,7 +414,14 @@ func (s *Server) ListPayments(ctx context.Context, req *paymentv1.ListPaymentsRe
 // --- Refunds ---
 
 func (s *Server) CreateRefund(ctx context.Context, req *paymentv1.CreateRefundRequest) (*paymentv1.CreateRefundResponse, error) {
-	payment, err := s.svc.CreateRefund(ctx, req.GetPaymentId(), req.GetAmountCents(), req.GetReason())
+	if err := requirePrivilegedMoneyPeer(ctx, req.GetActorIsAdmin(), req.GetSystemInitiated()); err != nil {
+		return nil, err
+	}
+	payment, err := s.svc.CreateRefund(ctx, req.GetPaymentId(), req.GetAmountCents(), req.GetReason(), service.ReleaseActor{
+		UserID:  req.GetInitiatedBy(),
+		IsAdmin: req.GetActorIsAdmin(),
+		System:  req.GetSystemInitiated(),
+	})
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -244,6 +433,13 @@ func (s *Server) CreateRefund(ctx context.Context, req *paymentv1.CreateRefundRe
 func (s *Server) HandleStripeWebhook(ctx context.Context, req *paymentv1.HandleStripeWebhookRequest) (*paymentv1.HandleStripeWebhookResponse, error) {
 	err := s.svc.HandleWebhook(ctx, []byte(req.GetPayload()), req.GetSignature())
 	if err != nil {
+		// A signature verification failure is bad client input — surface it as
+		// InvalidArgument so the gateway returns 400 rather than a misleading 500.
+		// Stripe itself treats any non-2xx as "retry", so a forged caller still
+		// gets nothing; this only improves the status for the predictable case.
+		if errors.Is(err, domain.ErrWebhookSignature) {
+			return nil, status.Error(codes.InvalidArgument, "invalid webhook signature")
+		}
 		return nil, status.Errorf(codes.Internal, "webhook processing failed: %v", err)
 	}
 	return &paymentv1.HandleStripeWebhookResponse{Processed: true}, nil
@@ -272,6 +468,8 @@ func (s *Server) CalculateFees(ctx context.Context, req *paymentv1.CalculateFees
 			ProviderPayoutCents: breakdown.ProviderPayoutCents,
 			FeePercentage:       breakdown.FeePercentage,
 			GuaranteePercentage: breakdown.GuaranteePercentage,
+			LeadGenFeeCents:     breakdown.LeadGenFeeCents,
+			LeadGenPercentage:   breakdown.LeadGenPercentage,
 		},
 	}, nil
 }
@@ -287,16 +485,7 @@ func (s *Server) GetFeeConfig(ctx context.Context, req *paymentv1.GetFeeConfigRe
 		return nil, mapDomainError(err)
 	}
 
-	resp := &paymentv1.GetFeeConfigResponse{
-		FeePercentage:       fc.FeePercentage,
-		GuaranteePercentage: fc.GuaranteePercentage,
-		MinFeeCents:         fc.MinFeeCents,
-	}
-	if fc.MaxFeeCents != nil {
-		resp.MaxFeeCents = *fc.MaxFeeCents
-	}
-
-	return resp, nil
+	return feeConfigToProto(fc), nil
 }
 
 // --- Admin RPCs ---
@@ -374,24 +563,33 @@ func (s *Server) AdminGetPaymentDetails(ctx context.Context, req *paymentv1.Admi
 		return nil, mapDomainError(err)
 	}
 
+	// Lead-gen fee is the residual deduction beyond platform + guarantee fees
+	// (the payments table does not carry a dedicated lead_gen column; the fee was
+	// folded into the provider-payout reduction at creation time).
+	leadGenFee := payment.AmountCents - payment.PlatformFeeCents - payment.GuaranteeFeeCents - payment.ProviderPayoutCents
+	if leadGenFee < 0 {
+		leadGenFee = 0
+	}
 	breakdown := &paymentv1.PaymentBreakdown{
 		SubtotalCents:       payment.AmountCents,
 		PlatformFeeCents:    payment.PlatformFeeCents,
 		GuaranteeFeeCents:   payment.GuaranteeFeeCents,
 		TotalCents:          payment.AmountCents,
 		ProviderPayoutCents: payment.ProviderPayoutCents,
+		LeadGenFeeCents:     leadGenFee,
 	}
 	if payment.AmountCents > 0 {
 		breakdown.FeePercentage = float64(payment.PlatformFeeCents) / float64(payment.AmountCents)
 		breakdown.GuaranteePercentage = float64(payment.GuaranteeFeeCents) / float64(payment.AmountCents)
+		breakdown.LeadGenPercentage = float64(leadGenFee) / float64(payment.AmountCents)
 	}
 
 	return &paymentv1.AdminGetPaymentDetailsResponse{
-		Payment:                domainPaymentToProto(payment),
-		Breakdown:              breakdown,
-		StripePaymentIntentId:  payment.StripePaymentIntentID,
-		StripeChargeId:         payment.StripeChargeID,
-		StripeTransferId:       payment.StripeTransferID,
+		Payment:               domainPaymentToProto(payment),
+		Breakdown:             breakdown,
+		StripePaymentIntentId: payment.StripePaymentIntentID,
+		StripeChargeId:        payment.StripeChargeID,
+		StripeTransferId:      payment.StripeTransferID,
 	}, nil
 }
 
@@ -410,23 +608,124 @@ func (s *Server) AdminUpdateFeeConfig(ctx context.Context, req *paymentv1.AdminU
 		maxFeeCents = req.MaxFeeCents
 	}
 
-	fc, err := s.svc.AdminUpdateFeeConfig(ctx, categoryID, req.GetFeePercentage(), req.GetGuaranteePercentage(), req.GetMinFeeCents(), maxFeeCents)
+	var leadGenMaxFeeCents *int64
+	if req.LeadGenMaxFeeCents != nil {
+		leadGenMaxFeeCents = req.LeadGenMaxFeeCents
+	}
+
+	fc, err := s.svc.AdminUpdateFeeConfig(ctx, categoryID, req.GetFeePercentage(), req.GetGuaranteePercentage(), req.GetMinFeeCents(), maxFeeCents,
+		req.GetLeadGenEnabled(), req.GetLeadGenPercentage(), req.GetLeadGenMinFeeCents(), leadGenMaxFeeCents)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
 
+	return &paymentv1.AdminUpdateFeeConfigResponse{
+		Config: feeConfigToProto(fc),
+	}, nil
+}
+
+func customFeeToProto(f *domain.CustomFee) *paymentv1.CustomFee {
+	if f == nil {
+		return nil
+	}
+	pb := &paymentv1.CustomFee{
+		Id:      f.ID,
+		Name:    f.Name,
+		RateBps: int32(f.RateBPS),
+		Active:  f.Active,
+	}
+	if !f.CreatedAt.IsZero() {
+		pb.CreatedAt = timestamppb.New(f.CreatedAt)
+	}
+	if !f.UpdatedAt.IsZero() {
+		pb.UpdatedAt = timestamppb.New(f.UpdatedAt)
+	}
+	return pb
+}
+
+func (s *Server) AdminListCustomFees(ctx context.Context, _ *paymentv1.AdminListCustomFeesRequest) (*paymentv1.AdminListCustomFeesResponse, error) {
+	fees, err := s.svc.ListCustomFees(ctx)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	out := make([]*paymentv1.CustomFee, 0, len(fees))
+	for _, f := range fees {
+		out = append(out, customFeeToProto(f))
+	}
+	return &paymentv1.AdminListCustomFeesResponse{Fees: out}, nil
+}
+
+func (s *Server) AdminCreateCustomFee(ctx context.Context, req *paymentv1.AdminCreateCustomFeeRequest) (*paymentv1.AdminCreateCustomFeeResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	fee, err := s.svc.CreateCustomFee(ctx, req.GetName(), int64(req.GetRateBps()))
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.AdminCreateCustomFeeResponse{Fee: customFeeToProto(fee)}, nil
+}
+
+func (s *Server) AdminUpdateCustomFee(ctx context.Context, req *paymentv1.AdminUpdateCustomFeeRequest) (*paymentv1.AdminUpdateCustomFeeResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	if req.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "id is required")
+	}
+	var name *string
+	if req.Name != nil {
+		n := req.GetName()
+		name = &n
+	}
+	var rateBPS *int64
+	if req.RateBps != nil {
+		v := int64(req.GetRateBps())
+		rateBPS = &v
+	}
+	var active *bool
+	if req.Active != nil {
+		a := req.GetActive()
+		active = &a
+	}
+	fee, err := s.svc.UpdateCustomFee(ctx, req.GetId(), name, rateBPS, active)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.AdminUpdateCustomFeeResponse{Fee: customFeeToProto(fee)}, nil
+}
+
+func (s *Server) AdminDeactivateCustomFee(ctx context.Context, req *paymentv1.AdminDeactivateCustomFeeRequest) (*paymentv1.AdminDeactivateCustomFeeResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	if req.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "id is required")
+	}
+	if err := s.svc.DeactivateCustomFee(ctx, req.GetId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.AdminDeactivateCustomFeeResponse{Deactivated: true}, nil
+}
+
+// feeConfigToProto maps a domain FeeConfig onto the GetFeeConfigResponse proto,
+// including the lead-gen fields.
+func feeConfigToProto(fc *domain.FeeConfig) *paymentv1.GetFeeConfigResponse {
 	resp := &paymentv1.GetFeeConfigResponse{
 		FeePercentage:       fc.FeePercentage,
 		GuaranteePercentage: fc.GuaranteePercentage,
 		MinFeeCents:         fc.MinFeeCents,
+		LeadGenEnabled:      fc.LeadGenEnabled,
+		LeadGenPercentage:   fc.LeadGenPercentage,
+		LeadGenMinFeeCents:  fc.LeadGenMinFeeCents,
 	}
 	if fc.MaxFeeCents != nil {
 		resp.MaxFeeCents = *fc.MaxFeeCents
 	}
-
-	return &paymentv1.AdminUpdateFeeConfigResponse{
-		Config: resp,
-	}, nil
+	if fc.LeadGenMaxFeeCents != nil {
+		resp.LeadGenMaxFeeCents = fc.LeadGenMaxFeeCents
+	}
+	return resp
 }
 
 func (s *Server) GetRevenueReport(ctx context.Context, req *paymentv1.GetRevenueReportRequest) (*paymentv1.GetRevenueReportResponse, error) {
@@ -463,11 +762,11 @@ func (s *Server) GetRevenueReport(ctx context.Context, req *paymentv1.GetRevenue
 	}
 
 	return &paymentv1.GetRevenueReportResponse{
-		DataPoints:            dataPoints,
-		TotalGmvCents:         report.TotalGMVCents,
-		TotalRevenueCents:     report.TotalRevenueCents,
+		DataPoints:              dataPoints,
+		TotalGmvCents:           report.TotalGMVCents,
+		TotalRevenueCents:       report.TotalRevenueCents,
 		TotalGuaranteeFundCents: report.TotalGuaranteeFundCents,
-		EffectiveTakeRate:     report.EffectiveTakeRate,
+		EffectiveTakeRate:       report.EffectiveTakeRate,
 	}, nil
 }
 
@@ -551,22 +850,148 @@ func paymentStatusToString(s paymentv1.PaymentStatus) string {
 
 // mapDomainError maps domain errors to gRPC status errors.
 func mapDomainError(err error) error {
+	if err == nil {
+		return nil
+	}
+	// Tip / payment-instrument sentinels (wrapped with %w).
+	switch {
+	case errors.Is(err, domain.ErrTipAlreadyRecorded):
+		return status.Error(codes.AlreadyExists, "tip already recorded")
+	case errors.Is(err, domain.ErrContractNotCompleted):
+		return status.Error(codes.FailedPrecondition, "contract is not completed")
+	case errors.Is(err, domain.ErrContractNotOwned):
+		return status.Error(codes.PermissionDenied, "only the customer can tip")
+	case errors.Is(err, service.ErrNoPaymentInstrument):
+		return status.Error(codes.FailedPrecondition, "add a payment method before tipping")
+	case errors.Is(err, domain.ErrStripeAccountNotFound):
+		return status.Error(codes.FailedPrecondition, "provider is not set up to receive payouts")
+	}
 	switch {
 	case errors.Is(err, domain.ErrPaymentNotFound):
 		return status.Error(codes.NotFound, "payment not found")
 	case errors.Is(err, domain.ErrIdempotencyConflict):
 		return status.Error(codes.AlreadyExists, "duplicate idempotency key")
+	case errors.Is(err, domain.ErrRecurringInstancePaymentExists):
+		// Soft-replay normally absorbs this inside CreatePayment; if it still
+		// surfaces, the existing payment is not soft-replayable (no PI, bad status).
+		return status.Error(codes.AlreadyExists, "payment already exists for this recurring instance")
+	case errors.Is(err, domain.ErrPaymentIntentMissing):
+		return status.Error(codes.FailedPrecondition, "payment intent missing; cannot issue client_secret")
 	case errors.Is(err, domain.ErrInvalidAmount):
 		return status.Error(codes.InvalidArgument, "invalid amount")
 	case errors.Is(err, domain.ErrInvalidStatus):
 		return status.Error(codes.FailedPrecondition, "invalid status for this operation")
 	case errors.Is(err, domain.ErrPaymentAlreadyProcessed):
 		return status.Error(codes.FailedPrecondition, "payment already processed")
+	case errors.Is(err, domain.ErrNotAuthorizedActor):
+		return status.Error(codes.PermissionDenied, "you are not permitted to perform this action on this payment")
 	case errors.Is(err, domain.ErrFeeConfigNotFound):
 		return status.Error(codes.NotFound, "fee configuration not found")
+	case errors.Is(err, domain.ErrCustomFeeNotFound):
+		return status.Error(codes.NotFound, "custom fee not found")
+	case errors.Is(err, domain.ErrCombinedFeeCapExceeded):
+		return status.Error(codes.FailedPrecondition, "combined platform and custom fees exceed 50%")
 	case errors.Is(err, domain.ErrStripeAccountNotFound):
 		return status.Error(codes.NotFound, "stripe account not found")
+	case errors.Is(err, domain.ErrTransfersNotReady):
+		return status.Error(codes.FailedPrecondition, "connected account is not ready to receive transfers — complete Stripe onboarding")
+	case errors.Is(err, domain.ErrPlatformBankAccountNotFound):
+		return status.Error(codes.NotFound, "platform bank account not found")
+	// Goods marketplace sentinels (listing_charge.go). Without these, every
+	// ChargeListingWinner / ConfirmPickup domain rejection collapsed to
+	// codes.Internal → HTTP 500, so the pay route could not return 403/404/409.
+	case errors.Is(err, service.ErrListingOrderNotFound):
+		return status.Error(codes.NotFound, "listing order not found")
+	case errors.Is(err, service.ErrNotBuyer):
+		return status.Error(codes.PermissionDenied, "only the buyer on this order can perform this action")
+	case errors.Is(err, service.ErrInvalidEscrowState):
+		return status.Error(codes.FailedPrecondition, "order is not in a state that allows this action")
+	case errors.Is(err, service.ErrDisputeWindowClosed):
+		return status.Error(codes.FailedPrecondition, "dispute window closed")
+	case errors.Is(err, service.ErrDisputeAlreadyOpen):
+		return status.Error(codes.AlreadyExists, "dispute already open for this order")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}
+}
+
+// --- Platform bank account RPCs ---
+
+// platformBankAccountToProto maps a domain PlatformBankAccount onto its proto.
+func platformBankAccountToProto(a *domain.PlatformBankAccount) *paymentv1.PlatformBankAccount {
+	if a == nil {
+		return nil
+	}
+	pb := &paymentv1.PlatformBankAccount{
+		Id:                      a.ID,
+		StripeExternalAccountId: a.StripeExternalAccountID,
+		AccountHolderType:       a.AccountHolderType,
+		Last4:                   a.Last4,
+		Currency:                a.Currency,
+		Country:                 a.Country,
+		Status:                  a.Status,
+		IsDefault:               a.IsDefault,
+		CreatedAt:               timestamppb.New(a.CreatedAt),
+		UpdatedAt:               timestamppb.New(a.UpdatedAt),
+	}
+	if a.BankName != nil {
+		pb.BankName = *a.BankName
+	}
+	if a.AccountHolderName != nil {
+		pb.AccountHolderName = *a.AccountHolderName
+	}
+	if a.RoutingLast4 != nil {
+		pb.RoutingLast4 = *a.RoutingLast4
+	}
+	return pb
+}
+
+func (s *Server) AdminGetPlatformBankAccount(ctx context.Context, req *paymentv1.AdminGetPlatformBankAccountRequest) (*paymentv1.AdminGetPlatformBankAccountResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+
+	acct, err := s.svc.GetPlatformBankAccount(ctx)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	resp := &paymentv1.AdminGetPlatformBankAccountResponse{}
+	if acct != nil {
+		resp.Account = platformBankAccountToProto(acct)
+	}
+	return resp, nil
+}
+
+func (s *Server) AdminSetPlatformBankAccount(ctx context.Context, req *paymentv1.AdminSetPlatformBankAccountRequest) (*paymentv1.AdminSetPlatformBankAccountResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	if req.GetBankAccountToken() == "" {
+		return nil, status.Error(codes.InvalidArgument, "bank_account_token is required")
+	}
+
+	acct, err := s.svc.SetPlatformBankAccount(ctx, req.GetBankAccountToken(), req.GetAccountHolderName(), req.GetAccountHolderType(), req.GetAdminId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &paymentv1.AdminSetPlatformBankAccountResponse{
+		Account: platformBankAccountToProto(acct),
+	}, nil
+}
+
+func (s *Server) AdminDeletePlatformBankAccount(ctx context.Context, req *paymentv1.AdminDeletePlatformBankAccountRequest) (*paymentv1.AdminDeletePlatformBankAccountResponse, error) {
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	if req.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "id is required")
+	}
+
+	if err := s.svc.DeletePlatformBankAccount(ctx, req.GetId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &paymentv1.AdminDeletePlatformBankAccountResponse{Deleted: true}, nil
 }

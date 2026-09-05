@@ -19,9 +19,15 @@ spec:
         app.kubernetes.io/part-of: nomarkup
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "50058"
+        prometheus.io/port: "60058"
         prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: imaging
           image: ghcr.io/nomarkup/imaging:latest
@@ -30,24 +36,44 @@ spec:
             - name: grpc
               containerPort: 50058
               protocol: TCP
+            - name: metrics
+              containerPort: 60058
+              protocol: TCP
           env:
             - name: IMAGING_SERVICE_PORT
               value: "50058"
+            - name: IMAGING_METRICS_PORT
+              value: "60058"
+            - name: APP_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: nomarkup-config
+                  key: APP_VERSION
+                  optional: true
           envFrom:
             - configMapRef:
                 name: nomarkup-config
             - secretRef:
                 name: nomarkup-secrets
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           livenessProbe:
-            grpc:
-              port: 50058
+            httpGet:
+              path: /healthz
+              port: metrics
             initialDelaySeconds: 10
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
-            grpc:
-              port: 50058
+            httpGet:
+              path: /healthz
+              port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5

@@ -1,0 +1,49 @@
+-- Migration 076 — one repayment row per (advance, payment). Money invariant.
+--
+-- Pairs with 075 (which reconciled the rows this index would otherwise reject)
+-- and with the Go cap guard in
+-- services/payment/internal/repository/advance.go.
+--
+-- A payment can pay down an advance exactly once. Without this index the escrow
+-- release retry path credits the same advance twice off one payment while
+-- Stripe's idempotency key returns the single original transfer — see 075's
+-- header for the full trace. The Go layer now does
+-- `INSERT ... ON CONFLICT (advance_id, payment_id) DO NOTHING` and gates the
+-- `repaid_cents = repaid_cents + $2` update on that insert's RowsAffected, so
+-- this index is what makes the claim atomic rather than check-then-act.
+--
+-- NOT partial: every row in this table is a real ledger entry (there is no
+-- soft-delete column and no status to exclude), so the invariant is
+-- unconditional. It is also NOT a substitute for the FK index added in
+-- 087 — advance_id leads here, so lookups/DELETE checks on payment_id are not
+-- served by it.
+--
+-- ── Why this file contains exactly one statement ─────────────────────────
+-- CREATE INDEX CONCURRENTLY cannot run inside a transaction block. This repo
+-- runs golang-migrate v4 (CI: v4.19.1; deploy/docker/migrate.Dockerfile:
+-- migrate/migrate:v4.18.1) with the lib/pq `postgres` driver, which executes
+-- each migration file as a SINGLE simple-query Exec. PostgreSQL wraps a
+-- multi-statement simple query in an implicit transaction block, so ANY second
+-- statement in this file — even a bare `SET lock_timeout` or an explicit
+-- `COMMIT;` — makes Postgres reject the CONCURRENTLY build with
+-- "CREATE INDEX CONCURRENTLY cannot run inside a transaction block".
+-- (Verified empirically against migrate v4.19.1 + PostgreSQL 17: a
+-- single-statement file succeeds; adding a second statement or a mid-file
+-- COMMIT fails. Comments are not statements and are fine.)
+--
+-- The postgres driver has no `x-no-transaction` / `x-multi-statement` escape
+-- hatch (those are the MySQL driver's), and nothing in the Makefile,
+-- .github/workflows/ci.yml or .github/workflows/deploy.yml passes one. So the
+-- one-statement-per-file split is not stylistic: it is the only way to get a
+-- non-blocking index build through this pipeline. The trade-off accepted here
+-- is file count (each concurrent index costs its own migration pair) in
+-- exchange for zero write-blocking on populated tables — which matters because
+-- the deploy Job caps at activeDeadlineSeconds: 600 and golang-migrate stamps
+-- dirty=true BEFORE executing, so a long lock wait wedges the pipeline.
+--
+-- Operational note: an interrupted CONCURRENTLY build leaves an INVALID index
+-- behind. Re-running `migrate up` re-executes this file; IF NOT EXISTS then
+-- matches the invalid index and silently succeeds. Recovery is to DROP INDEX
+-- CONCURRENTLY the invalid index and re-run. Check with:
+--   SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_advance_repayments_advance_payment ON advance_repayments (advance_id, payment_id);

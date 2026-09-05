@@ -1,16 +1,19 @@
 package handler
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"log/slog"
-	"net"
 	"net/http"
 	"regexp"
 	"strings"
 
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	"github.com/nomarkup/nomarkup/gateway/internal/sessionflag"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -18,24 +21,42 @@ import (
 
 const (
 	refreshTokenCookieName = "refresh_token"
-	// sessionFlagCookieName is a non-httpOnly sentinel the web client reads to
-	// decide whether to attempt a token refresh on mount. Its presence does not
-	// authorize anything — the server always validates the real refresh cookie.
-	sessionFlagCookieName = "has_session"
+	// sessionFlagCookieName is a non-HttpOnly HMAC-signed sentinel (SEC-07).
+	// The web client / edge middleware treat a valid signature as "soft logged
+	// in" for UX only — it does not authorize any data access. Real auth is
+	// the HttpOnly refresh_token + RS256 access JWT.
+	sessionFlagCookieName = sessionflag.CookieName
 )
 
 // AuthHandler handles HTTP auth endpoints by proxying to the User gRPC service.
 type AuthHandler struct {
-	userClient   userv1.UserServiceClient
-	secureCookie bool
+	userClient    userv1.UserServiceClient
+	secureCookie  bool
+	sessionSecret []byte
+	// authMW backs the role-based idle-session timeout (CLAUDE.md §6): it owns
+	// the Redis cache client and the JWT decode used to read the refreshed
+	// token's userID/roles. nil disables idle tracking/enforcement (fail open).
+	authMW *middleware.AuthMiddleware
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(userClient userv1.UserServiceClient, secureCookie bool) *AuthHandler {
+// sessionSecret is SESSION_SECRET (or HAS_SESSION_SECRET) used to HMAC-sign the
+// has_session soft-gate cookie. Empty secret skips issuing the cookie (never
+// falls back to the forgeable literal "1").
+func NewAuthHandler(userClient userv1.UserServiceClient, secureCookie bool, sessionSecret string) *AuthHandler {
 	return &AuthHandler{
-		userClient:   userClient,
-		secureCookie: secureCookie,
+		userClient:    userClient,
+		secureCookie:  secureCookie,
+		sessionSecret: []byte(sessionSecret),
 	}
+}
+
+// WithIdleSession wires the idle-session timeout (CLAUDE.md §6) into the handler.
+// Additive: when not called (e.g. in tests) idle tracking/enforcement is simply
+// skipped (fail open). Returns the handler for chaining.
+func (h *AuthHandler) WithIdleSession(authMW *middleware.AuthMiddleware) *AuthHandler {
+	h.authMW = authMW
+	return h
 }
 
 type registerRequest struct {
@@ -66,15 +87,134 @@ type authResponse struct {
 	UserID               string `json:"user_id,omitempty"`
 	AccessToken          string `json:"access_token,omitempty"`
 	AccessTokenExpiresAt string `json:"access_token_expires_at,omitempty"`
-	MFARequired          bool   `json:"mfa_required,omitempty"`
-	MFAChallengeToken    string `json:"mfa_challenge_token,omitempty"`
+	// RefreshToken is omitted for browser clients (HttpOnly cookie is the
+	// session). Native clients send X-NoMarkup-Client and need the token in
+	// JSON because they do not persist the cookie jar.
+	RefreshToken      string `json:"refresh_token,omitempty"`
+	MFARequired       bool   `json:"mfa_required,omitempty"`
+	MFAChallengeToken string `json:"mfa_challenge_token,omitempty"`
+}
+
+// registerPhoneOnlyRequest is the body for the phone-only signup flow.
+type registerPhoneOnlyRequest struct {
+	Phone   string `json:"phone"`
+	OTPCode string `json:"otp_code"`
+}
+
+// phoneE164Pattern is a permissive E.164 check: "+" followed by 8-15 digits.
+var phoneE164Pattern = regexp.MustCompile(`^\+[1-9]\d{7,14}$`)
+
+// RegisterPhoneOnly creates a user with a placeholder email and
+// phone_verified=true once the supplied OTP validates.
+//
+// Architecture note: phone-only signup currently bridges the legacy
+// email-required Register RPC and the SMS OTP verify path by
+// synthesizing a placeholder email of the form
+// `+15551234567@phone.nomarkup` (RFC-5321 valid; non-routable). The
+// user-service treats this as a non-routable email and email_verified
+// stays false. Once the user-service exposes a dedicated
+// RegisterByPhone RPC (proto change), swap this for a direct call.
+//
+// Display name defaults to "Member-{last4}" pending profile completion.
+// This endpoint MUST remain unauthenticated — there is no session yet.
+func (h *AuthHandler) RegisterPhoneOnly(w http.ResponseWriter, r *http.Request) {
+	var req registerPhoneOnlyRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	req.Phone = strings.TrimSpace(req.Phone)
+	if !phoneE164Pattern.MatchString(req.Phone) {
+		writeError(w, http.StatusBadRequest, "phone must be in E.164 format (e.g. +15551234567)")
+		return
+	}
+	if strings.TrimSpace(req.OTPCode) == "" {
+		writeError(w, http.StatusBadRequest, "otp_code is required")
+		return
+	}
+
+	// Verify the anonymous signup OTP before creating the user. Creating first
+	// squatted +E.164@phone.nomarkup and VerifyPhone always failed because OTP
+	// is keyed by user_id and send-otp was auth-only.
+	if _, err := h.userClient.VerifyPhone(r.Context(), &userv1.VerifyPhoneRequest{
+		UserId:  phoneOTPUserID(req.Phone),
+		OtpCode: req.OTPCode,
+	}); err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	syntheticEmail := req.Phone + "@phone.nomarkup"
+	password, err := generatePhonePassword()
+	if err != nil {
+		slog.Error("register_phone_only: random password generation failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	suffix := req.Phone
+	if len(suffix) > 4 {
+		suffix = suffix[len(suffix)-4:]
+	}
+	displayName := "Member-" + suffix
+
+	regResp, err := h.userClient.Register(r.Context(), &userv1.RegisterRequest{
+		Email:       syntheticEmail,
+		Password:    password,
+		DisplayName: displayName,
+		Roles:       parseRoles([]string{"customer"}),
+	})
+	if err != nil {
+		if st, ok := status.FromError(err); !ok || st.Code() != codes.AlreadyExists {
+			writeGRPCError(w, err)
+			return
+		}
+		writeError(w, http.StatusConflict, "an account with this phone already exists — please sign in")
+		return
+	}
+
+	h.completeSessionLogin(w, r, regResp.GetUserId(), regResp.GetAccessToken(), regResp.GetRefreshToken(), regResp.GetAccessTokenExpiresAt())
+}
+
+const phoneOTPUserPrefix = "phone:"
+
+func phoneOTPUserID(phone string) string {
+	return phoneOTPUserPrefix + phone
+}
+
+// generatePhonePassword returns a 32-byte URL-safe base64 string. The
+// user never sees this — phone-only accounts log in via OTP-issued
+// tokens or via a password-reset flow tied to phone.
+func generatePhonePassword() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // Register handles POST /api/v1/auth/register.
+// isStrongPassword applies a basic password-strength check beyond length:
+// the password must contain at least one letter AND at least one non-letter
+// (digit or symbol). This rejects trivially weak passwords like "12345678"
+// or "aaaaaaaa" while keeping mixed passwords such as "Password123!" valid.
+func isStrongPassword(pw string) bool {
+	hasLetter := false
+	hasNonLetter := false
+	for _, c := range pw {
+		switch {
+		case (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'):
+			hasLetter = true
+		default:
+			hasNonLetter = true
+		}
+	}
+	return hasLetter && hasNonLetter
+}
+
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -85,9 +225,15 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate password: non-empty and minimum 8 characters.
+	// Validate password: minimum length plus a basic strength check.
+	// Length alone (e.g. "12345678") is trivially guessable, so require a
+	// mix of character classes rather than letting a numeric-only string pass.
 	if len(req.Password) < 8 {
 		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+	if !isStrongPassword(req.Password) {
+		writeError(w, http.StatusBadRequest, "password must include letters and at least one number or symbol")
 		return
 	}
 
@@ -105,20 +251,23 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.setRefreshTokenCookie(w, resp.GetRefreshToken())
+	h.setRefreshTokenCookie(w, resp.GetRefreshToken(), resp.GetUserId())
 
-	writeJSON(w, http.StatusCreated, authResponse{
+	created := authResponse{
 		UserID:               resp.GetUserId(),
 		AccessToken:          resp.GetAccessToken(),
 		AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
-	})
+	}
+	if wantsRefreshTokenInBody(r) {
+		created.RefreshToken = resp.GetRefreshToken()
+	}
+	writeJSON(w, http.StatusCreated, created)
 }
 
 // Login handles POST /api/v1/auth/login.
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -137,17 +286,78 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if resp.GetRefreshToken() != "" {
-		h.setRefreshTokenCookie(w, resp.GetRefreshToken())
+	if resp.GetMfaRequired() {
+		// An MFA challenge has no real session yet: set the refresh cookie
+		// only if the service issued one, do NOT seed the idle window (that
+		// happens on VerifyMFA's refresh via the normal request flow), and
+		// return the challenge token.
+		if resp.GetRefreshToken() != "" {
+			h.setRefreshTokenCookie(w, resp.GetRefreshToken(), resp.GetUserId())
+		}
+		writeJSON(w, http.StatusOK, authResponse{
+			UserID:               resp.GetUserId(),
+			AccessToken:          resp.GetAccessToken(),
+			AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
+			MFARequired:          true,
+			MFAChallengeToken:    resp.GetMfaChallengeToken(),
+		})
+		return
 	}
 
-	writeJSON(w, http.StatusOK, authResponse{
-		UserID:               resp.GetUserId(),
-		AccessToken:          resp.GetAccessToken(),
-		AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
-		MFARequired:          resp.GetMfaRequired(),
-		MFAChallengeToken:    resp.GetMfaChallengeToken(),
-	})
+	h.completeSessionLogin(w, r, resp.GetUserId(), resp.GetAccessToken(), resp.GetRefreshToken(), resp.GetAccessTokenExpiresAt())
+}
+
+// completeSessionLogin finalizes a fully-authenticated (non-MFA-pending)
+// login: refresh cookie + has_session sentinel, idle-window seed (CLAUDE.md
+// §6), and the standard password-login JSON body. It is THE single
+// login-success path — password login above and the passkey assertion flow
+// (passkey.go) both terminate here so every credential type yields an
+// identical session contract.
+func (h *AuthHandler) completeSessionLogin(w http.ResponseWriter, r *http.Request, userID, accessToken, refreshToken string, expiresAt *timestamppb.Timestamp) {
+	if refreshToken != "" {
+		h.setRefreshTokenCookie(w, refreshToken, userID)
+	}
+
+	// Seed the idle-session sliding window so a freshly logged-in session has
+	// its idle key immediately. Fail-open / no-op without authMW.
+	h.touchIdleFromAccessToken(r.Context(), accessToken, userID)
+
+	resp := authResponse{
+		UserID:               userID,
+		AccessToken:          accessToken,
+		AccessTokenExpiresAt: formatTimestamp(expiresAt),
+	}
+	if wantsRefreshTokenInBody(r) {
+		resp.RefreshToken = refreshToken
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func wantsRefreshTokenInBody(r *http.Request) bool {
+	c := strings.ToLower(strings.TrimSpace(r.Header.Get("X-NoMarkup-Client")))
+	return c == "ios" || c == "android"
+}
+
+// touchIdleFromAccessToken decodes the given access token to extract the user's
+// roles and (re)sets their idle-session key with the role-derived TTL. The
+// fallbackUserID is used when the token lacks/fails to yield a subject. It is a
+// no-op when idle tracking is not wired (authMW nil) or the cache is down
+// (fail open — see middleware.TouchIdleSession).
+func (h *AuthHandler) touchIdleFromAccessToken(ctx context.Context, accessToken, fallbackUserID string) {
+	if h.authMW == nil {
+		return
+	}
+	userID := fallbackUserID
+	var roles []string
+	if accessToken != "" {
+		if claims, err := h.authMW.ValidateToken(accessToken); err == nil {
+			if claims.UserID != "" {
+				userID = claims.UserID
+			}
+			roles = claims.Roles
+		}
+	}
+	h.authMW.TouchIdleSession(ctx, userID, roles)
 }
 
 // Refresh handles POST /api/v1/auth/refresh.
@@ -157,7 +367,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		refreshToken = cookie.Value
 	}
 
-	if refreshToken == "" {
+	if refreshToken == "" && wantsRefreshTokenInBody(r) {
 		var req refreshRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
 			refreshToken = req.RefreshToken
@@ -180,12 +390,61 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.setRefreshTokenCookie(w, resp.GetRefreshToken())
+	// Idle-session enforcement (CLAUDE.md §6). The user-service already rotated
+	// the refresh token and minted a new access token. Before we hand them back
+	// to the client, check the role-based idle window: if the user has made no
+	// authenticated request / WS heartbeat for longer than their role's timeout,
+	// their idle key has expired in Redis and we reject the refresh — they must
+	// sign in again. The rotated refresh token is acceptable collateral (they
+	// re-login). FAIL OPEN: if the cache is down or the token can't be decoded,
+	// `ok` is false and we skip enforcement entirely — the idle timeout is a
+	// defense-in-depth layer, never the primary gate.
+	if h.authMW != nil {
+		if userID, roles, decoded := h.decodeAccessToken(resp.GetAccessToken()); decoded {
+			if active, ok := h.authMW.IdleSessionActive(r.Context(), userID); ok && !active {
+				// Idle past the role window — do NOT set the access cookie or
+				// return the new token. Clear the session sentinel so the client
+				// stops auto-retrying and routes the user to sign-in.
+				h.clearSessionFlagCookie(w)
+				slog.InfoContext(r.Context(), "refresh rejected: idle session timed out", "user_id", userID)
+				writeError(w, http.StatusUnauthorized, "Your session timed out due to inactivity. Please sign in again.")
+				return
+			}
+			// Active (or fail-open): reset the sliding idle window with the
+			// possibly-updated role TTL so the next window starts now.
+			h.authMW.TouchIdleSession(r.Context(), userID, roles)
+		}
+	}
 
-	writeJSON(w, http.StatusOK, authResponse{
+	userID, _, decoded := h.decodeAccessToken(resp.GetAccessToken())
+	if !decoded {
+		userID = userIDFromJWT(resp.GetAccessToken())
+	}
+	h.setRefreshTokenCookie(w, resp.GetRefreshToken(), userID)
+
+	refreshed := authResponse{
 		AccessToken:          resp.GetAccessToken(),
 		AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
-	})
+	}
+	if wantsRefreshTokenInBody(r) {
+		refreshed.RefreshToken = resp.GetRefreshToken()
+	}
+	writeJSON(w, http.StatusOK, refreshed)
+}
+
+// decodeAccessToken validates the given access token and returns its userID and
+// roles. decoded is false when the token is empty or fails validation — callers
+// must then skip idle enforcement (fail open) since they cannot identify the
+// session.
+func (h *AuthHandler) decodeAccessToken(accessToken string) (userID string, roles []string, decoded bool) {
+	if h.authMW == nil || accessToken == "" {
+		return "", nil, false
+	}
+	claims, err := h.authMW.ValidateToken(accessToken)
+	if err != nil || claims.UserID == "" {
+		return "", nil, false
+	}
+	return claims.UserID, claims.Roles, true
 }
 
 // Logout handles POST /api/v1/auth/logout.
@@ -195,24 +454,25 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		refreshToken = cookie.Value
 	}
 
-	if refreshToken == "" {
+	if refreshToken == "" && wantsRefreshTokenInBody(r) {
 		var req logoutRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
 			refreshToken = req.RefreshToken
 		}
 	}
 
-	if refreshToken == "" {
-		writeError(w, http.StatusBadRequest, "refresh token required")
-		return
-	}
-
-	_, err := h.userClient.Logout(r.Context(), &userv1.LogoutRequest{
-		RefreshToken: refreshToken,
-	})
-	if err != nil {
-		writeGRPCError(w, err)
-		return
+	// Logout is best-effort: a token-only client (valid Bearer, no refresh
+	// cookie) must still be able to log out. When we DO have a refresh token,
+	// revoke it server-side. When we don't, skip the revoke and just clear the
+	// client-side cookies — there is nothing to revoke and erroring would trap
+	// the client in a logged-in-looking state it can't escape.
+	if refreshToken != "" {
+		if _, err := h.userClient.Logout(r.Context(), &userv1.LogoutRequest{
+			RefreshToken: refreshToken,
+		}); err != nil {
+			writeGRPCError(w, err)
+			return
+		}
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -232,8 +492,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 // VerifyEmail handles POST /api/v1/auth/verify-email.
 func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	var req verifyEmailRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -255,8 +514,7 @@ type resendVerificationRequest struct {
 // ResendVerification handles POST /api/v1/auth/resend-verification.
 func (h *AuthHandler) ResendVerification(w http.ResponseWriter, r *http.Request) {
 	var req resendVerificationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if req.Email == "" {
@@ -294,8 +552,7 @@ func (h *AuthHandler) VerifyPhone(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req verifyPhoneRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -316,21 +573,29 @@ type sendPhoneOTPRequest struct {
 }
 
 // SendPhoneOTP handles POST /api/v1/auth/send-phone-otp.
+// Dual-mode via optionalAuth: signed-in callers key the OTP by user_id
+// (existing verify-phone flow); anonymous callers must send E.164 phone and
+// the OTP is stored under nomarkup:otp:phone:{e164} for RegisterPhoneOnly.
 func (h *AuthHandler) SendPhoneOTP(w http.ResponseWriter, r *http.Request) {
-	claims, ok := middleware.GetClaims(r.Context())
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "missing claims")
+	var req sendPhoneOTPRequest
+	if !decodeJSON(w, r, &req) {
 		return
 	}
+	req.Phone = strings.TrimSpace(req.Phone)
 
-	var req sendPhoneOTPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
+	userID := ""
+	if claims, ok := middleware.GetClaims(r.Context()); ok {
+		userID = claims.UserID
+	}
+	if userID == "" {
+		if !phoneE164Pattern.MatchString(req.Phone) {
+			writeError(w, http.StatusBadRequest, "phone must be in E.164 format (e.g. +15551234567)")
+			return
+		}
 	}
 
 	resp, err := h.userClient.SendPhoneOTP(r.Context(), &userv1.SendPhoneOTPRequest{
-		UserId: claims.UserID,
+		UserId: userID,
 		Phone:  req.Phone,
 	})
 	if err != nil {
@@ -339,6 +604,12 @@ func (h *AuthHandler) SendPhoneOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]bool{"sent": resp.GetSent()})
+}
+
+// SendRegisterPhoneOTP is an alias of SendPhoneOTP for clients that still
+// post to /register-phone/send-otp.
+func (h *AuthHandler) SendRegisterPhoneOTP(w http.ResponseWriter, r *http.Request) {
+	h.SendPhoneOTP(w, r)
 }
 
 // --- Password reset ---
@@ -350,8 +621,7 @@ type requestPasswordResetRequest struct {
 // RequestPasswordReset handles POST /api/v1/auth/request-password-reset.
 func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 	var req requestPasswordResetRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -375,8 +645,7 @@ type resetPasswordRequest struct {
 // ResetPassword handles POST /api/v1/auth/reset-password.
 func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req resetPasswordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -385,6 +654,69 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		NewPassword: req.NewPassword,
 	})
 	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"success": resp.GetSuccess()})
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// ChangePassword handles POST /api/v1/auth/change-password. This is the
+// AUTHENTICATED self-service password change (distinct from the token-driven
+// reset-password flow): the route is mounted behind the auth middleware, the
+// user is taken from the verified JWT claims (never the body), and the
+// current password is required as a re-auth gate (CLAUDE.md §6 — a stolen
+// access token alone must not be enough to change the password). The
+// user-service rotates all sessions on success.
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	var req changePasswordRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if strings.TrimSpace(req.CurrentPassword) == "" {
+		writeError(w, http.StatusBadRequest, "current_password is required")
+		return
+	}
+	// Apply the same strength rules as registration so a change can't weaken
+	// the account below the signup bar.
+	if len(req.NewPassword) < 8 {
+		writeError(w, http.StatusBadRequest, "new password must be at least 8 characters")
+		return
+	}
+	if !isStrongPassword(req.NewPassword) {
+		writeError(w, http.StatusBadRequest, "new password must include letters and at least one number or symbol")
+		return
+	}
+	if req.NewPassword == req.CurrentPassword {
+		writeError(w, http.StatusBadRequest, "new password must be different from your current password")
+		return
+	}
+
+	resp, err := h.userClient.ChangePassword(r.Context(), &userv1.ChangePasswordRequest{
+		UserId:          claims.UserID,
+		CurrentPassword: req.CurrentPassword,
+		NewPassword:     req.NewPassword,
+	})
+	if err != nil {
+		// A wrong current password comes back as Unauthenticated from the
+		// service; surface it as a 401 with an intuitive message rather than a
+		// generic 500 (CLAUDE.md §15 — a predictable condition is never a 500).
+		if st, ok := status.FromError(err); ok && st.Code() == codes.Unauthenticated {
+			writeError(w, http.StatusUnauthorized, "Current password is incorrect")
+			return
+		}
 		writeGRPCError(w, err)
 		return
 	}
@@ -431,8 +763,7 @@ func (h *AuthHandler) ConfirmMFASetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req confirmMFASetupRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -457,8 +788,7 @@ type verifyMFARequest struct {
 // VerifyMFA handles POST /api/v1/auth/mfa/verify.
 func (h *AuthHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) {
 	var req verifyMFARequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -471,14 +801,8 @@ func (h *AuthHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if resp.GetRefreshToken() != "" {
-		h.setRefreshTokenCookie(w, resp.GetRefreshToken())
-	}
-
-	writeJSON(w, http.StatusOK, authResponse{
-		AccessToken:          resp.GetAccessToken(),
-		AccessTokenExpiresAt: formatTimestamp(resp.GetAccessTokenExpiresAt()),
-	})
+	userID := userIDFromJWT(resp.GetAccessToken())
+	h.completeSessionLogin(w, r, userID, resp.GetAccessToken(), resp.GetRefreshToken(), resp.GetAccessTokenExpiresAt())
 }
 
 type disableMFARequest struct {
@@ -494,8 +818,7 @@ func (h *AuthHandler) DisableMFA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req disableMFARequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -511,7 +834,7 @@ func (h *AuthHandler) DisableMFA(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"success": resp.GetSuccess()})
 }
 
-func (h *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, token string) {
+func (h *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, token, userID string) {
 	maxAge := 7 * 24 * 60 * 60
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshTokenCookieName,
@@ -522,13 +845,22 @@ func (h *AuthHandler) setRefreshTokenCookie(w http.ResponseWriter, token string)
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
 	})
-	h.setSessionFlagCookie(w, maxAge)
+	h.setSessionFlagCookie(w, userID, maxAge)
 }
 
-func (h *AuthHandler) setSessionFlagCookie(w http.ResponseWriter, maxAge int) {
+// setSessionFlagCookie issues the SEC-07 HMAC-signed has_session sentinel.
+// Never falls back to the forgeable literal "1" — if signing fails (empty
+// secret), the cookie is simply omitted and the client falls through to
+// other session indicators / explicit login.
+func (h *AuthHandler) setSessionFlagCookie(w http.ResponseWriter, userID string, maxAge int) {
+	value, err := sessionflag.SignWithMaxAge(h.sessionSecret, userID, maxAge)
+	if err != nil {
+		slog.Warn("has_session cookie not issued: sign failed", "error", err)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionFlagCookieName,
-		Value:    "1",
+		Value:    value,
 		Path:     "/",
 		HttpOnly: false,
 		Secure:   h.secureCookie,
@@ -549,6 +881,31 @@ func (h *AuthHandler) clearSessionFlagCookie(w http.ResponseWriter) {
 	})
 }
 
+// userIDFromJWT extracts the "sub" claim from an access JWT without verifying
+// the signature. Used only to bind the has_session soft-gate cookie to the
+// user that just received a freshly minted token from our user service.
+func userIDFromJWT(accessToken string) string {
+	parts := strings.Split(accessToken, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		// Some issuers use padded base64url.
+		payload, err = base64.URLEncoding.DecodeString(parts[1])
+		if err != nil {
+			return ""
+		}
+	}
+	var claims struct {
+		Sub string `json:"sub"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	return claims.Sub
+}
+
 func parseRoles(roles []string) []commonv1.UserRole {
 	result := make([]commonv1.UserRole, 0, len(roles))
 	for _, r := range roles {
@@ -557,7 +914,7 @@ func parseRoles(roles []string) []commonv1.UserRole {
 			result = append(result, commonv1.UserRole_USER_ROLE_CUSTOMER)
 		case "provider":
 			result = append(result, commonv1.UserRole_USER_ROLE_PROVIDER)
-		// "admin" intentionally excluded — self-registration cannot grant admin role.
+			// "admin" intentionally excluded — self-registration cannot grant admin role.
 		}
 	}
 	return result
@@ -565,24 +922,10 @@ func parseRoles(roles []string) []commonv1.UserRole {
 
 // writeJSON, writeError, writeGRPCError are defined in response.go
 
+// extractIP returns the best-effort client IP, honoring trusted-proxy headers
+// only when the direct peer is a trusted proxy per middleware.ClientIP.
 func extractIP(r *http.Request) string {
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		for i := 0; i < len(forwarded); i++ {
-			if forwarded[i] == ',' {
-				return forwarded[:i]
-			}
-		}
-		return forwarded
-	}
-	if ip := r.Header.Get("X-Real-IP"); ip != "" {
-		return ip
-	}
-	// Use net.SplitHostPort to correctly handle IPv6 addresses like [::1]:port.
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return middleware.ClientIP(r)
 }
 
 func formatTimestamp(ts *timestamppb.Timestamp) string {

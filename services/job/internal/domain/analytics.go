@@ -66,35 +66,35 @@ type CategorySpending struct {
 
 // PlatformMetrics holds aggregated platform-wide metrics for admin dashboards.
 type PlatformMetrics struct {
-	TotalGMVCents          int64
-	TotalRevenueCents      int64
+	TotalGMVCents           int64
+	TotalRevenueCents       int64
 	TotalGuaranteeFundCents int64
-	EffectiveTakeRate      float64
-	TotalUsers             int32
-	ActiveUsers            int32
-	NewUsers               int32
-	TotalJobsPosted        int32
-	TotalJobsCompleted     int32
-	JobFillRate            float64
-	JobCompletionRate      float64
-	TotalBids              int32
-	AvgBidsPerJob          float64
-	DisputesOpened         int32
-	DisputesResolved       int32
-	DisputeRate            float64
-	GuaranteeClaims        int32
-	GuaranteePayoutsCents  int64
+	EffectiveTakeRate       float64
+	TotalUsers              int32
+	ActiveUsers             int32
+	NewUsers                int32
+	TotalJobsPosted         int32
+	TotalJobsCompleted      int32
+	JobFillRate             float64
+	JobCompletionRate       float64
+	TotalBids               int32
+	AvgBidsPerJob           float64
+	DisputesOpened          int32
+	DisputesResolved        int32
+	DisputeRate             float64
+	GuaranteeClaims         int32
+	GuaranteePayoutsCents   int64
 }
 
 // GrowthDataPoint represents a growth data point in a time series.
 type GrowthDataPoint struct {
-	PeriodStart    time.Time
-	NewUsers       int32
-	NewProviders   int32
-	JobsPosted     int32
-	JobsCompleted  int32
-	GMVCents       int64
-	RevenueCents   int64
+	PeriodStart   time.Time
+	NewUsers      int32
+	NewProviders  int32
+	JobsPosted    int32
+	JobsCompleted int32
+	GMVCents      int64
+	RevenueCents  int64
 }
 
 // CategoryMetrics holds analytics metrics for a single category.
@@ -112,28 +112,55 @@ type CategoryMetrics struct {
 
 // RegionMetrics holds analytics metrics for a geographic region.
 type RegionMetrics struct {
-	Region             string
-	CenterLat          float64
-	CenterLng          float64
-	ActiveUsers        int32
-	ActiveProviders    int32
-	JobsPosted         int32
-	GMVCents           int64
-	SupplyDemandRatio  float64
+	Region            string
+	CenterLat         float64
+	CenterLng         float64
+	ActiveUsers       int32
+	ActiveProviders   int32
+	JobsPosted        int32
+	GMVCents          int64
+	SupplyDemandRatio float64
+}
+
+// ClearedPriceTransaction is one settled, escrow-confirmed cleared price drawn
+// from a completed contract. It mirrors the candidate set the Rust pricing
+// engine consumes (per-transaction, not pre-aggregated). The cleared price is
+// the winning bid amount; geo is the job's service zip; category is the job's
+// category. TrustTier is the provider's trust tier mapped to 0..4.
+type ClearedPriceTransaction struct {
+	CategoryID        string
+	ParentCategoryID  string
+	MarketID          string
+	Zip               string
+	ClearedPriceCents int64
+	SettledAt         time.Time
+	TrustTier         uint32 // 0..4 (4 = highest)
+	InstantMatch      bool
+	Condition         uint32 // services pass 4
 }
 
 // AnalyticsRepository defines persistence operations for analytics queries.
 type AnalyticsRepository interface {
 	// Market analytics
 	GetMarketRange(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, zipCode string) (*MarketRange, error)
+	// GetMarketRangeAt resolves lat/lng to the nearest market_ranges row whose
+	// zip_code exists in zip_codes, within max radius (~50 mi / 80 km default).
+	GetMarketRangeAt(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, lat, lng, radiusKm float64) (*MarketRange, error)
+
+	// Fair-price candidate set: per-completed-contract cleared prices for a
+	// category within a recent window, for the Rust pricing engine.
+	GetClearedPriceTransactions(ctx context.Context, categoryID string, asOf time.Time) ([]ClearedPriceTransaction, error)
+	// GetCategoryIDBySlug resolves a category slug to its id (slug-or-id inputs, §15).
+	GetCategoryIDBySlug(ctx context.Context, slug string) (string, error)
 	GetMarketTrends(ctx context.Context, categoryID string, subcategoryID *string, region *string, startDate, endDate time.Time, groupBy string) ([]PriceTrend, error)
 
 	// Provider analytics
 	GetProviderAnalytics(ctx context.Context, providerID string, startDate, endDate time.Time) (*ProviderAnalytics, error)
 	GetProviderEarnings(ctx context.Context, providerID string, startDate, endDate time.Time, groupBy string) ([]EarningsDataPoint, error)
 
-	// Customer analytics
-	GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]SpendingDataPoint, []CategorySpending, int64, error)
+	// Customer analytics. Returns spending time series, per-category breakdown,
+	// total spent (cents), and total savings vs. market median (cents).
+	GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string, propertyID string) ([]SpendingDataPoint, []CategorySpending, int64, int64, error)
 
 	// Platform analytics (admin)
 	GetPlatformMetrics(ctx context.Context, startDate, endDate time.Time) (*PlatformMetrics, error)

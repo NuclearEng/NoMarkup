@@ -52,29 +52,29 @@ describe('useCountUp', () => {
     const { result } = renderHook(() => useCountUp(target, duration));
 
     // First frame at t=0 — should start from 0
-    act(() => flushRAF(0));
+    act(() => { flushRAF(0); });
     expect(result.current).toBe(0);
 
     // Midway through animation — should be partially animated
-    act(() => flushRAF(300));
+    act(() => { flushRAF(300); });
     expect(result.current).toBeGreaterThan(0);
     expect(result.current).toBeLessThan(target);
 
     // At exactly the duration — should reach the target
-    act(() => flushRAF(600));
+    act(() => { flushRAF(600); });
     expect(result.current).toBe(target);
   });
 
   it('handles target=0 (stays at 0)', () => {
     const { result } = renderHook(() => useCountUp(0));
 
-    act(() => flushRAF(0));
+    act(() => { flushRAF(0); });
     expect(result.current).toBe(0);
 
-    act(() => flushRAF(300));
+    act(() => { flushRAF(300); });
     expect(result.current).toBe(0);
 
-    act(() => flushRAF(600));
+    act(() => { flushRAF(600); });
     expect(result.current).toBe(0);
   });
 
@@ -82,7 +82,7 @@ describe('useCountUp', () => {
     const { unmount } = renderHook(() => useCountUp(100));
 
     // Fire the first frame so an animation is in progress
-    act(() => flushRAF(0));
+    act(() => { flushRAF(0); });
 
     // There should be a pending RAF at this point
     expect(rafCallbacks.length).toBeGreaterThan(0);
@@ -100,11 +100,11 @@ describe('useCountUp', () => {
     const { result } = renderHook(() => useCountUp(target, duration));
 
     // First frame to set start time
-    act(() => flushRAF(0));
+    act(() => { flushRAF(0); });
 
     // At 50% time, ease-out cubic = 1 - (1 - 0.5)^3 = 1 - 0.125 = 0.875
     // So value should be ~875
-    act(() => flushRAF(300));
+    act(() => { flushRAF(300); });
     expect(result.current).toBe(875);
   });
 
@@ -113,13 +113,13 @@ describe('useCountUp', () => {
     const target = 200;
     const { result } = renderHook(() => useCountUp(target, duration));
 
-    act(() => flushRAF(0));
+    act(() => { flushRAF(0); });
 
     // At 500ms of 1000ms duration, progress=0.5, eased=0.875
-    act(() => flushRAF(500));
+    act(() => { flushRAF(500); });
     expect(result.current).toBe(175); // 200 * 0.875
 
-    act(() => flushRAF(1000));
+    act(() => { flushRAF(1000); });
     expect(result.current).toBe(200);
   });
 });

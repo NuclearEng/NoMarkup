@@ -27,17 +27,23 @@ type Server struct {
 	admin              *service.Admin
 	phone              *service.PhoneVerification
 	verification       *service.Verification
+	erasure            *service.Erasure
 	notificationClient notificationv1.NotificationServiceClient
 	baseURL            string
 }
 
 // NewServer creates a new gRPC server for the user service.
+//
+// `erasure` may be nil — when nil, the GDPR/CCPA endpoints will return
+// FailedPrecondition. This lets older test setups keep working without
+// having to wire the erasure pipeline.
 func NewServer(
 	auth *service.Auth,
 	profile *service.Profile,
 	admin *service.Admin,
 	phone *service.PhoneVerification,
 	verification *service.Verification,
+	erasure *service.Erasure,
 	notificationClient notificationv1.NotificationServiceClient,
 	baseURL string,
 ) *Server {
@@ -47,6 +53,7 @@ func NewServer(
 		admin:              admin,
 		phone:              phone,
 		verification:       verification,
+		erasure:            erasure,
 		notificationClient: notificationClient,
 		baseURL:            baseURL,
 	}
@@ -81,7 +88,11 @@ func (s *Server) Register(ctx context.Context, req *userv1.RegisterRequest) (*us
 		return nil, mapDomainError(err)
 	}
 
-	s.sendVerificationEmail(ctx, userID, input.Email, verificationToken)
+	if phone, ok := phoneFromSyntheticEmail(input.Email); ok {
+		s.attachVerifiedSignupPhone(ctx, userID, phone)
+	} else {
+		s.sendVerificationEmail(ctx, userID, input.Email, verificationToken)
+	}
 
 	return &userv1.RegisterResponse{
 		UserId:               userID,
@@ -89,6 +100,38 @@ func (s *Server) Register(ctx context.Context, req *userv1.RegisterRequest) (*us
 		RefreshToken:         pair.RefreshToken,
 		AccessTokenExpiresAt: timestamppb.New(pair.AccessTokenExpiresAt),
 	}, nil
+}
+
+const phoneNomarkupDomain = "@phone.nomarkup"
+
+func phoneFromSyntheticEmail(email string) (string, bool) {
+	email = strings.TrimSpace(email)
+	lower := strings.ToLower(email)
+	if !strings.HasSuffix(lower, phoneNomarkupDomain) {
+		return "", false
+	}
+	phone := email[:len(email)-len(phoneNomarkupDomain)]
+	if !strings.HasPrefix(phone, "+") || len(phone) < 9 {
+		return "", false
+	}
+	return phone, true
+}
+
+func (s *Server) attachVerifiedSignupPhone(ctx context.Context, userID, phone string) {
+	if s.phone == nil || s.profile == nil || userID == "" || phone == "" {
+		return
+	}
+	if !s.phone.ConsumeVerifiedPhoneClaim(ctx, phone) {
+		slog.Warn("register: phone-only email without verified OTP claim", "user_id", userID)
+		return
+	}
+	if _, err := s.profile.UpdateUser(ctx, userID, domain.UpdateUserInput{Phone: &phone}); err != nil {
+		slog.Error("register: persist verified phone failed", "user_id", userID, "error", err)
+		return
+	}
+	if err := s.phone.MarkPhoneVerified(ctx, userID); err != nil {
+		slog.Error("register: mark phone verified failed", "user_id", userID, "error", err)
+	}
 }
 
 func (s *Server) Login(ctx context.Context, req *userv1.LoginRequest) (*userv1.LoginResponse, error) {
@@ -139,6 +182,18 @@ func (s *Server) FindOrCreateByOAuth(ctx context.Context, req *userv1.FindOrCrea
 	}
 
 	userID, pair, isNewUser, err := s.auth.FindOrCreateByOAuth(ctx, input)
+	var mfa *service.MFARequiredError
+	if errors.As(err, &mfa) {
+		st, stErr := status.New(codes.FailedPrecondition, "mfa required").WithDetails(&userv1.LoginResponse{
+			UserId:            mfa.UserID,
+			MfaRequired:       true,
+			MfaChallengeToken: mfa.Challenge,
+		})
+		if stErr != nil {
+			return nil, status.Error(codes.FailedPrecondition, "mfa required")
+		}
+		return nil, st.Err()
+	}
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -155,7 +210,14 @@ func (s *Server) FindOrCreateByOAuth(ctx context.Context, req *userv1.FindOrCrea
 func (s *Server) RefreshToken(ctx context.Context, req *userv1.RefreshTokenRequest) (*userv1.RefreshTokenResponse, error) {
 	pair, err := s.auth.RefreshToken(ctx, req.GetRefreshToken())
 	if err != nil {
-		slog.Error("refresh token failed", "error", err)
+		// A revoked/expired/replayed refresh token is a normal auth outcome
+		// (e.g. a concurrent-refresh loser or a replay attempt), not a server
+		// fault — log at WARN so it doesn't pollute ERROR-level alerting.
+		if errors.Is(err, domain.ErrTokenRevoked) || errors.Is(err, domain.ErrTokenExpired) || errors.Is(err, domain.ErrInvalidToken) {
+			slog.Warn("refresh token rejected", "error", err)
+		} else {
+			slog.Error("refresh token failed", "error", err)
+		}
 		return nil, mapDomainError(err)
 	}
 
@@ -197,6 +259,87 @@ func (s *Server) ResendVerification(ctx context.Context, req *userv1.ResendVerif
 	return &userv1.ResendVerificationResponse{}, nil
 }
 
+func (s *Server) RequestPasswordReset(ctx context.Context, req *userv1.RequestPasswordResetRequest) (*userv1.RequestPasswordResetResponse, error) {
+	if req.GetEmail() == "" {
+		return nil, status.Error(codes.InvalidArgument, "email is required")
+	}
+
+	user, token, matched, err := s.auth.RequestPasswordReset(ctx, req.GetEmail())
+	if err != nil {
+		// Never reveal whether the email exists — log internally and still
+		// return ok so the gateway can hold the anti-enumeration contract.
+		slog.Error("password reset request failed", "error", err)
+		return &userv1.RequestPasswordResetResponse{}, nil
+	}
+
+	if matched {
+		s.sendPasswordResetEmail(ctx, user.ID, user.Email, token)
+	}
+
+	return &userv1.RequestPasswordResetResponse{}, nil
+}
+
+func (s *Server) ResetPassword(ctx context.Context, req *userv1.ResetPasswordRequest) (*userv1.ResetPasswordResponse, error) {
+	if req.GetToken() == "" {
+		return nil, status.Error(codes.InvalidArgument, "token is required")
+	}
+	if req.GetNewPassword() == "" {
+		return nil, status.Error(codes.InvalidArgument, "new_password is required")
+	}
+
+	if err := s.auth.ResetPassword(ctx, req.GetToken(), req.GetNewPassword()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.ResetPasswordResponse{Success: true}, nil
+}
+
+// ChangePassword handles the authenticated self-service password change. The
+// caller is identified by user_id (set by the gateway from the verified JWT
+// claims, never from client input) and must supply their current password.
+func (s *Server) ChangePassword(ctx context.Context, req *userv1.ChangePasswordRequest) (*userv1.ChangePasswordResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	if req.GetCurrentPassword() == "" {
+		return nil, status.Error(codes.InvalidArgument, "current_password is required")
+	}
+	if req.GetNewPassword() == "" {
+		return nil, status.Error(codes.InvalidArgument, "new_password is required")
+	}
+
+	if err := s.auth.ChangePassword(ctx, req.GetUserId(), req.GetCurrentPassword(), req.GetNewPassword()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.ChangePasswordResponse{Success: true}, nil
+}
+
+// sendPasswordResetEmail dispatches a password-reset email via the notification
+// service. Failures are logged but not propagated.
+func (s *Server) sendPasswordResetEmail(ctx context.Context, userID, email, resetToken string) {
+	if s.notificationClient == nil {
+		slog.Warn("notification client not configured, password reset email not sent", "user_id", userID)
+		return
+	}
+	_, err := s.notificationClient.SendNotification(ctx, &notificationv1.SendNotificationRequest{
+		UserId:           userID,
+		NotificationType: notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED,
+		Title:            "Reset your NoMarkup password",
+		Body:             fmt.Sprintf("Click this link to reset your password: %s/reset-password?token=%s\n\nThis link expires in 1 hour. If you didn't request this, you can ignore this email.", s.baseURL, resetToken),
+		ActionUrl:        fmt.Sprintf("%s/reset-password?token=%s", s.baseURL, resetToken),
+		Data: map[string]string{
+			"user_email": email,
+		},
+		Channels: []notificationv1.NotificationChannel{
+			notificationv1.NotificationChannel_NOTIFICATION_CHANNEL_EMAIL,
+		},
+	})
+	if err != nil {
+		slog.Error("failed to send password reset email", "user_id", userID, "error", err)
+	}
+}
+
 // sendVerificationEmail dispatches a verification email via the notification service.
 // Failures are logged but not propagated so the caller can continue.
 func (s *Server) sendVerificationEmail(ctx context.Context, userID, email, verificationToken string) {
@@ -224,9 +367,6 @@ func (s *Server) sendVerificationEmail(ctx context.Context, userID, email, verif
 }
 
 func (s *Server) SendPhoneOTP(ctx context.Context, req *userv1.SendPhoneOTPRequest) (*userv1.SendPhoneOTPResponse, error) {
-	if req.GetUserId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "user_id is required")
-	}
 	if req.GetPhone() == "" {
 		return nil, status.Error(codes.InvalidArgument, "phone is required")
 	}
@@ -330,12 +470,16 @@ func (s *Server) UploadDocument(ctx context.Context, req *userv1.UploadDocumentR
 
 	storageURL := ""
 	fileName := ""
+	mimeType := ""
+	var sizeBytes int64
 	if req.GetFile() != nil {
 		storageURL = req.GetFile().GetUrl()
 		fileName = req.GetFile().GetName()
+		mimeType = req.GetFile().GetMimeType()
+		sizeBytes = int64(req.GetFile().GetSizeBytes())
 	}
 
-	doc, err := s.verification.UploadDocument(ctx, req.GetUserId(), domain.DocumentType(req.GetDocumentType()), fileName, storageURL)
+	doc, err := s.verification.UploadDocument(ctx, req.GetUserId(), domain.DocumentType(req.GetDocumentType()), fileName, storageURL, mimeType, sizeBytes)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -357,10 +501,11 @@ func (s *Server) GetDocumentStatus(ctx context.Context, req *userv1.GetDocumentS
 	}
 
 	resp := &userv1.GetDocumentStatusResponse{
-		Id:              doc.ID,
-		DocumentType:    string(doc.Type),
-		Status:          stringToProtoVerificationStatus(string(doc.Status)),
-		RejectionReason: doc.RejectionReason,
+		Id:                doc.ID,
+		DocumentType:      string(doc.Type),
+		Status:            stringToProtoVerificationStatus(string(doc.Status)),
+		RejectionReason:   doc.RejectionReason,
+		ResubmissionCount: int32(doc.ResubmissionCount),
 	}
 	if doc.ExpiresAt != nil {
 		resp.ExpiresAt = timestamppb.New(*doc.ExpiresAt)
@@ -381,10 +526,11 @@ func (s *Server) ListDocuments(ctx context.Context, req *userv1.ListDocumentsReq
 	protoDocs := make([]*userv1.GetDocumentStatusResponse, 0, len(docs))
 	for _, doc := range docs {
 		pd := &userv1.GetDocumentStatusResponse{
-			Id:              doc.ID,
-			DocumentType:    string(doc.Type),
-			Status:          stringToProtoVerificationStatus(string(doc.Status)),
-			RejectionReason: doc.RejectionReason,
+			Id:                doc.ID,
+			DocumentType:      string(doc.Type),
+			Status:            stringToProtoVerificationStatus(string(doc.Status)),
+			RejectionReason:   doc.RejectionReason,
+			ResubmissionCount: int32(doc.ResubmissionCount),
 		}
 		if doc.ExpiresAt != nil {
 			pd.ExpiresAt = timestamppb.New(*doc.ExpiresAt)
@@ -423,6 +569,23 @@ func (s *Server) GetUser(ctx context.Context, req *userv1.GetUserRequest) (*user
 	return &userv1.GetUserResponse{User: domainUserToProto(user)}, nil
 }
 
+// BatchGetUsers resolves many ids in one query. See the RPC comment in
+// user.proto for the visibility contract: the response type physically cannot
+// carry PII, so this handler needs no caller-identity check that a future edit
+// could forget.
+func (s *Server) BatchGetUsers(ctx context.Context, req *userv1.BatchGetUsersRequest) (*userv1.BatchGetUsersResponse, error) {
+	users, err := s.profile.BatchGetUsers(ctx, req.GetUserIds())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	out := make([]*userv1.PublicUser, 0, len(users))
+	for i := range users {
+		out = append(out, domainPublicUserToProto(&users[i]))
+	}
+	return &userv1.BatchGetUsersResponse{Users: out}, nil
+}
+
 func (s *Server) UpdateUser(ctx context.Context, req *userv1.UpdateUserRequest) (*userv1.UpdateUserResponse, error) {
 	input := domain.UpdateUserInput{
 		DisplayName: req.DisplayName,
@@ -456,10 +619,15 @@ func (s *Server) GetProviderProfile(ctx context.Context, req *userv1.GetProvider
 
 func (s *Server) UpdateProviderProfile(ctx context.Context, req *userv1.UpdateProviderProfileRequest) (*userv1.UpdateProviderProfileResponse, error) {
 	input := domain.UpdateProviderInput{
-		BusinessName:    req.BusinessName,
-		Bio:             req.Bio,
-		ServiceAddress:  req.ServiceAddress,
-		ServiceRadiusKm: req.ServiceRadiusKm,
+		BusinessName:           req.BusinessName,
+		Bio:                    req.Bio,
+		ServiceAddress:         req.ServiceAddress,
+		ServiceRadiusKm:        req.ServiceRadiusKm,
+		EINTIN:                 req.EinTin,
+		InsurancePolicyNumber:  req.InsurancePolicyNumber,
+		InsuranceProvider:      req.InsuranceProvider,
+		InsuranceExpiry:        req.InsuranceExpiry,
+		InsuranceCoverageCents: req.InsuranceCoverageCents,
 	}
 	if req.ServiceLocation != nil {
 		lat := req.ServiceLocation.GetLatitude()
@@ -680,6 +848,7 @@ func (s *Server) CreateProperty(ctx context.Context, req *userv1.CreatePropertyR
 		Nickname:  req.GetNickname(),
 		Notes:     req.GetNotes(),
 		IsPrimary: req.GetIsPrimary(),
+		PhotoURLs: req.GetPhotoUrls(),
 	}
 
 	if addr := req.GetAddress(); addr != nil {
@@ -711,6 +880,13 @@ func (s *Server) UpdateProperty(ctx context.Context, req *userv1.UpdatePropertyR
 		Notes:     req.Notes,
 		IsPrimary: req.IsPrimary,
 	}
+	if req.UpdatePhotoUrls != nil && req.GetUpdatePhotoUrls() {
+		urls := req.GetPhotoUrls()
+		if urls == nil {
+			urls = []string{}
+		}
+		input.PhotoURLs = &urls
+	}
 
 	prop, err := s.profile.UpdateProperty(ctx, req.GetPropertyId(), input)
 	if err != nil {
@@ -737,6 +913,10 @@ func domainPropertyToProto(p *domain.Property) *userv1.Property {
 		return nil
 	}
 
+	photoURLs := p.PhotoURLs
+	if photoURLs == nil {
+		photoURLs = []string{}
+	}
 	prop := &userv1.Property{
 		Id:        p.ID,
 		UserId:    p.UserID,
@@ -744,6 +924,7 @@ func domainPropertyToProto(p *domain.Property) *userv1.Property {
 		Notes:     p.Notes,
 		IsPrimary: p.IsPrimary,
 		CreatedAt: timestamppb.New(p.CreatedAt),
+		PhotoUrls: photoURLs,
 		Address: &commonv1.Address{
 			Street:  p.Address,
 			City:    p.City,
@@ -768,6 +949,12 @@ func (s *Server) AdminSuspendUser(ctx context.Context, req *userv1.AdminSuspendU
 	}
 	if req.GetAdminId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	// An admin must not be able to suspend their own account — doing so locks
+	// them out of the admin surface the moment their current access token
+	// expires, leaving DB surgery as the only recovery.
+	if req.GetUserId() == req.GetAdminId() {
+		return nil, status.Error(codes.InvalidArgument, "an admin cannot suspend their own account")
 	}
 
 	if err := s.admin.SuspendUser(ctx, req.GetUserId(), req.GetReason(), req.GetAdminId()); err != nil {
@@ -794,6 +981,38 @@ func (s *Server) AdminSuspendUser(ctx context.Context, req *userv1.AdminSuspendU
 	}, nil
 }
 
+func (s *Server) AdminReactivateUser(ctx context.Context, req *userv1.AdminReactivateUserRequest) (*userv1.AdminReactivateUserResponse, error) {
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	if req.GetAdminId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+
+	if err := s.admin.ReactivateUser(ctx, req.GetUserId(), req.GetAdminId()); err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	if err := s.admin.InsertAuditLog(ctx, req.GetAdminId(), "reactivate_user", "user", req.GetUserId(), map[string]any{
+		"note": req.GetNote(),
+	}, ""); err != nil {
+		slog.Warn("failed to insert audit log for reactivate",
+			"user_id", req.GetUserId(),
+			"admin_id", req.GetAdminId(),
+			"error", err,
+		)
+	}
+
+	user, err := s.admin.AdminGetUser(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	return &userv1.AdminReactivateUserResponse{
+		User: domainUserToProto(user),
+	}, nil
+}
+
 func (s *Server) AdminBanUser(ctx context.Context, req *userv1.AdminBanUserRequest) (*userv1.AdminBanUserResponse, error) {
 	if req.GetUserId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "user_id is required")
@@ -803,6 +1022,10 @@ func (s *Server) AdminBanUser(ctx context.Context, req *userv1.AdminBanUserReque
 	}
 	if req.GetAdminId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "admin_id is required")
+	}
+	// An admin must not be able to ban their own account (self-lockout).
+	if req.GetUserId() == req.GetAdminId() {
+		return nil, status.Error(codes.InvalidArgument, "an admin cannot ban their own account")
 	}
 
 	if err := s.admin.BanUser(ctx, req.GetUserId(), req.GetReason(), req.GetAdminId()); err != nil {
@@ -847,7 +1070,12 @@ func (s *Server) AdminSearchUsers(ctx context.Context, req *userv1.AdminSearchUs
 		statusFilter = protoUserStatusToString(*req.StatusFilter)
 	}
 
-	users, total, err := s.admin.AdminSearchUsers(ctx, req.GetQuery(), statusFilter, page, pageSize)
+	roleFilter := ""
+	if req.RoleFilter != nil && *req.RoleFilter != commonv1.UserRole_USER_ROLE_UNSPECIFIED {
+		roleFilter = protoRoleToString(*req.RoleFilter)
+	}
+
+	users, total, err := s.admin.AdminSearchUsers(ctx, req.GetQuery(), statusFilter, roleFilter, page, pageSize)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -864,6 +1092,57 @@ func (s *Server) AdminSearchUsers(ctx context.Context, req *userv1.AdminSearchUs
 
 	return &userv1.AdminSearchUsersResponse{
 		Users: protoUsers,
+		Pagination: &commonv1.PaginationResponse{
+			TotalCount: int32(total),
+			Page:       int32(page),
+			PageSize:   int32(pageSize),
+			TotalPages: totalPages,
+			HasNext:    int32(page) < totalPages,
+		},
+	}, nil
+}
+
+func (s *Server) AdminListPendingDocuments(ctx context.Context, req *userv1.AdminListPendingDocumentsRequest) (*userv1.AdminListPendingDocumentsResponse, error) {
+	page := int(req.GetPagination().GetPage())
+	pageSize := int(req.GetPagination().GetPageSize())
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	docs, total, err := s.admin.AdminListPendingDocuments(ctx, page, pageSize)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	protoDocs := make([]*userv1.PendingDocument, 0, len(docs))
+	for i := range docs {
+		d := &docs[i]
+		protoDocs = append(protoDocs, &userv1.PendingDocument{
+			Id:              d.ID,
+			UserId:          d.UserID,
+			UserEmail:       d.UserEmail,
+			UserDisplayName: d.UserDisplayName,
+			DocumentType:    string(d.Type),
+			Status:          stringToProtoVerificationStatus(string(d.Status)),
+			FileName:        d.FileName,
+			FileUrl:         d.StorageURL,
+			CreatedAt:       timestamppb.New(d.CreatedAt),
+		})
+	}
+
+	totalPages := int32(total) / int32(pageSize)
+	if int32(total)%int32(pageSize) > 0 {
+		totalPages++
+	}
+
+	return &userv1.AdminListPendingDocumentsResponse{
+		Documents: protoDocs,
 		Pagination: &commonv1.PaginationResponse{
 			TotalCount: int32(total),
 			Page:       int32(page),
@@ -1087,6 +1366,27 @@ func domainUserToProto(u *domain.User) *userv1.User {
 	return pb
 }
 
+// domainPublicUserToProto maps the public projection. Note there is no PII
+// branch to get wrong: domain.PublicUser has no email/phone/MFA fields to copy.
+func domainPublicUserToProto(u *domain.PublicUser) *userv1.PublicUser {
+	protoRoles := make([]commonv1.UserRole, 0, len(u.Roles))
+	for _, r := range u.Roles {
+		protoRoles = append(protoRoles, stringToProtoRole(r))
+	}
+	pb := &userv1.PublicUser{
+		Id:          u.ID,
+		DisplayName: u.DisplayName,
+		AvatarUrl:   u.AvatarURL,
+		Roles:       protoRoles,
+		Status:      stringToProtoUserStatus(u.Status),
+		CreatedAt:   timestamppb.New(u.CreatedAt),
+	}
+	if u.LastActiveAt != nil {
+		pb.LastActiveAt = timestamppb.New(*u.LastActiveAt)
+	}
+	return pb
+}
+
 func domainProviderToProto(p *domain.ProviderProfile) *userv1.ProviderProfile {
 	pb := &userv1.ProviderProfile{
 		Id:                       p.ID,
@@ -1104,6 +1404,12 @@ func domainProviderToProto(p *domain.ProviderProfile) *userv1.ProviderProfile {
 		ProfileCompleteness:      int32(p.ProfileCompleteness),
 		StripeOnboardingComplete: p.StripeOnboardingComplete,
 		MemberSince:              timestamppb.New(p.CreatedAt),
+		// Owner-path PII (encrypted at rest). Public HTTP handlers MUST strip.
+		EinTin:                 p.EINTIN,
+		InsurancePolicyNumber:  p.InsurancePolicyNumber,
+		InsuranceProvider:      p.InsuranceProvider,
+		InsuranceExpiry:        p.InsuranceExpiry,
+		InsuranceCoverageCents: p.InsuranceCoverageCents,
 	}
 
 	if p.Latitude != nil && p.Longitude != nil {
@@ -1280,10 +1586,27 @@ func mapDomainError(err error) error {
 		return status.Error(codes.Unauthenticated, "token expired")
 	case errors.Is(err, domain.ErrTokenRevoked):
 		return status.Error(codes.Unauthenticated, "token revoked")
+	// Reuse detection deliberately returns the SAME code and message as a plain
+	// revocation. The family has already been revoked and the event logged; an
+	// attacker probing with a stolen token must not learn from the response
+	// whether detection fired.
+	case errors.Is(err, domain.ErrRefreshTokenReuse):
+		return status.Error(codes.Unauthenticated, "token revoked")
+	case errors.Is(err, domain.ErrBatchTooLarge):
+		return status.Errorf(codes.InvalidArgument, "batch size exceeds limit of %d", service.MaxBatchGetUsers)
 	case errors.Is(err, domain.ErrAccountSuspended):
 		return status.Error(codes.PermissionDenied, "account suspended")
 	case errors.Is(err, domain.ErrAccountBanned):
 		return status.Error(codes.PermissionDenied, "account banned")
+	case errors.Is(err, domain.ErrCannotSuspendBanned):
+		return status.Error(codes.FailedPrecondition, "cannot suspend a banned account")
+	case errors.Is(err, domain.ErrInvalidDocumentType):
+		return status.Error(codes.InvalidArgument, "invalid document type")
+	case errors.Is(err, domain.ErrMissingFileName):
+		return status.Error(codes.InvalidArgument, "file_name is required")
+	case errors.Is(err, domain.ErrResubmissionLimitReached):
+		// FR-2.10 → gateway maps FailedPrecondition to HTTP 422.
+		return status.Error(codes.FailedPrecondition, "maximum resubmission attempts reached for this document type; contact support")
 	case errors.Is(err, domain.ErrAccountDeactivated):
 		return status.Error(codes.PermissionDenied, "account deactivated")
 	case errors.Is(err, domain.ErrProviderProfileNotFound):
@@ -1298,6 +1621,12 @@ func mapDomainError(err error) error {
 		return status.Error(codes.InvalidArgument, "invalid OTP code")
 	case errors.Is(err, domain.ErrOTPExpired):
 		return status.Error(codes.InvalidArgument, "OTP code expired")
+	case errors.Is(err, domain.ErrOTPRateLimited):
+		return status.Error(codes.ResourceExhausted, err.Error())
+	case errors.Is(err, domain.ErrInvalidPhone):
+		return status.Error(codes.InvalidArgument, "phone must be in E.164 format")
+	case errors.Is(err, domain.ErrServiceUnavailable):
+		return status.Error(codes.Unavailable, "service temporarily unavailable")
 	case errors.Is(err, domain.ErrDocumentNotFound):
 		return status.Error(codes.NotFound, "document not found")
 	case errors.Is(err, domain.ErrEmailNotVerified):
@@ -1312,7 +1641,98 @@ func mapDomainError(err error) error {
 		return status.Error(codes.Unauthenticated, "invalid or expired MFA challenge token")
 	case errors.Is(err, domain.ErrPropertyNotFound):
 		return status.Error(codes.NotFound, "property not found")
+	case errors.Is(err, domain.ErrInvalidPropertyPhotos):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, domain.ErrDeletionAlreadyRequested):
+		return status.Error(codes.AlreadyExists, "deletion already requested")
+	case errors.Is(err, domain.ErrDeletionNotRequested):
+		return status.Error(codes.FailedPrecondition, "no deletion request pending")
+	case errors.Is(err, domain.ErrDeletionAlreadyFinalized):
+		return status.Error(codes.FailedPrecondition, "deletion already finalized")
+	case errors.Is(err, domain.ErrDeletionGracePeriodActive):
+		return status.Error(codes.FailedPrecondition, "deletion grace period still active")
+	case errors.Is(err, domain.ErrDeletionConfirmation):
+		return status.Error(codes.InvalidArgument, "deletion confirmation phrase invalid")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}
+}
+
+// RequestAccountDeletion handles the GDPR/CCPA self-service erasure request.
+func (s *Server) RequestAccountDeletion(ctx context.Context, req *userv1.RequestAccountDeletionRequest) (*userv1.RequestAccountDeletionResponse, error) {
+	if s.erasure == nil {
+		return nil, status.Error(codes.FailedPrecondition, "erasure pipeline not configured")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	deadline, created, err := s.erasure.RequestAccountDeletion(ctx, req.GetUserId(), req.GetReason(), req.GetConfirmation())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &userv1.RequestAccountDeletionResponse{
+		GraceDeadline: timestamppb.New(deadline),
+		Created:       created,
+	}, nil
+}
+
+// CancelAccountDeletion clears a pending deletion request within the grace
+// window.
+func (s *Server) CancelAccountDeletion(ctx context.Context, req *userv1.CancelAccountDeletionRequest) (*userv1.CancelAccountDeletionResponse, error) {
+	if s.erasure == nil {
+		return nil, status.Error(codes.FailedPrecondition, "erasure pipeline not configured")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	cancelled, err := s.erasure.CancelAccountDeletion(ctx, req.GetUserId())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &userv1.CancelAccountDeletionResponse{Cancelled: cancelled}, nil
+}
+
+// FinalizeAccountDeletion runs the erasure cascade. Used by the cron worker
+// (force=false) and admin override (force=true).
+func (s *Server) FinalizeAccountDeletion(ctx context.Context, req *userv1.FinalizeAccountDeletionRequest) (*userv1.FinalizeAccountDeletionResponse, error) {
+	if s.erasure == nil {
+		return nil, status.Error(codes.FailedPrecondition, "erasure pipeline not configured")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	outcome, err := s.erasure.FinalizeAccountDeletion(ctx, req.GetUserId(), req.GetForce())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+
+	// Audit-log every finalize (admin force gets the admin_id; cron uses the
+	// user's own id as actor since it is system-driven).
+	actor := req.GetAdminId()
+	if actor == "" {
+		actor = req.GetUserId()
+	}
+	if logErr := s.admin.InsertAuditLog(ctx, actor, "gdpr_finalize", "user", req.GetUserId(), map[string]any{
+		"force":                   req.GetForce(),
+		"counts":                  outcome.Counts,
+		"stripe_customer_outcome": outcome.StripeCustomerOutcome,
+		"stripe_account_outcome":  outcome.StripeAccountOutcome,
+	}, ""); logErr != nil {
+		slog.Warn("gdpr: failed to write audit log",
+			"user_id", req.GetUserId(),
+			"error", logErr,
+		)
+	}
+
+	rows := make(map[string]int64, len(outcome.Counts))
+	for k, v := range outcome.Counts {
+		rows[k] = v
+	}
+
+	return &userv1.FinalizeAccountDeletionResponse{
+		FinalizedAt:           timestamppb.New(outcome.FinalizedAt),
+		RowsAffected:          rows,
+		StripeCustomerOutcome: outcome.StripeCustomerOutcome,
+		StripeAccountOutcome:  outcome.StripeAccountOutcome,
+	}, nil
 }

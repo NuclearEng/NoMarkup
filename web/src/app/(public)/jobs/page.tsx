@@ -1,275 +1,171 @@
-'use client';
+import type { Metadata } from 'next';
 
-import { SlidersHorizontal, X } from 'lucide-react';
-import { useState } from 'react';
+import { JobsSearchClient } from './JobsSearchClient';
+import type { Job, JobsResponse, SearchJobsParams } from '@/types';
+import { serverFetch } from '@/lib/server-fetch';
 
-import { JobCard } from '@/components/jobs/JobCard';
-import { JobSearchFilters } from '@/components/jobs/JobSearchFilters';
-import { SeasonalDemandBanner } from '@/components/jobs/SeasonalDemandBanner';
-import { EmptyState } from '@/components/ui/empty-state';
-import { Button } from '@/components/ui/button';
-import { useSearchJobs } from '@/hooks/useJobs';
-import type { SearchJobsParams } from '@/types';
+// Server-side API origin. Mirror marketplace browse: prefer server-only
+// API_URL, fall back to public var, then localhost for dev. Jobs search is a
+// public read (no auth/cookies).
+const API_URL =
+  process.env['API_URL'] ?? process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8081';
 
 const DEFAULT_PAGE_SIZE = 12;
 
-function SearchIllustration() {
-  return (
-    <svg
-      width="48"
-      height="48"
-      viewBox="0 0 48 48"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <circle
-        cx="22"
-        cy="22"
-        r="14"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-      <path d="M32 32L42 42" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-      <path
-        d="M16 22H28"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        opacity="0.5"
-      />
-      <path
-        d="M16 17H24"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        opacity="0.3"
-      />
-      <path
-        d="M16 27H22"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        opacity="0.3"
-      />
-    </svg>
-  );
+export const metadata: Metadata = {
+  title: 'Find Jobs · NoMarkup',
+  description:
+    'Browse open home-service jobs. Qualified providers compete in reverse auctions — fair market rates, not the markup.',
+  openGraph: {
+    title: 'Find Jobs · NoMarkup',
+    description:
+      'Reverse-auction home services. Providers compete on price. The market sets the rate — not the markup.',
+    type: 'website',
+  },
+};
+
+function first(v: string | string[] | undefined): string | undefined {
+  if (Array.isArray(v)) return v[0];
+  return v;
 }
 
-export default function JobsSearchPage() {
-  const [filters, setFilters] = useState<SearchJobsParams>({
+function parseIntParam(v: string | string[] | undefined): number | undefined {
+  const s = first(v);
+  if (s === undefined || s === '') return undefined;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function paramsFromSearch(
+  searchParams: Record<string, string | string[] | undefined>,
+): SearchJobsParams {
+  const out: SearchJobsParams = {
+    page: parseIntParam(searchParams['page']) ?? 1,
+    page_size: parseIntParam(searchParams['page_size']) ?? DEFAULT_PAGE_SIZE,
+  };
+
+  const q = first(searchParams['q']);
+  if (q && q.trim().length > 0) out.query = q;
+
+  const categoryId = first(searchParams['category_id']);
+  if (categoryId) out.category_id = categoryId;
+
+  const scheduleType = first(searchParams['schedule_type']);
+  if (
+    scheduleType === 'flexible' ||
+    scheduleType === 'specific_date' ||
+    scheduleType === 'date_range'
+  ) {
+    out.schedule_type = scheduleType;
+  }
+
+  const minPrice = parseIntParam(searchParams['min_price_cents']);
+  if (minPrice !== undefined) out.min_price_cents = minPrice;
+
+  const maxPrice = parseIntParam(searchParams['max_price_cents']);
+  if (maxPrice !== undefined) out.max_price_cents = maxPrice;
+
+  const radiusKm = parseIntParam(searchParams['radius_km']);
+  if (radiusKm !== undefined) out.radius_km = radiusKm;
+
+  const lat = first(searchParams['latitude'] ?? searchParams['location_lat']);
+  const lng = first(searchParams['longitude'] ?? searchParams['location_lng']);
+  if (lat !== undefined && lat !== '' && lng !== undefined && lng !== '') {
+    const latN = Number(lat);
+    const lngN = Number(lng);
+    if (Number.isFinite(latN) && Number.isFinite(lngN)) {
+      out.location_lat = latN;
+      out.location_lng = lngN;
+    }
+  }
+
+  if (first(searchParams['is_recurring']) === 'true') out.is_recurring = true;
+
+  return out;
+}
+
+// Mirror useJobs.buildSearchParams so the server-seeded fetch and the client
+// refetch hit identical URLs (TanStack cache key lines up).
+function queryStringFor(params: SearchJobsParams): string {
+  const sp = new URLSearchParams();
+  if (params.category_id) sp.set('category_ids', params.category_id);
+  if (params.query) sp.set('q', params.query);
+  if (params.schedule_type) sp.set('schedule_type', params.schedule_type);
+  if (params.is_recurring) sp.set('recurring_only', 'true');
+  if (params.min_price_cents !== undefined)
+    sp.set('min_price_cents', String(params.min_price_cents));
+  if (params.max_price_cents !== undefined)
+    sp.set('max_price_cents', String(params.max_price_cents));
+  if (params.location_lat !== undefined) sp.set('latitude', String(params.location_lat));
+  if (params.location_lng !== undefined) sp.set('longitude', String(params.location_lng));
+  if (params.radius_km !== undefined) sp.set('radius_km', String(params.radius_km));
+  if (params.sort_by) sp.set('sort', params.sort_by);
+  if (params.sort_order) sp.set('sort_dir', params.sort_order);
+  if (params.page !== undefined) sp.set('page', String(params.page));
+  if (params.page_size !== undefined) sp.set('page_size', String(params.page_size));
+  return sp.toString();
+}
+
+const EMPTY_RESPONSE: JobsResponse = {
+  jobs: [],
+  pagination: {
+    totalCount: 0,
     page: 1,
-    page_size: DEFAULT_PAGE_SIZE,
-  });
-  const [filtersOpen, setFiltersOpen] = useState(false);
+    pageSize: DEFAULT_PAGE_SIZE,
+    totalPages: 0,
+    hasNext: false,
+  },
+};
 
-  const { data, isLoading, isError, refetch } = useSearchJobs(filters);
+/**
+ * Server-fetch the public jobs list. 30s revalidate (CLAUDE.md §14) — long
+ * enough for edge cache hits, short enough that first paint is not badly
+ * stale. Client island refetches on filter change. Empty response on error
+ * so the page never throws (graceful degrade).
+ */
+async function fetchJobs(queryString: string): Promise<JobsResponse> {
+  try {
+    const url = queryString
+      ? `${API_URL}/api/v1/jobs?${queryString}`
+      : `${API_URL}/api/v1/jobs`;
+    const res = await serverFetch(url, { next: { revalidate: 30 } });
+    if (!res.ok) return EMPTY_RESPONSE;
+    const body = (await res.json()) as {
+      jobs?: Job[] | null;
+      pagination?: JobsResponse['pagination'] | null;
+    };
+    return {
+      jobs: body.jobs ?? [],
+      pagination: body.pagination ?? EMPTY_RESPONSE.pagination,
+    };
+  } catch {
+    return EMPTY_RESPONSE;
+  }
+}
 
-  const currentPage = filters.page ?? 1;
-  const totalPages = data?.pagination?.totalPages ?? 1;
-
-  const hasActiveFilters =
-    filters.query !== undefined ||
-    filters.category_id !== undefined ||
-    filters.schedule_type !== undefined ||
-    filters.min_price_cents !== undefined ||
-    filters.max_price_cents !== undefined ||
-    filters.radius_km !== undefined ||
-    filters.is_recurring !== undefined;
-
+/**
+ * PERF-06: Server Component entry for `/jobs`.
+ *
+ * - Exports static metadata (SEO).
+ * - Server-fetches the public jobs catalog (URL searchParams → same query the
+ *   client would build) and seeds the client island so first paint is real
+ *   cards — no skeleton flash on the default / deep-linked browse.
+ * - Interactive filters, pagination, and retry stay in JobsSearchClient.
+ * - Fetch errors return EMPTY_RESPONSE (fail soft); the island still mounts
+ *   and TanStack refetches client-side. Root layout still forces dynamic
+ *   rendering via CSP nonce (`headers()`); the DATA fetch is revalidated
+ *   independently (30s).
+ */
+export default async function JobsSearchPage({
+  searchParams,
+}: {
+  // Next.js 15: searchParams is a Promise in async Server Components.
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
+  const initialFilters = paramsFromSearch(sp);
+  const initialJobs = await fetchJobs(queryStringFor(initialFilters));
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="animate-fade-in-up mb-8">
-        <h1 className="text-4xl font-extrabold tracking-tight text-zinc-100">
-          Find <span className="gold-text">Jobs</span>
-        </h1>
-        <p className="mt-2 text-lg text-zinc-300">Browse available jobs and place your bids</p>
-      </div>
-
-      <div className="flex flex-col gap-8 lg:flex-row">
-        {/* Mobile filter toggle */}
-        <div className="lg:hidden">
-          <Button
-            variant="outline"
-            className="min-h-[44px] w-full justify-between border-[var(--brand-gold)]/15 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
-            onClick={() => {
-              setFiltersOpen(!filtersOpen);
-            }}
-            aria-expanded={filtersOpen}
-            aria-controls="job-filters-panel"
-          >
-            <span className="flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
-              Filters
-              {hasActiveFilters ? (
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--brand-gold)] text-[10px] font-semibold text-black">
-                  !
-                </span>
-              ) : null}
-            </span>
-            {filtersOpen ? <X className="h-4 w-4" aria-hidden="true" /> : null}
-          </Button>
-        </div>
-
-        {/* Filters sidebar */}
-        <aside
-          id="job-filters-panel"
-          className={`w-full shrink-0 lg:block lg:w-72 ${filtersOpen ? 'block' : 'hidden'}`}
-        >
-          <div className="glass glass-highlight animate-fade-in sticky top-6 rounded-xl border border-[var(--brand-gold)]/10 p-4">
-            <h2 className="mb-4 text-sm font-semibold tracking-wide text-zinc-400 uppercase">
-              Filters
-            </h2>
-            <div className="stagger-children">
-              <JobSearchFilters filters={filters} onChange={setFilters} />
-            </div>
-          </div>
-        </aside>
-
-        {/* Results */}
-        <div className="flex-1">
-          {isLoading ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={`skeleton-${String(i)}`}
-                  className="glass glass-highlight animate-pulse rounded-xl border border-[var(--brand-gold)]/10 p-5"
-                >
-                  <div className="mb-3 flex items-center gap-3">
-                    <div className="h-5 w-16 rounded-full bg-white/[0.06]" />
-                    <div className="h-4 w-12 rounded bg-white/[0.06]" />
-                  </div>
-                  <div className="mb-2 h-5 w-3/4 rounded bg-white/[0.06]" />
-                  <div className="mb-4 space-y-2">
-                    <div className="h-3 w-full rounded bg-white/[0.06]" />
-                    <div className="h-3 w-5/6 rounded bg-white/[0.06]" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-4 w-4 rounded bg-white/[0.06]" />
-                    <div className="h-3 w-24 rounded bg-white/[0.06]" />
-                  </div>
-                  <div className="mt-3 flex items-center gap-2">
-                    <div className="h-4 w-4 rounded bg-white/[0.06]" />
-                    <div className="h-3 w-20 rounded bg-white/[0.06]" />
-                  </div>
-                  <div className="glass-divider mt-4 mb-3" />
-                  <div className="flex items-center justify-between">
-                    <div className="h-5 w-20 rounded bg-white/[0.06]" />
-                    <div className="h-3 w-16 rounded bg-white/[0.06]" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : isError ? (
-            <EmptyState
-              icon={
-                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-                  <circle cx="16" cy="16" r="14" stroke="currentColor" strokeWidth="2" />
-                  <path
-                    d="M12 12L20 20M20 12L12 20"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              }
-              title="Failed to load jobs"
-              description="Something went wrong while fetching jobs. Check your connection and try again."
-              action={
-                <Button
-                  variant="default"
-                  className="min-h-[44px]"
-                  onClick={() => {
-                    void refetch();
-                  }}
-                >
-                  Retry
-                </Button>
-              }
-              className="border-destructive/30"
-            />
-          ) : !data?.jobs.length ? (
-            <EmptyState
-              icon={<SearchIllustration />}
-              title="No jobs found"
-              description={
-                hasActiveFilters
-                  ? 'No jobs match your current filters. Try broadening your search or clearing some filters.'
-                  : 'There are no jobs posted right now. Check back soon for new opportunities.'
-              }
-              action={
-                hasActiveFilters ? (
-                  <Button
-                    variant="default"
-                    className="min-h-[44px]"
-                    onClick={() => {
-                      setFilters({ page: 1, page_size: DEFAULT_PAGE_SIZE });
-                    }}
-                  >
-                    Clear All Filters
-                  </Button>
-                ) : null
-              }
-            />
-          ) : (
-            <>
-              {/* Results count */}
-              <p className="mb-4 text-sm text-zinc-400">
-                {String(data.pagination?.totalCount ?? 0)} job
-                {(data.pagination?.totalCount ?? 0) !== 1 ? 's' : ''} found
-              </p>
-
-              {/* Seasonal demand banner — derived from first result's category slug */}
-              {data.jobs[0]?.category_slug ? (
-                <div className="mb-4">
-                  <SeasonalDemandBanner categorySlug={data.jobs[0].category_slug} />
-                </div>
-              ) : null}
-
-              {/* Job cards grid */}
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {data.jobs.map((job) => (
-                  <JobCard key={job.id} job={job} />
-                ))}
-              </div>
-
-              {/* Pagination */}
-              {totalPages > 1 ? (
-                <nav
-                  aria-label="Search results pagination"
-                  className="mt-8 flex items-center justify-center gap-2"
-                >
-                  <Button
-                    variant="outline"
-                    disabled={currentPage <= 1}
-                    onClick={() => {
-                      setFilters({ ...filters, page: currentPage - 1 });
-                    }}
-                    className="min-h-[44px] border-[var(--brand-gold)]/15 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
-                  >
-                    Previous
-                  </Button>
-                  <span className="px-4 text-sm text-zinc-400">
-                    Page {String(currentPage)} of {String(totalPages)}
-                  </span>
-                  <Button
-                    variant="outline"
-                    disabled={!data.pagination?.hasNext}
-                    onClick={() => {
-                      setFilters({ ...filters, page: currentPage + 1 });
-                    }}
-                    className="min-h-[44px] border-[var(--brand-gold)]/15 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
-                  >
-                    Next
-                  </Button>
-                </nav>
-              ) : null}
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+    <JobsSearchClient initialJobs={initialJobs} initialFilters={initialFilters} />
   );
 }

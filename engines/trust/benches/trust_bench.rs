@@ -1,10 +1,17 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+// Synthetic bench fixtures: counts are small, lossy casts intentional.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
 
-use nomarkup_trust_engine::models::DimensionScores;
-use nomarkup_trust_engine::scoring::{
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+
+use trust::models::DimensionScores;
+use trust::scoring::{
+    DecayConfig, FeedbackInput, FraudInput, ReviewDataPoint, RiskInput, ScoreTier, VolumeInput,
     composite_score, compute_feedback_score, compute_fraud_score, compute_risk_score,
-    compute_volume_score, decay_weight, recency_weighted_average, DecayConfig, FeedbackInput,
-    FraudInput, ReviewDataPoint, RiskInput, ScoreTier, VolumeInput,
+    compute_volume_score, decay_weight, recency_weighted_average,
 };
 
 // ---------------------------------------------------------------------------
@@ -16,26 +23,26 @@ fn make_reviews(n: usize) -> Vec<ReviewDataPoint> {
     (0..n)
         .map(|i| ReviewDataPoint {
             rating: 1.0 + (i % 5) as f64, // Ratings 1-5 cycling.
-            age_days: i as f64 * 7.0,      // One review per week.
+            age_days: i as f64 * 7.0,     // One review per week.
         })
         .collect()
 }
 
-/// Build a FeedbackInput for a provider with `n` reviews.
+/// Build a `FeedbackInput` for a provider with `n` reviews.
 fn make_feedback_input(n: i32) -> FeedbackInput {
     let avg = if n > 0 { 4.2 } else { 0.0 };
     FeedbackInput {
         average_rating: avg,
         weighted_average_rating: if n > 0 { Some(4.3) } else { None },
         total_reviews: n,
-        five_star_count: (n as f64 * 0.6) as i32,
-        one_star_count: (n as f64 * 0.05) as i32,
+        five_star_count: (f64::from(n) * 0.6) as i32,
+        one_star_count: (f64::from(n) * 0.05) as i32,
         rating_trend: 0.1,
-        disputes_lost: (n as f64 * 0.02) as i32,
+        disputes_lost: (f64::from(n) * 0.02) as i32,
     }
 }
 
-/// Build a VolumeInput representing different activity levels.
+/// Build a `VolumeInput` representing different activity levels.
 fn make_volume_input(completed: i64) -> VolumeInput {
     VolumeInput {
         total_completed: completed,
@@ -46,7 +53,7 @@ fn make_volume_input(completed: i64) -> VolumeInput {
     }
 }
 
-/// Build a RiskInput representing different risk levels.
+/// Build a `RiskInput` representing different risk levels.
 fn make_risk_input(contracts: i64, cancellations: i64, disputes: i64) -> RiskInput {
     RiskInput {
         total_contracts: contracts,

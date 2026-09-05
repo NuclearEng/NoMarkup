@@ -44,7 +44,7 @@ function ChallengeRow({ challenge }: { challenge: AdminChallenge }) {
     <div className="flex items-center gap-4 rounded-md border p-4">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
         {challenge.is_active ? (
-          <CheckCircle2 className="h-5 w-5 text-green-600" aria-hidden="true" />
+          <CheckCircle2 className="h-5 w-5 text-trust-high" aria-hidden="true" />
         ) : (
           <Circle className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
         )}
@@ -121,7 +121,7 @@ export function ChallengeManager() {
   }, []);
 
   const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
+    (e: React.SyntheticEvent) => {
       e.preventDefault();
       if (!title || !description || !targetValue || !rewardValue || !startsAt || !endsAt) {
         return;
@@ -146,7 +146,7 @@ export function ChallengeManager() {
       }
 
       createChallenge.mutate(input, {
-        onSuccess: () => resetForm(),
+        onSuccess: () => { resetForm(); },
       });
     },
     [
@@ -220,7 +220,7 @@ export function ChallengeManager() {
         <h2 className="text-lg font-semibold">All Challenges</h2>
         <Button
           className="min-h-[44px]"
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => { setShowForm(!showForm); }}
         >
           {showForm ? (
             <>
@@ -250,7 +250,7 @@ export function ChallengeManager() {
                   <Input
                     id="challenge-title"
                     value={title}
-                    onChange={(e) => setTitle(e.target.value)}
+                    onChange={(e) => { setTitle(e.target.value); }}
                     placeholder="e.g. Speed Demon"
                     required
                   />
@@ -259,7 +259,7 @@ export function ChallengeManager() {
                   <Label htmlFor="challenge-type">Challenge Type</Label>
                   <Select
                     value={challengeType}
-                    onValueChange={(v) => setChallengeType(v as ChallengeType)}
+                    onValueChange={(v) => { setChallengeType(v as ChallengeType); }}
                   >
                     <SelectTrigger id="challenge-type">
                       <SelectValue />
@@ -281,7 +281,7 @@ export function ChallengeManager() {
                 <Textarea
                   id="challenge-description"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => { setDescription(e.target.value); }}
                   placeholder="Describe what the provider needs to achieve..."
                   required
                 />
@@ -295,7 +295,7 @@ export function ChallengeManager() {
                     type="number"
                     min="1"
                     value={targetValue}
-                    onChange={(e) => setTargetValue(e.target.value)}
+                    onChange={(e) => { setTargetValue(e.target.value); }}
                     placeholder="e.g. 10"
                     required
                   />
@@ -304,7 +304,7 @@ export function ChallengeManager() {
                   <Label htmlFor="reward-type">Reward Type</Label>
                   <Select
                     value={rewardType}
-                    onValueChange={(v) => setRewardType(v as RewardType)}
+                    onValueChange={(v) => { setRewardType(v as RewardType); }}
                   >
                     <SelectTrigger id="reward-type">
                       <SelectValue />
@@ -322,7 +322,7 @@ export function ChallengeManager() {
                   <Input
                     id="reward-value"
                     value={rewardValue}
-                    onChange={(e) => setRewardValue(e.target.value)}
+                    onChange={(e) => { setRewardValue(e.target.value); }}
                     placeholder="e.g. Rising Star"
                     required
                   />
@@ -336,7 +336,7 @@ export function ChallengeManager() {
                     id="starts-at"
                     type="datetime-local"
                     value={startsAt}
-                    onChange={(e) => setStartsAt(e.target.value)}
+                    onChange={(e) => { setStartsAt(e.target.value); }}
                     required
                   />
                 </div>
@@ -346,7 +346,7 @@ export function ChallengeManager() {
                     id="ends-at"
                     type="datetime-local"
                     value={endsAt}
-                    onChange={(e) => setEndsAt(e.target.value)}
+                    onChange={(e) => { setEndsAt(e.target.value); }}
                     required
                   />
                 </div>
@@ -367,7 +367,7 @@ export function ChallengeManager() {
                     <Input
                       id="season-name"
                       value={seasonName}
-                      onChange={(e) => setSeasonName(e.target.value)}
+                      onChange={(e) => { setSeasonName(e.target.value); }}
                       placeholder="e.g. Spring Sprint 2026"
                     />
                   </div>
@@ -379,7 +379,7 @@ export function ChallengeManager() {
                     type="number"
                     min="1"
                     value={maxParticipants}
-                    onChange={(e) => setMaxParticipants(e.target.value)}
+                    onChange={(e) => { setMaxParticipants(e.target.value); }}
                     placeholder="Unlimited"
                   />
                 </div>

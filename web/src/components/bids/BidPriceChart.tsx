@@ -21,17 +21,19 @@ export function BidPriceChart({ bids, height = 120, className }: BidPriceChartPr
     const points = bids.map((v, i) => {
       const x = (i / (bids.length - 1)) * w;
       const y = height - ((v - min) / range) * (height - 16);
-      return `${x},${y}`;
+      return `${String(x)},${String(y)}`;
     });
     return `M${points.join(' L')}`;
   }, [bids, height]);
 
   const areaPath = useMemo(() => {
     if (!path) return '';
-    return `${path} L100,${height} L0,${height} Z`;
+    return `${path} L100,${String(height)} L0,${String(height)} Z`;
   }, [path, height]);
 
-  const isDown = bids.length >= 2 && bids[bids.length - 1]! < bids[0]!;
+  const lastBid = bids[bids.length - 1];
+  const firstBid = bids[0];
+  const isDown = bids.length >= 2 && lastBid !== undefined && firstBid !== undefined && lastBid < firstBid;
 
   if (bids.length < 2) {
     return (
@@ -47,12 +49,12 @@ export function BidPriceChart({ bids, height = 120, className }: BidPriceChartPr
   return (
     <div className={cn('relative overflow-hidden rounded-xl', className)}>
       <svg
-        viewBox={`0 0 100 ${height}`}
+        viewBox={`0 0 100 ${String(height)}`}
         preserveAspectRatio="none"
         className="h-full w-full"
         style={{ height }}
         role="img"
-        aria-label={`Bid price chart showing ${bids.length} bids, trending ${isDown ? 'down' : 'up'}`}
+        aria-label={`Bid price chart showing ${String(bids.length)} bids, trending ${isDown ? 'down' : 'up'}`}
       >
         <defs>
           <linearGradient id="bid-gradient" x1="0" y1="0" x2="0" y2="1">

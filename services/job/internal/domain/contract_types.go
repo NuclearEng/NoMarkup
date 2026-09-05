@@ -9,15 +9,48 @@ import (
 // Sentinel errors for the contract domain.
 var (
 	ErrContractNotFound        = errors.New("contract not found")
+	// ErrJobAlreadyContracted means the job already carries a LIVE contract
+	// for a DIFFERENT bid (migration 078's uq_contracts_live_job). Awarding a
+	// second bid would start a parallel escrow lifecycle against the same job,
+	// so it is refused. Retrying the award of the SAME bid is not this error —
+	// that returns the existing contract (CreateContract is idempotent per
+	// bid). Gateways should map this to 409 Conflict.
+	ErrJobAlreadyContracted = errors.New("job already has a live contract for a different bid")
 	ErrNotContractParty        = errors.New("not a party to this contract")
+	ErrNotContractProvider     = errors.New("only the provider can mark this contract complete")
 	ErrAlreadyAccepted         = errors.New("contract already accepted by this party")
 	ErrDeadlineExpired         = errors.New("acceptance deadline has expired")
 	ErrContractNotActive       = errors.New("contract is not active")
+	ErrMilestonesNotApproved   = errors.New("all milestones must be approved before completing")
 	ErrMilestoneNotFound       = errors.New("milestone not found")
 	ErrMaxRevisions            = errors.New("maximum revision count reached")
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
+	ErrGuaranteeNotCompleted   = errors.New("guarantee claims require a completed contract")
 	ErrDisputeNotFound         = errors.New("dispute not found")
 	ErrDisputeAlreadyResolved  = errors.New("dispute is already resolved")
+	ErrInvalidResolutionType   = errors.New("invalid resolution type")
+	ErrInvalidGuaranteeOutcome = errors.New("invalid guarantee outcome")
+	// ErrInvalidGuaranteePayout guards the guarantee-claim money path: the
+	// admin-set payout must be non-negative and never exceed the covered
+	// contract amount (the guarantee can refund at most what was contracted).
+	ErrInvalidGuaranteePayout = errors.New("invalid guarantee payout amount")
+
+	// Change-order sentinels.
+	ErrChangeOrderNotFound     = errors.New("change order not found")
+	ErrChangeOrderNotProposer  = errors.New("only the provider can propose a change order")
+	ErrChangeOrderNotResponder = errors.New("only the customer can respond to a change order")
+	ErrChangeOrderNotPending   = errors.New("change order is no longer pending")
+	ErrInvalidChangeOrderDelta = errors.New("invalid change order amount delta")
+
+	// Recurring (FR-18) sentinels.
+	ErrRecurringNotFound         = errors.New("recurring config not found")
+	ErrRecurringInstanceNotFound = errors.New("recurring instance not found")
+	ErrRecurringNotActive        = errors.New("recurring config is not active")
+	ErrRecurringNotPaused        = errors.New("recurring config is not paused")
+	ErrRecurringCancelled        = errors.New("recurring config is cancelled")
+	ErrRecurringInvalidFrequency = errors.New("invalid recurrence frequency")
+	ErrRecurringInvalidRate      = errors.New("invalid recurring rate")
+	ErrRecurringInstanceState    = errors.New("invalid recurring instance status transition")
 )
 
 // Contract represents a contract between customer and provider.
@@ -49,6 +82,8 @@ type Contract struct {
 	JobTitle     string
 	Milestones   []Milestone
 	ChangeOrders []ChangeOrder
+	// Recurring is loaded when a recurring_configs row exists for the contract.
+	Recurring *RecurringConfig
 }
 
 // Milestone represents a milestone within a contract.
@@ -109,6 +144,41 @@ type MilestoneInput struct {
 	AmountCents int64
 }
 
+// RecurringConfig is the schedule + rate for a recurring contract (FR-18).
+// Backed by recurring_configs (migration 001).
+type RecurringConfig struct {
+	ID              string
+	ContractID      string
+	Frequency       string // weekly, biweekly, monthly
+	RateCents       int64
+	AutoApprove     bool
+	Status          string // active, paused, cancelled
+	PausedAt        *time.Time
+	PauseMaxDate    *time.Time
+	NextOccurrence  time.Time // DATE stored as midnight UTC
+	CancelledAt     *time.Time
+	CancelledBy     *string
+	NoticePeriodEnd *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// RecurringInstance is a single occurrence of a recurring contract (FR-18).
+// Backed by recurring_instances (migration 001).
+type RecurringInstance struct {
+	ID             string
+	RecurringID    string
+	ContractID     string
+	OccurrenceDate time.Time // DATE stored as midnight UTC
+	Status         string    // scheduled, in_progress, completed, skipped, cancelled
+	AmountCents    int64
+	CompletedAt    *time.Time
+	ApprovedAt     *time.Time
+	AutoApproved   bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 // ContractRepository defines persistence operations for contracts.
 type ContractRepository interface {
 	CreateContract(ctx context.Context, contract *Contract, milestones []MilestoneInput) (*Contract, error)
@@ -127,6 +197,16 @@ type ContractRepository interface {
 	GetContractsAwaitingApproval(ctx context.Context, olderThan time.Duration) ([]Contract, error)
 	UpdateJobCompleted(ctx context.Context, jobID string) error
 
+	// Change orders
+	CreateChangeOrder(ctx context.Context, order *ChangeOrder) (*ChangeOrder, error)
+	GetChangeOrder(ctx context.Context, changeOrderID string) (*ChangeOrder, error)
+	// AcceptChangeOrder atomically marks the change order accepted and applies the
+	// amount delta to the contract (and its single milestone, if present). It
+	// returns the updated change order.
+	AcceptChangeOrder(ctx context.Context, changeOrderID string) (*ChangeOrder, error)
+	// RejectChangeOrder marks the change order rejected without any money change.
+	RejectChangeOrder(ctx context.Context, changeOrderID string) (*ChangeOrder, error)
+
 	// Disputes
 	CreateDispute(ctx context.Context, dispute *Dispute) (*Dispute, error)
 	GetDispute(ctx context.Context, disputeID string) (*Dispute, error)
@@ -134,4 +214,14 @@ type ContractRepository interface {
 	ResolveDispute(ctx context.Context, disputeID, resolutionType, notes, resolvedBy string, refundAmountCents int64, guaranteeOutcome string) (*Dispute, error)
 	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any) error
 	UpdateContractStatus(ctx context.Context, contractID string, status string) error
+
+	// Recurring (FR-18) — tables recurring_configs / recurring_instances
+	GetRecurringConfigByContract(ctx context.Context, contractID string) (*RecurringConfig, error)
+	GetRecurringConfigByID(ctx context.Context, recurringID string) (*RecurringConfig, error)
+	CreateRecurringConfig(ctx context.Context, cfg *RecurringConfig) (*RecurringConfig, error)
+	UpdateRecurringConfig(ctx context.Context, cfg *RecurringConfig) (*RecurringConfig, error)
+	ListRecurringInstances(ctx context.Context, recurringID string, page, pageSize int) ([]*RecurringInstance, *Pagination, error)
+	GetRecurringInstance(ctx context.Context, instanceID string) (*RecurringInstance, error)
+	CreateRecurringInstance(ctx context.Context, inst *RecurringInstance) (*RecurringInstance, error)
+	UpdateRecurringInstance(ctx context.Context, inst *RecurringInstance) (*RecurringInstance, error)
 }

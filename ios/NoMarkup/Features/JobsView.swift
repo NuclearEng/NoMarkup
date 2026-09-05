@@ -1,0 +1,827 @@
+import SwiftUI
+
+/// Services reverse-auction surface.
+/// Browse = public open jobs; Mine = authenticated owner list (`/jobs/mine`).
+///
+/// DES.12 / MP.1: regular width → `NavigationSplitView` (list + detail);
+/// compact → `NavigationStack`. Selection drives the detail pane on iPad.
+struct JobsView: View {
+    private enum Segment: String, CaseIterable, Identifiable {
+        case browse = "Browse"
+        case mine = "Mine"
+        var id: String { rawValue }
+    }
+
+    @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @ObservedObject private var deepLinks = DeepLinkRouter.shared
+
+    @State private var segment: Segment = .browse
+    @State private var jobs: [JobSummary] = []
+    @State private var myJobs: [JobMine] = []
+    @State private var pagination: PaginationMeta?
+    @State private var myPagination: PaginationMeta?
+    @State private var isLoading = false
+    @State private var isLoadingMore = false
+    @State private var errorMessage: String?
+    @State private var needsSignIn = false
+    @State private var searchText = ""
+    @State private var loadMoreError: String?
+    @State private var selectedJob: JobSummary?
+    /// FR-3.8 browse filters (category + min starting bid + schedule type).
+    @State private var filterCategoryId = ""
+    @State private var filterCategoryName = ""
+    @State private var minStartingBidText = ""
+    /// Empty = any; otherwise gateway values: flexible | specific_date | date_range.
+    @State private var filterScheduleType = ""
+    @State private var showBrowseFilters = false
+    /// Mine empty copy is role-specific — `/jobs/mine` is the customer owner list.
+    /// Dual-role users keep the customer empty (they can post). Provider-only
+    /// users get a browse CTA instead of “Post a job”.
+    @State private var viewerHasProviderRole = false
+    @State private var viewerHasCustomerRole = false
+    @State private var showPostJob = false
+
+    private let scheduleFilterOptions: [(id: String, label: String)] = [
+        ("", "Any schedule"),
+        ("flexible", "Flexible"),
+        ("specific_date", "Specific date"),
+        ("date_range", "Date range"),
+    ]
+
+    private var usesSplitView: Bool { horizontalSizeClass == .regular }
+
+    /// Copies a pending App Intent / `/jobs?q=` search into the browse search field.
+    @discardableResult
+    private func applyIncomingCatalogSearch() -> Bool {
+        guard let q = deepLinks.consumeCatalogSearchQuery(for: .jobs) else { return false }
+        segment = .browse
+        searchText = q
+        return true
+    }
+
+    private var minStartingBidCents: Int64? {
+        let t = minStartingBidText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return nil }
+        return MoneyFormat.cents(fromDollarsText: t)
+    }
+
+    var body: some View {
+        Group {
+            if usesSplitView {
+                NavigationSplitView {
+                    listRoot
+                } detail: {
+                    NavigationStack {
+                        if let selectedJob {
+                            LazyView {
+                                JobDetailView(jobID: selectedJob.id, preview: selectedJob)
+                            }
+                        } else {
+                            ContentUnavailableView(
+                                "Select a job",
+                                systemImage: "wrench.and.screwdriver",
+                                description: Text("Choose a reverse auction from the list.")
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .brandScreenBackground()
+                        }
+                    }
+                }
+            } else {
+                NavigationStack {
+                    listRoot
+                        .navigationDestination(for: JobSummary.self) { job in
+                            LazyView {
+                                JobDetailView(jobID: job.id, preview: job)
+                            }
+                        }
+                }
+            }
+        }
+    }
+
+    private var listRoot: some View {
+        content
+            .navigationTitle("Jobs")
+            .refreshable { await load(reset: true) }
+            .task(id: segment) {
+                _ = applyIncomingCatalogSearch()
+                await load(reset: true)
+            }
+            .onChange(of: deepLinks.sequence) { _, _ in
+                if applyIncomingCatalogSearch() {
+                    Task { await load(reset: true) }
+                }
+            }
+            .onChange(of: segment) { _, _ in
+                BrandHaptics.selection()
+                selectedJob = nil
+            }
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("Jobs section", selection: $segment) {
+                        ForEach(Segment.allCases) { s in
+                            Text(s.rawValue).tag(s)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(minWidth: 180)
+                    .accessibilityLabel("Jobs section")
+                    .accessibilityIdentifier("jobs.segment")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 12) {
+                        if segment == .browse {
+                            Button {
+                                showBrowseFilters.toggle()
+                            } label: {
+                                Label(
+                                    "Filters",
+                                    systemImage: hasActiveBrowseFilters
+                                        ? "line.3.horizontal.decrease.circle.fill"
+                                        : "line.3.horizontal.decrease.circle"
+                                )
+                            }
+                            .frame(minHeight: 44)
+                            .accessibilityHint("Filter browse by category, schedule, and minimum starting bid")
+                            .accessibilityIdentifier("jobs.filters")
+                        }
+                        NavigationLink {
+                            LazyView { JobsMapView() }
+                        } label: {
+                            Label("Map", systemImage: "map")
+                        }
+                        .frame(minHeight: 44)
+                        .accessibilityHint("Shows open jobs on a map")
+                        .accessibilityIdentifier("jobs.map")
+                    }
+                }
+            }
+            .brandNavigationBarChrome()
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    BrandCatalogSearchField(
+                        text: $searchText,
+                        prompt: segment == .browse ? "Search jobs" : "Search is browse-only",
+                        enabled: segment == .browse,
+                        accessibilityID: "jobs.search"
+                    ) {
+                        guard segment == .browse else { return }
+                        Task { await load(reset: true) }
+                    }
+                    if segment == .browse, showBrowseFilters {
+                        browseFiltersBar
+                    }
+                }
+            }
+            .sheet(isPresented: $showPostJob) {
+                NavigationStack {
+                    PostJobView()
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close") { showPostJob = false }
+                                    .frame(minHeight: 44)
+                                    .accessibilityIdentifier("postJob.close")
+                            }
+                        }
+                }
+                .environmentObject(auth)
+                .tint(BrandTheme.accent)
+            }
+    }
+
+    private var hasActiveBrowseFilters: Bool {
+        !filterCategoryId.isEmpty || minStartingBidCents != nil || !filterScheduleType.isEmpty
+    }
+
+    private var hasBrowseSearchQuery: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var browseFiltersBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            NavigationLink {
+                CategoryPickerView(selectedId: $filterCategoryId, selectedName: $filterCategoryName)
+            } label: {
+                HStack {
+                    Text("Category")
+                        .foregroundStyle(BrandTheme.textPrimary)
+                    Spacer()
+                    Text(filterCategoryName.isEmpty ? "Any" : filterCategoryName)
+                        .foregroundStyle(filterCategoryName.isEmpty ? BrandTheme.textSecondary : BrandTheme.goldBright)
+                        .lineLimit(1)
+                }
+                .frame(minHeight: 44)
+            }
+            .accessibilityLabel("Filter by category")
+
+            // FR-3.8 — schedule_type query (flexible / specific_date / date_range).
+            Picker("Schedule", selection: $filterScheduleType) {
+                ForEach(scheduleFilterOptions, id: \.id) { opt in
+                    Text(opt.label).tag(opt.id)
+                }
+            }
+            .frame(minHeight: 44)
+            .accessibilityLabel("Filter by schedule type")
+
+            HStack {
+                Text("Min starting bid ($)")
+                    .foregroundStyle(BrandTheme.textPrimary)
+                TextField("Any", text: $minStartingBidText)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(minHeight: 44)
+            }
+
+            HStack {
+                Button("Apply") {
+                    Task { await load(reset: true) }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(BrandTheme.accent)
+                .frame(minHeight: 44)
+
+                Button("Clear") {
+                    filterCategoryId = ""
+                    filterCategoryName = ""
+                    minStartingBidText = ""
+                    filterScheduleType = ""
+                    Task { await load(reset: true) }
+                }
+                .buttonStyle(.bordered)
+                .frame(minHeight: 44)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(BrandTheme.navyElevated)
+        .accessibilityIdentifier("jobs.filters.bar")
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch segment {
+        case .browse:
+            browseContent
+        case .mine:
+            mineContent
+        }
+    }
+
+    // MARK: - Browse (public)
+
+    @ViewBuilder
+    private var browseContent: some View {
+        if isLoading && jobs.isEmpty {
+            BrandLoadingScreen(kind: .catalog, rows: 5, accessibilityLabel: "Loading jobs…")
+                .accessibilityIdentifier("jobs.loading")
+        } else if let errorMessage, jobs.isEmpty {
+            BrandEmptyState(
+                title: "Couldn’t load jobs",
+                systemImage: "wifi.exclamationmark",
+                message: errorMessage,
+                actionTitle: "Try again"
+            ) {
+                Task { await load(reset: true) }
+            }
+            .accessibilityIdentifier("jobs.error")
+        } else if jobs.isEmpty, pagination?.resolvedHasNext != true {
+            BrandEmptyState(
+                title: hasBrowseSearchQuery ? "No matching jobs" : "No open reverse auctions",
+                systemImage: "wrench.and.screwdriver",
+                message: hasBrowseSearchQuery
+                    ? "Nothing matches “\(searchText.trimmingCharacters(in: .whitespacesAndNewlines))”. Clear search or post a job."
+                    : "When customers post work, qualified providers compete here on price. Pull to refresh, or post a job and watch providers bid down.",
+                actionTitle: "Post a job",
+                action: {
+                    BrandHaptics.selection()
+                    showPostJob = true
+                }
+            )
+            .accessibilityIdentifier("jobs.empty")
+        } else {
+            List {
+                Section {
+                    Text("Customers post jobs. Providers compete on price (descending reverse auction). Fair market rates — not lead-gen markup.")
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
+                }
+
+                Section {
+                    if jobs.isEmpty {
+                        Text("No open auctions on this page. Load more to keep scanning the floor.")
+                            .font(.subheadline)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityIdentifier("jobs.browse.drainEmpty")
+                    }
+                    ForEach(jobs) { job in
+                        jobRowLink(job)
+                    }
+                } header: {
+                    if jobs.isEmpty {
+                        Text("Open floor").brandSectionHeader()
+                    } else {
+                        Text("\(jobs.count) open").brandSectionHeader()
+                    }
+                }
+
+                if pagination?.resolvedHasNext == true {
+                    Section {
+                        loadMoreFooter(
+                            isLoadingMore: isLoadingMore,
+                            error: loadMoreError
+                        ) {
+                            Task { await load(reset: false) }
+                        }
+                    }
+                }
+
+                Section {
+                    Text(LocationPurposeCopy.systemWhenInUseUsageDescription)
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
+                    Text(LocationPurposeCopy.marketPickerPrePrompt)
+                        .font(.caption2)
+                        .foregroundStyle(BrandTheme.textSecondary.opacity(0.75))
+                        .listRowBackground(BrandTheme.navyElevated)
+                } header: {
+                    Text("Location").brandSectionHeader()
+                }
+            }
+            .brandListBackground()
+            .brandTabBarClearance()
+            .accessibilityIdentifier("jobs.list")
+        }
+    }
+
+    // MARK: - Mine (auth)
+
+    @ViewBuilder
+    private var mineContent: some View {
+        if auth.isScaffoldSession {
+            BrandEmptyState(
+                title: "Sign in for My Jobs",
+                systemImage: "person.crop.circle.badge.exclamationmark",
+                message: "Browse-only mode has no API token. Sign out and sign in with a real account to load jobs you posted.",
+                actionTitle: "Sign out to log in"
+            ) {
+                auth.signOut()
+            }
+            .accessibilityIdentifier("jobs.mine.empty")
+        } else if needsSignIn {
+            BrandEmptyState(
+                title: "Sign in required",
+                systemImage: "lock.circle",
+                message: "Your session expired or is missing. Sign in again to see jobs you posted.",
+                actionTitle: "Sign in"
+            ) {
+                auth.signOut()
+            }
+            .accessibilityIdentifier("jobs.mine.empty")
+        } else if isLoading && myJobs.isEmpty {
+            BrandLoadingScreen(kind: .catalog, rows: 5, accessibilityLabel: "Loading your jobs…")
+                .accessibilityIdentifier("jobs.loading")
+        } else if let errorMessage, myJobs.isEmpty {
+            BrandEmptyState(
+                title: "Couldn’t load your jobs",
+                systemImage: "wifi.exclamationmark",
+                message: errorMessage,
+                actionTitle: "Try again"
+            ) {
+                Task { await load(reset: true) }
+            }
+            .accessibilityIdentifier("jobs.error")
+        } else if myJobs.isEmpty {
+            mineEmptyState
+        } else {
+            List {
+                Section {
+                    Text("Jobs you posted (including drafts if the mine feed includes them). Open a row for detail; publish drafts from Account → Job drafts.")
+                        .font(.subheadline)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .listRowBackground(BrandTheme.navyElevated)
+                }
+
+                Section {
+                    ForEach(myJobs) { job in
+                        jobRowLink(job)
+                    }
+                } header: {
+                    if let total = myPagination?.resolvedTotal, total > 0 {
+                        Text("\(myJobs.count) of \(total)").brandSectionHeader()
+                    } else {
+                        Text("My jobs").brandSectionHeader()
+                    }
+                }
+
+                if myPagination?.resolvedHasNext == true {
+                    Section {
+                        loadMoreFooter(
+                            isLoadingMore: isLoadingMore,
+                            error: loadMoreError
+                        ) {
+                            Task { await load(reset: false) }
+                        }
+                    }
+                }
+            }
+            .brandListBackground()
+            .brandTabBarClearance()
+            .accessibilityIdentifier("jobs.list")
+        }
+    }
+
+    /// Mine is `GET /jobs/mine` (jobs this user posted). Dual-role keeps the
+    /// customer empty + Post CTA. Provider-only users cannot post this list.
+    @ViewBuilder
+    private var mineEmptyState: some View {
+        if viewerHasProviderRole && !viewerHasCustomerRole {
+            BrandEmptyState(
+                title: "No awarded work",
+                systemImage: "briefcase",
+                message: "This list is jobs you post as a customer. Bid on the open floor, or enable customer in Profile to post.",
+                actionTitle: "Browse the open floor"
+            ) {
+                segment = .browse
+            }
+            .accessibilityIdentifier("jobs.mine.empty")
+        } else {
+            BrandEmptyState(
+                title: "No jobs yet",
+                systemImage: "tray",
+                message: "Jobs you post as a customer show up here. Providers bid down until the market sets the price.",
+                actionTitle: "Post a job",
+                action: {
+                    BrandHaptics.selection()
+                    showPostJob = true
+                }
+            )
+            .accessibilityIdentifier("jobs.mine.empty")
+        }
+    }
+
+    @ViewBuilder
+    private func jobRowLink(_ job: JobSummary) -> some View {
+        if usesSplitView {
+            Button {
+                selectedJob = job
+            } label: {
+                JobRowView(job: job)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .frame(minHeight: 44)
+            .listRowBackground(
+                selectedJob?.id == job.id ? BrandTheme.surfaceRaised : BrandTheme.navyElevated
+            )
+            .accessibilityHint("Shows job detail in the side panel")
+        } else {
+            NavigationLink(value: job) {
+                JobRowView(job: job)
+            }
+            .frame(minHeight: 44)
+            .listRowBackground(BrandTheme.navyElevated)
+            .accessibilityHint("Opens job detail")
+        }
+    }
+
+    @ViewBuilder
+    private func loadMoreFooter(
+        isLoadingMore: Bool,
+        error: String?,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let error, !error.isEmpty {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.destructive)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button {
+                BrandHaptics.light()
+                action()
+            } label: {
+                if isLoadingMore {
+                    ProgressView()
+                        .tint(BrandTheme.accent)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                } else {
+                    Text("Load more")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+            }
+            .buttonStyle(.bordered)
+            .tint(BrandTheme.accent)
+            .disabled(isLoadingMore)
+            .accessibilityLabel("Load more jobs")
+            .accessibilityHint("Fetches the next page and appends to the list")
+        }
+        .listRowBackground(BrandTheme.navyElevated)
+    }
+
+    @MainActor
+    private func load(reset: Bool) async {
+        if reset {
+            isLoading = true
+            loadMoreError = nil
+        } else {
+            guard !isLoadingMore else { return }
+            let hasNext: Bool = {
+                switch segment {
+                case .browse: return pagination?.resolvedHasNext == true
+                case .mine: return myPagination?.resolvedHasNext == true
+                }
+            }()
+            guard hasNext else { return }
+            isLoadingMore = true
+            loadMoreError = nil
+        }
+        errorMessage = nil
+        needsSignIn = false
+        defer {
+            isLoading = false
+            isLoadingMore = false
+        }
+
+        let pageSize = 40
+
+        switch segment {
+        case .browse:
+            do {
+                try await loadOpenBrowse(reset: reset, pageSize: pageSize)
+            } catch {
+                if reset, jobs.isEmpty {
+                    errorMessage = error.localizedDescription
+                } else if !reset {
+                    loadMoreError = error.localizedDescription
+                }
+            }
+        case .mine:
+            if auth.isScaffoldSession {
+                myJobs = []
+                myPagination = nil
+                return
+            }
+            let nextPage = reset ? 1 : (myPagination?.resolvedPage ?? 1) + 1
+            do {
+                if reset, !auth.isScaffoldSession {
+                    if let me = try? await APIClient.shared.fetchMe() {
+                        viewerHasProviderRole = me.hasProviderRole
+                        viewerHasCustomerRole = me.hasCustomerRole
+                    }
+                }
+                let response = try await APIClient.shared.fetchMyJobs(page: nextPage, pageSize: pageSize)
+                if reset {
+                    myJobs = response.jobs
+                } else {
+                    let existing = Set(myJobs.map(\.id))
+                    myJobs.append(contentsOf: response.jobs.filter { !existing.contains($0.id) })
+                }
+                myPagination = response.pagination
+            } catch let error as APIClientError where error.isUnauthorized {
+                if reset {
+                    myJobs = []
+                    myPagination = nil
+                    needsSignIn = true
+                } else {
+                    loadMoreError = error.localizedDescription
+                }
+            } catch {
+                if reset, myJobs.isEmpty {
+                    errorMessage = error.localizedDescription
+                } else if !reset {
+                    loadMoreError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    /// Public browse is the open floor — closed/cancelled/draft rows stay on Mine.
+    private static func isOpenBrowseStatus(_ raw: String?) -> Bool {
+        switch (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "active", "open", "bidding", "live", "published":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Bound so a closed-first catalog cannot hammer the gateway on first paint.
+    private static let browseClosedDrainLimit = 8
+
+    /// Fetch browse pages until at least one open-floor row lands, or pages run out.
+    /// Closed-only pages stay off the default floor (empty + Load more, not Closed cards).
+    @MainActor
+    private func loadOpenBrowse(reset: Bool, pageSize: Int) async throws {
+        var page = reset ? 1 : (pagination?.resolvedPage ?? 1) + 1
+        var collected: [JobSummary] = []
+        var seen = Set(reset ? [String]() : jobs.map(\.id))
+        var lastMeta: PaginationMeta?
+
+        for _ in 0..<Self.browseClosedDrainLimit {
+            let categoryIds: [String]? = filterCategoryId.isEmpty ? nil : [filterCategoryId]
+            let schedule: String? = filterScheduleType.isEmpty ? nil : filterScheduleType
+            let response = try await APIClient.shared.fetchJobs(
+                page: page,
+                pageSize: pageSize,
+                q: searchText,
+                categoryIds: categoryIds,
+                latitude: AppConfig.browseLatitude,
+                longitude: AppConfig.browseLongitude,
+                scheduleType: schedule,
+                minPriceCents: minStartingBidCents,
+                sort: "created_at",
+                sortDir: "desc",
+                status: "open"
+            )
+            lastMeta = response.pagination
+            let open = response.jobs.filter { Self.isOpenBrowseStatus($0.status) }
+            for job in open where !seen.contains(job.id) {
+                seen.insert(job.id)
+                collected.append(job)
+            }
+            if !open.isEmpty { break }
+            guard response.pagination?.resolvedHasNext == true else { break }
+            page += 1
+        }
+
+        if reset {
+            jobs = collected
+        } else {
+            jobs.append(contentsOf: collected)
+        }
+        pagination = lastMeta
+    }
+}
+
+// MARK: - Row
+
+private struct JobRowView: View {
+    let job: JobSummary
+
+    private var isDraft: Bool {
+        (job.status ?? "").lowercased() == "draft"
+    }
+
+    private var isLive: Bool {
+        switch (job.status ?? "").lowercased() {
+        case "active", "open", "bidding", "live", "published":
+            return true
+        default:
+            return false
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if isDraft {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.text")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(BrandTheme.warning)
+                    Text("DRAFT")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(BrandTheme.warning)
+                    Text("· not published")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Draft, not published")
+            } else if isLive {
+                HStack(spacing: 6) {
+                    LivePulseDot()
+                    Text("LIVE REVERSE AUCTION")
+                        .font(.caption2.weight(.bold).monospaced())
+                        .tracking(0.4)
+                        .foregroundStyle(BrandTheme.success)
+                    if let countdown = job.auctionCountdown {
+                        Text("· \(countdown)")
+                            .font(.caption2.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.goldBright)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(job.displayTitle)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(BrandTheme.textPrimary)
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                if let price = job.displayPrice {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(price)
+                            .font(.body.weight(.bold).monospacedDigit())
+                            .foregroundStyle(BrandTheme.goldBright)
+                            .contentTransition(.numericText())
+                        if let caption = job.priceCaption {
+                            Text(caption)
+                                .font(.caption2)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+
+            HStack(spacing: 8) {
+                if !isDraft {
+                    Text("Bid down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandTheme.goldBright)
+                }
+                if let status = job.status, !status.isEmpty {
+                    StatusChipView(
+                        label: StatusChipStyle.displayLabel(status),
+                        style: StatusChipStyle.forStatus(status)
+                    )
+                }
+                if let category = job.categoryName, !category.isEmpty {
+                    Text(category)
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+
+            HStack(spacing: 12) {
+                if let location = job.locationLabel {
+                    Label(location, systemImage: "mappin.and.ellipse")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .lineLimit(1)
+                }
+                // FR-10.7: distance when browse is geo-scoped (AppConfig lat/lng).
+                // Travel-time residual: MapKit ETA needs a destination coordinate.
+                // Job list only returns distance_km + approximate city/state (no lat/lng
+                // for privacy). Skip ETA until list/map exposes a coarse destination.
+                if let distance = job.distanceLabel {
+                    Label(distance, systemImage: "location")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                        .lineLimit(1)
+                }
+                if job.resolvedBidCount > 0 {
+                    Label("\(job.resolvedBidCount) bids", systemImage: "hammer")
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.textSecondary)
+                }
+                if let countdown = job.auctionCountdown {
+                    Label(countdown, systemImage: "clock")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(countdown == "Ended" ? BrandTheme.textSecondary : BrandTheme.goldBright)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Compact status pill used on catalog rows.
+struct StatusChipView: View {
+    let label: String
+    let style: StatusChipStyle
+
+    var body: some View {
+        Text(label)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .foregroundStyle(foreground)
+            .background(background, in: Capsule())
+            .accessibilityLabel("Status \(label)")
+    }
+
+    private var foreground: Color {
+        switch style {
+        case .success: return BrandTheme.success
+        case .info: return BrandTheme.bidActive
+        case .warning: return BrandTheme.warning
+        case .danger: return BrandTheme.destructive
+        case .neutral: return BrandTheme.textSecondary
+        }
+    }
+
+    private var background: Color {
+        foreground.opacity(0.14)
+    }
+}
+
+#Preview {
+    JobsView()
+        .environmentObject(AuthViewModel())
+        .preferredColorScheme(.dark)
+        .tint(BrandTheme.accent)
+}

@@ -156,7 +156,10 @@ fn score_user_agent(ua: &str) -> f64 {
     for token in ANCIENT_ENGINE_TOKENS {
         // Simple substring check -- the regex-style brackets are just
         // illustrative; we check a simplified version.
-        let plain = token.replace("[1-3]", "").replace("[1-5]", "").replace("[0-9]", "");
+        let plain = token
+            .replace("[1-3]", "")
+            .replace("[1-5]", "")
+            .replace("[0-9]", "");
         if lower.contains(&plain) {
             score += 0.15;
             break;
@@ -209,8 +212,8 @@ fn score_attribute_anomalies(fp: &FingerprintAttributes) -> f64 {
     }
 
     // Canvas hash is all zeros -- typical headless default.
-    let canvas_suspicious = !fp.canvas_hash.is_empty()
-        && fp.canvas_hash.chars().all(|c| c == '0' || c == 'x');
+    let canvas_suspicious =
+        !fp.canvas_hash.is_empty() && fp.canvas_hash.chars().all(|c| c == '0' || c == 'x');
     if canvas_suspicious {
         score += 0.20;
     }
@@ -323,13 +326,11 @@ pub fn score_bid_patterns(
     }
 
     // --- 2. Shill bidding patterns ---
-    let shill_score =
-        detect_shill_bidding(bids, customer_ids_by_job, customer_sessions);
+    let shill_score = detect_shill_bidding(bids, customer_ids_by_job, customer_sessions);
     if shill_score > 0.0 {
         shill_pattern = true;
         score += shill_score;
-        reasons
-            .push("Shill bidding pattern: bidder shares device/IP with job poster".into());
+        reasons.push("Shill bidding pattern: bidder shares device/IP with job poster".into());
     }
 
     // --- 3. Bid rotation detection ---
@@ -337,9 +338,8 @@ pub fn score_bid_patterns(
     if rotation_score > 0.0 {
         bid_rotation = true;
         score += rotation_score;
-        reasons.push(
-            "Bid rotation detected: systematic bid-then-withdraw pattern across jobs".into(),
-        );
+        reasons
+            .push("Bid rotation detected: systematic bid-then-withdraw pattern across jobs".into());
     }
 
     // --- 4. Repeated identical amounts ---
@@ -524,11 +524,7 @@ fn detect_duplicate_amounts(bids: &[BidRecord]) -> f64 {
     }
 
     // Find the most-repeated amount across different jobs.
-    let max_jobs_same_amount = amount_counts
-        .values()
-        .map(HashSet::len)
-        .max()
-        .unwrap_or(0);
+    let max_jobs_same_amount = amount_counts.values().map(HashSet::len).max().unwrap_or(0);
 
     let ratio = max_jobs_same_amount as f64 / unique_jobs.len() as f64;
 
@@ -598,11 +594,7 @@ pub fn score_ip_geolocation(
     let users_in_subnet = if let Some(ref prefix) = target_prefix {
         let user_ids: HashSet<uuid::Uuid> = all_sessions
             .iter()
-            .filter(|s| {
-                ip_v4_24_prefix(&s.ip_address)
-                    .as_ref()
-                    .map_or(false, |p| p == prefix)
-            })
+            .filter(|s| ip_v4_24_prefix(&s.ip_address).as_ref() == Some(prefix))
             .map(|s| s.user_id)
             .collect();
         user_ids.len()
@@ -648,24 +640,25 @@ pub fn score_ip_geolocation(
     }
 
     // --- 3. Geo-mismatch ---
-    if let Some(expected) = expected_country {
-        if !expected.is_empty() {
-            let target_sessions: Vec<&IpSessionRecord> = all_sessions
-                .iter()
-                .filter(|s| s.user_id == target_user_id)
-                .collect();
+    if let Some(expected) = expected_country
+        && !expected.is_empty()
+    {
+        let target_sessions: Vec<&IpSessionRecord> = all_sessions
+            .iter()
+            .filter(|s| s.user_id == target_user_id)
+            .collect();
 
-            for sess in &target_sessions {
-                if let Some(ref country) = sess.geo_country {
-                    if !country.is_empty() && country != expected {
-                        geo_mismatch = true;
-                        score += 0.20;
-                        reasons.push(format!(
-                            "Geo mismatch: session from {country}, expected {expected}"
-                        ));
-                        break; // Only flag once.
-                    }
-                }
+        for sess in &target_sessions {
+            if let Some(ref country) = sess.geo_country
+                && !country.is_empty()
+                && country != expected
+            {
+                geo_mismatch = true;
+                score += 0.20;
+                reasons.push(format!(
+                    "Geo mismatch: session from {country}, expected {expected}"
+                ));
+                break; // Only flag once.
             }
         }
     }
@@ -702,10 +695,7 @@ fn ip_v4_24_prefix(ip: &str) -> Option<String> {
 ///
 /// Uses a conservative 900 km/h threshold (roughly the speed of a commercial
 /// jet).
-fn detect_impossible_travel(
-    target_user_id: uuid::Uuid,
-    sessions: &[IpSessionRecord],
-) -> f64 {
+fn detect_impossible_travel(target_user_id: uuid::Uuid, sessions: &[IpSessionRecord]) -> f64 {
     let user_sessions: Vec<&IpSessionRecord> = sessions
         .iter()
         .filter(|s| s.user_id == target_user_id && s.geo_lat.is_some() && s.geo_lng.is_some())
@@ -749,8 +739,10 @@ fn haversine_km(lat1: f64, lng1: f64, lat2: f64, lng2: f64) -> f64 {
     let lat1_rad = lat1.to_radians();
     let lat2_rad = lat2.to_radians();
 
-    let a = (d_lat / 2.0).sin().powi(2)
-        + lat1_rad.cos() * lat2_rad.cos() * (d_lng / 2.0).sin().powi(2);
+    let a = (d_lat / 2.0).sin().mul_add(
+        (d_lat / 2.0).sin(),
+        lat1_rad.cos() * lat2_rad.cos() * (d_lng / 2.0).sin().powi(2),
+    );
 
     let c = 2.0 * a.sqrt().asin();
 
@@ -958,10 +950,7 @@ mod tests {
         let mut fp = default_fingerprint();
         fp.user_agent = String::new();
         let score = score_fingerprint(&fp);
-        assert!(
-            score > 0.2,
-            "empty UA should increase score, got {score}"
-        );
+        assert!(score > 0.2, "empty UA should increase score, got {score}");
     }
 
     #[test]
@@ -1332,10 +1321,7 @@ mod tests {
 
     #[test]
     fn ipv4_prefix_extracted() {
-        assert_eq!(
-            ip_v4_24_prefix("192.168.1.100"),
-            Some("192.168.1".into())
-        );
+        assert_eq!(ip_v4_24_prefix("192.168.1.100"), Some("192.168.1".into()));
     }
 
     #[test]

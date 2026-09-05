@@ -10,10 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
-	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +19,7 @@ import (
 	"nhooyr.io/websocket"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 const (
@@ -80,8 +78,11 @@ func NewSpectatorWSHandler(cacheClient *cache.Client) *SpectatorWSHandler {
 // SpectateAuction handles anonymous WebSocket connections for auction spectators.
 // This endpoint is publicly accessible (no authentication required).
 func (h *SpectatorWSHandler) SpectateAuction(w http.ResponseWriter, r *http.Request) {
-	// Check feature flag.
-	if os.Getenv("ENABLE_LIVE_AUCTION") != "true" {
+	// Dual gate: spectator_mode DB flag is enforced by RequireFlag on the route
+	// (migration 013). ENABLE_LIVE_AUCTION remains an ops kill switch AND-ed
+	// here so services-side spectate can be killed without a DB write.
+	// See middleware.LiveAuctionEnvEnabled.
+	if !middleware.LiveAuctionEnvEnabled() {
 		writeError(w, http.StatusNotFound, "live auctions not enabled")
 		return
 	}
@@ -106,9 +107,11 @@ func (h *SpectatorWSHandler) SpectateAuction(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Accept the WebSocket connection.
+	// Accept the WebSocket connection. OriginPatterns enforces the Same-Origin
+	// policy — even for anonymous spectator flows, we fail closed to prevent
+	// arbitrary third-party sites from embedding our feed.
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // CORS handled by gateway middleware.
+		OriginPatterns: wsOriginPatterns(),
 	})
 	if err != nil {
 		slog.Error("spectator ws accept failed", "error", err, "remote_addr", r.RemoteAddr)
@@ -323,7 +326,17 @@ func (h *SpectatorWSHandler) checkIPLimit(ctx context.Context, ip string) bool {
 		rdb.Expire(ctx, key, spectatorIPKeyTTL)
 	}
 
-	return count <= maxSpectatorConnectionsPerIP
+	if count > maxSpectatorConnectionsPerIP {
+		// Over the cap: this connection is rejected and never registers, so the
+		// Decr in unregisterSpectator never runs. Undo the speculative Incr now
+		// so a rejected attempt consumes no slot — otherwise sustained over-cap
+		// attempts from one IP leak the counter and lock the IP out for the TTL.
+		// (We keep the atomic Incr-then-check to avoid a GET/Incr TOCTOU.)
+		rdb.Decr(ctx, key)
+		return false
+	}
+
+	return true
 }
 
 // registerSpectator adds a spectator to the tracking set for an auction.
@@ -414,21 +427,8 @@ func lastIndexByte(s string, c byte) int {
 	return -1
 }
 
-// extractClientIP extracts the client IP from the request, checking proxy headers first.
+// extractClientIP returns the client IP, honoring proxy headers only when the
+// direct peer is a trusted proxy (see middleware.ClientIP).
 func extractClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if ip := strings.TrimSpace(strings.SplitN(xff, ",", 2)[0]); ip != "" {
-			return ip
-		}
-	}
-
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return middleware.ClientIP(r)
 }

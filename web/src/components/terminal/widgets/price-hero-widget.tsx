@@ -17,13 +17,18 @@ function fmt(cents: number): string {
   }).format(cents / 100);
 }
 
-export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: WidgetProps) {
+export function PriceHeroWidget({
+  sim,
+  auctionEndsAt,
+  startingPriceCents,
+  snipeExtensionCount = 0,
+}: WidgetProps) {
   const savingsCents = startingPriceCents - sim.currentLowest;
   const savingsPct =
     sim.currentLowest > 0 ? Math.round((savingsCents / startingPriceCents) * 100) : 0;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl bg-[#0c0f18] border border-[var(--brand-gold)]/15 shadow-[0_0_0_1px_rgba(201,168,76,0.06),0_20px_50px_-12px_rgba(0,0,0,0.6)]">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl bg-card border border-[var(--brand-gold)]/15 shadow-[0_0_0_1px_rgba(201,168,76,0.06),0_20px_50px_-12px_rgba(0,0,0,0.6)]">
       {/* Animated gold accent line at top */}
       <div className="hero-gold-line-animated h-[2px] shrink-0" />
 
@@ -137,7 +142,7 @@ export function PriceHeroWidget({ sim, auctionEndsAt, startingPriceCents }: Widg
             <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: 'linear-gradient(90deg, transparent, rgba(139,92,246,0.5), transparent)' }} />
             <div className="absolute top-0 bottom-0 left-0 w-px" style={{ background: 'linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent)' }} />
             <Shield className="mb-1 h-4 w-4 text-violet-400/70" />
-            <SnipeIndicator count={0} max={3} />
+            <SnipeIndicator count={snipeExtensionCount ?? 0} max={3} />
           </div>
         </div>
       </div>

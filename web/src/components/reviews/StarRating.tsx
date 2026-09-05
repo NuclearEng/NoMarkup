@@ -34,7 +34,17 @@ export function StarRatingDisplay({ rating, size = 'md', showValue = false }: St
   const sizeClass = SIZE_MAP[size];
 
   return (
-    <div className="flex items-center gap-1" aria-label={`Rating: ${String(rating)} out of 5 stars`}>
+    // `role="img"` is required, not decorative: `aria-label` is PROHIBITED on a
+    // bare <div> (implicit role `generic`) — axe `aria-prohibited-attr`,
+    // serious / WCAG 2.1 A 4.1.2 — so the label was silently dropped by
+    // assistive tech and the rating announced as nothing at all. Declaring the
+    // star row a single labelled image makes the name valid and collapses the
+    // five decorative glyphs into one meaningful announcement.
+    <div
+      className="flex items-center gap-1"
+      role="img"
+      aria-label={`Rating: ${String(rating)} out of 5 stars`}
+    >
       {Array.from({ length: 5 }, (_, i) => {
         const starIndex = i + 1;
         const isFilled = starIndex <= Math.round(rating);

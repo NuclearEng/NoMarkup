@@ -24,6 +24,8 @@ type mockSubRepo struct {
 	cancelSubscriptionFn     func(ctx context.Context, id string, cancelledAt time.Time, status string) error
 	updateSubPeriodFn        func(ctx context.Context, id string, periodStart, periodEnd time.Time) error
 	getUsageFn               func(ctx context.Context, userID string) (int32, int32, int32, error)
+	updateTierFn             func(ctx context.Context, tierID string, updates map[string]interface{}) (*domain.SubscriptionTier, error)
+	adminListSubscriptionsFn func(ctx context.Context, statusFilter, tierID string, page, pageSize int) ([]*domain.Subscription, int, int64, error)
 }
 
 func (m *mockSubRepo) ListTiers(ctx context.Context) ([]*domain.SubscriptionTier, error) {
@@ -56,13 +58,19 @@ func (m *mockSubRepo) UpdateSubscriptionPeriod(ctx context.Context, id string, p
 func (m *mockSubRepo) GetUsage(ctx context.Context, userID string) (int32, int32, int32, error) {
 	return m.getUsageFn(ctx, userID)
 }
-func (m *mockSubRepo) UpdateTier(_ context.Context, tierID string, _ map[string]interface{}) (*domain.SubscriptionTier, error) {
+func (m *mockSubRepo) UpdateTier(ctx context.Context, tierID string, updates map[string]interface{}) (*domain.SubscriptionTier, error) {
+	if m.updateTierFn != nil {
+		return m.updateTierFn(ctx, tierID, updates)
+	}
 	if m.getTierFn != nil {
-		return m.getTierFn(context.Background(), tierID)
+		return m.getTierFn(ctx, tierID)
 	}
 	return nil, domain.ErrTierNotFound
 }
-func (m *mockSubRepo) AdminListSubscriptions(_ context.Context, _ string, _ string, _, _ int) ([]*domain.Subscription, int, int64, error) {
+func (m *mockSubRepo) AdminListSubscriptions(ctx context.Context, statusFilter, tierID string, page, pageSize int) ([]*domain.Subscription, int, int64, error) {
+	if m.adminListSubscriptionsFn != nil {
+		return m.adminListSubscriptionsFn(ctx, statusFilter, tierID, page, pageSize)
+	}
 	return nil, 0, 0, nil
 }
 

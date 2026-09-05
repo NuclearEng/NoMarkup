@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -91,8 +92,10 @@ func (r *PostgresRepository) GetChannel(ctx context.Context, channelID string, u
 		return nil, fmt.Errorf("get channel: %w", err)
 	}
 
-	// Compute unread count based on user role.
-	ch.UnreadCount = computeUnread(&ch, userID)
+	// Exact unread (peer messages after watermark) — never MessageCount upper bound.
+	if n, uerr := r.countUnreadForUser(ctx, channelID, userID); uerr == nil {
+		ch.UnreadCount = n
+	}
 
 	// Load last message.
 	lastMsg, err := r.getLastMessage(ctx, channelID)
@@ -101,6 +104,46 @@ func (r *PostgresRepository) GetChannel(ctx context.Context, channelID string, u
 	}
 
 	return &ch, nil
+}
+
+// IsChannelMember reports whether userID is the customer or provider on the
+// given channel. Used by the WebSocket subscribe path to authorize a live
+// subscription without loading the full channel. Returns false (not an error)
+// when the channel does not exist.
+func (r *PostgresRepository) IsChannelMember(ctx context.Context, channelID, userID string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM chat_channels
+			WHERE id = $1 AND (customer_id = $2 OR provider_id = $2)
+		)`,
+		channelID, userID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("is channel member: %w", err)
+	}
+	return exists, nil
+}
+
+// IsJobParticipant reports whether userID is a party to the given job — i.e.
+// the job owner (customer) or a provider who has placed a bid on it. Used by
+// the live-auction WebSocket subscribe path to authorize access to the
+// privileged real-time bid feed. Returns false (not an error) when the user
+// is unrelated to the job.
+func (r *PostgresRepository) IsJobParticipant(ctx context.Context, jobID, userID string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM jobs WHERE id = $1 AND customer_id = $2
+			UNION ALL
+			SELECT 1 FROM bids WHERE job_id = $1 AND provider_id = $2
+		)`,
+		jobID, userID,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("is job participant: %w", err)
+	}
+	return exists, nil
 }
 
 func (r *PostgresRepository) ListChannels(ctx context.Context, userID string, page, pageSize int) ([]*domain.Channel, int, error) {
@@ -130,7 +173,21 @@ func (r *PostgresRepository) ListChannels(ctx context.Context, userID string, pa
 		SELECT c.id, c.job_id, c.customer_id, c.provider_id, c.status, c.channel_type,
 		       c.customer_last_read_at, c.provider_last_read_at, c.last_message_at,
 		       c.message_count, c.created_at, c.updated_at,
-		       m.id, m.channel_id, m.sender_id, m.message_type, m.content, m.created_at
+		       m.id, m.channel_id, m.sender_id, m.message_type, m.content, m.created_at,
+		       (
+		         SELECT COUNT(*) FROM chat_messages um
+		         WHERE um.channel_id = c.id
+		           AND um.is_deleted = false
+		           AND um.sender_id <> $1
+		           AND um.created_at > COALESCE(
+		             CASE
+		               WHEN c.customer_id = $1 THEN c.customer_last_read_at
+		               WHEN c.provider_id = $1 THEN c.provider_last_read_at
+		               ELSE NULL
+		             END,
+		             '1970-01-01'::timestamptz
+		           )
+		       ) AS unread_count
 		FROM chat_channels c
 		LEFT JOIN LATERAL (
 			SELECT id, channel_id, sender_id, message_type, content, created_at
@@ -160,12 +217,11 @@ func (r *PostgresRepository) ListChannels(ctx context.Context, userID string, pa
 			&ch.CustomerLastReadAt, &ch.ProviderLastReadAt, &ch.LastMessageAt,
 			&ch.MessageCount, &ch.CreatedAt, &ch.UpdatedAt,
 			&msgID, &msgChannelID, &msgSenderID, &msgType, &msgContent, &msgCreatedAt,
+			&ch.UnreadCount,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("list channels scan: %w", err)
 		}
-
-		ch.UnreadCount = computeUnread(&ch, userID)
 
 		if msgID != nil {
 			ch.LastMessage = &domain.Message{
@@ -207,14 +263,31 @@ func (r *PostgresRepository) SendMessage(ctx context.Context, msg *domain.Messag
 		return nil, fmt.Errorf("send message insert: %w", err)
 	}
 
-	// Update channel metadata.
+	// Update channel metadata and advance the sender's MarkRead watermark so
+	// own messages never create self-unread badges (pairs with sender_id filter).
 	_, err = tx.Exec(ctx, `
 		UPDATE chat_channels
 		SET last_message_at = $1,
 		    message_count = message_count + 1,
+		    customer_last_read_at = CASE
+		      WHEN customer_id = $3 THEN
+		        CASE
+		          WHEN customer_last_read_at IS NULL OR customer_last_read_at < $1 THEN $1
+		          ELSE customer_last_read_at
+		        END
+		      ELSE customer_last_read_at
+		    END,
+		    provider_last_read_at = CASE
+		      WHEN provider_id = $3 THEN
+		        CASE
+		          WHEN provider_last_read_at IS NULL OR provider_last_read_at < $1 THEN $1
+		          ELSE provider_last_read_at
+		        END
+		      ELSE provider_last_read_at
+		    END,
 		    updated_at = now()
 		WHERE id = $2`,
-		createdAt, msg.ChannelID,
+		createdAt, msg.ChannelID, msg.SenderID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("send message update channel: %w", err)
@@ -229,7 +302,7 @@ func (r *PostgresRepository) SendMessage(ctx context.Context, msg *domain.Messag
 	return msg, nil
 }
 
-func (r *PostgresRepository) ListMessages(ctx context.Context, channelID string, before *time.Time, pageSize int) ([]*domain.Message, error) {
+func (r *PostgresRepository) ListMessages(ctx context.Context, channelID string, before *time.Time, pageSize int, query string) ([]*domain.Message, error) {
 	if pageSize < 1 {
 		pageSize = 50
 	}
@@ -237,10 +310,51 @@ func (r *PostgresRepository) ListMessages(ctx context.Context, channelID string,
 		pageSize = 100
 	}
 
+	// FR-8.6: optional ILIKE content filter. Escape %/_ so user input cannot
+	// broaden the pattern; channel_id predicate keeps the scan membership-scoped
+	// (caller enforces membership). Existing (channel_id, created_at) indexes apply.
+	search := strings.TrimSpace(query)
+	var likePattern string
+	if search != "" {
+		// Cap search length to avoid pathological patterns.
+		if len(search) > 200 {
+			search = search[:200]
+		}
+		esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(search)
+		likePattern = "%" + esc + "%"
+	}
+
 	var rows pgx.Rows
 	var err error
 
-	if before != nil {
+	switch {
+	case search != "" && before != nil:
+		rows, err = r.pool.Query(ctx, `
+			SELECT id, channel_id, sender_id, message_type, content,
+			       COALESCE(attachment_url, ''), COALESCE(attachment_name, ''),
+			       COALESCE(attachment_type, ''), COALESCE(attachment_size, 0),
+			       flagged_contact_info, is_deleted, deleted_at, created_at
+			FROM chat_messages
+			WHERE channel_id = $1 AND created_at < $2 AND is_deleted = false
+			  AND content ILIKE $3 ESCAPE '\'
+			ORDER BY created_at DESC
+			LIMIT $4`,
+			channelID, *before, likePattern, pageSize,
+		)
+	case search != "":
+		rows, err = r.pool.Query(ctx, `
+			SELECT id, channel_id, sender_id, message_type, content,
+			       COALESCE(attachment_url, ''), COALESCE(attachment_name, ''),
+			       COALESCE(attachment_type, ''), COALESCE(attachment_size, 0),
+			       flagged_contact_info, is_deleted, deleted_at, created_at
+			FROM chat_messages
+			WHERE channel_id = $1 AND is_deleted = false
+			  AND content ILIKE $2 ESCAPE '\'
+			ORDER BY created_at DESC
+			LIMIT $3`,
+			channelID, likePattern, pageSize,
+		)
+	case before != nil:
 		rows, err = r.pool.Query(ctx, `
 			SELECT id, channel_id, sender_id, message_type, content,
 			       COALESCE(attachment_url, ''), COALESCE(attachment_name, ''),
@@ -252,7 +366,7 @@ func (r *PostgresRepository) ListMessages(ctx context.Context, channelID string,
 			LIMIT $3`,
 			channelID, *before, pageSize,
 		)
-	} else {
+	default:
 		rows, err = r.pool.Query(ctx, `
 			SELECT id, channel_id, sender_id, message_type, content,
 			       COALESCE(attachment_url, ''), COALESCE(attachment_name, ''),
@@ -326,6 +440,8 @@ func (r *PostgresRepository) MarkRead(ctx context.Context, channelID string, use
 }
 
 func (r *PostgresRepository) GetUnreadCounts(ctx context.Context, userID string) ([]domain.ChannelUnread, error) {
+	// Unread = peer (and system) messages after the viewer's watermark.
+	// Exclude sender_id = viewer so own sends after MarkRead never inflate badges.
 	rows, err := r.pool.Query(ctx, `
 		SELECT id,
 		       CASE
@@ -333,11 +449,13 @@ func (r *PostgresRepository) GetUnreadCounts(ctx context.Context, userID string)
 		               (SELECT COUNT(*) FROM chat_messages
 		                WHERE channel_id = chat_channels.id
 		                  AND is_deleted = false
+		                  AND sender_id <> $1
 		                  AND created_at > COALESCE(chat_channels.customer_last_read_at, '1970-01-01'))
 		           WHEN provider_id = $1 THEN
 		               (SELECT COUNT(*) FROM chat_messages
 		                WHERE channel_id = chat_channels.id
 		                  AND is_deleted = false
+		                  AND sender_id <> $1
 		                  AND created_at > COALESCE(chat_channels.provider_last_read_at, '1970-01-01'))
 		           ELSE 0
 		       END AS unread_count
@@ -385,30 +503,41 @@ func (r *PostgresRepository) getLastMessage(ctx context.Context, channelID strin
 	return &m, nil
 }
 
-// computeUnread calculates unread count for the given user in a channel.
-func computeUnread(ch *domain.Channel, userID string) int {
-	if ch.LastMessageAt == nil {
-		return 0
+// countUnreadForUser returns peer messages after the viewer's last_read watermark.
+// Own messages are excluded. Failures return 0 with error for the caller to log.
+func (r *PostgresRepository) countUnreadForUser(ctx context.Context, channelID, userID string) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM chat_messages m
+		JOIN chat_channels c ON c.id = m.channel_id
+		WHERE m.channel_id = $1
+		  AND m.is_deleted = false
+		  AND m.sender_id <> $2
+		  AND (c.customer_id = $2 OR c.provider_id = $2)
+		  AND m.created_at > COALESCE(
+		    CASE
+		      WHEN c.customer_id = $2 THEN c.customer_last_read_at
+		      WHEN c.provider_id = $2 THEN c.provider_last_read_at
+		      ELSE NULL
+		    END,
+		    '1970-01-01'::timestamptz
+		  )`,
+		channelID, userID,
+	).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count unread: %w", err)
 	}
+	return n, nil
+}
 
-	var lastRead *time.Time
-	if userID == ch.CustomerID {
-		lastRead = ch.CustomerLastReadAt
-	} else if userID == ch.ProviderID {
-		lastRead = ch.ProviderLastReadAt
-	} else {
-		return 0
+// messageCountsAsUnread is the pure predicate mirrored by unread SQL
+// (sender_id <> viewer AND created_at > watermark). Exported for unit tests.
+func messageCountsAsUnread(senderID, viewerID string, msgAt time.Time, lastRead *time.Time) bool {
+	if senderID == "" || viewerID == "" || senderID == viewerID {
+		return false
 	}
-
 	if lastRead == nil {
-		return ch.MessageCount
+		return true
 	}
-
-	if ch.LastMessageAt.After(*lastRead) {
-		// Approximate: we know there are unread messages but do not know exactly how many
-		// without a count query. Return message_count as an upper bound. The exact count
-		// is computed by the GetUnreadCounts method.
-		return ch.MessageCount
-	}
-	return 0
+	return msgAt.After(*lastRead)
 }

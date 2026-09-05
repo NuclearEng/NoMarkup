@@ -33,7 +33,7 @@ impl RiskLevel {
 
     /// Map to DB severity string (3 values: low, medium, high).
     #[must_use]
-    pub fn as_db_severity(&self) -> &'static str {
+    pub const fn as_db_severity(&self) -> &'static str {
         match self {
             Self::Low => "low",
             Self::Medium => "medium",
@@ -54,7 +54,7 @@ impl RiskLevel {
 
     /// Convert to proto i32.
     #[must_use]
-    pub fn to_proto_i32(self) -> i32 {
+    pub const fn to_proto_i32(self) -> i32 {
         match self {
             Self::Low => 1,
             Self::Medium => 2,
@@ -75,7 +75,7 @@ pub enum FraudDecision {
 
 impl FraudDecision {
     #[must_use]
-    pub fn from_risk_level(level: RiskLevel) -> Self {
+    pub const fn from_risk_level(level: RiskLevel) -> Self {
         match level {
             RiskLevel::Low => Self::Allow,
             RiskLevel::Medium => Self::AllowWithReview,
@@ -86,7 +86,7 @@ impl FraudDecision {
 
     /// Convert to proto i32.
     #[must_use]
-    pub fn to_proto_i32(self) -> i32 {
+    pub const fn to_proto_i32(self) -> i32 {
         match self {
             Self::Allow => 1,
             Self::AllowWithReview => 2,
@@ -97,10 +97,11 @@ impl FraudDecision {
 }
 
 /// Proto signal type enum values mapped to closest DB `signal_type` values.
-/// Proto enum: VELOCITY=1, GEO_MISMATCH=2, DEVICE_FINGERPRINT=3, SHILL_BID=4,
-///   ACCOUNT_TAKEOVER=5, PAYMENT_FRAUD=6, FAKE_REVIEW=7, MULTI_ACCOUNT=8, BOT_BEHAVIOR=9
-/// DB: 'review_manipulation', 'account_fraud', 'bid_manipulation',
-///     'transaction_fraud', 'bad_actor_behavior'
+///
+/// Proto enum: VELOCITY=1, `GEO_MISMATCH=2`, `DEVICE_FINGERPRINT=3`, `SHILL_BID=4`,
+///   `ACCOUNT_TAKEOVER=5`, `PAYMENT_FRAUD=6`, `FAKE_REVIEW=7`, `MULTI_ACCOUNT=8`, `BOT_BEHAVIOR=9`
+/// DB: '`review_manipulation`', '`account_fraud`', '`bid_manipulation`',
+///     '`transaction_fraud`', '`bad_actor_behavior`'
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignalType {
     Velocity,
@@ -117,7 +118,7 @@ pub enum SignalType {
 impl SignalType {
     /// Parse from proto enum i32.
     #[must_use]
-    pub fn from_proto_i32(v: i32) -> Option<Self> {
+    pub const fn from_proto_i32(v: i32) -> Option<Self> {
         match v {
             1 => Some(Self::Velocity),
             2 => Some(Self::GeoMismatch),
@@ -134,7 +135,7 @@ impl SignalType {
 
     /// Convert to proto enum i32.
     #[must_use]
-    pub fn to_proto_i32(self) -> i32 {
+    pub const fn to_proto_i32(self) -> i32 {
         match self {
             Self::Velocity => 1,
             Self::GeoMismatch => 2,
@@ -150,7 +151,7 @@ impl SignalType {
 
     /// Map to closest DB `signal_type` value.
     #[must_use]
-    pub fn as_db_str(&self) -> &'static str {
+    pub const fn as_db_str(&self) -> &'static str {
         match self {
             Self::Velocity => "bad_actor_behavior",
             Self::GeoMismatch => "account_fraud",
@@ -189,7 +190,7 @@ impl SignalType {
 
     /// Human-readable name used as DB `signal_subtype`.
     #[must_use]
-    pub fn as_subtype_str(&self) -> &'static str {
+    pub const fn as_subtype_str(&self) -> &'static str {
         match self {
             Self::Velocity => "velocity",
             Self::GeoMismatch => "geo_mismatch",

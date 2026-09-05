@@ -45,6 +45,22 @@ func (s *Server) CreateChannel(ctx context.Context, req *chatv1.CreateChannelReq
 	}, nil
 }
 
+// ShareContactInfo implements FR-8.8 explicit contact share (opt-in message).
+func (s *Server) ShareContactInfo(ctx context.Context, req *chatv1.ShareContactInfoRequest) (*chatv1.ShareContactInfoResponse, error) {
+	contact, err := s.svc.ShareContactInfo(ctx, req.GetChannelId(), req.GetUserId(), req.GetPhone(), req.GetEmail())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &chatv1.ShareContactInfoResponse{
+		Contact: &chatv1.SharedContact{
+			UserId:   contact.UserID,
+			Phone:    contact.Phone,
+			Email:    contact.Email,
+			SharedAt: timestamppb.New(contact.SharedAt),
+		},
+	}, nil
+}
+
 func (s *Server) GetChannel(ctx context.Context, req *chatv1.GetChannelRequest) (*chatv1.GetChannelResponse, error) {
 	ch, err := s.svc.GetChannel(ctx, req.GetChannelId(), req.GetUserId())
 	if err != nil {
@@ -123,7 +139,7 @@ func (s *Server) ListMessages(ctx context.Context, req *chatv1.ListMessagesReque
 		before = &t
 	}
 
-	messages, err := s.svc.ListMessages(ctx, req.GetChannelId(), req.GetUserId(), before, pageSize)
+	messages, err := s.svc.ListMessages(ctx, req.GetChannelId(), req.GetUserId(), before, pageSize, req.GetQuery())
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -146,10 +162,48 @@ func (s *Server) MarkRead(ctx context.Context, req *chatv1.MarkReadRequest) (*ch
 	return &chatv1.MarkReadResponse{}, nil
 }
 
+// SendProposedTerms — provider-only local-terms proposal (FR-8.9 / FR-5.4).
+func (s *Server) SendProposedTerms(ctx context.Context, req *chatv1.SendProposedTermsRequest) (*chatv1.SendProposedTermsResponse, error) {
+	terms := map[string]interface{}{}
+	if v := strings.TrimSpace(req.GetPaymentType()); v != "" {
+		terms["payment_type"] = v
+	}
+	if v := strings.TrimSpace(req.GetAmount()); v != "" {
+		terms["amount"] = v
+	}
+	if v := strings.TrimSpace(req.GetMilestones()); v != "" {
+		terms["milestones"] = v
+	}
+	if v := strings.TrimSpace(req.GetDescription()); v != "" {
+		terms["description"] = v
+	}
+
+	msg, err := s.svc.SendProposedTerms(ctx, req.GetChannelId(), req.GetSenderId(), terms)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &chatv1.SendProposedTermsResponse{
+		Message: domainMessageToProto(msg),
+	}, nil
+}
+
+// RespondToTerms — customer-only explicit Accept/Reject. On Accept, service
+// binds local terms onto the live contract when channel job + contract exist.
+func (s *Server) RespondToTerms(ctx context.Context, req *chatv1.RespondToTermsRequest) (*chatv1.RespondToTermsResponse, error) {
+	msg, err := s.svc.RespondToTerms(ctx, req.GetChannelId(), req.GetUserId(), req.GetAccepted())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &chatv1.RespondToTermsResponse{
+		Message: domainMessageToProto(msg),
+	}, nil
+}
+
 func (s *Server) SendTypingIndicator(ctx context.Context, req *chatv1.SendTypingIndicatorRequest) (*chatv1.SendTypingIndicatorResponse, error) {
 	err := s.svc.SendTypingIndicator(ctx, req.GetChannelId(), req.GetUserId())
 	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to send typing indicator")
+		// SEC-10: non-members → PermissionDenied via mapDomainError (not 500).
+		return nil, mapDomainError(err)
 	}
 	return &chatv1.SendTypingIndicatorResponse{}, nil
 }
@@ -190,6 +244,13 @@ func domainChannelToProto(ch *domain.Channel) *chatv1.Channel {
 		UpdatedAt:   timestamppb.New(ch.UpdatedAt),
 	}
 
+	if ch.CustomerLastReadAt != nil {
+		pb.CustomerLastReadAt = timestamppb.New(*ch.CustomerLastReadAt)
+	}
+	if ch.ProviderLastReadAt != nil {
+		pb.ProviderLastReadAt = timestamppb.New(*ch.ProviderLastReadAt)
+	}
+
 	if ch.LastMessage != nil {
 		pb.LastMessage = domainMessageToProto(ch.LastMessage)
 	}
@@ -213,19 +274,21 @@ func domainMessageToProto(m *domain.Message) *chatv1.Message {
 func protoChannelTypeToString(ct chatv1.ChannelType) string {
 	switch ct {
 	case chatv1.ChannelType_CHANNEL_TYPE_PRE_AWARD:
-		return "pre_award"
+		// Maps to DB "bid" via service.normalizeChannelType.
+		return "bid"
 	case chatv1.ChannelType_CHANNEL_TYPE_CONTRACT:
 		return "contract"
 	case chatv1.ChannelType_CHANNEL_TYPE_SUPPORT:
-		return "support"
+		return "contract"
 	default:
-		return "pre_award"
+		return "bid"
 	}
 }
 
 func stringToProtoChannelType(s string) chatv1.ChannelType {
 	switch s {
-	case "pre_award":
+	case "pre_award", "bid", "inquiry":
+		// inquiry is pre-award Q&A; bid is post-bid pre-award. Both surface as PRE_AWARD on wire.
 		return chatv1.ChannelType_CHANNEL_TYPE_PRE_AWARD
 	case "contract":
 		return chatv1.ChannelType_CHANNEL_TYPE_CONTRACT
@@ -248,6 +311,12 @@ func protoMessageTypeToString(mt chatv1.MessageType) string {
 		return "system"
 	case chatv1.MessageType_MESSAGE_TYPE_CONTACT_SHARE:
 		return "contact_share"
+	case chatv1.MessageType_MESSAGE_TYPE_PROPOSED_TERMS:
+		return "proposed_terms"
+	case chatv1.MessageType_MESSAGE_TYPE_TERMS_ACCEPTED:
+		return "terms_accepted"
+	case chatv1.MessageType_MESSAGE_TYPE_TERMS_REJECTED:
+		return "terms_rejected"
 	default:
 		return "text"
 	}
@@ -265,6 +334,12 @@ func stringToProtoMessageType(s string) chatv1.MessageType {
 		return chatv1.MessageType_MESSAGE_TYPE_SYSTEM
 	case "contact_share":
 		return chatv1.MessageType_MESSAGE_TYPE_CONTACT_SHARE
+	case "proposed_terms":
+		return chatv1.MessageType_MESSAGE_TYPE_PROPOSED_TERMS
+	case "terms_accepted":
+		return chatv1.MessageType_MESSAGE_TYPE_TERMS_ACCEPTED
+	case "terms_rejected":
+		return chatv1.MessageType_MESSAGE_TYPE_TERMS_REJECTED
 	default:
 		return chatv1.MessageType_MESSAGE_TYPE_UNSPECIFIED
 	}
@@ -283,12 +358,22 @@ func mapDomainError(err error) error {
 		return status.Error(codes.NotFound, "channel not found")
 	case errors.Is(err, domain.ErrNotChannelMember):
 		return status.Error(codes.PermissionDenied, "not a member of this channel")
+	case errors.Is(err, domain.ErrOnlyProviderCanPropose):
+		return status.Error(codes.PermissionDenied, "only the provider can propose terms")
+	case errors.Is(err, domain.ErrOnlyCustomerCanRespond):
+		return status.Error(codes.PermissionDenied, "only the customer can respond to proposed terms")
 	case errors.Is(err, domain.ErrChannelClosed):
 		return status.Error(codes.FailedPrecondition, "channel is closed or read-only")
 	case errors.Is(err, domain.ErrMessageNotFound):
 		return status.Error(codes.NotFound, "message not found")
 	case errors.Is(err, domain.ErrEmptyMessage):
 		return status.Error(codes.InvalidArgument, "message content is empty")
+	case errors.Is(err, domain.ErrTermsAlreadyPending):
+		return status.Error(codes.FailedPrecondition, "proposed terms already pending")
+	case errors.Is(err, domain.ErrNoBidForChat):
+		// Predictable precondition (provider has no active bid on the job) —
+		// must not 500. FailedPrecondition → gateway 422.
+		return status.Error(codes.FailedPrecondition, "provider must have an active bid on the job to chat")
 	case strings.Contains(msg, "is required"):
 		return status.Error(codes.InvalidArgument, msg)
 	default:

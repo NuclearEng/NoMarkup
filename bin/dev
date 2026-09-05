@@ -54,12 +54,25 @@ FRAUD_PORT=${FRAUD_PORT:-50056}
 TRUST_PORT=${TRUST_PORT:-50057}
 IMAGING_PORT=${IMAGING_PORT:-50058}
 NOTIFICATION_PORT=${NOTIFICATION_PORT:-50059}
+UNDERWRITING_PORT=${UNDERWRITING_PORT:-50060}
+PRICING_PORT=${PRICING_PORT:-50061}
 WEB_PORT=${WEB_PORT:-3000}
+
+# ── Object storage (MinIO) ────────────────────────────────────────
+# Host used in *presigned* PUT URLs and public image URLs returned to clients.
+# Default localhost is fine for Simulator / web on the same machine. Physical
+# device dogfood must use a LAN-reachable host (set DEV_PUBLIC_HOST or put
+# S3_ENDPOINT / S3_PUBLIC_URL in .env.local — e.g. http://192.168.1.101:9000).
+DEV_PUBLIC_HOST=${DEV_PUBLIC_HOST:-localhost}
+S3_BUCKET=${S3_BUCKET:-nomarkup-dev}
+S3_ENDPOINT=${S3_ENDPOINT:-http://$DEV_PUBLIC_HOST:$MINIO_PORT}
+S3_PUBLIC_URL=${S3_PUBLIC_URL:-http://$DEV_PUBLIC_HOST:$MINIO_PORT/$S3_BUCKET}
 
 # ── Database ─────────────────────────────────────────────────────
 PG_USER=nomarkup
 PG_DB=nomarkup
-DATABASE_URL="postgresql://$PG_USER@localhost:$PG_PORT/$PG_DB?sslmode=disable"
+PG_PASSWORD=${PG_PASSWORD:-password}
+DATABASE_URL="postgresql://$PG_USER:$PG_PASSWORD@localhost:$PG_PORT/$PG_DB?sslmode=disable"
 
 # ── Colors ───────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -151,16 +164,20 @@ stop_one() {
 }
 
 ensure_pg_on_path() {
-    if ! has_cmd pg_ctl; then
-        local prefix
-        prefix="$(brew --prefix postgresql@17 2>/dev/null || true)"
-        if [[ -n "$prefix" && -d "$prefix/bin" ]]; then
-            export PATH="$prefix/bin:$PATH"
-        else
-            err "pg_ctl not found. Run: bin/dev setup"
-            return 1
-        fi
+    # Always prefer postgresql@17 — the data dir is initialized with it.
+    # A different pg_ctl on PATH (e.g. postgresql@16 via default Homebrew link)
+    # would try to start against incompatible data files.
+    local prefix
+    prefix="$(brew --prefix postgresql@17 2>/dev/null || true)"
+    if [[ -n "$prefix" && -d "$prefix/bin" ]]; then
+        export PATH="$prefix/bin:$PATH"
+        return 0
     fi
+    if has_cmd pg_ctl; then
+        return 0
+    fi
+    err "pg_ctl not found. Run: bin/dev setup"
+    return 1
 }
 
 # ── Setup ────────────────────────────────────────────────────────
@@ -345,8 +362,11 @@ S3_ACCESS_KEY_ID=minioadmin
 S3_SECRET_ACCESS_KEY=minioadmin
 
 NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ...
-NEXT_PUBLIC_API_URL=http://localhost:$GATEWAY_PORT
-NEXT_PUBLIC_WS_URL=ws://localhost:$GATEWAY_PORT
+# Leave NEXT_PUBLIC_API_URL unset (empty) so the web client uses relative /api and /ws paths.
+# These are rewritten by next.config.ts to the gateway → same-origin fetches (no CORS, cookies work correctly for the web origin).
+# Explicitly setting it to http://localhost:808X forces cross-origin mode which requires working CORS + complicates session restoration.
+API_URL=http://localhost:$GATEWAY_PORT
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
 
 SENTRY_DSN=
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:$JAEGER_OTLP
@@ -366,6 +386,18 @@ ENVFILE
         success ".env.local created — add your Stripe/Mapbox keys"
     else
         success ".env.local exists"
+    fi
+
+    # Single source of truth: web/.env.local is a SYMLINK to the root .env.local.
+    # Why: Next.js loads web/.env.local, but bin/dev also does `set -a; source
+    # .env.local` (root) before starting web, so root's NEXT_PUBLIC_* silently
+    # OVERRODE a separate web/.env.local — two files, root quietly winning (this
+    # bit us on the Mapbox token). The symlink makes them the same file forever,
+    # and `cd web && npm run dev` reads the identical values.
+    if [[ ! -L "$ROOT/web/.env.local" ]]; then
+        rm -f "$ROOT/web/.env.local"
+        ln -s ../.env.local "$ROOT/web/.env.local"
+        success "Linked web/.env.local → ../.env.local (single env source)"
     fi
 
     # ── Web dependencies ─────────────────────────────────────────
@@ -534,8 +566,10 @@ start_go_service() {
         build_go_service "$name" "$dir"
     fi
 
-    # Common env
+    # Common env — ENVIRONMENT is mandatory for Go services (and for user
+    # fail-closed notification wiring outside development).
     local env_args=(
+        "ENVIRONMENT=${ENVIRONMENT:-development}"
         "DATABASE_URL=$DATABASE_URL"
         "REDIS_URL=redis://localhost:$REDIS_PORT"
         "OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:$JAEGER_OTLP"
@@ -575,6 +609,7 @@ start_rust_engine() {
     fi
 
     local env_args=(
+        "ENVIRONMENT=${ENVIRONMENT:-development}"
         "DATABASE_URL=$DATABASE_URL"
         "RUST_LOG=info"
         "OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:$JAEGER_OTLP"
@@ -600,9 +635,9 @@ start_web() {
     step "Starting Next.js dev server..."
     (
         cd "$ROOT/web"
-        NEXT_PUBLIC_API_URL="http://localhost:$GATEWAY_PORT" \
-        NEXT_PUBLIC_WS_URL="ws://localhost:$GATEWAY_PORT" \
-        npx next dev --port "$WEB_PORT" > "$LOGS/web.log" 2>&1
+        # Do not force NEXT_PUBLIC_API_URL. Empty means relative /api + /ws paths
+        # (rewritten by Next to the gateway). This keeps fetches same-origin.
+        npx next dev --turbopack --port "$WEB_PORT" > "$LOGS/web.log" 2>&1
     ) &
     save_pid web $!
 
@@ -633,17 +668,23 @@ start_services() {
 
     start_go_service user "$ROOT/services/user" "$USER_PORT" \
         "USER_SERVICE_PORT=$USER_PORT" \
-        "JWT_PRIVATE_KEY_PATH=$ROOT/keys/private.pem"
+        "JWT_PRIVATE_KEY_PATH=$ROOT/keys/private.pem" \
+        "NOTIFICATION_SERVICE_ADDR=localhost:$NOTIFICATION_PORT"
 
     start_go_service job "$ROOT/services/job" "$JOB_PORT" \
         "JOB_SERVICE_PORT=$JOB_PORT" \
+        "MEILISEARCH_URL=http://localhost:$MEILI_PORT" \
         "MEILISEARCH_HOST=http://localhost:$MEILI_PORT" \
-        "MEILISEARCH_API_KEY=masterKey"
+        "MEILISEARCH_API_KEY=masterKey" \
+        "PRICING_ENGINE_ADDR=localhost:$PRICING_PORT"
 
     start_go_service payment "$ROOT/services/payment" "$PAYMENT_PORT" \
+        "ENVIRONMENT=development" \
         "PAYMENT_SERVICE_PORT=$PAYMENT_PORT" \
         "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}" \
-        "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}"
+        "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}" \
+        "TRUST_ENGINE_ADDR=localhost:$TRUST_PORT" \
+        "UNDERWRITING_ENGINE_ADDR=localhost:$UNDERWRITING_PORT"
 
     start_go_service chat "$ROOT/services/chat" "$CHAT_PORT" \
         "CHAT_SERVICE_PORT=$CHAT_PORT" \
@@ -672,12 +713,18 @@ start_engines() {
 
     start_rust_engine imaging nomarkup-imaging-engine "$IMAGING_PORT" \
         "IMAGING_SERVICE_PORT=$IMAGING_PORT" \
-        "S3_BUCKET=nomarkup-dev" \
-        "S3_ENDPOINT=http://localhost:$MINIO_PORT" \
-        "S3_PUBLIC_URL=http://localhost:$MINIO_PORT/nomarkup-dev" \
-        "AWS_ACCESS_KEY_ID=minioadmin" \
-        "AWS_SECRET_ACCESS_KEY=minioadmin" \
-        "AWS_REGION=us-east-1"
+        "S3_BUCKET=$S3_BUCKET" \
+        "S3_ENDPOINT=$S3_ENDPOINT" \
+        "S3_PUBLIC_URL=$S3_PUBLIC_URL" \
+        "AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-minioadmin}" \
+        "AWS_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-minioadmin}" \
+        "AWS_REGION=${S3_REGION:-us-east-1}"
+
+    start_rust_engine underwriting nomarkup-underwriting-engine "$UNDERWRITING_PORT" \
+        "UNDERWRITING_ENGINE_PORT=$UNDERWRITING_PORT"
+
+    start_rust_engine pricing nomarkup-pricing-engine "$PRICING_PORT" \
+        "PRICING_ENGINE_PORT=$PRICING_PORT"
 
     success "Rust engines ready"
 }
@@ -688,7 +735,8 @@ start_gateway() {
     start_go_service gateway "$ROOT/gateway" "$GATEWAY_PORT" \
         "GATEWAY_PORT=$GATEWAY_PORT" \
         "JWT_PUBLIC_KEY_PATH=$ROOT/keys/public.pem" \
-        "ALLOWED_ORIGINS=http://localhost:$WEB_PORT" \
+        "ALLOWED_ORIGINS=http://localhost:$WEB_PORT,http://127.0.0.1:$WEB_PORT,http://[::1]:$WEB_PORT" \
+        "WS_ALLOWED_ORIGINS=http://localhost:$WEB_PORT,http://127.0.0.1:$WEB_PORT,http://[::1]:$WEB_PORT" \
         "SECURE_COOKIES=false" \
         "USER_SERVICE_ADDR=localhost:$USER_PORT" \
         "JOB_SERVICE_ADDR=localhost:$JOB_PORT" \
@@ -700,7 +748,12 @@ start_gateway() {
         "TRUST_ENGINE_ADDR=localhost:$TRUST_PORT" \
         "IMAGING_SERVICE_ADDR=localhost:$IMAGING_PORT" \
         "NOTIFICATION_SERVICE_ADDR=localhost:$NOTIFICATION_PORT" \
-        "REDIS_URL=redis://localhost:$REDIS_PORT"
+        "REDIS_URL=redis://localhost:$REDIS_PORT" \
+        "RATE_LIMIT_AUTH=${RATE_LIMIT_AUTH:-50}" \
+        "MEILISEARCH_URL=http://localhost:$MEILI_PORT" \
+        "MEILISEARCH_HOST=http://localhost:$MEILI_PORT" \
+        "MEILISEARCH_API_KEY=masterKey" \
+        "ENABLE_LIVE_AUCTION=${ENABLE_LIVE_AUCTION:-true}"
 
     success "Gateway ready"
 }
@@ -747,19 +800,25 @@ cmd_up() {
         user)
             start_go_service user "$ROOT/services/user" "$USER_PORT" \
                 "USER_SERVICE_PORT=$USER_PORT" \
-                "JWT_PRIVATE_KEY_PATH=$ROOT/keys/private.pem"
+                "JWT_PRIVATE_KEY_PATH=$ROOT/keys/private.pem" \
+                "NOTIFICATION_SERVICE_ADDR=localhost:$NOTIFICATION_PORT"
             ;;
         job)
             start_go_service job "$ROOT/services/job" "$JOB_PORT" \
                 "JOB_SERVICE_PORT=$JOB_PORT" \
+                "MEILISEARCH_URL=http://localhost:$MEILI_PORT" \
                 "MEILISEARCH_HOST=http://localhost:$MEILI_PORT" \
-                "MEILISEARCH_API_KEY=masterKey"
+                "MEILISEARCH_API_KEY=masterKey" \
+                "PRICING_ENGINE_ADDR=localhost:$PRICING_PORT"
             ;;
         payment)
             start_go_service payment "$ROOT/services/payment" "$PAYMENT_PORT" \
+                "ENVIRONMENT=development" \
                 "PAYMENT_SERVICE_PORT=$PAYMENT_PORT" \
                 "STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}" \
-                "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}"
+                "STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}" \
+                "TRUST_ENGINE_ADDR=localhost:$TRUST_PORT" \
+                "UNDERWRITING_ENGINE_ADDR=localhost:$UNDERWRITING_PORT"
             ;;
         chat)
             start_go_service chat "$ROOT/services/chat" "$CHAT_PORT" \
@@ -785,12 +844,12 @@ cmd_up() {
         imaging)
             start_rust_engine imaging nomarkup-imaging-engine "$IMAGING_PORT" \
                 "IMAGING_SERVICE_PORT=$IMAGING_PORT" \
-                "S3_BUCKET=nomarkup-dev" \
-                "S3_ENDPOINT=http://localhost:$MINIO_PORT" \
-                "S3_PUBLIC_URL=http://localhost:$MINIO_PORT/nomarkup-dev" \
-                "AWS_ACCESS_KEY_ID=minioadmin" \
-                "AWS_SECRET_ACCESS_KEY=minioadmin" \
-                "AWS_REGION=us-east-1"
+                "S3_BUCKET=$S3_BUCKET" \
+                "S3_ENDPOINT=$S3_ENDPOINT" \
+                "S3_PUBLIC_URL=$S3_PUBLIC_URL" \
+                "AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-minioadmin}" \
+                "AWS_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-minioadmin}" \
+                "AWS_REGION=${S3_REGION:-us-east-1}"
             ;;
         *)
             err "Unknown target: $target"
@@ -847,6 +906,8 @@ cmd_status() {
         "fraud:$FRAUD_PORT:rust"
         "trust:$TRUST_PORT:rust"
         "imaging:$IMAGING_PORT:rust"
+        "underwriting:$UNDERWRITING_PORT:rust"
+        "pricing:$PRICING_PORT:rust"
         "gateway:$GATEWAY_PORT:go"
         "web:$WEB_PORT:node"
     )

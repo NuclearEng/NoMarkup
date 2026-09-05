@@ -43,9 +43,9 @@ function PaymentRow({ payment }: { payment: Payment }) {
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <span className="text-sm text-muted-foreground">{createdDate}</span>
+              <span className="whitespace-nowrap text-sm text-muted-foreground">{createdDate}</span>
               <span className="text-xs text-muted-foreground">
-                Contract: {payment.contract_id.slice(0, 8)}...
+                Contract: {payment.contract_number ?? `${payment.contract_id.slice(0, 8)}...`}
               </span>
             </div>
           </div>
@@ -82,7 +82,7 @@ function PaymentRow({ payment }: { payment: Payment }) {
               </div>
 
               {payment.refund_amount_cents > 0 ? (
-                <div className="flex items-center justify-between text-orange-600 dark:text-orange-400">
+                <div className="flex items-center justify-between text-trust-medium">
                   <span>Refunded</span>
                   <span>{formatCents(payment.refund_amount_cents)}</span>
                 </div>
@@ -96,7 +96,7 @@ function PaymentRow({ payment }: { payment: Payment }) {
               ) : null}
 
               {payment.failure_reason ? (
-                <div className="flex items-center justify-between text-red-600 dark:text-red-400">
+                <div className="flex items-center justify-between text-destructive">
                   <span>Failure reason</span>
                   <span className="text-right">{payment.failure_reason}</span>
                 </div>

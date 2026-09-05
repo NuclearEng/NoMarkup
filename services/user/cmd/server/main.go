@@ -10,11 +10,12 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -24,18 +25,36 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	grpclib "google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	imagingv1 "github.com/nomarkup/nomarkup/proto/imaging/v1"
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
+	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
+	"github.com/nomarkup/nomarkup/services/user/internal/crypto"
 	grpcserver "github.com/nomarkup/nomarkup/services/user/internal/grpc"
+	"github.com/nomarkup/nomarkup/services/user/internal/observability"
 	"github.com/nomarkup/nomarkup/services/user/internal/repository"
 	"github.com/nomarkup/nomarkup/services/user/internal/service"
 )
 
+// isDevelopmentEnv reports whether this process is running in development.
+// Honors both ENVIRONMENT (service config convention) and APP_ENV (Sentry
+// convention), matching gateway/internal/handler/ws_origins.go. Comparison is
+// case- and whitespace-insensitive so "Development" or a stray trailing space
+// in a ConfigMap cannot silently flip a security decision — note that anything
+// that is NOT recognizably development is treated as production, which is the
+// fail-closed direction.
+func isDevelopmentEnv() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("ENVIRONMENT")), "development") ||
+		strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "development")
+}
+
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	logger := slog.New(observability.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	}))
+	})))
 	slog.SetDefault(logger)
 
 	port := os.Getenv("USER_SERVICE_PORT")
@@ -87,7 +106,7 @@ func main() {
 
 	// Connect to PostgreSQL.
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, databaseURL)
+	pool, err := observability.NewPGXPool(ctx, databaseURL)
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)
@@ -130,6 +149,9 @@ func main() {
 	}
 	rdb := redis.NewClient(redisOpts)
 	defer rdb.Close()
+	if err := redisotel.InstrumentTracing(rdb); err != nil {
+		slog.Warn("redis tracing instrumentation failed", "error", err)
+	}
 
 	for attempt := 1; ; attempt++ {
 		if err := rdb.Ping(ctx).Err(); err != nil {
@@ -150,8 +172,13 @@ func main() {
 	var notifClient notificationv1.NotificationServiceClient
 	notifAddr := os.Getenv("NOTIFICATION_SERVICE_ADDR")
 	if notifAddr != "" {
+		dialOpt, dialErr := meshClientDialOption()
+		if dialErr != nil {
+			slog.Error("failed to load mesh mTLS for notification dial", "error", dialErr)
+			os.Exit(1)
+		}
 		notifConn, err := grpclib.NewClient(notifAddr,
-			grpclib.WithTransportCredentials(insecure.NewCredentials()),
+			dialOpt,
 			grpclib.WithStatsHandler(otelgrpc.NewClientHandler()),
 		)
 		if err != nil {
@@ -171,21 +198,120 @@ func main() {
 	}
 
 	// Wire up dependencies.
-	// When no notification service is configured, auto-verify emails on registration
-	// so users are not blocked from logging in.
-	skipEmailVerification := notifClient == nil
+	//
+	// Email verification may only be skipped in development, where there is no
+	// notification service to send the mail. Deriving it from
+	// `notifClient == nil` alone made it activate on ABSENCE: an unset or
+	// typo'd NOTIFICATION_SERVICE_ADDR — and the variable is currently set on
+	// the gateway deployment only, not on this service or the shared
+	// ConfigMap — silently marked every new account email_verified=true with
+	// no mail ever sent. That is the control gating account identity, password
+	// reset, and every downstream trust signal; registering as
+	// victim@example.com would have yielded a pre-verified account.
+	//
+	// Outside development a missing notification service is fatal instead:
+	// registration that cannot send a verification email must not proceed.
+	skipEmailVerification := notifClient == nil && isDevelopmentEnv()
+	if notifClient == nil && !isDevelopmentEnv() {
+		slog.Error("notification service is not configured; refusing to start outside development because email verification could not be enforced",
+			"env", strings.TrimSpace(os.Getenv("ENVIRONMENT")),
+		)
+		os.Exit(1)
+	}
 	if skipEmailVerification {
-		slog.Warn("email verification will be skipped on registration (no notification service)")
+		slog.Warn("DEVELOPMENT ONLY: email verification will be skipped on registration (no notification service)")
 	}
 
-	repo := repository.NewPostgresRepository(pool)
+	// Build the PII cipher (libsodium-compatible nacl/secretbox). In
+	// production a missing ENCRYPTION_KEY is fatal; in development an
+	// ephemeral key is generated and a WARN is logged. See CLAUDE.md §6.
+	cipher, err := crypto.FromEnv()
+	if err != nil {
+		slog.Error("failed to initialize PII cipher", "error", err)
+		os.Exit(1)
+	}
+
+	repo := repository.NewPostgresRepository(pool, cipher)
 	jwtManager := service.NewJWTManager(privateKey)
 	authService := service.NewAuth(repo, jwtManager, verificationSecret, skipEmailVerification)
 	profileService := service.NewProfile(repo)
 	adminService := service.NewAdmin(repo)
 	phoneService := service.NewPhoneVerification(repo, rdb, smsClient)
 	verificationService := service.NewVerification(repo)
-	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService, notifClient, baseURL)
+
+	// GDPR/CCPA erasure pipeline.
+	//
+	// Stripe deletion is wired to the payment service via
+	// PaymentService/DeleteStripeAccounts. When PAYMENT_SERVICE_ADDR is unset
+	// (unit tests, isolated user-service stack) the deleter is left nil and
+	// Erasure falls back to "skipped_no_client" — see deletion.go's
+	// noopStripeDeleter.
+	//
+	// S3 deletion is wired to ImagingService/DeleteUserObjects. Imaging owns
+	// the bucket and the real key layout; the user service does not take an
+	// AWS SDK dependency. Unset IMAGING_SERVICE_ADDR skips S3 cleanup.
+	//
+	// OAuth provider-side revoke is not wired: oauth_accounts stores
+	// provider + provider_id + email only (no refresh/access tokens), so
+	// Google/Apple/Facebook cannot be revoked remotely. Local oauth_accounts
+	// rows are DELETE'd in the Postgres cascade.
+	var stripeDeleter service.StripeDeleter
+	if paymentAddr := os.Getenv("PAYMENT_SERVICE_ADDR"); paymentAddr != "" {
+		dialOpt, dialErr := meshClientDialOption()
+		if dialErr != nil {
+			slog.Error("failed to load mesh mTLS for payment dial", "error", dialErr)
+			os.Exit(1)
+		}
+		paymentConn, err := grpclib.NewClient(paymentAddr,
+			dialOpt,
+			grpclib.WithStatsHandler(otelgrpc.NewClientHandler()),
+		)
+		if err != nil {
+			slog.Warn("failed to connect to payment service, GDPR Stripe deletion disabled",
+				"addr", paymentAddr, "error", err)
+		} else {
+			stripeDeleter = newStripeDeleterClient(paymentv1.NewPaymentServiceClient(paymentConn))
+			slog.Info("payment service connected for GDPR deletion", "addr", paymentAddr)
+		}
+	} else {
+		slog.Warn("PAYMENT_SERVICE_ADDR not set; GDPR Stripe deletion will record skipped_no_client")
+	}
+
+	var objectStore service.ObjectStoreDeleter
+	if imagingAddr := os.Getenv("IMAGING_SERVICE_ADDR"); imagingAddr != "" {
+		dialOpt, dialErr := meshClientDialOption()
+		if dialErr != nil {
+			slog.Error("failed to load mesh mTLS for imaging dial", "error", dialErr)
+			os.Exit(1)
+		}
+		imagingConn, err := grpclib.NewClient(imagingAddr,
+			dialOpt,
+			grpclib.WithStatsHandler(otelgrpc.NewClientHandler()),
+		)
+		if err != nil {
+			slog.Warn("failed to connect to imaging service, GDPR S3 deletion disabled",
+				"addr", imagingAddr, "error", err)
+		} else {
+			objectStore = newObjectStoreDeleterClient(imagingv1.NewImagingServiceClient(imagingConn))
+			slog.Info("imaging service connected for GDPR deletion", "addr", imagingAddr)
+		}
+	} else {
+		slog.Warn("IMAGING_SERVICE_ADDR not set; GDPR S3 deletion will skip object cleanup")
+	}
+
+	// GDPR lifecycle emails (request / cancel / finalize) ride the same
+	// notification → SendGrid path as password-reset and verification mail.
+	// When notifClient is nil (dev without NOTIFICATION_SERVICE_ADDR) Erasure
+	// logs Error on every lifecycle event — never silent success (ARC-17).
+	var gdprMailer service.GDPRMailer
+	if notifClient != nil {
+		gdprMailer = newGDPRMailerClient(notifClient, baseURL)
+		slog.Info("GDPR lifecycle emails wired via notification service")
+	} else {
+		slog.Warn("notification client unavailable; GDPR lifecycle emails will log Error until NOTIFICATION_SERVICE_ADDR is set")
+	}
+	erasureService := service.NewErasure(repo, stripeDeleter, objectStore, nil, gdprMailer)
+	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService, erasureService, notifClient, baseURL)
 
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
@@ -194,15 +320,50 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := grpclib.NewServer(
+	serverOpts := []grpclib.ServerOption{
 		grpclib.StatsHandler(otelgrpc.NewServerHandler()),
-		grpclib.ChainUnaryInterceptor(loggingUnaryInterceptor),
-		grpclib.ChainStreamInterceptor(loggingStreamInterceptor),
-	)
+		// RequestID first (it seeds the context both the recovery and logging
+		// interceptors read), then recovery — outside logging so a panic in
+		// either the logging interceptor or the handler is contained (RES-03).
+		grpclib.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, recoveryUnaryInterceptor, loggingUnaryInterceptor),
+		grpclib.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, recoveryStreamInterceptor, loggingStreamInterceptor),
+		grpclib.KeepaliveEnforcementPolicy(grpcKeepaliveEnforcement()),
+		grpclib.KeepaliveParams(grpcKeepaliveParams()),
+	}
+	serverOpts, err = meshServerOptions(serverOpts)
+	if err != nil {
+		slog.Error("failed to configure gRPC server mTLS", "error", err)
+		os.Exit(1)
+	}
+	s := grpclib.NewServer(serverOpts...)
 	grpcserver.Register(s, srv)
+
+	// Standard gRPC health service (grpc.health.v1.Health). REQUIRED — the
+	// Kubernetes deployment (deploy/k8s/base/user/deployment.yaml) uses native
+	// gRPC liveness/readiness probes, and kubelet queries the EMPTY service
+	// name. Without this registration every probe returns UNIMPLEMENTED,
+	// readiness never passes and liveness restarts the pod (CrashLoopBackOff).
+	// Do not delete as "unused" — the only caller is kubelet.
+	healthSrv := health.NewServer()
+	healthpb.RegisterHealthServer(s, healthSrv)
+	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthSrv.SetServingStatus(userv1.UserService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Observability HTTP server (healthz / readyz / metrics) on a separate port.
+	startObservabilityServer(sigCtx, "user-service", port, pool, rdb)
+
+	// GDPR cron worker — every 6 hours, drain a batch of users whose
+	// 30-day grace window has elapsed. Cleanly stops on SIGINT/SIGTERM.
+	gdprInterval := parseDurationOrDefault(os.Getenv("GDPR_WORKER_INTERVAL"), 6*time.Hour)
+	gdprBatch := parseIntOrDefault(os.Getenv("GDPR_WORKER_BATCH_SIZE"), 100)
+	if os.Getenv("GDPR_WORKER_ENABLED") == "false" {
+		slog.Info("gdpr cron worker disabled via GDPR_WORKER_ENABLED=false")
+	} else {
+		startGDPRWorker(sigCtx, erasureService, gdprInterval, gdprBatch)
+	}
 
 	go func() {
 		slog.Info("user service starting", "port", port)
@@ -214,6 +375,10 @@ func main() {
 
 	<-sigCtx.Done()
 	slog.Info("shutting down user service")
+	// Flip every health status to NOT_SERVING *before* draining so the k8s
+	// readiness probe pulls this pod out of rotation while in-flight RPCs
+	// finish.
+	healthSrv.Shutdown()
 	s.GracefulStop()
 	slog.Info("user service stopped")
 }

@@ -33,6 +33,71 @@ func RegisterContract(s *grpclib.Server, srv *ContractServer) {
 	contractv1.RegisterContractServiceServer(s, srv)
 }
 
+// CreateContractFromAward creates a contract row after the bidding engine has
+// flipped the winning bid to "awarded". The gateway calls this immediately
+// after BidService.AwardBid succeeds so accepting a bid actually produces a
+// contract downstream (closing the severed pipeline).
+func (s *ContractServer) CreateContractFromAward(ctx context.Context, req *contractv1.CreateContractFromAwardRequest) (*contractv1.CreateContractFromAwardResponse, error) {
+	if req.GetJobId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "job_id is required")
+	}
+	if req.GetBidId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "bid_id is required")
+	}
+	if req.GetCustomerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "customer_id is required")
+	}
+	if req.GetProviderId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "provider_id is required")
+	}
+	if req.GetAmountCents() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "amount_cents must be positive")
+	}
+
+	paymentTiming := protoPaymentTimingToString(req.GetPaymentTiming())
+	if paymentTiming == "" {
+		// Default to "completion" — full amount released when the work is done.
+		paymentTiming = "completion"
+	}
+
+	contract, err := s.svc.CreateContractFromAward(
+		ctx,
+		req.GetJobId(),
+		req.GetBidId(),
+		req.GetCustomerId(),
+		req.GetProviderId(),
+		req.GetAmountCents(),
+		paymentTiming,
+		nil, // single full-amount milestone created by default
+	)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	return &contractv1.CreateContractFromAwardResponse{
+		Contract: domainContractToProto(contract),
+	}, nil
+}
+
+// protoPaymentTimingToString converts the proto enum back to the domain string
+// used by the contract repository.
+func protoPaymentTimingToString(pt commonv1.PaymentTiming) string {
+	switch pt {
+	case commonv1.PaymentTiming_PAYMENT_TIMING_UPFRONT:
+		return "upfront"
+	case commonv1.PaymentTiming_PAYMENT_TIMING_MILESTONE:
+		return "milestone"
+	case commonv1.PaymentTiming_PAYMENT_TIMING_COMPLETION:
+		return "completion"
+	case commonv1.PaymentTiming_PAYMENT_TIMING_PAYMENT_PLAN:
+		return "payment_plan"
+	case commonv1.PaymentTiming_PAYMENT_TIMING_RECURRING:
+		return "recurring"
+	default:
+		return ""
+	}
+}
+
 func (s *ContractServer) GetContract(ctx context.Context, req *contractv1.GetContractRequest) (*contractv1.GetContractResponse, error) {
 	contract, err := s.svc.GetContract(ctx, req.GetContractId(), req.GetRequestingUserId())
 	if err != nil {
@@ -53,6 +118,28 @@ func (s *ContractServer) GetContract(ctx context.Context, req *contractv1.GetCon
 	}
 
 	return resp, nil
+}
+
+// ExportContractPDF returns a downloadable URL for the contract document.
+// The ContractService base embeds UnimplementedContractServiceServer, so
+// without this method the RPC returns codes.Unimplemented (surfaced as a 500
+// at the gateway). We validate the contract exists, then return a stable URL
+// pointing at the document-export endpoint for that contract.
+func (s *ContractServer) ExportContractPDF(ctx context.Context, req *contractv1.ExportContractPDFRequest) (*contractv1.ExportContractPDFResponse, error) {
+	if req.GetContractId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "contract id is required")
+	}
+
+	// Confirm the contract exists (passing empty requesting user skips the
+	// party check — the gateway has already authenticated the caller). A
+	// missing contract maps to NotFound rather than a generic 500.
+	if _, err := s.svc.GetContract(ctx, req.GetContractId(), ""); err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	return &contractv1.ExportContractPDFResponse{
+		PdfUrl: "/api/v1/contracts/" + req.GetContractId() + "/document.pdf",
+	}, nil
 }
 
 func (s *ContractServer) AcceptContract(ctx context.Context, req *contractv1.AcceptContractRequest) (*contractv1.AcceptContractResponse, error) {
@@ -166,6 +253,58 @@ func (s *ContractServer) CancelContract(ctx context.Context, req *contractv1.Can
 	}
 	return &contractv1.CancelContractResponse{
 		Contract: domainContractToProto(contract),
+	}, nil
+}
+
+// --- Change Order RPCs ---
+
+func (s *ContractServer) ProposeChangeOrder(ctx context.Context, req *contractv1.ProposeChangeOrderRequest) (*contractv1.ProposeChangeOrderResponse, error) {
+	if req.GetContractId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "contract id is required")
+	}
+	if req.GetProposedBy() == "" {
+		return nil, status.Error(codes.InvalidArgument, "proposed_by is required")
+	}
+	if req.GetDescription() == "" {
+		return nil, status.Error(codes.InvalidArgument, "description is required")
+	}
+
+	order, err := s.svc.ProposeChangeOrder(
+		ctx,
+		req.GetContractId(),
+		req.GetProposedBy(),
+		req.GetDescription(),
+		req.GetAmountDeltaCents(),
+	)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	return &contractv1.ProposeChangeOrderResponse{
+		ChangeOrder: domainChangeOrderToProto(order),
+	}, nil
+}
+
+func (s *ContractServer) RespondToChangeOrder(ctx context.Context, req *contractv1.RespondToChangeOrderRequest) (*contractv1.RespondToChangeOrderResponse, error) {
+	if req.GetChangeOrderId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "change_order_id is required")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+
+	order, err := s.svc.RespondToChangeOrder(
+		ctx,
+		req.GetChangeOrderId(),
+		req.GetUserId(),
+		req.GetAccepted(),
+	)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+
+	return &contractv1.RespondToChangeOrderResponse{
+		ChangeOrder: domainChangeOrderToProto(order),
 	}, nil
 }
 
@@ -302,6 +441,149 @@ func (s *ContractServer) AdminResolveDispute(ctx context.Context, req *contractv
 	}, nil
 }
 
+// --- Recurring (FR-18) ---
+
+func (s *ContractServer) GetRecurringConfig(ctx context.Context, req *contractv1.GetRecurringConfigRequest) (*contractv1.GetRecurringConfigResponse, error) {
+	if req.GetContractId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "contract_id is required")
+	}
+	// Empty requesting_user_id fails closed in requireContractParty.
+	// Gateway and mesh callers must pass a real contract party id.
+	cfg, err := s.svc.GetRecurringConfig(ctx, req.GetContractId(), req.GetRequestingUserId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.GetRecurringConfigResponse{Config: domainRecurringConfigToProto(cfg)}, nil
+}
+
+func (s *ContractServer) UpdateRecurringConfig(ctx context.Context, req *contractv1.UpdateRecurringConfigRequest) (*contractv1.UpdateRecurringConfigResponse, error) {
+	if req.GetRecurringId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "recurring_id is required")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	var rate *int64
+	if req.ProposedRateCents != nil {
+		v := req.GetProposedRateCents()
+		rate = &v
+	}
+	var auto *bool
+	if req.AutoApprove != nil {
+		v := req.GetAutoApprove()
+		auto = &v
+	}
+	cfg, err := s.svc.UpdateRecurringConfig(ctx, req.GetRecurringId(), req.GetUserId(), rate, auto)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.UpdateRecurringConfigResponse{Config: domainRecurringConfigToProto(cfg)}, nil
+}
+
+func (s *ContractServer) PauseRecurring(ctx context.Context, req *contractv1.PauseRecurringRequest) (*contractv1.PauseRecurringResponse, error) {
+	if req.GetRecurringId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "recurring_id is required")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	cfg, err := s.svc.PauseRecurring(ctx, req.GetRecurringId(), req.GetUserId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.PauseRecurringResponse{Config: domainRecurringConfigToProto(cfg)}, nil
+}
+
+func (s *ContractServer) ResumeRecurring(ctx context.Context, req *contractv1.ResumeRecurringRequest) (*contractv1.ResumeRecurringResponse, error) {
+	if req.GetRecurringId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "recurring_id is required")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	cfg, err := s.svc.ResumeRecurring(ctx, req.GetRecurringId(), req.GetUserId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.ResumeRecurringResponse{Config: domainRecurringConfigToProto(cfg)}, nil
+}
+
+func (s *ContractServer) CancelRecurring(ctx context.Context, req *contractv1.CancelRecurringRequest) (*contractv1.CancelRecurringResponse, error) {
+	if req.GetRecurringId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "recurring_id is required")
+	}
+	if req.GetUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	cfg, err := s.svc.CancelRecurring(ctx, req.GetRecurringId(), req.GetUserId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.CancelRecurringResponse{Config: domainRecurringConfigToProto(cfg)}, nil
+}
+
+func (s *ContractServer) ListRecurringInstances(ctx context.Context, req *contractv1.ListRecurringInstancesRequest) (*contractv1.ListRecurringInstancesResponse, error) {
+	if req.GetRecurringId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "recurring_id is required")
+	}
+	page, pageSize := 1, 20
+	if p := req.GetPagination(); p != nil {
+		if p.GetPage() > 0 {
+			page = int(p.GetPage())
+		}
+		if p.GetPageSize() > 0 {
+			pageSize = int(p.GetPageSize())
+		}
+	}
+	// Empty requesting_user_id fails closed in requireContractParty.
+	instances, pagination, err := s.svc.ListRecurringInstances(ctx, req.GetRecurringId(), req.GetRequestingUserId(), page, pageSize)
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	out := make([]*contractv1.RecurringInstance, 0, len(instances))
+	for _, inst := range instances {
+		out = append(out, domainRecurringInstanceToProto(inst))
+	}
+	return &contractv1.ListRecurringInstancesResponse{
+		Instances:  out,
+		Pagination: domainPaginationToProto(pagination),
+	}, nil
+}
+
+func (s *ContractServer) CompleteRecurringInstance(ctx context.Context, req *contractv1.CompleteRecurringInstanceRequest) (*contractv1.CompleteRecurringInstanceResponse, error) {
+	if req.GetInstanceId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "instance_id is required")
+	}
+	if req.GetProviderId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "provider_id is required")
+	}
+	inst, err := s.svc.CompleteRecurringInstance(ctx, req.GetInstanceId(), req.GetProviderId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	return &contractv1.CompleteRecurringInstanceResponse{Instance: domainRecurringInstanceToProto(inst)}, nil
+}
+
+func (s *ContractServer) ApproveRecurringInstance(ctx context.Context, req *contractv1.ApproveRecurringInstanceRequest) (*contractv1.ApproveRecurringInstanceResponse, error) {
+	if req.GetInstanceId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "instance_id is required")
+	}
+	if req.GetCustomerId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "customer_id is required")
+	}
+	inst, err := s.svc.ApproveRecurringInstance(ctx, req.GetInstanceId(), req.GetCustomerId())
+	if err != nil {
+		return nil, mapContractDomainError(err)
+	}
+	// Payment is orchestrated at the gateway (CreatePayment with
+	// recurring_instance_id → real Stripe PI). Job service does not hold a
+	// payment client and never invents a payment_id.
+	return &contractv1.ApproveRecurringInstanceResponse{
+		Instance:  domainRecurringInstanceToProto(inst),
+		PaymentId: "",
+	}, nil
+}
+
 // --- Proto conversion helpers ---
 
 func domainContractToProto(c *domain.Contract) *contractv1.Contract {
@@ -340,6 +622,47 @@ func domainContractToProto(c *domain.Contract) *contractv1.Contract {
 		pb.Milestones = protoMilestones
 	}
 
+	if c.Recurring != nil {
+		pb.Recurring = domainRecurringConfigToProto(c.Recurring)
+	}
+
+	return pb
+}
+
+func domainRecurringConfigToProto(cfg *domain.RecurringConfig) *contractv1.RecurringConfig {
+	if cfg == nil {
+		return nil
+	}
+	pb := &contractv1.RecurringConfig{
+		Id:             cfg.ID,
+		ContractId:     cfg.ContractID,
+		Frequency:      stringToProtoRecurrence(cfg.Frequency),
+		RateCents:      cfg.RateCents,
+		AutoApprove:    cfg.AutoApprove,
+		Status:         cfg.Status,
+		NextOccurrence: timestamppb.New(cfg.NextOccurrence),
+	}
+	return pb
+}
+
+func domainRecurringInstanceToProto(inst *domain.RecurringInstance) *contractv1.RecurringInstance {
+	if inst == nil {
+		return nil
+	}
+	pb := &contractv1.RecurringInstance{
+		Id:             inst.ID,
+		RecurringId:    inst.RecurringID,
+		OccurrenceDate: timestamppb.New(inst.OccurrenceDate),
+		Status:         inst.Status,
+		AmountCents:    inst.AmountCents,
+		AutoApproved:   inst.AutoApproved,
+	}
+	if inst.CompletedAt != nil {
+		pb.CompletedAt = timestamppb.New(*inst.CompletedAt)
+	}
+	if inst.ApprovedAt != nil {
+		pb.ApprovedAt = timestamppb.New(*inst.ApprovedAt)
+	}
 	return pb
 }
 
@@ -555,26 +878,70 @@ func mapContractDomainError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrContractNotFound):
 		return status.Error(codes.NotFound, "contract not found")
+	case errors.Is(err, domain.ErrJobAlreadyContracted):
+		// codes.AlreadyExists → 409 Conflict at the gateway. Retrying the SAME
+		// award never reaches here (CreateContract returns the existing
+		// contract); this fires only for a second bid on a job that is already
+		// contracted.
+		return status.Error(codes.AlreadyExists, "This job already has an active contract. Cancel it before awarding a different bid.")
 	case errors.Is(err, domain.ErrNotContractParty):
-		return status.Error(codes.PermissionDenied, "not a party to this contract")
+		return status.Error(codes.PermissionDenied, "You are not a party to this contract")
+	case errors.Is(err, domain.ErrNotContractProvider):
+		return status.Error(codes.PermissionDenied, "Only the provider can mark this contract complete")
 	case errors.Is(err, domain.ErrAlreadyAccepted):
-		return status.Error(codes.AlreadyExists, "already accepted by this party")
+		return status.Error(codes.AlreadyExists, "You have already accepted this contract")
 	case errors.Is(err, domain.ErrDeadlineExpired):
-		return status.Error(codes.FailedPrecondition, "acceptance deadline has expired")
+		return status.Error(codes.FailedPrecondition, "This contract's acceptance deadline has passed and it can no longer be accepted")
 	case errors.Is(err, domain.ErrContractNotActive):
 		return status.Error(codes.FailedPrecondition, "contract is not active")
+	case errors.Is(err, domain.ErrMilestonesNotApproved):
+		return status.Error(codes.FailedPrecondition, "all milestones must be approved before completing the contract")
 	case errors.Is(err, domain.ErrMilestoneNotFound):
 		return status.Error(codes.NotFound, "milestone not found")
 	case errors.Is(err, domain.ErrMaxRevisions):
 		return status.Error(codes.FailedPrecondition, "maximum revision count reached")
 	case errors.Is(err, domain.ErrInvalidStatusTransition):
 		return status.Error(codes.FailedPrecondition, "invalid status transition")
+	case errors.Is(err, domain.ErrGuaranteeNotCompleted):
+		return status.Error(codes.FailedPrecondition, "guarantee claims require a completed contract")
 	case errors.Is(err, domain.ErrJobNotFound):
 		return status.Error(codes.NotFound, "job not found")
 	case errors.Is(err, domain.ErrDisputeNotFound):
 		return status.Error(codes.NotFound, "dispute not found")
 	case errors.Is(err, domain.ErrDisputeAlreadyResolved):
 		return status.Error(codes.FailedPrecondition, "dispute is already resolved")
+	case errors.Is(err, domain.ErrInvalidResolutionType):
+		return status.Error(codes.InvalidArgument, "invalid resolution type")
+	case errors.Is(err, domain.ErrInvalidGuaranteeOutcome):
+		return status.Error(codes.InvalidArgument, "invalid guarantee outcome")
+	case errors.Is(err, domain.ErrInvalidGuaranteePayout):
+		return status.Error(codes.InvalidArgument, "payout must be non-negative and at most the covered contract amount")
+	case errors.Is(err, domain.ErrChangeOrderNotFound):
+		return status.Error(codes.NotFound, "change order not found")
+	case errors.Is(err, domain.ErrChangeOrderNotProposer):
+		return status.Error(codes.PermissionDenied, "Only the provider can propose a change order")
+	case errors.Is(err, domain.ErrChangeOrderNotResponder):
+		return status.Error(codes.PermissionDenied, "Only the customer can respond to a change order")
+	case errors.Is(err, domain.ErrChangeOrderNotPending):
+		return status.Error(codes.FailedPrecondition, "This change order has already been responded to")
+	case errors.Is(err, domain.ErrInvalidChangeOrderDelta):
+		return status.Error(codes.InvalidArgument, "invalid change order amount")
+	case errors.Is(err, domain.ErrRecurringNotFound):
+		return status.Error(codes.NotFound, "recurring config not found")
+	case errors.Is(err, domain.ErrRecurringInstanceNotFound):
+		return status.Error(codes.NotFound, "recurring instance not found")
+	case errors.Is(err, domain.ErrRecurringNotActive):
+		return status.Error(codes.FailedPrecondition, "recurring schedule is not active")
+	case errors.Is(err, domain.ErrRecurringNotPaused):
+		return status.Error(codes.FailedPrecondition, "recurring schedule is not paused")
+	case errors.Is(err, domain.ErrRecurringCancelled):
+		return status.Error(codes.FailedPrecondition, "recurring schedule is cancelled")
+	case errors.Is(err, domain.ErrRecurringInvalidFrequency):
+		return status.Error(codes.InvalidArgument, "invalid recurrence frequency")
+	case errors.Is(err, domain.ErrRecurringInvalidRate):
+		return status.Error(codes.InvalidArgument, "invalid recurring rate")
+	case errors.Is(err, domain.ErrRecurringInstanceState):
+		return status.Error(codes.FailedPrecondition, "invalid recurring instance status transition")
 	default:
 		slog.Error("unmapped contract error", "error", err)
 		return status.Error(codes.Internal, "internal error")

@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package nomarkup.underwriting.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/underwriting/v1;underwritingv1";
+
+// ============================================================
+// Underwriting Service (Rust) — deterministic working-capital underwriting.
+//
+// The keystone of the provider Financial OS: it sizes a provider's
+// working-capital credit line and prices the advance fee from un-forgeable,
+// server-side marketplace data (trust graph + escrow-SETTLED earnings +
+// repayment record). Model: an additive logistic scorecard (explainable,
+// regulator-friendly) + cash-flow exposure sizing + risk-banded factor pricing.
+//
+// It is a PURE FUNCTION — no database, no I/O, no clock (the "now" anchor is
+// passed in as as_of_unix) — so a decision is deterministic, reproducible, and
+// auditable.
+//
+// Security model ("not even an adversary can game it"):
+//   - Every feature is gathered SERVER-SIDE from settled/escrow-confirmed data;
+//     the client supplies none of them. The borrowing base is escrow-RELEASED
+//     earnings, so fabricating $1 of limit costs ~$1 of real platform fees and
+//     leaves a counterparty-paired, fraud-scored trail.
+//   - The engine enforces hard invariants regardless of inputs (limit in
+//     [0, cap], monotonic in trust, fee in band, available >= 0).
+//   - Each decision carries a decision_hash over (canonical features, output,
+//     model_version) for tamper-evidence, plus a signed per-feature reason
+//     breakdown for ECOA/Reg-B adverse-action explainability.
+// ============================================================
+
+service UnderwritingService {
+  // Underwrite a provider for working capital. Pure, deterministic, sub-ms.
+  rpc Underwrite(UnderwriteRequest) returns (UnderwriteResponse);
+}
+
+// Underwriting tier — the engine's own risk band (distinct from the trust tier).
+enum UnderwritingTier {
+  UNDERWRITING_TIER_UNSPECIFIED = 0;
+  UNDERWRITING_TIER_INELIGIBLE = 1; // limit 0 (gated: new/under-review/too risky)
+  UNDERWRITING_TIER_STARTER = 2;
+  UNDERWRITING_TIER_STANDARD = 3;
+  UNDERWRITING_TIER_PREMIUM = 4;
+  UNDERWRITING_TIER_ELITE = 5;
+}
+
+// Provider features — ALL gathered server-side from un-forgeable data. Money is
+// integer cents; rates are 0.0..1.0. Self-reported and in-escrow (unsettled)
+// fields are excluded by design.
+message ProviderFeatures {
+  string provider_id = 1;
+
+  // Trust graph (from the trust engine).
+  double trust_overall = 2;   // composite 0.0..1.0
+  double trust_feedback = 3;  // feedback dimension 0.0..1.0
+  double trust_fraud = 4;     // fraud dimension 0.0..1.0 (1.0 = clean)
+  string trust_tier = 5;      // "new"|"rising"|"trusted"|"top_rated"|"under_review"
+
+  // Escrow-RELEASED earnings windows (the un-forgeable borrowing base).
+  int64 trailing_30d_earnings_cents = 6;
+  int64 trailing_90d_earnings_cents = 7;
+  int64 trailing_365d_earnings_cents = 8;
+  int32 completed_jobs_90d = 9;          // escrow-confirmed completions, 90d
+  int32 active_months = 10;              // distinct months w/ >=1 completion (cap 24)
+
+  // Repayment record on prior advances.
+  double on_time_repayment_rate = 11;    // 0.0..1.0 (neutral 0.5 prior when none)
+  int32 prior_advances_count = 12;
+
+  // Risk signals.
+  double dispute_rate_90d = 13;          // disputes / completed jobs, 90d, 0.0..1.0
+  int32 account_tenure_days = 14;
+
+  // Current exposure (outstanding advance principal + fees remaining).
+  int64 outstanding_advance_cents = 15;
+
+  // Determinism anchor: caller's "now" (unix seconds). Windows are caller-derived
+  // and passed in; the engine itself reads no clock.
+  int64 as_of_unix = 16;
+}
+
+message UnderwriteRequest {
+  ProviderFeatures features = 1;
+}
+
+// A single explainable contribution to the decision (fair-lending requirement).
+// For the additive scorecard these are exact (signed w_i * n_i terms of z), not
+// approximations.
+message DecisionReason {
+  string code = 1;         // e.g. "REPAYMENT", "DISPUTE_RATE", "TRUST", "THIN_FILE"
+  string label = 2;        // plain-language
+  double contribution = 3; // signed contribution to the log-odds z (+ = raises risk)
+}
+
+message UnderwriteResponse {
+  string provider_id = 1;
+
+  bool approved = 2;                 // false when max_credit_cents == 0
+  UnderwritingTier tier = 3;
+
+  int64 max_credit_cents = 4;        // the credit line (hard-capped)
+  int64 available_credit_cents = 5;  // max(0, max_credit - outstanding)
+
+  // Risk-banded pricing.
+  int32 fee_bps = 6;                 // advance fee in basis points (600..1800)
+  double factor_rate = 7;            // 1.0 + fee_bps/10000 (1.06..1.18)
+  int32 holdback_pct = 8;            // % of each future escrow payout to collect (8..20)
+
+  double risk_score = 9;             // PD-like 0.0..1.0 (higher = riskier)
+
+  // Decline transparency: when approved == false, the single decisive gate.
+  string binding_gate = 10;          // "" when approved
+  // Limit transparency: which cap bound an approved offer.
+  string binding_cap = 11;           // "absolute_max" | "revenue_35pct" | "risk_multiple"
+
+  repeated DecisionReason reasons = 12; // top signed contributors
+
+  // Tamper-evidence: SHA-256 hex over (canonical features || decision ||
+  // model_version). Lets the platform prove a stored decision came from this
+  // engine for these exact inputs and was not altered.
+  string decision_hash = 13;
+  string model_version = 14;
+}

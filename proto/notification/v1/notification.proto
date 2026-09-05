@@ -101,6 +101,16 @@ enum NotificationType {
   NOTIFICATION_TYPE_WIN_STREAK = 39;
   // Pre-matching
   NOTIFICATION_TYPE_JOB_MATCHED = 40;
+  // Marketplace wishlist
+  NOTIFICATION_TYPE_WISHLIST_MATCH = 41;
+  // Goods-marketplace outbid — a higher bid landed on a listing you were winning.
+  NOTIFICATION_TYPE_BID_OUTBID = 42;
+  // Goods-marketplace Best-Offer chain.
+  NOTIFICATION_TYPE_OFFER_RECEIVED = 43;   // a buyer made an offer on your listing
+  NOTIFICATION_TYPE_OFFER_COUNTERED = 44;  // the other party countered your offer
+  // SCA / 3DS — buyer must complete bank authentication (distinct from a hard
+  // decline). UI should render an Authenticate CTA, not a generic failure icon.
+  NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED = 45;
 }
 
 message Notification {
@@ -203,6 +213,8 @@ enum DevicePlatform {
   DEVICE_PLATFORM_IOS = 1;
   DEVICE_PLATFORM_ANDROID = 2;
   DEVICE_PLATFORM_WEB = 3;
+  // ActivityKit per-activity update token (not an alert device token).
+  DEVICE_PLATFORM_IOS_LIVE_ACTIVITY = 4;
 }
 
 message RegisterDeviceRequest {

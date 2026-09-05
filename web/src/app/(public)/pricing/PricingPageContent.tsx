@@ -4,10 +4,12 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, MapPin, Search, TrendingDown, X } from 'lucide-react';
 
+import { FairPriceBand } from '@/components/analytics/FairPriceBand';
 import { PriceHeatMap } from '@/components/maps/PriceHeatMap';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useFairPrice } from '@/hooks/useAnalytics';
 import {
   usePricingOverview,
   usePricingByCategory,
@@ -179,12 +181,12 @@ export function PricingPageContent() {
       : 0;
 
   return (
-    <div className="min-h-screen bg-[#070b14]">
+    <div className="min-h-screen bg-background">
 
       {/* ============================================================ */}
       {/* HERO SECTION                                                  */}
       {/* ============================================================ */}
-      <section className="relative isolate overflow-hidden bg-[#070b14] pb-10 pt-14 sm:pb-16 sm:pt-20">
+      <section className="relative isolate overflow-hidden bg-background pb-10 pt-14 sm:pb-16 sm:pt-20">
         {/* Ambient gradient background */}
         <div
           className="pointer-events-none absolute inset-0 z-0"
@@ -215,7 +217,7 @@ export function PricingPageContent() {
             style={{ animationDelay: '80ms' }}
           >
             The Fair Price Index tracks what home services actually cost — pulled from completed
-            jobs on NoMarkup. Search by ZIP to see local rates.
+            jobs on NoMarkup. Transparent pricing: the market sets the rate, not the markup.
           </p>
 
           {/* ZIP code search bar */}
@@ -281,7 +283,7 @@ export function PricingPageContent() {
       {/* ============================================================ */}
       <section
         ref={statsSection.ref}
-        className="border-y border-white/[0.05] bg-[#0c0f18] py-8 sm:py-12"
+        className="border-y border-white/[0.05] bg-card py-8 sm:py-12"
         aria-label="Pricing index statistics"
       >
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
@@ -291,13 +293,13 @@ export function PricingPageContent() {
               className={`glass-stat-card glass-highlight flex flex-col items-center px-3 py-5 text-center transition-all duration-700 sm:px-6 sm:py-8 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
               style={{ transitionDelay: '0ms' }}
             >
-              <p className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(220,70%,55%)' }}>
+              <div className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(220,70%,55%)' }}>
                 {overviewLoading ? (
                   <Skeleton className="h-8 w-16 rounded" />
                 ) : (
                   <AnimatedCounter end={totalJobs} suffix="+" />
                 )}
-              </p>
+              </div>
               <p className="text-muted-foreground relative z-[3] mt-1 text-[10px] font-medium uppercase tracking-wide sm:mt-2 sm:text-xs">
                 Jobs Tracked
               </p>
@@ -308,7 +310,7 @@ export function PricingPageContent() {
               className={`glass-stat-card glass-highlight flex flex-col items-center px-3 py-5 text-center transition-all duration-700 sm:px-6 sm:py-8 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
               style={{ transitionDelay: '120ms' }}
             >
-              <p className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(142,71%,45%)' }}>
+              <div className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(142,71%,45%)' }}>
                 {overviewLoading ? (
                   <Skeleton className="h-8 w-20 rounded" />
                 ) : avgSavings > 0 ? (
@@ -316,7 +318,7 @@ export function PricingPageContent() {
                 ) : (
                   <span>—</span>
                 )}
-              </p>
+              </div>
               <p className="text-muted-foreground relative z-[3] mt-1 text-[10px] font-medium uppercase tracking-wide sm:mt-2 sm:text-xs">
                 Avg. Savings
               </p>
@@ -327,13 +329,13 @@ export function PricingPageContent() {
               className={`glass-stat-card glass-highlight flex flex-col items-center px-3 py-5 text-center transition-all duration-700 sm:px-6 sm:py-8 ${statsSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
               style={{ transitionDelay: '240ms' }}
             >
-              <p className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(38,92%,50%)' }}>
+              <div className="relative z-[3] text-2xl font-black tracking-tight sm:text-4xl" style={{ color: 'hsl(38,92%,50%)' }}>
                 {overviewLoading ? (
                   <Skeleton className="h-8 w-10 rounded" />
                 ) : (
                   <AnimatedCounter end={categoryCount} />
                 )}
-              </p>
+              </div>
               <p className="text-muted-foreground relative z-[3] mt-1 text-[10px] font-medium uppercase tracking-wide sm:mt-2 sm:text-xs">
                 Categories
               </p>
@@ -354,20 +356,18 @@ export function PricingPageContent() {
           className={`mb-12 transition-all duration-700 ${heatmapSection.inView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
         >
           {/* Section header */}
-          <div className="mb-5 flex items-center gap-3">
-            <div className="glass-pill inline-flex items-center gap-2 rounded-full px-3.5 py-1 text-xs font-medium text-white/60">
-              <span
-                className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400"
-                aria-hidden="true"
-              />
-              Live
+          <div className="mb-5 space-y-2">
+            <div className="flex items-center gap-3">
+              <h2
+                id="heatmap-heading"
+                className="text-lg font-bold text-white sm:text-xl"
+              >
+                Completed jobs by ZIP
+              </h2>
             </div>
-            <h2
-              id="heatmap-heading"
-              className="text-lg font-bold text-white sm:text-xl"
-            >
-              Price heat map
-            </h2>
+            <p className="text-sm text-white/50">
+              Completed jobs by ZIP (where we have coordinates).
+            </p>
           </div>
 
           <div className="glass glass-highlight overflow-hidden rounded-2xl">
@@ -407,11 +407,11 @@ export function PricingPageContent() {
               id="pricing-cta-heading"
               className="relative z-[3] text-2xl font-black tracking-tight text-white sm:text-3xl"
             >
-              Get these prices for your next project
+              Let the market set your next price
             </h2>
             <p className="text-muted-foreground relative z-[3] mx-auto mt-3 max-w-lg text-base sm:mt-4 sm:text-lg">
-              Post your job on NoMarkup and let providers compete for your business. Our
-              reverse-auction model means you always get a fair price.
+              Post your job and watch providers compete in a reverse auction. Fair market rates —
+              not the markup.
             </p>
             <div className="relative z-[3] mt-8 sm:mt-10">
               <Button
@@ -694,6 +694,15 @@ function PriceDetailCard({
   index: number;
   parentInView: boolean;
 }) {
+  // Fair-Price engine read for this (category × zip) cell. Augments the static
+  // materialized-view medians below with a confidence-scored band that handles
+  // sparse data gracefully. Degrades to a "not enough data" note on miss.
+  const {
+    data: fairPrice,
+    isLoading: fairPriceLoading,
+    isError: fairPriceError,
+  } = useFairPrice({ categorySlug: row.category_slug, zip: row.zip_code });
+
   return (
     <div
       className={`glass glass-highlight glass-specular-anim rounded-2xl p-5 transition-all duration-700 ${parentInView ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'}`}
@@ -710,13 +719,25 @@ function PriceDetailCard({
         </span>
       </div>
 
-      {/* Median price hero number */}
+      {/* Fair-Price band — confidence-scored estimate (replaces the bare
+          median hero with the engine's robust estimate + band + confidence). */}
+      <div className="relative z-[3] mb-4">
+        <FairPriceBand
+          fairPrice={fairPrice}
+          isLoading={fairPriceLoading}
+          isError={fairPriceError}
+          title="Fair price"
+        />
+      </div>
+
+      {/* Static materialized-view percentile detail, retained as the
+          breakdown beneath the live band. */}
       <div className="relative z-[3]">
         <p className="text-xs font-medium uppercase tracking-wide text-white/35">
           Median price
         </p>
         <p
-          className="mt-0.5 text-3xl font-black tabular-nums"
+          className="mt-0.5 text-2xl font-black tabular-nums"
           style={{
             background: 'linear-gradient(135deg, var(--brand-gold-dim), var(--brand-gold-bright))',
             WebkitBackgroundClip: 'text',

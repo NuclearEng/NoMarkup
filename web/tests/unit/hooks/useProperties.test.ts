@@ -1,0 +1,213 @@
+import { renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { type ReactNode, createElement } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  useCreateProperty,
+  useDeleteProperty,
+  usePreferredProviders,
+  useProperties,
+  useUpdateProperty,
+} from '@/hooks/useProperties';
+import type { PreferredProvidersResponse, Property } from '@/hooks/useProperties';
+import { toast } from 'sonner';
+
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/api', () => ({
+  api: { get: vi.fn(), getPublic: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  ApiError: class ApiError extends Error {
+    code = 'ERR';
+    userMessage(fallback: string) { return this.message || fallback; }
+  },
+  getApiErrorMessage: (err: unknown, fallback: string): string =>
+    err instanceof Error && err.message ? err.message : fallback,
+}));
+const { api } = await import('@/lib/api');
+
+function qc() {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+  });
+}
+function wrap(client: QueryClient) {
+  return function W({ children }: { children: ReactNode }) {
+    return createElement(QueryClientProvider, { client }, children);
+  };
+}
+
+const mockProp: Property = {
+  id: 'p-1',
+  nickname: 'Pine St',
+  address: { street: '123 Pine', city: 'Seattle', state: 'WA', zip_code: '98101' },
+  notes: null,
+  active_jobs: 0,
+  total_spend_cents: 0,
+  created_at: '2026-04-25T00:00:00Z',
+};
+
+describe('useProperties (list)', () => {
+  let client: QueryClient;
+  beforeEach(() => { vi.resetAllMocks(); client = qc(); });
+  afterEach(() => { client.clear(); });
+
+  it('unwraps { properties } from the gateway response into an array', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ properties: [mockProp] });
+    const { result } = renderHook(() => useProperties(), { wrapper: wrap(client) });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toEqual([mockProp]);
+  });
+});
+
+describe('useCreateProperty', () => {
+  let client: QueryClient;
+  beforeEach(() => { vi.resetAllMocks(); client = qc(); });
+  afterEach(() => { client.clear(); });
+
+  it('posts + returns the unwrapped property', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce(mockProp);
+    const spy = vi.spyOn(client, 'invalidateQueries');
+
+    const { result } = renderHook(() => useCreateProperty(), { wrapper: wrap(client) });
+    result.current.mutate({
+      nickname: 'Pine St',
+      street: '123 Pine',
+      city: 'Seattle',
+      state: 'WA',
+      zip_code: '98101',
+    });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(result.current.data?.id).toBe('p-1');
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['properties'] });
+  });
+
+  it('shows toast.error on create failure (covers onError)', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useCreateProperty(), { wrapper: wrap(client) });
+    result.current.mutate({
+      nickname: 'Pine St',
+      street: '123 Pine',
+      city: 'Seattle',
+      state: 'WA',
+      zip_code: '98101',
+    });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    // getApiErrorMessage surfaces the Error/server reason; literal remains the fallback.
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
+  });
+});
+
+describe('useUpdateProperty', () => {
+  let client: QueryClient;
+  beforeEach(() => { vi.resetAllMocks(); client = qc(); });
+  afterEach(() => { client.clear(); });
+
+  it('uses PUT (not PATCH — gateway returns 405 on PATCH)', async () => {
+    vi.mocked(api.put).mockResolvedValueOnce({ ...mockProp, nickname: 'Pine St (renamed)' });
+    const { result } = renderHook(() => useUpdateProperty(), { wrapper: wrap(client) });
+    result.current.mutate({ id: 'p-1', input: { nickname: 'Pine St (renamed)' } });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.put)).toHaveBeenCalledWith(
+      '/api/v1/properties/p-1',
+      { nickname: 'Pine St (renamed)' },
+    );
+    // Verify PATCH was NOT called — the bug fix this hook embeds.
+    expect(vi.mocked(api.patch)).not.toHaveBeenCalled();
+  });
+
+  it('shows toast.error on update failure (covers onError)', async () => {
+    vi.mocked(api.put).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useUpdateProperty(), { wrapper: wrap(client) });
+    result.current.mutate({ id: 'p-1', input: { nickname: 'Renamed' } });
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
+  });
+});
+
+describe('useDeleteProperty', () => {
+  let client: QueryClient;
+  beforeEach(() => { vi.resetAllMocks(); client = qc(); });
+  afterEach(() => { client.clear(); });
+
+  it('deletes by id + invalidates list', async () => {
+    vi.mocked(api.delete).mockResolvedValueOnce({ success: true });
+    const spy = vi.spyOn(client, 'invalidateQueries');
+
+    const { result } = renderHook(() => useDeleteProperty(), { wrapper: wrap(client) });
+    result.current.mutate('p-1');
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.delete)).toHaveBeenCalledWith('/api/v1/properties/p-1');
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['properties'] });
+  });
+
+  it('shows toast.error on delete failure (covers onError)', async () => {
+    vi.mocked(api.delete).mockRejectedValueOnce(new Error('boom'));
+    const { result } = renderHook(() => useDeleteProperty(), { wrapper: wrap(client) });
+    result.current.mutate('p-1');
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('boom');
+  });
+});
+
+
+describe('usePreferredProviders', () => {
+  let client: QueryClient;
+  beforeEach(() => { vi.resetAllMocks(); client = qc(); });
+  afterEach(() => { client.clear(); });
+
+  it('fetches account-wide preferred providers from /me', async () => {
+    const body: PreferredProvidersResponse = {
+      providers: [{
+        provider_id: 'prov-1',
+        display_name: 'Ace',
+        completed_count: 4,
+        last_completed_at: '2026-07-01T00:00:00Z',
+        is_preferred: true,
+      }],
+      preferred_threshold: 3,
+    };
+    vi.mocked(api.get).mockResolvedValueOnce(body);
+    const { result } = renderHook(() => usePreferredProviders(), { wrapper: wrap(client) });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/me/preferred-providers');
+    expect(result.current.data?.providers).toHaveLength(1);
+    expect(result.current.data?.providers[0]?.is_preferred).toBe(true);
+  });
+
+  it('scopes via ?property_id= on the me endpoint when not using property path', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ providers: [], preferred_threshold: 3 });
+    const { result } = renderHook(
+      () => usePreferredProviders({ propertyId: 'p-1' }),
+      { wrapper: wrap(client) },
+    );
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/me/preferred-providers?property_id=p-1',
+    );
+  });
+
+  it('uses GET /properties/{id}/preferred-providers when usePropertyPath', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ providers: [], preferred_threshold: 3 });
+    const { result } = renderHook(
+      () => usePreferredProviders({ propertyId: 'p-9', usePropertyPath: true }),
+      { wrapper: wrap(client) },
+    );
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/properties/p-9/preferred-providers',
+    );
+  });
+
+  it('does not fetch when property path is requested without an id', async () => {
+    const { result } = renderHook(
+      () => usePreferredProviders({ usePropertyPath: true }),
+      { wrapper: wrap(client) },
+    );
+    // Disabled query stays idle.
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+  });
+});

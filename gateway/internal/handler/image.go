@@ -1,13 +1,52 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
+	"strings"
 
 	imagingv1 "github.com/nomarkup/nomarkup/proto/imaging/v1"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
+
+// objectKeyOwner extracts the owning user-id segment from a storage object key
+// or full URL. Every imaging key is namespaced "{context}/{userID}/...", so the
+// owner is the second path segment. A full URL (scheme://host/bucket/key) is
+// reduced to its key first. Returns "" when the shape is unexpected so callers
+// fail closed.
+func objectKeyOwner(sourceURL string) string {
+	key := sourceURL
+	if i := strings.Index(key, "://"); i >= 0 {
+		rest := key[i+3:]
+		if s := strings.IndexByte(rest, '/'); s >= 0 {
+			path := rest[s+1:] // drop host
+			if b := strings.IndexByte(path, '/'); b >= 0 {
+				key = path[b+1:] // drop bucket
+			} else {
+				key = path
+			}
+		}
+	}
+	parts := strings.SplitN(key, "/", 3)
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[1]
+}
+
+// requireOwnedObject enforces that the storage object identified by sourceURL
+// belongs to userID. The imaging service trusts the caller-supplied source_url
+// and never checks ownership, so without this gate any authenticated user could
+// read and reprocess another user's stored object — including private
+// verification documents (ID/SSN scans). Writes a 403 and returns false on a
+// cross-tenant or unexpectedly-shaped key (fails closed).
+func requireOwnedObject(w http.ResponseWriter, sourceURL, userID string) bool {
+	if owner := objectKeyOwner(sourceURL); owner == "" || owner != userID {
+		writeError(w, http.StatusForbidden, "source object does not belong to you")
+		return false
+	}
+	return true
+}
 
 // ImageHandler handles HTTP endpoints for the imaging pipeline.
 type ImageHandler struct {
@@ -34,8 +73,7 @@ func (h *ImageHandler) GetUploadURL(w http.ResponseWriter, r *http.Request) {
 		FileSizeBytes int32  `json:"file_size_bytes"`
 		Context       string `json:"context"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
@@ -92,13 +130,15 @@ func (h *ImageHandler) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		ObjectKey string `json:"object_key"`
 		Context   string `json:"context"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
 	if body.ObjectKey == "" {
 		writeError(w, http.StatusBadRequest, "object_key is required")
+		return
+	}
+	if !requireOwnedObject(w, body.ObjectKey, claims.UserID) {
 		return
 	}
 
@@ -112,12 +152,18 @@ func (h *ImageHandler) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Field names match the web client's typed ConfirmUploadResponse
+	// (web/src/types ConfirmUploadResponse + useImageUpload). The imaging
+	// proto names these source_url/valid/error; the gateway is the HTTP
+	// contract boundary, so we expose them as confirmed_url/content_type_valid
+	// here. A mismatch silently breaks EVERY upload: the hook reads
+	// content_type_valid (undefined → falsy) and fails the upload as
+	// "rejected", and confirmed_url would be undefined so the preview <Image>
+	// renders an empty src.
 	result := map[string]interface{}{
-		"source_url": resp.GetSourceUrl(),
-		"valid":      resp.GetValid(),
-	}
-	if resp.GetError() != "" {
-		result["error"] = resp.GetError()
+		"confirmed_url":       resp.GetSourceUrl(),
+		"content_type_valid":  resp.GetValid(),
+		"actual_content_type": resp.GetError(),
 	}
 
 	writeJSON(w, http.StatusOK, result)
@@ -126,7 +172,7 @@ func (h *ImageHandler) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 // ProcessImage handles POST /api/v1/images/process.
 // Body: { "source_url": "...", "context": "job_photo", "options": { ... } }
 func (h *ImageHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
@@ -137,13 +183,15 @@ func (h *ImageHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 		Context   string                  `json:"context"`
 		Options   *processImageOptionsDTO `json:"options"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
 	if body.SourceURL == "" {
 		writeError(w, http.StatusBadRequest, "source_url is required")
+		return
+	}
+	if !requireOwnedObject(w, body.SourceURL, claims.UserID) {
 		return
 	}
 
@@ -187,7 +235,7 @@ func (h *ImageHandler) ProcessImage(w http.ResponseWriter, r *http.Request) {
 
 // ProcessJobPhotos handles POST /api/v1/images/process/job-photos.
 func (h *ImageHandler) ProcessJobPhotos(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
@@ -197,8 +245,7 @@ func (h *ImageHandler) ProcessJobPhotos(w http.ResponseWriter, r *http.Request) 
 		JobID      string   `json:"job_id"`
 		SourceURLs []string `json:"source_urls"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.JobID == "" {
@@ -208,6 +255,11 @@ func (h *ImageHandler) ProcessJobPhotos(w http.ResponseWriter, r *http.Request) 
 	if len(body.SourceURLs) == 0 {
 		writeError(w, http.StatusBadRequest, "source_urls is required")
 		return
+	}
+	for _, u := range body.SourceURLs {
+		if !requireOwnedObject(w, u, claims.UserID) {
+			return
+		}
 	}
 
 	resp, err := h.imagingClient.ProcessJobPhotos(r.Context(), &imagingv1.ProcessJobPhotosRequest{
@@ -250,12 +302,15 @@ func (h *ImageHandler) ProcessAvatar(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		SourceURL string `json:"source_url"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.SourceURL == "" {
 		writeError(w, http.StatusBadRequest, "source_url is required")
+		return
+	}
+
+	if !requireOwnedObject(w, body.SourceURL, claims.UserID) {
 		return
 	}
 
@@ -295,12 +350,15 @@ func (h *ImageHandler) ProcessPortfolio(w http.ResponseWriter, r *http.Request) 
 		SourceURL string `json:"source_url"`
 		Caption   string `json:"caption"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.SourceURL == "" {
 		writeError(w, http.StatusBadRequest, "source_url is required")
+		return
+	}
+
+	if !requireOwnedObject(w, body.SourceURL, claims.UserID) {
 		return
 	}
 
@@ -341,12 +399,15 @@ func (h *ImageHandler) ProcessDocument(w http.ResponseWriter, r *http.Request) {
 		SourceURL    string `json:"source_url"`
 		DocumentType string `json:"document_type"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.SourceURL == "" {
 		writeError(w, http.StatusBadRequest, "source_url is required")
+		return
+	}
+
+	if !requireOwnedObject(w, body.SourceURL, claims.UserID) {
 		return
 	}
 

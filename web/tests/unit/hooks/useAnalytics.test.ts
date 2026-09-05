@@ -17,15 +17,8 @@ import type {
 } from '@/types';
 
 // Mock the api module
-vi.mock('@/lib/api', () => ({
-  api: {
-    get: vi.fn(),
-    getPublic: vi.fn(),
-    post: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
-  },
-  ApiError: class ApiError extends Error {
+vi.mock('@/lib/api', () => {
+  class ApiError extends Error {
     status: number;
     body: string;
     constructor(status: number, body: string) {
@@ -34,8 +27,18 @@ vi.mock('@/lib/api', () => ({
       this.status = status;
       this.body = body;
     }
-  },
-}));
+  }
+  return {
+    api: {
+      get: vi.fn(),
+      getPublic: vi.fn(),
+      post: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+    },
+    ApiError,
+  };
+});
 
 // Seed the auth store so `enabled: !!userId` is true and the query fires.
 vi.mock('@/stores/auth-store', () => ({
@@ -43,7 +46,7 @@ vi.mock('@/stores/auth-store', () => ({
     selector({ user: { id: 'user-1' } }),
 }));
 
-const { api } = await import('@/lib/api');
+const { api, ApiError: FakeApiError } = await import('@/lib/api');
 
 function createTestQueryClient(): QueryClient {
   return new QueryClient({
@@ -61,6 +64,7 @@ function createWrapper(queryClient: QueryClient) {
 }
 
 const mockMarketRange: AnalyticsMarketRange = {
+  has_data: true,
   category_id: 'cat-1',
   subcategory_id: 'subcat-1',
   service_type_id: 'svc-1',
@@ -105,34 +109,35 @@ describe('useMarketRange', () => {
   });
 
   it('fetches market range for a category', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce(mockMarketRange);
+    // Public read (FairPriceWidget renders for logged-out visitors) → getPublic.
+    vi.mocked(api.getPublic).mockResolvedValueOnce(mockMarketRange);
 
     const { result } = renderHook(() => useMarketRange('cat-1'), {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.low_cents).toBe(5000);
     expect(result.current.data?.median_cents).toBe(12500);
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
-      expect.stringContaining('/api/v1/analytics/market-range?category_id=cat-1'),
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/analytics/market/range?category_id=cat-1'),
     );
   });
 
   it('passes subcategory and service type params', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce(mockMarketRange);
+    vi.mocked(api.getPublic).mockResolvedValueOnce(mockMarketRange);
 
     const { result } = renderHook(() => useMarketRange('cat-1', 'subcat-1', 'svc-1'), {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith(
       expect.stringContaining('subcategory_id=subcat-1'),
     );
-    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+    expect(vi.mocked(api.getPublic)).toHaveBeenCalledWith(
       expect.stringContaining('service_type_id=svc-1'),
     );
   });
@@ -143,18 +148,31 @@ describe('useMarketRange', () => {
     });
 
     expect(result.current.fetchStatus).toBe('idle');
-    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+    expect(vi.mocked(api.getPublic)).not.toHaveBeenCalled();
   });
 
   it('handles API errors', async () => {
-    vi.mocked(api.get).mockRejectedValueOnce(new Error('Network error'));
+    vi.mocked(api.getPublic).mockRejectedValueOnce(new Error('Network error'));
 
     const { result } = renderHook(() => useMarketRange('cat-1'), {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
     expect(result.current.error).toBeDefined();
+  });
+
+  it('treats 404/401 as a no-data empty state (public page still renders)', async () => {
+    for (const status of [404, 401]) {
+      const qc = createTestQueryClient();
+      vi.mocked(api.getPublic).mockRejectedValueOnce(new FakeApiError(status, 'no data'));
+      const { result } = renderHook(() => useMarketRange('cat-1'), {
+        wrapper: createWrapper(qc),
+      });
+      await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+      expect(result.current.data?.has_data).toBe(false);
+      qc.clear();
+    }
   });
 });
 
@@ -177,7 +195,7 @@ describe('useProviderAnalytics', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.jobs_completed).toBe(15);
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/providers/user-1');
@@ -190,7 +208,7 @@ describe('useProviderAnalytics', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       expect.stringContaining('start_date=2026-01-01'),
@@ -205,7 +223,29 @@ describe('useProviderAnalytics', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+  });
+
+  it('returns null on 404 (graceful degrade)', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(404, 'no analytics'));
+
+    const { result } = renderHook(() => useProviderAnalytics(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
+  });
+
+  it('returns null on 500', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(500, 'down'));
+
+    const { result } = renderHook(() => useProviderAnalytics(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
   });
 });
 
@@ -235,7 +275,7 @@ describe('useProviderEarnings', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(
       '/api/v1/analytics/providers/user-1/earnings',
@@ -256,9 +296,41 @@ describe('useProviderEarnings', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('group_by=month'));
+  });
+
+  it('returns null on 404 (graceful degrade — earnings may not exist)', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(404, 'no earnings'));
+
+    const { result } = renderHook(() => useProviderEarnings(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
+  });
+
+  it('returns null on 500 (service degraded)', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(500, 'down'));
+
+    const { result } = renderHook(() => useProviderEarnings(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
+  });
+
+  it('rethrows non-404/500 ApiError so caller sees real bugs', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(401, 'unauthorized'));
+
+    const { result } = renderHook(() => useProviderEarnings(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -289,7 +361,7 @@ describe('useCustomerSpending', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith('/api/v1/analytics/customers/me/spending');
   });
@@ -309,9 +381,33 @@ describe('useCustomerSpending', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(vi.mocked(api.get)).toHaveBeenCalledWith(expect.stringContaining('group_by=week'));
+  });
+
+  it('passes property_id when scoped', async () => {
+    const mockSpending: CustomerSpendingResponse = {
+      data_points: [],
+      total_spent_cents: 12000,
+      total_jobs: 1,
+      average_job_cost_cents: 12000,
+      total_savings_cents: 0,
+      category_breakdown: [],
+    };
+    vi.mocked(api.get).mockResolvedValueOnce(mockSpending);
+    const propId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+    const { result } = renderHook(
+      () => useCustomerSpending('2026-01-01', '2026-12-31', 'month', propId),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      expect.stringContaining(`property_id=${propId}`),
+    );
   });
 
   it('handles API errors', async () => {
@@ -321,6 +417,28 @@ describe('useCustomerSpending', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
+  });
+
+  it('returns null on 404 (graceful degrade)', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(404, 'no spend'));
+
+    const { result } = renderHook(() => useCustomerSpending(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
+  });
+
+  it('returns null on 500', async () => {
+    vi.mocked(api.get).mockRejectedValueOnce(new FakeApiError(500, 'down'));
+
+    const { result } = renderHook(() => useCustomerSpending(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data).toBeNull();
   });
 });

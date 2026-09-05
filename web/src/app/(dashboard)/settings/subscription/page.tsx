@@ -14,13 +14,14 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   useCancelSubscription,
   useChangeTier,
+  useCreateSubscription,
   useInvoices,
   useSubscription,
   useTiers,
   useUsage,
 } from '@/hooks/useSubscription';
 import { cn } from '@/lib/utils';
-import { formatCents } from '@/lib/utils';
+import { formatCents, humanizeStatus, subscriptionTierLabel } from '@/lib/utils';
 import { BILLING_INTERVAL, SUBSCRIPTION_STATUS } from '@/types';
 import type { BillingInterval } from '@/types';
 
@@ -94,6 +95,7 @@ export default function SubscriptionPage() {
   const { data: usageData } = useUsage();
   const { data: invoicesData } = useInvoices();
   const changeTier = useChangeTier();
+  const createSubscription = useCreateSubscription();
   const cancelSubscription = useCancelSubscription();
 
   const [billingInterval, setBillingInterval] = useState<BillingInterval>(BILLING_INTERVAL.MONTHLY);
@@ -104,10 +106,25 @@ export default function SubscriptionPage() {
   const subscription = subscriptionData?.subscription;
   const tiers = tiersData?.tiers ?? [];
   const usage = usageData;
+
+  // Read proration off the mutation result here, where `data` is still typed
+  // `... | undefined`. Inside the `isSuccess` branch below TanStack narrows
+  // `data` to non-null, but in practice the success flag can flip a render
+  // before `data` is populated, so we keep this nullable and default to 0.
+  const prorationCents = changeTier.data?.proration_amount_cents ?? 0;
   const invoices = invoicesData?.invoices ?? [];
 
   function handleSelectTier(tierId: string) {
-    if (!subscription) return;
+    if (!subscription) {
+      // No active subscription yet — start one. Dev seeds a default payment
+      // method; paid tiers complete via the returned client_secret/Stripe flow.
+      void createSubscription.mutateAsync({
+        tier_id: tierId,
+        billing_interval: billingInterval,
+        payment_method_id: '',
+      });
+      return;
+    }
     void changeTier.mutateAsync({
       new_tier_id: tierId,
       billing_interval: billingInterval,
@@ -187,7 +204,7 @@ export default function SubscriptionPage() {
           <CardContent className="space-y-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-xl font-bold">{subscription.tier.name}</p>
+                <p className="text-xl font-bold">{subscriptionTierLabel(subscription.tier)}</p>
                 <p className="text-sm text-zinc-300">
                   {formatCents(subscription.current_price_cents)}/
                   {subscription.billing_interval === BILLING_INTERVAL.ANNUAL ? 'year' : 'month'}
@@ -271,7 +288,7 @@ export default function SubscriptionPage() {
             <div className="flex items-center justify-between text-sm">
               <span className="text-zinc-300">Current platform fee</span>
               <span className="font-semibold">
-                {String(usage.current_fee_percentage)}%
+                {(usage.current_fee_percentage * 100).toFixed(0)}%
               </span>
             </div>
           </CardContent>
@@ -358,6 +375,22 @@ export default function SubscriptionPage() {
           {changeTier.isSuccess ? (
             <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg p-3 text-sm">
               Plan changed successfully.
+              {prorationCents > 0 ? (
+                <>
+                  {' '}
+                  A prorated charge of{' '}
+                  <span className="font-semibold">{formatCents(prorationCents)}</span> applies for
+                  the rest of this billing period.
+                </>
+              ) : null}
+              {prorationCents < 0 ? (
+                <>
+                  {' '}
+                  A prorated credit of{' '}
+                  <span className="font-semibold">{formatCents(Math.abs(prorationCents))}</span>{' '}
+                  will be applied to your next invoice.
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -404,7 +437,7 @@ export default function SubscriptionPage() {
                       variant={invoice.status === 'paid' ? 'default' : 'outline'}
                       className="text-xs"
                     >
-                      {invoice.status}
+                      {humanizeStatus(invoice.status)}
                     </Badge>
                   </div>
                   <div className="w-10">

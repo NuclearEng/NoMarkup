@@ -1,34 +1,182 @@
 package handler
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/redis/go-redis/v9"
-	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
-	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	fraudv1 "github.com/nomarkup/nomarkup/proto/fraud/v1"
+	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // viewerWindowSeconds is how long a viewer ping is considered "active".
 const viewerWindowSeconds = 120
 
-// JobHandler handles HTTP endpoints for jobs.
-type JobHandler struct {
-	jobClient jobv1.JobServiceClient
-	cache     *cache.Client
+// Field-length caps for jobs, mirrored from the frontend Zod schemas in
+// web/src/lib/validations.ts (jobTitleSchema .max(200),
+// jobDescriptionSchema .max(5000)). Enforced server-side so an oversized
+// title/description is rejected with a clean 400 rather than persisting an
+// unbounded TEXT value (DoS via storage/render). Measured in runes, not bytes.
+const (
+	maxJobTitleLen       = 200
+	maxJobDescriptionLen = 5000
+)
+
+// Shared pagination ceilings for the list endpoints in this package.
+//
+//   - maxPageSize caps a client-supplied page_size so a huge value can't ask
+//     the service for an unbounded result set.
+//   - maxPageNumber caps how deep a client may page. page becomes an OFFSET,
+//     and OFFSET makes the database produce and then discard every preceding
+//     row, so an unbounded page number is a full scan even with a small
+//     page_size. 10000 pages is far past any real admin or user workflow;
+//     anything deeper wants a filter or a cursor, not an offset.
+const (
+	maxPageSize   = 100
+	maxPageNumber = 10000
+)
+
+// parseGeoParam reads an optional float query param, validating it is within
+// [min,max]. Returns ok=false with the value zeroed when the param is present
+// but unparseable or out of range, so the caller can return a 400 instead of
+// silently degrading garbage input to a (0,0) centroid / negative radius.
+func parseGeoParam(q url.Values, key string, min, max float64) (val float64, present, ok bool) {
+	raw := q.Get(key)
+	if raw == "" {
+		return 0, false, true
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || v < min || v > max {
+		return 0, true, false
+	}
+	return v, true, true
 }
 
-// NewJobHandler creates a new JobHandler.
-func NewJobHandler(jobClient jobv1.JobServiceClient, cacheClient *cache.Client) *JobHandler {
-	return &JobHandler{jobClient: jobClient, cache: cacheClient}
+// parsePageParam reads an optional positive integer query param. Returns
+// ok=false when present-but-invalid (non-numeric, negative, zero, or
+// overflowing int32) so the caller can 400 rather than truncating to garbage.
+func parsePageParam(q url.Values, key string, def int) (val int, ok bool) {
+	raw := q.Get(key)
+	if raw == "" {
+		return def, true
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil || v < 1 || v > math.MaxInt32 {
+		return def, false
+	}
+	return v, true
+}
+
+// JobHandler handles HTTP endpoints for jobs.
+type JobHandler struct {
+	jobClient   jobv1.JobServiceClient
+	cache       *cache.Client
+	fraudClient fraudv1.FraudServiceClient // optional — if nil, fraud signal recording is skipped
+	db          *pgxpool.Pool              // optional — used for the job-creation velocity gate
+}
+
+// NewJobHandler creates a new JobHandler. The fraud client and db pool are
+// optional — callers may pass nil to disable fraud signal recording (e.g. in
+// tests). Without the db pool the velocity gate degrades to a no-op (no
+// signal recorded) rather than the old behavior of stamping a fraud signal on
+// every job creation.
+func NewJobHandler(jobClient jobv1.JobServiceClient, cacheClient *cache.Client, fraudClient fraudv1.FraudServiceClient, db *pgxpool.Pool) *JobHandler {
+	return &JobHandler{jobClient: jobClient, cache: cacheClient, fraudClient: fraudClient, db: db}
+}
+
+// Job-creation velocity thresholds. Mirror the fraud engine's own velocity
+// bands (engines/fraud/src/engine.rs: >=3/hour = elevated, >=5/hour = high) so
+// the gateway and the engine agree on what "rapid posting" means. A signal is
+// recorded ONLY when posting is genuinely anomalous — a normal cadence records
+// nothing.
+const (
+	jobVelocityWindow       = time.Hour
+	jobVelocityElevated     = 3 // jobs in the window before we flag at all
+	jobVelocityHigh         = 5 // jobs in the window for a high-confidence flag
+	jobVelocityElevatedConf = 0.5
+	jobVelocityHighConf     = 0.75
+)
+
+// recordJobCreationSignal evaluates the job-creation velocity for this user and
+// records a fraud signal ONLY when the rate is anomalous. Posting a job is
+// normal activity, not fraud, so the common case records nothing.
+//
+// Previously this stamped a `pending` VELOCITY signal on EVERY job creation.
+// That polluted the admin fraud queue (which surfaces pending signals), tanked
+// every active poster's trust fraud_score (the trust engine counts these as
+// fraud), and — because the trust engine pins any user with a pending/confirmed
+// signal to the `under_review` tier — permanently demoted every job-poster
+// regardless of their real reputation. The velocity GATE here restores the
+// original intent (catch rapid-fire posting) without the false positives.
+//
+// We do not block the response on this: it runs detached with a hard 500ms
+// timeout, and any error is logged and swallowed so neither the DB nor the
+// fraud engine can stall or fail job creation.
+func (h *JobHandler) recordJobCreationSignal(parent context.Context, userID, jobID, ipAddress string) {
+	if h.fraudClient == nil || h.db == nil {
+		// No fraud engine or no DB to run the velocity gate → record nothing.
+		// (Failing closed here would mean stamping benign activity as fraud.)
+		return
+	}
+
+	// Detach from the request context so the work survives the HTTP response.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+
+		// Real velocity check: how many jobs has this user posted in the
+		// window (including the one just created)? The jobs.created_at +
+		// customer_id columns are indexed; this is a cheap point count.
+		var recentCount int
+		if err := h.db.QueryRow(ctx, `
+			SELECT COUNT(*) FROM jobs
+			 WHERE customer_id = $1
+			   AND created_at >= now() - $2::interval`,
+			userID, jobVelocityWindow.String(),
+		).Scan(&recentCount); err != nil {
+			slog.WarnContext(parent, "job velocity check failed",
+				"user_id", userID, "job_id", jobID, "error", err)
+			return
+		}
+
+		// Below the elevated threshold → normal cadence, nothing to record.
+		if recentCount < jobVelocityElevated {
+			return
+		}
+
+		confidence := jobVelocityElevatedConf
+		if recentCount >= jobVelocityHigh {
+			confidence = jobVelocityHighConf
+		}
+
+		_, err := h.fraudClient.RecordSignal(ctx, &fraudv1.RecordSignalRequest{
+			UserId:        userID,
+			SignalType:    fraudv1.FraudSignalType_FRAUD_SIGNAL_TYPE_VELOCITY,
+			Confidence:    confidence,
+			Details:       fmt.Sprintf("high job-post velocity: %d jobs in last hour", recentCount),
+			IpAddress:     ipAddress,
+			ReferenceType: "job",
+			ReferenceId:   jobID,
+		})
+		if err != nil {
+			slog.WarnContext(parent, "fraud signal record failed",
+				"user_id", userID, "job_id", jobID, "error", err)
+		}
+	}()
 }
 
 type createJobRequest struct {
@@ -83,9 +231,37 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createJobRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
+	}
+
+	if utf8.RuneCountInString(req.Title) > maxJobTitleLen {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("title must be at most %d characters", maxJobTitleLen))
+		return
+	}
+	if utf8.RuneCountInString(req.Description) > maxJobDescriptionLen {
+		writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("description must be at most %d characters", maxJobDescriptionLen))
+		return
+	}
+	// ASR-1.2.a / 1.1.3.b / 1.4.3.c / 1.1.4 — pre-post UGC filter.
+	if rejectProhibitedUGC(w, r, req.Title, req.Description) {
+		return
+	}
+
+	// Live auction create is dual-gated (field-level — CreateJob is shared with
+	// sealed auctions, so we cannot RequireFlag the whole route):
+	//   1. live_auction DB flag (migration 013) via IsFeatureDisabled — fail-
+	//      closed in production when missing/error/nil DB (SEC-01)
+	//   2. ENABLE_LIVE_AUCTION ops kill switch AND-ed
+	// Sealed (default) and empty auction_type are unaffected.
+	if strings.EqualFold(strings.TrimSpace(req.AuctionType), "live") {
+		if !middleware.LiveAuctionEnvEnabled() ||
+			middleware.IsFeatureDisabled(r.Context(), h.db, h.cache, "live_auction") {
+			writeError(w, http.StatusServiceUnavailable, "live auctions are currently unavailable")
+			return
+		}
 	}
 
 	grpcReq := &jobv1.CreateJobRequest{
@@ -143,12 +319,16 @@ func (h *JobHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fire-and-forget velocity fraud signal. Failures here must not block
+	// or fail the response — the fraud engine has its own retry/aggregation.
+	h.recordJobCreationSignal(r.Context(), claims.UserID, resp.GetJob().GetId(), r.RemoteAddr)
+
 	writeJSON(w, http.StatusCreated, protoJobToJSON(resp.GetJob()))
 }
 
 // Update handles PATCH /api/v1/jobs/{id}.
 func (h *JobHandler) Update(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -161,13 +341,27 @@ func (h *JobHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updateJobRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
+	}
+
+	// ASR-1.2.a — pre-post UGC filter on title/description when present.
+	{
+		var parts []string
+		if req.Title != nil {
+			parts = append(parts, *req.Title)
+		}
+		if req.Description != nil {
+			parts = append(parts, *req.Description)
+		}
+		if len(parts) > 0 && rejectProhibitedUGC(w, r, parts...) {
+			return
+		}
 	}
 
 	grpcReq := &jobv1.UpdateJobRequest{
 		JobId:       jobID,
+		CustomerId:  claims.UserID,
 		Title:       req.Title,
 		Description: req.Description,
 		CategoryId:  req.CategoryID,
@@ -206,7 +400,7 @@ func (h *JobHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 // Delete handles DELETE /api/v1/jobs/{id}.
 func (h *JobHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -219,7 +413,8 @@ func (h *JobHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.jobClient.DeleteDraft(r.Context(), &jobv1.DeleteDraftRequest{
-		JobId: jobID,
+		JobId:      jobID,
+		CustomerId: claims.UserID,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -231,7 +426,7 @@ func (h *JobHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // Publish handles POST /api/v1/jobs/{id}/publish.
 func (h *JobHandler) Publish(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetClaims(r.Context())
+	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
 		return
@@ -244,7 +439,8 @@ func (h *JobHandler) Publish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.jobClient.PublishJob(r.Context(), &jobv1.PublishJobRequest{
-		JobId: jobID,
+		JobId:      jobID,
+		CustomerId: claims.UserID,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -312,6 +508,114 @@ func (h *JobHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, protoJobToJSON(resp.GetJob()))
 }
 
+// repostJobRequest is the optional JSON body for POST /api/v1/jobs/{id}/repost.
+// Empty body reposts the original fields; any provided field overrides the copy.
+type repostJobRequest struct {
+	Title                *string `json:"title,omitempty"`
+	Description          *string `json:"description,omitempty"`
+	StartingBidCents     *int64  `json:"starting_bid_cents,omitempty"`
+	OfferAcceptedCents   *int64  `json:"offer_accepted_cents,omitempty"`
+	AuctionDurationHours *int32  `json:"auction_duration_hours,omitempty"`
+}
+
+// Repost handles POST /api/v1/jobs/{id}/repost (FR-3.5 / FR-3.10).
+// Owner-only; creates a new active job linked to the original. Previous bids do not carry over.
+func (h *JobHandler) Repost(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	jobID := chi.URLParam(r, "id")
+	if jobID == "" {
+		writeError(w, http.StatusBadRequest, "job id required")
+		return
+	}
+
+	var req repostJobRequest
+	// Body is optional — empty or {} copies the original job as-is.
+	if err := decodeJSONOptional(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if req.Title != nil {
+		t := strings.TrimSpace(*req.Title)
+		if t == "" {
+			writeError(w, http.StatusBadRequest, "title cannot be empty")
+			return
+		}
+		if utf8.RuneCountInString(t) > maxJobTitleLen {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("title must be at most %d characters", maxJobTitleLen))
+			return
+		}
+		req.Title = &t
+		if rejectProhibitedUGC(w, r, t) {
+			return
+		}
+	}
+	if req.Description != nil {
+		d := strings.TrimSpace(*req.Description)
+		if d == "" {
+			writeError(w, http.StatusBadRequest, "description cannot be empty")
+			return
+		}
+		if utf8.RuneCountInString(d) > maxJobDescriptionLen {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("description must be at most %d characters", maxJobDescriptionLen))
+			return
+		}
+		req.Description = &d
+		if rejectProhibitedUGC(w, r, d) {
+			return
+		}
+	}
+	if req.StartingBidCents != nil && *req.StartingBidCents <= 0 {
+		writeError(w, http.StatusBadRequest, "starting_bid_cents must be a positive amount")
+		return
+	}
+	if req.OfferAcceptedCents != nil && *req.OfferAcceptedCents <= 0 {
+		writeError(w, http.StatusBadRequest, "offer_accepted_cents must be a positive amount")
+		return
+	}
+	if req.AuctionDurationHours != nil {
+		hours := *req.AuctionDurationHours
+		if hours < 1 || hours > 168 {
+			writeError(w, http.StatusBadRequest, "auction_duration_hours must be between 1 and 168")
+			return
+		}
+	}
+
+	grpcReq := &jobv1.RepostJobRequest{
+		OriginalJobId: jobID,
+		CustomerId:    claims.UserID,
+	}
+	if req.Title != nil {
+		grpcReq.Title = req.Title
+	}
+	if req.Description != nil {
+		grpcReq.Description = req.Description
+	}
+	if req.StartingBidCents != nil {
+		grpcReq.StartingBidCents = req.StartingBidCents
+	}
+	if req.OfferAcceptedCents != nil {
+		grpcReq.OfferAcceptedCents = req.OfferAcceptedCents
+	}
+	if req.AuctionDurationHours != nil {
+		grpcReq.AuctionDurationHours = req.AuctionDurationHours
+	}
+
+	resp, err := h.jobClient.RepostJob(r.Context(), grpcReq)
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	// New job is a create-class response.
+	writeJSON(w, http.StatusCreated, protoJobToJSON(resp.GetNewJob()))
+}
+
 // Search handles GET /api/v1/jobs (public).
 func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -324,19 +628,21 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 		grpcReq.CategoryIds = splitCommas(catIDs)
 	}
 
-	if lat := q.Get("latitude"); lat != "" {
-		if lng := q.Get("longitude"); lng != "" {
-			latF, _ := strconv.ParseFloat(lat, 64)
-			lngF, _ := strconv.ParseFloat(lng, 64)
-			grpcReq.Location = &commonv1.Location{
-				Latitude:  latF,
-				Longitude: lngF,
-			}
-		}
+	latF, latPresent, latOK := parseGeoParam(q, "latitude", -90, 90)
+	lngF, lngPresent, lngOK := parseGeoParam(q, "longitude", -180, 180)
+	if !latOK || !lngOK {
+		writeError(w, http.StatusBadRequest, "latitude must be within [-90,90] and longitude within [-180,180]")
+		return
 	}
-	if radius := q.Get("radius_km"); radius != "" {
-		r, _ := strconv.ParseFloat(radius, 64)
-		grpcReq.RadiusKm = r
+	if latPresent && lngPresent {
+		grpcReq.Location = &commonv1.Location{Latitude: latF, Longitude: lngF}
+	}
+	if radiusF, present, ok := parseGeoParam(q, "radius_km", 0, 20037); present {
+		if !ok || radiusF <= 0 {
+			writeError(w, http.StatusBadRequest, "radius_km must be a positive distance")
+			return
+		}
+		grpcReq.RadiusKm = radiusF
 	}
 
 	if minPrice := q.Get("min_price_cents"); minPrice != "" {
@@ -356,6 +662,10 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 		v := true
 		grpcReq.RecurringOnly = &v
 	}
+	if statusStr := q.Get("status"); statusStr != "" {
+		st := stringToJobStatus(statusStr)
+		grpcReq.StatusFilter = &st
+	}
 
 	if sortField := q.Get("sort"); sortField != "" {
 		dir := commonv1.SortDirection_SORT_DIRECTION_ASC
@@ -368,13 +678,14 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	page := 1
-	pageSize := 20
-	if p := q.Get("page"); p != "" {
-		page, _ = strconv.Atoi(p)
+	page, pageOK := parsePageParam(q, "page", 1)
+	pageSize, sizeOK := parsePageParam(q, "page_size", 20)
+	if !pageOK || !sizeOK {
+		writeError(w, http.StatusBadRequest, "page and page_size must be positive integers")
+		return
 	}
-	if ps := q.Get("page_size"); ps != "" {
-		pageSize, _ = strconv.Atoi(ps)
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
 	}
 	grpcReq.Pagination = &commonv1.PaginationRequest{
 		Page:     int32(page),
@@ -387,9 +698,20 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	wantLive := false
+	if statusStr := q.Get("status"); statusStr == "open" || statusStr == "active" {
+		wantLive = true
+	}
 	jobs := make([]map[string]interface{}, 0, len(resp.GetJobs()))
 	for _, j := range resp.GetJobs() {
-		jobs = append(jobs, protoJobToJSON(j))
+		row := protoJobToJSON(j)
+		if wantLive {
+			st, _ := row["status"].(string)
+			if st != "active" {
+				continue
+			}
+		}
+		jobs = append(jobs, row)
 	}
 
 	result := map[string]interface{}{
@@ -398,14 +720,17 @@ func (h *JobHandler) Search(w http.ResponseWriter, r *http.Request) {
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
 		}
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	// Public job browse — no per-caller variance (this route has no auth), so it
+	// is edge-cacheable per §14. Short TTL since auctions move; live bid state is
+	// fetched separately by the client island.
+	writeCachedJSON(w, r, http.StatusOK, result, 15, 60)
 }
 
 // GetJob handles GET /api/v1/jobs/{id} (public with optional auth).
@@ -469,7 +794,71 @@ func (h *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 		result["customer_jobs_posted"] = 0
 	}
 
+	// F2: owner-only liquidity. Non-owners never see the key.
+	if customerID := detail.GetJob().GetCustomerId(); isJobOwner(requestingUserID, customerID) {
+		if liq := h.loadJobLiquidity(r.Context(), jobID, detail.GetJob().GetCreatedAt()); liq != nil {
+			result["liquidity"] = liq
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{"job": result})
+}
+
+func isJobOwner(requestingUserID, customerID string) bool {
+	return requestingUserID != "" && customerID != "" && requestingUserID == customerID
+}
+
+type jobLiquidity struct {
+	NotifiedCount     int     `json:"notified_count"`
+	FirstBidAt        *string `json:"first_bid_at"`
+	MinutesToFirstBid *int    `json:"minutes_to_first_bid,omitempty"`
+	BidCount          int     `json:"bid_count"`
+}
+
+// loadJobLiquidity reads the match-notify ledger + first bid time.
+// Returns nil when the pool is unset or the query fails (fail-soft, omit key).
+func (h *JobHandler) loadJobLiquidity(ctx context.Context, jobID string, jobCreated *timestamppb.Timestamp) *jobLiquidity {
+	if h.db == nil {
+		return nil
+	}
+
+	var notified int
+	var firstBid *time.Time
+	var firstNotified *time.Time
+	var bidCount int
+	err := h.db.QueryRow(ctx, `
+		SELECT
+			(SELECT COUNT(*)::int FROM job_match_notifications WHERE job_id = $1),
+			(SELECT MIN(notified_at) FROM job_match_notifications WHERE job_id = $1),
+			(SELECT MIN(created_at) FROM bids WHERE job_id = $1),
+			(SELECT COUNT(*)::int FROM bids WHERE job_id = $1)`,
+		jobID,
+	).Scan(&notified, &firstNotified, &firstBid, &bidCount)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to load job liquidity", "job_id", jobID, "error", err)
+		return nil
+	}
+
+	liq := &jobLiquidity{
+		NotifiedCount: notified,
+		BidCount:      bidCount,
+	}
+	if firstBid != nil {
+		ts := firstBid.UTC().Format("2006-01-02T15:04:05Z")
+		liq.FirstBidAt = &ts
+		start := *firstBid
+		if firstNotified != nil {
+			start = *firstNotified
+		} else if jobCreated != nil && jobCreated.IsValid() {
+			start = jobCreated.AsTime()
+		}
+		mins := int(firstBid.Sub(start).Minutes())
+		if mins < 0 {
+			mins = 0
+		}
+		liq.MinutesToFirstBid = &mins
+	}
+	return liq
 }
 
 // ListMine handles GET /api/v1/jobs/mine.
@@ -490,16 +879,50 @@ func (h *JobHandler) ListMine(w http.ResponseWriter, r *http.Request) {
 		grpcReq.StatusFilter = &st
 	}
 	if propID := q.Get("property_id"); propID != "" {
+		if !isValidUUID(propID) {
+			writeError(w, http.StatusBadRequest, "property_id must be a valid UUID")
+			return
+		}
 		grpcReq.PropertyId = &propID
 	}
-
-	page := 1
-	pageSize := 20
-	if p := q.Get("page"); p != "" {
-		page, _ = strconv.Atoi(p)
+	// FR-19.3 history filters (optional; cheap SQL on ListCustomerJobs).
+	if catID := strings.TrimSpace(q.Get("category_id")); catID != "" {
+		if !isValidUUID(catID) {
+			writeError(w, http.StatusBadRequest, "category_id must be a valid UUID")
+			return
+		}
+		grpcReq.CategoryId = &catID
 	}
-	if ps := q.Get("page_size"); ps != "" {
-		pageSize, _ = strconv.Atoi(ps)
+	if df := strings.TrimSpace(q.Get("date_from")); df != "" {
+		ts, err := parseTimestamp(df)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "date_from must be RFC3339 or YYYY-MM-DD")
+			return
+		}
+		grpcReq.DateFrom = ts
+	}
+	if dt := strings.TrimSpace(q.Get("date_to")); dt != "" {
+		ts, err := parseTimestamp(dt)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "date_to must be RFC3339 or YYYY-MM-DD")
+			return
+		}
+		// Inclusive end-of-day when caller passes bare YYYY-MM-DD.
+		if len(dt) == 10 {
+			end := ts.AsTime().Add(24*time.Hour - time.Nanosecond)
+			ts = timestamppb.New(end)
+		}
+		grpcReq.DateTo = ts
+	}
+
+	page, pageOK := parsePageParam(q, "page", 1)
+	pageSize, sizeOK := parsePageParam(q, "page_size", 20)
+	if !pageOK || !sizeOK {
+		writeError(w, http.StatusBadRequest, "page and page_size must be positive integers")
+		return
+	}
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
 	}
 	grpcReq.Pagination = &commonv1.PaginationRequest{
 		Page:     int32(page),
@@ -523,7 +946,7 @@ func (h *JobHandler) ListMine(w http.ResponseWriter, r *http.Request) {
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -563,19 +986,21 @@ func (h *JobHandler) MapView(w http.ResponseWriter, r *http.Request) {
 
 	grpcReq := &jobv1.GetJobsOnMapRequest{}
 
-	if lat := q.Get("latitude"); lat != "" {
-		if lng := q.Get("longitude"); lng != "" {
-			latF, _ := strconv.ParseFloat(lat, 64)
-			lngF, _ := strconv.ParseFloat(lng, 64)
-			grpcReq.Center = &commonv1.Location{
-				Latitude:  latF,
-				Longitude: lngF,
-			}
-		}
+	latF, latPresent, latOK := parseGeoParam(q, "latitude", -90, 90)
+	lngF, lngPresent, lngOK := parseGeoParam(q, "longitude", -180, 180)
+	if !latOK || !lngOK {
+		writeError(w, http.StatusBadRequest, "latitude must be within [-90,90] and longitude within [-180,180]")
+		return
 	}
-	if radius := q.Get("radius_km"); radius != "" {
-		v, _ := strconv.ParseFloat(radius, 64)
-		grpcReq.RadiusKm = v
+	if latPresent && lngPresent {
+		grpcReq.Center = &commonv1.Location{Latitude: latF, Longitude: lngF}
+	}
+	if radiusF, present, ok := parseGeoParam(q, "radius_km", 0, 20037); present {
+		if !ok || radiusF <= 0 {
+			writeError(w, http.StatusBadRequest, "radius_km must be a positive distance")
+			return
+		}
+		grpcReq.RadiusKm = radiusF
 	}
 	if catIDs := q.Get("category_ids"); catIDs != "" {
 		grpcReq.CategoryIds = splitCommas(catIDs)
@@ -583,6 +1008,12 @@ func (h *JobHandler) MapView(w http.ResponseWriter, r *http.Request) {
 	if maxPrice := q.Get("max_price_cents"); maxPrice != "" {
 		v, _ := strconv.ParseInt(maxPrice, 10, 64)
 		grpcReq.MaxPriceCents = &v
+	}
+	if schedType := q.Get("schedule_type"); schedType != "" {
+		st := stringToScheduleType(schedType)
+		if st != commonv1.ScheduleType_SCHEDULE_TYPE_UNSPECIFIED {
+			grpcReq.ScheduleType = &st
+		}
 	}
 
 	resp, err := h.jobClient.GetJobsOnMap(r.Context(), grpcReq)
@@ -612,9 +1043,10 @@ func (h *JobHandler) MapView(w http.ResponseWriter, r *http.Request) {
 		pins = append(pins, entry)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	// Public map pins — no per-caller variance, edge-cacheable per §14.
+	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{
 		"pins": pins,
-	})
+	}, 30, 120)
 }
 
 // protoJobToJSON converts a proto Job to a JSON-friendly map.
@@ -628,7 +1060,7 @@ func protoJobToJSON(j *jobv1.Job) map[string]interface{} {
 		"customer_id":            j.GetCustomerId(),
 		"title":                  j.GetTitle(),
 		"description":            j.GetDescription(),
-		"status":                 jobStatusToString(j.GetStatus()),
+		"status":                 effectiveJobStatus(jobStatusToString(j.GetStatus()), j.GetAuctionEndsAt()),
 		"schedule_type":          scheduleTypeToString(j.GetScheduleType()),
 		"is_recurring":           j.GetIsRecurring(),
 		"auction_duration_hours": j.GetAuctionDurationHours(),
@@ -648,11 +1080,18 @@ func protoJobToJSON(j *jobv1.Job) map[string]interface{} {
 		result["reposted_from_id"] = j.GetRepostedFromId()
 	}
 
-	// Category.
+	// Category. Emit BOTH the nested object (consumed by the auction/replay
+	// terminals) and the flat category_id/category_name/category_slug fields
+	// that the web `Job` type and every job-list/detail/dashboard surface read
+	// (web/src/types/index.ts). Without the flat fields the UI rendered an empty
+	// category everywhere (frontend↔gateway contract drift).
 	if cat := j.GetCategory(); cat != nil {
 		result["category"] = map[string]interface{}{
 			"id": cat.GetId(), "name": cat.GetName(), "slug": cat.GetSlug(), "icon": cat.GetIcon(),
 		}
+		result["category_id"] = cat.GetId()
+		result["category_name"] = cat.GetName()
+		result["category_slug"] = cat.GetSlug()
 	}
 	if sub := j.GetSubcategory(); sub != nil {
 		result["subcategory"] = map[string]interface{}{
@@ -707,6 +1146,10 @@ func protoJobToJSON(j *jobv1.Job) map[string]interface{} {
 	}
 	if j.GetOriginalAuctionEndsAt() != nil {
 		result["original_auction_ends_at"] = formatTimestamp(j.GetOriginalAuctionEndsAt())
+	}
+	// FR-10.7: only when search was geo-scoped (optional proto field).
+	if j.DistanceKm != nil {
+		result["distance_km"] = j.GetDistanceKm()
 	}
 
 	// Market range.
@@ -791,7 +1234,7 @@ func stringToJobStatus(s string) jobv1.JobStatus {
 	switch s {
 	case "draft":
 		return jobv1.JobStatus_JOB_STATUS_DRAFT
-	case "active":
+	case "active", "open":
 		return jobv1.JobStatus_JOB_STATUS_ACTIVE
 	case "closed":
 		return jobv1.JobStatus_JOB_STATUS_CLOSED
@@ -818,6 +1261,25 @@ func stringToJobStatus(s string) jobv1.JobStatus {
 	default:
 		return jobv1.JobStatus_JOB_STATUS_UNSPECIFIED
 	}
+}
+
+// effectiveJobStatus lazily transitions a still-'active' service-job auction
+// whose bidding deadline has passed to 'closed'. The job service has no
+// background worker that flips expired auctions (CloseAuction is only invoked
+// by the customer via gRPC), so without this read-time evaluation a job past
+// its auction_ends_at keeps reading 'active' forever — the same stale-state
+// contradiction as goods listings (active badge + "Auction Closed" countdown).
+//
+// 'closed' (not 'awarded'/'expired') is deliberate: it is an existing allowed
+// status meaning "bidding is over, pending award", does not fabricate a winner,
+// and lets the owner still award the winning bid (web canAward allows 'closed').
+// The bid action-gate in the bidding engine already 409s on a past-deadline
+// auction independently of this display value.
+func effectiveJobStatus(rawStatus string, auctionEndsAt *timestamppb.Timestamp) string {
+	if rawStatus == "active" && auctionEndsAt != nil && auctionEndsAt.AsTime().Before(time.Now()) {
+		return "closed"
+	}
+	return rawStatus
 }
 
 func jobStatusToString(s jobv1.JobStatus) string {

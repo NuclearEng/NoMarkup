@@ -253,13 +253,34 @@ stripe logs tail
    - Startup crash: missing env vars, unreachable database, bad config.
    - OOMKilled: increase memory limits.
    - Liveness probe failure: check if the health endpoint is slow or broken.
-5. If caused by a bad deployment, rollback: `kubectl rollout undo -n nomarkup deployment/<service>`
+5. If caused by a bad deployment, roll back: `kubectl rollout undo -n nomarkup deployment/<service>`
+   — note the deploy workflow now attempts this **automatically** when the
+   rollout or the post-deploy smoke check fails, and fails the job loudly
+   either way. If you are here after an automated rollback reported
+   `ROLLBACK INCOMPLETE`, this manual path is the fallback. Migrations are
+   forward-only, so a rollback restores **code only**; the schema stays
+   ahead, which is safe because migrations are additive.
 
 **Escalation:** If the service is critical (gateway, payment) and rollback does not help, escalate to P0.
 
 ---
 
-### NoMarkupDBConnectionPoolExhausted (P1 Warning)
+### NoMarkupDBConnectionPoolExhausted (P1 Warning) — ⚠️ CURRENTLY DISABLED
+
+> **This alert cannot fire today.** Its rule is commented out in
+> `deploy/monitoring/prometheus/alerts.yml` because the metrics it needs
+> (`pgbouncer_pools_server_active` / `_idle`) come from a PgBouncer exporter
+> that is not deployed — PgBouncer appears only in `docker-compose.yml` for
+> local dev, in zero Kubernetes manifests, and the Go services connect to
+> Postgres directly. It was previously a live rule against a metric nobody
+> emitted, which reads as coverage while providing none.
+>
+> **To re-enable:** deploy PgBouncer + pgbouncer-exporter, uncomment the
+> scrape job in `prometheus.yml`, then uncomment the rule. A cheaper
+> alternative is to export `db_pool_*` from `pgxpool.Stat()` on the existing
+> `/metrics` endpoint and rewrite the expression against that.
+>
+> The response steps below stay valid for manual investigation.
 
 **What it means:** PgBouncer connection pool is >90% utilized. New database connections may be queued or rejected.
 
@@ -274,7 +295,17 @@ stripe logs tail
 
 ---
 
-### NoMarkupDBSlowQueries (P1 Warning)
+### NoMarkupDBSlowQueries (P1 Warning) — ⚠️ CURRENTLY DISABLED
+
+> **This alert cannot fire today.** Its rule is commented out in
+> `deploy/monitoring/prometheus/alerts.yml` because
+> `pg_stat_activity_max_tx_duration` comes from a postgres_exporter that is
+> not deployed and has no scrape job.
+>
+> **To re-enable:** deploy postgres_exporter, add its scrape job, then
+> uncomment the rule.
+>
+> The response steps below stay valid for manual investigation.
 
 **What it means:** PostgreSQL has transactions running longer than 30 seconds. This may cause lock contention and cascading latency.
 

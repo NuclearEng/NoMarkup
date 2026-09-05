@@ -1,14 +1,29 @@
 import { expect, type Page } from '@playwright/test';
 
+import { HAS_STACK, NO_STACK_REASON } from '../helpers/stack';
+
 /* ------------------------------------------------------------------ */
 /*  Seed credentials — read from environment variables                */
 /*  Set SEED_PASSWORD in .env.local or CI environment                 */
+/*                                                                    */
+/*  IMPORTANT: this must stay lazy (called inside a test, never at    */
+/*  module scope) so importing this file can never break non-dogfood  */
+/*  suites. When SEED_PASSWORD is unset, playwright.config.ts ignores */
+/*  dogfood/** entirely (`testIgnore`), so the throw below is only    */
+/*  reachable if that gate is bypassed — fail loudly in that case.    */
 /* ------------------------------------------------------------------ */
 function getSeedPassword(): string {
   const pw = process.env['SEED_PASSWORD'];
-  if (!pw) throw new Error('SEED_PASSWORD env var is required to run dogfood tests');
+  if (!pw) {
+    throw new Error(
+      `Dogfood spec ran without a seeded stack: ${NO_STACK_REASON}. ` +
+        'Start the local stack (bin/dev) and set SEED_PASSWORD in .env.local or the CI env.',
+    );
+  }
   return pw;
 }
+
+export { HAS_STACK, NO_STACK_REASON };
 
 const EMAILS = {
   customer: 'customer@nomarkup.com',
@@ -26,30 +41,52 @@ export async function loginAs(page: Page, persona: Persona) {
   const email = EMAILS[persona];
   const password = getSeedPassword();
 
-  await page.goto('/login');
-  await page.waitForLoadState('domcontentloaded');
+  // UI login with 429 backoff (auth rate limit is per-IP and trips during dense e2e).
+  // Prefer input[type=...] over getByLabel — OAuth chrome has multiple "email" strings.
+  for (let attempt = 0; attempt < 6; attempt++) {
+    await page.goto('/login');
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForTimeout(300);
 
-  await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
-  await page.getByRole('button', { name: /sign in/i }).click();
+    const emailInput = page.locator('input[type="email"], input[name="email"]').first();
+    const passwordInput = page.locator('input[type="password"]').first();
+    await emailInput.waitFor({ state: 'visible', timeout: 15_000 });
+    await emailInput.fill('');
+    await emailInput.fill(email);
+    await passwordInput.fill('');
+    await passwordInput.fill(password);
+    await page.getByRole('button', { name: /sign in/i }).click();
 
-  // Wait for redirect to dashboard (auth success).
-  await page.waitForURL(/\/dashboard/, { timeout: 15_000 });
-  await page.waitForLoadState('networkidle');
+    try {
+      await page.waitForURL(/\/dashboard/, { timeout: 25_000 });
+      await page.waitForLoadState('domcontentloaded');
+      return;
+    } catch {
+      const body = (await page.locator('body').innerText().catch(() => '')) ?? '';
+      if (/rate limit/i.test(body) && attempt < 5) {
+        // Gateway Retry-After is often ~2 min; sleep with progressive backoff.
+        const waitMs = Math.min(30_000 + attempt * 20_000, 150_000);
+        await page.waitForTimeout(waitMs);
+        continue;
+      }
+      if (attempt === 5) {
+        throw new Error(`loginAs(${persona}) failed after retries: ${body.slice(0, 240)}`);
+      }
+      await page.waitForTimeout(2_000 * (attempt + 1));
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ */
 /*  Assertion helpers                                                  */
 /* ------------------------------------------------------------------ */
 
-/** Wait for page to settle and verify heading exists */
-export async function expectPageLoaded(page: Page, headingPattern?: RegExp) {
+/** Wait for page to settle and verify a page-specific heading is visible. */
+export async function expectPageLoaded(page: Page, headingPattern: RegExp) {
   await page.waitForLoadState('domcontentloaded');
-  if (headingPattern) {
-    await expect(page.getByRole('heading', { name: headingPattern }).first()).toBeVisible({
-      timeout: 15_000,
-    });
-  }
+  await expect(page.getByRole('heading', { name: headingPattern }).first()).toBeVisible({
+    timeout: 15_000,
+  });
 }
 
 /**
@@ -82,16 +119,9 @@ export async function expectNotErrorPage(page: Page) {
   expect(errorCount, 'Page should not show a fatal error state').toBe(0);
 }
 
-/** Verify navigation sidebar is present */
+/** Verify navigation sidebar is present (role=navigation visible — not count >= 1 alone). */
 export async function expectNavSidebar(page: Page) {
-  const nav = page.getByRole('navigation');
-  expect(await nav.count()).toBeGreaterThanOrEqual(1);
-}
-
-/** Verify page has at least one heading */
-export async function expectHasHeadings(page: Page) {
-  const headings = page.getByRole('heading');
-  expect(await headings.count()).toBeGreaterThanOrEqual(1);
+  await expect(page.getByRole('navigation').first()).toBeVisible({ timeout: 10_000 });
 }
 
 export { EMAILS };

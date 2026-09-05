@@ -18,10 +18,17 @@ spec:
         app.kubernetes.io/component: rust-engine
         app.kubernetes.io/part-of: nomarkup
       annotations:
+        # Rust engines: metrics on gRPC port + 10000 (docs/operations/metrics.md)
         prometheus.io/scrape: "true"
-        prometheus.io/port: "50053"
+        prometheus.io/port: "60053"
         prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: bidding
           image: ghcr.io/nomarkup/bidding:latest
@@ -30,24 +37,44 @@ spec:
             - name: grpc
               containerPort: 50053
               protocol: TCP
+            - name: metrics
+              containerPort: 60053
+              protocol: TCP
           env:
             - name: BID_ENGINE_PORT
               value: "50053"
+            - name: BIDDING_METRICS_PORT
+              value: "60053"
+            - name: APP_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: nomarkup-config
+                  key: APP_VERSION
+                  optional: true
           envFrom:
             - configMapRef:
                 name: nomarkup-config
             - secretRef:
                 name: nomarkup-secrets
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           livenessProbe:
-            grpc:
-              port: 50053
+            httpGet:
+              path: /healthz
+              port: metrics
             initialDelaySeconds: 10
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
-            grpc:
-              port: 50053
+            httpGet:
+              path: /healthz
+              port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5

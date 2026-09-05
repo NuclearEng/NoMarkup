@@ -1,0 +1,328 @@
+import SwiftUI
+
+/// Email resend + phone OTP verification (PRD FR-1.8 / FR-1.9).
+/// Server still enforces gates on post/bid/transact; this surfaces the flows.
+struct VerificationCenterView: View {
+    @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var featureFlags: FeatureFlags
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var emailForResend = ""
+    @State private var emailToken = ""
+    @State private var phone = ""
+    @State private var otpCode = ""
+    @State private var statusMessage: String?
+    @State private var statusIsError = false
+    @State private var isBusy = false
+
+    // FR-2.9 Checkr scaffold — status from server only; never invent PASS.
+    @State private var backgroundCheck: ProviderBackgroundCheck?
+    @State private var backgroundCheckError: String?
+    @State private var backgroundCheckLoading = false
+    @State private var backgroundCheckRequesting = false
+
+    var body: some View {
+        Group {
+            if auth.isScaffoldSession {
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "checkmark.shield",
+                    message: "Browse-only mode has no API credentials. Sign in to verify email and phone.",
+                    actionTitle: "Sign out to log in",
+                    action: { auth.signOut() }
+                )
+            } else if !auth.isAuthenticated {
+                BrandEmptyState(
+                    title: "Sign in required",
+                    systemImage: "lock.circle",
+                    message: "Sign in to resend email verification and complete phone OTP.",
+                    actionTitle: "Sign in",
+                    action: { auth.signOut() }
+                )
+            } else {
+                verificationForm
+            }
+        }
+        .navigationTitle("Verify account")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .brandNavigationBarChrome()
+        .accessibilityIdentifier("verificationCenter.root")
+        .task {
+            if emailForResend.isEmpty {
+                let e = auth.email.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !e.isEmpty { emailForResend = e }
+            }
+            if auth.isAuthenticated, featureFlags.isEnabled("background_checks") {
+                await loadBackgroundCheck()
+            }
+        }
+    }
+
+    private var verificationForm: some View {
+        Form {
+            Section {
+                Text("Verify email and phone before posting jobs or transacting. Codes are delivered by the user service (SMS in environments with SMS configured).")
+                    .font(.subheadline)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .listRowBackground(BrandTheme.navyElevated)
+            }
+
+            Section {
+                TextField("Email", text: $emailForResend)
+                    .textContentType(.emailAddress)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .listRowBackground(BrandTheme.navyElevated)
+                Button {
+                    Task { await resendEmail() }
+                } label: {
+                    if isBusy {
+                        ProgressView().tint(BrandTheme.accent)
+                    } else {
+                        Text("Resend verification email")
+                    }
+                }
+                .disabled(isBusy || emailForResend.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityIdentifier("verification.resendEmail")
+
+                TextField("Email verification token (from link)", text: $emailToken)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .listRowBackground(BrandTheme.navyElevated)
+                Button("Submit email token") {
+                    Task { await verifyEmailToken() }
+                }
+                .disabled(isBusy || emailToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityIdentifier("verification.submitEmailToken")
+            } header: {
+                Text("Email").brandSectionHeader()
+            } footer: {
+                Text("Resend always returns a generic success (anti-enumeration). Paste the token from the email link if deep-link open is unavailable.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            Section {
+                TextField("Phone (E.164 preferred)", text: $phone)
+                    .textContentType(.telephoneNumber)
+                    .keyboardType(.phonePad)
+                    .listRowBackground(BrandTheme.navyElevated)
+                Button("Send SMS code") {
+                    Task { await sendOTP() }
+                }
+                .disabled(isBusy || phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !auth.isAuthenticated)
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityIdentifier("verification.sendOTP")
+
+                TextField("OTP code", text: $otpCode)
+                    .keyboardType(.numberPad)
+                    .textContentType(.oneTimeCode)
+                    .listRowBackground(BrandTheme.navyElevated)
+                Button("Verify phone") {
+                    Task { await verifyOTP() }
+                }
+                .disabled(isBusy || otpCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !auth.isAuthenticated)
+                .frame(minHeight: 44)
+                .listRowBackground(BrandTheme.navyElevated)
+                .accessibilityIdentifier("verification.verifyPhone")
+            } header: {
+                Text("Phone").brandSectionHeader()
+            } footer: {
+                Text("Phone OTP requires a signed-in session. SMS delivery depends on gateway/user-service config.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            Section {
+                if !featureFlags.isEnabled("background_checks") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Background checks unavailable")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(BrandTheme.textPrimary)
+                        Text("The background_checks flag is off. Checkr is not configured on this environment. The app never invents a PASS.")
+                            .font(.subheadline)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Background checks unavailable. Checkr is off. Never invents a pass.")
+                    .accessibilityIdentifier("verification.backgroundCheck.unavailable")
+                } else {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Background check")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(BrandTheme.textPrimary)
+                            Text(backgroundCheck?.displayStatus ?? (backgroundCheckLoading ? "Loading…" : "Not loaded"))
+                                .font(.subheadline)
+                                .foregroundStyle(BrandTheme.textSecondary)
+                            if let err = backgroundCheckError {
+                                Text(err)
+                                    .font(.caption)
+                                    .foregroundStyle(BrandTheme.destructive)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        if backgroundCheckLoading || backgroundCheckRequesting {
+                            ProgressView()
+                                .tint(BrandTheme.accent)
+                        }
+                    }
+                    .listRowBackground(BrandTheme.navyElevated)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Background check, \(backgroundCheck?.displayStatus ?? "status unknown")")
+
+                    Button {
+                        Task { await requestBackgroundCheck() }
+                    } label: {
+                        Text(backgroundCheck?.canRequest == false ? "Request unavailable" : "Request background check")
+                    }
+                    .disabled(
+                        isBusy
+                            || backgroundCheckLoading
+                            || backgroundCheckRequesting
+                            || !auth.isAuthenticated
+                            || (backgroundCheck?.canRequest == false)
+                    )
+                    .frame(minHeight: 44)
+                    .listRowBackground(BrandTheme.navyElevated)
+
+                    Button {
+                        Task { await loadBackgroundCheck() }
+                    } label: {
+                        Text("Refresh status")
+                    }
+                    .disabled(isBusy || backgroundCheckLoading || backgroundCheckRequesting || !auth.isAuthenticated)
+                    .frame(minHeight: 44)
+                    .listRowBackground(BrandTheme.navyElevated)
+
+                    if let inviteURL = backgroundCheck?.openableInvitationURL {
+                        Link("Open Checkr", destination: inviteURL)
+                            .frame(minHeight: 44)
+                            .listRowBackground(BrandTheme.navyElevated)
+                            .accessibilityHint("Opens the Checkr invitation in a browser")
+                    }
+                }
+            } header: {
+                Text("Background check").brandSectionHeader()
+            } footer: {
+                Text(
+                    featureFlags.isEnabled("background_checks")
+                        ? "Status comes from Checkr when configured. The app never invents a PASS. Requires CHECKR_API_KEY on the server."
+                        : "Flag off — no Checkr request, no status badge. Never invents a PASS."
+                )
+                .foregroundStyle(BrandTheme.textSecondary)
+            }
+
+            if let statusMessage {
+                Section {
+                    Text(statusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(statusIsError ? BrandTheme.destructive : BrandTheme.success)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .listRowBackground(BrandTheme.navyElevated)
+                }
+            }
+        }
+        .brandListBackground()
+    }
+
+    @MainActor
+    private func resendEmail() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await APIClient.shared.resendEmailVerification(email: emailForResend)
+            statusIsError = false
+            statusMessage = "If an account exists for that email, a verification link was sent."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func verifyEmailToken() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await APIClient.shared.verifyEmail(token: emailToken)
+            statusIsError = false
+            statusMessage = "Email verified."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func sendOTP() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await APIClient.shared.sendPhoneOTP(phone: phone)
+            statusIsError = false
+            statusMessage = "OTP send requested. Check your phone when SMS is configured."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func verifyOTP() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await APIClient.shared.verifyPhone(otpCode: otpCode)
+            statusIsError = false
+            statusMessage = "Phone verified."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func loadBackgroundCheck() async {
+        guard auth.isAuthenticated else { return }
+        backgroundCheckLoading = true
+        backgroundCheckError = nil
+        defer { backgroundCheckLoading = false }
+        do {
+            backgroundCheck = try await APIClient.shared.fetchMyBackgroundCheck()
+        } catch {
+            // Flag-off / key missing → 503 with clear message — surface, don't fake clear.
+            backgroundCheckError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func requestBackgroundCheck() async {
+        guard auth.isAuthenticated else { return }
+        backgroundCheckRequesting = true
+        backgroundCheckError = nil
+        statusMessage = nil
+        defer { backgroundCheckRequesting = false }
+        do {
+            let result = try await APIClient.shared.requestMyBackgroundCheck()
+            backgroundCheck = result
+            statusIsError = false
+            statusMessage = "Background check requested — status: \(result.displayStatus)."
+        } catch {
+            backgroundCheckError = error.localizedDescription
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+}

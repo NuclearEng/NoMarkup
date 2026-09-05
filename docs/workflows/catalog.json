@@ -1,0 +1,509 @@
+{
+  "version": 1,
+  "personas": [
+    "customer",
+    "provider",
+    "provider2",
+    "admin"
+  ],
+  "workflows": [
+    {
+      "id": "auth.login",
+      "label": "Sign in",
+      "web": "/login",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "ios": "login.submit",
+      "vcr": "fixtures/auth.login.json"
+    },
+    {
+      "id": "account.me",
+      "label": "Load Account hub",
+      "web": "/settings/account",
+      "method": "GET",
+      "path": "/api/v1/users/me",
+      "status": 200,
+      "ios": "account.row.profile",
+      "vcr": "fixtures/account.me.json"
+    },
+    {
+      "id": "account.profile.save",
+      "label": "Save display name",
+      "web": "/profile",
+      "method": "PATCH",
+      "path": "/api/v1/users/me",
+      "status": [
+        200
+      ],
+      "ios": "account.row.profile",
+      "mutation": true,
+      "vcr": "fixtures/account.profile.save.json"
+    },
+    {
+      "id": "account.security",
+      "label": "Security settings",
+      "web": "/settings/security",
+      "method": "GET",
+      "path": "/api/v1/users/me",
+      "status": 200,
+      "ios": "account.row.security",
+      "vcr": "fixtures/account.security.json"
+    },
+    {
+      "id": "account.verification",
+      "label": "Verify email & phone",
+      "web": "/settings/account",
+      "method": "POST",
+      "path": "/api/v1/auth/resend-verification",
+      "status": [
+        200,
+        204
+      ],
+      "ios": "account.row.verification",
+      "mutation": true,
+      "vcr": "fixtures/account.verification.json"
+    },
+    {
+      "id": "account.post_job",
+      "label": "Post a job",
+      "web": "/jobs/new",
+      "method": "POST",
+      "path": "/api/v1/jobs",
+      "status": [
+        201,
+        400
+      ],
+      "ios": "account.row.postJob",
+      "mutation": true,
+      "vcr": "fixtures/account.post_job.json"
+    },
+    {
+      "id": "account.sell",
+      "label": "List an item",
+      "web": "/sell/new",
+      "method": "POST",
+      "path": "/api/v1/listings",
+      "status": [
+        201,
+        400
+      ],
+      "ios": "account.row.sell",
+      "mutation": true,
+      "vcr": "fixtures/account.sell.json"
+    },
+    {
+      "id": "account.orders",
+      "label": "Orders list",
+      "web": "/orders",
+      "method": "GET",
+      "path": "/api/v1/me/orders",
+      "status": [
+        200,
+        404
+      ],
+      "ios": "account.row.orders",
+      "vcr": "fixtures/account.orders.json"
+    },
+    {
+      "id": "account.contracts",
+      "label": "Contracts list",
+      "web": "/contracts",
+      "method": "GET",
+      "path": "/api/v1/contracts",
+      "status": 200,
+      "ios": "account.row.contracts",
+      "vcr": "fixtures/account.contracts.json"
+    },
+    {
+      "id": "account.bids",
+      "label": "My bids",
+      "web": "/bids",
+      "method": "GET",
+      "path": "/api/v1/bids/mine",
+      "status": 200,
+      "ios": "account.row.myBids",
+      "vcr": "fixtures/account.bids.json"
+    },
+    {
+      "id": "account.listings",
+      "label": "My listings",
+      "web": "/sell/mine",
+      "method": "GET",
+      "path": "/api/v1/listings/mine",
+      "status": [
+        200,
+        404
+      ],
+      "ios": "account.row.myListings",
+      "vcr": "fixtures/account.listings.json"
+    },
+    {
+      "id": "account.watchlist",
+      "label": "Watchlist",
+      "web": "/me/watchlist",
+      "method": "GET",
+      "path": "/api/v1/me/watchlist",
+      "status": [
+        200,
+        404
+      ],
+      "ios": "account.row.watchlist",
+      "vcr": "fixtures/account.watchlist.json"
+    },
+    {
+      "id": "account.payment_methods",
+      "label": "Payment methods",
+      "web": "/settings/payment-methods",
+      "method": "GET",
+      "path": "/api/v1/payments/methods",
+      "status": [
+        200,
+        404
+      ],
+      "ios": "account.row.paymentMethods",
+      "vcr": "fixtures/account.payment_methods.json"
+    },
+    {
+      "id": "account.notifications",
+      "label": "Notifications",
+      "web": "/notifications",
+      "method": "GET",
+      "path": "/api/v1/notifications",
+      "status": 200,
+      "ios": "account.row.notifications",
+      "vcr": "fixtures/account.notifications.json"
+    },
+    {
+      "id": "account.notification_prefs.save",
+      "label": "Save notification preferences",
+      "web": "/settings/notifications",
+      "method": "PUT",
+      "path": "/api/v1/notifications/preferences",
+      "status": [
+        200
+      ],
+      "ios": "account.row.notificationPreferences",
+      "mutation": true,
+      "vcr": "fixtures/account.notification_prefs.save.json"
+    },
+    {
+      "id": "account.plan_limits",
+      "label": "Plan limits",
+      "web": "/settings/subscription",
+      "method": "GET",
+      "path": "/api/v1/subscriptions/tiers",
+      "status": 200,
+      "ios": "account.row.planLimits",
+      "vcr": "fixtures/account.plan_limits.json"
+    },
+    {
+      "id": "account.plan_limits.enforce",
+      "label": "Reject over-cap bid",
+      "web": "/jobs",
+      "method": "POST",
+      "path": "/api/v1/jobs/{id}/bids",
+      "status": [
+        400,
+        403,
+        404
+      ],
+      "ios": "account.row.planLimits",
+      "mutation": true,
+      "vcr": "fixtures/account.plan_limits.enforce.json"
+    },
+    {
+      "id": "account.export",
+      "label": "Export data",
+      "web": "/settings/account",
+      "method": "GET",
+      "path": "/api/v1/users/me/export",
+      "status": [
+        200
+      ],
+      "ios": "account.row.exportData",
+      "mutation": true,
+      "vcr": "fixtures/account.export.json"
+    },
+    {
+      "id": "account.sign_out",
+      "label": "Sign out",
+      "web": "/login",
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "status": [
+        200,
+        204
+      ],
+      "ios": "account.row.signOut",
+      "mutation": true,
+      "vcr": "fixtures/account.sign_out.json"
+    },
+    {
+      "id": "account.request_log",
+      "label": "Open request log",
+      "web": "/settings/request-log",
+      "method": "GET",
+      "path": "/api/v1/me/activity",
+      "status": [
+        200,
+        401,
+        404
+      ],
+      "ios": "account.row.requestLog",
+      "vcr": "fixtures/account.request_log.json"
+    },
+    {
+      "id": "account.admin.flags",
+      "label": "Admin flags",
+      "web": "/admin/flags",
+      "method": "GET",
+      "path": "/api/v1/admin/flags",
+      "status": 200,
+      "ios": "account.row.admin",
+      "persona": "admin",
+      "deny": {
+        "customer": 403,
+        "provider": 403,
+        "provider2": 403
+      },
+      "vcr": "fixtures/account.admin.flags.json"
+    },
+    {
+      "id": "account.admin.users",
+      "label": "Admin users",
+      "web": "/admin/users",
+      "method": "GET",
+      "path": "/api/v1/admin/users",
+      "status": 200,
+      "ios": "account.row.admin",
+      "persona": "admin",
+      "deny": {
+        "customer": 403,
+        "provider": 403,
+        "provider2": 403
+      },
+      "vcr": "fixtures/account.admin.users.json"
+    },
+    {
+      "id": "account.admin.disputes",
+      "label": "Admin disputes",
+      "web": "/admin/disputes",
+      "method": "GET",
+      "path": "/api/v1/admin/disputes",
+      "status": 200,
+      "ios": "account.row.admin",
+      "persona": "admin",
+      "deny": {
+        "customer": 403,
+        "provider": 403,
+        "provider2": 403
+      },
+      "vcr": "fixtures/account.admin.disputes.json"
+    },
+    {
+      "id": "account.admin.fraud",
+      "label": "Admin fraud alerts",
+      "web": "/admin/fraud",
+      "method": "GET",
+      "path": "/api/v1/admin/fraud/alerts",
+      "status": 200,
+      "ios": "account.row.admin",
+      "persona": "admin",
+      "deny": {
+        "customer": 403,
+        "provider": 403,
+        "provider2": 403
+      },
+      "vcr": "fixtures/account.admin.fraud.json"
+    },
+    {
+      "id": "account.admin.jobs",
+      "label": "Admin jobs",
+      "web": "/admin/jobs",
+      "method": "GET",
+      "path": "/api/v1/admin/jobs",
+      "status": 200,
+      "ios": "account.row.admin",
+      "persona": "admin",
+      "deny": {
+        "customer": 403,
+        "provider": 403,
+        "provider2": 403
+      },
+      "vcr": "fixtures/account.admin.jobs.json"
+    },
+    {
+      "id": "account.admin.fees",
+      "label": "Admin fee config",
+      "web": "/admin/payments",
+      "method": "GET",
+      "path": "/api/v1/admin/payments/fee-config",
+      "status": 200,
+      "ios": "account.row.admin",
+      "persona": "admin",
+      "deny": {
+        "customer": 403,
+        "provider": 403,
+        "provider2": 403
+      },
+      "vcr": "fixtures/account.admin.fees.json"
+    },
+    {
+      "id": "account.admin.banking",
+      "label": "Admin platform banking",
+      "web": "/admin/payments",
+      "method": "GET",
+      "path": "/api/v1/admin/banking",
+      "status": 200,
+      "ios": "account.row.admin",
+      "persona": "admin",
+      "deny": {
+        "customer": 403,
+        "provider": 403,
+        "provider2": 403
+      },
+      "vcr": "fixtures/account.admin.banking.json"
+    },
+    {
+      "id": "provider.workspace",
+      "label": "Provider workspace",
+      "web": "/provider/workspace",
+      "method": "GET",
+      "path": "/api/v1/contracts",
+      "status": 200,
+      "ios": "account.row.providerWorkspace",
+      "vcr": "fixtures/provider.workspace.json"
+    },
+    {
+      "id": "provider.payouts",
+      "label": "Seller payouts",
+      "web": "/settings/payment-methods",
+      "method": "GET",
+      "path": "/api/v1/providers/me/stripe/status",
+      "status": [
+        200,
+        404
+      ],
+      "ios": "account.row.sellerPayouts",
+      "vcr": "fixtures/provider.payouts.json"
+    },
+    {
+      "id": "provider.instant_offers",
+      "label": "Instant offers",
+      "web": "/provider/offers",
+      "method": "GET",
+      "path": "/api/v1/provider/offers",
+      "status": [
+        200,
+        403,
+        404,
+        503
+      ],
+      "ios": "account.row.instantOffers",
+      "vcr": "fixtures/provider.instant_offers.json"
+    },
+    {
+      "id": "provider.categories.save",
+      "label": "Save provider categories",
+      "web": "/provider",
+      "method": "PUT",
+      "path": "/api/v1/providers/me/categories",
+      "status": [
+        200,
+        400,
+        403
+      ],
+      "ios": "account.row.providerCategories",
+      "mutation": true,
+      "vcr": "fixtures/provider.categories.save.json"
+    },
+    {
+      "id": "provider.portfolio.save",
+      "label": "Save provider portfolio",
+      "web": "/provider",
+      "method": "PUT",
+      "path": "/api/v1/providers/me/portfolio",
+      "status": [
+        200,
+        400,
+        403
+      ],
+      "ios": "account.row.providerPortfolio",
+      "mutation": true,
+      "vcr": "fixtures/provider.portfolio.save.json"
+    },
+    {
+      "id": "money.pay_order",
+      "label": "Pay listing order",
+      "web": "/orders",
+      "method": "POST",
+      "path": "/api/v1/orders/{id}/pay",
+      "status": [
+        400,
+        402,
+        404
+      ],
+      "ios": "account.row.orders",
+      "mutation": true,
+      "vcr": "fixtures/money.pay_order.json"
+    },
+    {
+      "id": "money.escrow",
+      "label": "Process escrow payment",
+      "web": "/payments",
+      "method": "POST",
+      "path": "/api/v1/payments/{id}/process",
+      "status": [
+        400,
+        404
+      ],
+      "ios": "account.row.contracts",
+      "mutation": true,
+      "vcr": "fixtures/money.escrow.json"
+    },
+    {
+      "id": "money.payouts",
+      "label": "Stripe Connect account status",
+      "web": "/settings/payment-methods",
+      "method": "GET",
+      "path": "/api/v1/providers/me/stripe/status",
+      "status": [
+        200,
+        404
+      ],
+      "ios": "account.row.sellerPayouts",
+      "vcr": "fixtures/money.payouts.json"
+    },
+    {
+      "id": "bid.place",
+      "label": "Place a job bid",
+      "web": "/jobs",
+      "method": "POST",
+      "path": "/api/v1/jobs/{id}/bids",
+      "status": [
+        400,
+        403,
+        404
+      ],
+      "ios": "account.row.myBids",
+      "mutation": true,
+      "vcr": "fixtures/bid.place.json"
+    },
+    {
+      "id": "bid.retract",
+      "label": "Retract a listing bid",
+      "web": "/marketplace",
+      "method": "POST",
+      "path": "/api/v1/listings/{id}/bids/{bidId}/retract",
+      "status": [
+        400,
+        403,
+        404
+      ],
+      "ios": "account.row.myBids",
+      "mutation": true,
+      "vcr": "fixtures/bid.retract.json"
+    }
+  ]
+}

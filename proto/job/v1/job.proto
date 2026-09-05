@@ -34,6 +34,10 @@ service JobService {
   rpc GetServiceCategories(GetServiceCategoriesRequest) returns (GetServiceCategoriesResponse);
   rpc GetCategoryTree(GetCategoryTreeRequest) returns (GetCategoryTreeResponse);
 
+  // Fair Price — gathers candidate cleared prices from completed contracts and
+  // delegates the estimate to the Rust pricing engine. Fails soft (has_data=false).
+  rpc GetFairPrice(GetFairPriceRequest) returns (GetFairPriceResponse);
+
   // Admin
   rpc AdminListJobs(AdminListJobsRequest) returns (AdminListJobsResponse);
   rpc AdminSuspendJob(AdminSuspendJobRequest) returns (AdminSuspendJobResponse);
@@ -113,6 +117,9 @@ message Job {
   string auction_type = 31; // "sealed" or "live"
   int32 snipe_extension_count = 32;
   google.protobuf.Timestamp original_auction_ends_at = 33;
+  // Populated only when search was geo-scoped (caller lat/lng). Coarse
+  // approximate_location distance in km — never exact service point.
+  optional double distance_km = 34;
 }
 
 // Full job detail (includes exact address for awarded provider)
@@ -188,6 +195,8 @@ message UpdateJobRequest {
   optional int64 offer_accepted_cents = 9;
   optional int32 auction_duration_hours = 10;
   repeated string photo_urls = 11;
+  // Authenticated caller's user ID — the job service verifies ownership.
+  string customer_id = 12;
 }
 
 message UpdateJobResponse {
@@ -205,12 +214,16 @@ message GetJobResponse {
 
 message DeleteDraftRequest {
   string job_id = 1;
+  // Authenticated caller's user ID — the job service verifies ownership.
+  string customer_id = 2;
 }
 
 message DeleteDraftResponse {}
 
 message PublishJobRequest {
   string job_id = 1;
+  // Authenticated caller's user ID — the job service verifies ownership.
+  string customer_id = 2;
 }
 
 message PublishJobResponse {
@@ -266,6 +279,9 @@ message SearchJobsRequest {
   string text_query = 8;
   nomarkup.common.v1.SortRequest sort = 9;
   nomarkup.common.v1.PaginationRequest pagination = 10;
+  // Optional public-browse filter. Unset keeps the service default (active).
+  // Gateway maps query `status=open` onto JOB_STATUS_ACTIVE.
+  optional JobStatus status_filter = 11;
 }
 
 message SearchJobsResponse {
@@ -278,6 +294,7 @@ message GetJobsOnMapRequest {
   double radius_km = 2;
   repeated string category_ids = 3;
   optional int64 max_price_cents = 4;
+  optional nomarkup.common.v1.ScheduleType schedule_type = 5;
 }
 
 message GetJobsOnMapResponse {
@@ -299,6 +316,11 @@ message ListCustomerJobsRequest {
   optional JobStatus status_filter = 2;
   optional string property_id = 3;
   nomarkup.common.v1.PaginationRequest pagination = 4;
+  // FR-19.3 history filters (optional). category_id is a UUID; date_from/date_to
+  // filter jobs.created_at (inclusive lower, inclusive upper when set).
+  optional string category_id = 5;
+  optional google.protobuf.Timestamp date_from = 6;
+  optional google.protobuf.Timestamp date_to = 7;
 }
 
 message ListCustomerJobsResponse {
@@ -427,3 +449,34 @@ message AdminDeleteCategoryRequest {
 }
 
 message AdminDeleteCategoryResponse {}
+
+// ============================================================
+// Fair Price Messages
+// ============================================================
+
+// side mirrors nomarkup.pricing.v1.MarketSide:
+//   0 = unspecified, 1 = service (reverse-auction), 2 = good (forward-auction).
+message GetFairPriceRequest {
+  string category_id = 1;
+  string zip = 2;
+  string market_id = 3;  // optional resolved metro; empty → engine uses national levels
+  int64 as_of = 4;       // unix seconds; anchors recency decay. 0 → server uses now()
+  uint32 side = 5;       // MarketSide
+  string category_slug = 6; // slug-or-id flexible (§15): used when category_id is empty
+}
+
+message GetFairPriceResponse {
+  bool has_data = 1;             // false when the engine had no usable data or errored (fail-soft)
+
+  int64 price_cents = 2;
+  int64 p25_cents = 3;
+  int64 p75_cents = 4;
+  int64 ci_lo_cents = 5;
+  int64 ci_hi_cents = 6;
+
+  double n_eff = 7;
+  double confidence = 8;
+  string confidence_label = 9;
+  uint32 level_used = 10;
+  string model_version = 11;
+}

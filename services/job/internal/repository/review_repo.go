@@ -10,12 +10,29 @@ import (
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
 
+// reviewSelectColumns lists the columns we read for a review, joined with
+// optional review_responses. Kept in one place so every query (GetReview,
+// ListReviewsForUser, ListReviewsByUser) stays in sync with the schema
+// (see migrations: reviewer_role, review_text, review_window_ends,
+// photo_urls TEXT[] — flag state is derived from status='flagged').
+const reviewSelectColumns = `
+	r.id, r.contract_id, r.job_id, r.reviewer_id, r.reviewee_id, r.reviewer_role,
+	r.overall_rating, r.quality_rating, r.communication_rating,
+	r.timeliness_rating, r.value_rating,
+	r.payment_promptness_rating, r.scope_accuracy_rating, r.access_rating,
+	r.review_text, COALESCE(r.photo_urls, '{}'), r.status,
+	r.flagged_at, r.flag_reason,
+	r.review_window_ends, r.created_at, r.updated_at,
+	rr.id, rr.review_id, rr.user_id, rr.response_text, rr.created_at`
+
 // CreateReview inserts a new review with status 'pending'.
 func (r *PostgresRepository) CreateReview(ctx context.Context, review *domain.Review) (*domain.Review, error) {
-	// Compute review_window_ends_at from contract completed_at + 14 days.
+	// Look up the contract to derive job_id and the review window from completed_at.
+	var jobID string
 	var completedAt *time.Time
 	err := r.pool.QueryRow(ctx,
-		`SELECT completed_at FROM contracts WHERE id = $1`, review.ContractID).Scan(&completedAt)
+		`SELECT job_id, completed_at FROM contracts WHERE id = $1`, review.ContractID).
+		Scan(&jobID, &completedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("create review: %w", domain.ErrContractNotFound)
@@ -25,27 +42,48 @@ func (r *PostgresRepository) CreateReview(ctx context.Context, review *domain.Re
 	if completedAt == nil {
 		return nil, fmt.Errorf("create review: contract is not completed")
 	}
-	windowEndsAt := completedAt.Add(14 * 24 * time.Hour)
+	// 90-day review window (marketplace-standard; was 14d and expired dogfood contracts).
+	windowEnds := completedAt.Add(90 * 24 * time.Hour)
+
+	// Derive reviewer_role from the legacy Direction string if the caller
+	// populated only one of them. Persistent column is reviewer_role.
+	role := review.ReviewerRole
+	if role == "" {
+		role = review.Direction()
+		if role == "customer_to_provider" {
+			role = "customer"
+		} else if role == "provider_to_customer" {
+			role = "provider"
+		}
+	}
+
+	photoURLs := review.PhotoURLs
+	if photoURLs == nil {
+		photoURLs = []string{}
+	}
 
 	var reviewID string
 	var createdAt, updatedAt time.Time
 	err = r.pool.QueryRow(ctx, `
 		INSERT INTO reviews (
-			contract_id, reviewer_id, reviewee_id, direction,
+			contract_id, job_id, reviewer_id, reviewee_id, reviewer_role,
 			overall_rating, quality_rating, communication_rating,
 			timeliness_rating, value_rating,
-			comment, photo_urls, status, is_flagged, review_window_ends_at
+			payment_promptness_rating, scope_accuracy_rating, access_rating,
+			review_text, photo_urls, status, review_window_ends
 		) VALUES (
-			$1, $2, $3, $4,
-			$5, $6, $7,
-			$8, $9,
-			$10, $11, 'pending', false, $12
+			$1, $2, $3, $4, $5,
+			$6, $7, $8,
+			$9, $10,
+			$11, $12, $13,
+			$14, $15, 'pending', $16
 		)
 		RETURNING id, created_at, updated_at`,
-		review.ContractID, review.ReviewerID, review.RevieweeID, review.Direction,
+		review.ContractID, jobID, review.ReviewerID, review.RevieweeID, role,
 		review.OverallRating, review.QualityRating, review.CommunicationRating,
 		review.TimelinessRating, review.ValueRating,
-		review.Comment, review.PhotoURLs, windowEndsAt,
+		review.PaymentPromptnessRating, review.ScopeAccuracyRating, review.AccessRating,
+		review.ReviewText, photoURLs, windowEnds,
 	).Scan(&reviewID, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create review insert: %w", err)
@@ -58,27 +96,26 @@ func (r *PostgresRepository) CreateReview(ctx context.Context, review *domain.Re
 func (r *PostgresRepository) GetReview(ctx context.Context, reviewID string) (*domain.Review, error) {
 	var rev domain.Review
 	var qualityRating, communicationRating, timelinessRating, valueRating *int
-	var photoURLs []string
+	var paymentPromptness, scopeAccuracy, accessRating *int
+	var flaggedAt *time.Time
+	var flagReason *string
 
 	// Review fields + optional response via LEFT JOIN.
 	var respID, respReviewID, respResponderID, respComment *string
 	var respCreatedAt *time.Time
 
 	err := r.pool.QueryRow(ctx, `
-		SELECT r.id, r.contract_id, r.reviewer_id, r.reviewee_id, r.direction,
-		       r.overall_rating, r.quality_rating, r.communication_rating,
-		       r.timeliness_rating, r.value_rating,
-		       r.comment, r.photo_urls, r.status, r.is_flagged,
-		       r.review_window_ends_at, r.created_at, r.updated_at,
-		       rr.id, rr.review_id, rr.responder_id, rr.comment, rr.created_at
+		SELECT `+reviewSelectColumns+`
 		FROM reviews r
 		LEFT JOIN review_responses rr ON rr.review_id = r.id
 		WHERE r.id = $1`, reviewID).Scan(
-		&rev.ID, &rev.ContractID, &rev.ReviewerID, &rev.RevieweeID, &rev.Direction,
+		&rev.ID, &rev.ContractID, &rev.JobID, &rev.ReviewerID, &rev.RevieweeID, &rev.ReviewerRole,
 		&rev.OverallRating, &qualityRating, &communicationRating,
 		&timelinessRating, &valueRating,
-		&rev.Comment, &photoURLs, &rev.Status, &rev.IsFlagged,
-		&rev.ReviewWindowEndsAt, &rev.CreatedAt, &rev.UpdatedAt,
+		&paymentPromptness, &scopeAccuracy, &accessRating,
+		&rev.ReviewText, &rev.PhotoURLs, &rev.Status,
+		&flaggedAt, &flagReason,
+		&rev.ReviewWindowEnds, &rev.CreatedAt, &rev.UpdatedAt,
 		&respID, &respReviewID, &respResponderID, &respComment, &respCreatedAt,
 	)
 	if err != nil {
@@ -92,7 +129,13 @@ func (r *PostgresRepository) GetReview(ctx context.Context, reviewID string) (*d
 	rev.CommunicationRating = communicationRating
 	rev.TimelinessRating = timelinessRating
 	rev.ValueRating = valueRating
-	rev.PhotoURLs = photoURLs
+	rev.PaymentPromptnessRating = paymentPromptness
+	rev.ScopeAccuracyRating = scopeAccuracy
+	rev.AccessRating = accessRating
+	rev.FlaggedAt = flaggedAt
+	if flagReason != nil {
+		rev.FlagReason = *flagReason
+	}
 
 	if respID != nil {
 		rev.Response = &domain.ReviewResponse{
@@ -108,16 +151,27 @@ func (r *PostgresRepository) GetReview(ctx context.Context, reviewID string) (*d
 }
 
 // ListReviewsForUser lists published reviews where the user is the reviewee,
-// with optional direction filter, pagination, and returns avg rating + count.
+// with optional reviewer_role filter, pagination, and returns avg rating + count.
 func (r *PostgresRepository) ListReviewsForUser(ctx context.Context, userID string, directionFilter *string, page, pageSize int) ([]*domain.Review, *domain.Pagination, float64, int, error) {
 	where := "r.reviewee_id = $1 AND r.status = 'published'"
 	args := []interface{}{userID}
 	argIdx := 2
 
+	// directionFilter is a legacy "customer_to_provider" / "provider_to_customer"
+	// string. Translate to the persistent reviewer_role column.
 	if directionFilter != nil && *directionFilter != "" {
-		where += fmt.Sprintf(" AND r.direction = $%d", argIdx)
-		args = append(args, *directionFilter)
-		argIdx++
+		role := ""
+		switch *directionFilter {
+		case "customer_to_provider", "customer":
+			role = "customer"
+		case "provider_to_customer", "provider":
+			role = "provider"
+		}
+		if role != "" {
+			where += fmt.Sprintf(" AND r.reviewer_role = $%d", argIdx)
+			args = append(args, role)
+			argIdx++
+		}
 	}
 
 	// Count and average.
@@ -149,17 +203,12 @@ func (r *PostgresRepository) ListReviewsForUser(ctx context.Context, userID stri
 	args = append(args, pageSize, offset)
 
 	rows, err := r.pool.Query(ctx, fmt.Sprintf(`
-		SELECT r.id, r.contract_id, r.reviewer_id, r.reviewee_id, r.direction,
-		       r.overall_rating, r.quality_rating, r.communication_rating,
-		       r.timeliness_rating, r.value_rating,
-		       r.comment, r.photo_urls, r.status, r.is_flagged,
-		       r.review_window_ends_at, r.created_at, r.updated_at,
-		       rr.id, rr.review_id, rr.responder_id, rr.comment, rr.created_at
+		SELECT %s
 		FROM reviews r
 		LEFT JOIN review_responses rr ON rr.review_id = r.id
 		WHERE %s
 		ORDER BY r.created_at DESC
-		LIMIT $%d OFFSET $%d`, where, argIdx, argIdx+1), args...)
+		LIMIT $%d OFFSET $%d`, reviewSelectColumns, where, argIdx, argIdx+1), args...)
 	if err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("list reviews for user query: %w", err)
 	}
@@ -208,18 +257,13 @@ func (r *PostgresRepository) ListReviewsByUser(ctx context.Context, userID strin
 	}
 	offset := (page - 1) * pageSize
 
-	rows, err := r.pool.Query(ctx, `
-		SELECT r.id, r.contract_id, r.reviewer_id, r.reviewee_id, r.direction,
-		       r.overall_rating, r.quality_rating, r.communication_rating,
-		       r.timeliness_rating, r.value_rating,
-		       r.comment, r.photo_urls, r.status, r.is_flagged,
-		       r.review_window_ends_at, r.created_at, r.updated_at,
-		       rr.id, rr.review_id, rr.responder_id, rr.comment, rr.created_at
+	rows, err := r.pool.Query(ctx, fmt.Sprintf(`
+		SELECT %s
 		FROM reviews r
 		LEFT JOIN review_responses rr ON rr.review_id = r.id
 		WHERE r.reviewer_id = $1 AND r.status = 'published'
 		ORDER BY r.created_at DESC
-		LIMIT $2 OFFSET $3`, userID, pageSize, offset)
+		LIMIT $2 OFFSET $3`, reviewSelectColumns), userID, pageSize, offset)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list reviews by user query: %w", err)
 	}
@@ -270,7 +314,7 @@ func (r *PostgresRepository) CreateReviewResponse(ctx context.Context, resp *dom
 	var id string
 	var createdAt time.Time
 	err = r.pool.QueryRow(ctx, `
-		INSERT INTO review_responses (review_id, responder_id, comment)
+		INSERT INTO review_responses (review_id, user_id, response_text)
 		VALUES ($1, $2, $3)
 		RETURNING id, created_at`,
 		resp.ReviewID, resp.ResponderID, resp.Comment,
@@ -288,7 +332,9 @@ func (r *PostgresRepository) CreateReviewResponse(ctx context.Context, resp *dom
 	}, nil
 }
 
-// FlagReview inserts a review flag and updates the review's is_flagged field.
+// FlagReview inserts a review flag and updates the review's status to 'flagged'
+// (the schema has no boolean is_flagged column — flag state is encoded by
+// status + flagged_at + flag_reason).
 func (r *PostgresRepository) FlagReview(ctx context.Context, flag *domain.ReviewFlag) (string, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -318,9 +364,17 @@ func (r *PostgresRepository) FlagReview(ctx context.Context, flag *domain.Review
 		return "", fmt.Errorf("flag review insert: %w", err)
 	}
 
+	// Promote the review to flagged status — only if it isn't already removed,
+	// so an admin remove takes precedence over a subsequent flag.
 	_, err = tx.Exec(ctx, `
-		UPDATE reviews SET is_flagged = true, updated_at = now()
-		WHERE id = $1`, flag.ReviewID)
+		UPDATE reviews
+		   SET status      = 'flagged',
+		       flagged_at  = COALESCE(flagged_at, now()),
+		       flag_reason = COALESCE(flag_reason, $2),
+		       flagged_by  = COALESCE(flagged_by, $3),
+		       updated_at  = now()
+		 WHERE id = $1 AND status != 'removed'`,
+		flag.ReviewID, flag.Reason, flag.FlaggedBy)
 	if err != nil {
 		return "", fmt.Errorf("flag review update review: %w", err)
 	}
@@ -358,7 +412,8 @@ func (r *PostgresRepository) CheckReviewEligibility(ctx context.Context, contrac
 		return &domain.ReviewEligibility{Eligible: false}, nil
 	}
 
-	windowCloses := completedAt.Add(14 * 24 * time.Hour)
+	// 90-day review window after completion.
+	windowCloses := completedAt.Add(90 * 24 * time.Hour)
 
 	// Check if already reviewed.
 	var alreadyReviewed bool
@@ -430,7 +485,7 @@ func (r *PostgresRepository) PublishPendingReviews(ctx context.Context, contract
 			return fmt.Errorf("publish pending reviews lookup contract: %w", err)
 		}
 		if completedAt != nil {
-			windowCloses := completedAt.Add(14 * 24 * time.Hour)
+			windowCloses := completedAt.Add(90 * 24 * time.Hour)
 			if time.Now().After(windowCloses) {
 				shouldPublish = true
 			}
@@ -439,7 +494,7 @@ func (r *PostgresRepository) PublishPendingReviews(ctx context.Context, contract
 
 	if shouldPublish {
 		_, err = r.pool.Exec(ctx, `
-			UPDATE reviews SET status = 'published', updated_at = now()
+			UPDATE reviews SET status = 'published', published_at = COALESCE(published_at, now()), updated_at = now()
 			WHERE contract_id = $1 AND status = 'pending'`, contractID)
 		if err != nil {
 			return fmt.Errorf("publish pending reviews update: %w", err)
@@ -503,11 +558,13 @@ func (r *PostgresRepository) AdminListFlaggedReviews(ctx context.Context, status
 	rows, err := r.pool.Query(ctx, fmt.Sprintf(`
 		SELECT rf.id, rf.review_id, rf.flagged_by, rf.reason, rf.details, rf.status,
 		       rf.resolved_by, rf.resolution_notes, rf.created_at, rf.resolved_at,
-		       rev.id, rev.contract_id, rev.reviewer_id, rev.reviewee_id, rev.direction,
+		       rev.id, rev.contract_id, rev.job_id, rev.reviewer_id, rev.reviewee_id, rev.reviewer_role,
 		       rev.overall_rating, rev.quality_rating, rev.communication_rating,
 		       rev.timeliness_rating, rev.value_rating,
-		       rev.comment, rev.photo_urls, rev.status, rev.is_flagged,
-		       rev.review_window_ends_at, rev.created_at, rev.updated_at
+		       rev.payment_promptness_rating, rev.scope_accuracy_rating, rev.access_rating,
+		       rev.review_text, COALESCE(rev.photo_urls, '{}'), rev.status,
+		       rev.flagged_at, rev.flag_reason,
+		       rev.review_window_ends, rev.created_at, rev.updated_at
 		FROM review_flags rf
 		JOIN reviews rev ON rev.id = rf.review_id
 		WHERE %s
@@ -523,26 +580,45 @@ func (r *PostgresRepository) AdminListFlaggedReviews(ctx context.Context, status
 		var flag domain.ReviewFlag
 		var rev domain.Review
 		var qualityRating, communicationRating, timelinessRating, valueRating *int
-		var photoURLs []string
+		var paymentPromptness, scopeAccuracy, accessRating *int
+		var revFlaggedAt *time.Time
+		var revFlagReason *string
+		// review_flags.details and resolution_notes are nullable in the schema;
+		// scan into pointers so NULL doesn't blow up Scan().
+		var flagDetails, flagResolutionNotes *string
 
 		err := rows.Scan(
-			&flag.ID, &flag.ReviewID, &flag.FlaggedBy, &flag.Reason, &flag.Details, &flag.Status,
-			&flag.ResolvedBy, &flag.ResolutionNotes, &flag.FlaggedAt, &flag.ResolvedAt,
-			&rev.ID, &rev.ContractID, &rev.ReviewerID, &rev.RevieweeID, &rev.Direction,
+			&flag.ID, &flag.ReviewID, &flag.FlaggedBy, &flag.Reason, &flagDetails, &flag.Status,
+			&flag.ResolvedBy, &flagResolutionNotes, &flag.FlaggedAt, &flag.ResolvedAt,
+			&rev.ID, &rev.ContractID, &rev.JobID, &rev.ReviewerID, &rev.RevieweeID, &rev.ReviewerRole,
 			&rev.OverallRating, &qualityRating, &communicationRating,
 			&timelinessRating, &valueRating,
-			&rev.Comment, &photoURLs, &rev.Status, &rev.IsFlagged,
-			&rev.ReviewWindowEndsAt, &rev.CreatedAt, &rev.UpdatedAt,
+			&paymentPromptness, &scopeAccuracy, &accessRating,
+			&rev.ReviewText, &rev.PhotoURLs, &rev.Status,
+			&revFlaggedAt, &revFlagReason,
+			&rev.ReviewWindowEnds, &rev.CreatedAt, &rev.UpdatedAt,
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("admin list flagged reviews scan: %w", err)
+		}
+		if flagDetails != nil {
+			flag.Details = *flagDetails
+		}
+		if flagResolutionNotes != nil {
+			flag.ResolutionNotes = *flagResolutionNotes
 		}
 
 		rev.QualityRating = qualityRating
 		rev.CommunicationRating = communicationRating
 		rev.TimelinessRating = timelinessRating
 		rev.ValueRating = valueRating
-		rev.PhotoURLs = photoURLs
+		rev.PaymentPromptnessRating = paymentPromptness
+		rev.ScopeAccuracyRating = scopeAccuracy
+		rev.AccessRating = accessRating
+		rev.FlaggedAt = revFlaggedAt
+		if revFlagReason != nil {
+			rev.FlagReason = *revFlagReason
+		}
 
 		results = append(results, domain.FlaggedReviewWithFlag{
 			Flag:   flag,
@@ -618,9 +694,8 @@ func (r *PostgresRepository) AdminResolveFlag(ctx context.Context, flagID, admin
 		return "", fmt.Errorf("admin resolve flag update: %w", err)
 	}
 
-	// If upheld, remove the review and recalculate the reviewee's rating.
 	if uphold {
-		// Get the reviewee before removing.
+		// Get the reviewee before removing — needed to recompute their average rating.
 		var revieweeID string
 		err = tx.QueryRow(ctx,
 			`SELECT reviewee_id FROM reviews WHERE id = $1`, reviewID).Scan(&revieweeID)
@@ -636,7 +711,12 @@ func (r *PostgresRepository) AdminResolveFlag(ctx context.Context, flagID, admin
 			return "", fmt.Errorf("admin resolve flag remove review: %w", err)
 		}
 
-		// Recalculate the reviewee's average rating within the transaction.
+		// Recompute the reviewee's published-review aggregates inside the same
+		// transaction, but do not write to a users.average_rating column —
+		// the live schema doesn't have one. We simply call AVG/COUNT here so
+		// failures (e.g. a missing reviewee row) surface as transaction errors;
+		// the authoritative rating is computed on read via ComputeAverageRating
+		// or RecalculateProviderRating.
 		var avgRating float64
 		var count int
 		err = tx.QueryRow(ctx, `
@@ -646,13 +726,8 @@ func (r *PostgresRepository) AdminResolveFlag(ctx context.Context, flagID, admin
 		if err != nil {
 			return "", fmt.Errorf("admin resolve flag recalculate rating: %w", err)
 		}
-
-		_, err = tx.Exec(ctx, `
-			UPDATE users SET average_rating = $1, total_reviews = $2, updated_at = now()
-			WHERE id = $3`, avgRating, count, revieweeID)
-		if err != nil {
-			return "", fmt.Errorf("admin resolve flag update user rating: %w", err)
-		}
+		_ = avgRating
+		_ = count
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -663,8 +738,12 @@ func (r *PostgresRepository) AdminResolveFlag(ctx context.Context, flagID, admin
 }
 
 // RecalculateProviderRating recomputes the average rating for a provider
-// based on their remaining published reviews.
+// based on their remaining published reviews. The current users schema does
+// not have an average_rating cache column, so this is currently a no-op
+// (kept on the interface for callers that expect it; rating is computed
+// on read instead). If a cache column is added later, write here.
 func (r *PostgresRepository) RecalculateProviderRating(ctx context.Context, providerID string) error {
+	// Sanity-check the user exists; surface a real error if the query itself fails.
 	var avgRating float64
 	var count int
 	err := r.pool.QueryRow(ctx, `
@@ -674,15 +753,8 @@ func (r *PostgresRepository) RecalculateProviderRating(ctx context.Context, prov
 	if err != nil {
 		return fmt.Errorf("recalculate provider rating query: %w", err)
 	}
-
-	_, err = r.pool.Exec(ctx, `
-		UPDATE users SET average_rating = $1, total_reviews = $2, updated_at = now()
-		WHERE id = $3`,
-		avgRating, count, providerID)
-	if err != nil {
-		return fmt.Errorf("recalculate provider rating update: %w", err)
-	}
-
+	_ = avgRating
+	_ = count
 	return nil
 }
 
@@ -690,16 +762,20 @@ func (r *PostgresRepository) RecalculateProviderRating(ctx context.Context, prov
 func scanReviewRow(rows pgx.Rows) (*domain.Review, error) {
 	var rev domain.Review
 	var qualityRating, communicationRating, timelinessRating, valueRating *int
-	var photoURLs []string
+	var paymentPromptness, scopeAccuracy, accessRating *int
+	var flaggedAt *time.Time
+	var flagReason *string
 	var respID, respReviewID, respResponderID, respComment *string
 	var respCreatedAt *time.Time
 
 	err := rows.Scan(
-		&rev.ID, &rev.ContractID, &rev.ReviewerID, &rev.RevieweeID, &rev.Direction,
+		&rev.ID, &rev.ContractID, &rev.JobID, &rev.ReviewerID, &rev.RevieweeID, &rev.ReviewerRole,
 		&rev.OverallRating, &qualityRating, &communicationRating,
 		&timelinessRating, &valueRating,
-		&rev.Comment, &photoURLs, &rev.Status, &rev.IsFlagged,
-		&rev.ReviewWindowEndsAt, &rev.CreatedAt, &rev.UpdatedAt,
+		&paymentPromptness, &scopeAccuracy, &accessRating,
+		&rev.ReviewText, &rev.PhotoURLs, &rev.Status,
+		&flaggedAt, &flagReason,
+		&rev.ReviewWindowEnds, &rev.CreatedAt, &rev.UpdatedAt,
 		&respID, &respReviewID, &respResponderID, &respComment, &respCreatedAt,
 	)
 	if err != nil {
@@ -710,7 +786,13 @@ func scanReviewRow(rows pgx.Rows) (*domain.Review, error) {
 	rev.CommunicationRating = communicationRating
 	rev.TimelinessRating = timelinessRating
 	rev.ValueRating = valueRating
-	rev.PhotoURLs = photoURLs
+	rev.PaymentPromptnessRating = paymentPromptness
+	rev.ScopeAccuracyRating = scopeAccuracy
+	rev.AccessRating = accessRating
+	rev.FlaggedAt = flaggedAt
+	if flagReason != nil {
+		rev.FlagReason = *flagReason
+	}
 
 	if respID != nil {
 		rev.Response = &domain.ReviewResponse{

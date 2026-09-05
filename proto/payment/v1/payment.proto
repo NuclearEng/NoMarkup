@@ -17,11 +17,30 @@ service PaymentService {
   rpc GetStripeOnboardingLink(GetStripeOnboardingLinkRequest) returns (GetStripeOnboardingLinkResponse);
   rpc GetStripeAccountStatus(GetStripeAccountStatusRequest) returns (GetStripeAccountStatusResponse);
   rpc GetStripeDashboardLink(GetStripeDashboardLinkRequest) returns (GetStripeDashboardLinkResponse);
+  // Connect embedded components — AccountSession client_secret for
+  // account_onboarding / notification_banner / account_management / payouts.
+  rpc CreateStripeAccountSession(CreateStripeAccountSessionRequest) returns (CreateStripeAccountSessionResponse);
 
   // Customer payment methods
   rpc CreateSetupIntent(CreateSetupIntentRequest) returns (CreateSetupIntentResponse);
+  // Server-side verification that a SetupIntent actually confirmed. Callers
+  // that gate on "the client says it paid" MUST use this instead — see
+  // gateway/internal/handler/bid_bonds.go.
+  rpc GetSetupIntentStatus(GetSetupIntentStatusRequest) returns (GetSetupIntentStatusResponse);
+  // Collects a paid listing-promotion fee off-session against the payment
+  // method saved by a confirmed SetupIntent. The amount is supplied by the
+  // gateway from its server-side pricebook, never by the client.
+  rpc ChargePromotion(ChargePromotionRequest) returns (ChargePromotionResponse);
+  // Post-completion gratuity: charge customer off-session, transfer full tip
+  // to provider Connect, CAS contracts.tip_amount_cents only after success.
+  rpc ChargeContractTip(ChargeContractTipRequest) returns (ChargeContractTipResponse);
   rpc ListPaymentMethods(ListPaymentMethodsRequest) returns (ListPaymentMethodsResponse);
   rpc DeletePaymentMethod(DeletePaymentMethodRequest) returns (DeletePaymentMethodResponse);
+  rpc SetDefaultPaymentMethod(SetDefaultPaymentMethodRequest) returns (SetDefaultPaymentMethodResponse);
+  // AddDevPaymentMethod is dev-only — it bypasses Stripe Elements and
+  // inserts a card directly into the in-memory dev store. Gateway gates this
+  // behind a dev-mode check; production returns FailedPrecondition.
+  rpc AddDevPaymentMethod(AddDevPaymentMethodRequest) returns (AddDevPaymentMethodResponse);
 
   // Payments
   rpc CreatePayment(CreatePaymentRequest) returns (CreatePaymentResponse);
@@ -32,6 +51,11 @@ service PaymentService {
 
   // Refunds
   rpc CreateRefund(CreateRefundRequest) returns (CreateRefundResponse);
+
+  // Instant Connect payout — cleared escrow to provider bank (fee + caps).
+  // Payment service owns ledger claim-first + Stripe Instant Payouts.
+  // Live keys never fabricate payout_dev_* ids (MON-09/10/11).
+  rpc InstantPayout(InstantPayoutRequest) returns (InstantPayoutResponse);
 
   // Webhooks
   rpc HandleStripeWebhook(HandleStripeWebhookRequest) returns (HandleStripeWebhookResponse);
@@ -44,6 +68,19 @@ service PaymentService {
   rpc AdminGetPaymentDetails(AdminGetPaymentDetailsRequest) returns (AdminGetPaymentDetailsResponse);
   rpc AdminListPayments(AdminListPaymentsRequest) returns (AdminListPaymentsResponse);
   rpc AdminUpdateFeeConfig(AdminUpdateFeeConfigRequest) returns (AdminUpdateFeeConfigResponse);
+  // Admin-named additive fees (platform_custom_fees). Applied on live
+  // CalculateFees / CreatePayment as extra platform_fee_cents (integer bps).
+  rpc AdminListCustomFees(AdminListCustomFeesRequest) returns (AdminListCustomFeesResponse);
+  rpc AdminCreateCustomFee(AdminCreateCustomFeeRequest) returns (AdminCreateCustomFeeResponse);
+  rpc AdminUpdateCustomFee(AdminUpdateCustomFeeRequest) returns (AdminUpdateCustomFeeResponse);
+  rpc AdminDeactivateCustomFee(AdminDeactivateCustomFeeRequest) returns (AdminDeactivateCustomFeeResponse);
+
+  // Platform banking (admin) — the platform's own payout bank account where
+  // all collected fees route. Raw bank numbers never reach us: the client
+  // tokenizes via Stripe.js and sends a bank_account token.
+  rpc AdminGetPlatformBankAccount(AdminGetPlatformBankAccountRequest) returns (AdminGetPlatformBankAccountResponse);
+  rpc AdminSetPlatformBankAccount(AdminSetPlatformBankAccountRequest) returns (AdminSetPlatformBankAccountResponse);
+  rpc AdminDeletePlatformBankAccount(AdminDeletePlatformBankAccountRequest) returns (AdminDeletePlatformBankAccountResponse);
 
   // Revenue reporting
   rpc GetRevenueReport(GetRevenueReportRequest) returns (GetRevenueReportResponse);
@@ -88,6 +125,24 @@ service PaymentService {
   // Tax form / invoice HTML retrieval
   rpc GetTaxFormHTML(GetTaxFormHTMLRequest) returns (GetTaxFormHTMLResponse);
   rpc GetInvoiceHTML(GetInvoiceHTMLRequest) returns (GetInvoiceHTMLResponse);
+
+  // ============================================================
+  // Marketplace (peer-to-peer goods) — escrow + pickup + release
+  // ============================================================
+  // Lifecycle: pending_payment -> held -> pickup_confirmed -> released
+  // (with optional disputed branch). See docs/operations/marketplace-escrow.md
+  // for the state diagram and dispute timeline.
+  rpc ChargeListingWinner(ChargeListingWinnerRequest) returns (ChargeListingWinnerResponse);
+  rpc ConfirmListingPickup(ConfirmListingPickupRequest) returns (ConfirmListingPickupResponse);
+  rpc FileListingDispute(FileListingDisputeRequest) returns (FileListingDisputeResponse);
+  rpc ResolveListingDispute(ResolveListingDisputeRequest) returns (ResolveListingDisputeResponse);
+  rpc AutoReleaseListingOrders(AutoReleaseListingOrdersRequest) returns (AutoReleaseListingOrdersResponse);
+
+  // GDPR — delete a customer's Stripe Customer + Connect Express account.
+  // Called by the user service's Erasure pipeline after the local DB cascade
+  // commits. Outcomes are recorded verbatim in the user service's audit log.
+  // See docs/operations/gdpr-delete.md.
+  rpc DeleteStripeAccounts(DeleteStripeAccountsRequest) returns (DeleteStripeAccountsResponse);
 }
 
 // ============================================================
@@ -140,6 +195,10 @@ message PaymentBreakdown {
   int64 provider_payout_cents = 5;
   double fee_percentage = 6;
   double guarantee_percentage = 7;
+  // Separate, additive "qualified lead" fee charged to the winning provider.
+  // Zero when lead-gen is disabled for the category. Deducted from provider payout.
+  int64 lead_gen_fee_cents = 8;
+  double lead_gen_percentage = 9;
 }
 
 // ============================================================
@@ -175,6 +234,13 @@ message GetStripeAccountStatusResponse {
   bool payouts_enabled = 2;
   bool details_submitted = 3;
   repeated string requirements = 4;
+  // Separate charges + transfers readiness (Accounts v2 stripe_transfers or legacy transfers).
+  bool transfers_ready = 5;
+  string stripe_transfers_status = 6;
+  // express | full | none when known
+  string dashboard = 7;
+  // "v2" | "v1" when inferred
+  string accounts_api = 8;
 }
 
 message GetStripeDashboardLinkRequest {
@@ -183,6 +249,15 @@ message GetStripeDashboardLinkRequest {
 
 message GetStripeDashboardLinkResponse {
   string dashboard_url = 1;
+}
+
+message CreateStripeAccountSessionRequest {
+  string user_id = 1;
+}
+
+message CreateStripeAccountSessionResponse {
+  string client_secret = 1;
+  google.protobuf.Timestamp expires_at = 2;
 }
 
 // ============================================================
@@ -195,6 +270,59 @@ message CreateSetupIntentRequest {
 
 message CreateSetupIntentResponse {
   string client_secret = 1;
+}
+
+message GetSetupIntentStatusRequest {
+  // The client_secret handed back by CreateSetupIntent. Callers persist this
+  // alongside their own record (bid_bonds.stripe_pi_id,
+  // promotion_charges.stripe_pi_id) and pass it back here to verify.
+  string client_secret = 1;
+  // Platform user id asserted by the caller. The service checks it against
+  // the SetupIntent's metadata so one user cannot confirm another's intent.
+  string customer_id = 2;
+}
+
+message GetSetupIntentStatusResponse {
+  // Raw Stripe SetupIntent status ("succeeded", "requires_payment_method",
+  // "requires_action", "canceled", ...).
+  string status = 1;
+  // True only when status == "succeeded" AND a payment method is attached.
+  bool succeeded = 2;
+  string payment_method_id = 3;
+}
+
+message ChargePromotionRequest {
+  string customer_id = 1;
+  // client_secret of the SetupIntent that saved the card.
+  string client_secret = 2;
+  // Server-computed tier price. The gateway derives this from its pricebook
+  // and the duration stored on the charge row — never from request input.
+  int64 amount_cents = 3;
+  // promotion_charges.id — used as the Stripe idempotency key so a retried
+  // confirm cannot double-charge.
+  string idempotency_key = 4;
+  string listing_id = 5;
+}
+
+message ChargePromotionResponse {
+  string payment_intent_id = 1;
+  string status = 2;
+  bool succeeded = 3;
+}
+
+message ChargeContractTipRequest {
+  string contract_id = 1;
+  string customer_id = 2; // must match contract customer (server re-checks)
+  int64 amount_cents = 3; // $1 … $10,000
+  string idempotency_key = 4; // required; deterministic tip:<contract_id> recommended
+}
+
+message ChargeContractTipResponse {
+  string payment_id = 1;
+  string payment_intent_id = 2;
+  int64 tip_amount_cents = 3; // set only when succeeded
+  string status = 4; // e.g. completed
+  bool succeeded = 5;
 }
 
 message PaymentMethod {
@@ -222,6 +350,25 @@ message DeletePaymentMethodRequest {
 
 message DeletePaymentMethodResponse {}
 
+message SetDefaultPaymentMethodRequest {
+  string customer_id = 1;
+  string payment_method_id = 2;
+}
+
+message SetDefaultPaymentMethodResponse {}
+
+message AddDevPaymentMethodRequest {
+  string customer_id = 1;
+  string brand = 2;
+  string last_four = 3;
+  int32 exp_month = 4;
+  int32 exp_year = 5;
+}
+
+message AddDevPaymentMethodResponse {
+  PaymentMethod method = 1;
+}
+
 // ============================================================
 // Payment RPCs
 // ============================================================
@@ -247,6 +394,11 @@ message CreatePaymentResponse {
 message ProcessPaymentRequest {
   string payment_id = 1;
   string payment_method_id = 2;
+  // Who is capturing. Required for caller-initiated captures so the payment
+  // service can refuse a provider pulling authorized funds into escrow even
+  // if a mesh peer skips the gateway party check.
+  string actor_user_id = 3;
+  bool actor_is_admin = 4;
 }
 
 message ProcessPaymentResponse {
@@ -256,6 +408,16 @@ message ProcessPaymentResponse {
 message ReleaseEscrowRequest {
   string payment_id = 1;
   string reason = 2;  // "milestone_approved", "completion_approved", "auto_release"
+  // Who is asking. Required for caller-initiated releases so the service can
+  // refuse a payee releasing their own escrow — the gateway's party check
+  // admits BOTH parties, so it cannot make this distinction on its own.
+  string actor_user_id = 3;
+  // True when the actor holds the admin role. Admins may release on behalf of
+  // either party (dispute resolution).
+  bool actor_is_admin = 4;
+  // Set by trusted in-process/system callers (auto-release cron) that have no
+  // human actor. Never set this from a request handler.
+  bool system_initiated = 5;
 }
 
 message ReleaseEscrowResponse {
@@ -291,11 +453,39 @@ message CreateRefundRequest {
   string payment_id = 1;
   int64 amount_cents = 2;  // 0 = full refund
   string reason = 3;
-  string initiated_by = 4;  // admin or dispute resolution
+  string initiated_by = 4;  // user id of the actor
+  // True when the actor holds the admin role. Refunding a payment that has
+  // already been RELEASED or COMPLETED pulls from the platform balance while
+  // the provider keeps their transfer, so it is admin-only.
+  bool actor_is_admin = 5;
+  // Trusted internal callers (dispute resolution worker, Stripe event handler).
+  bool system_initiated = 6;
 }
 
 message CreateRefundResponse {
   Payment payment = 1;
+}
+
+// ============================================================
+// Instant Payout RPCs
+// ============================================================
+
+message InstantPayoutRequest {
+  string provider_id = 1;
+  int64 amount_cents = 2;
+  // Client Idempotency-Key (or body fallback). Durable dedup on
+  // instant_payouts UNIQUE(provider_id, idempotency_key).
+  string idempotency_key = 3;
+}
+
+message InstantPayoutResponse {
+  string payout_id = 1;
+  string stripe_payout_id = 2;
+  int64 amount_cents = 3;
+  int64 fee_cents = 4;
+  int64 net_cents = 5;
+  string status = 6; // completed | pending | failed
+  bool replayed = 7; // true when prior successful claim was returned
 }
 
 // ============================================================
@@ -333,6 +523,10 @@ message GetFeeConfigResponse {
   double guarantee_percentage = 2;
   int64 min_fee_cents = 3;
   int64 max_fee_cents = 4;
+  bool lead_gen_enabled = 5;
+  double lead_gen_percentage = 6;
+  int64 lead_gen_min_fee_cents = 7;
+  optional int64 lead_gen_max_fee_cents = 8;
 }
 
 // ============================================================
@@ -372,10 +566,110 @@ message AdminUpdateFeeConfigRequest {
   double guarantee_percentage = 4;
   int64 min_fee_cents = 5;
   optional int64 max_fee_cents = 6;
+  bool lead_gen_enabled = 7;
+  double lead_gen_percentage = 8;
+  int64 lead_gen_min_fee_cents = 9;
+  optional int64 lead_gen_max_fee_cents = 10;
 }
 
 message AdminUpdateFeeConfigResponse {
   GetFeeConfigResponse config = 1;
+}
+
+// Named additive platform fee. rate_bps is integer basis points (500 = 5%).
+message CustomFee {
+  string id = 1;
+  string name = 2;
+  int32 rate_bps = 3;
+  bool active = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message AdminListCustomFeesRequest {}
+
+message AdminListCustomFeesResponse {
+  repeated CustomFee fees = 1;
+}
+
+message AdminCreateCustomFeeRequest {
+  string admin_id = 1;
+  string name = 2;
+  int32 rate_bps = 3;
+}
+
+message AdminCreateCustomFeeResponse {
+  CustomFee fee = 1;
+}
+
+message AdminUpdateCustomFeeRequest {
+  string admin_id = 1;
+  string id = 2;
+  optional string name = 3;
+  optional int32 rate_bps = 4;
+  optional bool active = 5;
+}
+
+message AdminUpdateCustomFeeResponse {
+  CustomFee fee = 1;
+}
+
+message AdminDeactivateCustomFeeRequest {
+  string admin_id = 1;
+  string id = 2;
+}
+
+message AdminDeactivateCustomFeeResponse {
+  bool deactivated = 1;
+}
+
+// Platform banking — non-sensitive metadata only. Never carries raw account
+// or routing numbers.
+message PlatformBankAccount {
+  string id = 1;
+  string stripe_external_account_id = 2;
+  string bank_name = 3;
+  string account_holder_name = 4;
+  string account_holder_type = 5;  // individual | company
+  string last4 = 6;
+  string routing_last4 = 7;
+  string currency = 8;
+  string country = 9;
+  string status = 10;              // new | validated | verification_failed | errored
+  bool is_default = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+message AdminGetPlatformBankAccountRequest {
+  string admin_id = 1;
+}
+
+message AdminGetPlatformBankAccountResponse {
+  // Unset when no platform bank account has been configured yet.
+  PlatformBankAccount account = 1;
+}
+
+message AdminSetPlatformBankAccountRequest {
+  string admin_id = 1;
+  // A Stripe bank_account token (btok_...) created client-side via Stripe.js.
+  // Raw account/routing numbers are tokenized in the browser and never sent here.
+  string bank_account_token = 2;
+  string account_holder_name = 3;
+  string account_holder_type = 4;  // individual | company
+}
+
+message AdminSetPlatformBankAccountResponse {
+  PlatformBankAccount account = 1;
+}
+
+message AdminDeletePlatformBankAccountRequest {
+  string admin_id = 1;
+  string id = 2;
+}
+
+message AdminDeletePlatformBankAccountResponse {
+  bool deleted = 1;
 }
 
 // ============================================================
@@ -482,6 +776,9 @@ message Advance {
   google.protobuf.Timestamp created_at = 13;
   google.protobuf.Timestamp updated_at = 14;
   string stripe_transfer_id = 15;
+  // Flat origination/service fee portion of fee_cents (the rest is APR
+  // interest). Surfaced for a transparent, itemized breakdown.
+  int64 service_fee_cents = 16;
 }
 
 message RequestAdvanceRequest {
@@ -538,6 +835,14 @@ message GetCreditLimitRequest {
   string provider_id = 1;
 }
 
+// One explainable, signed contribution to the underwriting decision (ECOA/Reg-B
+// adverse-action transparency). + raises risk, − lowers it.
+message CreditDecisionReason {
+  string code = 1;
+  string label = 2;
+  double contribution = 3;
+}
+
 message GetCreditLimitResponse {
   string provider_id = 1;
   int64 max_advance_cents = 2;
@@ -549,6 +854,18 @@ message GetCreditLimitResponse {
   int64 avg_job_value_cents = 8;
   double on_time_rate = 9;
   google.protobuf.Timestamp last_computed_at = 10;
+
+  // Underwriting-engine decision (deterministic, explainable, tamper-evident).
+  bool approved = 11;
+  string tier = 12;            // ineligible|starter|standard|premium|elite
+  int32 fee_bps = 13;          // advance fee in basis points (600..1800)
+  double factor_rate = 14;     // 1.06..1.18
+  int32 holdback_pct = 15;     // % of each future payout auto-collected (8..20)
+  string binding_cap = 16;     // absolute_max|revenue_35pct|risk_multiple
+  string binding_gate = 17;    // decisive reason when not approved
+  repeated CreditDecisionReason reasons = 18;
+  string decision_hash = 19;   // SHA-256 over (features||decision||model_version)
+  string model_version = 20;
 }
 
 // ============================================================
@@ -601,6 +918,11 @@ message CreateInstallmentPlanResponse {
 
 message GetInstallmentPlanRequest {
   string plan_id = 1;
+  // Ownership context, set by the gateway from the caller's JWT claims. The
+  // service authorizes the read: a non-admin caller may only read a plan whose
+  // customer_id or provider_id matches caller_user_id (otherwise NotFound).
+  string caller_user_id = 2;
+  bool caller_is_admin = 3;
 }
 
 message GetInstallmentPlanResponse {
@@ -656,6 +978,10 @@ message InsurancePolicy {
   google.protobuf.Timestamp paid_at = 14;
   google.protobuf.Timestamp cancelled_at = 15;
   string cancellation_reason = 16;
+  google.protobuf.Timestamp created_at = 17;
+  google.protobuf.Timestamp updated_at = 18;
+}
+
 // ============================================================
 // Tax Form RPCs
 // ============================================================
@@ -806,6 +1132,8 @@ message AdminListInsuranceClaimsRequest {
 message AdminListInsuranceClaimsResponse {
   repeated InsuranceClaim claims = 1;
   nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
 message GenerateTaxFormRequest {
   string provider_id = 1;
   int32 tax_year = 2;
@@ -859,4 +1187,100 @@ message GetInvoiceHTMLRequest {
 
 message GetInvoiceHTMLResponse {
   string html = 1;
+}
+
+// ============================================================
+// GDPR Stripe Deletion RPCs
+// ============================================================
+
+message DeleteStripeAccountsRequest {
+  // Either or both may be empty; empty fields are skipped (the response
+  // outcome will be "skipped_no_id"). The user service determines per-call
+  // whether the user actually had a Stripe customer / Connect account.
+  string stripe_customer_id = 1;
+  string stripe_account_id = 2;
+}
+
+message DeleteStripeAccountsResponse {
+  // Outcome strings recorded in the user service's audit log. One of:
+  // "deleted", "deleted_already_gone", "skipped_no_id",
+  // "skipped_open_invoices", "skipped_dispute", "skipped_balance",
+  // "skipped_no_client", or "error: <detail>" if a transient error
+  // bubbled up unhandled.
+  string customer_outcome = 1;
+  string account_outcome = 2;
+}
+
+// ============================================================
+// Marketplace (Goods) Escrow RPCs
+// ============================================================
+
+message ChargeListingWinnerRequest {
+  // listing_orders.id (NOT listings.id). The marketplace service creates
+  // the order in pending_payment status when the auction closes; this RPC
+  // creates the Stripe PaymentIntent and persists it on the order.
+  string order_id = 1;
+}
+
+message ChargeListingWinnerResponse {
+  string payment_intent_id = 1;
+  string client_secret = 2;
+  int64  amount_cents = 3;     // bid amount (subtotal)
+  int64  fee_cents = 4;        // platform fee
+  int64  tax_cents = 5;        // sales tax (state-level)
+  int64  total_cents = 6;      // total charged to buyer
+}
+
+message ConfirmListingPickupRequest {
+  string order_id = 1;
+  // The buyer is implicit from the JWT claims; admin paths set actor_role="admin".
+  string actor_user_id = 2;
+  string actor_role = 3; // "buyer" or "admin"
+}
+
+message ConfirmListingPickupResponse {
+  string status = 1;             // "released"
+  int64  seller_payout_cents = 2;
+  google.protobuf.Timestamp pickup_confirmed_at = 3;
+}
+
+message FileListingDisputeRequest {
+  string order_id = 1;
+  string buyer_id = 2;
+  // One of: item_not_as_described, item_damaged, no_show,
+  //         item_not_received, other.
+  string reason = 3;
+  string description = 4;
+}
+
+message FileListingDisputeResponse {
+  string dispute_id = 1;
+  string status = 2;
+}
+
+message ResolveListingDisputeRequest {
+  string dispute_id = 1;
+  string admin_id = 2;
+  // One of: refund_full, refund_partial, release_to_seller, no_action.
+  string resolution = 3;
+  string notes = 4;
+  // Used only when resolution == refund_partial. Cents to refund to buyer;
+  // remainder goes to seller minus platform fee.
+  int64  refund_to_buyer_cents = 5;
+}
+
+message ResolveListingDisputeResponse {
+  string status = 1;             // "resolved"
+  string resolution = 2;
+  int64  refund_to_buyer_cents = 3;
+  int64  transfer_to_seller_cents = 4;
+}
+
+message AutoReleaseListingOrdersRequest {
+  // Optional batch limit; defaults to 100 server-side.
+  int32 batch_limit = 1;
+}
+
+message AutoReleaseListingOrdersResponse {
+  int32 released_count = 1;
 }

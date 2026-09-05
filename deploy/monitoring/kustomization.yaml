@@ -1,0 +1,60 @@
+# Optional monitoring stack (OPS-10 + OPS-09 Tempo lite). Not part of
+# deploy/k8s base/overlays — apply separately after the app mesh so Prometheus
+# can scrape gateway /metrics and the OTel collector can dual-export to Tempo.
+#
+#   kubectl apply -k deploy/monitoring
+#
+# Requires Secret nomarkup-metrics-token in namespace monitoring first
+# (see docs/operations/monitoring-stack.md). Reuses prometheus.yml + alerts.yml
+# from this directory tree via configMapGenerator.
+#
+# Stack: Prometheus + Alertmanager + Grafana + Tempo (single-binary, local store).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: nomarkup
+    includeSelectors: false
+
+resources:
+  - k8s/namespace.yaml
+  - k8s/rbac.yaml
+  - k8s/prometheus-deployment.yaml
+  - k8s/prometheus-service.yaml
+  - k8s/alertmanager-deployment.yaml
+  - k8s/alertmanager-service.yaml
+  - k8s/grafana-deployment.yaml
+  - k8s/grafana-service.yaml
+  # OPS-09 optional in-cluster OTLP/HTTP backend (not HA; emptyDir).
+  - k8s/tempo-deployment.yaml
+  - k8s/tempo-service.yaml
+  - k8s/tempo-network-policy.yaml
+
+# Configs live next to this kustomization so default load restrictions allow
+# them (no --load-restrictor needed). Same files docker-compose mounts for
+# Prometheus/Alertmanager.
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus.yml=prometheus/prometheus.yml
+      - alerts.yml=prometheus/alerts.yml
+  - name: alertmanager-config
+    files:
+      - alertmanager.yml=alertmanager/alertmanager.yml
+  - name: grafana-datasources
+    files:
+      - datasources.yaml=grafana/provisioning/datasources.yaml
+  - name: grafana-dashboards-provider
+    files:
+      - dashboards.yaml=grafana/provisioning/dashboards.yaml
+  - name: grafana-dashboards
+    files:
+      - api-overview.json=grafana/dashboards/api-overview.json
+      - service-health.json=grafana/dashboards/service-health.json
+  - name: tempo-config
+    files:
+      - tempo.yaml=tempo/tempo.yaml

@@ -256,7 +256,7 @@ export function AuctionReplay({ jobId }: AuctionReplayProps) {
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <Zap className="h-5 w-5 text-blue-400" aria-hidden="true" />
+            <Zap className="h-5 w-5 text-bid-active" aria-hidden="true" />
             <h2 className="text-foreground text-sm font-bold tracking-widest uppercase">
               Auction Replay
             </h2>
@@ -265,16 +265,16 @@ export function AuctionReplay({ jobId }: AuctionReplayProps) {
             {isPlaying ? (
               <>
                 <div
-                  className="h-2 w-2 rounded-full bg-blue-500"
+                  className="h-2 w-2 rounded-full bg-bid-active"
                   style={{ animation: 'replayPulse 2s ease-in-out infinite' }}
                   aria-hidden="true"
                 />
-                <span className="text-xs font-medium text-blue-400">PLAYING</span>
+                <span className="text-xs font-medium text-bid-active">PLAYING</span>
               </>
             ) : isComplete ? (
               <>
-                <div className="h-2 w-2 rounded-full bg-green-500" aria-hidden="true" />
-                <span className="text-xs font-medium text-green-400">COMPLETE</span>
+                <div className="h-2 w-2 rounded-full bg-bid-winning" aria-hidden="true" />
+                <span className="text-xs font-medium text-bid-winning">COMPLETE</span>
               </>
             ) : (
               <>
@@ -295,7 +295,7 @@ export function AuctionReplay({ jobId }: AuctionReplayProps) {
         ) : null}
 
         <div
-          className="text-4xl font-black tracking-tight text-green-500 sm:text-5xl"
+          className="text-4xl font-black tracking-tight text-bid-winning sm:text-5xl"
           role="status"
           aria-live="polite"
           aria-label={
@@ -314,12 +314,12 @@ export function AuctionReplay({ jobId }: AuctionReplayProps) {
         {/* Savings pill */}
         {savingsSoFar > 0 ? (
           <div
-            className="mx-auto mt-3 inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-3.5 py-1.5"
+            className="mx-auto mt-3 inline-flex items-center gap-1.5 rounded-full bg-bid-winning/10 px-3.5 py-1.5"
             role="status"
             aria-label={`Saving ${formatCents(savingsSoFar)} from starting price`}
           >
-            <TrendingDown className="h-3.5 w-3.5 text-green-400" aria-hidden="true" />
-            <span className="text-xs font-bold text-green-400">
+            <TrendingDown className="h-3.5 w-3.5 text-bid-winning" aria-hidden="true" />
+            <span className="text-xs font-bold text-bid-winning">
               Saving {formatCents(savingsSoFar)} from starting price
             </span>
           </div>
@@ -454,17 +454,17 @@ export function AuctionReplay({ jobId }: AuctionReplayProps) {
       {isComplete ? (
         <div className="border-border/30 border-t px-4 py-6 text-center sm:px-6">
           <div
-            className="inline-flex items-center gap-2 rounded-full bg-green-500/15 px-4 py-2"
+            className="inline-flex items-center gap-2 rounded-full bg-bid-winning/15 px-4 py-2"
             style={{ animation: 'celebrationPulse 2s ease-in-out infinite' }}
           >
-            <Trophy className="h-5 w-5 text-green-400" aria-hidden="true" />
-            <span className="text-sm font-bold text-green-400">Auction Complete</span>
+            <Trophy className="h-5 w-5 text-bid-winning" aria-hidden="true" />
+            <span className="text-sm font-bold text-bid-winning">Auction Complete</span>
           </div>
 
           <div className="mt-4 grid grid-cols-3 gap-4">
             <div>
               <p className="text-muted-foreground text-xs">Final Price</p>
-              <p className="text-lg font-bold text-green-500">
+              <p className="text-lg font-bold text-bid-winning">
                 {formatCents(data.winning_bid_cents)}
               </p>
             </div>
@@ -474,7 +474,7 @@ export function AuctionReplay({ jobId }: AuctionReplayProps) {
             </div>
             <div>
               <p className="text-muted-foreground text-xs">Saved</p>
-              <p className="text-lg font-bold text-green-500">
+              <p className="text-lg font-bold text-bid-winning">
                 {data.total_savings_cents > 0 ? formatCents(data.total_savings_cents) : '$0'}
               </p>
             </div>

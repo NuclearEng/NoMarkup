@@ -17,6 +17,10 @@ export interface PublicProvider {
   member_since: string;
   verified: boolean;
   response_time_label?: string;
+  /** Whether the authenticated caller already follows this seller. */
+  is_following?: boolean;
+  /** Live follower count for social proof. */
+  follower_count?: number;
 }
 
 export interface SearchProvidersParams {
@@ -52,13 +56,22 @@ export function useSearchProviders(params: SearchProvidersParams) {
   });
 }
 
-export function usePublicProviderProfile(id: string) {
+export function usePublicProviderProfile(
+  id: string,
+  options?: { initialData?: PublicProvider },
+) {
   return useQuery({
     queryKey: ['provider', id],
-    queryFn: () =>
-      api
-        .getPublic<{ profile: PublicProvider }>(`/api/v1/providers/${id}`)
-        .then((res) => res.profile),
+    // Gateway returns the provider at the top level (with response_time_label
+    // merged in), not wrapped in { profile }.
+    queryFn: async () => {
+      const raw = await api.getPublic<Record<string, unknown>>(`/api/v1/providers/${id}`);
+      return raw as unknown as PublicProvider;
+    },
     enabled: !!id,
+    // Optional server-seeded profile (the RSC page passes its fetch result) so
+    // SSR + client first paint render the same data — no skeleton, no refetch
+    // flash. Mirrors useListing / the marketplace detail pattern.
+    ...(options?.initialData ? { initialData: options.initialData } : {}),
   });
 }

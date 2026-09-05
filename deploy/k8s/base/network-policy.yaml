@@ -8,20 +8,65 @@ spec:
   policyTypes:
     - Ingress
 ---
+# Gateway accepts external traffic only from the ingress controller.
+# Labels match Deployments (app.kubernetes.io/name), not legacy app:.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-gateway-external
+  name: allow-ingress-to-gateway
   namespace: nomarkup
 spec:
   podSelector:
     matchLabels:
-      app: gateway
+      app.kubernetes.io/name: gateway
   policyTypes:
     - Ingress
   ingress:
-    - {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
 ---
+# Next.js frontend is also fronted by ingress-nginx (path /).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-web
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+# Mesh services accept gRPC/HTTP only from the gateway (and peer pods below).
+# DELIBERATELY LEFT BROAD. This admits the gateway to every nomarkup pod,
+# including pricing and underwriting, which it never dials. That is wider than
+# least privilege and is a considered trade rather than an oversight: the
+# gateway is the front door and already the most privileged internal
+# component, so over-permitting it buys an attacker very little, while the
+# per-service rules below close the far more dangerous direction — one
+# compromised LEAF service reaching another. Narrowing this further risks an
+# outage for marginal gain. Revisit when mTLS lands and network position stops
+# being the authentication boundary.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -37,12 +82,302 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app: gateway
+              app.kubernetes.io/name: gateway
+---
+# Gateway may call the web Service (SSR / internal rewrites) if needed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-web
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+# Intra-namespace mesh: LEAST PRIVILEGE, not allow-all.
+#
+# WHY THIS IS TIGHT. The gRPC mesh defaults to insecure credentials (plaintext —
+# arm mTLS via GRPC_MTLS + cert mounts; see docs/operations/mesh-mtls.md.
+# CLAUDE.md §6 states this openly), and the RPCs take the acting user's
+# identity as a REQUEST FIELD: AwardBidRequest.customer_id, the various
+# provider_id fields, and so on. The service trusts what it is told. That is
+# the whole authorization model on the mesh.
+#
+# Combined, those two facts mean anything that can open a TCP connection to a
+# service port can impersonate any user — award a bid as someone else, read
+# another account's data, act as an admin. There is no cryptographic peer
+# identity to stop it. Until mTLS lands, the network IS the authentication
+# boundary, so an allow-any-pod-in-the-namespace rule was effectively no
+# boundary at all: one compromised or misconfigured pod, anywhere in the
+# namespace, was full impersonation of every user.
+#
+# This does not replace mTLS. It reduces the blast radius from "any pod in the
+# namespace" to "the specific pods that genuinely need to call this service",
+# derived from the actual call graph (each service's *_SERVICE_ADDR /
+# *_ENGINE_ADDR reads):
+#
+#   gateway -> user, job, payment, chat, notification, bidding, fraud, trust, imaging
+#   user    -> notification, payment
+#   job     -> pricing
+#   payment -> trust, underwriting
+#   chat    -> (none)
+#   notification -> (none)
+#
+# Nothing dials the gateway internally — it is reached only through the
+# ingress, which has its own rule above. When you add a new caller, add it
+# here; a missing entry fails CLOSED (connection refused), which is the
+# correct direction for this to fail.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-user
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: user
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-intra-namespace
+  name: allow-mesh-job
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: job
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-payment
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: payment
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: user
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-chat
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: chat
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-notification
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notification
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: user
+---
+# Rust engines. bidding/fraud/trust/imaging are gateway-facing; pricing is
+# called only by job; underwriting only by payment.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-engines-gateway
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [bidding, fraud, imaging]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-trust
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: trust
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payment
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-pricing
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pricing
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: job
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-underwriting
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: underwriting
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payment
+---
+# OTel collector: every service and engine exports spans here.
+#
+# This rule is REQUIRED by the tightening above. The removed allow-all
+# intra-namespace policy was the only thing permitting service -> collector,
+# so dropping it without this would have silently killed tracing across the
+# whole platform — the failure mode being "no traces appear", which looks
+# exactly like "tracing was never wired" and would have been debugged for
+# hours.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-otel-collector
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: nomarkup
+---
+# web -> gateway. The Next.js server proxies /api/* and /ws/* to the gateway
+# (next.config.ts rewrites), so this is a server-side pod-to-pod call, not a
+# browser one. allow-ingress-to-gateway admits only ingress-nginx, so without
+# this rule every server-rendered page and every same-origin API call from the
+# app would fail — again previously covered only by the allow-all rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-web-to-gateway
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+---
+# Meilisearch: gateway (search reads) and job (index writes) only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-meilisearch
+  namespace: nomarkup
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: meilisearch
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: job
+---
+# Prometheus (or kube-prometheus) scrapes /metrics on the HTTP metrics ports.
+# Scoped to pods that advertise scrape annotations; source is monitoring NS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
   namespace: nomarkup
 spec:
   podSelector:
@@ -54,4 +389,18 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: nomarkup
+              kubernetes.io/metadata.name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+---
+# Egress policies (OPS-19) live in network-policy-egress.yaml:
+#   default-deny-egress, allow-egress-dns, allow-egress-in-namespace,
+#   allow-egress-data-stores, allow-egress-https-public,
+#   allow-egress-otel-backend, allow-egress-payment-stripe.
+#
+# The former notification-only egress rule is superseded by the namespace-wide
+# default-deny + shared allowlists. Notification still cannot reach RFC1918 /
+# IMDS over HTTPS (public-HTTPS carve-outs), which is the SSRF control for
+# user-supplied Web Push endpoints (see push_endpoint.go).
+# Docs: docs/operations/network-policy-egress.md

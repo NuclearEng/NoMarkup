@@ -3,45 +3,64 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
-	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
+	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 )
 
 // ProviderHandler handles HTTP endpoints for provider profiles.
 type ProviderHandler struct {
-	userClient userv1.UserServiceClient
-	db         *pgxpool.Pool
+	userClient  userv1.UserServiceClient
+	trustClient trustv1.TrustServiceClient
+	db          *pgxpool.Pool
+	planLimits  PlanLimitGuard
 }
 
 // NewProviderHandler creates a new ProviderHandler.
-// The db pool is used for gateway-level queries (e.g. streaks) that don't
-// have a corresponding gRPC RPC. If db is nil, those endpoints degrade gracefully.
-func NewProviderHandler(userClient userv1.UserServiceClient, db *pgxpool.Pool) *ProviderHandler {
-	return &ProviderHandler{userClient: userClient, db: db}
+// The db pool is used for gateway-level queries (e.g. streaks, review
+// aggregates) that don't have a corresponding gRPC RPC. If db is nil, those
+// endpoints degrade gracefully. trustClient supplies the real computed trust
+// score for the public profile; if it or the score is unavailable the profile
+// still renders without the trust card.
+func NewProviderHandler(userClient userv1.UserServiceClient, trustClient trustv1.TrustServiceClient, db *pgxpool.Pool) *ProviderHandler {
+	return &ProviderHandler{
+		userClient:  userClient,
+		trustClient: trustClient,
+		db:          db,
+		planLimits:  newPlanLimitGuard(db),
+	}
 }
 
 type updateProviderRequest struct {
-	BusinessName *string  `json:"business_name,omitempty"`
-	Bio          *string  `json:"bio,omitempty"`
-	Address      *string  `json:"service_address,omitempty"`
-	Latitude     *float64 `json:"latitude,omitempty"`
-	Longitude    *float64 `json:"longitude,omitempty"`
-	RadiusKm     *float64 `json:"service_radius_km,omitempty"`
+	BusinessName           *string  `json:"business_name,omitempty"`
+	Bio                    *string  `json:"bio,omitempty"`
+	Address                *string  `json:"service_address,omitempty"`
+	Latitude               *float64 `json:"latitude,omitempty"`
+	Longitude              *float64 `json:"longitude,omitempty"`
+	RadiusKm               *float64 `json:"service_radius_km,omitempty"`
+	EINTIN                 *string  `json:"ein_tin,omitempty"`
+	InsurancePolicyNumber  *string  `json:"insurance_policy_number,omitempty"`
+	InsuranceProvider      *string  `json:"insurance_provider,omitempty"`
+	InsuranceExpiry        *string  `json:"insurance_expiry,omitempty"`
+	InsuranceCoverageCents *int64   `json:"insurance_coverage_cents,omitempty"`
 }
 
 type setTermsRequest struct {
-	PaymentTiming      string               `json:"payment_timing"`
-	Milestones         []milestoneRequest    `json:"milestones"`
-	CancellationPolicy string               `json:"cancellation_policy"`
-	WarrantyTerms      string               `json:"warranty_terms"`
+	PaymentTiming      string             `json:"payment_timing"`
+	Milestones         []milestoneRequest `json:"milestones"`
+	CancellationPolicy string             `json:"cancellation_policy"`
+	WarrantyTerms      string             `json:"warranty_terms"`
 }
 
 type milestoneRequest struct {
@@ -64,9 +83,9 @@ type updatePortfolioRequest struct {
 }
 
 type setAvailabilityRequest struct {
-	Enabled      bool                     `json:"enabled"`
-	AvailableNow bool                     `json:"available_now"`
-	Schedule     []availabilityWindowReq  `json:"schedule"`
+	Enabled      bool                    `json:"enabled"`
+	AvailableNow bool                    `json:"available_now"`
+	Schedule     []availabilityWindowReq `json:"schedule"`
 }
 
 type availabilityWindowReq struct {
@@ -91,10 +110,19 @@ func (h *ProviderHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := protoProviderToJSON(resp.GetProfile())
+	// Owner GET — include encrypted-at-rest PII fields (decrypted by user service).
+	result := protoProviderToJSON(resp.GetProfile(), true)
+	if result == nil {
+		writeError(w, http.StatusInternalServerError, "empty provider profile")
+		return
+	}
 	if label := h.getResponseTimeLabel(r.Context(), claims.UserID); label != nil {
 		result["response_time_label"] = *label
 	}
+	// Instant weekly windows live only in SQL (provider_profiles.instant_schedule);
+	// ProviderProfile proto has no schedule field. Enrich owner GET only so iOS
+	// can hydrate the weekly editor — never attach schedule to public profiles.
+	result["schedule"] = h.getInstantSchedule(r.Context(), claims.UserID)
 
 	writeJSON(w, http.StatusOK, result)
 }
@@ -108,17 +136,21 @@ func (h *ProviderHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updateProviderRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
 	grpcReq := &userv1.UpdateProviderProfileRequest{
-		UserId:         claims.UserID,
-		BusinessName:   req.BusinessName,
-		Bio:            req.Bio,
-		ServiceAddress: req.Address,
-		ServiceRadiusKm: req.RadiusKm,
+		UserId:                 claims.UserID,
+		BusinessName:           req.BusinessName,
+		Bio:                    req.Bio,
+		ServiceAddress:         req.Address,
+		ServiceRadiusKm:        req.RadiusKm,
+		EinTin:                 req.EINTIN,
+		InsurancePolicyNumber:  req.InsurancePolicyNumber,
+		InsuranceProvider:      req.InsuranceProvider,
+		InsuranceExpiry:        req.InsuranceExpiry,
+		InsuranceCoverageCents: req.InsuranceCoverageCents,
 	}
 	if req.Latitude != nil && req.Longitude != nil {
 		grpcReq.ServiceLocation = &commonv1.Location{
@@ -133,7 +165,8 @@ func (h *ProviderHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoProviderToJSON(resp.GetProfile()))
+	// Owner update — return PII so the client can confirm what was stored.
+	writeJSON(w, http.StatusOK, protoProviderToJSON(resp.GetProfile(), true))
 }
 
 // SetGlobalTerms handles PUT /api/v1/providers/me/terms.
@@ -145,8 +178,7 @@ func (h *ProviderHandler) SetGlobalTerms(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req setTermsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -170,7 +202,8 @@ func (h *ProviderHandler) SetGlobalTerms(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoProviderToJSON(resp.GetProfile()))
+	// Owner terms update — include PII fields (same as GetMe).
+	writeJSON(w, http.StatusOK, protoProviderToJSON(resp.GetProfile(), true))
 }
 
 // UpdateCategories handles PUT /api/v1/providers/me/categories.
@@ -182,8 +215,12 @@ func (h *ProviderHandler) UpdateCategories(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req updateCategoriesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if code, msg := h.planLimits.denyCategories(r, claims.UserID, len(req.CategoryIDs)); code != 0 {
+		writeError(w, code, msg)
 		return
 	}
 
@@ -218,8 +255,12 @@ func (h *ProviderHandler) UpdatePortfolio(w http.ResponseWriter, r *http.Request
 	}
 
 	var req updatePortfolioRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if code, msg := h.planLimits.denyPortfolio(r, claims.UserID, len(req.Images)); code != 0 {
+		writeError(w, code, msg)
 		return
 	}
 
@@ -262,8 +303,7 @@ func (h *ProviderHandler) SetAvailability(w http.ResponseWriter, r *http.Request
 	}
 
 	var req setAvailabilityRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -287,9 +327,31 @@ func (h *ProviderHandler) SetAvailability(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Echo schedule from the accepted body (same shape as GET /providers/me).
+	// Prefer a post-write DB read when wired so clients see the durable value;
+	// fall back to the request windows when DB is nil (tests / degrade).
+	echoSchedule := h.getInstantSchedule(r.Context(), claims.UserID)
+	if len(echoSchedule) == 0 && len(req.Schedule) > 0 {
+		echoSchedule = make([]map[string]interface{}, 0, len(req.Schedule))
+		for _, s := range req.Schedule {
+			day := strings.ToLower(strings.TrimSpace(s.Day))
+			start := strings.TrimSpace(s.StartTime)
+			end := strings.TrimSpace(s.EndTime)
+			if day == "" || start == "" || end == "" {
+				continue
+			}
+			echoSchedule = append(echoSchedule, map[string]interface{}{
+				"day":        day,
+				"start_time": start,
+				"end_time":   end,
+			})
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"instant_enabled":   resp.GetInstantEnabled(),
 		"instant_available": resp.GetInstantAvailable(),
+		"schedule":          echoSchedule,
 	})
 }
 
@@ -324,9 +386,9 @@ func (h *ProviderHandler) GetStreaks(w http.ResponseWriter, r *http.Request) {
 		var (
 			id, providerID                          string
 			categoryID                              *string
-			currentStreak, longestStreak, totalWins  int
-			categoryRank                             *int
-			updatedAt                                time.Time
+			currentStreak, longestStreak, totalWins int
+			categoryRank                            *int
+			updatedAt                               time.Time
 		)
 		if err := rows.Scan(&id, &providerID, &categoryID, &currentStreak, &longestStreak, &totalWins, &categoryRank, &updatedAt); err != nil {
 			slog.Error("failed to scan provider streak row", "provider_id", claims.UserID, "error", err)
@@ -334,14 +396,14 @@ func (h *ProviderHandler) GetStreaks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		streak := map[string]interface{}{
-			"id":              id,
-			"provider_id":     providerID,
-			"category_id":     categoryID,
-			"current_streak":  currentStreak,
-			"longest_streak":  longestStreak,
-			"total_wins":      totalWins,
-			"category_rank":   categoryRank,
-			"updated_at":      updatedAt.UTC().Format(time.RFC3339),
+			"id":             id,
+			"provider_id":    providerID,
+			"category_id":    categoryID,
+			"current_streak": currentStreak,
+			"longest_streak": longestStreak,
+			"total_wins":     totalWins,
+			"category_rank":  categoryRank,
+			"updated_at":     updatedAt.UTC().Format(time.RFC3339),
 		}
 		streaks = append(streaks, streak)
 	}
@@ -357,8 +419,8 @@ func (h *ProviderHandler) GetStreaks(w http.ResponseWriter, r *http.Request) {
 // GetProvider handles GET /api/v1/providers/{id}.
 func (h *ProviderHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	if userID == "" {
-		writeError(w, http.StatusBadRequest, "user id required")
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
 
@@ -370,12 +432,189 @@ func (h *ProviderHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := protoProviderToJSON(resp.GetProfile())
+	// Public GET — never expose EIN/TIN or insurance policy number (C2/PII).
+	result := protoProviderToJSON(resp.GetProfile(), false)
 	if label := h.getResponseTimeLabel(r.Context(), userID); label != nil {
 		result["response_time_label"] = *label
 	}
 
+	// Trust score (real, computed by the trust engine) + review summary
+	// (aggregated from published reviews). The public profile page renders both
+	// — without these the trust card and rating stat silently disappear. Both
+	// degrade to absent on error so the profile still loads (§15: fail soft).
+	if ts := h.trustScoreSummary(r.Context(), userID); ts != nil {
+		result["trust_score"] = ts
+	}
+	if rs := h.reviewSummary(r.Context(), userID); rs != nil {
+		result["review_summary"] = rs
+	}
+
+	// Social proof: follower_count (always) + is_following (relative to the
+	// authenticated caller, if any). This route is wrapped in optionalAuth, so
+	// a logged-out shopper simply sees is_following=false. Both degrade to a
+	// safe default on DB error — the profile still renders. (Bug 3)
+	result["follower_count"] = h.followerCount(r.Context(), userID)
+	result["is_following"] = false
+	if claims, ok := middleware.GetClaims(r.Context()); ok && claims.UserID != "" {
+		result["is_following"] = h.isFollowing(r.Context(), claims.UserID, userID)
+	}
+
+	// Public projection: this endpoint is anonymous-reachable, so never expose
+	// another seller's exact location. Drop precise address + coordinates; the
+	// service_radius_km still conveys a general serving area. (PII, §6)
+	delete(result, "service_address")
+	delete(result, "service_location") // nested {latitude, longitude} — exact GPS
+
 	writeJSON(w, http.StatusOK, result)
+}
+
+// followerCount returns the live follower count for a seller. Errors degrade
+// to 0 so the profile still renders without a count.
+func (h *ProviderHandler) followerCount(ctx context.Context, sellerID string) int {
+	if h.db == nil {
+		return 0
+	}
+	var n int
+	if err := h.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM seller_follows WHERE seller_id = $1`, sellerID,
+	).Scan(&n); err != nil {
+		slog.WarnContext(ctx, "provider follower count failed", "error", err, "seller_id", sellerID)
+		return 0
+	}
+	return n
+}
+
+// isFollowing reports whether followerID already follows sellerID. Errors
+// degrade to false (fail-soft: the button just shows "Follow").
+func (h *ProviderHandler) isFollowing(ctx context.Context, followerID, sellerID string) bool {
+	if h.db == nil {
+		return false
+	}
+	var exists bool
+	if err := h.db.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM seller_follows WHERE follower_id = $1 AND seller_id = $2)`,
+		followerID, sellerID,
+	).Scan(&exists); err != nil {
+		slog.WarnContext(ctx, "provider is_following check failed", "error", err, "follower_id", followerID, "seller_id", sellerID)
+		return false
+	}
+	return exists
+}
+
+// trustScoreSummary fetches the user's real computed trust score from the trust
+// engine and projects it to the public {overall_score (0.0-1.0), tier} shape the
+// client expects. Returns nil if no score exists yet or the engine is
+// unreachable — the profile still renders without a trust card.
+func (h *ProviderHandler) trustScoreSummary(ctx context.Context, userID string) map[string]interface{} {
+	if h.trustClient == nil {
+		return nil
+	}
+	resp, err := h.trustClient.GetTrustScore(ctx, &trustv1.GetTrustScoreRequest{UserId: userID})
+	if err != nil {
+		// NotFound is expected for users without a score yet; log others.
+		slog.DebugContext(ctx, "provider trust score lookup failed", "error", err, "user_id", userID)
+		return nil
+	}
+	score := resp.GetScore()
+	if score == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"overall_score": score.GetOverallScore(),
+		"tier":          trustTierToString(score.GetTier()),
+	}
+}
+
+// reviewSummary aggregates a provider's PUBLISHED reviews (matching the trust
+// engine's filter) into {average_rating, review_count, on_time_rate}. The
+// on_time_rate is derived from reviews.timeliness_rating (>= 4 of 5 = on time)
+// and is null when no review carries a timeliness rating (unknown, not 0%).
+// Errors degrade to nil so the profile still renders without a rating stat.
+func (h *ProviderHandler) reviewSummary(ctx context.Context, userID string) map[string]interface{} {
+	if h.db == nil {
+		return nil
+	}
+	var avg float64
+	var count int
+	if err := h.db.QueryRow(ctx,
+		`SELECT COALESCE(AVG(overall_rating)::float8, 0), COUNT(*)
+		   FROM reviews WHERE reviewee_id = $1 AND status = 'published'`,
+		userID,
+	).Scan(&avg, &count); err != nil {
+		slog.WarnContext(ctx, "provider review summary failed", "error", err, "user_id", userID)
+		return nil
+	}
+	if count == 0 {
+		return nil
+	}
+
+	// On-time rate is derived from the double-blind reviews' timeliness_rating
+	// (1-5) as a proxy: the share of timeliness-rated reviews scored "on time"
+	// (>= 4 of 5). We do NOT read provider_profiles.on_time_rate — that column
+	// is never populated, and there is no contract deadline signal to compute it
+	// from (contracts.schedule_json carries no agreed deadline in current data),
+	// so reading it would COALESCE a real NULL into a misleading "0%".
+	//
+	// When no published review carries a timeliness_rating the rate is genuinely
+	// UNKNOWN, so we leave on_time_rate as null rather than assert 0% — the
+	// client hides the stat in that case. Only reviews with a non-null
+	// timeliness_rating count toward the denominator.
+	var rated int
+	var onTime int
+	if err := h.db.QueryRow(ctx,
+		`SELECT COUNT(timeliness_rating),
+		        COUNT(timeliness_rating) FILTER (WHERE timeliness_rating >= 4)
+		   FROM reviews
+		  WHERE reviewee_id = $1
+		    AND status = 'published'
+		    AND timeliness_rating IS NOT NULL`,
+		userID,
+	).Scan(&rated, &onTime); err != nil {
+		slog.WarnContext(ctx, "provider on-time rate failed", "error", err, "user_id", userID)
+		return reviewSummaryJSON(avg, count, nil)
+	}
+	var onTimeRate *float64
+	if rated > 0 {
+		v := float64(onTime) / float64(rated)
+		onTimeRate = &v
+	}
+	return reviewSummaryJSON(avg, count, onTimeRate)
+}
+
+// reviewSummaryJSON is the public {average_rating, review_count, on_time_rate}
+// projection used by GET /providers/{id} and the customer bid ladder.
+// count <= 0 returns nil — never a fake 5.0 / empty object.
+func reviewSummaryJSON(avg float64, count int, onTimeRate *float64) map[string]interface{} {
+	if count <= 0 {
+		return nil
+	}
+	out := map[string]interface{}{
+		"average_rating": avg,
+		"review_count":   count,
+		"on_time_rate":   nil,
+	}
+	if onTimeRate != nil {
+		out["on_time_rate"] = *onTimeRate
+	}
+	return out
+}
+
+// reviewSummaryFromProto maps a user-service ReviewSummary. Count 0 / nil proto
+// is absent (JSON null), never a fabricated rating.
+func reviewSummaryFromProto(rs *userv1.ReviewSummary) map[string]interface{} {
+	if rs == nil {
+		return nil
+	}
+	count := int(rs.GetReviewCount())
+	if count <= 0 {
+		return nil
+	}
+	var onTimeRate *float64
+	if rs.GetOnTimeRate() > 0 {
+		v := rs.GetOnTimeRate()
+		onTimeRate = &v
+	}
+	return reviewSummaryJSON(rs.GetAverageRating(), count, onTimeRate)
 }
 
 // SearchProviders handles GET /api/v1/providers/search.
@@ -385,7 +624,17 @@ func (h *ProviderHandler) SearchProviders(w http.ResponseWriter, r *http.Request
 	grpcReq := &userv1.SearchProvidersRequest{}
 
 	if catIDs := q.Get("category_ids"); catIDs != "" {
-		grpcReq.CategoryIds = splitCommas(catIDs)
+		ids := splitCommas(catIDs)
+		// The category filter runs as `category_id = ANY($n)` against a uuid
+		// column; a non-UUID value makes Postgres fail to parse and 500s. Reject
+		// malformed ids at the boundary with a 400.
+		for _, id := range ids {
+			if !isValidUUID(id) {
+				writeError(w, http.StatusBadRequest, "invalid category id")
+				return
+			}
+		}
+		grpcReq.CategoryIds = ids
 	}
 
 	if lat := q.Get("latitude"); lat != "" {
@@ -474,7 +723,92 @@ func (h *ProviderHandler) SearchProviders(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	// Public provider directory, keyed by query at the edge. 60s CDN TTL +
+	// 5m SWR. No auth, no per-user data.
+	writeCachedJSON(w, r, http.StatusOK, result, 60, 300)
+}
+
+// getInstantSchedule loads provider_profiles.instant_schedule for the
+// authenticated owner. Returns an empty slice (never nil) so JSON always
+// emits `"schedule": []` when missing/unavailable — clients can distinguish
+// "no windows" from a missing key after PATCH responses that omit schedule.
+// Fail-soft: nil DB, missing row, or corrupt JSON all yield [].
+//
+// Security: call only from GetMe (RequireProvider + claims.UserID). Do not
+// attach this to public GET /providers/{id}.
+func (h *ProviderHandler) getInstantSchedule(ctx context.Context, userID string) []map[string]interface{} {
+	empty := make([]map[string]interface{}, 0)
+	if h.db == nil || userID == "" {
+		return empty
+	}
+
+	var raw []byte
+	err := h.db.QueryRow(ctx, `
+		SELECT instant_schedule
+		FROM provider_profiles
+		WHERE user_id = $1
+	`, userID).Scan(&raw)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("failed to query provider instant_schedule",
+				"user_id", userID,
+				"error", err,
+			)
+		}
+		return empty
+	}
+	return parseInstantScheduleJSON(raw)
+}
+
+// parseInstantScheduleWindows normalizes DB JSONB (written by SetInstantAvailability
+// via json.Marshal of AvailabilityWindow protos: day/start_time/end_time) into
+// typed weekly windows. Fail-soft: empty/null/corrupt → empty slice (never nil).
+func parseInstantScheduleWindows(raw []byte) []availabilityWindowReq {
+	empty := make([]availabilityWindowReq, 0)
+	if len(raw) == 0 {
+		return empty
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return empty
+	}
+
+	var windows []availabilityWindowReq
+	if err := json.Unmarshal(raw, &windows); err != nil {
+		slog.Warn("provider instant_schedule JSON unreadable", "error", err)
+		return empty
+	}
+
+	out := make([]availabilityWindowReq, 0, len(windows))
+	for _, w := range windows {
+		day := strings.ToLower(strings.TrimSpace(w.Day))
+		start := strings.TrimSpace(w.StartTime)
+		end := strings.TrimSpace(w.EndTime)
+		if day == "" || start == "" || end == "" {
+			continue
+		}
+		out = append(out, availabilityWindowReq{
+			Day:       day,
+			StartTime: start,
+			EndTime:   end,
+		})
+	}
+	return out
+}
+
+// parseInstantScheduleJSON normalizes DB JSONB into the same shape as
+// PUT /providers/me/availability's schedule body (owner GET/PATCH echo).
+func parseInstantScheduleJSON(raw []byte) []map[string]interface{} {
+	windows := parseInstantScheduleWindows(raw)
+	out := make([]map[string]interface{}, 0, len(windows))
+	for _, w := range windows {
+		out = append(out, map[string]interface{}{
+			"day":        w.Day,
+			"start_time": w.StartTime,
+			"end_time":   w.EndTime,
+		})
+	}
+	return out
 }
 
 // getResponseTimeLabel calculates the average first-response time for a
@@ -539,12 +873,18 @@ func protoProviderSearchResultToJSON(p *userv1.ProviderSearchResult) map[string]
 	}
 
 	result := map[string]interface{}{
-		"user_id":            p.GetUserId(),
-		"display_name":       p.GetDisplayName(),
-		"business_name":      p.GetBusinessName(),
-		"avatar_url":         p.GetAvatarUrl(),
-		"distance_km":        p.GetDistanceKm(),
-		"instant_available":  p.GetInstantAvailable(),
+		// The public provider identifier IS the user id — the profile route is
+		// /api/v1/providers/{id} where {id} is the user id. Expose it as `id` too
+		// so the web's provider cards have a stable React key and link to
+		// /providers/{id} instead of /providers/undefined (broken nav + duplicate
+		// null keys).
+		"id":                p.GetUserId(),
+		"user_id":           p.GetUserId(),
+		"display_name":      p.GetDisplayName(),
+		"business_name":     p.GetBusinessName(),
+		"avatar_url":        p.GetAvatarUrl(),
+		"distance_km":       p.GetDistanceKm(),
+		"instant_available": p.GetInstantAvailable(),
 	}
 
 	if rs := p.GetReviewSummary(); rs != nil {
@@ -558,7 +898,10 @@ func protoProviderSearchResultToJSON(p *userv1.ProviderSearchResult) map[string]
 	if ts := p.GetTrustScore(); ts != nil {
 		result["trust_score"] = map[string]interface{}{
 			"overall_score": ts.GetOverallScore(),
-			"tier":          ts.GetTier().String(),
+			// Use the same clean serialization as the provider profile
+			// (trustTierToString -> "rising"), not the raw proto enum
+			// ("TRUST_TIER_RISING"), so the same field has one contract everywhere.
+			"tier": trustTierToString(ts.GetTier()),
 		}
 	}
 
@@ -570,7 +913,9 @@ func protoProviderSearchResultToJSON(p *userv1.ProviderSearchResult) map[string]
 			"slug": c.GetSlug(),
 		})
 	}
-	result["categories"] = cats
+	// Field is named `service_categories` in the public PublicProvider TS type
+	// (matches ProviderProfile naming for consistency on the client).
+	result["service_categories"] = cats
 
 	return result
 }
@@ -609,7 +954,11 @@ func paymentTimingToString(t commonv1.PaymentTiming) string {
 	}
 }
 
-func protoProviderToJSON(p *userv1.ProviderProfile) map[string]interface{} {
+// protoProviderToJSON maps a ProviderProfile to the HTTP JSON shape.
+// includePII must be true only for owner-authenticated surfaces
+// (GET/PATCH /providers/me and other /me mutations). Public GET /providers/{id}
+// must pass false so EIN/TIN and insurance policy numbers never leave the API.
+func protoProviderToJSON(p *userv1.ProviderProfile, includePII bool) map[string]interface{} {
 	if p == nil {
 		return nil
 	}
@@ -631,6 +980,15 @@ func protoProviderToJSON(p *userv1.ProviderProfile) map[string]interface{} {
 		"profile_completeness":       p.GetProfileCompleteness(),
 		"stripe_onboarding_complete": p.GetStripeOnboardingComplete(),
 		"member_since":               formatTimestamp(p.GetMemberSince()),
+	}
+	if includePII {
+		// Decrypted by the user service; owner-only. Empty string = not set.
+		result["ein_tin"] = p.GetEinTin()
+		result["insurance_policy_number"] = p.GetInsurancePolicyNumber()
+		// Insurance metadata — owner-only (not secretbox, still not public).
+		result["insurance_provider"] = p.GetInsuranceProvider()
+		result["insurance_expiry"] = p.GetInsuranceExpiry()
+		result["insurance_coverage_cents"] = p.GetInsuranceCoverageCents()
 	}
 
 	if loc := p.GetServiceLocation(); loc != nil {

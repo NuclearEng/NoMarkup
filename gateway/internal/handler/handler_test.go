@@ -6,13 +6,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
-	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
 	subscriptionv1 "github.com/nomarkup/nomarkup/proto/subscription/v1"
+	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -47,14 +49,20 @@ func (m *mockUserClient) VerifyEmail(ctx context.Context, req *userv1.VerifyEmai
 // mockJobClient implements jobv1.JobServiceClient for testing.
 type mockJobClient struct {
 	jobv1.JobServiceClient
-	createJobFn  func(ctx context.Context, req *jobv1.CreateJobRequest) (*jobv1.CreateJobResponse, error)
-	publishJobFn func(ctx context.Context, req *jobv1.PublishJobRequest) (*jobv1.PublishJobResponse, error)
-	searchJobsFn func(ctx context.Context, req *jobv1.SearchJobsRequest) (*jobv1.SearchJobsResponse, error)
+	createJobFn   func(ctx context.Context, req *jobv1.CreateJobRequest) (*jobv1.CreateJobResponse, error)
+	updateJobFn   func(ctx context.Context, req *jobv1.UpdateJobRequest) (*jobv1.UpdateJobResponse, error)
+	publishJobFn  func(ctx context.Context, req *jobv1.PublishJobRequest) (*jobv1.PublishJobResponse, error)
+	searchJobsFn  func(ctx context.Context, req *jobv1.SearchJobsRequest) (*jobv1.SearchJobsResponse, error)
 	deleteDraftFn func(ctx context.Context, req *jobv1.DeleteDraftRequest) (*jobv1.DeleteDraftResponse, error)
+	getJobFn      func(ctx context.Context, req *jobv1.GetJobRequest) (*jobv1.GetJobResponse, error)
 }
 
 func (m *mockJobClient) CreateJob(ctx context.Context, req *jobv1.CreateJobRequest, _ ...grpc.CallOption) (*jobv1.CreateJobResponse, error) {
 	return m.createJobFn(ctx, req)
+}
+
+func (m *mockJobClient) UpdateJob(ctx context.Context, req *jobv1.UpdateJobRequest, _ ...grpc.CallOption) (*jobv1.UpdateJobResponse, error) {
+	return m.updateJobFn(ctx, req)
 }
 
 func (m *mockJobClient) PublishJob(ctx context.Context, req *jobv1.PublishJobRequest, _ ...grpc.CallOption) (*jobv1.PublishJobResponse, error) {
@@ -69,11 +77,18 @@ func (m *mockJobClient) DeleteDraft(ctx context.Context, req *jobv1.DeleteDraftR
 	return m.deleteDraftFn(ctx, req)
 }
 
+func (m *mockJobClient) GetJob(ctx context.Context, req *jobv1.GetJobRequest, _ ...grpc.CallOption) (*jobv1.GetJobResponse, error) {
+	if m.getJobFn == nil {
+		return nil, status.Error(codes.Unimplemented, "GetJob not stubbed")
+	}
+	return m.getJobFn(ctx, req)
+}
+
 // mockSubscriptionClient implements subscriptionv1.SubscriptionServiceClient for testing.
 type mockSubscriptionClient struct {
 	subscriptionv1.SubscriptionServiceClient
-	listTiersFn         func(ctx context.Context, req *subscriptionv1.ListTiersRequest) (*subscriptionv1.ListTiersResponse, error)
-	getSubscriptionFn   func(ctx context.Context, req *subscriptionv1.GetSubscriptionRequest) (*subscriptionv1.GetSubscriptionResponse, error)
+	listTiersFn          func(ctx context.Context, req *subscriptionv1.ListTiersRequest) (*subscriptionv1.ListTiersResponse, error)
+	getSubscriptionFn    func(ctx context.Context, req *subscriptionv1.GetSubscriptionRequest) (*subscriptionv1.GetSubscriptionResponse, error)
 	checkFeatureAccessFn func(ctx context.Context, req *subscriptionv1.CheckFeatureAccessRequest) (*subscriptionv1.CheckFeatureAccessResponse, error)
 }
 
@@ -95,6 +110,14 @@ func addClaimsToRequest(r *http.Request, userID, email string, roles []string) *
 	claims := &middleware.Claims{UserID: userID, Email: email, Roles: roles}
 	ctx := context.WithValue(r.Context(), middleware.ClaimsContextKey, claims)
 	return r.WithContext(ctx)
+}
+
+// withChiURLParam injects a Chi URL parameter into the request context so
+// chi.URLParam works inside handlers that rely on routing.
+func withChiURLParam(r *http.Request, key, value string) *http.Request {
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add(key, value)
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
 
 func decodeJSONResponse(t *testing.T, rec *httptest.ResponseRecorder) map[string]interface{} {
@@ -168,7 +191,7 @@ func TestAuthHandler_Register(t *testing.T) {
 			t.Parallel()
 
 			client := &mockUserClient{registerFn: tt.mockFn}
-			h := NewAuthHandler(client, false)
+			h := NewAuthHandler(client, false, "test-session-secret")
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -179,7 +202,11 @@ func TestAuthHandler_Register(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, rec.Code)
 			result := decodeJSONResponse(t, rec)
 			if tt.wantField != "" {
-				assert.Equal(t, tt.wantValue, result[tt.wantField])
+				// decodeJSON helper appends the underlying JSON parse error to
+				// "invalid request body" — assert with prefix instead of equal.
+				gotStr, _ := result[tt.wantField].(string)
+				assert.True(t, strings.HasPrefix(gotStr, tt.wantValue),
+					"expected %q to have prefix %q", gotStr, tt.wantValue)
 			}
 		})
 	}
@@ -205,7 +232,7 @@ func TestAuthHandler_Login(t *testing.T) {
 					AccessToken:          "jwt-token",
 					AccessTokenExpiresAt: timestamppb.Now(),
 					RefreshToken:         "refresh-token",
-					MfaRequired:         false,
+					MfaRequired:          false,
 				}, nil
 			},
 			wantStatus: http.StatusOK,
@@ -237,7 +264,7 @@ func TestAuthHandler_Login(t *testing.T) {
 			t.Parallel()
 
 			client := &mockUserClient{loginFn: tt.mockFn}
-			h := NewAuthHandler(client, false)
+			h := NewAuthHandler(client, false, "test-session-secret")
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -289,7 +316,7 @@ func TestAuthHandler_VerifyEmail(t *testing.T) {
 			t.Parallel()
 
 			client := &mockUserClient{verifyEmailFn: tt.mockFn}
-			h := NewAuthHandler(client, false)
+			h := NewAuthHandler(client, false, "test-session-secret")
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/verify-email", bytes.NewBufferString(tt.body))
 			rec := httptest.NewRecorder()
@@ -342,9 +369,9 @@ func TestJobHandler_Create(t *testing.T) {
 			wantStatus: http.StatusUnauthorized,
 		},
 		{
-			name:      "invalid_body_returns_400",
-			body:      `{bad json`,
-			hasClaims: true,
+			name:       "invalid_body_returns_400",
+			body:       `{bad json`,
+			hasClaims:  true,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
@@ -365,7 +392,7 @@ func TestJobHandler_Create(t *testing.T) {
 			t.Parallel()
 
 			client := &mockJobClient{createJobFn: tt.mockFn}
-			h := NewJobHandler(client, nil)
+			h := NewJobHandler(client, nil, nil, nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -399,7 +426,7 @@ func TestJobHandler_Search(t *testing.T) {
 			}, nil
 		},
 	}
-	h := NewJobHandler(client, nil)
+	h := NewJobHandler(client, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?q=plumbing", nil)
 	rec := httptest.NewRecorder()
@@ -413,6 +440,54 @@ func TestJobHandler_Search(t *testing.T) {
 	assert.Len(t, jobs, 2)
 }
 
+func TestJobHandler_Search_forwards_status(t *testing.T) {
+	t.Parallel()
+
+	var got *jobv1.JobStatus
+	client := &mockJobClient{
+		searchJobsFn: func(_ context.Context, req *jobv1.SearchJobsRequest) (*jobv1.SearchJobsResponse, error) {
+			got = req.StatusFilter
+			return &jobv1.SearchJobsResponse{Jobs: []*jobv1.Job{}}, nil
+		},
+	}
+	h := NewJobHandler(client, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?page=1&page_size=5&status=open", nil)
+	rec := httptest.NewRecorder()
+	h.Search(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, got)
+	assert.Equal(t, jobv1.JobStatus_JOB_STATUS_ACTIVE, *got)
+}
+
+func TestJobHandler_Search_openOmitsPastDeadlineActiveRows(t *testing.T) {
+	t.Parallel()
+	past := timestamppb.New(time.Now().Add(-time.Hour))
+	client := &mockJobClient{
+		searchJobsFn: func(_ context.Context, _ *jobv1.SearchJobsRequest) (*jobv1.SearchJobsResponse, error) {
+			return &jobv1.SearchJobsResponse{
+				Jobs: []*jobv1.Job{
+					{Id: "live", Status: jobv1.JobStatus_JOB_STATUS_ACTIVE, AuctionEndsAt: timestamppb.New(time.Now().Add(time.Hour))},
+					{Id: "stale", Status: jobv1.JobStatus_JOB_STATUS_ACTIVE, AuctionEndsAt: past},
+				},
+			}, nil
+		},
+	}
+	h := NewJobHandler(client, nil, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?page=1&page_size=20&status=open", nil)
+	rec := httptest.NewRecorder()
+	h.Search(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body struct {
+		Jobs []map[string]interface{} `json:"jobs"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Jobs, 1)
+	assert.Equal(t, "live", body.Jobs[0]["id"])
+	assert.Equal(t, "active", body.Jobs[0]["status"])
+}
+
 func TestJobHandler_Search_grpc_error(t *testing.T) {
 	t.Parallel()
 
@@ -421,7 +496,7 @@ func TestJobHandler_Search_grpc_error(t *testing.T) {
 			return nil, status.Error(codes.Internal, "search unavailable")
 		},
 	}
-	h := NewJobHandler(client, nil)
+	h := NewJobHandler(client, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?q=test", nil)
 	rec := httptest.NewRecorder()
@@ -429,6 +504,85 @@ func TestJobHandler_Search_grpc_error(t *testing.T) {
 	h.Search(rec, req)
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// TestJobHandler_Update_forwards_customer_id verifies the IDOR fix: the gateway
+// MUST forward the authenticated caller's user ID as CustomerId so the job
+// service can enforce ownership in the SQL WHERE clause. Without this, user B
+// could update user A's draft.
+func TestJobHandler_Update_forwards_customer_id(t *testing.T) {
+	t.Parallel()
+
+	var receivedCustomerID, receivedJobID string
+	client := &mockJobClient{
+		updateJobFn: func(_ context.Context, req *jobv1.UpdateJobRequest) (*jobv1.UpdateJobResponse, error) {
+			receivedCustomerID = req.GetCustomerId()
+			receivedJobID = req.GetJobId()
+			return &jobv1.UpdateJobResponse{Job: &jobv1.Job{Id: req.GetJobId(), CustomerId: req.GetCustomerId()}}, nil
+		},
+	}
+	h := NewJobHandler(client, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/jobs/job-1", bytes.NewBufferString(`{"title":"New Title"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req = addClaimsToRequest(req, "user-authenticated", "a@example.com", []string{"customer"})
+	// Inject the Chi URL param that the handler reads.
+	req = withChiURLParam(req, "id", "job-1")
+
+	rec := httptest.NewRecorder()
+	h.Update(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "user-authenticated", receivedCustomerID, "gateway must forward authenticated user ID as CustomerId")
+	assert.Equal(t, "job-1", receivedJobID)
+}
+
+// TestJobHandler_Delete_forwards_customer_id verifies the same IDOR fix for DeleteDraft.
+func TestJobHandler_Delete_forwards_customer_id(t *testing.T) {
+	t.Parallel()
+
+	var receivedCustomerID string
+	client := &mockJobClient{
+		deleteDraftFn: func(_ context.Context, req *jobv1.DeleteDraftRequest) (*jobv1.DeleteDraftResponse, error) {
+			receivedCustomerID = req.GetCustomerId()
+			return &jobv1.DeleteDraftResponse{}, nil
+		},
+	}
+	h := NewJobHandler(client, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/jobs/job-1", nil)
+	req = addClaimsToRequest(req, "user-authenticated", "a@example.com", []string{"customer"})
+	req = withChiURLParam(req, "id", "job-1")
+
+	rec := httptest.NewRecorder()
+	h.Delete(rec, req)
+
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+	assert.Equal(t, "user-authenticated", receivedCustomerID, "gateway must forward authenticated user ID as CustomerId")
+}
+
+// TestJobHandler_Publish_forwards_customer_id verifies the same IDOR fix for PublishJob.
+func TestJobHandler_Publish_forwards_customer_id(t *testing.T) {
+	t.Parallel()
+
+	var receivedCustomerID string
+	client := &mockJobClient{
+		publishJobFn: func(_ context.Context, req *jobv1.PublishJobRequest) (*jobv1.PublishJobResponse, error) {
+			receivedCustomerID = req.GetCustomerId()
+			return &jobv1.PublishJobResponse{Job: &jobv1.Job{Id: req.GetJobId(), Status: jobv1.JobStatus_JOB_STATUS_ACTIVE}}, nil
+		},
+	}
+	h := NewJobHandler(client, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/job-1/publish", nil)
+	req = addClaimsToRequest(req, "user-authenticated", "a@example.com", []string{"customer"})
+	req = withChiURLParam(req, "id", "job-1")
+
+	rec := httptest.NewRecorder()
+	h.Publish(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "user-authenticated", receivedCustomerID, "gateway must forward authenticated user ID as CustomerId")
 }
 
 // --- SubscriptionHandler tests ---
@@ -555,11 +709,11 @@ func TestWriteGRPCError_mapping(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		grpcCode   codes.Code
-		grpcMsg    string
-		wantHTTP   int
-		wantMsg    string
+		name     string
+		grpcCode codes.Code
+		grpcMsg  string
+		wantHTTP int
+		wantMsg  string
 	}{
 		{
 			name:     "already_exists_to_409",
@@ -654,26 +808,41 @@ func TestExtractIP(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		forwarded string
-		realIP    string
+		name       string
+		forwarded  string
+		realIP     string
 		remoteAddr string
-		wantIP    string
+		wantIP     string
 	}{
 		{
-			name:      "x_forwarded_for_first",
-			forwarded: "1.2.3.4, 5.6.7.8",
-			wantIP:    "1.2.3.4",
+			name:       "x_forwarded_for_first_from_trusted_peer",
+			forwarded:  "1.2.3.4, 5.6.7.8",
+			remoteAddr: "127.0.0.1:12345", // loopback is a trusted proxy by default
+			wantIP:     "1.2.3.4",
 		},
 		{
-			name:      "x_forwarded_for_single",
-			forwarded: "10.0.0.1",
-			wantIP:    "10.0.0.1",
+			name:       "x_forwarded_for_single_from_trusted_peer",
+			forwarded:  "10.0.0.1",
+			remoteAddr: "127.0.0.1:12345",
+			wantIP:     "10.0.0.1",
 		},
 		{
-			name:   "x_real_ip",
-			realIP: "192.168.1.1",
-			wantIP: "192.168.1.1",
+			name:       "x_real_ip_from_trusted_peer",
+			realIP:     "192.168.1.1",
+			remoteAddr: "127.0.0.1:12345",
+			wantIP:     "192.168.1.1",
+		},
+		{
+			name:       "x_forwarded_for_ignored_from_untrusted_peer",
+			forwarded:  "10.0.0.1",
+			remoteAddr: "203.0.113.7:12345", // public IP, not a trusted proxy
+			wantIP:     "203.0.113.7",
+		},
+		{
+			name:       "x_real_ip_ignored_from_untrusted_peer",
+			realIP:     "10.0.0.1",
+			remoteAddr: "203.0.113.7:12345",
+			wantIP:     "203.0.113.7",
 		},
 		{
 			name:       "remote_addr_with_port",

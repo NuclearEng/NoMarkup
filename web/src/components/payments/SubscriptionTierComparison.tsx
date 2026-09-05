@@ -4,7 +4,7 @@ import { Check, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { formatCents } from '@/lib/utils';
+import { formatCents, subscriptionTierLabel } from '@/lib/utils';
 import { BILLING_INTERVAL } from '@/types';
 import type { BillingInterval, SubscriptionTier } from '@/types';
 
@@ -28,9 +28,11 @@ const FEATURE_ROWS: FeatureRow[] = [
   },
   {
     label: 'Fee discount',
+    // fee_discount_percentage is a fraction (e.g. 0.10 = 10% off), so scale to
+    // a whole-number percentage for display — matching the usage fee readout.
     getValue: (t) =>
       t.fee_discount_percentage > 0
-        ? `${String(t.fee_discount_percentage)}%`
+        ? `${String(Math.round(t.fee_discount_percentage * 100))}%`
         : '-',
   },
   {
@@ -58,7 +60,7 @@ const FEATURE_ROWS: FeatureRow[] = [
 function CellValue({ value }: { value: string | boolean }) {
   if (typeof value === 'boolean') {
     return value ? (
-      <Check className="mx-auto h-4 w-4 text-emerald-500" aria-label="Included" />
+      <Check className="mx-auto h-4 w-4 text-trust-high" aria-label="Included" />
     ) : (
       <X className="mx-auto h-4 w-4 text-muted-foreground/40" aria-label="Not included" />
     );
@@ -109,7 +111,7 @@ export function SubscriptionTierComparison({
                   )}
                 >
                   <div className="space-y-1">
-                    <p className="text-sm font-semibold">{tier.name}</p>
+                    <p className="text-sm font-semibold">{subscriptionTierLabel(tier)}</p>
                     <p className="text-lg font-bold">{formatCents(monthlyEquivalent)}</p>
                     <p className="text-xs text-muted-foreground">
                       {billingInterval === BILLING_INTERVAL.ANNUAL
@@ -166,8 +168,8 @@ export function SubscriptionTierComparison({
                     onClick={() => { onSelectTier(tier.id); }}
                     aria-label={
                       isCurrent
-                        ? `Current plan - ${tier.name}`
-                        : `Select ${tier.name}`
+                        ? `Current plan - ${subscriptionTierLabel(tier)}`
+                        : `Select ${subscriptionTierLabel(tier)}`
                     }
                   >
                     {isCurrent ? 'Current' : 'Select'}

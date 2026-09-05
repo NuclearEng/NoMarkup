@@ -7,6 +7,7 @@ import { useInstantPayout } from '@/hooks/usePayments';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { formatCents } from '@/lib/utils';
 
 interface InstantPayoutButtonProps {
@@ -14,17 +15,24 @@ interface InstantPayoutButtonProps {
 }
 
 export function InstantPayoutButton({ availableBalanceCents = 0 }: InstantPayoutButtonProps) {
+  const instantPayoutEnabled = useFeatureFlag('instant_payout');
   const [amountDollars, setAmountDollars] = useState<string>(
     availableBalanceCents > 0 ? String(Math.floor(availableBalanceCents / 100)) : '',
   );
   const instantPayout = useInstantPayout();
 
-  const amountCents = Math.round(parseFloat(amountDollars || '0') * 100);
-  const feeCents = Math.round(amountCents * 0.01);
-  const netCents = amountCents - feeCents;
-  const isValid = amountCents > 0 && amountCents <= availableBalanceCents;
+  // Hide the entry point entirely when the feature is off (admin toggle).
+  // The gateway also enforces this with a 503, so this is the UX layer.
+  if (!instantPayoutEnabled) return null;
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  const amountCents = Math.round(parseFloat(amountDollars || '0') * 100);
+  // Server: 150 bps (1.5%) with ceiling half-up + $1.00 floor — keep display honest.
+  const percentFee = Math.ceil((amountCents * 150) / 10_000);
+  const feeCents = Math.max(100, percentFee);
+  const netCents = amountCents - feeCents;
+  const isValid = amountCents > 0 && amountCents <= availableBalanceCents && netCents > 0;
+
+  function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!isValid) return;
     instantPayout.mutate(amountCents);
@@ -38,8 +46,8 @@ export function InstantPayoutButton({ availableBalanceCents = 0 }: InstantPayout
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-zinc-400">
-          Get paid now. <span className="text-zinc-300 font-medium">1% fee.</span> Funds arrive
-          within minutes.
+          Get paid now. <span className="text-zinc-300 font-medium">1.5% fee ($1 minimum).</span>{' '}
+          Funds arrive within minutes.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -78,7 +86,7 @@ export function InstantPayoutButton({ availableBalanceCents = 0 }: InstantPayout
                 <span className="text-zinc-300">{formatCents(amountCents)}</span>
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-zinc-400">Fee (1%)</span>
+                <span className="text-zinc-400">Fee (1.5%, $1 min)</span>
                 <span className="text-zinc-400">-{formatCents(feeCents)}</span>
               </div>
               <div className="glass-divider" aria-hidden="true" />

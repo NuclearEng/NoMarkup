@@ -2,7 +2,6 @@ import { test } from '@playwright/test';
 
 import {
   expect,
-  expectHasHeadings,
   expectNavSidebar,
   expectNotErrorPage,
   expectPageLoaded,
@@ -36,9 +35,9 @@ test.describe('Customer: Login & Dashboard', () => {
       });
     }
 
-    // Verify quick action cards exist
-    await expect(page.getByText('Post a Job')).toBeVisible();
-    await expect(page.getByText('My Contracts')).toBeVisible();
+    // Verify quick action cards exist - use href or role with partial to avoid ambiguity
+    await expect(page.locator('a[href="/jobs/new"]')).toBeVisible();
+    await expect(page.locator('a[href="/contracts"]')).toBeVisible();
 
     // Verify nav sidebar is present
     await expectNavSidebar(page);
@@ -54,7 +53,7 @@ test.describe.serial('Customer: Job Creation Wizard', () => {
   });
 
   test.afterAll(async () => {
-    await sharedPage?.close();
+    await sharedPage.close();
   });
 
   test('navigates to /jobs/new and sees the wizard', async () => {
@@ -74,36 +73,39 @@ test.describe.serial('Customer: Job Creation Wizard', () => {
     const categoryButtons = categoryList.getByRole('button');
     await expect(categoryButtons.first()).toBeVisible({ timeout: 15_000 });
 
-    // Click Plumbing (or first available)
-    const plumbingButton = sharedPage.getByRole('button', { name: /Plumbing/i });
-    if ((await plumbingButton.count()) > 0) {
-      await plumbingButton.first().click();
-    } else {
-      await categoryButtons.first().click();
-    }
+    // Click first available top level (Plumbing or any)
+    await categoryButtons.first().click();
 
-    // If subcategories appeared, drill down and check a leaf
-    await sharedPage.waitForTimeout(500);
+    // Wait for either sub level or selection
+    await sharedPage.waitForTimeout(800);
+
+    // Try to select a leaf if checkboxes appear
+    let selected = false;
     const checkboxes = sharedPage.getByRole('checkbox');
     if ((await checkboxes.count()) > 0) {
       await checkboxes.first().check();
+      selected = true;
     } else {
-      // Still a drill-down level
       const subButtons = sharedPage.locator('ul[aria-label="Categories"]').getByRole('button');
       if ((await subButtons.count()) > 0) {
         await subButtons.first().click();
-        await sharedPage.waitForTimeout(500);
+        await sharedPage.waitForTimeout(800);
         const leafCheckboxes = sharedPage.getByRole('checkbox');
         if ((await leafCheckboxes.count()) > 0) {
           await leafCheckboxes.first().check();
+          selected = true;
         }
       }
     }
 
-    // Verify category was selected
-    const selectedBadges = sharedPage.locator('[aria-label="Selected categories"]');
-    const selectedHint = sharedPage.getByText(/Category selected/i);
-    expect((await selectedBadges.count()) > 0 || (await selectedHint.count()) > 0).toBeTruthy();
+    // If no leaf, perhaps top level is selectable or use hint
+    if (!selected) {
+      // click again or accept top level
+      await categoryButtons.first().click();
+    }
+
+    // Verify category was selected by ensuring a checkbox is checked (the UI indicator)
+    await expect(sharedPage.getByRole('checkbox').first()).toBeChecked({ timeout: 5000 });
 
     // Click Next (exact match to avoid Next.js dev tools button)
     await sharedPage.getByRole('button', { name: 'Next', exact: true }).click();
@@ -176,8 +178,8 @@ test.describe.serial('Customer: Job Creation Wizard', () => {
     await expect(numberInputs.first()).toBeVisible();
     await numberInputs.first().fill('100');
 
-    // Verify slider is visible
-    expect(await sharedPage.getByRole('slider').count()).toBeGreaterThanOrEqual(1);
+    // Auction duration control must be present (QA-07: not count >= 1 alone)
+    await expect(sharedPage.getByRole('slider').first()).toBeVisible({ timeout: 10_000 });
 
     // Fill instant accept price (second number input)
     if ((await numberInputs.count()) >= 2) {
@@ -215,15 +217,17 @@ test.describe('Customer: My Jobs', () => {
     await loginAs(page, 'customer');
     await navigateTo(page, '/jobs/mine', 'customer');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /My Jobs/i);
     await expectNotErrorPage(page);
 
-    // The page either shows job cards or an empty state — both are valid
-    const hasContent =
-      (await page.getByRole('tab').count()) > 0 ||
-      (await page.getByText(/no.*job/i).count()) > 0 ||
-      (await page.getByRole('link').count()) > 0;
-    expect(hasContent).toBeTruthy();
+    // Job cards, tabs, or empty copy — not "any link" in chrome (QA-07).
+    await expect(
+      page
+        .getByRole('tab')
+        .or(page.getByText(/no.*job|haven't posted|no results/i))
+        .or(page.locator('a[href*="/jobs/"]').filter({ hasNotText: /new|mine/i }))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -281,11 +285,11 @@ test.describe('Customer: Profile', () => {
     await expectNotErrorPage(page);
     await page.waitForTimeout(2_000);
 
-    // Verify email is displayed
-    expect(await page.getByText(/customer@nomarkup\.com/i).count()).toBeGreaterThanOrEqual(1);
-
-    // Verify role badge
-    expect(await page.getByText(/customer/i).count()).toBeGreaterThanOrEqual(1);
+    // Seed customer identity (QA-07: visible text, not count >= 1)
+    await expect(page.getByText(/customer@nomarkup\.com/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByText(/^customer$/i).first()).toBeVisible({ timeout: 10_000 });
 
     // Click "Edit Profile" and verify form appears
     const editBtn = page.getByRole('button', { name: /Edit Profile/i });
@@ -304,16 +308,28 @@ test.describe('Customer: Settings Pages', () => {
 
     await expectPageLoaded(page, /Payment Methods/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    // Customer payment-methods chrome: add control + saved methods section
+    await expect(
+      page
+        .getByRole('button', { name: /Add Method/i })
+        .or(page.getByText(/Saved Payment Methods/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('notification preferences page loads', async ({ page }) => {
     await loginAs(page, 'customer');
     await navigateTo(page, '/settings/notifications', 'customer');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Notification Preferences/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expect(
+      page
+        .getByRole('heading', { name: /Global Settings/i })
+        .or(page.getByText(/Email notifications/i))
+        .or(page.getByRole('switch').first())
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('security settings page loads', async ({ page }) => {
@@ -340,10 +356,14 @@ test.describe('Customer: Analytics', () => {
     await expectNotErrorPage(page);
     await page.waitForTimeout(3_000);
 
-    // Verify analytics content rendered
-    const hasSelector = (await page.getByRole('combobox').count()) > 0;
-    const hasHeadings = (await page.getByRole('heading').count()) > 0;
-    expect(hasSelector || hasHeadings).toBeTruthy();
+    // Analytics must show a period control and/or metric chrome — heading alone
+    // is not enough (QA-07).
+    await expect(
+      page
+        .getByRole('combobox')
+        .or(page.getByText(/spend|jobs posted|saved|period|last \d+ days/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -355,9 +375,12 @@ test.describe('Customer: Messages', () => {
     await expectPageLoaded(page, /Messages/i);
     await expectNotErrorPage(page);
 
-    const emptyState = page.getByText(/Select a conversation/i);
-    const channelList = page.getByRole('navigation');
-    expect((await emptyState.count()) > 0 || (await channelList.count()) > 0).toBeTruthy();
+    await expect(
+      page
+        .getByText(/Select a conversation|No messages yet/i)
+        .or(page.getByRole('listitem'))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -366,9 +389,16 @@ test.describe('Customer: Notifications', () => {
     await loginAs(page, 'customer');
     await navigateTo(page, '/notifications', 'customer');
 
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Notifications/i);
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    // Filter + mark-all chrome, list items, or empty state (QA-07)
+    await expect(
+      page
+        .getByRole('button', { name: /Mark all as read/i })
+        .or(page.getByRole('button', { name: /Unread only/i }))
+        .or(page.getByText(/no notifications|you're all caught up|nothing here/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
 
@@ -378,12 +408,11 @@ test.describe('Customer: Public Pages (while logged in)', () => {
     await navigateTo(page, '/jobs', 'customer');
 
     await expectNotErrorPage(page);
-    await expectHasHeadings(page);
+    await expectPageLoaded(page, /Find\s+Jobs/i);
 
-    const searchInput = page.getByPlaceholder(/search|find/i);
-    const filterCombobox = page.getByRole('combobox');
-    const hasSearchOrFilter = (await searchInput.count()) > 0 || (await filterCombobox.count()) > 0;
-    expect(hasSearchOrFilter).toBeTruthy();
+    await expect(
+      page.getByPlaceholder(/search|find/i).or(page.getByRole('combobox')).first(),
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test('providers page loads', async ({ page }) => {
@@ -391,7 +420,13 @@ test.describe('Customer: Public Pages (while logged in)', () => {
     await navigateTo(page, '/providers', 'customer');
 
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expectPageLoaded(page, /Find\s+Providers/i);
+    await expect(
+      page
+        .getByPlaceholder(/Search by name|business|category/i)
+        .or(page.getByRole('button', { name: /^Search$/i }))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('pricing page loads', async ({ page }) => {
@@ -399,6 +434,13 @@ test.describe('Customer: Public Pages (while logged in)', () => {
     await navigateTo(page, '/pricing', 'customer');
 
     await expectNotErrorPage(page);
-    expect(await page.getByRole('heading').count()).toBeGreaterThanOrEqual(1);
+    await expectPageLoaded(page, /Real prices|Fair Price Index/i);
+    await expect(
+      page
+        .getByLabel(/ZIP/i)
+        .or(page.getByPlaceholder(/ZIP|zip code/i))
+        .or(page.getByText(/Fair Price Index/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
   });
 });

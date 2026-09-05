@@ -1,0 +1,67 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": [
+          "6L6565278C.com.nomarkup.app"
+        ],
+        "components": [
+          {
+            "/": "/jobs/*",
+            "comment": "Service job detail"
+          },
+          {
+            "/": "/jobs",
+            "comment": "Jobs browse"
+          },
+          {
+            "/": "/listings/*",
+            "comment": "Goods listing detail"
+          },
+          {
+            "/": "/marketplace/*",
+            "comment": "Marketplace listing / auction paths"
+          },
+          {
+            "/": "/marketplace",
+            "comment": "Marketplace root"
+          },
+          {
+            "/": "/auctions/*",
+            "comment": "Auction deep links (listing alias)"
+          },
+          {
+            "/": "/contracts/*",
+            "comment": "Contract detail"
+          },
+          {
+            "/": "/orders/*",
+            "comment": "Order detail"
+          },
+          {
+            "/": "/orders",
+            "comment": "Orders list"
+          },
+          {
+            "/": "/messages/*",
+            "comment": "Chat / messages"
+          },
+          {
+            "/": "/messages",
+            "comment": "Messages root"
+          },
+          {
+            "/": "/chat/*",
+            "comment": "Chat alias"
+          }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "6L6565278C.com.nomarkup.app"
+    ]
+  }
+}

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	"github.com/nomarkup/nomarkup/services/notification/internal/domain"
 	"github.com/nomarkup/nomarkup/services/notification/internal/service"
 	grpclib "google.golang.org/grpc"
@@ -326,6 +326,8 @@ func protoNotificationTypeToString(nt notificationv1.NotificationType) string {
 		return "payment_released"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED:
 		return "payment_failed"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED:
+		return "payment_authentication_required"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT:
 		return "payout_sent"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_NEW_MESSAGE:
@@ -356,6 +358,12 @@ func protoNotificationTypeToString(nt notificationv1.NotificationType) string {
 		return "recurring_upcoming"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_INSTANCE_READY:
 		return "recurring_instance_ready"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH:
+		return "wishlist_match"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_BID_OUTBID:
+		return "bid_outbid"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED:
+		return "job_matched"
 	default:
 		return "unspecified"
 	}
@@ -397,6 +405,8 @@ func stringToProtoNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_RELEASED
 	case "payment_failed":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED
+	case "payment_authentication_required":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED
 	case "payout_sent":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT
 	case "new_message":
@@ -427,6 +437,12 @@ func stringToProtoNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_UPCOMING
 	case "recurring_instance_ready":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_INSTANCE_READY
+	case "wishlist_match":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH
+	case "bid_outbid":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_BID_OUTBID
+	case "job_matched":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED
 	default:
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED
 	}
@@ -462,7 +478,10 @@ func stringToProtoChannel(s string) notificationv1.NotificationChannel {
 	}
 }
 
-// protoPlatformToString converts a proto DevicePlatform to a string.
+// protoPlatformToString converts a proto DevicePlatform to a string stored in
+// device_tokens.platform. IOS-SYS.LA.3: DEVICE_PLATFORM_IOS_LIVE_ACTIVITY
+// round-trips as "ios_live_activity" so alert fan-out can exclude LA tokens
+// and SendLiveActivityUpdate can target them.
 func protoPlatformToString(p notificationv1.DevicePlatform) string {
 	switch p {
 	case notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS:
@@ -471,6 +490,8 @@ func protoPlatformToString(p notificationv1.DevicePlatform) string {
 		return "android"
 	case notificationv1.DevicePlatform_DEVICE_PLATFORM_WEB:
 		return "web"
+	case notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS_LIVE_ACTIVITY:
+		return "ios_live_activity"
 	default:
 		return "unknown"
 	}

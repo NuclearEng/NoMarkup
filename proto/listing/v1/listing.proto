@@ -1,0 +1,273 @@
+syntax = "proto3";
+
+package nomarkup.listing.v1;
+
+option go_package = "github.com/nomarkup/nomarkup/proto/listing/v1;listingv1";
+
+import "google/protobuf/timestamp.proto";
+import "common/v1/common.proto";
+
+// ============================================================
+// Listing Service — peer-to-peer goods marketplace (forward auctions).
+//
+// Direction is the inverse of JobService: highest bidder at close wins.
+// Local pickup only in v1; 25-mile radius cap enforced at app layer.
+//
+// ============================================================
+// PATH STATUS (ARC-09) — DO NOT TREAT AS PRIMARY WRITE PATH
+// ============================================================
+// This package defines a *future / secondary* gRPC contract only.
+//
+// Production goods writes (create / update / cancel / place bid / buy-it-now /
+// retract / report) are implemented as **gateway-direct SQL** (pgx):
+//   gateway/internal/handler/listings_write.go
+//   gateway/internal/handler/listings_bid.go
+//   gateway/internal/handler/listings.go  (reads)
+//
+// There is **no** ListingService gRPC server in services/job/internal/grpc/,
+// and the gateway does **not** dial a listing client. Job-service
+// `ListingService` (Go domain + repository) is used for auction-close /
+// Meilisearch lifecycle workers — not as a gRPC mesh surface for HTTP writes.
+//
+// Do not implement dual-write (gateway SQL + gRPC) without an explicit
+// migration plan. Until a real server is registered and gateway is switched,
+// treat this .proto as schema documentation / reserved contract, not the
+// live path. See docs/architecture.md and docs/marketplace.md.
+// ============================================================
+
+service ListingService {
+  // Listing CRUD
+  rpc CreateListing(CreateListingRequest) returns (CreateListingResponse);
+  rpc GetListing(GetListingRequest) returns (GetListingResponse);
+  rpc ListListings(ListListingsRequest) returns (ListListingsResponse);
+  rpc UpdateListing(UpdateListingRequest) returns (UpdateListingResponse);
+  rpc CancelListing(CancelListingRequest) returns (CancelListingResponse);
+
+  // Bidding
+  rpc PlaceListingBid(PlaceListingBidRequest) returns (PlaceListingBidResponse);
+  rpc GetListingBids(GetListingBidsRequest) returns (GetListingBidsResponse);
+
+  // Post-award
+  rpc ConfirmPickup(ConfirmPickupRequest) returns (ConfirmPickupResponse);
+  rpc FileListingDispute(FileListingDisputeRequest) returns (FileListingDisputeResponse);
+}
+
+// ============================================================
+// Listing
+// ============================================================
+
+enum ListingStatus {
+  LISTING_STATUS_UNSPECIFIED = 0;
+  LISTING_STATUS_DRAFT = 1;
+  LISTING_STATUS_ACTIVE = 2;
+  LISTING_STATUS_SOLD = 3;
+  LISTING_STATUS_CANCELLED = 4;
+  LISTING_STATUS_EXPIRED = 5;
+}
+
+enum ListingBidStatus {
+  LISTING_BID_STATUS_UNSPECIFIED = 0;
+  LISTING_BID_STATUS_ACTIVE = 1;     // current high bid
+  LISTING_BID_STATUS_OUTBID = 2;
+  LISTING_BID_STATUS_WINNING = 3;    // post-close, pre-award
+  LISTING_BID_STATUS_AWARDED = 4;    // post-award
+  LISTING_BID_STATUS_WITHDRAWN = 5;
+}
+
+enum EscrowStatus {
+  ESCROW_STATUS_UNSPECIFIED = 0;
+  ESCROW_STATUS_HELD = 1;
+  ESCROW_STATUS_PICKUP_CONFIRMED = 2;
+  ESCROW_STATUS_RELEASED = 3;
+  ESCROW_STATUS_DISPUTED = 4;
+  ESCROW_STATUS_REFUNDED = 5;
+}
+
+message Listing {
+  string id = 1;
+  string seller_id = 2;
+  string title = 3;
+  string description = 4;
+  string category_id = 5;
+  // Location
+  nomarkup.common.v1.Location location = 6;
+  string pickup_address = 7;
+  string pickup_zip_code = 8;
+  // Pricing — forward auction (ascending).
+  int64 starting_price_cents = 9;
+  optional int64 current_bid_cents = 10;
+  optional string current_bidder_id = 11;
+  int32 bid_count = 12;
+  // Auction window. Allowed durations: 24h / 48h / 168h (7-day).
+  int32 auction_duration_hours = 13;
+  google.protobuf.Timestamp auction_ends_at = 14;
+  google.protobuf.Timestamp original_auction_ends_at = 15;
+  int32 snipe_extension_count = 16;
+  // Lifecycle
+  ListingStatus status = 17;
+  // Photos (sorted)
+  repeated ListingPhoto photos = 18;
+  // Timestamps
+  google.protobuf.Timestamp created_at = 19;
+  google.protobuf.Timestamp updated_at = 20;
+}
+
+message ListingPhoto {
+  string id = 1;
+  string url = 2;
+  int32 sort_order = 3;
+}
+
+message ListingBid {
+  string id = 1;
+  string listing_id = 2;
+  string bidder_id = 3;
+  int64 amount_cents = 4;
+  ListingBidStatus status = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message ListingOrder {
+  string id = 1;
+  string listing_id = 2;
+  string seller_id = 3;
+  string buyer_id = 4;
+  int64 amount_cents = 5;
+  int64 fee_cents = 6;
+  EscrowStatus escrow_status = 7;
+  string payment_intent_id = 8;
+  optional google.protobuf.Timestamp pickup_confirmed_at = 9;
+  optional google.protobuf.Timestamp released_at = 10;
+  optional string dispute_id = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+// ============================================================
+// CRUD messages
+// ============================================================
+
+message CreateListingRequest {
+  string seller_id = 1;
+  string title = 2;
+  string description = 3;
+  string category_id = 4;
+  nomarkup.common.v1.Location location = 5;
+  string pickup_address = 6;
+  string pickup_zip_code = 7;
+  int64 starting_price_cents = 8;
+  int32 auction_duration_hours = 9;  // 24, 48, or 168
+  repeated string photo_urls = 10;
+  bool publish = 11;  // true = skip draft, go straight to active
+}
+
+message CreateListingResponse {
+  Listing listing = 1;
+}
+
+message GetListingRequest {
+  string listing_id = 1;
+  string requesting_user_id = 2;
+}
+
+message GetListingResponse {
+  Listing listing = 1;
+}
+
+message ListListingsRequest {
+  optional ListingStatus status_filter = 1;
+  optional string seller_id = 2;
+  optional string category_id = 3;
+  // Buyer-side filters
+  optional nomarkup.common.v1.Location near = 4;
+  optional double radius_miles = 5;  // capped at 25
+  optional int64 max_price_cents = 6;
+  string text_query = 7;
+  nomarkup.common.v1.PaginationRequest pagination = 8;
+}
+
+message ListListingsResponse {
+  repeated Listing listings = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+message UpdateListingRequest {
+  string listing_id = 1;
+  string seller_id = 2;
+  optional string title = 3;
+  optional string description = 4;
+  optional int64 starting_price_cents = 5;
+  optional int32 auction_duration_hours = 6;
+  repeated string photo_urls = 7;
+}
+
+message UpdateListingResponse {
+  Listing listing = 1;
+}
+
+message CancelListingRequest {
+  string listing_id = 1;
+  string seller_id = 2;
+  string reason = 3;
+}
+
+message CancelListingResponse {
+  Listing listing = 1;
+}
+
+// ============================================================
+// Bidding
+// ============================================================
+
+message PlaceListingBidRequest {
+  string listing_id = 1;
+  string bidder_id = 2;
+  int64 amount_cents = 3;  // MUST be > listings.current_bid_cents
+  string ip_address = 4;
+  string fingerprint = 5;
+}
+
+message PlaceListingBidResponse {
+  ListingBid bid = 1;
+  // If the bid landed within 60s of close, the auction was extended by 5min.
+  bool snipe_extension_triggered = 2;
+  google.protobuf.Timestamp new_auction_ends_at = 3;
+  int32 snipe_extension_count = 4;
+}
+
+message GetListingBidsRequest {
+  string listing_id = 1;
+  string requesting_user_id = 2;
+  nomarkup.common.v1.PaginationRequest pagination = 3;
+}
+
+message GetListingBidsResponse {
+  repeated ListingBid bids = 1;
+  nomarkup.common.v1.PaginationResponse pagination = 2;
+}
+
+// ============================================================
+// Post-award
+// ============================================================
+
+message ConfirmPickupRequest {
+  string order_id = 1;
+  string buyer_id = 2;  // only the buyer can confirm pickup
+}
+
+message ConfirmPickupResponse {
+  ListingOrder order = 1;
+}
+
+message FileListingDisputeRequest {
+  string order_id = 1;
+  string filing_user_id = 2;
+  string dispute_type = 3;  // 'item_not_as_described' | 'no_show' | 'other'
+  string description = 4;
+  repeated string evidence_urls = 5;
+}
+
+message FileListingDisputeResponse {
+  string dispute_id = 1;
+  ListingOrder order = 2;
+}

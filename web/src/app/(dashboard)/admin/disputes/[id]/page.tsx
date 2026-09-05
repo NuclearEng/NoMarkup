@@ -5,6 +5,7 @@ import { useState } from 'react';
 import type { Route } from 'next';
 import { useParams, useRouter } from 'next/navigation';
 
+import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/ui/breadcrumb';
@@ -26,7 +27,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAdminDispute, useResolveDispute } from '@/hooks/useAdmin';
 import { DISPUTE_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn, formatCents } from '@/lib/utils';
-import type { DisputeResolutionType } from '@/types';
+import type { Dispute, DisputeResolutionType } from '@/types';
 import { DISPUTE_RESOLUTION_TYPE, DISPUTE_STATUS } from '@/types';
 
 const RESOLUTION_LABELS: Record<DisputeResolutionType, string> = {
@@ -46,6 +47,18 @@ function formatDate(dateStr: string): string {
   });
 }
 
+// The contract service identifies the filer as `opened_by`; older responses
+// aliased it as `initiated_by`. Read whichever is present, null-safe.
+function disputeInitiator(dispute: Dispute): string {
+  return dispute.opened_by ?? dispute.initiated_by ?? '';
+}
+
+// The contract service describes a dispute via `description` (with `dispute_type`
+// as a fallback); `reason` is the legacy alias.
+function disputeReason(dispute: Dispute): string {
+  return dispute.reason ?? dispute.description ?? dispute.dispute_type ?? '';
+}
+
 export default function AdminDisputeDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -58,6 +71,7 @@ export default function AdminDisputeDetailPage() {
   const [notes, setNotes] = useState('');
   const [refundCents, setRefundCents] = useState('');
   const [guaranteeClaim, setGuaranteeClaim] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const dispute = data?.dispute;
   const isResolved = dispute?.status === DISPUTE_STATUS.RESOLVED;
@@ -72,6 +86,7 @@ export default function AdminDisputeDetailPage() {
       refund_amount_cents: parsedRefund,
       guarantee_claim: guaranteeClaim,
     });
+    setConfirmOpen(false);
     router.push('/admin/disputes' as Route);
   }
 
@@ -168,7 +183,7 @@ export default function AdminDisputeDetailPage() {
             </div>
             <div>
               <span className="text-zinc-300">Initiated By</span>
-              <p className="mt-1">{dispute.initiator_name ?? dispute.initiated_by.slice(0, 12)}</p>
+              <p className="mt-1">{dispute.initiator_name ?? disputeInitiator(dispute).slice(0, 12)}</p>
             </div>
             <div>
               <span className="text-zinc-300">Respondent</span>
@@ -196,7 +211,7 @@ export default function AdminDisputeDetailPage() {
 
           <div className="mt-4">
             <span className="text-zinc-300 text-sm">Reason</span>
-            <p className="mt-1 text-sm">{dispute.reason}</p>
+            <p className="mt-1 text-sm">{disputeReason(dispute)}</p>
           </div>
 
           {dispute.resolution_notes ? (
@@ -288,7 +303,7 @@ export default function AdminDisputeDetailPage() {
               className="min-h-[44px]"
               disabled={!resolutionType || resolveMutation.isPending}
               onClick={() => {
-                void handleResolve();
+                setConfirmOpen(true);
               }}
             >
               {resolveMutation.isPending ? 'Resolving...' : 'Resolve Dispute'}
@@ -302,6 +317,26 @@ export default function AdminDisputeDetailPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <ActionConfirmDialog
+        open={confirmOpen}
+        onClose={() => {
+          if (!resolveMutation.isPending) setConfirmOpen(false);
+        }}
+        onConfirm={() => {
+          void handleResolve();
+        }}
+        title="Resolve this dispute?"
+        description={
+          refundCents
+            ? `This will apply resolution “${resolutionType}” with a refund of $${refundCents}. Money movement cannot be undone from this screen.`
+            : `This will apply resolution “${resolutionType || '—'}”. Money and guarantee actions cannot be undone from this screen.`
+        }
+        confirmLabel="Resolve dispute"
+        destructive
+        loading={resolveMutation.isPending}
+        confirmDisabled={!resolutionType}
+      />
     </div>
     </PageTransition>
   );

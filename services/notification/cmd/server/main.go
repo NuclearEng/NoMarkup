@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -20,16 +19,20 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	notificationgrpc "github.com/nomarkup/nomarkup/services/notification/internal/grpc"
+	"github.com/nomarkup/nomarkup/services/notification/internal/observability"
 	"github.com/nomarkup/nomarkup/services/notification/internal/repository"
 	"github.com/nomarkup/nomarkup/services/notification/internal/service"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	logger := slog.New(observability.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	}))
+	})))
 	slog.SetDefault(logger)
 
 	port := os.Getenv("NOTIFICATION_SERVICE_PORT")
@@ -71,7 +74,7 @@ func main() {
 	defer stop()
 
 	// Initialize PostgreSQL connection pool.
-	pool, err := pgxpool.New(ctx, databaseURL)
+	pool, err := observability.NewPGXPool(ctx, databaseURL)
 	if err != nil {
 		slog.Error("failed to create database pool", "error", err)
 		os.Exit(1)
@@ -99,9 +102,21 @@ func main() {
 		os.Getenv("SENDGRID_FROM_NAME"),
 	)
 
+	apnsCfg := service.LoadAPNsConfigFromEnv()
 	pushDispatcher := service.NewPushDispatcher(
 		os.Getenv("FCM_SERVER_KEY"),
 		os.Getenv("FCM_PROJECT_ID"),
+		apnsCfg,
+	)
+
+	// W3C Web Push (RFC 8030) dispatcher — coexists with FCM/APNs. When
+	// VAPID_PRIVATE_KEY is empty, the dispatcher logs and skips
+	// (dev-mode parity with FCM/APNs).
+	webPushDispatcher := service.NewWebPushDispatcher(
+		pool,
+		os.Getenv("VAPID_PUBLIC_KEY"),
+		os.Getenv("VAPID_PRIVATE_KEY"),
+		os.Getenv("VAPID_SUBJECT"),
 	)
 
 	smsDispatcher := service.NewSMSDispatcher(
@@ -115,16 +130,58 @@ func main() {
 		slog.Info("email dispatcher running in dev mode (SENDGRID_API_KEY not set)")
 	}
 	if os.Getenv("FCM_SERVER_KEY") == "" {
-		slog.Info("push dispatcher running in dev mode (FCM_SERVER_KEY not set)")
+		slog.Info("push dispatcher FCM path running in dev mode (FCM_SERVER_KEY not set)")
+	}
+	if apnsCfg == nil {
+		slog.Info("push dispatcher APNs path running in dev mode (APNS_* keys not fully set)")
+	} else if os.Getenv("APNS_PRODUCTION") == "true" || os.Getenv("APNS_PRODUCTION") == "1" {
+		slog.Info("push dispatcher APNs path enabled (production host)")
+	} else {
+		slog.Info("push dispatcher APNs path enabled (sandbox host)")
+	}
+	if os.Getenv("VAPID_PRIVATE_KEY") == "" {
+		slog.Warn("web push dispatcher running in dev mode (VAPID_PRIVATE_KEY not set) — generate keys with: go run github.com/SherClockHolmes/webpush-go/cmd/webpush-cli@latest generate")
 	}
 	if os.Getenv("TWILIO_ACCOUNT_SID") == "" {
 		slog.Info("sms dispatcher running in dev mode (TWILIO_ACCOUNT_SID not set)")
 	}
 
-	// Wire up dependencies.
+	// Wire up dependencies. repo triples as the notification store, the
+	// device-token store, and the send ledger backing the push cooldowns
+	// (IOS-SYS.NT.1) — all one PostgresRepository.
 	repo := repository.New(pool)
-	svc := service.New(repo, repo, emailDispatcher, pushDispatcher, smsDispatcher)
+	svc := service.New(repo, repo, repo, emailDispatcher, pushDispatcher, webPushDispatcher, smsDispatcher)
 	srv := notificationgrpc.NewServer(svc)
+
+	// Goods-marketplace retention loop: closing-soon, closing-now, and
+	// outbid notifications. Best-effort; failures log-and-continue.
+	runListingNotificationScheduler(ctx, pool, svc, os.Getenv("REDIS_URL"))
+
+	// Welcome-email cadence (day-1 / day-3 / day-7). Idempotent via
+	// users.welcome_*_sent_at timestamps stamped on dispatch.
+	runWelcomeEmailScheduler(ctx, pool, svc)
+
+	// New-listing fan-out to seller followers. Subscribes to
+	// `notify:seller_new_listing:*` published by the job service when a
+	// listing flips to status='active'. Skipped when REDIS_URL is unset.
+	runFollowsPubsubScheduler(ctx, pool, svc, os.Getenv("REDIS_URL"))
+
+	// Price-drop alerts on watched listings — every 5 minutes, walks
+	// listing_watchlist looking for ≥10% drops vs. baseline. See
+	// price_drop_scheduler.go.
+	runPriceDropScheduler(ctx, pool, svc)
+
+	// Re-engagement cadence (7d/14d/30d). Sweeps every 6h for users
+	// inactive past each milestone and queues a re-engagement
+	// notification. Idempotent via 24h-wide bucket queries.
+	runReengagementScheduler(ctx, pool, svc)
+
+	// Post-transaction NPS prompts. Every 1h, finds completed
+	// listing_orders and contracts ≥48h old, inserts an nps_surveys row
+	// (UNIQUE-protected against re-prompts), and queues a `nps_survey`
+	// notification. The web mounts <NPSSurvey> when /me/nps/pending
+	// returns ≥1 unanswered row.
+	runNPSScheduler(ctx, pool, svc)
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
@@ -132,12 +189,38 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := grpc.NewServer(
+	serverOpts := []grpc.ServerOption{
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.ChainUnaryInterceptor(loggingUnaryInterceptor),
-		grpc.ChainStreamInterceptor(loggingStreamInterceptor),
-	)
+		// RequestID first (it seeds the context both the recovery and logging
+		// interceptors read), then recovery — outside logging so a panic in
+		// either the logging interceptor or the handler is contained (RES-03).
+		grpc.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, recoveryUnaryInterceptor, loggingUnaryInterceptor),
+		grpc.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, recoveryStreamInterceptor, loggingStreamInterceptor),
+		grpc.KeepaliveEnforcementPolicy(grpcKeepaliveEnforcement()),
+		grpc.KeepaliveParams(grpcKeepaliveParams()),
+	}
+	var errMTLS error
+	serverOpts, errMTLS = meshServerOptions(serverOpts)
+	if errMTLS != nil {
+		slog.Error("failed to configure gRPC server mTLS", "error", errMTLS)
+		os.Exit(1)
+	}
+	s := grpc.NewServer(serverOpts...)
 	notificationgrpc.Register(s, srv)
+
+	// Standard gRPC health service (grpc.health.v1.Health). REQUIRED — the
+	// Kubernetes deployment (deploy/k8s/base/notification/deployment.yaml) uses
+	// native gRPC liveness/readiness probes, and kubelet queries the EMPTY
+	// service name. Without this registration every probe returns
+	// UNIMPLEMENTED, readiness never passes and liveness restarts the pod
+	// (CrashLoopBackOff). Do not delete as "unused" — the only caller is kubelet.
+	healthSrv := health.NewServer()
+	healthpb.RegisterHealthServer(s, healthSrv)
+	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthSrv.SetServingStatus(notificationv1.NotificationService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+
+	// Observability HTTP server (healthz / readyz / metrics) on a separate port.
+	startObservabilityServer(ctx, "notification-service", port, pool)
 
 	go func() {
 		slog.Info("notification service starting", "port", port)
@@ -149,6 +232,10 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("shutting down notification service")
+	// Flip every health status to NOT_SERVING *before* draining so the k8s
+	// readiness probe pulls this pod out of rotation while in-flight RPCs
+	// finish.
+	healthSrv.Shutdown()
 	s.GracefulStop()
 	slog.Info("notification service stopped")
 }

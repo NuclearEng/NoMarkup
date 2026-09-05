@@ -16,6 +16,9 @@ var (
 	ErrNoBidForChat        = errors.New("provider must have an active bid on the job to chat")
 	ErrChatNotApproved     = errors.New("customer has not approved this chat request")
 	ErrTermsAlreadyPending = errors.New("proposed terms already pending")
+	// FR-8.9 / FR-5.4 party roles for local-terms negotiation.
+	ErrOnlyProviderCanPropose = errors.New("only the provider can propose terms")
+	ErrOnlyCustomerCanRespond = errors.New("only the customer can respond to proposed terms")
 )
 
 // Known message types.
@@ -26,6 +29,8 @@ const (
 	MessageTypeSystem        = "system"
 	MessageTypeContactShare  = "contact_share"
 	MessageTypeProposedTerms = "proposed_terms"
+	MessageTypeTermsAccepted = "terms_accepted"
+	MessageTypeTermsRejected = "terms_rejected"
 )
 
 // Channel represents a chat channel between two users for a job.
@@ -90,9 +95,11 @@ type BidChecker interface {
 type ChannelRepository interface {
 	CreateChannel(ctx context.Context, channel *Channel) (*Channel, error)
 	GetChannel(ctx context.Context, channelID string, userID string) (*Channel, error)
+	IsChannelMember(ctx context.Context, channelID string, userID string) (bool, error)
+	IsJobParticipant(ctx context.Context, jobID string, userID string) (bool, error)
 	ListChannels(ctx context.Context, userID string, page, pageSize int) ([]*Channel, int, error)
 	SendMessage(ctx context.Context, msg *Message) (*Message, error)
-	ListMessages(ctx context.Context, channelID string, before *time.Time, pageSize int) ([]*Message, error)
+	ListMessages(ctx context.Context, channelID string, before *time.Time, pageSize int, query string) ([]*Message, error)
 	MarkRead(ctx context.Context, channelID string, userID string) error
 	GetUnreadCounts(ctx context.Context, userID string) ([]ChannelUnread, error)
 }

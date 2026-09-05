@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, Calendar, FileText, Loader2, Shield } from 'lucide-react';
+import { ArrowLeft, Calendar, FileText, Shield } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -15,39 +15,48 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageTransition } from '@/components/ui/page-transition';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useInsurancePolicy } from '@/hooks/useInsurance';
-import { cn, formatCents } from '@/lib/utils';
+import { useInsurancePolicy, useInsuranceProducts } from '@/hooks/useInsurance';
+import { cn, formatCents, humanizeStatus } from '@/lib/utils';
 import type { InsuranceClaimStatus, InsurancePolicyStatus } from '@/types';
-import { INSURANCE_CLAIM_STATUS, INSURANCE_POLICY_STATUS } from '@/types';
+import { INSURANCE_POLICY_STATUS } from '@/types';
 
-const POLICY_STATUS_CLASSES: Record<InsurancePolicyStatus, string> = {
+// Keyed on plain strings: a policy can be `pending_payment` before its premium
+// is charged, which is outside the typed InsurancePolicyStatus union. Unknown
+// statuses fall back to a humanized label rather than rendering a raw slug.
+const POLICY_STATUS_CLASSES: Record<string, string> = {
   active: 'bg-green-500/10 text-green-300 border-green-500/30',
+  pending_payment: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30',
   expired: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
   cancelled: 'bg-red-500/10 text-red-300 border-red-500/30',
   claimed: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
 };
 
-const POLICY_STATUS_LABELS: Record<InsurancePolicyStatus, string> = {
+const POLICY_STATUS_LABELS: Record<string, string> = {
   active: 'Active',
+  pending_payment: 'Pending Payment',
   expired: 'Expired',
   cancelled: 'Cancelled',
   claimed: 'Claimed',
 };
 
-const CLAIM_STATUS_CLASSES: Record<InsuranceClaimStatus, string> = {
+const _CLAIM_STATUS_CLASSES: Record<InsuranceClaimStatus, string> = {
   filed: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
   under_review: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
   approved: 'bg-green-500/10 text-green-300 border-green-500/30',
   denied: 'bg-red-500/10 text-red-300 border-red-500/30',
-  paid: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+  paid_out: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+  appealed: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+  closed: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/30',
 };
 
-const CLAIM_STATUS_LABELS: Record<InsuranceClaimStatus, string> = {
+const _CLAIM_STATUS_LABELS: Record<InsuranceClaimStatus, string> = {
   filed: 'Filed',
   under_review: 'Under Review',
   approved: 'Approved',
   denied: 'Denied',
-  paid: 'Paid',
+  paid_out: 'Paid Out',
+  appealed: 'Appealed',
+  closed: 'Closed',
 };
 
 function formatDate(dateStr: string): string {
@@ -62,6 +71,9 @@ export default function InsurancePolicyDetailPage() {
   const params = useParams<{ id: string }>();
   const policyId = params.id;
   const { data, isLoading, isError } = useInsurancePolicy(policyId);
+  // The policy response is flat (product_id only); resolve the product details
+  // client-side. Guarded so a missing product never crashes the page.
+  const { data: productsData } = useInsuranceProducts();
   const [showClaimForm, setShowClaimForm] = useState(false);
 
   if (isLoading) {
@@ -97,6 +109,13 @@ export default function InsurancePolicyDetailPage() {
   const policy = data.policy;
   const isActive = policy.status === INSURANCE_POLICY_STATUS.ACTIVE;
   const policyStatus = policy.status as InsurancePolicyStatus;
+  // Resolve the product for display. Defensive: if products haven't loaded or
+  // the product is missing, fall back to sensible placeholders rather than
+  // crashing on a nested-field access.
+  const product = productsData?.products.find((p) => p.id === policy.product_id);
+  const productName = product?.name ?? 'Insurance Policy';
+  const productCoverageType = product ? humanizeStatus(product.coverage_type) : '—';
+  const productDescription = product?.description ?? 'Coverage details are unavailable.';
 
   return (
     <PageTransition>
@@ -120,12 +139,16 @@ export default function InsurancePolicyDetailPage() {
               </h1>
               <Badge
                 variant="outline"
-                className={cn('text-xs', POLICY_STATUS_CLASSES[policyStatus])}
+                className={cn(
+                  'text-xs',
+                  POLICY_STATUS_CLASSES[policyStatus] ??
+                    'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+                )}
               >
-                {POLICY_STATUS_LABELS[policyStatus]}
+                {POLICY_STATUS_LABELS[policyStatus] ?? humanizeStatus(policyStatus)}
               </Badge>
             </div>
-            <p className="mt-1 text-zinc-300">{policy.product.name}</p>
+            <p className="mt-1 text-zinc-300">{productName}</p>
           </div>
         </div>
 
@@ -158,7 +181,7 @@ export default function InsurancePolicyDetailPage() {
             <Separator className="bg-white/5" />
             <div className="flex items-center justify-between">
               <span className="text-sm text-zinc-300">Coverage Type</span>
-              <span className="text-sm">{policy.product.coverage_type}</span>
+              <span className="text-sm">{productCoverageType}</span>
             </div>
           </CardContent>
         </Card>
@@ -219,7 +242,7 @@ export default function InsurancePolicyDetailPage() {
             <CardTitle className="gold-text text-base">Product Details</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-zinc-300">{policy.product.description}</p>
+            <p className="text-sm text-zinc-300">{productDescription}</p>
           </CardContent>
         </Card>
       </div>

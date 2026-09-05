@@ -1,0 +1,530 @@
+{
+  "generated": "2026-08-22",
+  "routes": [
+    {
+      "id": "web.page.forgot-password",
+      "route": "/forgot-password",
+      "file": "web/src/app/(auth)/forgot-password/page.tsx"
+    },
+    {
+      "id": "web.page.login",
+      "route": "/login",
+      "file": "web/src/app/(auth)/login/page.tsx"
+    },
+    {
+      "id": "web.page.register",
+      "route": "/register",
+      "file": "web/src/app/(auth)/register/page.tsx"
+    },
+    {
+      "id": "web.page.reset-password",
+      "route": "/reset-password",
+      "file": "web/src/app/(auth)/reset-password/page.tsx"
+    },
+    {
+      "id": "web.page.verify-email",
+      "route": "/verify-email",
+      "file": "web/src/app/(auth)/verify-email/page.tsx"
+    },
+    {
+      "id": "web.page.admin.advances",
+      "route": "/admin/advances",
+      "file": "web/src/app/(dashboard)/admin/advances/page.tsx"
+    },
+    {
+      "id": "web.page.admin.banking",
+      "route": "/admin/banking",
+      "file": "web/src/app/(dashboard)/admin/banking/page.tsx"
+    },
+    {
+      "id": "web.page.admin.challenges",
+      "route": "/admin/challenges",
+      "file": "web/src/app/(dashboard)/admin/challenges/page.tsx"
+    },
+    {
+      "id": "web.page.admin.disputes.[id]",
+      "route": "/admin/disputes/[id]",
+      "file": "web/src/app/(dashboard)/admin/disputes/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.admin.disputes",
+      "route": "/admin/disputes",
+      "file": "web/src/app/(dashboard)/admin/disputes/page.tsx"
+    },
+    {
+      "id": "web.page.admin.flags",
+      "route": "/admin/flags",
+      "file": "web/src/app/(dashboard)/admin/flags/page.tsx"
+    },
+    {
+      "id": "web.page.admin.fraud",
+      "route": "/admin/fraud",
+      "file": "web/src/app/(dashboard)/admin/fraud/page.tsx"
+    },
+    {
+      "id": "web.page.admin.goods-reports",
+      "route": "/admin/goods-reports",
+      "file": "web/src/app/(dashboard)/admin/goods-reports/page.tsx"
+    },
+    {
+      "id": "web.page.admin.guarantee.[id]",
+      "route": "/admin/guarantee/[id]",
+      "file": "web/src/app/(dashboard)/admin/guarantee/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.admin.guarantee",
+      "route": "/admin/guarantee",
+      "file": "web/src/app/(dashboard)/admin/guarantee/page.tsx"
+    },
+    {
+      "id": "web.page.admin.insurance",
+      "route": "/admin/insurance",
+      "file": "web/src/app/(dashboard)/admin/insurance/page.tsx"
+    },
+    {
+      "id": "web.page.admin.insurers",
+      "route": "/admin/insurers",
+      "file": "web/src/app/(dashboard)/admin/insurers/page.tsx"
+    },
+    {
+      "id": "web.page.admin.job-reports",
+      "route": "/admin/job-reports",
+      "file": "web/src/app/(dashboard)/admin/job-reports/page.tsx"
+    },
+    {
+      "id": "web.page.admin.jobs",
+      "route": "/admin/jobs",
+      "file": "web/src/app/(dashboard)/admin/jobs/page.tsx"
+    },
+    {
+      "id": "web.page.admin.licenses",
+      "route": "/admin/licenses",
+      "file": "web/src/app/(dashboard)/admin/licenses/page.tsx"
+    },
+    {
+      "id": "web.page.admin.listings",
+      "route": "/admin/listings",
+      "file": "web/src/app/(dashboard)/admin/listings/page.tsx"
+    },
+    {
+      "id": "web.page.admin.markets",
+      "route": "/admin/markets",
+      "file": "web/src/app/(dashboard)/admin/markets/page.tsx"
+    },
+    {
+      "id": "web.page.admin",
+      "route": "/admin",
+      "file": "web/src/app/(dashboard)/admin/page.tsx"
+    },
+    {
+      "id": "web.page.admin.payments",
+      "route": "/admin/payments",
+      "file": "web/src/app/(dashboard)/admin/payments/page.tsx"
+    },
+    {
+      "id": "web.page.admin.platform",
+      "route": "/admin/platform",
+      "file": "web/src/app/(dashboard)/admin/platform/page.tsx"
+    },
+    {
+      "id": "web.page.admin.reviews",
+      "route": "/admin/reviews",
+      "file": "web/src/app/(dashboard)/admin/reviews/page.tsx"
+    },
+    {
+      "id": "web.page.admin.taxonomy",
+      "route": "/admin/taxonomy",
+      "file": "web/src/app/(dashboard)/admin/taxonomy/page.tsx"
+    },
+    {
+      "id": "web.page.admin.user-reports",
+      "route": "/admin/user-reports",
+      "file": "web/src/app/(dashboard)/admin/user-reports/page.tsx"
+    },
+    {
+      "id": "web.page.admin.users.[id]",
+      "route": "/admin/users/[id]",
+      "file": "web/src/app/(dashboard)/admin/users/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.admin.users",
+      "route": "/admin/users",
+      "file": "web/src/app/(dashboard)/admin/users/page.tsx"
+    },
+    {
+      "id": "web.page.admin.verification",
+      "route": "/admin/verification",
+      "file": "web/src/app/(dashboard)/admin/verification/page.tsx"
+    },
+    {
+      "id": "web.page.analytics",
+      "route": "/analytics",
+      "file": "web/src/app/(dashboard)/analytics/page.tsx"
+    },
+    {
+      "id": "web.page.bids",
+      "route": "/bids",
+      "file": "web/src/app/(dashboard)/bids/page.tsx"
+    },
+    {
+      "id": "web.page.contracts.[id].guarantee-claim",
+      "route": "/contracts/[id]/guarantee-claim",
+      "file": "web/src/app/(dashboard)/contracts/[id]/guarantee-claim/page.tsx"
+    },
+    {
+      "id": "web.page.contracts.[id]",
+      "route": "/contracts/[id]",
+      "file": "web/src/app/(dashboard)/contracts/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.contracts.[id].review",
+      "route": "/contracts/[id]/review",
+      "file": "web/src/app/(dashboard)/contracts/[id]/review/page.tsx"
+    },
+    {
+      "id": "web.page.contracts",
+      "route": "/contracts",
+      "file": "web/src/app/(dashboard)/contracts/page.tsx"
+    },
+    {
+      "id": "web.page.dashboard",
+      "route": "/dashboard",
+      "file": "web/src/app/(dashboard)/dashboard/page.tsx"
+    },
+    {
+      "id": "web.page.disputes.new",
+      "route": "/disputes/new",
+      "file": "web/src/app/(dashboard)/disputes/new/page.tsx"
+    },
+    {
+      "id": "web.page.insurance.[id]",
+      "route": "/insurance/[id]",
+      "file": "web/src/app/(dashboard)/insurance/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.insurance",
+      "route": "/insurance",
+      "file": "web/src/app/(dashboard)/insurance/page.tsx"
+    },
+    {
+      "id": "web.page.insurance.quotes",
+      "route": "/insurance/quotes",
+      "file": "web/src/app/(dashboard)/insurance/quotes/page.tsx"
+    },
+    {
+      "id": "web.page.jobs.mine",
+      "route": "/jobs/mine",
+      "file": "web/src/app/(dashboard)/jobs/mine/page.tsx"
+    },
+    {
+      "id": "web.page.jobs.new.legal",
+      "route": "/jobs/new/legal",
+      "file": "web/src/app/(dashboard)/jobs/new/legal/page.tsx"
+    },
+    {
+      "id": "web.page.jobs.new",
+      "route": "/jobs/new",
+      "file": "web/src/app/(dashboard)/jobs/new/page.tsx"
+    },
+    {
+      "id": "web.page.jobs.recurring",
+      "route": "/jobs/recurring",
+      "file": "web/src/app/(dashboard)/jobs/recurring/page.tsx"
+    },
+    {
+      "id": "web.page.me.feed",
+      "route": "/me/feed",
+      "file": "web/src/app/(dashboard)/me/feed/page.tsx"
+    },
+    {
+      "id": "web.page.me.positions",
+      "route": "/me/positions",
+      "file": "web/src/app/(dashboard)/me/positions/page.tsx"
+    },
+    {
+      "id": "web.page.me.referrals",
+      "route": "/me/referrals",
+      "file": "web/src/app/(dashboard)/me/referrals/page.tsx"
+    },
+    {
+      "id": "web.page.me.saved-searches",
+      "route": "/me/saved-searches",
+      "file": "web/src/app/(dashboard)/me/saved-searches/page.tsx"
+    },
+    {
+      "id": "web.page.me.watchlist",
+      "route": "/me/watchlist",
+      "file": "web/src/app/(dashboard)/me/watchlist/page.tsx"
+    },
+    {
+      "id": "web.page.me.wishlist",
+      "route": "/me/wishlist",
+      "file": "web/src/app/(dashboard)/me/wishlist/page.tsx"
+    },
+    {
+      "id": "web.page.messages",
+      "route": "/messages",
+      "file": "web/src/app/(dashboard)/messages/page.tsx"
+    },
+    {
+      "id": "web.page.notifications",
+      "route": "/notifications",
+      "file": "web/src/app/(dashboard)/notifications/page.tsx"
+    },
+    {
+      "id": "web.page.orders.[id]",
+      "route": "/orders/[id]",
+      "file": "web/src/app/(dashboard)/orders/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.orders",
+      "route": "/orders",
+      "file": "web/src/app/(dashboard)/orders/page.tsx"
+    },
+    {
+      "id": "web.page.payments.installments.[id]",
+      "route": "/payments/installments/[id]",
+      "file": "web/src/app/(dashboard)/payments/installments/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.payments",
+      "route": "/payments",
+      "file": "web/src/app/(dashboard)/payments/page.tsx"
+    },
+    {
+      "id": "web.page.profile",
+      "route": "/profile",
+      "file": "web/src/app/(dashboard)/profile/page.tsx"
+    },
+    {
+      "id": "web.page.properties.[id]",
+      "route": "/properties/[id]",
+      "file": "web/src/app/(dashboard)/properties/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.properties",
+      "route": "/properties",
+      "file": "web/src/app/(dashboard)/properties/page.tsx"
+    },
+    {
+      "id": "web.page.provider.advances",
+      "route": "/provider/advances",
+      "file": "web/src/app/(dashboard)/provider/advances/page.tsx"
+    },
+    {
+      "id": "web.page.provider.business.expenses",
+      "route": "/provider/business/expenses",
+      "file": "web/src/app/(dashboard)/provider/business/expenses/page.tsx"
+    },
+    {
+      "id": "web.page.provider.business.invoices",
+      "route": "/provider/business/invoices",
+      "file": "web/src/app/(dashboard)/provider/business/invoices/page.tsx"
+    },
+    {
+      "id": "web.page.provider.business",
+      "route": "/provider/business",
+      "file": "web/src/app/(dashboard)/provider/business/page.tsx"
+    },
+    {
+      "id": "web.page.provider.business.tax",
+      "route": "/provider/business/tax",
+      "file": "web/src/app/(dashboard)/provider/business/tax/page.tsx"
+    },
+    {
+      "id": "web.page.provider.challenges",
+      "route": "/provider/challenges",
+      "file": "web/src/app/(dashboard)/provider/challenges/page.tsx"
+    },
+    {
+      "id": "web.page.provider.offers",
+      "route": "/provider/offers",
+      "file": "web/src/app/(dashboard)/provider/offers/page.tsx"
+    },
+    {
+      "id": "web.page.provider.onboarding",
+      "route": "/provider/onboarding",
+      "file": "web/src/app/(dashboard)/provider/onboarding/page.tsx"
+    },
+    {
+      "id": "web.page.provider",
+      "route": "/provider",
+      "file": "web/src/app/(dashboard)/provider/page.tsx"
+    },
+    {
+      "id": "web.page.provider.team",
+      "route": "/provider/team",
+      "file": "web/src/app/(dashboard)/provider/team/page.tsx"
+    },
+    {
+      "id": "web.page.provider.verification",
+      "route": "/provider/verification",
+      "file": "web/src/app/(dashboard)/provider/verification/page.tsx"
+    },
+    {
+      "id": "web.page.provider.workspace",
+      "route": "/provider/workspace",
+      "file": "web/src/app/(dashboard)/provider/workspace/page.tsx"
+    },
+    {
+      "id": "web.page.sell.analytics",
+      "route": "/sell/analytics",
+      "file": "web/src/app/(dashboard)/sell/analytics/page.tsx"
+    },
+    {
+      "id": "web.page.sell.mine",
+      "route": "/sell/mine",
+      "file": "web/src/app/(dashboard)/sell/mine/page.tsx"
+    },
+    {
+      "id": "web.page.sell.new",
+      "route": "/sell/new",
+      "file": "web/src/app/(dashboard)/sell/new/page.tsx"
+    },
+    {
+      "id": "web.page.sell",
+      "route": "/sell",
+      "file": "web/src/app/(dashboard)/sell/page.tsx"
+    },
+    {
+      "id": "web.page.settings.account",
+      "route": "/settings/account",
+      "file": "web/src/app/(dashboard)/settings/account/page.tsx"
+    },
+    {
+      "id": "web.page.settings.notifications",
+      "route": "/settings/notifications",
+      "file": "web/src/app/(dashboard)/settings/notifications/page.tsx"
+    },
+    {
+      "id": "web.page.settings.payment-methods",
+      "route": "/settings/payment-methods",
+      "file": "web/src/app/(dashboard)/settings/payment-methods/page.tsx"
+    },
+    {
+      "id": "web.page.settings.request-log",
+      "route": "/settings/request-log",
+      "file": "web/src/app/(dashboard)/settings/request-log/page.tsx"
+    },
+    {
+      "id": "web.page.settings.security",
+      "route": "/settings/security",
+      "file": "web/src/app/(dashboard)/settings/security/page.tsx"
+    },
+    {
+      "id": "web.page.settings.subscription",
+      "route": "/settings/subscription",
+      "file": "web/src/app/(dashboard)/settings/subscription/page.tsx"
+    },
+    {
+      "id": "web.page.auctions.[id]",
+      "route": "/auctions/[id]",
+      "file": "web/src/app/(public)/auctions/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.auctions.[id].spectate",
+      "route": "/auctions/[id]/spectate",
+      "file": "web/src/app/(public)/auctions/[id]/spectate/page.tsx"
+    },
+    {
+      "id": "web.page.community-guidelines",
+      "route": "/community-guidelines",
+      "file": "web/src/app/(public)/community-guidelines/page.tsx"
+    },
+    {
+      "id": "web.page.jobs.[id]",
+      "route": "/jobs/[id]",
+      "file": "web/src/app/(public)/jobs/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.jobs.map",
+      "route": "/jobs/map",
+      "file": "web/src/app/(public)/jobs/map/page.tsx"
+    },
+    {
+      "id": "web.page.jobs",
+      "route": "/jobs",
+      "file": "web/src/app/(public)/jobs/page.tsx"
+    },
+    {
+      "id": "web.page.legal",
+      "route": "/legal",
+      "file": "web/src/app/(public)/legal/page.tsx"
+    },
+    {
+      "id": "web.page.marketplace.[id]",
+      "route": "/marketplace/[id]",
+      "file": "web/src/app/(public)/marketplace/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.marketplace.[id].replay",
+      "route": "/marketplace/[id]/replay",
+      "file": "web/src/app/(public)/marketplace/[id]/replay/page.tsx"
+    },
+    {
+      "id": "web.page.marketplace.[id].spectate",
+      "route": "/marketplace/[id]/spectate",
+      "file": "web/src/app/(public)/marketplace/[id]/spectate/page.tsx"
+    },
+    {
+      "id": "web.page.marketplace.map",
+      "route": "/marketplace/map",
+      "file": "web/src/app/(public)/marketplace/map/page.tsx"
+    },
+    {
+      "id": "web.page.marketplace",
+      "route": "/marketplace",
+      "file": "web/src/app/(public)/marketplace/page.tsx"
+    },
+    {
+      "id": "web.page.home",
+      "route": "/",
+      "file": "web/src/app/(public)/page.tsx"
+    },
+    {
+      "id": "web.page.pricing.[slug]",
+      "route": "/pricing/[slug]",
+      "file": "web/src/app/(public)/pricing/[slug]/page.tsx"
+    },
+    {
+      "id": "web.page.pricing",
+      "route": "/pricing",
+      "file": "web/src/app/(public)/pricing/page.tsx"
+    },
+    {
+      "id": "web.page.privacy",
+      "route": "/privacy",
+      "file": "web/src/app/(public)/privacy/page.tsx"
+    },
+    {
+      "id": "web.page.providers.[id]",
+      "route": "/providers/[id]",
+      "file": "web/src/app/(public)/providers/[id]/page.tsx"
+    },
+    {
+      "id": "web.page.providers",
+      "route": "/providers",
+      "file": "web/src/app/(public)/providers/page.tsx"
+    },
+    {
+      "id": "web.page.support",
+      "route": "/support",
+      "file": "web/src/app/(public)/support/page.tsx"
+    },
+    {
+      "id": "web.page.terms",
+      "route": "/terms",
+      "file": "web/src/app/(public)/terms/page.tsx"
+    },
+    {
+      "id": "web.page.auctions.[id].replay",
+      "route": "/auctions/[id]/replay",
+      "file": "web/src/app/(terminal)/auctions/[id]/replay/page.tsx"
+    },
+    {
+      "id": "web.page.demo.auction",
+      "route": "/demo/auction",
+      "file": "web/src/app/demo/auction/page.tsx"
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 
 import { parseJwtPayload, setAccessToken } from '@/lib/auth';
+import { looksLikeSessionFlag } from '@/lib/session-flag';
 import { useAuthStore } from '@/stores/auth-store';
 import type { UserRole } from '@/types';
 
@@ -29,9 +30,10 @@ export function AuthRestorer() {
 
     // Check for OAuth callback cookies first.
     const oauthToken = getCookie('oauth_access_token');
-    if (!oauthToken && getCookie('has_session') !== '1') {
+    if (!oauthToken && !looksLikeSessionFlag(getCookie('has_session'))) {
       // No server-set session sentinel — don't hit /auth/refresh and avoid a
-      // guaranteed 400 in the console on every public page load.
+      // guaranteed 400 in the console on every public page load. Client only
+      // does a structural check (v1.* or legacy "1"); HMAC verify is edge-only.
       useAuthStore.setState({ isHydrating: false });
       return;
     }
@@ -41,28 +43,32 @@ export function AuthRestorer() {
       deleteCookie('oauth_access_token');
       deleteCookie('oauth_token_expires');
 
-      setAccessToken(oauthToken);
       const payload = parseJwtPayload(oauthToken);
-
-      if (payload) {
-        useAuthStore.setState({
-          user: {
-            id: payload.sub,
-            email: payload.email,
-            displayName: '',
-            avatarUrl: null,
-            roles: payload.roles as UserRole[],
-            status: 'active',
-            emailVerified: true,
-            phoneVerified: false,
-            mfaEnabled: false,
-            createdAt: new Date().toISOString(),
-          },
-          accessToken: oauthToken,
-          isAuthenticated: true,
-          isHydrating: false,
-        });
+      if (!payload) {
+        // Malformed callback token must not leave AuthGuard on the hydrating
+        // skeleton forever — isHydrating starts true in the store.
+        useAuthStore.setState({ isHydrating: false });
+        return;
       }
+
+      setAccessToken(oauthToken);
+      useAuthStore.setState({
+        user: {
+          id: payload.sub,
+          email: payload.email,
+          displayName: '',
+          avatarUrl: null,
+          roles: payload.roles as UserRole[],
+          status: 'active',
+          emailVerified: true,
+          phoneVerified: false,
+          mfaEnabled: false,
+          createdAt: new Date().toISOString(),
+        },
+        accessToken: oauthToken,
+        isAuthenticated: true,
+        isHydrating: false,
+      });
       return;
     }
 
@@ -78,10 +84,17 @@ function getCookie(name: string): string | null {
   const match = document.cookie.match(
     new RegExp('(?:^|; )' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'),
   );
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
+  const raw = match?.[1];
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 function deleteCookie(name: string): void {
   if (typeof document === 'undefined') return;
-  document.cookie = name + '=; path=/; max-age=0; samesite=strict';
+  const secure = location.protocol === 'https:' ? '; secure' : '';
+  document.cookie = name + '=; path=/; max-age=0; samesite=strict' + secure;
 }

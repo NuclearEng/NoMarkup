@@ -9,6 +9,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 
 import { CategorySelector } from '@/components/providers/CategorySelector';
+import { ProfessionalLicenseSection } from '@/components/providers/ProfessionalLicenseSection';
 
 const ServiceAreaMap = dynamic(
   () => import('@/components/maps/ServiceAreaMap').then((mod) => mod.ServiceAreaMap),
@@ -39,16 +40,31 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { StripeOnboarding } from '@/components/payments/StripeOnboarding';
+import { getApiErrorMessage, ApiError } from '@/lib/api';
 import {
+  indexDocumentsByType,
+  isDocumentResubmissionLocked,
+  MAX_DOCUMENT_RESUBMISSIONS,
+  resubmissionLockoutMessage,
   useProviderProfile,
+  useProviderVerificationDocuments,
   useUpdateCategories,
   useUpdatePortfolio,
   useUpdateProviderProfile,
   useSetGlobalTerms,
   useUploadVerificationDocument,
 } from '@/hooks/useProviderProfile';
-import type { ProviderProfile } from '@/types';
+import type { ProviderProfile, ProviderVerificationDocument } from '@/types';
 import { useImageUpload } from '@/hooks/useImageUpload';
+import {
+  ACCEPTED_DOCUMENT_EXTENSIONS,
+  ACCEPTED_DOCUMENT_MIME_TYPES,
+  formatDocStatus,
+  formatDocumentSize,
+  MAX_DOCUMENT_SIZE_BYTES,
+  PROVIDER_DOCUMENT_TYPES,
+  type DocumentTypeConfig,
+} from '@/lib/provider-verification-docs';
 import {
   businessInfoSchema,
   globalTermsSchema,
@@ -63,6 +79,7 @@ const STEPS = [
   { title: 'Terms', description: 'Set your default terms' },
   { title: 'Portfolio', description: 'Showcase your work' },
   { title: 'Verification', description: 'Upload documents to verify your business' },
+  { title: 'License', description: 'Add a professional license (legal services)' },
   { title: 'Payments', description: 'Connect Stripe to receive payouts' },
 ] as const;
 
@@ -143,21 +160,22 @@ export default function ProviderOnboardingPage() {
             <CategoriesStep
               onNext={goNext}
               onPrev={goPrev}
-              existingIds={providerProfile?.serviceCategories.map((c) => c.id) ?? []}
+              existingIds={providerProfile?.service_categories.map((c) => c.id) ?? []}
             />
           ) : null}
           {step === 2 ? (
             <ServiceAreaStep
               onNext={goNext}
               onPrev={goPrev}
-              existingRadius={providerProfile?.serviceRadiusKm}
-              existingAddress={providerProfile?.serviceAddress ?? undefined}
+              existingRadius={providerProfile?.service_radius_km}
+              existingAddress={providerProfile?.service_address ?? undefined}
             />
           ) : null}
           {step === 3 ? <GlobalTermsStep onNext={goNext} onPrev={goPrev} existingProfile={providerProfile} /> : null}
           {step === 4 ? <PortfolioStep onNext={goNext} onPrev={goPrev} /> : null}
           {step === 5 ? <DocumentVerificationStep onNext={goNext} onPrev={goPrev} /> : null}
-          {step === 6 ? <PaymentsStep onNext={goNext} onPrev={goPrev} /> : null}
+          {step === 6 ? <ProfessionalLicenseStep onNext={goNext} onPrev={goPrev} /> : null}
+          {step === 7 ? <PaymentsStep onNext={goNext} onPrev={goPrev} /> : null}
         </CardContent>
       </Card>
     </div>
@@ -189,28 +207,68 @@ function BusinessInfoStep({
     },
   });
 
-  // Prefill form when existing profile data arrives
+  // Prefill form when existing profile data arrives. EIN/TIN, policy number,
+  // and insurance metadata are owner-only fields from GET /providers/me.
   useEffect(() => {
     if (existingProfile) {
+      const coverageCents = existingProfile.insurance_coverage_cents;
       form.reset({
-        businessName: existingProfile.businessName ?? '',
+        businessName: existingProfile.business_name ?? '',
         bio: existingProfile.bio ?? '',
-        serviceAddress: existingProfile.serviceAddress ?? '',
-        einTin: '',
-        insuranceProvider: '',
-        insurancePolicyNumber: '',
-        insuranceExpiry: '',
-        insuranceCoverageDollars: undefined,
+        serviceAddress: existingProfile.service_address ?? '',
+        einTin: existingProfile.ein_tin ?? '',
+        insuranceProvider: existingProfile.insurance_provider ?? '',
+        insurancePolicyNumber: existingProfile.insurance_policy_number ?? '',
+        insuranceExpiry: existingProfile.insurance_expiry ?? '',
+        insuranceCoverageDollars:
+          coverageCents != null && coverageCents > 0
+            ? Math.round(coverageCents / 100)
+            : undefined,
       });
     }
   }, [existingProfile, form]);
 
   async function onSubmit(values: BusinessInfoFormValues) {
-    await updateProvider.mutateAsync({
+    // Only send optional identity fields when the user entered a value so an
+    // empty form field does not wipe previously stored data on re-submit.
+    const payload: {
+      business_name: string;
+      bio?: string;
+      service_address?: string;
+      ein_tin?: string;
+      insurance_policy_number?: string;
+      insurance_provider?: string;
+      insurance_expiry?: string;
+      insurance_coverage_cents?: number;
+    } = {
       business_name: values.businessName,
       bio: values.bio || undefined,
       service_address: values.serviceAddress || undefined,
-    });
+    };
+    const ein = values.einTin?.trim();
+    if (ein) {
+      payload.ein_tin = ein;
+    }
+    const policy = values.insurancePolicyNumber?.trim();
+    if (policy) {
+      payload.insurance_policy_number = policy;
+    }
+    const carrier = values.insuranceProvider?.trim();
+    if (carrier) {
+      payload.insurance_provider = carrier;
+    }
+    const expiry = values.insuranceExpiry?.trim();
+    if (expiry) {
+      payload.insurance_expiry = expiry;
+    }
+    if (
+      values.insuranceCoverageDollars != null &&
+      Number.isFinite(values.insuranceCoverageDollars) &&
+      values.insuranceCoverageDollars > 0
+    ) {
+      payload.insurance_coverage_cents = Math.round(values.insuranceCoverageDollars * 100);
+    }
+    await updateProvider.mutateAsync(payload);
     onNext();
   }
 
@@ -564,10 +622,10 @@ function GlobalTermsStep({
   useEffect(() => {
     if (existingProfile) {
       form.reset({
-        paymentTiming: existingProfile.defaultPaymentTiming ?? 'completion',
-        milestones: existingProfile.defaultMilestones ?? [],
-        cancellationPolicy: existingProfile.cancellationPolicy ?? '',
-        warrantyTerms: existingProfile.warrantyTerms ?? '',
+        paymentTiming: existingProfile.default_payment_timing,
+        milestones: existingProfile.default_milestones,
+        cancellationPolicy: existingProfile.cancellation_policy ?? '',
+        warrantyTerms: existingProfile.warranty_terms ?? '',
       });
     }
   }, [existingProfile, form]);
@@ -749,8 +807,7 @@ function PortfolioStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => v
   function handleRemove(url: string) {
     setUploadedUrls((prev) => prev.filter((u) => u !== url));
     setCaptions((prev) => {
-      const next = { ...prev };
-      delete next[url];
+      const { [url]: _removed, ...next } = prev;
       return next;
     });
   }
@@ -825,62 +882,9 @@ function PortfolioStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => v
 
 // -- Step 6: Document Verification --
 
-const ACCEPTED_DOCUMENT_TYPES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'application/pdf',
-];
-
-const ACCEPTED_DOCUMENT_EXTENSIONS = '.jpg,.jpeg,.png,.webp,.pdf';
-
-const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-
-interface DocumentTypeConfig {
-  key: string;
-  label: string;
-  description: string;
-  required: boolean;
-}
-
-const DOCUMENT_TYPES: DocumentTypeConfig[] = [
-  {
-    key: 'government_id',
-    label: 'Government-Issued ID',
-    description: "Driver's license or passport. Used to verify your identity.",
-    required: true,
-  },
-  {
-    key: 'business_license',
-    label: 'Business License',
-    description: 'Your business registration or license certificate.',
-    required: false,
-  },
-  {
-    key: 'proof_of_insurance',
-    label: 'Proof of Insurance',
-    description: 'Liability insurance or bonding documentation.',
-    required: false,
-  },
-  {
-    key: 'trade_license',
-    label: 'Trade-Specific License',
-    description: 'Electrician, plumber, contractor, or other trade license.',
-    required: false,
-  },
-];
-
 interface DocumentFile {
   file: File;
   name: string;
-}
-
-function formatDocumentSize(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  const mb = kb / 1024;
-  return `${mb.toFixed(1)} MB`;
 }
 
 function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
@@ -889,10 +893,16 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const { data: existingDocs = [] } = useProviderVerificationDocuments();
+  const existingByType = indexDocumentsByType(existingDocs);
+  const lockedTypes = PROVIDER_DOCUMENT_TYPES.filter((dt) =>
+    isDocumentResubmissionLocked(existingByType[dt.key]?.resubmission_count),
+  );
+
   const uploadImage = useImageUpload({
     context: 'document',
     maxSizeBytes: MAX_DOCUMENT_SIZE_BYTES,
-    acceptedTypes: ACCEPTED_DOCUMENT_TYPES,
+    acceptedTypes: [...ACCEPTED_DOCUMENT_MIME_TYPES],
   });
 
   const uploadDocument = useUploadVerificationDocument();
@@ -900,8 +910,17 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
   function handleFileSelect(docKey: string, file: File | undefined) {
     if (!file) return;
 
+    if (isDocumentResubmissionLocked(existingByType[docKey]?.resubmission_count)) {
+      setErrors((prev) => ({
+        ...prev,
+        [docKey]:
+          'This document type has no re-uploads left (maximum 3). Contact support to continue verification.',
+      }));
+      return;
+    }
+
     // Validate file type
-    if (!ACCEPTED_DOCUMENT_TYPES.includes(file.type)) {
+    if (!(ACCEPTED_DOCUMENT_MIME_TYPES as readonly string[]).includes(file.type)) {
       setErrors((prev) => ({
         ...prev,
         [docKey]: 'Please upload a JPG, PNG, WebP, or PDF file.',
@@ -920,8 +939,7 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
 
     // Clear any previous error
     setErrors((prev) => {
-      const next = { ...prev };
-      delete next[docKey];
+      const { [docKey]: _removed, ...next } = prev;
       return next;
     });
 
@@ -933,22 +951,30 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
 
   function handleRemove(docKey: string) {
     setDocuments((prev) => {
-      const next = { ...prev };
-      delete next[docKey];
+      const { [docKey]: _removed, ...next } = prev;
       return next;
     });
     setErrors((prev) => {
-      const next = { ...prev };
-      delete next[docKey];
+      const { [docKey]: _removed, ...next } = prev;
       return next;
     });
   }
 
+  function hasServerCoverage(docKey: string): boolean {
+    const status = existingByType[docKey]?.status?.toLowerCase() ?? '';
+    return status === 'pending' || status === 'verified';
+  }
+
   async function handleFinish() {
-    // Validate required documents
-    const missingRequired = DOCUMENT_TYPES.filter(
-      (dt) => dt.required && !documents[dt.key],
-    );
+    // Validate required documents — local pick OR already on file (pending/verified).
+    // Locked required types cannot be re-uploaded; surface contact-support instead of a hard fail.
+    const missingRequired = PROVIDER_DOCUMENT_TYPES.filter((dt) => {
+      if (!dt.required) return false;
+      if (documents[dt.key]) return false;
+      if (hasServerCoverage(dt.key)) return false;
+      if (isDocumentResubmissionLocked(existingByType[dt.key]?.resubmission_count)) return false;
+      return true;
+    });
 
     if (missingRequired.length > 0) {
       const newErrors: Record<string, string> = {};
@@ -959,6 +985,20 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
       return;
     }
 
+    const lockedRequiredMissing = PROVIDER_DOCUMENT_TYPES.filter(
+      (dt) =>
+        dt.required &&
+        !documents[dt.key] &&
+        !hasServerCoverage(dt.key) &&
+        isDocumentResubmissionLocked(existingByType[dt.key]?.resubmission_count),
+    );
+    if (lockedRequiredMissing.length > 0) {
+      setSubmitError(
+        'One or more required document types have no re-uploads left. Contact support to continue verification.',
+      );
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError(null);
 
@@ -966,38 +1006,73 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
       // Upload each selected document: first to the image pipeline, then register with verification endpoint
       const entries = Object.entries(documents);
       for (const [docKey, docFile] of entries) {
-        // Step 1: Upload to the image pipeline to get a confirmed URL
-        const uploadResult = await uploadImage.upload(docFile.file);
-        if (!uploadResult) {
+        if (isDocumentResubmissionLocked(existingByType[docKey]?.resubmission_count)) {
           setErrors((prev) => ({
             ...prev,
-            [docKey]: `Failed to upload ${docFile.name}. Please try again.`,
+            [docKey]:
+              'This document type has no re-uploads left (maximum 3). Contact support to continue verification.',
+          }));
+          setIsSubmitting(false);
+          return;
+        }
+
+        // Step 1: Upload to the image pipeline to get a confirmed URL
+        const uploadOutcome = await uploadImage.upload(docFile.file);
+        if (!uploadOutcome.ok) {
+          setErrors((prev) => ({
+            ...prev,
+            [docKey]: `Could not upload ${docFile.name}: ${uploadOutcome.error}`,
           }));
           setIsSubmitting(false);
           return;
         }
 
         // Step 2: Register the uploaded document with the verification endpoint
-        await uploadDocument.mutateAsync({
-          document_type: docKey,
-          file_url: uploadResult.confirmedUrl,
-          file_name: docFile.name,
-          mime_type: docFile.file.type,
-          size_bytes: docFile.file.size,
-        });
+        try {
+          await uploadDocument.mutateAsync({
+            document_type: docKey,
+            file_url: uploadOutcome.result.confirmedUrl,
+            file_name: docFile.name,
+            mime_type: docFile.file.type,
+            size_bytes: docFile.file.size,
+          });
+        } catch (err) {
+          // FR-2.10: user service → gateway 422 when resubmission_count >= 3.
+          if (err instanceof ApiError && err.status === 422) {
+            setErrors((prev) => ({
+              ...prev,
+              [docKey]: resubmissionLockoutMessage(err),
+            }));
+            setSubmitError(resubmissionLockoutMessage(err));
+          } else {
+            setErrors((prev) => ({
+              ...prev,
+              [docKey]: getApiErrorMessage(err, `Could not register ${docFile.name}.`),
+            }));
+            setSubmitError(getApiErrorMessage(err, 'Failed to upload documents. Please try again.'));
+          }
+          setIsSubmitting(false);
+          return;
+        }
       }
 
       onNext();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to upload documents. Please try again.';
-      setSubmitError(message);
+      if (err instanceof ApiError && err.status === 422) {
+        setSubmitError(resubmissionLockoutMessage(err));
+      } else {
+        setSubmitError(getApiErrorMessage(err, 'Failed to upload documents. Please try again.'));
+      }
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  const hasRequiredDocuments = DOCUMENT_TYPES.filter((dt) => dt.required).every(
-    (dt) => documents[dt.key] !== undefined,
+  const hasRequiredDocuments = PROVIDER_DOCUMENT_TYPES.filter((dt) => dt.required).every(
+    (dt) =>
+      documents[dt.key] !== undefined ||
+      hasServerCoverage(dt.key) ||
+      isDocumentResubmissionLocked(existingByType[dt.key]?.resubmission_count),
   );
 
   return (
@@ -1005,16 +1080,31 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
       <p className="text-sm text-zinc-300">
         Upload documents to verify your identity and business credentials.
         Accepted formats: JPG, PNG, WebP, PDF (max{' '}
-        {formatDocumentSize(MAX_DOCUMENT_SIZE_BYTES)}).
+        {formatDocumentSize(MAX_DOCUMENT_SIZE_BYTES)}). After a rejection you may
+        re-upload up to {String(MAX_DOCUMENT_RESUBMISSIONS)} times per document type;
+        after that, contact support — further uploads for that type are blocked.
       </p>
 
+      {lockedTypes.length > 0 ? (
+        <div
+          className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          role="alert"
+        >
+          {lockedTypes.length === 1
+            ? `${lockedTypes[0]?.label ?? 'One document type'} has no re-uploads left. Contact support to continue verification for that type.`
+            : `${String(lockedTypes.length)} document types have no re-uploads left. Contact support to continue verification for those types.`}
+        </div>
+      ) : null}
+
       <div className="space-y-4">
-        {DOCUMENT_TYPES.map((docType) => (
+        {PROVIDER_DOCUMENT_TYPES.map((docType) => (
           <DocumentUploadField
             key={docType.key}
             config={docType}
             document={documents[docType.key]}
+            existing={existingByType[docType.key]}
             error={errors[docType.key]}
+            locked={isDocumentResubmissionLocked(existingByType[docType.key]?.resubmission_count)}
             onFileSelect={(file) => { handleFileSelect(docType.key, file); }}
             onRemove={() => { handleRemove(docType.key); }}
           />
@@ -1052,13 +1142,17 @@ function DocumentVerificationStep({ onNext, onPrev }: { onNext: () => void; onPr
 function DocumentUploadField({
   config,
   document,
+  existing,
   error,
+  locked,
   onFileSelect,
   onRemove,
 }: {
   config: DocumentTypeConfig;
   document: DocumentFile | undefined;
+  existing: ProviderVerificationDocument | undefined;
   error: string | undefined;
+  locked: boolean;
   onFileSelect: (file: File | undefined) => void;
   onRemove: () => void;
 }) {
@@ -1074,8 +1168,8 @@ function DocumentUploadField({
   const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragging(true);
-  }, []);
+    if (!locked) setIsDragging(true);
+  }, [locked]);
 
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -1088,14 +1182,16 @@ function DocumentUploadField({
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
+      if (locked) return;
       const file = e.dataTransfer.files[0];
       onFileSelect(file);
     },
-    [onFileSelect],
+    [onFileSelect, locked],
   );
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (locked) return;
       const file = e.target.files?.[0];
       onFileSelect(file);
       // Reset input so the same file can be selected again
@@ -1103,47 +1199,99 @@ function DocumentUploadField({
         fileInputRef.current.value = '';
       }
     },
-    [onFileSelect],
+    [onFileSelect, locked],
   );
 
   const openFilePicker = useCallback(() => {
+    if (locked) return;
     fileInputRef.current?.click();
-  }, []);
+  }, [locked]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (locked) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         openFilePicker();
       }
     },
-    [openFilePicker],
+    [openFilePicker, locked],
   );
 
   const isPdf = document?.file.type === 'application/pdf';
+  const resubmissionCount = existing?.resubmission_count ?? 0;
+  const showResubmission =
+    resubmissionCount > 0 || existing?.status?.toLowerCase() === 'rejected';
+  const remaining = Math.max(0, MAX_DOCUMENT_RESUBMISSIONS - resubmissionCount);
 
   return (
-    <div className="glass rounded-lg border border-[var(--brand-gold)]/10 p-4">
+    <div
+      className={cn(
+        'glass rounded-lg border p-4',
+        locked ? 'border-destructive/30 opacity-95' : 'border-[var(--brand-gold)]/10',
+      )}
+    >
       <div className="mb-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label htmlFor={inputId} className="text-sm font-medium">
               {config.label}
             </label>
             <Badge variant={config.required ? 'default' : 'secondary'} className="glass-badge text-xs">
               {config.required ? 'Required' : 'Optional'}
             </Badge>
+            {existing?.status ? (
+              <Badge
+                variant={existing.status.toLowerCase() === 'rejected' ? 'destructive' : 'secondary'}
+                className="glass-badge text-xs capitalize"
+              >
+                {formatDocStatus(existing.status)}
+              </Badge>
+            ) : null}
+            {locked ? (
+              <Badge variant="destructive" className="glass-badge text-xs">
+                Locked
+              </Badge>
+            ) : null}
           </div>
           <p className="mt-0.5 text-xs text-zinc-300">
             {config.description}
           </p>
+          {showResubmission ? (
+            <p
+              className={cn(
+                'mt-1 text-xs',
+                locked ? 'font-medium text-destructive' : 'text-zinc-400',
+              )}
+            >
+              Resubmissions: {String(resubmissionCount)} of {String(MAX_DOCUMENT_RESUBMISSIONS)}
+              {locked
+                ? ' — contact support to continue'
+                : remaining > 0
+                  ? ` · ${String(remaining)} re-upload${remaining === 1 ? '' : 's'} left`
+                  : null}
+            </p>
+          ) : null}
+          {existing?.rejection_reason ? (
+            <p className="mt-1 text-xs text-destructive" role="status">
+              {existing.rejection_reason}
+            </p>
+          ) : null}
         </div>
-        {document ? (
+        {document || (existing && !locked && existing.status?.toLowerCase() === 'verified') ? (
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" aria-label="Uploaded" />
         ) : null}
       </div>
 
-      {document ? (
+      {locked ? (
+        <div
+          className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+          role="status"
+        >
+          Re-upload disabled for this document type after {String(MAX_DOCUMENT_RESUBMISSIONS)}{' '}
+          rejections. Contact support to continue verification.
+        </div>
+      ) : document ? (
         <div className="flex items-center gap-3 rounded-md border border-[var(--brand-gold)]/10 bg-white/[0.04] p-3">
           <FileText className="h-8 w-8 shrink-0 text-zinc-300" aria-hidden="true" />
           <div className="min-w-0 flex-1">
@@ -1169,6 +1317,7 @@ function DocumentUploadField({
           role="button"
           tabIndex={0}
           aria-label={`Upload ${config.label}`}
+          aria-disabled={locked}
           className={cn(
             'flex min-h-[80px] cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed px-4 py-4 transition-colors',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
@@ -1192,6 +1341,7 @@ function DocumentUploadField({
             onChange={handleInputChange}
             aria-hidden="true"
             tabIndex={-1}
+            disabled={locked}
           />
           <Upload className="mb-1 h-5 w-5 text-zinc-300" aria-hidden="true" />
           <p className="text-sm text-zinc-300">
@@ -1209,7 +1359,33 @@ function DocumentUploadField({
   );
 }
 
-// -- Step 7: Payments (Stripe Connect) --
+// -- Step 7: Professional License (legal services) --
+// Optional. The license section self-gates behind the `legal_services` flag
+// (renders nothing when off), so non-legal providers see only a short note and
+// can skip straight through — the flow never dead-ends.
+function ProfessionalLicenseStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-zinc-300">
+        Practice law? Add your bar license so you can bid on legal jobs and earn a
+        verified badge. Not a legal provider? Skip this step.
+      </p>
+
+      <ProfessionalLicenseSection />
+
+      <div className="flex gap-3">
+        <Button type="button" variant="outline" onClick={onPrev} className="min-h-[44px]">
+          Previous
+        </Button>
+        <Button type="button" onClick={onNext} className="min-h-[44px]">
+          Continue
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// -- Step 8: Payments (Stripe Connect) --
 function PaymentsStep({ onNext, onPrev }: { onNext: () => void; onPrev: () => void }) {
   return (
     <div className="space-y-6">

@@ -41,6 +41,8 @@ type ServerMessage struct {
 	ChannelID   string          `json:"channel_id,omitempty"`
 	Message     json.RawMessage `json:"message,omitempty"`
 	UserID      string          `json:"user_id,omitempty"`
+	// LastReadAt is set on type=read_receipt (RFC3339 peer MarkRead watermark).
+	LastReadAt  string          `json:"last_read_at,omitempty"`
 	UnreadCount int             `json:"unread_count,omitempty"`
 	Error       string          `json:"error,omitempty"`
 }
@@ -51,12 +53,19 @@ type channelSub struct {
 	cancel   context.CancelFunc
 }
 
+// ChannelAuthorizer verifies that a user is permitted to subscribe to a
+// channel's live feed. Implemented by the chat service.
+type ChannelAuthorizer interface {
+	IsChannelMember(ctx context.Context, channelID, userID string) (bool, error)
+}
+
 // Connection represents a single WebSocket connection for a user.
 type Connection struct {
 	conn       *websocket.Conn
 	userID     string
 	hub        *Hub
 	pubsub     *service.PubSub
+	authorizer ChannelAuthorizer
 	subs       map[string]*channelSub // channelID -> subscription
 	subsMu     sync.Mutex
 	sendCh     chan []byte
@@ -109,6 +118,19 @@ func (h *Hub) Unregister(conn *Connection) {
 	)
 }
 
+// ActiveCount returns the total number of currently registered connections
+// across all users. Used by Prometheus metric exporters
+// (active_websocket_connections per CLAUDE.md §11).
+func (h *Hub) ActiveCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	total := 0
+	for _, conns := range h.connections {
+		total += len(conns)
+	}
+	return total
+}
+
 // CloseAll closes all connections in the hub. Used during graceful shutdown.
 func (h *Hub) CloseAll() {
 	h.mu.RLock()
@@ -123,15 +145,22 @@ func (h *Hub) CloseAll() {
 
 // Handler manages WebSocket connections for real-time chat messaging.
 type Handler struct {
-	hub    *Hub
-	pubsub *service.PubSub
+	hub            *Hub
+	pubsub         *service.PubSub
+	authorizer     ChannelAuthorizer
+	internalSecret string // shared secret the gateway must present; "" disables the check
 }
 
-// NewHandler creates a new WebSocket handler with a connection hub and pub/sub service.
-func NewHandler(hub *Hub, pubsub *service.PubSub) *Handler {
+// NewHandler creates a new WebSocket handler with a connection hub, pub/sub
+// service, and a channel authorizer used to enforce membership on subscribe.
+// The shared internal secret (INTERNAL_WS_SECRET / GATEWAY_CHAT_SECRET) is read
+// from the environment to authenticate the gateway -> chat dial.
+func NewHandler(hub *Hub, pubsub *service.PubSub, authorizer ChannelAuthorizer) *Handler {
 	return &Handler{
-		hub:    hub,
-		pubsub: pubsub,
+		hub:            hub,
+		pubsub:         pubsub,
+		authorizer:     authorizer,
+		internalSecret: InternalWSSecret(),
 	}
 }
 
@@ -139,6 +168,15 @@ func NewHandler(hub *Hub, pubsub *service.PubSub) *Handler {
 // The user ID is expected as a query parameter ?user_id= set by the gateway
 // after it validates the JWT token.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Defense-in-depth: verify the gateway's shared secret before trusting the
+	// query-string user_id. If the chat WS port is reachable directly, this
+	// stops impersonation of arbitrary users. Fail closed.
+	if !verifyInternalSecret(r, h.internalSecret) {
+		slog.Warn("ws connection rejected: invalid internal secret", "remote_addr", r.RemoteAddr)
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
 	userID := r.URL.Query().Get("user_id")
 	if userID == "" {
 		slog.Warn("ws connection attempt without user_id", "remote_addr", r.RemoteAddr)
@@ -146,9 +184,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Origin check (SEC-04): do not use InsecureSkipVerify. Gateway→chat dials
+	// typically omit Origin (allowed by nhooyr). Browser origins must match
+	// WS_ALLOWED_ORIGINS. The shared secret above already authenticates the
+	// mesh hop; this blocks CSWSH if the chat port is ever exposed.
 	wsConn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// The gateway handles CORS; no need to check origin here.
-		InsecureSkipVerify: true,
+		OriginPatterns: originPatterns(),
 	})
 	if err != nil {
 		slog.Error("failed to accept websocket", "error", err, "remote_addr", r.RemoteAddr)
@@ -158,13 +199,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	wsConn.SetReadLimit(maxMessageSize)
 
 	conn := &Connection{
-		conn:    wsConn,
-		userID:  userID,
-		hub:     h.hub,
-		pubsub:  h.pubsub,
-		subs:    make(map[string]*channelSub),
-		sendCh:  make(chan []byte, 64),
-		closeCh: make(chan struct{}),
+		conn:       wsConn,
+		userID:     userID,
+		hub:        h.hub,
+		pubsub:     h.pubsub,
+		authorizer: h.authorizer,
+		subs:       make(map[string]*channelSub),
+		sendCh:     make(chan []byte, 64),
+		closeCh:    make(chan struct{}),
 	}
 
 	h.hub.Register(conn)
@@ -283,18 +325,51 @@ func (c *Connection) handleSubscribe(ctx context.Context, channelID string) {
 	c.subsMu.Lock()
 	defer c.subsMu.Unlock()
 
-	// Already subscribed.
+	// Already subscribed. An existing subscription means membership was already
+	// verified for this (connection, channel), so we don't re-query.
 	if _, exists := c.subs[channelID]; exists {
+		return
+	}
+
+	// Authorize: the connecting user must be a participant of the channel.
+	// This mirrors the HTTP/gRPC paths (GetChannel/ListMessages/SendMessage)
+	// which all reject non-members; without this check the socket would stream
+	// messages from conversations the user is not part of (IDOR). Fail closed.
+	if c.authorizer == nil {
+		c.sendError("subscription unavailable")
+		slog.Error("ws subscribe denied: no authorizer configured",
+			"user_id", c.userID,
+			"channel_id", channelID,
+		)
+		return
+	}
+	allowed, err := c.authorizer.IsChannelMember(ctx, channelID, c.userID)
+	if err != nil {
+		c.sendError("subscription unavailable")
+		slog.Error("ws subscribe membership check failed",
+			"user_id", c.userID,
+			"channel_id", channelID,
+			"error", err,
+		)
+		return
+	}
+	if !allowed {
+		c.sendError("not a member of this channel")
+		slog.Warn("ws subscribe denied: not a channel member",
+			"user_id", c.userID,
+			"channel_id", channelID,
+		)
 		return
 	}
 
 	subCtx, subCancel := context.WithCancel(ctx)
 
-	// Subscribe to both message and typing topics.
+	// Subscribe to message, typing, and read-receipt topics.
 	messageTopic := fmt.Sprintf("chat:%s", channelID)
 	typingTopic := fmt.Sprintf("chat:%s:typing", channelID)
+	readTopic := fmt.Sprintf("chat:%s:read", channelID)
 
-	redisSub := c.pubsub.SubscribeTopics(subCtx, messageTopic, typingTopic)
+	redisSub := c.pubsub.SubscribeTopics(subCtx, messageTopic, typingTopic, readTopic)
 
 	c.subs[channelID] = &channelSub{
 		redisSub: redisSub,
@@ -341,10 +416,39 @@ func (c *Connection) handleUnsubscribe(channelID string) {
 	)
 }
 
+// isSubscribed reports whether this connection currently holds a subscription
+// for channelID.
+//
+// RES-04: c.subs MUST NOT be read without subsMu. cleanupSubscriptions
+// REASSIGNS the map (c.subs = make(...)) and it runs from Close(), which is
+// reached from the read loop, the listenRedis goroutine and the send-buffer
+// overflow path — concurrently with the read loop's handleTyping. A concurrent
+// map read + map write is a Go RUNTIME FATAL ERROR, not a panic: no recover()
+// and no interceptor can contain it, the whole pod dies and every other
+// WebSocket connection on it drops.
+func (c *Connection) isSubscribed(channelID string) bool {
+	c.subsMu.Lock()
+	defer c.subsMu.Unlock()
+
+	_, ok := c.subs[channelID]
+	return ok
+}
+
 // handleTyping publishes a typing indicator via Redis.
+// SEC-10: only allow typing on channels this connection has successfully
+// subscribed to (subscribe already enforces IsChannelMember). Fail closed if
+// the client tries to type into a channel it never joined.
 func (c *Connection) handleTyping(ctx context.Context, channelID string) {
 	if channelID == "" {
 		c.sendError("channel_id is required for typing")
+		return
+	}
+	if !c.isSubscribed(channelID) {
+		c.sendError("not subscribed to this channel")
+		slog.Warn("ws typing denied: not subscribed",
+			"user_id", c.userID,
+			"channel_id", channelID,
+		)
 		return
 	}
 
@@ -376,14 +480,28 @@ func (c *Connection) listenRedis(ctx context.Context, channelID string, redisSub
 	}
 }
 
+// redisTopicKind classifies a Redis channel name for a subscribed chat channel.
+func redisTopicKind(channelID, redisChannel string) string {
+	prefix := "chat:" + channelID
+	switch redisChannel {
+	case prefix:
+		return "message"
+	case prefix + ":typing":
+		return "typing"
+	case prefix + ":read":
+		return "read"
+	default:
+		return ""
+	}
+}
+
 // forwardRedisMessage converts a Redis pub/sub message to a ServerMessage and sends it.
 func (c *Connection) forwardRedisMessage(channelID string, redisMsg *redis.Message) {
-	// Determine type based on the Redis topic.
-	isTyping := len(redisMsg.Channel) > len(channelID)+5 &&
-		redisMsg.Channel[len(redisMsg.Channel)-7:] == ":typing"
+	kind := redisTopicKind(channelID, redisMsg.Channel)
 
 	var serverMsg ServerMessage
-	if isTyping {
+	switch kind {
+	case "typing":
 		// Parse the typing payload to extract user_id.
 		var payload struct {
 			UserID string `json:"user_id"`
@@ -401,8 +519,30 @@ func (c *Connection) forwardRedisMessage(channelID string, redisMsg *redis.Messa
 			ChannelID: channelID,
 			UserID:    payload.UserID,
 		}
-	} else {
-		// It's a chat message. Parse to check sender and avoid echo.
+	case "read":
+		var payload struct {
+			UserID     string `json:"user_id"`
+			LastReadAt string `json:"last_read_at"`
+		}
+		if err := json.Unmarshal([]byte(redisMsg.Payload), &payload); err != nil {
+			slog.Warn("failed to parse read_receipt payload", "error", err)
+			return
+		}
+		// Don't echo own MarkRead — the reader already knows they read the thread.
+		if payload.UserID == c.userID {
+			return
+		}
+		if payload.UserID == "" {
+			return
+		}
+		serverMsg = ServerMessage{
+			Type:       "read_receipt",
+			ChannelID:  channelID,
+			UserID:     payload.UserID,
+			LastReadAt: payload.LastReadAt,
+		}
+	case "message":
+		// Chat message body. Parse for structural validation only.
 		var msgPayload domain.Message
 		if err := json.Unmarshal([]byte(redisMsg.Payload), &msgPayload); err != nil {
 			slog.Warn("failed to parse message payload", "error", err)
@@ -413,6 +553,9 @@ func (c *Connection) forwardRedisMessage(channelID string, redisMsg *redis.Messa
 			ChannelID: channelID,
 			Message:   json.RawMessage(redisMsg.Payload),
 		}
+	default:
+		slog.Warn("unknown redis chat topic", "redis_channel", redisMsg.Channel, "channel_id", channelID)
+		return
 	}
 
 	data, err := json.Marshal(serverMsg)
@@ -424,10 +567,14 @@ func (c *Connection) forwardRedisMessage(channelID string, redisMsg *redis.Messa
 	select {
 	case c.sendCh <- data:
 	default:
-		slog.Warn("ws send buffer full, dropping message",
+		// Buffer full: the client has fallen behind. Silently dropping would
+		// lose messages without the client knowing. Instead close the
+		// connection so the client reconnects and refetches missed history.
+		slog.Warn("ws send buffer full, closing connection so client reconnects",
 			"user_id", c.userID,
 			"channel_id", channelID,
 		)
+		c.Close(websocket.StatusTryAgainLater, "fell behind, reconnect")
 	}
 }
 
@@ -445,7 +592,10 @@ func (c *Connection) sendError(msg string) {
 	select {
 	case c.sendCh <- data:
 	default:
-		slog.Warn("ws send buffer full, dropping error message", "user_id", c.userID)
+		// Buffer full: drop the error frame too and close so the client
+		// reconnects rather than silently losing frames.
+		slog.Warn("ws send buffer full, closing connection so client reconnects", "user_id", c.userID)
+		c.Close(websocket.StatusTryAgainLater, "fell behind, reconnect")
 	}
 }
 
