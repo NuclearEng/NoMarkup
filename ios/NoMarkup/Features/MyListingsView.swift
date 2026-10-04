@@ -133,11 +133,14 @@ struct MyListingsView: View {
                 Text(listing.displayTitle)
                     .font(.body.weight(.medium))
                     .foregroundStyle(BrandTheme.textPrimary)
-                    .lineLimit(2)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Text(listing.displayPrice)
                     .font(.subheadline.weight(.bold).monospacedDigit())
                     .foregroundStyle(BrandTheme.goldBright)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
                     .contentTransition(.numericText())
             }
 
@@ -158,9 +161,6 @@ struct MyListingsView: View {
                         label: StatusChipStyle.displayLabel(status),
                         style: StatusChipStyle.forStatus(status)
                     )
-                }
-                if listing.hasActivePromotion {
-                    StatusChipView(label: "Promoted", style: .warning)
                 }
                 Text(listing.priceCaption)
                     .font(.caption)

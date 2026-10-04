@@ -315,7 +315,7 @@ struct PropertiesView: View {
             } header: {
                 Text("Providers · all properties").brandSectionHeader()
             } footer: {
-                Text("From completed service contracts on your account (server aggregate when available). “Preferred” means 3+ completed jobs with that provider (PRD FR-19.2). Open a property for property-scoped counts.")
+                Text("From completed service contracts on your account (server aggregate when available). “Preferred” means 3+ completed jobs with that provider. Open a property for property-scoped counts.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         } else if let preferredProvidersError {

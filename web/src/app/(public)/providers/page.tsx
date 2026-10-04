@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { useSearchProviders } from '@/hooks/useProviders';
 import type { SearchProvidersParams } from '@/hooks/useProviders';
 
@@ -124,7 +125,8 @@ export default function ProvidersPage() {
           Find <span className="gold-text">Providers</span>
         </h1>
         <p className="mt-2 text-lg text-zinc-300">
-          Verified providers who compete for your jobs — fair market rates, not the markup.
+          Verified providers who compete for your jobs — fair market rates, not the markup.{' '}
+          {BUYER_PAYS_AGREED_PRICE}
         </p>
       </div>
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func newJobReportsRouter(h *JobReportsHandler) chi.Router {
@@ -293,6 +294,11 @@ func TestCreateJobReport_LiveDB(t *testing.T) {
 	if afterStatus != "dismissed" {
 		t.Fatalf("after resolve: status=%s want dismissed", afterStatus)
 	}
+	// Dismiss must not hide the job. Public browse is deleted_at IS NULL
+	// AND status = 'active' (services/job SearchJobs + map).
+	if !jobOnPublicBrowse(t, pool, jobID) {
+		t.Fatal("dismissed report hid the job from public browse")
+	}
 
 	if rec := resolve(t, created.ID, `{"action":"actioned"}`, reporter); rec.Code != http.StatusConflict {
 		t.Fatalf("resolve already terminal: got %d want 409 (body=%s)", rec.Code, rec.Body.String())
@@ -301,6 +307,9 @@ func TestCreateJobReport_LiveDB(t *testing.T) {
 	reviewRec := resolve(t, created2.ID, `{"action":"review","notes":"looking"}`, reporter)
 	if reviewRec.Code != http.StatusOK {
 		t.Fatalf("resolve review: got %d want 200 (body=%s)", reviewRec.Code, reviewRec.Body.String())
+	}
+	if !jobOnPublicBrowse(t, pool, jobID) {
+		t.Fatal("review action hid the job from public browse")
 	}
 	actionRec := resolve(t, created2.ID, `{"action":"actioned","notes":"removed"}`, reporter)
 	if actionRec.Code != http.StatusOK {
@@ -313,4 +322,31 @@ func TestCreateJobReport_LiveDB(t *testing.T) {
 	if afterActioned != "actioned" {
 		t.Fatalf("after actioned: status=%s want actioned", afterActioned)
 	}
+	if jobOnPublicBrowse(t, pool, jobID) {
+		t.Fatal("actioned report left the job on public browse")
+	}
+	var deleted bool
+	if err := pool.QueryRow(ctx, `SELECT deleted_at IS NOT NULL FROM jobs WHERE id = $1`, jobID).Scan(&deleted); err != nil {
+		t.Fatalf("read deleted_at: %v", err)
+	}
+	if !deleted {
+		t.Fatal("actioned report did not set jobs.deleted_at")
+	}
+}
+
+// jobOnPublicBrowse matches SearchJobs' default public filter: not soft-deleted,
+// status active, and still inside the auction window.
+func jobOnPublicBrowse(t *testing.T, pool *pgxpool.Pool, jobID string) bool {
+	t.Helper()
+	var n int
+	err := pool.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM jobs j
+		 WHERE j.id = $1
+		   AND j.deleted_at IS NULL
+		   AND j.status = 'active'
+		   AND (j.auction_ends_at IS NULL OR j.auction_ends_at > now())`, jobID).Scan(&n)
+	if err != nil {
+		t.Fatalf("public browse count: %v", err)
+	}
+	return n == 1
 }

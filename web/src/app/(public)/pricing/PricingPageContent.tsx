@@ -15,6 +15,7 @@ import {
   usePricingByCategory,
 } from '@/hooks/usePricing';
 import type { PricingData, PricingOverviewCategory } from '@/hooks/usePricing';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { formatCents } from '@/lib/utils';
 
 /* ------------------------------------------------------------------ */
@@ -217,7 +218,8 @@ export function PricingPageContent() {
             style={{ animationDelay: '80ms' }}
           >
             The Fair Price Index tracks what home services actually cost — pulled from completed
-            jobs on NoMarkup. Transparent pricing: the market sets the rate, not the markup.
+            jobs on NoMarkup. Transparent pricing: the market sets the rate, not the markup.{' '}
+            {BUYER_PAYS_AGREED_PRICE}
           </p>
 
           {/* ZIP code search bar */}
@@ -411,7 +413,7 @@ export function PricingPageContent() {
             </h2>
             <p className="text-muted-foreground relative z-[3] mx-auto mt-3 max-w-lg text-base sm:mt-4 sm:text-lg">
               Post your job and watch providers compete in a reverse auction. Fair market rates —
-              not the markup.
+              not the markup. {BUYER_PAYS_AGREED_PRICE}
             </p>
             <div className="relative z-[3] mt-8 sm:mt-10">
               <Button

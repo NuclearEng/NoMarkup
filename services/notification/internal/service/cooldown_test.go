@@ -15,6 +15,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// promoPushOn is a stored preference that opts a promotional type into push.
+// Cooldown tests need it: with no preference row, promotional push is not sent.
+func promoPushOn(notifType string) *domain.NotificationPreferences {
+	return &domain.NotificationPreferences{
+		UserID: "user-1",
+		Preferences: map[string]domain.ChannelPrefs{
+			notifType: {InApp: true, Push: true},
+		},
+	}
+}
+
 // findChannelDelivery returns the delivery entry for the given channel,
 // failing the test when it is absent.
 func findChannelDelivery(t *testing.T, deliveries []ChannelDelivery, channel string) ChannelDelivery {
@@ -71,7 +82,7 @@ func TestIsPromotionalNotifType(t *testing.T) {
 func TestPushCooldown_PromotionalPerType(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockNotifRepo{}
+	repo := &mockNotifRepo{prefs: promoPushOn("price_drop")}
 	device := &mockDeviceRepo{tokens: []domain.DeviceToken{{UserID: "user-1", Token: "tok-1", Platform: "ios"}}}
 	ledger := &mockSendLedger{}
 	svc := newTestServiceWithLedger(repo, device, ledger)
@@ -113,7 +124,7 @@ func TestPushCooldown_PromotionalPerType(t *testing.T) {
 func TestPushCooldown_PromotionalClassTotal(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockNotifRepo{}
+	repo := &mockNotifRepo{prefs: promoPushOn("price_drop")}
 	device := &mockDeviceRepo{tokens: []domain.DeviceToken{{UserID: "user-1", Token: "tok-1", Platform: "ios"}}}
 	ledger := &mockSendLedger{}
 	ledger.seed("user-1", "welcome_day_1", "push", time.Hour)
@@ -196,7 +207,7 @@ func TestPushCooldown_FailsOpen(t *testing.T) {
 	t.Run("count error allows send", func(t *testing.T) {
 		t.Parallel()
 		ledger := &mockSendLedger{countErr: errors.New("db down")}
-		svc := newTestServiceWithLedger(&mockNotifRepo{}, oneToken(), ledger)
+		svc := newTestServiceWithLedger(&mockNotifRepo{prefs: promoPushOn("price_drop")}, oneToken(), ledger)
 		_, deliveries, err := svc.SendNotification(context.Background(), "user-1", "price_drop",
 			"t", "b", "/l/1", nil, []string{"push"})
 		require.NoError(t, err)
@@ -215,7 +226,7 @@ func TestPushCooldown_FailsOpen(t *testing.T) {
 
 	t.Run("nil ledger disables cooldowns", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestServiceWithLedger(&mockNotifRepo{}, oneToken(), nil)
+		svc := newTestServiceWithLedger(&mockNotifRepo{prefs: promoPushOn("price_drop")}, oneToken(), nil)
 		_, deliveries, err := svc.SendNotification(context.Background(), "user-1", "price_drop",
 			"t", "b", "/l/1", nil, []string{"push"})
 		require.NoError(t, err)
@@ -228,7 +239,7 @@ func TestPushCooldown_FailsOpen(t *testing.T) {
 func TestPushCooldown_NoDeliveryNoBudget(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockNotifRepo{}
+	repo := &mockNotifRepo{prefs: promoPushOn("price_drop")}
 	ledger := &mockSendLedger{}
 	svc := newTestServiceWithLedger(repo, &mockDeviceRepo{}, ledger) // zero tokens
 

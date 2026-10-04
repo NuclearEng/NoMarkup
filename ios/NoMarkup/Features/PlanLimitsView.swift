@@ -241,7 +241,7 @@ struct PlanLimitsView: View {
         } header: {
             Text("In-App Purchase").brandSectionHeader()
         } footer: {
-            Text("Product IDs: \(AppConfig.storeKitProductIDs.joined(separator: ", ")). Entitlements require server JWS verify before production grant (see storekit-scaffold.md).")
+            Text("A paid plan is granted only after the server verifies the App Store receipt. This build does not list product identifiers.")
                 .foregroundStyle(BrandTheme.textSecondary)
         }
     }

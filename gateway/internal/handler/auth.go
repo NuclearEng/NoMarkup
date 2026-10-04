@@ -239,6 +239,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	// Sanitize display_name: strip HTML tags to prevent XSS.
 	req.DisplayName = stripHTMLTags(req.DisplayName)
+	// ASR-1.2.a — display name is public UGC. Blank after tag-strip is optional
+	// and is not filtered. Email and password are not public text.
+	if name := strings.TrimSpace(req.DisplayName); name != "" && rejectProhibitedUGC(w, r, name) {
+		return
+	}
 
 	resp, err := h.userClient.Register(r.Context(), &userv1.RegisterRequest{
 		Email:       req.Email,

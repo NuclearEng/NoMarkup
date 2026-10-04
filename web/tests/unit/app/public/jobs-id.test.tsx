@@ -29,6 +29,10 @@ vi.mock('@/components/bids/BidActivityFeed', () => ({ BidActivityFeed: stubModul
 vi.mock('@/components/bids/BidForm', () => ({ BidForm: stubModule('bid-form') }));
 vi.mock('@/components/bids/BidList', () => ({ BidList: stubModule('bid-list') }));
 vi.mock('@/components/chat/ReportButton', () => ({ ReportButton: stubModule('report-button') }));
+vi.mock('@/components/chat/BlockButton', () => ({
+  BlockButton: ({ userId }: { userId: string }) =>
+    createElement('button', { type: 'button', 'data-testid': 'block-user' }, userId),
+}));
 // BidPlacementPanel stub forwards onPlaceBid via a button so we can fire the
 // page's placeBid.mutate handler from a test.
 vi.mock('@/components/bids/BidPlacementPanel', () => ({
@@ -64,7 +68,11 @@ vi.mock('@/components/chat/ChatRelayAlias', () => ({ ChatRelayAlias: () => null 
 vi.mock('@/components/terminal/terminal-toolbar', () => ({ TerminalToolbar: stubModule('terminal-toolbar') }));
 vi.mock('@/components/terminal/terminal-grid', () => ({ TerminalGrid: stubModule('terminal-grid') }));
 
-vi.mock('@/lib/constants', () => ({ ENABLE_LIVE_AUCTION: true }));
+vi.mock('@/lib/constants', () => ({
+  ENABLE_LIVE_AUCTION: true,
+  BUYER_PAYS_AGREED_PRICE:
+    'You pay the agreed price. The platform fee comes from the seller payout.',
+}));
 
 vi.mock('@/hooks/useAuctionTerminal', () => ({
   useAuctionTerminal: vi.fn(),
@@ -810,5 +818,72 @@ describe('(public)/jobs/[id]/page', () => {
     renderClient();
     // BidForm renders for a provider with an existing bid (lines 590-599).
     expect(screen.getByTestId('bid-form')).toBeDefined();
+  });
+
+  it('tells the customer the platform fee comes from the seller payout', () => {
+    setAuth({ user: null, isAuthenticated: false });
+    setHooks({ job: baseJob });
+    renderClient();
+    expect(
+      screen.getByText('You pay the agreed price. The platform fee comes from the seller payout.'),
+    ).toBeDefined();
+  });
+
+  it('shows Block beside Report for another party and hides it for the owner', () => {
+    setAuth({
+      user: { id: 'prov-self', roles: ['provider'] },
+      isAuthenticated: true,
+    });
+    setHooks({ job: baseJob });
+    renderClient();
+    expect(screen.getByTestId('report-job')).toBeDefined();
+    expect(screen.getByTestId('block-user').textContent).toBe('cust-1');
+  });
+
+  it('hides Block when the poster id is missing', () => {
+    setAuth({
+      user: { id: 'prov-self', roles: ['provider'] },
+      isAuthenticated: true,
+    });
+    setHooks({ job: { ...baseJob, customer_id: '   ' } });
+    renderClient();
+    expect(screen.getByTestId('report-job')).toBeDefined();
+    expect(screen.queryByTestId('block-user')).toBeNull();
+  });
+
+  it('lets the job poster block the awarded provider', () => {
+    setAuth({
+      user: { id: 'cust-1', roles: ['customer'] },
+      isAuthenticated: true,
+    });
+    setHooks({
+      job: { ...baseJob, awarded_provider_id: 'prov-9' },
+      bids: [
+        {
+          bid: {
+            id: 'b9',
+            amount_cents: 5000,
+            provider_id: 'prov-9',
+            created_at: '2026-04-10T00:00:00Z',
+          },
+          provider_display_name: 'Ada',
+          provider_business_name: 'Ada LLC',
+        },
+      ],
+    });
+    renderClient();
+    expect(screen.getByTestId('block-user').textContent).toBe('prov-9');
+    expect(screen.queryByTestId('report-job')).toBeNull();
+  });
+
+  it('hides Block and Report for the job poster', () => {
+    setAuth({
+      user: { id: 'cust-1', roles: ['customer'] },
+      isAuthenticated: true,
+    });
+    setHooks({ job: baseJob });
+    renderClient();
+    expect(screen.queryByTestId('block-user')).toBeNull();
+    expect(screen.queryByTestId('report-job')).toBeNull();
   });
 });

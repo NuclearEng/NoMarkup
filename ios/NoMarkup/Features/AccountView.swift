@@ -226,6 +226,7 @@ struct AccountView: View {
                     .accessibilityHint("Resend email verification and complete phone OTP")
                     .accessibilityIdentifier("account.row.verification")
 
+                    #if DEBUG
                     NavigationLink {
                         LazyView {
                             ClientActionLogView()
@@ -236,6 +237,7 @@ struct AccountView: View {
                     .frame(minHeight: 44)
                     .accessibilityHint("Shows recent API calls from this device with status, duration, and request id.")
                     .accessibilityIdentifier("account.row.requestLog")
+                    #endif
 
                     Button("Sign out", role: .destructive) {
                         confirmSignOut = true
@@ -346,11 +348,11 @@ struct AccountView: View {
                             PositionsBlotterView()
                         }
                     } label: {
-                        Label("Positions blotter", systemImage: "chart.bar.doc.horizontal")
+                        Label("Open bids & watchlist", systemImage: "chart.bar.doc.horizontal")
                     }
                     .frame(minHeight: 44)
                     .disabled(auth.isScaffoldSession || !auth.isAuthenticated)
-                    .accessibilityHint("Open market exposure — service bids, goods bids, and watchlist")
+                    .accessibilityHint("Service bids, goods bids, and listings you are watching")
                     .accessibilityIdentifier("account.row.positions")
 
                     NavigationLink {
@@ -1094,7 +1096,8 @@ private struct ExportShareItem: Identifiable {
 }
 
 /// Sheet target for Privacy / Terms / Guidelines / Support.
-/// Support uses `.nativeSupport` so NXDOMAIN on the public host is not a dead-end.
+/// Support uses `.nativeSupport` so a failed load shows mailto instead of a dead Safari sheet.
+/// The public URL is still requested first.
 private struct LegalSheetTarget: Identifiable {
     let id = UUID()
     let title: String

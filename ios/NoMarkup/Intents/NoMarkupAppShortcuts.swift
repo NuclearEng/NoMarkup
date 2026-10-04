@@ -166,9 +166,9 @@ struct ListingEntityQuery: EntityQuery {
 
 // Spotlight indexability (INT.2): `IndexedEntity` is iOS 18+ while the app targets
 // iOS 17, so the conformances are availability-gated. `attributeSet` falls back to
-// the SDK's `defaultAttributeSet` (derived from `displayRepresentation`). Donation
-// calls (`CSSearchableIndex.indexAppEntities`) belong to the detail views'
-// NSUserActivity/CoreSpotlight work, not to this file.
+// the SDK's `defaultAttributeSet` (derived from `displayRepresentation`).
+// `SpotlightIndex` calls `CSSearchableIndex.indexAppEntities` when a detail view's
+// `NSUserActivity` becomes current, using the same id as `persistentIdentifier`.
 @available(iOS 18.0, *)
 extension JobEntity: IndexedEntity {}
 

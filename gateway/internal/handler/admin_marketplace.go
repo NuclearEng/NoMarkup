@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/meilisearch/meilisearch-go"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
@@ -29,13 +31,37 @@ import (
 // All routes require RequireAdmin middleware (set by the router).
 type AdminMarketplaceHandler struct {
 	db *pgxpool.Pool
+	// meili best-effort deletes the listings search document after a committed
+	// hide. Nil (search unconfigured) is a no-op, not a 500. Do not filter the
+	// index on is_hidden: existing documents do not have that field.
+	meili meilisearch.ServiceManager
 }
 
 // NewAdminMarketplaceHandler returns a new AdminMarketplaceHandler. If db
 // is nil (e.g. DATABASE_URL unset in tests), every endpoint returns an
-// empty response instead of a 500.
+// empty response instead of a 500. Search eviction stays off until SetMeili.
 func NewAdminMarketplaceHandler(db *pgxpool.Pool) *AdminMarketplaceHandler {
 	return &AdminMarketplaceHandler{db: db}
+}
+
+// SetMeili wires the existing Meilisearch client so a committed hide can
+// evict the listing document. Nil is stored and later treated as a no-op.
+// Kept as a setter so NewAdminMarketplaceHandler's signature stays stable.
+func (h *AdminMarketplaceHandler) SetMeili(meili meilisearch.ServiceManager) {
+	if h == nil {
+		return
+	}
+	h.meili = meili
+}
+
+// evictHiddenListing drops the search document after Postgres has committed
+// is_hidden = true. Nil meili does not call Meilisearch and does not fail
+// the hide.
+func (h *AdminMarketplaceHandler) evictHiddenListing(ctx context.Context, listingID string) {
+	if h == nil {
+		return
+	}
+	deleteListingSearchDocument(ctx, h.meili, listingID)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -43,19 +69,19 @@ func NewAdminMarketplaceHandler(db *pgxpool.Pool) *AdminMarketplaceHandler {
 // ─────────────────────────────────────────────────────────────────────────
 
 type adminListing struct {
-	ID                string     `json:"id"`
-	Title             string     `json:"title"`
-	SellerID          string     `json:"seller_id"`
-	SellerEmail       string     `json:"seller_email"`
-	Status            string     `json:"status"`
-	IsHidden          bool       `json:"is_hidden"`
-	HiddenReason      *string    `json:"hidden_reason,omitempty"`
-	StartingCents     int64      `json:"starting_price_cents"`
-	CurrentBidCents   *int64     `json:"current_bid_cents,omitempty"`
-	BidCount          int        `json:"bid_count"`
-	OpenReportCount   int        `json:"open_report_count"`
-	AuctionEndsAt     time.Time  `json:"auction_ends_at"`
-	CreatedAt         time.Time  `json:"created_at"`
+	ID              string    `json:"id"`
+	Title           string    `json:"title"`
+	SellerID        string    `json:"seller_id"`
+	SellerEmail     string    `json:"seller_email"`
+	Status          string    `json:"status"`
+	IsHidden        bool      `json:"is_hidden"`
+	HiddenReason    *string   `json:"hidden_reason,omitempty"`
+	StartingCents   int64     `json:"starting_price_cents"`
+	CurrentBidCents *int64    `json:"current_bid_cents,omitempty"`
+	BidCount        int       `json:"bid_count"`
+	OpenReportCount int       `json:"open_report_count"`
+	AuctionEndsAt   time.Time `json:"auction_ends_at"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // ListListings GET /api/v1/admin/listings
@@ -168,7 +194,9 @@ func (h *AdminMarketplaceHandler) SuspendListing(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	var body struct{ Reason string `json:"reason"` }
+	var body struct {
+		Reason string `json:"reason"`
+	}
 	if !decodeJSON(w, r, &body) {
 		return
 	}
@@ -186,6 +214,7 @@ func (h *AdminMarketplaceHandler) SuspendListing(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, "failed to suspend listing")
 		return
 	}
+	h.evictHiddenListing(r.Context(), id)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"listing_id": id,
@@ -244,7 +273,9 @@ func (h *AdminMarketplaceHandler) CancelListing(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	var body struct{ Reason string `json:"reason"` }
+	var body struct {
+		Reason string `json:"reason"`
+	}
 	if !decodeJSON(w, r, &body) {
 		return
 	}
@@ -262,6 +293,8 @@ func (h *AdminMarketplaceHandler) CancelListing(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "failed to cancel listing")
 		return
 	}
+	// Cancel also sets is_hidden, so the search document must leave with it.
+	h.evictHiddenListing(r.Context(), id)
 	// Admin cancel has no winner: release every authorized bond. Fail-soft.
 	if n, rerr := releaseAuthorizedBidBondsForListing(r.Context(), h.db, id, ""); rerr != nil {
 		slog.WarnContext(r.Context(), "admin cancel listing: bid bond release failed",
@@ -484,8 +517,9 @@ func (h *AdminMarketplaceHandler) ListGoodsDisputes(w http.ResponseWriter, r *ht
 
 // ResolveGoodsDispute POST /api/v1/admin/disputes/goods/{id}/resolve
 // Body: { "resolution": "refund_full" | "refund_partial" | "release_to_seller" | "no_action",
-//         "refund_to_buyer_cents": int64, "transfer_to_seller_cents": int64,
-//         "notes": "..." }
+//
+//	"refund_to_buyer_cents": int64, "transfer_to_seller_cents": int64,
+//	"notes": "..." }
 func (h *AdminMarketplaceHandler) ResolveGoodsDispute(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidUUID(id) {
@@ -717,7 +751,18 @@ func (h *AdminMarketplaceHandler) ResolveReport(w http.ResponseWriter, r *http.R
 	// this, a second resolve silently overwrites the prior resolution,
 	// reviewed_by, and reviewed_at — letting one admin's verdict be replaced with
 	// no audit trail. 'reviewed' is intermediate and may still advance.
-	tag, err := h.db.Exec(r.Context(), `
+	// actioned hides the listing in the same transaction. Public catalog is
+	// `status = 'active' AND is_hidden = false`; is_hidden is the existing
+	// column (auto-hide trigger), not a new status.
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		slog.Error("admin resolve report begin failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to resolve")
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	tag, err := tx.Exec(r.Context(), `
 		UPDATE listing_reports
 		   SET status = $1, reviewed_by = $2, reviewed_at = now(),
 		       resolution = $3, updated_at = now()
@@ -729,6 +774,7 @@ func (h *AdminMarketplaceHandler) ResolveReport(w http.ResponseWriter, r *http.R
 		return
 	}
 	if tag.RowsAffected() == 0 {
+		_ = tx.Rollback(r.Context())
 		// Either the report doesn't exist (404) or it's already terminal (409).
 		var exists bool
 		if e := h.db.QueryRow(r.Context(),
@@ -744,16 +790,62 @@ func (h *AdminMarketplaceHandler) ResolveReport(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusConflict, "report already resolved")
 		return
 	}
+	var hiddenListingID string
+	if body.Action == "actioned" {
+		var herr error
+		hiddenListingID, herr = hideListingForActionedReport(r.Context(), tx, id)
+		if herr != nil {
+			slog.Error("admin resolve report hide failed", "error", herr, "report_id", id)
+			writeError(w, http.StatusInternalServerError, "failed to resolve")
+			return
+		}
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		slog.Error("admin resolve report commit failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to resolve")
+		return
+	}
+	// Evict only after commit. A failed delete must not undo the hide, and a
+	// rolled-back hide must not drop a still-public document.
+	if hiddenListingID != "" {
+		h.evictHiddenListing(r.Context(), hiddenListingID)
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"report_id": id,
 		"status":    newStatus,
 	})
 }
 
+// hideListingForActionedReport removes the listing from the public catalog
+// (ListListings requires is_hidden = false). An existing hidden_reason is kept.
+// The returned id is the listing that was hidden, or empty when no listing row
+// matched. Callers evict that id from search only after the transaction commits.
+func hideListingForActionedReport(ctx context.Context, tx pgx.Tx, reportID string) (string, error) {
+	var listingID string
+	err := tx.QueryRow(ctx, `
+		UPDATE listings
+		   SET is_hidden = true,
+		       hidden_reason = COALESCE(hidden_reason, 'admin: report actioned'),
+		       updated_at = now()
+		 WHERE id = (SELECT listing_id FROM listing_reports WHERE id = $1)
+		RETURNING id::text`, reportID).Scan(&listingID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("hide actioned listing: %w", err)
+	}
+	return listingID, nil
+}
+
 // CreateReport POST /api/v1/listings/{id}/report
 // Public-ish endpoint (rate-limited at the gateway). Anyone — including
 // unauthenticated visitors — can flag a listing. The trigger on
-// listing_reports auto-hides the listing once ≥3 open reports exist.
+// listing_reports auto-hides the listing once ≥3 distinct signed-in
+// reporters have open reports. That write is the SQL trigger in migration
+// 074. After the insert commits, this handler checks is_hidden and evicts
+// the search document when the trigger hid the row. Public search also
+// drops hidden rows in Postgres.
 func (h *AdminMarketplaceHandler) CreateReport(w http.ResponseWriter, r *http.Request) {
 	listingID := chi.URLParam(r, "id")
 	if !isValidUUID(listingID) {
@@ -856,6 +948,16 @@ func (h *AdminMarketplaceHandler) CreateReport(w http.ResponseWriter, r *http.Re
 		slog.Error("create listing report failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to create report")
 		return
+	}
+
+	// The auto-hide trigger may have just set is_hidden. Evict only then.
+	// A read error must not turn a saved report into a 500.
+	var hidden bool
+	if err := h.db.QueryRow(r.Context(),
+		`SELECT is_hidden FROM listings WHERE id = $1`, listingID).Scan(&hidden); err != nil {
+		slog.Warn("create listing report: hide check failed", "error", err, "listing_id", listingID)
+	} else if hidden {
+		h.evictHiddenListing(r.Context(), listingID)
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{

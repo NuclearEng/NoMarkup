@@ -305,3 +305,29 @@ describe('ListingDetailClient — Best-Offer wiring', () => {
     expect(screen.queryByTestId('counter-offer-banner')).toBeNull();
   });
 });
+
+describe('ListingDetailClient — Block beside Report', () => {
+  it('asks for confirmation before blocking the seller', async () => {
+    authState.user = { id: 'buyer-9' };
+    authState.isAuthenticated = true;
+    renderClient();
+    expect(screen.getByRole('button', { name: /report listing/i })).toBeDefined();
+    await userEvent.click(screen.getByRole('button', { name: /block user/i }));
+    expect(screen.getByRole('heading', { name: /Block Jane/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /^Cancel$/i })).toBeDefined();
+  });
+
+  it('hides Block for the seller and when the seller id is missing', () => {
+    authState.user = { id: 's-1' };
+    authState.isAuthenticated = true;
+    renderClient();
+    expect(screen.queryByRole('button', { name: /block user/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /report listing/i })).toBeNull();
+
+    authState.user = { id: 'buyer-9' };
+    authState.isAuthenticated = true;
+    renderClient({ ...detail, seller_id: '   ' });
+    expect(screen.queryByRole('button', { name: /block user/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /report listing/i })).toBeDefined();
+  });
+});

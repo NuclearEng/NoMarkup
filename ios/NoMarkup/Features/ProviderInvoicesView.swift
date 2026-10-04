@@ -72,7 +72,7 @@ struct ProviderInvoicesView: View {
                     } header: {
                         Text("Completed contracts (\(contracts.count))").brandSectionHeader()
                     } footer: {
-                        Text("Uses GET /contracts/{id}/invoice/download (HTML). PDF path is used when the gateway exposes it.")
+                        Text("The invoice opens from this contract. You get HTML when that is what the server returns, and a PDF when the server provides one.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
 

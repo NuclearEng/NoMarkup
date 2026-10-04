@@ -11,9 +11,9 @@ struct OpenWatchlistIntent: AppIntent {
     var session: any IntentSessionProviding = KeychainTokenStore()
 
     @MainActor
-    func perform() async throws -> some IntentResult {
+    func perform() async throws -> some IntentResult & ProvidesDialog {
         try IntentAuthGuard.requireSession(session)
         DeepLinkRouter.shared.open(.watchlist)
-        return .result()
+        return .result(dialog: IntentDialog("Opening your watchlist."))
     }
 }

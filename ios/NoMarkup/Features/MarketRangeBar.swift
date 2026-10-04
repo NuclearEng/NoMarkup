@@ -201,24 +201,25 @@ struct MarketRangeBar: View {
 
     private var disclaimerText: String {
         if isIndustrySeeded {
-            return "Based on industry data. Actual bids may vary by location and scope."
+            return String(localized: "Based on industry data. Actual bids may vary by location and scope.")
         }
         switch audience {
         case .customer:
             if sampleSize > 0 {
-                return "Based on \(String(localized: "\(sampleSize) completed jobs")) in your area, \(servicePhrase) typically costs between \(lowLabel) and \(highLabel)."
+                return String(localized: "Based on \(sampleSize) completed jobs in your area, \(servicePhrase) typically costs between \(lowLabel) and \(highLabel).")
             }
-            return "\(servicePhrase.prefix(1).uppercased() + servicePhrase.dropFirst()) typically costs between \(lowLabel) and \(highLabel) in your area."
+            let titledService = servicePhrase.prefix(1).uppercased() + servicePhrase.dropFirst()
+            return String(localized: "\(titledService) typically costs between \(lowLabel) and \(highLabel) in your area.")
         case .provider:
             if sampleSize > 0 {
-                return "Other providers in your area typically price \(servicePhrase) between \(lowLabel) and \(highLabel) (\(String(localized: "\(sampleSize) completed jobs")))."
+                return String(localized: "Other providers in your area typically price \(servicePhrase) between \(lowLabel) and \(highLabel) (\(sampleSize) completed jobs).")
             }
-            return "Other providers in your area typically price \(servicePhrase) between \(lowLabel) and \(highLabel)."
+            return String(localized: "Other providers in your area typically price \(servicePhrase) between \(lowLabel) and \(highLabel).")
         }
     }
 
     private var accessibilitySummary: String {
-        "Market range low \(lowLabel), median \(medianLabel), high \(highLabel). \(disclaimerText)"
+        String(localized: "Market range low \(lowLabel), median \(medianLabel), high \(highLabel). \(disclaimerText)")
     }
 }
 

@@ -132,9 +132,6 @@
 	-->
 	<key>StoreKitEnabled</key>
 	<false/>
-	<!-- Comma-separated ASC product IDs (or use string array). Defaults match AppConfig.defaultStoreKitProductIDs. -->
-	<key>StoreKitProductIDs</key>
-	<string>nomarkup.provider.pro.monthly,nomarkup.provider.pro.yearly,nomarkup.provider.business.monthly,nomarkup.provider.business.yearly</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<!-- FR-10.4: allow canOpenURL for Google Maps app scheme (optional directions). -->

@@ -1,7 +1,7 @@
 # App Review Notes (NoMarkup)
 
 **Purpose:** Paste into App Store Connect **App Review Information → Notes** (and internal packaging).  
-**As of:** 2026-08-21  
+**As of:** 2026-10-03  
 **Binary:** Native SwiftUI iOS (`ios/NoMarkup`) — free-tier digital, dual-rail GMV via Stripe  
 **Related:** [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) · [`v1-ios-product-cut.md`](./v1-ios-product-cut.md) · [`submission-blockers.md`](./submission-blockers.md)
 
@@ -20,9 +20,13 @@ Founder residual (do **not** claim done in ASC): production API is **not** live;
 • UGC: Report on jobs AND listings AND users/chat/reviews. Block.
   Community Guidelines in-app (Account → Legal & support).
 • Payments: Rail A Stripe/Apple Pay for goods and offline services
-  only. StoreKitEnabled=false — no digital unlock purchase.
+  only. The buyer pays the agreed price. The platform fee comes out
+  of the seller payout. StoreKitEnabled=false — no digital unlock
+  purchase, no listing-promotion purchase, and no Promoted chip.
+  This binary does not steer sellers to buy promotion on the web.
   Regulated rails hard-off on iOS (BNPL, insurance, working capital,
   instant payout, legal, lead_gen) regardless of server seed.
+  Passkeys stay off until no-markup.com resolves.
 • Demo accounts (same password, ASC Password field only):
   customer@nomarkup.com (primary), provider@nomarkup.com,
   provider2@nomarkup.com, admin@nomarkup.com.
@@ -102,9 +106,13 @@ In-app help: Account → Legal & support → Widgets & Live Activities
 FREE-TIER ONLY — NO IAP AT LAUNCH
 ═══════════════════════════════════════════════════════════════
 StoreKitEnabled=false. This binary does NOT include In-App Purchases
-or a digital subscription paywall. There is no digital unlock purchase
-and no “buy digital cheaper on the web” CTA inside the app.
+or a digital subscription paywall. The committed plists have no
+StoreKitProductIDs, and the app does not embed a draft product catalog.
+There is no digital unlock purchase, no listing-promotion purchase,
+no Promoted badge, and no “buy digital cheaper on the web” CTA.
 Account → Plan limits compares free launch limits only.
+Passkeys are off until https://no-markup.com resolves and webcredentials
+can be verified. Do not expect a passkey button during review.
 
 ═══════════════════════════════════════════════════════════════
 PAYMENTS (dual-rail) — Guideline 3.0.1 / 3.1.3(e)
@@ -114,9 +122,13 @@ Rail A — Real-world GMV:
   use Stripe PaymentSheet / Apple Pay / Connect. Not digital unlocks.
   Not IAP.
 
+The buyer pays the agreed price. The platform fee comes out of the
+seller payout. iOS does not sell or display listing promotion.
+
 Rail B — Digital feature tiers:
   Analytics, featured placement, bid-limit upgrades, etc. are NOT sold
   in this binary. Free-tier baseline only. StoreKitEnabled=false.
+  No StoreKit product identifiers are compiled into this build.
 
 ═══════════════════════════════════════════════════════════════
 REGULATED RAILS — HARD-OFF ON iOS
@@ -134,15 +146,24 @@ In-app: Account → Your data → Delete Account
   (typed confirmation + optional Face ID step → DELETE /api/v1/users/me,
   ~30-day grace on server)
 Export: Account → Export Data
-Privacy Policy URL: https://no-markup.com/privacy
-Support: https://no-markup.com/support · support@no-markup.com
+Privacy Policy URL (intended): https://no-markup.com/privacy
+Support URL (intended): https://no-markup.com/support
+Those hosts did not resolve on 2026-10-03. If the page fails to load,
+Account → Legal shows a bundled privacy summary and a short community
+guidelines summary, plus mailto support@no-markup.com. That fallback
+does not make the public URL live. Do not submit while the host is down.
 
 ═══════════════════════════════════════════════════════════════
 UGC / SAFETY
 ═══════════════════════════════════════════════════════════════
 Report on jobs AND listings AND users/chat/reviews.
-Block abusive users (Account → Network & safety → Blocked users).
-Community Guidelines: Account → Legal & support (also /community-guidelines).
+Block is next to Report on job detail and listing detail, and under
+Account → Network & safety → Blocked users.
+An actioned job report soft-deletes the job. An actioned listing
+report hides the listing from the public catalog.
+First-look target and what an actioned report changes: [ugc-moderation-sla.md](./ugc-moderation-sla.md).
+Community Guidelines: Account → Legal & support. If the public page
+does not load, the app shows the bundled summary.
 
 ═══════════════════════════════════════════════════════════════
 OTHER
@@ -213,7 +234,7 @@ Canonical keys: `feature_flags` table + `GET /api/v1/flags`. Gateway `RequireFla
 | Rail | What | Processor |
 |------|------|-----------|
 | **A — GMV** | Jobs escrow, goods orders, Connect payouts | **Stripe** (**3.1.3(e)**) — not IAP |
-| **B — Digital tiers** | Analytics, featured, bid limits, etc. | **Not in this binary**; web Stripe only until StoreKit (B2) |
+| **B — Digital tiers** | Analytics, bid limits, subscriptions | **Not in this binary.** No compiled product IDs. Listing promotion is not sold or shown on iOS. |
 
 Apple Pay (when merchant ID + domain association + `pk_` configured) is a Stripe payment method — not digital IAP.
 

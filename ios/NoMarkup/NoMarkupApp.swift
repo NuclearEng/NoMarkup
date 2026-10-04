@@ -16,7 +16,12 @@ struct NoMarkupApp: App {
         // IOS-PERF.3: bounded URLCache for AsyncImage / default URL loading + purge on memory pressure.
         ImageUploader.configureCache()
         ImageUploader.installMemoryWarningPurge()
+        // Detail views donate NSUserActivity; this bridge indexes the App Entity.
+        SpotlightIndex.installActivityDonationBridge()
+        // Local UI audit. Release never installs — no consent, and the log is not uploaded.
+        #if DEBUG
         ActionAuditProbe.install()
+        #endif
     }
 
     var body: some Scene {

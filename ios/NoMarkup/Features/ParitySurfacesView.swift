@@ -315,14 +315,14 @@ struct PositionsBlotterView: View {
                     } header: {
                         Text("Watchlist").brandSectionHeader()
                     } footer: {
-                        Text("Open exposure across reverse-auction jobs and forward-auction goods.")
+                        Text("Jobs you are bidding on and goods you are watching.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
                 }
                 .brandListBackground()
             }
         }
-        .navigationTitle("Positions")
+        .navigationTitle("Open bids & watchlist")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

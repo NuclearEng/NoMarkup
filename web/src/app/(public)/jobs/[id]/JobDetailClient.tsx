@@ -29,6 +29,7 @@ import { BidForm } from '@/components/bids/BidForm';
 import { BidList } from '@/components/bids/BidList';
 import { BidPriceChart } from '@/components/bids/BidPriceChart';
 import { LiveBidTicker } from '@/components/bids/LiveBidTicker';
+import { BlockButton } from '@/components/chat/BlockButton';
 import { ChatRelayAlias } from '@/components/chat/ChatRelayAlias';
 import { ReportButton } from '@/components/chat/ReportButton';
 import { GradientMesh } from '@/components/landing/GradientMesh';
@@ -47,7 +48,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Separator } from '@/components/ui/separator';
-import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
+import { BUYER_PAYS_AGREED_PRICE, ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { useAuctionTerminal } from '@/hooks/useAuctionTerminal';
 import { useBidCount, useBidsForJob } from '@/hooks/useBids';
 import { useCreateChannel } from '@/hooks/useChannels';
@@ -73,6 +74,79 @@ function ownerLiquidityCopy(liq: JobLiquidity): string | null {
     return `${who} — first bid in ${String(liq.minutes_to_first_bid)} min`;
   }
   return `${who} — waiting for the first bid`;
+}
+
+/** Blank or self hides Block. Comparison is case-insensitive so a UUID case mismatch cannot target you. */
+function blockTargetUserId(
+  raw: string | null | undefined,
+  selfId: string | null | undefined,
+): string | null {
+  const id = typeof raw === 'string' ? raw.trim() : '';
+  if (id.length === 0) return null;
+  const self = typeof selfId === 'string' ? selfId.trim() : '';
+  if (self.length > 0 && id.toLowerCase() === self.toLowerCase()) return null;
+  return id;
+}
+
+function AwardedProviderBlock({
+  awardedProviderId,
+  selfId,
+  displayName,
+}: {
+  awardedProviderId: string | null | undefined;
+  selfId: string | null;
+  displayName?: string;
+}) {
+  const id = blockTargetUserId(awardedProviderId, selfId);
+  if (!id) return null;
+  return (
+    <BlockButton
+      userId={id}
+      displayName={displayName}
+      className="min-h-[44px] min-w-[44px] text-muted-foreground hover:text-destructive"
+    />
+  );
+}
+
+function JobPartyActions({
+  jobId,
+  jobTitle,
+  customerId,
+  customerName,
+  selfId,
+  isAuthenticated,
+}: {
+  jobId: string;
+  jobTitle: string;
+  customerId: string;
+  customerName: string;
+  selfId: string | null;
+  isAuthenticated: boolean;
+}) {
+  const blockUserId = blockTargetUserId(customerId, selfId);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <ReportJobButton
+        jobId={jobId}
+        jobTitle={jobTitle}
+        className="min-h-[44px] min-w-[44px] text-muted-foreground hover:text-destructive"
+      />
+      {blockUserId ? (
+        <BlockButton
+          userId={blockUserId}
+          displayName={customerName}
+          className="min-h-[44px] min-w-[44px] text-muted-foreground hover:text-destructive"
+        />
+      ) : null}
+      {isAuthenticated && customerId.trim().length > 0 ? (
+        <ReportButton
+          userId={customerId}
+          displayName={customerName}
+          className="min-h-[44px] min-w-[44px] text-muted-foreground hover:text-destructive"
+        />
+      ) : null}
+    </div>
+  );
 }
 
 const FALLBACK_MARKET_RANGE: MarketRange = {
@@ -279,6 +353,9 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
         : 'Flexible';
 
   const displayBidCount = bidCount ?? job.bid_count;
+  const awardedProviderName = bidsData?.bids.find(
+    (entry) => entry.bid.provider_id === job.awarded_provider_id,
+  )?.provider_display_name;
   const liquidityLine =
     isJobOwner && job.liquidity ? ownerLiquidityCopy(job.liquidity) : null;
 
@@ -455,6 +532,30 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
             <ChatRelayAlias contextType="job" contextId={jobId} />
           </div>
         ) : null}
+
+        {!isJobOwner ? (
+          <div className="mx-auto max-w-[1400px] px-4 pb-4 sm:px-6">
+            <JobPartyActions
+              jobId={jobId}
+              jobTitle={job.title}
+              customerId={job.customer_id}
+              customerName={job.customer_display_name}
+              selfId={user?.id ?? null}
+              isAuthenticated={isAuthenticated}
+            />
+          </div>
+        ) : (
+          <div className="mx-auto max-w-[1400px] px-4 pb-4 sm:px-6">
+            <AwardedProviderBlock
+              awardedProviderId={job.awarded_provider_id}
+              selfId={user?.id ?? null}
+              displayName={awardedProviderName}
+            />
+          </div>
+        )}
+        <p className="mx-auto max-w-[1400px] px-4 pb-4 text-sm text-muted-foreground sm:px-6">
+          {BUYER_PAYS_AGREED_PRICE}
+        </p>
 
         {/* Provider bid form — pinned to bottom for providers who can bid */}
         {canBid ? (
@@ -779,6 +880,8 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                   </div>
                 ) : null}
 
+                <p className="text-muted-foreground text-sm">{BUYER_PAYS_AGREED_PRICE}</p>
+
                 {/* Bid count badge */}
                 <div className="flex items-center gap-2">
                   <Users className="text-muted-foreground h-4 w-4" aria-hidden="true" />
@@ -978,21 +1081,25 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                 posted
               </p>
               {!isJobOwner ? (
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <ReportJobButton
+                <div className="pt-1">
+                  <JobPartyActions
                     jobId={jobId}
                     jobTitle={job.title}
-                    className="text-muted-foreground hover:text-destructive"
+                    customerId={job.customer_id}
+                    customerName={job.customer_display_name}
+                    selfId={user?.id ?? null}
+                    isAuthenticated={isAuthenticated}
                   />
-                  {isAuthenticated ? (
-                    <ReportButton
-                      userId={job.customer_id}
-                      displayName={job.customer_display_name}
-                      className="text-muted-foreground hover:text-destructive"
-                    />
-                  ) : null}
                 </div>
-              ) : null}
+              ) : (
+                <div className="pt-1">
+                  <AwardedProviderBlock
+                    awardedProviderId={job.awarded_provider_id}
+                    selfId={user?.id ?? null}
+                    displayName={awardedProviderName}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

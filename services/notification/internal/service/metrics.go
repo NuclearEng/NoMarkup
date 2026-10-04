@@ -24,4 +24,20 @@ var (
 		Name: "notification_stale_device_tokens_pruned_total",
 		Help: "Device tokens deleted after APNs reported them unregistered.",
 	})
+
+	// apnsSendsTotal counts real APNs HTTP send results. result is
+	// success or failure. Labels must stay free of tokens and payloads.
+	apnsSendsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "notification_apns_sends_total",
+		Help: "APNs HTTP send attempts by result (success or failure).",
+	}, []string{"result"})
 )
+
+// recordAPNsSend counts one completed APNs HTTP attempt.
+func recordAPNsSend(success bool) {
+	result := "failure"
+	if success {
+		result = "success"
+	}
+	apnsSendsTotal.WithLabelValues(result).Inc()
+}

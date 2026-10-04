@@ -64,6 +64,7 @@ func TestPlaceBid_SuccessDoesNotDoubleCall(t *testing.T) {
 		},
 	}
 	h := NewBidHandler(mock, nil, nil)
+	allowUnblockedBid(h)
 
 	r := chi.NewRouter()
 	r.Post("/api/v1/jobs/{id}/bids", h.PlaceBid)
@@ -99,6 +100,9 @@ func TestPlaceBid_AlreadyExistsWithoutDBSurfacesConflict(t *testing.T) {
 		},
 	}
 	h := NewBidHandler(mock, nil, nil)
+	// Block check passes via a fake querier. h.db stays nil so the
+	// AlreadyExists soft-replay cannot load the stored row and stays 409.
+	allowUnblockedBid(h)
 
 	r := chi.NewRouter()
 	r.Post("/api/v1/jobs/{id}/bids", h.PlaceBid)

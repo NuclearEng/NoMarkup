@@ -31,6 +31,7 @@ import { OAuthButtons, OAuthDivider } from '@/components/auth/oauth-buttons';
 import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useEnableRole } from '@/hooks/useProfile';
 import { api, getApiErrorMessage } from '@/lib/api';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { messageForOAuthError } from '@/lib/oauth-errors';
 import { passkeysSupported, registerPasskey } from '@/lib/passkeys';
 import { cn } from '@/lib/utils';
@@ -204,7 +205,7 @@ export function RegisterForm() {
           Create an account
         </CardTitle>
         <CardDescription className="text-white/65">
-          Join NoMarkup — fair market rates, not the markup.
+          Join NoMarkup — fair market rates, not the markup. {BUYER_PAYS_AGREED_PRICE}
         </CardDescription>
       </CardHeader>
       <CardContent className="relative z-[2]">

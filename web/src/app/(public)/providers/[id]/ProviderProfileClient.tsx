@@ -1,5 +1,6 @@
 'use client';
 
+import { BlockButton } from '@/components/chat/BlockButton';
 import { ReportButton } from '@/components/chat/ReportButton';
 import { ResponseTimeBadge } from '@/components/providers/ResponseTimeBadge';
 import { VerifiedBarBadge } from '@/components/providers/VerifiedBarBadge';
@@ -110,11 +111,18 @@ export function ProviderProfileClient({
                 />
                 {/* ASR-1.2.b — report provider user (hidden for self). */}
                 {currentUserId && currentUserId !== provider.user_id ? (
-                  <ReportButton
-                    userId={provider.user_id}
-                    displayName={provider.business_name ?? provider.display_name}
-                    className="text-zinc-400 hover:text-red-300"
-                  />
+                  <>
+                    <ReportButton
+                      userId={provider.user_id}
+                      displayName={provider.business_name ?? provider.display_name}
+                      className="min-h-[44px] min-w-[44px] text-zinc-400 hover:text-red-300"
+                    />
+                    <BlockButton
+                      userId={provider.user_id}
+                      displayName={provider.business_name ?? provider.display_name}
+                      className="min-h-[44px] min-w-[44px] text-zinc-400 hover:text-red-300"
+                    />
+                  </>
                 ) : null}
               </div>
             ) : null}

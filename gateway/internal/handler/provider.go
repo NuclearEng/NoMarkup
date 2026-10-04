@@ -140,6 +140,17 @@ func (h *ProviderHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ASR-1.2.a — bio and business name are public UGC. Nil / blank is
+	// optional and not filtered. EIN, address, and insurance numbers are not.
+	if req.Bio != nil && rejectProhibitedUGC(w, r, *req.Bio) {
+		return
+	}
+	if req.BusinessName != nil {
+		if name := strings.TrimSpace(*req.BusinessName); name != "" && rejectProhibitedUGC(w, r, name) {
+			return
+		}
+	}
+
 	grpcReq := &userv1.UpdateProviderProfileRequest{
 		UserId:                 claims.UserID,
 		BusinessName:           req.BusinessName,
@@ -180,6 +191,26 @@ func (h *ProviderHandler) SetGlobalTerms(w http.ResponseWriter, r *http.Request)
 	var req setTermsRequest
 	if !decodeJSON(w, r, &req) {
 		return
+	}
+
+	// ASR-1.2.a — cancellation, warranty, and milestone descriptions are public
+	// UGC. Empty text is skipped. Payment timing and percentages are not filtered.
+	{
+		var parts []string
+		if s := strings.TrimSpace(req.CancellationPolicy); s != "" {
+			parts = append(parts, s)
+		}
+		if s := strings.TrimSpace(req.WarrantyTerms); s != "" {
+			parts = append(parts, s)
+		}
+		for _, m := range req.Milestones {
+			if s := strings.TrimSpace(m.Description); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		if len(parts) > 0 && rejectProhibitedUGC(w, r, parts...) {
+			return
+		}
 	}
 
 	milestones := make([]*userv1.MilestoneTemplate, 0, len(req.Milestones))
@@ -262,6 +293,19 @@ func (h *ProviderHandler) UpdatePortfolio(w http.ResponseWriter, r *http.Request
 	if code, msg := h.planLimits.denyPortfolio(r, claims.UserID, len(req.Images)); code != 0 {
 		writeError(w, code, msg)
 		return
+	}
+
+	// ASR-1.2.a — captions are public UGC. Empty captions and image URLs are not filtered.
+	{
+		var captions []string
+		for _, img := range req.Images {
+			if c := strings.TrimSpace(img.Caption); c != "" {
+				captions = append(captions, c)
+			}
+		}
+		if len(captions) > 0 && rejectProhibitedUGC(w, r, captions...) {
+			return
+		}
 	}
 
 	images := make([]*userv1.PortfolioImage, 0, len(req.Images))

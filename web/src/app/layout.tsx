@@ -14,6 +14,7 @@ import { QueryProvider } from '@/components/providers/QueryProvider';
 import { WebVitalsReporter } from '@/components/providers/WebVitalsReporter';
 import { InstallPrompt } from '@/components/pwa/InstallPrompt';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { Toaster } from 'sonner';
 
 // Showcase type stack — docs/brand/showcase-ssot.md (qa/showcase/index.html)
@@ -57,7 +58,7 @@ export const metadata: Metadata = {
     template: '%s | NoMarkup',
   },
   description:
-    'Reverse-auction service marketplace. Customers post jobs, providers compete on price. Fair market rates — not the markup. Plus local goods with escrow.',
+    `Reverse-auction service marketplace. Customers post jobs, providers compete on price. Fair market rates — not the markup. ${BUYER_PAYS_AGREED_PRICE} Plus local goods with escrow.`,
   applicationName: 'NoMarkup',
   manifest: '/manifest.json',
   keywords: [
@@ -67,7 +68,6 @@ export const metadata: Metadata = {
     'fair price',
     'local marketplace',
     'verified providers',
-    'no markup',
   ],
   alternates: { canonical: '/' },
   // Favicon + apple-touch-icon come from App Router file conventions:
@@ -77,7 +77,7 @@ export const metadata: Metadata = {
     siteName: 'NoMarkup',
     title: 'NoMarkup — The Market Sets The Price. Not The Markup.',
     description:
-      'Customers post home-service jobs. Qualified providers compete in real-time reverse auctions. Prices drop to fair market rates.',
+      `Customers post home-service jobs. Qualified providers compete in real-time reverse auctions. Prices drop to fair market rates. ${BUYER_PAYS_AGREED_PRICE}`,
     url: SITE_URL,
     images: [
       {
@@ -92,7 +92,7 @@ export const metadata: Metadata = {
     card: 'summary',
     title: 'NoMarkup — The Market Sets The Price',
     description:
-      'Reverse auctions for home services. Fair market rates — everyone wins except the middleman.',
+      `Reverse auctions for home services. Fair market rates. ${BUYER_PAYS_AGREED_PRICE}`,
     images: ['/app-icon-1024.png'],
   },
   appleWebApp: {

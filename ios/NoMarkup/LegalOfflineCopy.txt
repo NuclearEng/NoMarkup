@@ -1,0 +1,19 @@
+=== PRIVACY ===
+This summary is stored in the app because the privacy page could not be loaded. It is not the full policy.
+
+The app collects:
+- Account information you provide, including email and phone
+- Location when you use the map
+- Photos you choose for a job or listing
+- Payments processed by Stripe (the app does not store your full card number)
+- A device identifier so push notifications can reach this phone
+
+For privacy requests, email support@no-markup.com. Signed-in users can export data or schedule account deletion under Account, Your data.
+
+=== GUIDELINES ===
+This summary is stored in the app because the community guidelines page could not be loaded.
+
+- No illegal goods or services
+- No harassment, threats, or scams
+- Report and block from the job, listing, message, or profile when those controls are shown
+- Or email support@no-markup.com with the subject "Report abuse"

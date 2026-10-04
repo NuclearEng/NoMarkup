@@ -1,5 +1,12 @@
 export const APP_NAME = 'NoMarkup' as const;
 
+/**
+ * Qualify "no markup" / "not the markup" for buyers. No percent here — checkout
+ * shows the server's fee.
+ */
+export const BUYER_PAYS_AGREED_PRICE =
+  'You pay the agreed price. The platform fee comes from the seller payout.';
+
 // API_BASE_URL is used primarily to derive WebSocket endpoints.
 // HTTP API calls in the client now use relative paths (/api/v1/...) so they are
 // routed through Next.js rewrites. This guarantees same-origin requests in dev

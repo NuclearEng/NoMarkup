@@ -387,14 +387,12 @@ final class DeviceCapabilityUITests: XCTestCase {
         if blob.contains("label not human-readable") {
             return true
         }
-        // Showcase stack (Instrument Serif / Syne / Outfit) does not scale
-        // with Dynamic Type; that is a documented brand choice, not a control
-        // without a label. Contrast on navy/gold is tracked as advisory
+        // Contrast on navy/gold is tracked as advisory
         // (Claude.md §4: WCAG AA is a product goal, not an XCTest gate).
+        // Dynamic Type partial support and clipped text are not ignored —
+        // those hide the AX5 gap on price and title rows.
         // Missing labels / hit-targets still fail closed.
-        if blob.contains("dynamic type font sizes are partially unsupported")
-            || blob.contains("text clipped")
-            || blob.contains("contrast failed")
+        if blob.contains("contrast failed")
             || blob.contains("contrast nearly passed")
             || blob.contains("potentially inaccessible text")
         {

@@ -412,8 +412,9 @@ enum BrandTheme {
     /// bars re-resolve on appearance changes with no re-launch.
     /// Keeps system accessibility (Dynamic Type sizes, reduce motion) intact.
     ///
-    /// DES.4 / DES.9 — on iOS 26+ leave `scrollEdgeAppearance` at system default so
-    /// Liquid Glass can use a transparent/blurred edge; keep `standardAppearance` branded.
+    /// DES.4 / DES.9 — on iOS 26+ do not force an opaque tab-bar appearance so the
+    /// system scroll-edge material can show. iOS 17–25 keep an opaque bar.
+    /// Cards and lists stay opaque (`backgroundColor` below). No glass on empty surfaces.
     @MainActor
     static func applyGlobalChrome() {
         #if canImport(UIKit)
@@ -439,30 +440,30 @@ enum BrandTheme {
             dark: UIColor.black.withAlphaComponent(0.4)
         )
 
-        // Tab bar — navy in dark / paper in light, gold selected, muted unselected.
-        let tabAppearance = UITabBarAppearance()
-        tabAppearance.configureWithOpaqueBackground()
-        tabAppearance.backgroundColor = screenUI
-        tabAppearance.shadowColor = barShadowUI
-
-        let tabItem = UITabBarItemAppearance()
-        tabItem.normal.iconColor = secondaryUI
-        tabItem.normal.titleTextAttributes = [.foregroundColor: secondaryUI]
-        tabItem.selected.iconColor = goldUI
-        tabItem.selected.titleTextAttributes = [.foregroundColor: goldUI]
-        tabAppearance.stackedLayoutAppearance = tabItem
-        tabAppearance.inlineLayoutAppearance = tabItem
-        tabAppearance.compactInlineLayoutAppearance = tabItem
-
-        UITabBar.appearance().standardAppearance = tabAppearance
-        // iOS 26+ Liquid Glass: do not force opaque scroll-edge chrome.
-        if #available(iOS 26.0, *) {
-            // Leave scrollEdgeAppearance nil / system default for glass edge.
-        } else {
-            UITabBar.appearance().scrollEdgeAppearance = tabAppearance
-        }
+        // Tab bar — gold selected, muted unselected.
+        // iOS 26+: leave standardAppearance and scrollEdgeAppearance unset so the
+        // system scroll-edge material shows. iOS 17–25 stay opaque.
         UITabBar.appearance().tintColor = goldUI
         UITabBar.appearance().unselectedItemTintColor = secondaryUI
+        // iOS 26+ does not assign standardAppearance (system scroll-edge material).
+        if #unavailable(iOS 26.0) {
+            let tabAppearance = UITabBarAppearance()
+            tabAppearance.configureWithOpaqueBackground()
+            tabAppearance.backgroundColor = screenUI
+            tabAppearance.shadowColor = barShadowUI
+
+            let tabItem = UITabBarItemAppearance()
+            tabItem.normal.iconColor = secondaryUI
+            tabItem.normal.titleTextAttributes = [.foregroundColor: secondaryUI]
+            tabItem.selected.iconColor = goldUI
+            tabItem.selected.titleTextAttributes = [.foregroundColor: goldUI]
+            tabAppearance.stackedLayoutAppearance = tabItem
+            tabAppearance.inlineLayoutAppearance = tabItem
+            tabAppearance.compactInlineLayoutAppearance = tabItem
+
+            UITabBar.appearance().standardAppearance = tabAppearance
+            UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+        }
 
         // Navigation bar — opaque brand surface when scrolled, adaptive titles,
         // gold bar buttons via tint.

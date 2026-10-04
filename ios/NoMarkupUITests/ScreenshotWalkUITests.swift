@@ -768,7 +768,7 @@ final class ScreenshotWalkUITests: XCTestCase {
         "Contracts": "account.row.contracts",
         "Recurring jobs": "account.row.recurringJobs",
         "My bids": "account.row.myBids",
-        "Positions blotter": "account.row.positions",
+        "Open bids & watchlist": "account.row.positions",
         "My listings": "account.row.myListings",
         "Watchlist": "account.row.watchlist",
         "Saved searches": "account.row.savedSearches",
@@ -1942,7 +1942,7 @@ final class ScreenshotWalkUITests: XCTestCase {
 
         // Newer rows not always covered by the ordered label walk above.
         visitAccountRow("Recurring jobs", shotName: "account-recurring-jobs")
-        visitAccountRow("Positions blotter", shotName: "account-positions-blotter")
+        visitAccountRow("Open bids & watchlist", shotName: "account-positions-blotter")
         visitAccountRow("Insurance quote", shotName: "account-insurance-quote")
         visitAccountRow("Payments history", shotName: "account-payments-history")
         visitAccountRow("Fair price index", shotName: "account-fair-price")
@@ -1986,7 +1986,7 @@ final class ScreenshotWalkUITests: XCTestCase {
         visitAccountRow("Plan limits", shotName: "provider-plan-limits")
         visitAccountRow("Feature flag status", shotName: "provider-feature-flags")
         visitAccountRow("Recurring jobs", shotName: "provider-recurring-jobs")
-        visitAccountRow("Positions blotter", shotName: "provider-positions-blotter")
+        visitAccountRow("Open bids & watchlist", shotName: "provider-positions-blotter")
         visitAccountRow("Insurance quote", shotName: "provider-insurance-quote")
         visitAccountRow("Legal services", shotName: "provider-legal-services")
         visitAccountInfoRow("account.row.widgets", shotName: "provider-widgets")

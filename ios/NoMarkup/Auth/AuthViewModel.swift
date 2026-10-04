@@ -544,6 +544,8 @@ final class AuthViewModel: ObservableObject {
         // OBS-3: widgets must not keep rendering auction data after sign-out.
         WidgetSharedStore.clear()
 
+        // Drop the icon badge before RootView tears down the signed-in shell.
+        PushRegistration.shared.clearBadge()
         isAuthenticated = false
         isScaffoldSession = false
         shouldPresentOnboarding = false

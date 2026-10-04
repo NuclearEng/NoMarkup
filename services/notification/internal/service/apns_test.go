@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/nomarkup/nomarkup/services/notification/internal/domain"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // newAPNsTestDispatcher builds a PushDispatcher whose APNs provider points at
@@ -82,6 +83,49 @@ func TestBuildAPNsPayload(t *testing.T) {
 	}
 	if payload["type"] != "bid_outbid" {
 		t.Fatalf("type: %v", payload["type"])
+	}
+	if aps["interruption-level"] == "time-sensitive" {
+		t.Fatal("interruption-level must not be time-sensitive")
+	}
+}
+
+// TestBuildAPNsPayloadMessageOmitsContent: chat pushes show a generic
+// alert. Message text, sender free-text, and an address must not appear
+// in the alert or in any custom field.
+func TestBuildAPNsPayloadMessageOmitsContent(t *testing.T) {
+	t.Parallel()
+	const (
+		sender      = "Jordan Lee"
+		messageText = "The oak table is on the porch at Pine Avenue"
+	)
+	raw, err := buildAPNsPayload(pushMessage{
+		Title:      "New message from " + sender,
+		Body:       messageText,
+		ActionURL:  "/messages?channel=abc",
+		NotifType:  "new_message",
+		EntityType: "chat_channel",
+		EntityID:   "abc",
+	})
+	if err != nil {
+		t.Fatalf("buildAPNsPayload: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	aps := payload["aps"].(map[string]any)
+	alert := aps["alert"].(map[string]any)
+	if alert["title"] != "New message" || alert["body"] != "New message" {
+		t.Fatalf("alert = %v, want generic New message", alert)
+	}
+	encoded := string(raw)
+	for _, leak := range []string{sender, "Pine Avenue", "oak table", messageText} {
+		if strings.Contains(encoded, leak) {
+			t.Fatalf("payload contained message text %q: %s", leak, encoded)
+		}
+	}
+	if _, ok := payload["body"]; ok {
+		t.Fatal("custom body field must not be set")
 	}
 }
 
@@ -161,17 +205,17 @@ func TestBuildAPNsPayloadClassShaping(t *testing.T) {
 		wantCategory string
 	}{
 		{
-			name:         "outbid is time-sensitive with listing thread",
+			name:         "outbid is active with listing thread",
 			msg:          pushMessage{NotifType: "bid_outbid", EntityType: "listing", EntityID: "abc-123"},
-			wantLevel:    "time-sensitive",
+			wantLevel:    "active",
 			wantSound:    true,
 			wantThread:   "listing:abc-123",
 			wantCategory: "bid_outbid",
 		},
 		{
-			name:         "closing soon is time-sensitive",
+			name:         "closing soon is active",
 			msg:          pushMessage{NotifType: "auction_closing_soon"},
-			wantLevel:    "time-sensitive",
+			wantLevel:    "active",
 			wantSound:    true,
 			wantCategory: "auction_closing_soon",
 		},
@@ -488,8 +532,8 @@ func TestSendLiveActivityUpdateDevMode(t *testing.T) {
 	t.Parallel()
 	d := NewPushDispatcher("", "", nil)
 	if err := d.SendLiveActivityUpdate(t.Context(), LiveActivityUpdate{
-		DeviceToken: "tok",
-		Event:       "update",
+		DeviceToken:  "tok",
+		Event:        "update",
 		ContentState: map[string]any{"leadingBidCents": 1},
 	}); err != nil {
 		t.Fatalf("dev mode send: %v", err)
@@ -513,9 +557,9 @@ func TestSendLiveActivityUpdateValidation(t *testing.T) {
 func TestParseLiveActivityAuctionID(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		in      string
-		wantID  string
-		wantOK  bool
+		in     string
+		wantID string
+		wantOK bool
 	}{
 		{"liveactivity:auction-1", "auction-1", true},
 		{"liveactivity:", "", false},
@@ -560,6 +604,68 @@ func TestAlertSendStillUsesAlertPushType(t *testing.T) {
 	}
 	if got.Get("apns-topic") != "com.nomarkup.app" {
 		t.Errorf("topic = %q (must not gain .push-type.liveactivity)", got.Get("apns-topic"))
+	}
+}
+
+// apnsSendCount reads notification_apns_sends_total for one result label.
+func apnsSendCount(t *testing.T, result string) float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatalf("gather metrics: %v", err)
+	}
+	for _, fam := range families {
+		if fam.GetName() != "notification_apns_sends_total" {
+			continue
+		}
+		for _, m := range fam.GetMetric() {
+			for _, lp := range m.GetLabel() {
+				if lp.GetName() == "result" && lp.GetValue() == result && m.GetCounter() != nil {
+					return m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// TestAPNsSendRecordsResultMetrics counts success and failure at the
+// HTTP result. Not parallel: it reads the process-wide counter.
+func TestAPNsSendRecordsResultMetrics(t *testing.T) {
+	successBefore := apnsSendCount(t, "success")
+	failureBefore := apnsSendCount(t, "failure")
+
+	okDisp := newAPNsTestDispatcher(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	if err := okDisp.Send(context.Background(), pushMessage{
+		DeviceToken: "aabbcc",
+		Platform:    "ios",
+		Title:       "t",
+		Body:        "b",
+		NotifType:   "bid_outbid",
+	}); err != nil {
+		t.Fatalf("success send: %v", err)
+	}
+	if got := apnsSendCount(t, "success"); got != successBefore+1 {
+		t.Fatalf("success count = %v, want %v", got, successBefore+1)
+	}
+
+	badDisp := newAPNsTestDispatcher(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"reason":"InternalServerError"}`))
+	}))
+	if err := badDisp.Send(context.Background(), pushMessage{
+		DeviceToken: "aabbcc",
+		Platform:    "ios",
+		Title:       "t",
+		Body:        "b",
+		NotifType:   "bid_outbid",
+	}); err == nil {
+		t.Fatal("expected send failure")
+	}
+	if got := apnsSendCount(t, "failure"); got != failureBefore+1 {
+		t.Fatalf("failure count = %v, want %v", got, failureBefore+1)
 	}
 }
 

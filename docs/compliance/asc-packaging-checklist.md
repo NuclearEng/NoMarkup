@@ -105,8 +105,8 @@ In-app legal: SwiftUI → `SFSafariViewController` (`LegalWebView`) for Privacy,
 | ASC data type | Collected? | Linked? | Tracking? | Purposes | Status |
 |---------------|------------|---------|-----------|----------|--------|
 | **Email Address** | Yes | Yes | No | App Functionality, Account Management | `[x]` table + manifest |
-| **Name** | Yes | Yes | No | App Functionality | `[x]` |
-| **Phone Number** | Yes (optional) | Yes | No | App Functionality | `[x]` |
+| **Name** | Yes | Yes | No | App Functionality, Account Management | `[x]` |
+| **Phone Number** | Yes (optional) | Yes | No | App Functionality, Account Management | `[x]` |
 | **Physical Address** | Yes | Yes | No | App Functionality | `[x]` |
 | **Date of Birth** | Yes | Yes | No | App Functionality | `[x]` |
 | **Other User Contact Info** | **No** | — | — | — | `[x]` do not declare |

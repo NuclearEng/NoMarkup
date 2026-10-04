@@ -65,7 +65,7 @@ Do **not** archive with Xcode 16 / iOS 18 SDK for App Store or TestFlight — AS
 - [x] Release rejects cleartext overrides (`AppConfig`)  
 - [x] `PrivacyInfo.xcprivacy` in app + widget  
 - [x] `ITSAppUsesNonExemptEncryption = false`  
-- [x] No StoreKit IAP paywall (free-tier lock)  
+- [x] No StoreKit IAP paywall (free-tier lock). Committed plists omit `StoreKitProductIDs`.  
 - [x] Purpose strings + Face ID string present  
 
 ### Founder before archive
@@ -75,6 +75,7 @@ Do **not** archive with Xcode 16 / iOS 18 SDK for App Store or TestFlight — AS
 - [ ] Destination: **Any iOS Device (arm64)** — not Simulator archive  
 - [ ] Gateway env: `APPLE_NATIVE_CLIENT_ID=com.nomarkup.app` on the API the build will hit  
 - [ ] Optional: inject `NOMARKUP_STRIPE_PUBLISHABLE_KEY` via CI/secrets for payment dogfood — never commit live keys  
+- [ ] Push Notifications Console: after a real upload, send one sandbox alert and confirm `notification_apns_sends_total` moves. The committed entitlement `aps-environment` is `development`. The archived App Store binary must be `production`. This box is not signed.
 - [ ] Unit tests green (optional but recommended):
 
 ```bash

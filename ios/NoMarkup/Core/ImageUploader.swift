@@ -7,6 +7,105 @@ import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
 #endif
+#if canImport(SensitiveContentAnalysis)
+import SensitiveContentAnalysis
+#endif
+
+/// When an on-device sensitive-content scan may refuse a photo upload.
+/// Simulator and a missing or disabled analyzer always allow the upload.
+enum SensitivePhotoUploadDecision: Sendable {
+    static let refusalDetail =
+        "This photo can’t be uploaded because it was flagged as sensitive content."
+
+    static func shouldRefuse(
+        isSimulator: Bool,
+        frameworkAvailable: Bool,
+        policyDisabled: Bool,
+        classifiedSensitive: Bool
+    ) -> Bool {
+        if isSimulator { return false }
+        if !frameworkAvailable || policyDisabled { return false }
+        return classifiedSensitive
+    }
+}
+
+/// Pre-upload scan. Allows the photo when the framework is absent, the policy
+/// is off, analysis fails, or this is the simulator (no false positive).
+enum SensitivePhotoUploadGate {
+    static func refuseIfSensitive(_ jpeg: Data) async throws {
+        #if targetEnvironment(simulator)
+        let simulator = true
+        #else
+        let simulator = false
+        #endif
+        #if canImport(SensitiveContentAnalysis)
+        let framework = true
+        #else
+        let framework = false
+        #endif
+        guard SensitivePhotoUploadDecision.shouldRefuse(
+            isSimulator: simulator,
+            frameworkAvailable: framework,
+            policyDisabled: false,
+            classifiedSensitive: true
+        ) else { return }
+
+        #if canImport(SensitiveContentAnalysis)
+        guard #available(iOS 17.0, *) else { return }
+        let analyzer = SCSensitivityAnalyzer()
+        guard SensitivePhotoUploadDecision.shouldRefuse(
+            isSimulator: false,
+            frameworkAvailable: true,
+            policyDisabled: analyzer.analysisPolicy == .disabled,
+            classifiedSensitive: true
+        ) else { return }
+        guard let image = cgImage(from: jpeg) else { return }
+        let flagged: Bool
+        do {
+            flagged = try await isSensitive(image, analyzer: analyzer)
+        } catch {
+            return
+        }
+        guard SensitivePhotoUploadDecision.shouldRefuse(
+            isSimulator: false,
+            frameworkAvailable: true,
+            policyDisabled: false,
+            classifiedSensitive: flagged
+        ) else { return }
+        throw APIClientError.httpStatus(
+            400,
+            detail: SensitivePhotoUploadDecision.refusalDetail
+        )
+        #endif
+    }
+
+    #if canImport(SensitiveContentAnalysis)
+    @available(iOS 17.0, *)
+    private static func isSensitive(
+        _ image: CGImage,
+        analyzer: SCSensitivityAnalyzer
+    ) async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            analyzer.analyzeImage(image) { result, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: result?.isSensitive == true)
+                }
+            }
+        }
+    }
+
+    private static func cgImage(from data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [
+            kCGImageSourceShouldCache: false,
+        ] as CFDictionary) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, [
+            kCGImageSourceShouldCacheImmediately: true,
+        ] as CFDictionary)
+    }
+    #endif
+}
 
 /// PhotosPicker → gateway image pipeline helper.
 ///
@@ -286,7 +385,7 @@ enum ImageUploader: Sendable {
         let maxBytes = maxFileBytes
         let maxEdge = maxPixelDimension
         let qualities = jpegQualities
-        return try await Task.detached(priority: .userInitiated) {
+        let prepared = try await Task.detached(priority: .userInitiated) {
             try encodeJPEGDownsampled(
                 from: data,
                 maxPixelSize: maxEdge,
@@ -294,6 +393,8 @@ enum ImageUploader: Sendable {
                 maxFileBytes: maxBytes
             )
         }.value
+        try await SensitivePhotoUploadGate.refuseIfSensitive(prepared.data)
+        return prepared
     }
 
     #if canImport(UIKit)
@@ -306,7 +407,7 @@ enum ImageUploader: Sendable {
         let maxBytes = maxFileBytes
         let maxEdge = maxPixelDimension
         let qualities = jpegQualities
-        return try await Task.detached(priority: .userInitiated) {
+        let prepared = try await Task.detached(priority: .userInitiated) {
             guard let source = image.jpegData(compressionQuality: 1.0) else {
                 throw APIClientError.httpStatus(400, detail: "Could not read the captured photo.")
             }
@@ -317,6 +418,8 @@ enum ImageUploader: Sendable {
                 maxFileBytes: maxBytes
             )
         }.value
+        try await SensitivePhotoUploadGate.refuseIfSensitive(prepared.data)
+        return prepared
     }
     #endif
 

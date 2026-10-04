@@ -289,6 +289,9 @@ func (h *JobReportsHandler) ListJobReports(w http.ResponseWriter, r *http.Reques
 // rows 404. 'reviewed' is intermediate and may still advance. Dismissing so
 // open reports drop below 3 does not undelete the job — auto-hide is
 // one-way (safer; deleted_at is already set at 3 attributable reports).
+// action=actioned also sets jobs.deleted_at (jobs have no is_hidden). Public
+// browse is `deleted_at IS NULL AND status = 'active'`, so the row drops out
+// even if a caller passes another status filter.
 func (h *JobReportsHandler) ResolveJobReport(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if !isValidUUID(id) {
@@ -329,18 +332,29 @@ func (h *JobReportsHandler) ResolveJobReport(w http.ResponseWriter, r *http.Requ
 	// this, a second resolve silently overwrites the prior resolution,
 	// reviewed_by, and reviewed_at — letting one admin's verdict be replaced with
 	// no audit trail. 'reviewed' is intermediate and may still advance.
-	tag, err := h.db.Exec(r.Context(), `
+	// actioned hides the job in the same transaction so a failed hide does
+	// not leave the report resolved while the job stays on public browse.
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		slog.ErrorContext(r.Context(), "admin resolve job report begin failed", "error", fmt.Errorf("begin resolve job report: %w", err))
+		writeError(w, http.StatusInternalServerError, "failed to resolve")
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	tag, err := tx.Exec(r.Context(), `
 		UPDATE job_reports
 		   SET status = $1, reviewed_by = $2, reviewed_at = now(),
 		       resolution = $3, updated_at = now()
 		 WHERE id = $4 AND status NOT IN ('dismissed', 'actioned')`,
 		newStatus, claims.UserID, body.Notes, id)
 	if err != nil {
-		slog.ErrorContext(r.Context(), "admin resolve job report failed", "error", err)
+		slog.ErrorContext(r.Context(), "admin resolve job report failed", "error", fmt.Errorf("resolve job report: %w", err))
 		writeError(w, http.StatusInternalServerError, "failed to resolve")
 		return
 	}
 	if tag.RowsAffected() == 0 {
+		_ = tx.Rollback(r.Context())
 		// Either the report doesn't exist (404) or it's already terminal (409).
 		var exists bool
 		if e := h.db.QueryRow(r.Context(),
@@ -356,8 +370,37 @@ func (h *JobReportsHandler) ResolveJobReport(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusConflict, "report already resolved")
 		return
 	}
+	if body.Action == "actioned" {
+		if err := hideJobForActionedReport(r.Context(), tx, id); err != nil {
+			slog.ErrorContext(r.Context(), "admin resolve job report hide failed", "error", err, "report_id", id)
+			writeError(w, http.StatusInternalServerError, "failed to resolve")
+			return
+		}
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		slog.ErrorContext(r.Context(), "admin resolve job report commit failed", "error", fmt.Errorf("commit resolve job report: %w", err))
+		writeError(w, http.StatusInternalServerError, "failed to resolve")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"report_id": id,
 		"status":    newStatus,
 	})
+}
+
+// hideJobForActionedReport soft-deletes the reported job. Public search and
+// the map both require deleted_at IS NULL (and, by default, status = 'active').
+// Jobs have no is_hidden column; this is the same write as the auto-hide
+// trigger. An already-deleted row is left untouched.
+func hideJobForActionedReport(ctx context.Context, tx pgx.Tx, reportID string) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE jobs
+		   SET deleted_at = now(),
+		       updated_at = now()
+		 WHERE id = (SELECT job_id FROM job_reports WHERE id = $1)
+		   AND deleted_at IS NULL`, reportID)
+	if err != nil {
+		return fmt.Errorf("hide actioned job: %w", err)
+	}
+	return nil
 }

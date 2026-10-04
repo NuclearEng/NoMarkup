@@ -369,6 +369,8 @@ export interface Job {
    * Null/undefined when the search was not geo-scoped.
    */
   distance_km?: number | null;
+  /** Set after award. The poster can block this provider from the job. */
+  awarded_provider_id?: string | null;
 }
 
 export interface JobLiquidity {

@@ -74,12 +74,12 @@ func NewListingsSearchHandler(db *pgxpool.Pool, meili meilisearch.ServiceManager
 // ─────────────────────────────────────────────────────────────────────────
 
 type autocompleteSuggestionJSON struct {
-	Type               string `json:"type"`                            // "listing" | "category"
-	ID                 string `json:"id,omitempty"`                    // listing UUID
-	Title              string `json:"title,omitempty"`                 // listing title
-	CategorySlug       string `json:"category_slug,omitempty"`         // both kinds
-	Label              string `json:"label,omitempty"`                 // category display label
-	StartingPriceCents int64  `json:"starting_price_cents,omitempty"`  // listing only
+	Type               string `json:"type"`                           // "listing" | "category"
+	ID                 string `json:"id,omitempty"`                   // listing UUID
+	Title              string `json:"title,omitempty"`                // listing title
+	CategorySlug       string `json:"category_slug,omitempty"`        // both kinds
+	Label              string `json:"label,omitempty"`                // category display label
+	StartingPriceCents int64  `json:"starting_price_cents,omitempty"` // listing only
 }
 
 type autocompleteResponse struct {
@@ -261,7 +261,7 @@ func (h *ListingsSearchHandler) keepLiveListings(ctx context.Context, in []autoc
 
 	rows, err := h.db.Query(ctx, `
 		SELECT id::text FROM listings
-		 WHERE id = ANY($1::uuid[]) AND status = 'active'`, ids)
+		 WHERE id = ANY($1::uuid[]) AND status = 'active' AND is_hidden = false`, ids)
 	if err != nil {
 		slog.WarnContext(ctx, "autocomplete: listing liveness check failed, dropping listing suggestions",
 			"error", err, "candidates", len(in))
@@ -292,6 +292,52 @@ func (h *ListingsSearchHandler) keepLiveListings(ctx context.Context, in []autoc
 	if stale := len(in) - len(out); stale > 0 {
 		slog.InfoContext(ctx, "autocomplete: dropped stale meilisearch hits",
 			"stale", stale, "kept", len(out))
+	}
+	return out
+}
+
+// keepPublicListingIDs drops IDs that are not an active, visible listing.
+// Input order is preserved. A nil pool or a query error fails closed so a
+// hidden listing cannot ride a stale search hit onto the public similar rail.
+func (h *ListingsSearchHandler) keepPublicListingIDs(ctx context.Context, ids []string) []string {
+	if len(ids) == 0 {
+		return ids
+	}
+	if h.db == nil {
+		slog.WarnContext(ctx, "similar: no db handle, dropping unverified listing ids",
+			"dropped", len(ids))
+		return nil
+	}
+
+	rows, err := h.db.Query(ctx, `
+		SELECT id::text FROM listings
+		 WHERE id = ANY($1::uuid[]) AND status = 'active' AND is_hidden = false`, ids)
+	if err != nil {
+		slog.WarnContext(ctx, "similar: public listing check failed, dropping ids",
+			"error", err, "candidates", len(ids))
+		return nil
+	}
+	defer rows.Close()
+
+	live := make(map[string]struct{}, len(ids))
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			slog.WarnContext(ctx, "similar: public listing scan failed", "error", err)
+			return nil
+		}
+		live[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		slog.WarnContext(ctx, "similar: public listing iterate failed", "error", err)
+		return nil
+	}
+
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := live[id]; ok {
+			out = append(out, id)
+		}
 	}
 	return out
 }
@@ -337,7 +383,13 @@ func (h *ListingsSearchHandler) Similar(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ids := h.findSimilarIDs(r.Context(), id, title, description, categorySlug, limit)
+	// Meilisearch filters on status only. Documents have no is_hidden field,
+	// so do not add that filter — it would empty search until a full reindex.
+	// Go hide paths delete the document after commit, but a missed delete or
+	// the SQL auto-hide trigger can still return a hidden id. Confirm each
+	// hit is public before hydrating it. A miss falls through to the Postgres
+	// fallback, which already requires status = active and is_hidden = false.
+	ids := h.keepPublicListingIDs(r.Context(), h.findSimilarIDs(r.Context(), id, title, description, categorySlug, limit))
 
 	// Fall back to a same-category SQL pull when Meilisearch returned
 	// nothing (e.g. uninitialized index in dev / sandbox).

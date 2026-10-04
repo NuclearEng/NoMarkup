@@ -174,7 +174,7 @@ struct MarketplaceView: View {
         } else {
             List {
                 Section {
-                    Text("Local goods · buyers bid up · pickup within 25 mi. Escrow holds funds until pickup — fair price discovery, no middleman markup.")
+                    Text("Local goods · buyers bid up · pickup within 25 mi. Escrow holds funds until pickup. The buyer pays the agreed price, and the platform fee is taken from the seller’s payout.")
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .listRowBackground(BrandTheme.navyElevated)
@@ -497,9 +497,10 @@ private struct ListingRowView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(listing.displayPrice)
                         .font(.body.weight(.bold).monospacedDigit())
-                        .minimumScaleFactor(0.75)
-                        .lineLimit(1)
                         .foregroundStyle(BrandTheme.goldBright)
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .layoutPriority(1)
                         .contentTransition(.numericText())
                     Text(listing.priceCaption.uppercased())
                         .font(.caption2.weight(.bold).monospaced())

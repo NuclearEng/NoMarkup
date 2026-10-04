@@ -180,6 +180,7 @@ func TestPlaceBid_BackgroundCheckAllowsClear(t *testing.T) {
 		},
 	}
 	h := NewBidHandler(mock, nil, nil)
+	allowUnblockedBid(h)
 	h.bgGate.disabled = func(context.Context) bool { return false }
 	h.bgGate.latest = func(context.Context, string) (string, bool, error) {
 		return "clear", true, nil
@@ -203,6 +204,7 @@ func TestPlaceBid_BackgroundCheckAllowsConsider(t *testing.T) {
 		},
 	}
 	h := NewBidHandler(mock, nil, nil)
+	allowUnblockedBid(h)
 	h.bgGate.disabled = func(context.Context) bool { return false }
 	h.bgGate.latest = func(context.Context, string) (string, bool, error) {
 		return "consider", true, nil
@@ -225,6 +227,7 @@ func TestPlaceBid_BackgroundCheckFlagOff_NoGate(t *testing.T) {
 		},
 	}
 	h := NewBidHandler(mock, nil, nil)
+	allowUnblockedBid(h)
 	h.bgGate.disabled = func(context.Context) bool { return true }
 	h.bgGate.latest = func(context.Context, string) (string, bool, error) {
 		t.Fatal("must not read background check status when flag is off")

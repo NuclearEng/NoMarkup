@@ -131,3 +131,18 @@ func TestKeepLiveListings_FailsClosed(t *testing.T) {
 		t.Errorf("empty input must stay empty, got %d", len(got))
 	}
 }
+
+func TestKeepPublicListingIDs_FailsClosed(t *testing.T) {
+	t.Parallel()
+
+	h := NewListingsSearchHandler(nil, nil, nil)
+	got := h.keepPublicListingIDs(context.Background(), []string{
+		"11111111-1111-1111-1111-111111111111",
+	})
+	if len(got) != 0 {
+		t.Errorf("unverified similar ids must be dropped, got %d", len(got))
+	}
+	if got := h.keepPublicListingIDs(context.Background(), nil); len(got) != 0 {
+		t.Errorf("empty input must stay empty, got %d", len(got))
+	}
+}

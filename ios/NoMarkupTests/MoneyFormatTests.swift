@@ -156,3 +156,20 @@ final class ListingPromotionTests: XCTestCase {
         XCTAssertNotNil(response.promotedUntilDate)
     }
 }
+
+final class ShareCardTextTests: XCTestCase {
+    func testLifetimeSavingsStatesBuyerPriceAndSellerFee() {
+        let payload = ShareCardText.lifetimeSavings(savingsCents: 12_500)
+        XCTAssertTrue(payload.message.contains("$125.00"))
+        XCTAssertTrue(
+            payload.message.localizedCaseInsensitiveContains("buyer pays the agreed price")
+        )
+        XCTAssertTrue(
+            payload.message.localizedCaseInsensitiveContains("platform fee is taken from the seller")
+        )
+        XCTAssertFalse(
+            payload.message.localizedCaseInsensitiveContains("no markup"),
+            "share card must not claim no markup without the seller-side fee"
+        )
+    }
+}

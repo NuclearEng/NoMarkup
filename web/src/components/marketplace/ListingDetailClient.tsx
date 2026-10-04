@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { AnimatedPrice } from '@/components/bids/AnimatedPrice';
+import { BlockButton } from '@/components/chat/BlockButton';
 import { ChatRelayAlias } from '@/components/chat/ChatRelayAlias';
 import { BuyItNowButton } from '@/components/marketplace/BuyItNowButton';
 import { BuyerOfferCard } from '@/components/marketplace/BuyerOfferCard';
@@ -21,6 +22,7 @@ import { SnipeExtensionBanner } from '@/components/marketplace/SnipeExtensionBan
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { StarRatingDisplay } from '@/components/reviews/StarRating';
 import { Badge } from '@/components/ui/badge';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -43,6 +45,18 @@ import { cn, formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import type { ListingDetail } from '@/types';
 import { LISTING_STATUS } from '@/types';
+
+/** Blank or self hides Block. */
+function blockTargetUserId(
+  raw: string | null | undefined,
+  selfId: string | null | undefined,
+): string | null {
+  const id = typeof raw === 'string' ? raw.trim() : '';
+  if (id.length === 0) return null;
+  const self = typeof selfId === 'string' ? selfId.trim() : '';
+  if (self.length > 0 && id.toLowerCase() === self.toLowerCase()) return null;
+  return id;
+}
 
 interface ListingDetailClientProps {
   listingId: string;
@@ -173,6 +187,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
   }
 
   const isOwnListing = user?.id === listing.seller_id;
+  const blockUserId = blockTargetUserId(listing.seller_id, user?.id);
   const auctionExpired = isExpired || listing.status !== LISTING_STATUS.ACTIVE;
   // Unified social proof: API seed + live WS (gateway uses the same max semantics).
   const watcherCount = Math.max(liveWatcherCount, listing.watcher_count ?? 0);
@@ -259,7 +274,14 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
                   <ReportListingButton
                     listingId={listingId}
                     listingTitle={listing.title}
-                    className="text-zinc-400 hover:text-destructive"
+                    className="min-h-[44px] min-w-[44px] text-muted-foreground hover:text-destructive"
+                  />
+                ) : null}
+                {blockUserId ? (
+                  <BlockButton
+                    userId={blockUserId}
+                    displayName={listing.seller_display_name}
+                    className="min-h-[44px] min-w-[44px] text-muted-foreground hover:text-destructive"
                   />
                 ) : null}
                 <Badge variant={listing.status === 'active' ? 'active' : 'secondary'}>
@@ -453,6 +475,8 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
               </div>
             </CardContent>
           </Card>
+
+          <p className="text-sm text-muted-foreground">{BUYER_PAYS_AGREED_PRICE}</p>
 
           {/* Buy It Now — fixed-price closeout (only when seller set a BIN) */}
           <BuyItNowButton listing={listing} />

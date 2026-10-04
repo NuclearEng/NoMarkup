@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nomarkup/nomarkup/gateway/internal/cache"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
@@ -29,12 +31,19 @@ import (
 // and enforce subscription plan limits on PlaceBid. A nil pool skips
 // notifications, the bid gate (fail-soft / cannot read the flag as
 // explicitly enabled), and plan-limit checks.
+//
+// PlaceBid's user-block check is the exception: a nil pool fails closed
+// with 503 before the bidding engine. Durable idempotency replay still
+// returns first, so an already-stored bid is not turned into a 503.
+// blockDB, when set, replaces h.db for that check only (tests). Production
+// leaves it nil.
 type BidHandler struct {
 	bidClient      bidv1.BidServiceClient
 	contractClient contractv1.ContractServiceClient
 	trustClient    trustv1.TrustServiceClient
 	userClient     userv1.UserServiceClient
 	db             *pgxpool.Pool
+	blockDB        blockQuerier
 	bgGate         backgroundCheckBidGate
 	planLimits     PlanLimitGuard
 }
@@ -357,6 +366,13 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ASR-1.2.c — refuse a new bid when either party has blocked the other.
+	// After durable replay so a stored-bid retry is not turned into a 503.
+	// Fail closed before gRPC: nil DB or query error → 503; block → 403.
+	if h.refuseBidIfUsersBlocked(w, r, jobID, claims.UserID) {
+		return
+	}
+
 	resp, err := h.bidClient.PlaceBid(r.Context(), &bidv1.PlaceBidRequest{
 		JobId:       jobID,
 		ProviderId:  claims.UserID,
@@ -410,6 +426,55 @@ func (h *BidHandler) PlaceBid(w http.ResponseWriter, r *http.Request) {
 	h.notifyNewBid(r.Context(), jobID, claims.UserID, req.AmountCents)
 
 	writeJSON(w, http.StatusCreated, protoBidToJSON(resp.GetBid()))
+}
+
+// bidBlockQuerier is the DB surface for the pre-gRPC block check.
+// A typed-nil pool must stay a nil interface so areUsersBlocked fails closed.
+func (h *BidHandler) bidBlockQuerier() blockQuerier {
+	if h.blockDB != nil {
+		return h.blockDB
+	}
+	if h.db == nil {
+		return nil
+	}
+	return h.db
+}
+
+// refuseBidIfUsersBlocked writes 403/404/503 and returns true when PlaceBid
+// must stop. Returns false when the provider and the job's customer are not
+// blocked.
+func (h *BidHandler) refuseBidIfUsersBlocked(w http.ResponseWriter, r *http.Request, jobID, providerID string) bool {
+	db := h.bidBlockQuerier()
+	if db == nil {
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return true
+	}
+	var customerID string
+	err := db.QueryRow(r.Context(),
+		`SELECT customer_id::text FROM jobs WHERE id = $1`, jobID,
+	).Scan(&customerID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "job not found")
+		return true
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "place bid: customer lookup failed",
+			"error", err, "job_id", jobID, "provider_id", providerID)
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return true
+	}
+	blocked, berr := areUsersBlocked(r.Context(), db, providerID, customerID)
+	if berr != nil {
+		slog.ErrorContext(r.Context(), "place bid: block check failed",
+			"error", berr, "job_id", jobID, "provider_id", providerID)
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return true
+	}
+	if blocked {
+		writeError(w, http.StatusForbidden, "blocked")
+		return true
+	}
+	return false
 }
 
 // loadBidByIdempotencyKey returns the provider's bid for this job stamped with

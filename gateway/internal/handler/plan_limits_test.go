@@ -35,6 +35,7 @@ func planLimitBidHandler(snap usageSnapshot, usageErr error) (*BidHandler, *mock
 		},
 	}
 	h := NewBidHandler(mock, nil, nil)
+	allowUnblockedBid(h)
 	h.planLimits.usageFn = func(context.Context, string) (usageSnapshot, error) {
 		return snap, usageErr
 	}
@@ -135,6 +136,7 @@ func TestPlanLimit_PlaceBid_NilUsageFnSkips(t *testing.T) {
 		},
 	}
 	h := NewBidHandler(mock, nil, nil)
+	allowUnblockedBid(h)
 
 	r := chi.NewRouter()
 	r.Post("/api/v1/jobs/{id}/bids", h.PlaceBid)

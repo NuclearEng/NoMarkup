@@ -11,7 +11,7 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     /// iPhone 17e-class (~844pt tall, ~390pt wide). Pro Max (~932pt) already
-    /// clears Market Desk + LIVE NOW / GOODS LIVE / GATEWAY above the floating tab.
+    /// clears Market Desk + LIVE NOW / GOODS LIVE above the floating tab.
     private var usesCompactHomeChrome: Bool {
         #if canImport(UIKit)
         UIScreen.main.bounds.height < 880
@@ -62,8 +62,11 @@ struct HomeView: View {
                     liveAuctionsSection
                     marketplaceStrip
                     howItWorksSection
+                    #if DEBUG
+                    // Operator desk only. Release must not show DESK LIVE, the API host, or the git SHA.
                     gatewayFooter
                     revisionFooter
+                    #endif
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -191,7 +194,7 @@ struct HomeView: View {
                 .padding(.bottom, usesCompactHomeChrome ? 6 : 10)
 
                 Text(
-                    "Providers compete in real-time reverse auctions. Prices fall to fair market rates — not the middleman."
+                    "Providers compete in real-time reverse auctions. The buyer pays the agreed price, and the platform fee is taken from the seller’s payout."
                 )
                 .font(usesCompactHomeChrome ? .footnote : .subheadline)
                 .foregroundStyle(BrandTheme.textSecondary)
@@ -243,8 +246,9 @@ struct HomeView: View {
                         showPostJob = true
                     } label: {
                         Text("Post a job")
+                            .frame(maxWidth: .infinity, minHeight: 48)
                     }
-                    .brandGhostButton()
+                    .modifier(HomePostSellCTAModifier(legacy: .ghost))
                     .accessibilityHint("Opens the native post-a-job form")
                     .accessibilityIdentifier("home.postJob")
                 }
@@ -255,11 +259,10 @@ struct HomeView: View {
                 } label: {
                     Text("Sell an item")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(BrandTheme.goldBright.opacity(0.9))
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .frame(maxWidth: .infinity, minHeight: 48)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .modifier(HomePostSellCTAModifier(legacy: .plain))
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())
                 .accessibilityLabel("Sell an item")
@@ -338,14 +341,6 @@ struct HomeView: View {
             statCell(
                 value: listingTotal.map { Self.compactCount($0) } ?? "—",
                 label: "GOODS LIVE"
-            )
-            divider
-            statCell(
-                value: healthOK == true ? "LIVE" : (healthOK == false ? "DOWN" : "…"),
-                label: "GATEWAY",
-                valueColor: healthOK == true
-                    ? BrandTheme.success
-                    : (healthOK == false ? BrandTheme.destructive : BrandTheme.textSecondary)
             )
         }
         .brandCard(padding: 0, elevated: false)
@@ -621,8 +616,9 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Gateway
+    // MARK: - Gateway (DEBUG operator chrome only)
 
+    #if DEBUG
     private var gatewayFooter: some View {
         HStack(spacing: 8) {
             if isChecking {
@@ -704,6 +700,7 @@ struct HomeView: View {
         .accessibilityIdentifier("home.revision")
         .accessibilityLabel("App version \(AppConfig.versionLabel), revision \(AppConfig.gitRevision), branch \(GitRevision.branch)")
     }
+    #endif
 
     // MARK: - Chrome helpers
 
@@ -988,9 +985,9 @@ private struct LiveFloorFeatureCard: View {
             HStack(alignment: .lastTextBaseline, spacing: 8) {
                 Text(heroPrice)
                     .font(.largeTitle.weight(.bold).monospacedDigit())
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(2)
                     .foregroundStyle(BrandTheme.goldBright)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("budget · bid down")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(BrandTheme.textSecondary)
@@ -1167,9 +1164,10 @@ private struct HomeJobCard: View {
                         VStack(alignment: .trailing, spacing: 2) {
                             Text(price)
                                 .font(.headline.weight(.bold).monospacedDigit())
-                                .minimumScaleFactor(0.75)
-                                .lineLimit(1)
                                 .foregroundStyle(BrandTheme.goldBright)
+                                .multilineTextAlignment(.trailing)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(1)
                             Text(budgetCaption.uppercased())
                                 .font(.caption2.weight(.bold))
                                 .tracking(0.6)
@@ -1185,7 +1183,7 @@ private struct HomeJobCard: View {
                     Text(marketBandCaption)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(BrandTheme.textSecondary)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel(marketBandCaption)
                 }
 
@@ -1350,9 +1348,10 @@ private struct HomeListingCard: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(listing.displayPrice)
                     .font(.headline.weight(.bold).monospacedDigit())
-                    .minimumScaleFactor(0.75)
-                    .lineLimit(1)
                     .foregroundStyle(BrandTheme.goldBright)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                 Text(listing.priceCaption.uppercased())
                     .font(.caption2.weight(.bold).monospaced())
                     .tracking(0.6)
@@ -1384,6 +1383,34 @@ private struct HomeListingCard: View {
                     "Auction \(CatalogDateFormat.countdownLabel(until: ends, now: context.date))"
                 )
             }
+        }
+    }
+}
+
+/// Home post / sell actions. iOS 26 uses Liquid Glass; earlier releases keep the
+/// existing ghost or plain style. Empty-state post stays `brandPrimaryButton()` —
+/// no glass on empty content.
+private struct HomePostSellCTAModifier: ViewModifier {
+    enum Legacy {
+        case ghost
+        case plain
+    }
+
+    var legacy: Legacy
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassProminentBrandCTA()
+                .tint(BrandTheme.accent)
+                .foregroundStyle(BrandTheme.ctaLabelOnGold)
+        } else if legacy == .ghost {
+            content.brandGhostButton()
+        } else {
+            content
+                .buttonStyle(.plain)
+                .foregroundStyle(BrandTheme.goldBright.opacity(0.9))
         }
     }
 }

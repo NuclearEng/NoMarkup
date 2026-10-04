@@ -15,7 +15,8 @@ enum ShareCardText {
     ) -> SharePayload {
         let amount = MoneyFormat.usd(cents: max(0, savingsCents))
         var lines: [String] = [
-            "I saved \(amount) on reverse-auction home services through NoMarkup — fair prices, verified providers, no markup.",
+            "I saved \(amount) on reverse-auction home services through NoMarkup.",
+            "The buyer pays the agreed price, and the platform fee is taken from the seller’s payout.",
         ]
         appendReferralLine(to: &lines, code: referralCode)
         return SharePayload(

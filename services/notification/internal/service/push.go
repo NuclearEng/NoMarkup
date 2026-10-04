@@ -68,6 +68,7 @@ func NewPushDispatcher(fcmServerKey, projectID string, apnsCfg *APNsConfig) *Pus
 
 // Send dispatches a push to a single device, routing by platform.
 func (p *PushDispatcher) Send(ctx context.Context, msg pushMessage) error {
+	msg.Title, msg.Body = redactMessageAlert(msg.NotifType, msg.Title, msg.Body)
 	platform := strings.ToLower(strings.TrimSpace(msg.Platform))
 	if platform == "" {
 		platform = "unknown"
@@ -147,6 +148,9 @@ func (p *PushDispatcher) sendAPNs(ctx context.Context, msg pushMessage) error {
 }
 
 func (p *PushDispatcher) sendFCM(ctx context.Context, msg pushMessage) error {
+	// Same lock-screen rule as APNs: message text never goes in the
+	// notification body or the custom data map.
+	msg.Title, msg.Body = redactMessageAlert(msg.NotifType, msg.Title, msg.Body)
 	if p.fcmDevMode {
 		slog.Info("push dispatcher (fcm dev mode): would send push notification",
 			"device_token", truncateToken(msg.DeviceToken),

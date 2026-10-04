@@ -180,6 +180,7 @@ func TestSendMessage_acceptsLocalMinIO(t *testing.T) {
 
 	cc := &mockSendChatClient{}
 	h := NewChatHandler(cc, nil, nil, "", "", nil)
+	allowUnblockedChat(h)
 	content := "http://localhost:9000/nomarkup-dev/chat/obj.jpg"
 	body := `{"content":"` + content + `","message_type":"image"}`
 
@@ -195,6 +196,7 @@ func TestSendMessage_acceptsLocalMinIO(t *testing.T) {
 func TestSendMessage_textDoesNotRequireURL(t *testing.T) {
 	cc := &mockSendChatClient{}
 	h := NewChatHandler(cc, nil, nil, "", "", nil)
+	allowUnblockedChat(h)
 	body := `{"content":"hello there","message_type":"text"}`
 
 	rec := httptest.NewRecorder()

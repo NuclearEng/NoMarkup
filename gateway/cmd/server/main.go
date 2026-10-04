@@ -511,6 +511,10 @@ func main() {
 	} else {
 		slog.Info("MEILISEARCH_URL not set, listings search disabled")
 	}
+	// Same client the search handler already owns. Nil leaves hide-eviction
+	// as a no-op. router.New does not see this client; threading it through
+	// that constructor would be a signature change for no new client.
+	adminMarketplaceHandler.SetMeili(meiliClient)
 	listingsSearchHandler := handler.NewListingsSearchHandler(dbReadPool, meiliClient, listingsHandler) // read replica for discovery
 
 	// webhookHandler uses stripe.webhooks.constructEvent on the backend for signature verification.

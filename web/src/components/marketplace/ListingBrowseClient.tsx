@@ -13,6 +13,7 @@ import { UrgencyStrip } from '@/components/marketplace/UrgencyStrip';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { useListings } from '@/hooks/useListings';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { useAuthStore } from '@/stores/auth-store';
@@ -146,7 +147,8 @@ export function ListingBrowseClient({
           The <span className="gold-text">Live</span> Marketplace
         </h1>
         <p className="mt-2 text-lg text-zinc-300">
-          Local auctions with escrow. Bid up — the market sets the price, not the markup.
+          Local auctions with escrow. Bid up — the market sets the price, not the markup.{' '}
+          {BUYER_PAYS_AGREED_PRICE}
         </p>
       </div>
 
@@ -288,7 +290,7 @@ export function ListingBrowseClient({
               description={
                 hasActiveFilters
                   ? 'No auctions match your current filters. Try widening your radius or clearing some filters.'
-                  : 'The floor is quiet. Check back soon — new listings go live all day. Fair market rates, not the markup.'
+                  : `The floor is quiet. Check back soon — new listings go live all day. Fair market rates, not the markup. ${BUYER_PAYS_AGREED_PRICE}`
               }
               action={
                 hasActiveFilters ? (

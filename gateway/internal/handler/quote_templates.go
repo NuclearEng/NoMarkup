@@ -27,6 +27,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -134,10 +135,6 @@ func (h *QuoteTemplatesHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Create inserts a template owned by the requesting user.
 func (h *QuoteTemplatesHandler) Create(w http.ResponseWriter, r *http.Request) {
-	if h.db == nil {
-		writeError(w, http.StatusServiceUnavailable, "database unavailable")
-		return
-	}
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
@@ -167,6 +164,15 @@ func (h *QuoteTemplatesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "default_duration_hours must be non-negative")
 		return
 	}
+	// ASR-1.2.a — name and body are free text that gets pasted into bids.
+	// Both are required above, so empty is already rejected.
+	if rejectProhibitedUGC(w, r, req.Name, req.Body) {
+		return
+	}
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
 
 	var t quoteTemplateJSON
 	err := h.db.QueryRow(r.Context(), `
@@ -194,10 +200,6 @@ func (h *QuoteTemplatesHandler) Create(w http.ResponseWriter, r *http.Request) {
 // Update patches a template. Owner-bound: WHERE user_id = caller, so
 // non-owners get a 404.
 func (h *QuoteTemplatesHandler) Update(w http.ResponseWriter, r *http.Request) {
-	if h.db == nil {
-		writeError(w, http.StatusServiceUnavailable, "database unavailable")
-		return
-	}
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
@@ -214,6 +216,24 @@ func (h *QuoteTemplatesHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Body != nil && len(*req.Body) > maxQuoteBodyLen {
 		writeError(w, http.StatusBadRequest, "body too long")
+		return
+	}
+	// ASR-1.2.a — only text fields that are present. Nil and empty strings
+	// are optional and must not be rejected (amount-only patches stay valid).
+	{
+		var parts []string
+		if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+			parts = append(parts, *req.Name)
+		}
+		if req.Body != nil && strings.TrimSpace(*req.Body) != "" {
+			parts = append(parts, *req.Body)
+		}
+		if len(parts) > 0 && rejectProhibitedUGC(w, r, parts...) {
+			return
+		}
+	}
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
 		return
 	}
 

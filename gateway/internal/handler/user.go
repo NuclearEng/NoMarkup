@@ -101,6 +101,10 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 				fmt.Sprintf("display_name must be at most %d characters", maxDisplayNameLen))
 			return
 		}
+		// ASR-1.2.a — display name is public UGC. Empty is already rejected above.
+		if rejectProhibitedUGC(w, r, trimmed) {
+			return
+		}
 		req.DisplayName = &trimmed
 	}
 	if req.Timezone != nil && *req.Timezone != "" {

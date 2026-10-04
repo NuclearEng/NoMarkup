@@ -11,9 +11,9 @@ struct OpenPostJobIntent: AppIntent {
     var session: any IntentSessionProviding = KeychainTokenStore()
 
     @MainActor
-    func perform() async throws -> some IntentResult {
+    func perform() async throws -> some IntentResult & ProvidesDialog {
         try IntentAuthGuard.requireSession(session)
         DeepLinkRouter.shared.open(.postJob)
-        return .result()
+        return .result(dialog: IntentDialog("Opening the form to post a job."))
     }
 }

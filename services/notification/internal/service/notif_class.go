@@ -75,3 +75,15 @@ func isPromotionalNotifType(notifType string) bool {
 	}
 	return false
 }
+
+// isMessageNotifType reports chat / message notifications. Lock-screen
+// pushes for this class must not include message text, a sender's
+// free-text name, or an address.
+func isMessageNotifType(notifType string) bool {
+	switch strings.ToLower(strings.TrimSpace(notifType)) {
+	case "new_message", "message":
+		return true
+	default:
+		return false
+	}
+}

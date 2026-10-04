@@ -29,15 +29,26 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
+// followWriter is the DB surface Follow uses for the seller-exists check,
+// the block check, and the insert. *pgxpool.Pool satisfies it. followDB,
+// when set, replaces the pool for that path only (tests). A nil pool still
+// fails closed with 503.
+type followWriter interface {
+	blockQuerier
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
+
 // FollowsHandler exposes the follower-seller surface.
 type FollowsHandler struct {
-	db *pgxpool.Pool
+	db       *pgxpool.Pool
+	followDB followWriter
 }
 
 // NewFollowsHandler returns a FollowsHandler. A nil db short-circuits
@@ -68,12 +79,24 @@ type followedSellerJSON struct {
 // POST /api/v1/users/{id}/follow — follow a seller
 // ─────────────────────────────────────────────────────────────────────────
 
+func (h *FollowsHandler) followStore() followWriter {
+	if h.followDB != nil {
+		return h.followDB
+	}
+	if h.db == nil {
+		return nil
+	}
+	return h.db
+}
+
 // Follow is idempotent on the (follower_id, seller_id) UNIQUE constraint —
 // repeated calls just no-op. Self-follow is rejected with 400.
+// A block in either direction is 403. A block-check error is 503.
 //
 // Returns: { following: true, follower_count: int }.
 func (h *FollowsHandler) Follow(w http.ResponseWriter, r *http.Request) {
-	if h.db == nil {
+	store := h.followStore()
+	if store == nil {
 		writeError(w, http.StatusServiceUnavailable, "database unavailable")
 		return
 	}
@@ -95,7 +118,7 @@ func (h *FollowsHandler) Follow(w http.ResponseWriter, r *http.Request) {
 	// Verify seller exists. Cheap lookup keeps the FK violation from
 	// leaking out as a 500.
 	var sellerExists bool
-	if err := h.db.QueryRow(r.Context(),
+	if err := store.QueryRow(r.Context(),
 		`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, sellerID,
 	).Scan(&sellerExists); err != nil {
 		slog.ErrorContext(r.Context(), "follow: seller existence check failed", "error", err, "seller_id", sellerID)
@@ -107,7 +130,21 @@ func (h *FollowsHandler) Follow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.db.Exec(r.Context(), `
+	// ASR-1.2.c — neither party may follow the other after a block.
+	// Fail closed: query error → 503; block → 403. Nil store already 503'd.
+	blocked, berr := areUsersBlocked(r.Context(), store, claims.UserID, sellerID)
+	if berr != nil {
+		slog.ErrorContext(r.Context(), "follow: block check failed",
+			"error", berr, "follower_id", claims.UserID, "seller_id", sellerID)
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return
+	}
+	if blocked {
+		writeError(w, http.StatusForbidden, "blocked")
+		return
+	}
+
+	if _, err := store.Exec(r.Context(), `
 		INSERT INTO seller_follows (follower_id, seller_id)
 		VALUES ($1, $2)
 		ON CONFLICT (follower_id, seller_id) DO NOTHING`,

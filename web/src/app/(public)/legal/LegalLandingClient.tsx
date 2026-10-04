@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { useCategoryTree } from '@/hooks/useCategories';
 import { useSearchJobs } from '@/hooks/useJobs';
 import type { JobsResponse } from '@/types';
@@ -111,7 +112,7 @@ export function LegalLandingClient({ initialJobs, legalCategoryId }: LegalLandin
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-lg text-zinc-300">
           Post your legal need and let licensed attorneys compete. Fair market rates — not the
-          markup, not inflated retainers. Prices go down as they bid.
+          markup, not inflated retainers. Prices go down as they bid. {BUYER_PAYS_AGREED_PRICE}
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Button asChild size="lg" className="min-h-[44px]">

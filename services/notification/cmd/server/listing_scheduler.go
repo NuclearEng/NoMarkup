@@ -30,6 +30,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -147,7 +148,8 @@ func runListingClosingTick(ctx context.Context, pool *pgxpool.Pool, svc *service
 	defer cancel()
 
 	rows, err := pool.Query(tickCtx, `
-		SELECT id, current_bidder_id::text, title
+		SELECT id, current_bidder_id::text, title,
+		       current_bid_cents, auction_ends_at
 		  FROM listings
 		 WHERE status = 'active'
 		   AND auction_ends_at IS NOT NULL
@@ -165,11 +167,13 @@ func runListingClosingTick(ctx context.Context, pool *pgxpool.Pool, svc *service
 		ID              string
 		CurrentBidderID pgtype.Text
 		Title           string
+		CurrentBidCents pgtype.Int8
+		EndsAt          time.Time
 	}
 	listings := make([]closingListing, 0)
 	for rows.Next() {
 		var l closingListing
-		if err := rows.Scan(&l.ID, &l.CurrentBidderID, &l.Title); err != nil {
+		if err := rows.Scan(&l.ID, &l.CurrentBidderID, &l.Title, &l.CurrentBidCents, &l.EndsAt); err != nil {
 			slog.ErrorContext(tickCtx, "listing scheduler: scan failed", "error", err)
 			continue
 		}
@@ -206,10 +210,11 @@ func runListingClosingTick(ctx context.Context, pool *pgxpool.Pool, svc *service
 		if l.Title != "" {
 			body = fmt.Sprintf("%s — %s", l.Title, cfg.body)
 		}
-		data := map[string]string{
-			"entity_type": "listing",
-			"entity_id":   l.ID,
+		var amountCents int64
+		if l.CurrentBidCents.Valid {
+			amountCents = l.CurrentBidCents.Int64
 		}
+		data := liveActivityNotifyData("listing", l.ID, amountCents, l.EndsAt.UTC().Format(time.RFC3339))
 		for uid := range recipients {
 			if _, _, err := svc.SendNotification(tickCtx, uid, cfg.notifType, cfg.title, body, actionURL, data, nil); err != nil {
 				slog.WarnContext(tickCtx, "listing scheduler: send failed",
@@ -258,6 +263,58 @@ func intervalString(d time.Duration) string {
 	return fmt.Sprintf("%d milliseconds", d.Milliseconds())
 }
 
+// liveActivityNotifyData copies the current amount and auction end into the
+// notification data map. leading_bid_cents and ends_at are the keys
+// buildLiveActivityContentState already reads. A value the scheduler does
+// not have is omitted — never invented.
+func liveActivityNotifyData(entityType, entityID string, amountCents int64, endsAt string) map[string]string {
+	data := map[string]string{
+		"entity_type": entityType,
+		"entity_id":   entityID,
+	}
+	if amountCents > 0 {
+		data["leading_bid_cents"] = strconv.FormatInt(amountCents, 10)
+	}
+	if ends, ok := canonicalEndsAt(endsAt); ok {
+		data["ends_at"] = ends
+	}
+	return data
+}
+
+// canonicalEndsAt accepts the unix-seconds and RFC3339 forms the
+// content-state builder already parses. Zero and unparseable values are
+// dropped.
+func canonicalEndsAt(v string) (string, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", false
+	}
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+		if n <= 0 {
+			return "", false
+		}
+		return v, true
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil || !t.After(time.Unix(0, 0)) {
+		return "", false
+	}
+	return t.UTC().Format(time.RFC3339), true
+}
+
+// outbidEntity reports which auction an outbid payload belongs to.
+// Listing ids keep the existing /marketplace link. A job id with no
+// listing id is a job auction on the same channel.
+func outbidEntity(p outbidPayload) (entityType, entityID, actionURL string) {
+	if id := strings.TrimSpace(p.ListingID); id != "" {
+		return "listing", id, "/marketplace/" + id
+	}
+	if id := strings.TrimSpace(p.JobID); id != "" {
+		return "job", id, "/jobs/" + id
+	}
+	return "listing", "", "/marketplace/"
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Outbid pubsub fan-out
 // ─────────────────────────────────────────────────────────────────────────
@@ -266,11 +323,13 @@ func intervalString(d time.Duration) string {
 // in `publishBidPlaced` — kept in sync by convention; new fields are
 // simply ignored here.
 type outbidPayload struct {
-	Type         string `json:"type"`
-	ListingID    string `json:"listing_id"`
-	PrevBidderID string `json:"prev_bidder_id"`
-	NewBidderID  string `json:"new_bidder_id"`
-	AmountCents  int64  `json:"amount_cents"`
+	Type             string `json:"type"`
+	ListingID        string `json:"listing_id"`
+	JobID            string `json:"job_id"`
+	PrevBidderID     string `json:"prev_bidder_id"`
+	NewBidderID      string `json:"new_bidder_id"`
+	AmountCents      int64  `json:"amount_cents"`
+	NewAuctionEndsAt string `json:"new_auction_ends_at"`
 }
 
 // runOutbidPubsubLoop subscribes to `notify:outbid:*` and queues a
@@ -373,13 +432,13 @@ func handleOutbidMessage(ctx context.Context, msg *redis.Message, svc *service.S
 	const (
 		notifType = "bid_outbid"
 		title     = "You've been outbid"
-		body      = "Someone placed a higher bid on a listing you were winning. Open the auction to bid again."
 	)
-	actionURL := fmt.Sprintf("/marketplace/%s", payload.ListingID)
-	data := map[string]string{
-		"entity_type": "listing",
-		"entity_id":   payload.ListingID,
+	entityType, entityID, actionURL := outbidEntity(payload)
+	body := "Someone placed a higher bid on a listing you were winning. Open the auction to bid again."
+	if entityType == "job" {
+		body = "Someone placed a new bid on a job you were winning. Open the auction to bid again."
 	}
+	data := liveActivityNotifyData(entityType, entityID, payload.AmountCents, payload.NewAuctionEndsAt)
 	if _, _, err := svc.SendNotification(ctx, target, notifType, title, body, actionURL, data, nil); err != nil {
 		slog.Warn("outbid pubsub: send failed",
 			"user_id", target, "listing_id", payload.ListingID, "error", err,

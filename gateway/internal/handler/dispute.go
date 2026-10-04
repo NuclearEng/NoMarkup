@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -113,6 +114,11 @@ func (h *DisputeHandler) FileDispute(w http.ResponseWriter, r *http.Request) {
 	disputeType := disputeReasonToType(body.Reason)
 	if disputeType == "" {
 		writeError(w, http.StatusBadRequest, "invalid reason; must be one of: quality_issue, incomplete_work, no_show, property_damage, other")
+		return
+	}
+
+	// ASR-1.2.a — description is shown to the other party. The reason enum is not filtered.
+	if desc := strings.TrimSpace(body.Description); desc != "" && rejectProhibitedUGC(w, r, desc) {
 		return
 	}
 

@@ -6,7 +6,8 @@ package main
 // 'released' AND released_at <= now() - 48h, plus contracts.status =
 // 'completed' AND released_at proxy) that don't yet have a row in
 // nps_surveys for the buyer/customer. Inserts a `prompted_at = now()` row
-// and queues a `nps_survey` notification (push + in-app). The web client
+// and queues an in-app `nps_survey` notification. NPS is not a marketing
+// push — no push channel is attached. The web client
 // polls /api/v1/me/nps/pending and mounts the <NPSSurvey> modal whenever
 // the response includes ≥1 row.
 //
@@ -197,21 +198,28 @@ func insertAndPromptNPS(ctx context.Context, pool *pgxpool.Pool, svc *service.Se
 		return nil
 	}
 
-	const (
-		title = "How was your experience?"
-		body  = "It only takes 10 seconds. Tell us how likely you are to recommend NoMarkup to a friend."
-	)
 	actionURL := "/dashboard?nps=1"
 	data := map[string]string{
 		"entity_type": contextType,
 		"entity_id":   contextID,
 		"nps_survey":  "1",
 	}
-	channels := []string{"in_app", "push"}
-	if _, _, err := svc.SendNotification(ctx, userID, "nps_survey", title, body, actionURL, data, channels); err != nil {
+	// In-app only. Do not add push — the survey is not a marketing push.
+	if _, _, err := svc.SendNotification(ctx, userID, "nps_survey", npsPromptTitle, npsPromptBody, actionURL, data, npsPromptChannels()); err != nil {
 		return fmt.Errorf("dispatch nps notification: %w", err)
 	}
 	return nil
+}
+
+// In-app copy for the NPS prompt. Push is not used for this survey.
+const (
+	npsPromptTitle = "How was your experience?"
+	npsPromptBody  = "It only takes 10 seconds. Tell us how likely you are to recommend NoMarkup to a friend."
+)
+
+// npsPromptChannels is the delivery set for an NPS survey. In-app only.
+func npsPromptChannels() []string {
+	return []string{"in_app"}
 }
 
 // isUndefinedRelation surfaces SQLSTATE 42P01 (table missing). The

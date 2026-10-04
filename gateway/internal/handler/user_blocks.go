@@ -10,8 +10,9 @@ package handler
 //      gRPC service. Fail-closed on DB error (ASR-1.2.c): 503.
 //
 //   2. Prevents either party from bidding on / offering against the other's
-//      listings when a block exists in either direction (listings_bid +
-//      offers). Fail-closed on query error (503).
+//      listings, placing a job bid, or following, when a block exists in
+//      either direction (listings_bid, offers, PlaceBid, Follow).
+//      Fail-closed on query error (503).
 //
 // Routes:
 //

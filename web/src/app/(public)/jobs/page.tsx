@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 
-import { JobsSearchClient } from './JobsSearchClient';
-import type { Job, JobsResponse, SearchJobsParams } from '@/types';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { serverFetch } from '@/lib/server-fetch';
+import type { Job, JobsResponse, SearchJobsParams } from '@/types';
+
+import { JobsSearchClient } from './JobsSearchClient';
 
 // Server-side API origin. Mirror marketplace browse: prefer server-only
 // API_URL, fall back to public var, then localhost for dev. Jobs search is a
@@ -15,11 +17,11 @@ const DEFAULT_PAGE_SIZE = 12;
 export const metadata: Metadata = {
   title: 'Find Jobs · NoMarkup',
   description:
-    'Browse open home-service jobs. Qualified providers compete in reverse auctions — fair market rates, not the markup.',
+    `Browse open home-service jobs. Qualified providers compete in reverse auctions — fair market rates, not the markup. ${BUYER_PAYS_AGREED_PRICE}`,
   openGraph: {
     title: 'Find Jobs · NoMarkup',
     description:
-      'Reverse-auction home services. Providers compete on price. The market sets the rate — not the markup.',
+      `Reverse-auction home services. Providers compete on price. The market sets the rate — not the markup. ${BUYER_PAYS_AGREED_PRICE}`,
     type: 'website',
   },
 };

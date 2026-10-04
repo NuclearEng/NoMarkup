@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
+import { serverFetch } from '@/lib/server-fetch';
 import type { Job, JobsResponse } from '@/types';
 
 import { LegalLandingClient } from './LegalLandingClient';
-import { serverFetch } from '@/lib/server-fetch';
 
 // Server-side API origin. Mirrors the marketplace page: prefer server-only
 // API_URL, fall back to the public var, then localhost for dev. All reads here
@@ -20,11 +21,11 @@ const EMPTY_JOBS: JobsResponse = {
 export const metadata: Metadata = {
   title: 'Legal Services · NoMarkup',
   description:
-    'Post your legal need and let licensed attorneys compete in reverse auctions. Fair market rates — not the markup. Contracts, formation, wills, disputes.',
+    `Post your legal need and let licensed attorneys compete in reverse auctions. Fair market rates — not the markup. ${BUYER_PAYS_AGREED_PRICE} Contracts, formation, wills, disputes.`,
   openGraph: {
     title: 'Lawyers compete for your case · NoMarkup',
     description:
-      'Licensed attorneys bid to win your legal work. Prices go down — the market sets the rate, not the markup.',
+      `Licensed attorneys bid to win your legal work. Prices go down — the market sets the rate, not the markup. ${BUYER_PAYS_AGREED_PRICE}`,
     type: 'website',
   },
 };

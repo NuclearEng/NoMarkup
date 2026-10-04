@@ -167,12 +167,14 @@ func (a *apnsProvider) send(ctx context.Context, msg pushMessage) error {
 
 	resp, err := a.client.Do(req)
 	if err != nil {
+		recordAPNsSend(false)
 		return fmt.Errorf("apns: send: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode == http.StatusOK {
+		recordAPNsSend(true)
 		slog.Info("apns push sent",
 			"device_token", truncateToken(token),
 			"title", msg.Title,
@@ -180,6 +182,7 @@ func (a *apnsProvider) send(ctx context.Context, msg pushMessage) error {
 		)
 		return nil
 	}
+	recordAPNsSend(false)
 
 	// Typed error so SendMultiple can prune tokens APNs reports as
 	// permanently gone — 410 Unregistered / 400 BadDeviceToken (IOS-SYS.NT.4).
@@ -194,7 +197,7 @@ func (a *apnsProvider) send(ctx context.Context, msg pushMessage) error {
 // ContentState keys must match AuctionActivityAttributes.ContentState on iOS
 // (leadingBidCents, endsAt, optional outcome).
 type liveActivityMessage struct {
-	DeviceToken  string
+	DeviceToken string
 	// Event is "update" or "end" (Apple Live Activity push events).
 	Event string
 	// ContentState is the ActivityKit content-state dictionary.
@@ -243,18 +246,21 @@ func (a *apnsProvider) sendLiveActivity(ctx context.Context, msg liveActivityMes
 
 	resp, err := a.client.Do(req)
 	if err != nil {
+		recordAPNsSend(false)
 		return fmt.Errorf("apns liveactivity: send: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode == http.StatusOK {
+		recordAPNsSend(true)
 		slog.Info("apns liveactivity push sent",
 			"device_token", truncateToken(token),
 			"event", msg.Event,
 		)
 		return nil
 	}
+	recordAPNsSend(false)
 
 	return &apnsSendError{
 		StatusCode: resp.StatusCode,
@@ -344,13 +350,18 @@ func apnsPriority(notifType string) string {
 }
 
 func buildAPNsPayload(msg pushMessage) ([]byte, error) {
+	// Message-class alerts stay generic. The original body is not copied
+	// into the alert or into any custom field (that would land on the
+	// lock screen).
+	title, body := redactMessageAlert(msg.NotifType, msg.Title, msg.Body)
 	aps := map[string]any{
 		"alert": map[string]string{
-			"title": msg.Title,
-			"body":  msg.Body,
+			"title": title,
+			"body":  body,
 		},
-		// IOS-SYS.NT.3: outbid/closing-soon break through as time-sensitive,
-		// promotional stays passive (never lights the screen), rest active.
+		// Promotional stays passive. Everything else is active.
+		// time-sensitive is not sent: the app has no time-sensitive
+		// notification entitlement, and claiming one breaks signing.
 		"interruption-level": apnsInterruptionLevel(msg.NotifType),
 	}
 	// IOS-SYS.NT.6: promotional pushes are silent on the wire. The client's
@@ -384,18 +395,23 @@ func buildAPNsPayload(msg pushMessage) ([]byte, error) {
 }
 
 // apnsInterruptionLevel maps a notification type to the aps
-// interruption-level (IOS-SYS.NT.3): losing an auction is time-critical for
-// the bidder, promotions must never light the screen, and everything else is
-// a normal active alert.
+// interruption-level. Promotions stay passive so they never light the
+// screen. Every other alert, including outbid and closing-soon, is
+// active. time-sensitive is not used.
 func apnsInterruptionLevel(notifType string) string {
-	switch strings.ToLower(strings.TrimSpace(notifType)) {
-	case "bid_outbid", "auction_closing_soon":
-		return "time-sensitive"
-	}
 	if isPromotionalNotifType(notifType) {
 		return "passive"
 	}
 	return "active"
+}
+
+// redactMessageAlert is the lock-screen copy for a push. Chat alerts
+// are a fixed "New message" — no message text, sender free-text, or address.
+func redactMessageAlert(notifType, title, body string) (string, string) {
+	if isMessageNotifType(notifType) {
+		return "New message", "New message"
+	}
+	return title, body
 }
 
 // apnsThreadID derives the aps thread-id from the entity the emitters already

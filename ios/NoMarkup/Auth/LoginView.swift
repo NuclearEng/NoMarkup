@@ -124,7 +124,7 @@ struct LoginView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityLabel("The Market Sets The Price. Not The Markup.")
 
-                Text("Reverse-auction services. Local goods with escrow. Fair market rates — everyone wins except the middleman.")
+                Text("Reverse-auction services. Local goods with escrow. The buyer pays the agreed price, and the platform fee is taken from the seller’s payout.")
                     .font(.subheadline)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

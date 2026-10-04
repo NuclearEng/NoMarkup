@@ -246,7 +246,7 @@ struct PostJobView: View {
         Section {
             Text(
                 useInstantMatch
-                    ? "Emergency intake: describe the issue, set an accept-now price on the next step, and we’ll notify available Instant providers. First to accept wins — no middleman markup."
+                    ? "Emergency intake: describe the issue, set an accept-now price on the next step, and we’ll notify available Instant providers. First to accept wins. The buyer pays the agreed price, and the platform fee is taken from the seller’s payout."
                     : "Describe the work. Providers will compete by bidding down in a reverse auction. The market sets the price — not the markup."
             )
             .font(.subheadline)
@@ -786,7 +786,7 @@ struct PostJobView: View {
             return "“\(job.displayTitle)” was created as a reverse auction. Instant match could not be started — open the job or try again from web."
         }
         if publish {
-            return "“\(job.displayTitle)” is live. Providers will bid down from your starting budget — the market sets the price, not a middleman."
+            return "“\(job.displayTitle)” is live. Providers will bid down from your starting budget — the market sets the price. The buyer pays the agreed price, and the platform fee is taken from the seller’s payout."
         }
         return "“\(job.displayTitle)” is saved as a draft. Publish when you’re ready for providers to compete on price."
     }

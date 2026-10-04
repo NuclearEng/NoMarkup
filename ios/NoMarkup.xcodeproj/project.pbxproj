@@ -161,7 +161,9 @@ A100000000000000000000F0 /* LazyView.swift in Sources */ = {isa = PBXBuildFile; 
 		T1000000000000000000000C /* WorkEvidenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001C /* WorkEvidenceTests.swift */; };
 		T1000000000000000000000D /* NotificationPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001D /* NotificationPreferencesTests.swift */; };
 		T1000000000000000000000E /* AgeGateMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001E /* AgeGateMathTests.swift */; };
+		T10000000000000000000072 /* CheckoutSecretTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000073 /* CheckoutSecretTests.swift */; };
 		A100000000000000000000C0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C0 /* PrivacyInfo.xcprivacy */; };
+		A100000000000000000000E2 /* LegalOfflineCopy.txt in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000E2 /* LegalOfflineCopy.txt */; };
 		A100000000000000000000CD /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000CD /* Localizable.xcstrings */; };
 		A100000000000000000000C3 /* PasskeyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C3 /* PasskeyAuth.swift */; };
 		A100000000000000000000C4 /* BiometricGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000C4 /* BiometricGate.swift */; };
@@ -330,6 +332,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 		B100000000000000000000BB /* SpectatorWebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpectatorWebSocketClient.swift; sourceTree = "<group>"; };
 		B100000000000000000000BC /* MarketplaceSpectatorWebSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketplaceSpectatorWebSocketClient.swift; sourceTree = "<group>"; };
 		B100000000000000000000C0 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B100000000000000000000E2 /* LegalOfflineCopy.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = LegalOfflineCopy.txt; sourceTree = "<group>"; };
 		B100000000000000000000CD /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		B100000000000000000000B0 /* VerificationCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerificationCenterView.swift; sourceTree = "<group>"; };
 		B100000000000000000000B3 /* OnboardingWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWizardView.swift; sourceTree = "<group>"; };
@@ -349,6 +352,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 		T1000000000000000000001C /* WorkEvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkEvidenceTests.swift; sourceTree = "<group>"; };
 		T1000000000000000000001D /* NotificationPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreferencesTests.swift; sourceTree = "<group>"; };
 		T1000000000000000000001E /* AgeGateMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgeGateMathTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000073 /* CheckoutSecretTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckoutSecretTests.swift; sourceTree = "<group>"; };
 		T1000000000000000000001F /* ClientActionLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientActionLogTests.swift; sourceTree = "<group>"; };
 		T10000000000000000000070 /* BusinessHubLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessHubLayoutTests.swift; sourceTree = "<group>"; };
 		B100000000000000000000F4 /* ClientActionLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientActionLog.swift; sourceTree = "<group>"; };
@@ -492,6 +496,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				B100000000000000000000F1 /* Info-Debug.plist */,
 				B10000000000000000000016 /* NoMarkup.entitlements */,
 				B100000000000000000000C0 /* PrivacyInfo.xcprivacy */,
+				B100000000000000000000E2 /* LegalOfflineCopy.txt */,
 				B100000000000000000000CD /* Localizable.xcstrings */,
 				B10000000000000000000011 /* Assets.xcassets */,
 				E10000000000000000000005 /* Core */,
@@ -565,6 +570,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				T1000000000000000000001E /* AgeGateMathTests.swift */,
 				T1000000000000000000001F /* ClientActionLogTests.swift */,
 				T10000000000000000000070 /* BusinessHubLayoutTests.swift */,
+				T10000000000000000000073 /* CheckoutSecretTests.swift */,
 			);
 			path = NoMarkupTests;
 			sourceTree = "<group>";
@@ -897,6 +903,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 			files = (
 				A10000000000000000000011 /* Assets.xcassets in Resources */,
 				A100000000000000000000C0 /* PrivacyInfo.xcprivacy in Resources */,
+				A100000000000000000000E2 /* LegalOfflineCopy.txt in Resources */,
 				A100000000000000000000CD /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1102,6 +1109,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				T1000000000000000000000E /* AgeGateMathTests.swift in Sources */,
 				T1000000000000000000000F /* ClientActionLogTests.swift in Sources */,
 				T10000000000000000000071 /* BusinessHubLayoutTests.swift in Sources */,
+				T10000000000000000000072 /* CheckoutSecretTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

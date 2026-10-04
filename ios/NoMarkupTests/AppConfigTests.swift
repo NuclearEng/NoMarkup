@@ -160,17 +160,15 @@ final class AppConfigTests: XCTestCase {
         }
     }
 
-    func testDefaultStoreKitProductIDsAreASCDrafts() {
-        let ids = AppConfig.defaultStoreKitProductIDs
-        XCTAssertTrue(ids.contains("nomarkup.provider.pro.monthly"))
-        XCTAssertTrue(ids.contains("nomarkup.provider.pro.yearly"))
-        XCTAssertTrue(ids.contains("nomarkup.provider.business.monthly"))
-        XCTAssertTrue(ids.contains("nomarkup.provider.business.yearly"))
-        XCTAssertEqual(ids.count, 4)
-        // Resolved list is non-empty (plist or defaults).
-        XCTAssertFalse(AppConfig.storeKitProductIDs.isEmpty)
-        for id in AppConfig.storeKitProductIDs {
-            XCTAssertTrue(id.hasPrefix("nomarkup."), "unexpected product id \(id)")
+    func testShippingBinaryDoesNotEmbedStoreKitProductIDs() {
+        let env = ProcessInfo.processInfo.environment["NOMARKUP_STOREKIT_PRODUCT_IDS"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let plist = Bundle.main.object(forInfoDictionaryKey: "StoreKitProductIDs")
+        if env.isEmpty && plist == nil {
+            XCTAssertTrue(
+                AppConfig.storeKitProductIDs.isEmpty,
+                "draft IAP ids must not ship in the binary while StoreKit is off"
+            )
         }
     }
 

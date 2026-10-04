@@ -67,20 +67,18 @@ enum AppConfig {
         return false
     }
 
-    /// Canonical product ID catalog (draft ASC IDs — create in App Store Connect before enabling).
-    static let defaultStoreKitProductIDs: [String] = [
-        "nomarkup.provider.pro.monthly",
-        "nomarkup.provider.pro.yearly",
-        "nomarkup.provider.business.monthly",
-        "nomarkup.provider.business.yearly",
-    ]
-
     /// StoreKit product identifiers for Rail B digital tiers.
+    ///
+    /// The shipping binary does not embed a draft catalog. `StoreKitManager`
+    /// already returns before `Product.products` when this list is empty, and
+    /// `StoreKitEnabled` stays false. Draft IDs live in
+    /// `docs/compliance/storekit-scaffold.md` until App Store Connect products
+    /// exist and are supplied explicitly.
     ///
     /// Resolution:
     /// 1. `NOMARKUP_STOREKIT_PRODUCT_IDS` env (comma-separated)
     /// 2. Info.plist `StoreKitProductIDs` (array of strings, or comma-separated string)
-    /// 3. `defaultStoreKitProductIDs`
+    /// 3. Empty
     static var storeKitProductIDs: [String] {
         if let env = ProcessInfo.processInfo.environment["NOMARKUP_STOREKIT_PRODUCT_IDS"] {
             let parts = env.split(separator: ",").map {
@@ -98,7 +96,7 @@ enum AppConfig {
             }.filter { !$0.isEmpty }
             if !parts.isEmpty { return parts }
         }
-        return defaultStoreKitProductIDs
+        return []
     }
 
     /// Production API host (HTTPS only).

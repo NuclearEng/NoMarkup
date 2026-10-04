@@ -1147,7 +1147,7 @@ struct ContractDetailView: View {
             } header: {
                 Text("Actions").brandSectionHeader()
             } footer: {
-                Text("Approve completion finalizes the contract status. Releasing held escrow is a separate customer action (POST /payments/{id}/release). Providers cannot self-release. Amounts are server-side only.")
+                Text("Approving completion updates the contract. Releasing escrow is a separate step, and only the customer can do it. The provider cannot release their own payout.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
             .listRowBackground(BrandTheme.navyElevated)
@@ -1588,7 +1588,7 @@ struct ContractDetailView: View {
                             .disabled(isBusyForEscrowActions || !isWorkEvidenceReady)
                             .accessibilityHint(
                                 isWorkEvidenceReady
-                                    ? "Calls POST /payments/{id}/release with Idempotency-Key; pays the provider from held escrow"
+                                    ? "Releases the held payment to the provider. You cannot undo this here."
                                     : releaseBlockedCopy
                             )
                             if !isWorkEvidenceReady {
@@ -1634,7 +1634,7 @@ struct ContractDetailView: View {
             } header: {
                 Text("Escrow").brandSectionHeader()
             } footer: {
-                Text("Services: customer pays via POST /payments + PaymentSheet + POST /payments/{id}/process (sticky Idempotency-Key). Release is POST /payments/{id}/release. Amounts are server fields only — no client fee math. Goods orders use Orders pickup handshake, not this control.")
+                Text("The customer pays the contract total in the payment sheet. Funds stay in escrow until release, and the provider cannot release their own payout.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }
@@ -1678,7 +1678,7 @@ struct ContractDetailView: View {
                     label: "Contract / charge",
                     value: MoneyFormat.usd(cents: contract.amountCents ?? 0)
                 )
-                Text("Fee lines load from POST /payments/calculate-fees when available.")
+                Text("Fee lines appear when the server has calculated them. You pay the contract total.")
                     .font(.caption2)
                     .foregroundStyle(BrandTheme.textSecondary)
             }
@@ -3381,7 +3381,7 @@ private struct ContractConfirmationsModifier: ViewModifier {
                 }
             } message: {
                 if let payment = pendingReleasePayment {
-                    Text("Calls POST /payments/\(payment.id)/release with your auth and an Idempotency-Key. Server amount: \(payment.displayAmount). Providers cannot self-release.")
+                    Text("Release \(payment.displayAmount) from escrow to the provider. The provider cannot release this themselves.")
                 } else {
                     Text("Releases held escrow to the provider. Server amounts only.")
                 }
@@ -3637,7 +3637,7 @@ private struct LeaveReviewSheet: View {
                     } header: {
                         Text("Review").brandSectionHeader()
                     } footer: {
-                        Text("Reviews are double-blind: they become visible once both parties have submitted. Window is 90 days after completion. Category ratings use role-specific fields (FR-6.2).")
+                        Text("Reviews are double-blind: they become visible once both parties have submitted. Window is 90 days after completion. Category ratings use role-specific fields.")
                             .foregroundStyle(BrandTheme.textSecondary)
                     }
 

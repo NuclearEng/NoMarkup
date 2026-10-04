@@ -9,6 +9,7 @@ import { SeasonalDemandBanner } from '@/components/jobs/SeasonalDemandBanner';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { useSearchJobs } from '@/hooks/useJobs';
 import { useSelectedMarket } from '@/hooks/useSelectedMarket';
 import type { JobsResponse, SearchJobsParams } from '@/types';
@@ -145,7 +146,8 @@ export function JobsSearchClient({
           Find <span className="gold-text">Jobs</span>
         </h1>
         <p className="mt-2 text-lg text-zinc-300">
-          Reverse auctions for home services. Providers compete — fair market rates, not the markup.
+          Reverse auctions for home services. Providers compete — fair market rates, not the markup.{' '}
+          {BUYER_PAYS_AGREED_PRICE}
         </p>
       </div>
 

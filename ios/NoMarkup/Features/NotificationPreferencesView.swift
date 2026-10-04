@@ -120,7 +120,7 @@ struct NotificationPreferencesView: View {
                 Text("Global").brandSectionHeader()
             } footer: {
                 Text(
-                    "Global Push updates transactional types only. Payment failures, disputes, and guarantee alerts stay on (FR-17.3). Marketing push stays off unless you opt in below. Save to apply on the server."
+                    "Global Push updates transactional types only. Payment failures, disputes, and guarantee alerts stay on. Marketing push stays off unless you opt in below. Save to apply on the server."
                 )
                 .foregroundStyle(BrandTheme.textSecondary)
             }

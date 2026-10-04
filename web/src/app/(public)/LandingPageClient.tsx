@@ -26,6 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { MarketTickerStrip } from '@/components/landing/MarketTickerStrip';
 import { GradientMesh } from '@/components/landing/GradientMesh';
 import type { TickerItem } from '@/components/landing/ticker-items';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 
 // AuctionDemo is a heavy client-only widget. `ssr: false` avoids hydration
 // mismatches from Date.now() / rAF; aspect-ratio placeholder keeps CLS at 0.
@@ -252,7 +253,7 @@ export function LandingPageClient({ initialTickerItems }: LandingPageClientProps
                 style={{ animationDelay: '100ms' }}
               >
                 Customers post home-service jobs. Qualified providers compete in real-time reverse
-                auctions. Prices drop to fair market rates. Everyone wins except the middleman.
+                auctions. Prices drop to fair market rates. {BUYER_PAYS_AGREED_PRICE}
               </p>
 
               <div
@@ -566,7 +567,8 @@ export function LandingPageClient({ initialTickerItems }: LandingPageClientProps
               The market sets the price.
             </h2>
             <p className="text-muted-foreground relative z-[3] mt-5 text-lg">
-              Post a job. Watch providers compete. Fair market rates — not the markup.
+              Post a job. Watch providers compete. Fair market rates — not the markup.{' '}
+              {BUYER_PAYS_AGREED_PRICE}
             </p>
             <div className="relative z-[3] mt-8 sm:mt-12">
               <Button

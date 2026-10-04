@@ -6,8 +6,10 @@ import {
 } from '@/components/landing/ticker-items';
 import type { PricingOverviewCategory } from '@/hooks/usePricing';
 
-import { LandingPageClient } from './LandingPageClient';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { serverFetch } from '@/lib/server-fetch';
+
+import { LandingPageClient } from './LandingPageClient';
 
 // Server-side API origin. Mirror marketplace / jobs detail: prefer the
 // server-only API_URL, fall back to the public var, then localhost for dev.
@@ -18,11 +20,11 @@ const API_URL =
 export const metadata: Metadata = {
   title: 'NoMarkup — The Market Sets The Price',
   description:
-    'Reverse-auction service marketplace. Customers post jobs, providers compete on price. Fair market rates — not the markup. Plus local goods with escrow.',
+    `Reverse-auction service marketplace. Customers post jobs, providers compete on price. Fair market rates — not the markup. ${BUYER_PAYS_AGREED_PRICE} Plus local goods with escrow.`,
   openGraph: {
     title: 'NoMarkup — The Market Sets The Price. Not The Markup.',
     description:
-      'Customers post home-service jobs. Qualified providers compete in real-time reverse auctions. Prices drop to fair market rates.',
+      `Customers post home-service jobs. Qualified providers compete in real-time reverse auctions. Prices drop to fair market rates. ${BUYER_PAYS_AGREED_PRICE}`,
     type: 'website',
   },
 };

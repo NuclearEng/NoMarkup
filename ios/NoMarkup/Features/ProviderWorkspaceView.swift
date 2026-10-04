@@ -416,7 +416,7 @@ struct ProviderWorkspaceView: View {
             } header: {
                 Text("Licenses").brandSectionHeader()
             } footer: {
-                Text("POST /providers/me/licenses submits credentials for review. Bar licenses use a 2-letter jurisdiction (e.g. CA). Status updates after admin verification.")
+                Text("Submitting a license sends it for review. Bar licenses use a 2-letter jurisdiction such as CA. Status updates after verification.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
 
@@ -853,7 +853,7 @@ struct ProviderWorkspaceView: View {
             let updated = try await APIClient.shared.updateMyProviderPortfolio(images: images)
             profile = updated
             applyProfileToForm(updated)
-            statusMessage = "Portfolio saved (\(String(localized: "\(images.count) images")))."
+            statusMessage = String(localized: "Portfolio saved (\(images.count) images).")
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
         } catch {

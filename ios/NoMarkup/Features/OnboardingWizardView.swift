@@ -206,7 +206,7 @@ struct OnboardingWizardView: View {
         case .phone:
             return "Add a phone number and send an SMS code. Verification is required before some transactions."
         case .address:
-            return "Save a home or site address so reverse-auction jobs can reuse it (FR-1.3). Optional — manage anytime under Properties."
+            return "Save a home or site address so reverse-auction jobs can reuse it. Optional — manage anytime under Properties."
         case .provider:
             return "Providers bid on service jobs and complete reverse-auction contracts. You can add this anytime."
         case .done:

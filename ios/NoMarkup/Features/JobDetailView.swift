@@ -23,6 +23,10 @@ struct JobDetailView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showReportSheet = false
+    @State private var showBlockConfirm = false
+    @State private var isBlockingUser = false
+    @State private var blockStatusMessage: String?
+    @State private var blockStatusIsError = false
 
     @State private var bidEntries: [JobBidEntry] = []
     @State private var ladderState: BidLadderState = .idle
@@ -308,6 +312,28 @@ struct JobDetailView: View {
         return status == "withdrawn"
     }
 
+    /// Other party already on this screen: the customer, unless that is you —
+    /// then the awarded provider. Missing id hides Block.
+    private var otherPartyUserID: String? {
+        func trimmed(_ raw: String?) -> String? {
+            let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return value.isEmpty ? nil : value
+        }
+        func isSelf(_ id: String) -> Bool {
+            guard let me = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !me.isEmpty
+            else { return false }
+            return id.caseInsensitiveCompare(me) == .orderedSame
+        }
+        if let customer = trimmed(detail?.customerId), !isSelf(customer) {
+            return customer
+        }
+        if let provider = trimmed(detail?.awardedProviderId), !isSelf(provider) {
+            return provider
+        }
+        return nil
+    }
+
     /// Customer who posted the job (JWT `sub` matches `job.customer_id`).
     private var isJobOwner: Bool {
         guard let customerId = detail?.customerId?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -553,6 +579,18 @@ struct JobDetailView: View {
                 showReportSheet = false
             }
         }
+        .confirmationDialog(
+            "Block this user?",
+            isPresented: $showBlockConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Block user", role: .destructive) {
+                Task { await blockOtherParty() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You won’t see their messages. You can unblock later from Blocked users.")
+        }
         .sheet(isPresented: $showWebSafari) {
             NavigationStack {
                 LegalWebView(title: "Job on web", url: webJobURL)
@@ -691,6 +729,32 @@ struct JobDetailView: View {
             }
 
             Section {
+                if otherPartyUserID != nil {
+                    Button(role: .destructive) {
+                        showBlockConfirm = true
+                    } label: {
+                        HStack {
+                            if isBlockingUser {
+                                ProgressView()
+                                    .tint(BrandTheme.destructive)
+                            }
+                            Label("Block user", systemImage: "hand.raised.fill")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .disabled(isBlockingUser)
+                    .accessibilityHint("Blocks this user from messaging you")
+                    .accessibilityIdentifier("jobDetail.block")
+
+                    if let blockStatusMessage {
+                        Text(blockStatusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(blockStatusIsError ? BrandTheme.destructive : BrandTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
                 Button {
                     showReportSheet = true
                 } label: {
@@ -810,8 +874,8 @@ struct JobDetailView: View {
                     Text(arenaLeadingAmount)
                         .font(.largeTitle.weight(.bold).monospacedDigit())
                         .foregroundStyle(BrandTheme.success)
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.numericText())
                         .brandMoneyFlash(token: leadingFlashToken, isDown: true)
                         .animation(.easeOut(duration: 0.2), value: arenaLeadingAmount)
@@ -1073,8 +1137,7 @@ struct JobDetailView: View {
                     Text(priceLabel.amount)
                         .font(.largeTitle.weight(.bold).monospacedDigit())
                         .foregroundStyle(BrandTheme.goldBright)
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(2)
+                        .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel("\(priceLabel.caption): \(priceLabel.amount)")
                     Text(priceLabel.caption)
@@ -3250,6 +3313,35 @@ struct JobDetailView: View {
         }
         if let templateID, !templateID.isEmpty {
             try? await APIClient.shared.recordQuoteTemplateUse(id: templateID)
+        }
+    }
+
+    @MainActor
+    private func blockOtherParty() async {
+        blockStatusMessage = nil
+        blockStatusIsError = false
+        guard let userID = otherPartyUserID else { return }
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            blockStatusIsError = true
+            blockStatusMessage = auth.isScaffoldSession
+                ? "Browse-only mode has no API credentials. Sign in against a live gateway to block."
+                : "Sign in required to block users."
+            return
+        }
+
+        isBlockingUser = true
+        defer { isBlockingUser = false }
+
+        do {
+            try await APIClient.shared.blockUser(id: userID)
+            blockStatusIsError = false
+            blockStatusMessage = "User blocked. You can manage blocks from Account → Blocked users."
+        } catch let error as APIClientError where error.isUnauthorized {
+            blockStatusIsError = true
+            blockStatusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            blockStatusIsError = true
+            blockStatusMessage = error.localizedDescription
         }
     }
 }

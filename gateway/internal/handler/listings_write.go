@@ -37,6 +37,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/meilisearch/meilisearch-go"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
@@ -65,22 +66,22 @@ const (
 // ─────────────────────────────────────────────────────────────────────────
 
 type createListingRequest struct {
-	CategoryID           string   `json:"category_id"`
-	Title                string   `json:"title"`
-	Description          string   `json:"description"`
-	PhotoURLs            []string `json:"photo_urls"`
-	PickupZip            string   `json:"pickup_zip"`
-	PickupAddress        *string  `json:"pickup_address"`
-	PickupLat            *float64 `json:"pickup_lat"`
-	PickupLng            *float64 `json:"pickup_lng"`
-	StartingPriceCents   int64    `json:"starting_price_cents"`
-	ReservePriceCents    *int64   `json:"reserve_price_cents"`
-	BuyNowPriceCents     *int64   `json:"buy_now_price_cents"`
+	CategoryID         string   `json:"category_id"`
+	Title              string   `json:"title"`
+	Description        string   `json:"description"`
+	PhotoURLs          []string `json:"photo_urls"`
+	PickupZip          string   `json:"pickup_zip"`
+	PickupAddress      *string  `json:"pickup_address"`
+	PickupLat          *float64 `json:"pickup_lat"`
+	PickupLng          *float64 `json:"pickup_lng"`
+	StartingPriceCents int64    `json:"starting_price_cents"`
+	ReservePriceCents  *int64   `json:"reserve_price_cents"`
+	BuyNowPriceCents   *int64   `json:"buy_now_price_cents"`
 	// Condition is a StockX-style enum: new | like_new | very_good | good |
 	// acceptable | for_parts. Empty/nil persists as NULL ("seller didn't say").
-	Condition            *string  `json:"condition"`
-	AuctionDurationHours int      `json:"auction_duration_hours"`
-	Publish              bool     `json:"publish"`
+	Condition            *string `json:"condition"`
+	AuctionDurationHours int     `json:"auction_duration_hours"`
+	Publish              bool    `json:"publish"`
 }
 
 type updateListingRequest struct {
@@ -823,10 +824,21 @@ func (h *ListingsHandler) DeleteListingDraft(w http.ResponseWriter, r *http.Requ
 // expected dev/sandbox state. Errors are logged, never returned: every caller
 // has already committed its Postgres change and search is derived state.
 func (h *ListingsHandler) deleteListingDocument(ctx context.Context, listingID string) {
-	if h == nil || h.meili == nil {
+	if h == nil {
 		return
 	}
-	if _, err := h.meili.Index(listingsSearchIndexUID).DeleteDocumentWithContext(ctx, listingID, nil); err != nil {
+	deleteListingSearchDocument(ctx, h.meili, listingID)
+}
+
+// deleteListingSearchDocument is the shared best-effort Meilisearch delete
+// used by draft hard-delete and by admin hides that set is_hidden. Nil client
+// or empty id is a no-op, never an error. Call only after the Postgres change
+// that should drop the document has committed.
+func deleteListingSearchDocument(ctx context.Context, meili meilisearch.ServiceManager, listingID string) {
+	if meili == nil || listingID == "" {
+		return
+	}
+	if _, err := meili.Index(listingsSearchIndexUID).DeleteDocumentWithContext(ctx, listingID, nil); err != nil {
 		slog.WarnContext(ctx, "listing search document delete failed; index may serve a stale row until the next reindex",
 			"error", err, "listing_id", listingID, "index", listingsSearchIndexUID)
 		return

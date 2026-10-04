@@ -68,10 +68,9 @@ func (s *Service) SendNotification(ctx context.Context, userID, notifType, title
 		// nil-channel (resolveChannels) path already behaves.
 		//
 		// We only drop a channel the user has explicitly disabled for this
-		// type. Channels with no stored preference (transactional emails sent
-		// as `unspecified`, or a retention type the user never touched) pass
-		// through unchanged, so this neither breaks password-reset email nor
-		// silently disables a default-on retention send.
+		// type. Transactional channels with no stored preference pass
+		// through. Promotional push does not: with no preference row and
+		// no stored preference for the type, push is omitted.
 		channels = s.filterByExplicitPrefs(ctx, userID, notifType, channels)
 	}
 
@@ -191,6 +190,8 @@ func (s *Service) dispatchEmail(ctx context.Context, userID, notifType, title, b
 // user / hour anti-storm cap. A blocked push is skipped — the in-app row
 // still delivers — and counted on notification_push_cooldown_skips_total.
 func (s *Service) dispatchPush(ctx context.Context, userID, notifType, title, body, actionURL, entityType, entityID string, data map[string]string) ChannelDelivery {
+	// Lock-screen copy only. The in-app row keeps the original body.
+	title, body = redactMessageAlert(notifType, title, body)
 	if verdict := s.pushCooldownVerdict(ctx, userID, notifType); !verdict.allowed {
 		pushCooldownSkipsTotal.WithLabelValues(verdict.class, verdict.limit).Inc()
 		slog.InfoContext(ctx, "push dispatch skipped: cooldown",
@@ -745,9 +746,10 @@ func (s *Service) resolveChannels(ctx context.Context, userID, notifType string)
 // filterByExplicitPrefs removes any channel the user has EXPLICITLY disabled
 // for this notification type from the requested set. It only consults
 // preferences the user has actually stored (the repository returns exactly the
-// types present in the JSONB column) — a type the user has never configured is
-// left untouched so transactional sends (password reset / verification, sent as
-// `unspecified`) and default-on retention notifications still deliver.
+// types present in the JSONB column). A transactional type the user has never
+// configured is left untouched (password reset / verification, sent as
+// `unspecified`, still deliver). A promotional type with no stored preference
+// does not fail open to push.
 //
 // in_app is never dropped here: SendNotification re-adds it unconditionally
 // downstream, and the in-app record is the durable notification, so dropping it
@@ -756,15 +758,19 @@ func (s *Service) resolveChannels(ctx context.Context, userID, notifType string)
 func (s *Service) filterByExplicitPrefs(ctx context.Context, userID, notifType string, requested []string) []string {
 	prefs, err := s.repo.GetPreferences(ctx, userID)
 	if err != nil {
-		// No stored preferences (or a transient read error): respect the
-		// caller's intent rather than guessing. Fail open toward delivery —
-		// the same posture resolveChannels takes when GetPreferences errors.
+		// No preference row, or a transient read error. Transactional sends
+		// keep the caller's channels. Promotional push does not fail open.
+		if isPromotionalNotifType(notifType) {
+			return dropUnstoredPromoPush(ctx, userID, notifType, requested)
+		}
 		return requested
 	}
 
 	cp, ok := prefs.Preferences[notifType]
 	if !ok {
-		// User has never configured this type — nothing to enforce.
+		if isPromotionalNotifType(notifType) {
+			return dropUnstoredPromoPush(ctx, userID, notifType, requested)
+		}
 		return requested
 	}
 
@@ -788,6 +794,27 @@ func (s *Service) filterByExplicitPrefs(ctx context.Context, userID, notifType s
 			// re-added downstream regardless.
 			filtered = append(filtered, ch)
 		}
+	}
+	return filtered
+}
+
+// dropUnstoredPromoPush removes push when a promotional type has no stored
+// preference. Other requested channels stay.
+func dropUnstoredPromoPush(ctx context.Context, userID, notifType string, requested []string) []string {
+	filtered := make([]string, 0, len(requested))
+	dropped := false
+	for _, ch := range requested {
+		if ch == "push" {
+			dropped = true
+			continue
+		}
+		filtered = append(filtered, ch)
+	}
+	if dropped {
+		slog.InfoContext(ctx, "push omitted: promotional type has no stored preference",
+			"user_id", userID,
+			"type", notifType,
+		)
 	}
 	return filtered
 }
@@ -851,6 +878,11 @@ func defaultChannelPrefs(notifType string) domain.ChannelPrefs {
 		// Welcome cadence is email-led; we still gate on user prefs.
 		"welcome_day_1", "welcome_day_3", "welcome_day_7":
 		cp.Email = true
+	}
+
+	// Promotional push is opt-in. A missing preference never turns it on.
+	if isPromotionalNotifType(notifType) {
+		cp.Push = false
 	}
 
 	return cp

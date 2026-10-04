@@ -66,6 +66,10 @@ vi.mock('@/components/providers/VerifiedBarBadge', () => ({
 vi.mock('@/components/chat/ReportButton', () => ({
   ReportButton: () => createElement('button', { type: 'button', 'data-testid': 'report-provider' }, 'Report'),
 }));
+vi.mock('@/components/chat/BlockButton', () => ({
+  BlockButton: ({ userId }: { userId: string }) =>
+    createElement('button', { type: 'button', 'data-testid': 'block-provider' }, userId),
+}));
 vi.mock('@/components/reviews/FlagReviewButton', () => ({
   FlagReviewButton: () => createElement('button', { type: 'button', 'data-testid': 'flag-review' }, 'Report'),
 }));
@@ -350,6 +354,8 @@ describe('(public)/providers/[id]/page', () => {
     expect(btn.getAttribute('data-initial-following')).toBe('true');
     expect(btn.getAttribute('data-follower-count')).toBe('128');
     expect(btn.getAttribute('data-current-user-id')).toBe('viewer-9');
+    expect(screen.getByTestId('block-provider').textContent).toBe('u1');
+    expect(screen.getByTestId('report-provider')).toBeDefined();
   });
 
   it('defaults FollowButton to not-following when is_following is absent (fail-soft)', () => {

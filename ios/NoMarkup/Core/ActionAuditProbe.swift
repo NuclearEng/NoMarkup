@@ -9,9 +9,14 @@ import UIKit
 /// `UITextField` / `UITextView` actions are ignored so typing (including
 /// passwords) is never logged. HTTP hops are recorded separately by `APIClient`.
 enum ActionAuditProbe {
+    #if DEBUG
     nonisolated(unsafe) private static var installed = false
+    #endif
 
+    /// Default is off. Release builds do not install (no consent). Debug installs
+    /// for dogfood only. The log stays on device; nothing here uploads it.
     static func install() {
+        #if DEBUG
         guard !installed else { return }
         installed = true
         swizzle(
@@ -24,6 +29,7 @@ enum ActionAuditProbe {
             #selector(UIViewController.viewDidAppear(_:)),
             #selector(UIViewController.nm_audit_viewDidAppear(_:))
         )
+        #endif
     }
 
     private static func swizzle(_ cls: AnyClass, _ original: Selector, _ replacement: Selector) {

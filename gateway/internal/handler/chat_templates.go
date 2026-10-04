@@ -123,10 +123,6 @@ func (h *ChatTemplatesHandler) ListMyTemplates(w http.ResponseWriter, r *http.Re
 
 // CreateTemplate handles POST /api/v1/me/chat/templates.
 func (h *ChatTemplatesHandler) CreateTemplate(w http.ResponseWriter, r *http.Request) {
-	if h.db == nil {
-		writeError(w, http.StatusServiceUnavailable, "database unavailable")
-		return
-	}
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
@@ -144,6 +140,14 @@ func (h *ChatTemplatesHandler) CreateTemplate(w http.ResponseWriter, r *http.Req
 	}
 	if len(body) > templateMaxLen {
 		writeError(w, http.StatusBadRequest, "body too long")
+		return
+	}
+	// ASR-1.2.a — canned replies are sent as chat UGC. Empty already rejected.
+	if rejectProhibitedUGC(w, r, body) {
+		return
+	}
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
 		return
 	}
 
@@ -165,10 +169,6 @@ func (h *ChatTemplatesHandler) CreateTemplate(w http.ResponseWriter, r *http.Req
 
 // UpdateTemplate handles PATCH /api/v1/me/chat/templates/{id}.
 func (h *ChatTemplatesHandler) UpdateTemplate(w http.ResponseWriter, r *http.Request) {
-	if h.db == nil {
-		writeError(w, http.StatusServiceUnavailable, "database unavailable")
-		return
-	}
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "missing claims")
@@ -191,6 +191,13 @@ func (h *ChatTemplatesHandler) UpdateTemplate(w http.ResponseWriter, r *http.Req
 	}
 	if len(body) > templateMaxLen {
 		writeError(w, http.StatusBadRequest, "body too long")
+		return
+	}
+	if rejectProhibitedUGC(w, r, body) {
+		return
+	}
+	if h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "database unavailable")
 		return
 	}
 

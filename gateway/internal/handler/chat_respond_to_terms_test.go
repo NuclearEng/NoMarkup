@@ -77,6 +77,7 @@ func TestRespondToTerms_passesClaimsUserID(t *testing.T) {
 	t.Parallel()
 	cc := &mockRespondChatClient{}
 	h := NewChatHandler(cc, nil, nil, "", "", nil)
+	allowUnblockedChat(h)
 
 	rec := httptest.NewRecorder()
 	respondToTermsRouter(h).ServeHTTP(rec, newRespondToTermsHTTPRequest(t, testChannelID, testCustomerID, `{"accepted":true}`))
@@ -98,6 +99,7 @@ func TestRespondToTerms_rejectBodyStillForwardsClaimsUser(t *testing.T) {
 	t.Parallel()
 	cc := &mockRespondChatClient{}
 	h := NewChatHandler(cc, nil, nil, "", "", nil)
+	allowUnblockedChat(h)
 
 	rec := httptest.NewRecorder()
 	respondToTermsRouter(h).ServeHTTP(rec, newRespondToTermsHTTPRequest(t, testChannelID, testCustomerID, `{"accepted":false}`))
@@ -119,6 +121,7 @@ func TestRespondToTerms_servicePermissionDeniedMapsTo403(t *testing.T) {
 		},
 	}
 	h := NewChatHandler(cc, nil, nil, "", "", nil)
+	allowUnblockedChat(h)
 
 	// Claims may say "customer" role but wrong party for this channel — service decides.
 	rec := httptest.NewRecorder()

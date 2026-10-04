@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input';
 import { PasskeySignInButton } from '@/components/auth/PasskeySignInButton';
 import { OAuthButtons, OAuthDivider } from '@/components/auth/oauth-buttons';
 import { getApiErrorMessage } from '@/lib/api';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
 import { messageForOAuthError } from '@/lib/oauth-errors';
 import { safeInternalPath } from '@/lib/safe-internal-path';
 import { loginSchema } from '@/lib/validations';
@@ -197,7 +198,7 @@ export function LoginForm() {
       <CardHeader className="relative z-[2] text-center">
         <CardTitle className="text-3xl font-bold tracking-tight text-white">Welcome back</CardTitle>
         <CardDescription className="text-sm text-white/65">
-          Sign in — the market sets the price, not the markup.
+          Sign in — the market sets the price, not the markup. {BUYER_PAYS_AGREED_PRICE}
         </CardDescription>
       </CardHeader>
       <CardContent className="relative z-[2]">

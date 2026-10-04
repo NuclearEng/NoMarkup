@@ -33,13 +33,13 @@ Group recommendation: subscription group `nomarkup.provider.plans` (name free-fo
 | `nomarkup.provider.business.monthly` | Business | 1 month | Business digital unlocks |
 | `nomarkup.provider.business.yearly` | Business | 1 year | Same features, annual |
 
-**Defaults** live in:
+The shipping binary does **not** embed these IDs. `AppConfig.storeKitProductIDs` resolves only:
 
-- `AppConfig.defaultStoreKitProductIDs`
-- Info.plist `StoreKitProductIDs` (comma-separated string)
-- Override: env `NOMARKUP_STOREKIT_PRODUCT_IDS`
+1. env `NOMARKUP_STOREKIT_PRODUCT_IDS`
+2. Info.plist `StoreKitProductIDs` (absent from the committed plists)
+3. empty
 
-Do **not** enable `StoreKitEnabled` until these IDs exist in ASC for the app record (or StoreKit Configuration file for local dogfood).
+`StoreKitManager.loadProducts` returns before `Product.products` when the list is empty. Do **not** enable `StoreKitEnabled` until these IDs exist in App Store Connect and are supplied by that env or plist. Do not put them back in the committed plist while purchase stays off.
 
 ---
 

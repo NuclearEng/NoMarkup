@@ -31,10 +31,10 @@ const maxMessageContentLen = 2000
 
 // ChatHandler handles HTTP endpoints for chat channels and messages.
 //
-// db is optional — when non-nil, the SendMessage path enforces user_blocks
-// (Wave 5 / Agent P) before forwarding to the chat gRPC service. With a
-// nil pool the block check is skipped (matches the rest of the gateway's
-// nil-safe DB pattern; the gRPC service still runs).
+// db is optional for name enrichment and notifications. SendMessage does
+// not skip the block check when the pool is nil — that is a 503 (ASR-1.2.c).
+// blockDB, when set, replaces h.db for that check only (tests). Production
+// leaves it nil.
 type ChatHandler struct {
 	chatClient     chatv1.ChatServiceClient
 	userClient     userv1.UserServiceClient
@@ -42,6 +42,7 @@ type ChatHandler struct {
 	chatWSAddr     string
 	internalSecret string // shared secret presented to the chat WS backend
 	db             *pgxpool.Pool
+	blockDB        blockQuerier
 }
 
 // NewChatHandler creates a new ChatHandler. internalSecret is the shared secret
@@ -538,33 +539,38 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Block check (Wave 5 / Agent P / ASR-1.2.c): if EITHER party of this
 	// channel has blocked the sender, refuse with 403 before forwarding to
-	// the chat service. Fail CLOSED on DB error (503) — App Store UGC safety
-	// requires we never deliver through a broken block check.
+	// the chat service. Fail CLOSED on a nil pool or a DB error (503) —
+	// App Store UGC safety requires we never deliver through a broken check.
 	// The query joins chat_channels → user_blocks via the OR over
 	// (customer_id, provider_id) so we need just one round-trip.
-	if h.db != nil {
-		var blocked bool
-		err := h.db.QueryRow(r.Context(), `
-			SELECT EXISTS(
-				SELECT 1
-				  FROM chat_channels c
-				  JOIN user_blocks ub
-				    ON (ub.blocker_id = c.customer_id OR ub.blocker_id = c.provider_id)
-				   AND ub.blocked_id = $1
-				 WHERE c.id = $2
-			)`, claims.UserID, channelID).Scan(&blocked)
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-			// No row impossible with EXISTS, but be defensive.
-		case err != nil:
-			slog.ErrorContext(r.Context(), "send message: block check failed",
-				"channel_id", channelID, "sender_id", claims.UserID, "error", err)
-			writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
-			return
-		case blocked:
-			writeError(w, http.StatusForbidden, "blocked")
-			return
-		}
+	db := h.messageBlockQuerier()
+	if db == nil {
+		slog.ErrorContext(r.Context(), "send message: block check unavailable",
+			"channel_id", channelID, "sender_id", claims.UserID)
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return
+	}
+	var blocked bool
+	err := db.QueryRow(r.Context(), `
+		SELECT EXISTS(
+			SELECT 1
+			  FROM chat_channels c
+			  JOIN user_blocks ub
+			    ON (ub.blocker_id = c.customer_id OR ub.blocker_id = c.provider_id)
+			   AND ub.blocked_id = $1
+			 WHERE c.id = $2
+		)`, claims.UserID, channelID).Scan(&blocked)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// No row impossible with EXISTS, but be defensive.
+	case err != nil:
+		slog.ErrorContext(r.Context(), "send message: block check failed",
+			"channel_id", channelID, "sender_id", claims.UserID, "error", err)
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return
+	case blocked:
+		writeError(w, http.StatusForbidden, "blocked")
+		return
 	}
 
 	resp, err := h.chatClient.SendMessage(r.Context(), &chatv1.SendMessageRequest{
@@ -837,14 +843,31 @@ func (h *ChatHandler) RespondToTerms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, protoMessageToJSON(msg))
 }
 
-// refuseIfChannelBlocked runs the same block check as SendMessage. Returns true
-// when the handler has already written an error response (caller must return).
-func (h *ChatHandler) refuseIfChannelBlocked(w http.ResponseWriter, r *http.Request, channelID, userID string) bool {
+// messageBlockQuerier is the DB surface for SendMessage's block check.
+// A typed-nil pool must stay a nil interface so the send fails closed.
+func (h *ChatHandler) messageBlockQuerier() blockQuerier {
+	if h.blockDB != nil {
+		return h.blockDB
+	}
 	if h.db == nil {
-		return false
+		return nil
+	}
+	return h.db
+}
+
+// refuseIfChannelBlocked runs the channel block check for terms RPCs. Returns
+// true when the handler has already written an error response (caller must
+// return). A nil pool fails closed, same as SendMessage.
+func (h *ChatHandler) refuseIfChannelBlocked(w http.ResponseWriter, r *http.Request, channelID, userID string) bool {
+	db := h.messageBlockQuerier()
+	if db == nil {
+		slog.ErrorContext(r.Context(), "chat terms: block check unavailable",
+			"channel_id", channelID, "user_id", userID)
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return true
 	}
 	var blocked bool
-	err := h.db.QueryRow(r.Context(), `
+	err := db.QueryRow(r.Context(), `
 		SELECT EXISTS(
 			SELECT 1
 			  FROM chat_channels c

@@ -351,6 +351,111 @@ func TestSendNotification_ExplicitChannelsRespectPrefs(t *testing.T) {
 	})
 }
 
+func TestSendNotification_MessageInAppKeepsBody(t *testing.T) {
+	t.Parallel()
+	repo := &mockNotifRepo{}
+	svc := newTestService(repo, &mockDeviceRepo{})
+	const body = "The oak table is on the porch at Pine Avenue"
+	notif, _, err := svc.SendNotification(
+		context.Background(), "user-1", "new_message",
+		"New message from Jordan Lee", body, "/messages?channel=abc",
+		map[string]string{"entity_type": "chat_channel", "entity_id": "abc"},
+		[]string{"in_app", "push"},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, body, notif.Body, "in-app record keeps the message; only the push alert is generic")
+}
+
+func TestSendNotification_PromoWithoutPreferenceDoesNotPush(t *testing.T) {
+	t.Parallel()
+
+	hasPush := func(deliveries []ChannelDelivery) bool {
+		for _, d := range deliveries {
+			if d.Channel == "push" {
+				return true
+			}
+		}
+		return false
+	}
+
+	t.Run("no preference row drops explicit promo push", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestService(&mockNotifRepo{}, &mockDeviceRepo{})
+		_, deliveries, err := svc.SendNotification(
+			context.Background(), "user-1", "price_drop",
+			"Price drop", "body", "/marketplace/1", nil,
+			[]string{"in_app", "push"},
+		)
+		require.NoError(t, err)
+		assert.False(t, hasPush(deliveries), "promo push must not send without a preference row")
+	})
+
+	t.Run("nil channels and no preference row do not push promo", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestService(&mockNotifRepo{}, &mockDeviceRepo{})
+		_, deliveries, err := svc.SendNotification(
+			context.Background(), "user-1", "nps_survey",
+			"How was your experience?", "body", "/dashboard", nil, nil,
+		)
+		require.NoError(t, err)
+		assert.False(t, hasPush(deliveries))
+	})
+
+	t.Run("preference row without this promo type does not push", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockNotifRepo{
+			prefs: &domain.NotificationPreferences{
+				UserID: "user-1",
+				Preferences: map[string]domain.ChannelPrefs{
+					"new_bid": {InApp: true, Push: true},
+				},
+			},
+		}
+		svc := newTestService(repo, &mockDeviceRepo{})
+		_, deliveries, err := svc.SendNotification(
+			context.Background(), "user-1", "nps_survey",
+			"How was your experience?", "body", "/dashboard", nil,
+			[]string{"in_app", "push"},
+		)
+		require.NoError(t, err)
+		assert.False(t, hasPush(deliveries))
+	})
+
+	t.Run("stored promo push opt-in still pushes", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockNotifRepo{
+			prefs: &domain.NotificationPreferences{
+				UserID: "user-1",
+				Preferences: map[string]domain.ChannelPrefs{
+					"price_drop": {InApp: true, Push: true},
+				},
+			},
+		}
+		svc := newTestService(repo, &mockDeviceRepo{
+			tokens: []domain.DeviceToken{{UserID: "user-1", Token: "tok", Platform: "ios"}},
+		})
+		_, deliveries, err := svc.SendNotification(
+			context.Background(), "user-1", "price_drop",
+			"Price drop", "body", "/marketplace/1", nil,
+			[]string{"push"},
+		)
+		require.NoError(t, err)
+		assert.True(t, hasPush(deliveries), "explicit stored push opt-in must still push")
+	})
+
+	t.Run("transactional explicit push stays without a preference row", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestService(&mockNotifRepo{}, &mockDeviceRepo{})
+		_, deliveries, err := svc.SendNotification(
+			context.Background(), "user-1", "bid_outbid",
+			"Outbid", "body", "/marketplace/1", nil,
+			[]string{"push"},
+		)
+		require.NoError(t, err)
+		assert.True(t, hasPush(deliveries), "transactional push must still pass through with no preference row")
+	})
+}
+
 func TestSendBulkNotification(t *testing.T) {
 	t.Parallel()
 
