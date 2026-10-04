@@ -46,6 +46,39 @@ vi.mock('@/hooks/useBids', () => ({
   useAcceptOffer: vi.fn(),
 }));
 
+const quoteBox = vi.hoisted(() => ({
+  templates: [] as Array<{
+    id: string;
+    user_id: string;
+    name: string;
+    body: string;
+    default_amount_cents: number | null;
+    use_count: number;
+    created_at: string;
+  }>,
+  increment: vi.fn(),
+  createChannel: vi.fn(async () => ({ id: 'channel-1' })),
+  sendMessage: vi.fn(async () => ({})),
+}));
+
+vi.mock('@/hooks/useQuoteTemplates', () => ({
+  useQuoteTemplates: () => ({
+    data: quoteBox.templates,
+    isLoading: false,
+    isError: false,
+  }),
+  useIncrementQuoteTemplateUse: () => ({ mutate: quoteBox.increment }),
+}));
+
+vi.mock('@/hooks/useChannels', () => ({
+  useCreateChannel: () => ({ mutateAsync: quoteBox.createChannel, isPending: false }),
+  useSendMessage: () => ({ mutateAsync: quoteBox.sendMessage, isPending: false }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
+}));
+
 // Stub out child components that pull in their own data layer
 vi.mock('@/components/bids/BidSuggestion', () => ({
   BidSuggestion: () => null,
@@ -73,6 +106,7 @@ const pastAuctionEnd = new Date(Date.now() - 1000).toISOString();
 
 describe('BidForm', () => {
   beforeEach(() => {
+    quoteBox.templates = [];
     vi.clearAllMocks();
     mutateMock.mockReset();
     updateMutateMock.mockReset();
@@ -889,5 +923,52 @@ describe('BidForm', () => {
     expect(
       screen.queryByRole('button', { name: /confirm accept offer/i }),
     ).toBeNull();
+  });
+
+  it('sends the quote template body in chat after a new bid is placed', async () => {
+    quoteBox.templates = [
+      {
+        id: 'tpl-1',
+        user_id: 'provider-1',
+        name: 'Drain',
+        body: 'Drain unclog, parts included',
+        default_amount_cents: 15000,
+        use_count: 0,
+        created_at: '2026-01-01T00:00:00Z',
+      },
+    ];
+    quoteBox.createChannel.mockResolvedValue({ id: 'channel-1' });
+    quoteBox.sendMessage.mockResolvedValue({});
+    mutateMock.mockImplementation((_vars: unknown, opts?: { onSuccess?: () => void }) => {
+      opts?.onSuccess?.();
+    });
+
+    const user = userEvent.setup();
+    render(
+      <BidForm
+        jobId="job-1"
+        existingBid={null}
+        startingBidCents={50000}
+        offerAcceptedCents={null}
+        marketRange={null}
+        auctionEndsAt={futureAuctionEnd}
+      />,
+    );
+
+    await user.selectOptions(screen.getByLabelText('Quote template'), 'tpl-1');
+    await user.click(screen.getByRole('button', { name: /place bid/i }));
+    await user.click(screen.getByRole('button', { name: 'Confirm Bid' }));
+
+    await waitFor(() => {
+      expect(quoteBox.createChannel).toHaveBeenCalledWith({
+        job_id: 'job-1',
+        channel_type: 'bid',
+      });
+    });
+    expect(quoteBox.sendMessage).toHaveBeenCalledWith({
+      channelId: 'channel-1',
+      input: { content: 'Drain unclog, parts included', message_type: 'text' },
+    });
+    expect(quoteBox.increment).toHaveBeenCalledWith('tpl-1');
   });
 });

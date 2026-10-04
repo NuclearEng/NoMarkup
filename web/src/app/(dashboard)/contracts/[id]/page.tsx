@@ -21,6 +21,7 @@ import { useState } from 'react';
 import { ActionConfirmDialog } from '@/components/admin/ActionConfirmDialog';
 import { CompletionFlow } from '@/components/contracts/CompletionFlow';
 import { ContractAcceptance } from '@/components/contracts/ContractAcceptance';
+import { ContractOneShotPay } from '@/components/contracts/ContractOneShotPay';
 import { GuaranteeCoverage } from '@/components/contracts/GuaranteeCoverage';
 import { RecurringSchedule } from '@/components/contracts/RecurringSchedule';
 import { WorkEvidencePack } from '@/components/contracts/WorkEvidencePack';
@@ -64,6 +65,7 @@ import { useContractInstallmentPlan, useInstallmentSchedule } from '@/hooks/useI
 import { useReviewEligibility } from '@/hooks/useReviews';
 import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { api } from '@/lib/api';
+import { isOneShotContractPayable } from '@/lib/contract-one-shot-pay';
 import { printAuthenticatedDocument } from '@/lib/print';
 import { formatCents } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
@@ -563,6 +565,24 @@ export default function ContractDetailPage() {
           embeddedConfig={contract.recurring}
           jobTitle={contract.job_title}
           jobId={contract.job_id}
+          amountCents={contract.amount_cents}
+        />
+      ) : null}
+
+      {/* One-shot escrow: non-recurring awarded contracts. Amount is the
+          contract total from the server. Hidden when not payable, recurring,
+          on an installment plan, or already funded (component). */}
+      {isOneShotContractPayable({
+        isCustomer,
+        status: contract.status,
+        amountCents: contract.amount_cents,
+        paymentTiming: contract.payment_timing,
+        hasRecurringConfig: Boolean(contract.recurring?.id),
+        hasInstallmentPlan: hasInstallmentPlan || installments.length > 0,
+      }) ? (
+        <ContractOneShotPay
+          contractId={contract.id}
+          providerId={contract.provider_id}
           amountCents={contract.amount_cents}
         />
       ) : null}

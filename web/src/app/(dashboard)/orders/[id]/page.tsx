@@ -265,7 +265,7 @@ export default function OrderDetailPage() {
                   asChild
                   variant="outline"
                   size="sm"
-                  className="min-h-[40px] border-white/10"
+                  className="min-h-11 border-white/10"
                 >
                   <Link href={`/messages?channel=${order.channel_id}` as Route}>
                     <MessageSquare className="mr-1.5 h-4 w-4" aria-hidden="true" />
@@ -273,7 +273,9 @@ export default function OrderDetailPage() {
                   </Link>
                 </Button>
               ) : (
-                <p className="text-xs text-zinc-500">Chat opens once pickup is confirmed.</p>
+                <p className="text-xs text-zinc-500">
+                  Chat is unavailable for this order right now. Refresh to try again.
+                </p>
               )}
             </CardContent>
           </Card>

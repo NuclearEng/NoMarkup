@@ -85,6 +85,62 @@ func TestDemoUsers_DOBAndVerification(t *testing.T) {
 	}
 }
 
+func TestSeedPhones_uniqueE164(t *testing.T) {
+	t.Parallel()
+
+	phones := []string{seedAdminPhone, seedCustomerPhone, seedProviderPhone, seedProvider2Phone}
+	seen := make(map[string]struct{}, len(phones))
+	for _, p := range phones {
+		if len(p) < 10 || p[0] != '+' || p[1] < '1' || p[1] > '9' {
+			t.Errorf("seed phone %q is not a valid E.164 number", p)
+			continue
+		}
+		for _, c := range p[1:] {
+			if c < '0' || c > '9' {
+				t.Errorf("seed phone %q is not a valid E.164 number", p)
+				break
+			}
+		}
+		if _, dup := seen[p]; dup {
+			t.Errorf("duplicate seed phone %q", p)
+		}
+		seen[p] = struct{}{}
+	}
+	if len(seen) != 4 {
+		t.Errorf("want 4 unique seed phones, got %d", len(seen))
+	}
+}
+
+func TestDemoUsers_PhoneVerified(t *testing.T) {
+	conn := connectSeedTestDB(t)
+	defer conn.Close(context.Background())
+
+	for _, u := range demoUserIDs {
+		u := u
+		t.Run(u.name, func(t *testing.T) {
+			var (
+				phone         *string
+				phoneVerified bool
+			)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			err := conn.QueryRow(ctx,
+				`SELECT phone, phone_verified FROM users WHERE id = $1`,
+				u.id,
+			).Scan(&phone, &phoneVerified)
+			if err != nil {
+				t.Fatalf("query user %s (%s): %v — was the seeder run?", u.name, u.id, err)
+			}
+			if phone == nil || *phone == "" {
+				t.Errorf("user %s (%s) has empty phone — seeder regression", u.name, u.id)
+			}
+			if !phoneVerified {
+				t.Errorf("user %s (%s) phone_verified=false — FR-1.9 seed accounts must transact", u.name, u.id)
+			}
+		})
+	}
+}
+
 func TestDemoUsers_ToSAccepted(t *testing.T) {
 	conn := connectSeedTestDB(t)
 	defer conn.Close(context.Background())

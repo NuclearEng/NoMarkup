@@ -26,7 +26,20 @@ vi.mock('@/hooks/usePayments', () => ({
   useInstantPayout: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+vi.mock('@/hooks/useWorkingCapital', () => ({
+  useCreditLimit: () => ({
+    data: {
+      max_advance_cents: 1000000,
+      total_outstanding_cents: 0,
+      available_cents: 1000000,
+      risk_score: 0.2,
+    },
+    isLoading: false,
+  }),
+}));
+
 const { InstantPayoutButton } = await import('@/components/providers/InstantPayoutButton');
+const { CreditScoreCard } = await import('@/components/providers/CreditScoreCard');
 
 function renderWithClient(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -62,6 +75,23 @@ describe('feature-flag gating — InstantPayout card', () => {
       createElement(InstantPayoutButton, { availableBalanceCents: 50_000 }),
     );
     expect(screen.queryByText('Instant Payout')).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('feature-flag gating — working-capital credit card', () => {
+  it('renders the credit card when working_capital is ON', () => {
+    flagState = { working_capital: true };
+    renderWithClient(createElement(CreditScoreCard));
+    expect(screen.getByText('NoMarkup Credit Score')).toBeDefined();
+  });
+
+  it('hides the credit card when working_capital is OFF', () => {
+    flagState = { working_capital: false };
+    const { container } = renderWithClient(createElement(CreditScoreCard));
+    expect(screen.queryByText('NoMarkup Credit Score')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Maximum advance limit/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Working capital/i)).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
   });
 });

@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { AnimatedPrice } from '@/components/bids/AnimatedPrice';
+import { ChatRelayAlias } from '@/components/chat/ChatRelayAlias';
 import { BuyItNowButton } from '@/components/marketplace/BuyItNowButton';
 import { BuyerOfferCard } from '@/components/marketplace/BuyerOfferCard';
 import { CounterOfferBanner } from '@/components/marketplace/CounterOfferBanner';
@@ -318,6 +319,10 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
               )}
             </CardContent>
           </Card>
+
+          {isAuthenticated ? (
+            <ChatRelayAlias contextType="listing" contextId={listingId} />
+          ) : null}
 
           {/* Bid history */}
           {bidHistory && bidHistory.bids.length > 0 ? (

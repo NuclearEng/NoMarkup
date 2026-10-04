@@ -178,6 +178,25 @@ export function useCancelJob() {
   });
 }
 
+/**
+ * Owner repost. Gateway `POST /jobs/{id}/repost` returns 201 with the new
+ * job at the top level. Empty body copies the original. Previous bids do
+ * not carry over. Allowed when the auction is closed, expired, cancelled,
+ * or closed with zero bids.
+ */
+export function useRepostJob() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => postJob(`/api/v1/jobs/${id}/repost`, {}),
+    onSuccess: () => {
+      toast.success('Job reposted — previous bids do not carry over');
+      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: explainFailure('Failed to repost job'),
+  });
+}
+
 export interface CustomerJobsParams {
   status?: string;
   page?: number;

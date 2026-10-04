@@ -320,12 +320,11 @@ func (h *QuoteTemplatesHandler) IncrementUse(w http.ResponseWriter, r *http.Requ
 //
 // Customer-facing companion to the quote template surface (Wave 5
 // audit Section H). Tips require a real Stripe charge before the
-// tip_amount_cents column is treated as paid (MON-23). Until the
-// PaymentIntent path is wired, this endpoint refuses to record tips
-// as paid (HTTP 501) so we never inflate provider earnings without
-// captured funds.
+// tip_amount_cents column is treated as paid (MON-23). Tip charges
+// the customer off-session via payment ChargeContractTip; this
+// handler records nothing as paid unless that charge succeeds.
 //
-// Constraints (when wired):
+// Constraints:
 //   - Only the contract's customer may tip.
 //   - Contract must be in 'completed' status.
 //   - Only one tip per contract (tip_amount_cents starts at 0; non-zero
@@ -448,10 +447,9 @@ func (h *ContractTipHandler) Tip(w http.ResponseWriter, r *http.Request) {
 		"payment_id", resp.GetPaymentId(),
 	)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"tip_amount_cents":   resp.GetTipAmountCents(),
-		"payment_id":         resp.GetPaymentId(),
-		"payment_intent_id":  resp.GetPaymentIntentId(),
-		"status":             resp.GetStatus(),
+		"tip_amount_cents":  resp.GetTipAmountCents(),
+		"payment_id":        resp.GetPaymentId(),
+		"payment_intent_id": resp.GetPaymentIntentId(),
+		"status":            resp.GetStatus(),
 	})
 }
-

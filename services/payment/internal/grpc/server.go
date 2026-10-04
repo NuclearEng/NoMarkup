@@ -128,6 +128,7 @@ func (s *Server) GetStripeAccountStatus(ctx context.Context, req *paymentv1.GetS
 		StripeTransfersStatus: acctStatus.StripeTransfersStatus,
 		Dashboard:             acctStatus.Dashboard,
 		AccountsApi:           acctStatus.AccountsAPI,
+		AccountExists:         acctStatus.AccountExists,
 	}, nil
 }
 

@@ -336,7 +336,7 @@ func main() {
 	// Login seeds the idle key and Refresh enforces it. authMW owns the cache
 	// client + token decode; passing nil cache (Redis down) fails open.
 	authHandler.WithIdleSession(authMW)
-	userHandler := handler.NewUserHandler(userClient, dbPool)
+	userHandler := handler.NewUserHandler(userClient, dbPool).WithSessionIssuer(authHandler)
 	providerHandler := handler.NewProviderHandler(userClient, trustClient, dbPool)
 	categoriesHandler := handler.NewCategoriesHandler(userClient, cacheClient)
 	jobHandler := handler.NewJobHandler(jobClient, cacheClient, fraudClient, dbPool)

@@ -40,6 +40,7 @@ type mockPaymentRepo struct {
 	updateRefundFn                    func(ctx context.Context, id string, refundAmountCents int64, refundReason string, refundedAt time.Time, stripeRefundID string, status string) error
 	getStripeAccountIDFn              func(ctx context.Context, userID string) (string, error)
 	setStripeAccountIDFn              func(ctx context.Context, userID string, stripeAccountID string) error
+	findUserIDByStripeAccountIDFn     func(ctx context.Context, stripeAccountID string) (string, error)
 	setStripeOnboardingCompleteFn     func(ctx context.Context, stripeAccountID string, complete bool) error
 	// Expense methods
 	createExpenseFn func(ctx context.Context, expense *domain.Expense) error
@@ -234,6 +235,12 @@ func (m *mockPaymentRepo) GetStripeAccountID(ctx context.Context, userID string)
 }
 func (m *mockPaymentRepo) SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error {
 	return m.setStripeAccountIDFn(ctx, userID, stripeAccountID)
+}
+func (m *mockPaymentRepo) FindUserIDByStripeAccountID(ctx context.Context, stripeAccountID string) (string, error) {
+	if m.findUserIDByStripeAccountIDFn != nil {
+		return m.findUserIDByStripeAccountIDFn(ctx, stripeAccountID)
+	}
+	return "", domain.ErrStripeAccountNotFound
 }
 func (m *mockPaymentRepo) SetStripeOnboardingComplete(ctx context.Context, stripeAccountID string, complete bool) error {
 	if m.setStripeOnboardingCompleteFn != nil {

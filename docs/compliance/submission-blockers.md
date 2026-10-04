@@ -1,6 +1,6 @@
 # Submission blockers remaining (one-pager)
 
-**As of:** 2026-08-02 (eng packaging 100 — free-tier lock + dual-rail feature depth)  
+**As of:** 2026-08-27 (eng packaging docs + binary gates; dual-rail **core shipped**; named FR-3.1 / OTP / no-show **closed**)  
 **Binary tree:** `ios/NoMarkup` (SwiftUI native)  
 **Related:** [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) · [`app-review-notes.md`](./app-review-notes.md) · [`launch-board.md`](./launch-board.md) · [`eng-completion-scorecard-2026-08-02.md`](./eng-completion-scorecard-2026-08-02.md)
 
@@ -10,7 +10,7 @@
 
 | Claim | Status |
 |-------|--------|
-| Consumer dual-rail **engineering** (services + goods) | **100 / 100** — see eng scorecard |
+| Consumer dual-rail **engineering** (services + goods) | **Core shipped** — named FR residuals **closed**; see eng scorecard |
 | Free-tier digital lock (no StoreKit / no IAP paywall) | **LOCKED** — [`v1-ios-product-cut.md`](./v1-ios-product-cut.md) |
 | Native chrome (Guideline **4.2**) | **Met in code** — `RootTabView` TabView; no pure WKWebView shell |
 | Account deletion + privacy/terms in-app | **Met in code** — Account → Legal / Your data |
@@ -35,7 +35,7 @@ Engineering cannot complete Team signing or ASC portal clicks. This page lists *
 | **6** | Age rating + content rights questionnaires | 2.3 | Founder | Paste answers from [`asc-content-rating-answers.md`](./asc-content-rating-answers.md) |
 | **7** | Export compliance in ASC (if still prompted) | Export | Founder | Answer exempt / HTTPS-only; binary already has `ITSAppUsesNonExemptEncryption=false` |
 | **8** | Demo accounts + review contact in ASC | PRE-03/04 | Founder | Seed emails in notes; password in **ASC secure password field only** (from `SEED_PASSWORD` / seed log — **never commit**) |
-| **9** | Review backend **always-on** + seed | PRE-05 | Founder / ops | `https://api.no-markup.com` (or review host) reachable from Apple’s network; `make seed` applied |
+| **9** | Review backend **always-on** + seed | PRE-05 | Founder / ops | Production origin currently **does not resolve**. Lightsail + DNS A + `make seed`. Do **not** set `DEPLOY_PROVISIONED=true`. |
 | **10** | Optional Apple Pay merchant + domain association | 3.1.3(e) polish | Founder | If claiming Apple Pay in screenshots: merchant ID + Stripe Dashboard + domain file — [`apple-pay-domain.md`](./apple-pay-domain.md). Without it, card/Link still works when `pk_` is set. |
 | **11** | Human **device smoke** sign-off | Quality | Founder / QA | [`device-smoke-checklist.md`](./device-smoke-checklist.md) — eng does not claim “device verified” |
 | **12** | Regulated rails **off** on review env | 3.2 / licenses | Founder / ops | Keep server flags **off**: `customer_bnpl`, `working_capital`, `per_job_insurance`, `insurance_competition`, `legal_services`, `lead_gen`, `instant_payout` |
@@ -52,12 +52,15 @@ Nothing in rows **1–12** is missing Swift/Go/Rust product code for the free-ti
 | SIWA path | `AuthenticationServices` + `POST /api/v1/auth/apple/native` |
 | Legal links | Account + login → Privacy / Terms / Community / Support |
 | Account deletion / export | `AccountDeletionView` → `DELETE /api/v1/users/me`; export share sheet |
-| Dual-rail feature depth | Jobs reverse-auction + marketplace forward-auction + chat/orders/escrow UI — eng scorecard **100/100** |
+| Dual-rail feature depth | Jobs reverse-auction + marketplace forward-auction + chat/orders/escrow UI — FR-3.1 / web OTP / no-show **closed** |
+| FR-3.1 schedule encode | `PostJobView` `specific_date`/`date_range` + dates; `CreateJobScheduleTests.swift` |
+| Web phone OTP | `PhoneOtpForm.tsx` on profile + settings/account |
+| Web contract + order no-show | `useReportNoShow` / `useReportOrderNoShow` |
 | Free-tier digital | No StoreKit; Account + `PlanLimitsView` state no IAP |
 | Purpose strings + Face ID | `Info.plist`: location, photos, camera, Face ID; **no** mic / ATT |
 | Privacy manifest | `PrivacyInfo.xcprivacy` (app + widget) |
 | Export encryption flag | `ITSAppUsesNonExemptEncryption` = **false** |
-| Regulated rails gate model | `FeatureFlags.iOSHardOffKeys = []` — **server flags** + `RequireFlag`; review env keeps flags **off** |
+| Regulated rails gate model | `iOSHardOffKeys` populated + server `RequireFlag`; hub omits off-flag purchase rows; review flags **off** |
 | B6 eng docs package | This file + checklist + review notes + content rating + screenshot matrix + TestFlight process |
 
 ---
@@ -80,4 +83,4 @@ Nothing in rows **1–12** is missing Swift/Go/Rust product code for the free-ti
 4. Do **not** enable regulated flags or StoreKit for this submit.
 
 **Eng ASC packaging bar:** **100 / 100** (docs + binary eng gates).  
-**Overall App Store submit bar:** **blocked only by founder/ASC-OPS rows above** (not eng product gaps).
+**Overall App Store submit bar:** **blocked only by founder/ASC-OPS rows above** (not eng FR gaps). Do **not** claim submit READY or production live. `DEPLOY_PROVISIONED` stays unset; origin does not resolve.

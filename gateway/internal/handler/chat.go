@@ -143,7 +143,7 @@ func (h *ChatHandler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		ierr := h.db.QueryRow(r.Context(), `
 			INSERT INTO chat_channels (job_id, customer_id, provider_id, channel_type, status)
 			VALUES ($1, $2, $3, 'inquiry', 'active')
-			ON CONFLICT (job_id, customer_id, provider_id) DO UPDATE
+			ON CONFLICT (job_id, customer_id, provider_id) WHERE job_id IS NOT NULL DO UPDATE
 			  SET updated_at = now()
 			RETURNING id::text`,
 			jobID, customerID, providerID,

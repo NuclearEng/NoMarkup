@@ -96,6 +96,8 @@ type PaymentService struct {
 	customers *CustomerProvisioner
 	// flags dual-gates regulated fee knobs (lead_gen). Optional in tests.
 	flags FeatureFlagChecker
+	// notify is optional; payout.* webhooks send user-facing alerts when wired.
+	notify NotificationSender
 	// platformEIN is the IRS payer EIN stamped on generated 1099-NEC forms.
 	// Injected from PLATFORM_EIN at construction (overridable via SetPlatformEIN
 	// so tests stay t.Parallel and do not use t.Setenv). GenerateTaxForm fails
@@ -176,6 +178,12 @@ func (s *PaymentService) SetTrustSource(t ProviderTrustSource) {
 // SetFeatureFlagChecker wires product-flag dual-gating for regulated fees.
 func (s *PaymentService) SetFeatureFlagChecker(c FeatureFlagChecker) {
 	s.flags = c
+}
+
+// SetNotifier wires fail-soft user notifications for payout.* webhooks.
+// Nil is accepted and leaves payout events logged-only.
+func (s *PaymentService) SetNotifier(n NotificationSender) {
+	s.notify = n
 }
 
 // CalculateFees computes the fee breakdown for a given amount.
@@ -358,7 +366,9 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 		return nil, "", err
 	}
 
-	// Get provider Stripe account for destination charge.
+	// Resolve the provider's Connect account so later CreateTransfer can pay
+	// them from platform escrow (separate charges + transfers). Not a
+	// destination charge — the PI captures onto the platform balance.
 	providerAccountID, err := s.repo.GetStripeAccountID(ctx, input.ProviderID)
 	if err != nil {
 		return nil, "", fmt.Errorf("create payment: %w", err)
@@ -410,12 +420,11 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 		return nil, "", err
 	}
 
-	// Create Stripe PaymentIntent. The Stripe application_fee_amount is the
-	// amount the platform retains from the destination charge; the remainder is
-	// transferred to the provider. The lead-gen fee is an additional platform-
-	// retained amount, so it is added here alongside the platform + guarantee
-	// fees. This keeps the lead-gen fee with the platform and reduces the
-	// provider transfer by the same amount (mirrors breakdown.ProviderPayoutCents).
+	// Separate charges + transfers: the PaymentIntent captures onto the platform
+	// balance (no TransferData / application_fee_amount). totalFee is the
+	// platform-retained slice (platform + guarantee + lead-gen) recorded in PI
+	// metadata for reconciliation; CreateTransfer later sends
+	// ProviderPayoutCents to the connected account.
 	totalFee := breakdown.PlatformFeeCents + breakdown.GuaranteeFeeCents + breakdown.LeadGenFeeCents
 
 	// FR-18 visit: best-effort bind the customer's Stripe Customer so one
@@ -1438,7 +1447,21 @@ func (s *PaymentService) GetStripeAccountID(ctx context.Context, userID string) 
 }
 
 // CreateStripeAccount creates a Stripe Connect account and stores the ID.
+//
+// A seeded or leftover synthetic id (acct_dev_…) is not a live Connect account.
+// Against a real key it must be cleared before the first create, otherwise the
+// placeholder stays on the profile and later onboarding calls Stripe with an
+// id that does not exist. Dev mode keeps those ids — they are the stub account.
 func (s *PaymentService) CreateStripeAccount(ctx context.Context, userID, email, businessName string) (string, error) {
+	if s.stripe != nil && !s.stripe.IsDevMode() {
+		existing, lookupErr := s.repo.GetStripeAccountID(ctx, userID)
+		if lookupErr == nil && isSyntheticDevStripeAccountID(existing) {
+			if err := s.repo.SetStripeAccountID(ctx, userID, ""); err != nil {
+				return "", fmt.Errorf("clear synthetic stripe account: %w", err)
+			}
+		}
+	}
+
 	accountID, err := s.stripe.CreateStripeAccount(ctx, email, businessName)
 	if err != nil {
 		return "", err
@@ -1491,6 +1514,7 @@ func (s *PaymentService) GetStripeOnboardingLink(ctx context.Context, userID, re
 // return this instead of 500 so the UI can render the "connect Stripe" CTA.
 func defaultStripeAccountStatusNotStarted() *domain.StripeAccountStatus {
 	return &domain.StripeAccountStatus{
+		AccountExists:         false,
 		ChargesEnabled:        false,
 		PayoutsEnabled:        false,
 		DetailsSubmitted:      false,

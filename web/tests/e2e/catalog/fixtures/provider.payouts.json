@@ -6,6 +6,8 @@
   "body": {
     "charges_enabled": false,
     "payouts_enabled": false,
-    "details_submitted": false
+    "details_submitted": false,
+    "transfers_ready": false,
+    "account_exists": false
   }
 }

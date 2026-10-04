@@ -290,6 +290,7 @@ func main() {
 		}
 	} else {
 		marketplaceSvc.SetNotifier(service.NewMarketplaceNotifier(notifyClient))
+		paymentSvc.SetNotifier(notifyClient)
 		if recurringFailClient != nil {
 			recurringFailClient.SetNotifier(notifyClient)
 			slog.Info("FR-16.7/FR-18.8 recurring pause notifier wired", "addr", notificationAddr)

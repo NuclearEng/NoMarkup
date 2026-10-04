@@ -16,10 +16,12 @@ import type {
 
 const ALIASES_KEY = ['chat-aliases'] as const;
 
-export function useChatAliases() {
+export function useChatAliases(enabled = true) {
   return useQuery<ChatAliasesResponse>({
     queryKey: ALIASES_KEY,
     queryFn: () => api.get<ChatAliasesResponse>('/api/v1/me/chat/aliases'),
+    enabled,
+    retry: false,
     staleTime: 5 * 60 * 1000,
   });
 }

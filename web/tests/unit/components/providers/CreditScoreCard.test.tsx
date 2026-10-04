@@ -4,6 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CreditScoreCard } from '@/components/providers/CreditScoreCard';
 
+let workingCapitalEnabled = true;
+
+vi.mock('@/hooks/useFeatureFlags', () => ({
+  useFeatureFlag: (key: string) => (key === 'working_capital' ? workingCapitalEnabled : false),
+  useFeatureFlags: () => ({ working_capital: workingCapitalEnabled }),
+}));
+
 vi.mock('@/hooks/useWorkingCapital', () => ({
   useCreditLimit: vi.fn(() => ({ data: null, isLoading: true })),
 }));
@@ -13,6 +20,7 @@ const { useCreditLimit } = await import('@/hooks/useWorkingCapital');
 describe('CreditScoreCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    workingCapitalEnabled = true;
   });
 
   afterEach(() => {
@@ -37,6 +45,24 @@ describe('CreditScoreCard', () => {
     } as unknown as ReturnType<typeof useCreditLimit>);
     const { container } = render(<CreditScoreCard />);
     expect(container.firstChild).toBeNull();
+  });
+
+  it('hides the advances credit card when working_capital is off', () => {
+    workingCapitalEnabled = false;
+    vi.mocked(useCreditLimit).mockReturnValue({
+      data: {
+        max_advance_cents: 1000000,
+        total_outstanding_cents: 100000,
+        available_cents: 900000,
+        risk_score: 0.2,
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useCreditLimit>);
+    const { container } = render(<CreditScoreCard />);
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByText('NoMarkup Credit Score')).toBeNull();
+    expect(screen.queryByText(/working-capital/i)).toBeNull();
+    expect(screen.queryByText(/Maximum advance limit/i)).toBeNull();
   });
 
   it('renders an A risk grade for low risk score', () => {

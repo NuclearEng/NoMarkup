@@ -650,10 +650,40 @@ func (r *PostgresRepository) GetStripeAccountID(ctx context.Context, userID stri
 	return *accountID, nil
 }
 
+// FindUserIDByStripeAccountID resolves a Connect account ID to the owning
+// provider user. Returns ErrStripeAccountNotFound when no profile matches
+// (Stripe can deliver payout.* for accounts this environment does not track).
+func (r *PostgresRepository) FindUserIDByStripeAccountID(ctx context.Context, stripeAccountID string) (string, error) {
+	if stripeAccountID == "" {
+		return "", fmt.Errorf("find user by stripe account: %w", domain.ErrStripeAccountNotFound)
+	}
+	var userID string
+	err := r.pool.QueryRow(ctx, `
+		SELECT user_id FROM provider_profiles WHERE stripe_account_id = $1`, stripeAccountID).Scan(&userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("find user by stripe account: %w", domain.ErrStripeAccountNotFound)
+		}
+		return "", fmt.Errorf("find user by stripe account: %w", err)
+	}
+	if userID == "" {
+		return "", fmt.Errorf("find user by stripe account: %w", domain.ErrStripeAccountNotFound)
+	}
+	return userID, nil
+}
+
 func (r *PostgresRepository) SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error {
+	// Empty clears a synthetic placeholder (NULL), so the next read is "no account"
+	// rather than a leftover acct_dev id. A non-empty id replaces whatever was stored.
+	var stored any
+	if strings.TrimSpace(stripeAccountID) == "" {
+		stored = nil
+	} else {
+		stored = stripeAccountID
+	}
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE provider_profiles SET stripe_account_id = $2, updated_at = now() WHERE user_id = $1`,
-		userID, stripeAccountID)
+		userID, stored)
 	if err != nil {
 		return fmt.Errorf("set stripe account: %w", err)
 	}

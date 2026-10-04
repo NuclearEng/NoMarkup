@@ -1,58 +1,123 @@
 import SwiftUI
 
+/// Which money-rail / insurance catalog rows the business hub lists.
+/// Off-flag rails are omitted entirely (ASR-3.2.1.viii) — never advertised as
+/// "Not in this App Store build".
+struct BusinessHubLayout: Equatable {
+    static let introFootnote =
+        "Expenses, invoices, and tax stay available. Licensed rails appear when enabled."
+
+    let showPaymentPlans: Bool
+    let showInsurancePolicies: Bool
+    let showWorkingCapital: Bool
+    let showInstantPayout: Bool
+    let showInsuranceCatalog: Bool
+
+    var showMoneyRails: Bool {
+        showPaymentPlans || showInsurancePolicies || showWorkingCapital || showInstantPayout
+    }
+
+    /// Row titles the hub actually renders (screenshot / VoiceOver inventory).
+    var moneyRailTitles: [String] {
+        var titles: [String] = []
+        if showPaymentPlans { titles.append("Payment plans (BNPL)") }
+        if showInsurancePolicies { titles.append("Insurance policies") }
+        if showWorkingCapital { titles.append("Working capital advances") }
+        if showInstantPayout { titles.append("Instant payout") }
+        return titles
+    }
+
+    var insuranceCatalogTitles: [String] {
+        guard showInsuranceCatalog else { return [] }
+        return ["Insurance quote", "Browse insurance products"]
+    }
+
+    /// Copy the hub list exposes. Off-flag product names are not included.
+    var visibleCopy: [String] {
+        var lines: [String] = [Self.introFootnote]
+        if showMoneyRails {
+            lines.append("Money rails")
+            lines.append(contentsOf: moneyRailTitles)
+        }
+        lines.append(contentsOf: [
+            "Provider business OS",
+            "Business expenses",
+            "Invoices",
+            "Tax center",
+        ])
+        if showInsuranceCatalog {
+            lines.append("Insurance catalog")
+            lines.append(contentsOf: insuranceCatalogTitles)
+        }
+        return lines
+    }
+
+    init(isEnabled: (String) -> Bool) {
+        showPaymentPlans = isEnabled("customer_bnpl")
+        showInsurancePolicies = isEnabled("per_job_insurance")
+        showWorkingCapital = isEnabled("working_capital")
+        showInstantPayout = isEnabled("instant_payout")
+        showInsuranceCatalog = isEnabled("per_job_insurance") || isEnabled("insurance_competition")
+    }
+}
+
 /// Full product parity hub: BNPL, insurance, advances, instant payout, expenses, tax.
 /// Money-rail purchase surfaces are gated by `FeatureFlags.isEnabled` (iOS hard-off + server).
+/// Disabled rails are omitted — not listed as "Not in this App Store build".
 struct BusinessFeaturesHubView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var flags: FeatureFlags
 
-    private var insuranceEnabled: Bool {
-        flags.isEnabled("per_job_insurance") || flags.isEnabled("insurance_competition")
+    private var layout: BusinessHubLayout {
+        BusinessHubLayout(isEnabled: { flags.isEnabled($0) })
     }
 
     var body: some View {
         List {
             Section {
-                Text("Expenses, invoices, and tax stay available. BNPL, insurance, advances, and instant payout are off in this App Store build until licensed.")
+                Text(BusinessHubLayout.introFootnote)
                     .font(.footnote)
                     .foregroundStyle(BrandTheme.textSecondary)
                     .listRowBackground(BrandTheme.navyElevated)
             }
 
-            Section {
-                featureLink(
-                    flag: "customer_bnpl",
-                    title: "Payment plans (BNPL)",
-                    systemImage: "calendar.badge.clock"
-                ) {
-                    InstallmentsListView()
+            if layout.showMoneyRails {
+                Section {
+                    if layout.showPaymentPlans {
+                        moneyRow(
+                            title: "Payment plans (BNPL)",
+                            systemImage: "calendar.badge.clock"
+                        ) {
+                            InstallmentsListView()
+                        }
+                    }
+                    if layout.showInsurancePolicies {
+                        moneyRow(
+                            title: "Insurance policies",
+                            systemImage: "shield.checkered"
+                        ) {
+                            InsurancePoliciesView()
+                        }
+                    }
+                    if layout.showWorkingCapital {
+                        moneyRow(
+                            title: "Working capital advances",
+                            systemImage: "building.columns"
+                        ) {
+                            AdvancesView()
+                        }
+                    }
+                    if layout.showInstantPayout {
+                        moneyRow(
+                            title: "Instant payout",
+                            systemImage: "bolt.fill"
+                        ) {
+                            InstantPayoutView()
+                        }
+                    }
+                } header: {
+                    Text("Money rails").brandSectionHeader()
                 }
-                featureLink(
-                    flag: "per_job_insurance",
-                    title: "Insurance policies",
-                    systemImage: "shield.checkered"
-                ) {
-                    InsurancePoliciesView()
-                }
-                featureLink(
-                    flag: "working_capital",
-                    title: "Working capital advances",
-                    systemImage: "building.columns"
-                ) {
-                    AdvancesView()
-                }
-                featureLink(
-                    flag: "instant_payout",
-                    title: "Instant payout",
-                    systemImage: "bolt.fill"
-                ) {
-                    InstantPayoutView()
-                }
-            } header: {
-                Text("Money rails").brandSectionHeader()
-            } footer: {
-                Text("These rails are off in this App Store build until licensed. Purchase surfaces stay hidden while FeatureFlags.isEnabled is off (iOS hard-off plus server).")
-                    .foregroundStyle(BrandTheme.textSecondary)
             }
 
             Section {
@@ -82,23 +147,25 @@ struct BusinessFeaturesHubView: View {
                 Text("Provider business OS").brandSectionHeader()
             }
 
-            Section {
-                insuranceCatalogRow(
-                    title: "Insurance quote",
-                    systemImage: "shield.lefthalf.filled",
-                    accessibilityHint: "Request a per-job insurance quote for a contract"
-                ) {
-                    InsuranceQuoteFlowView()
+            if layout.showInsuranceCatalog {
+                Section {
+                    moneyRow(
+                        title: "Insurance quote",
+                        systemImage: "shield.lefthalf.filled",
+                        accessibilityHint: "Request a per-job insurance quote for a contract"
+                    ) {
+                        InsuranceQuoteFlowView()
+                    }
+                    .accessibilityIdentifier("business.row.insuranceQuote")
+                    moneyRow(
+                        title: "Browse insurance products",
+                        systemImage: "cross.case"
+                    ) {
+                        InsuranceProductsBrowseView()
+                    }
+                } header: {
+                    Text("Insurance catalog").brandSectionHeader()
                 }
-                .accessibilityIdentifier("business.row.insuranceQuote")
-                insuranceCatalogRow(
-                    title: "Browse insurance products",
-                    systemImage: "cross.case"
-                ) {
-                    InsuranceProductsBrowseView()
-                }
-            } header: {
-                Text("Insurance catalog").brandSectionHeader()
             }
         }
         .brandListBackground()
@@ -111,80 +178,29 @@ struct BusinessFeaturesHubView: View {
         .task { await flags.refresh() }
     }
 
+    /// Interactive destination only while the matching flag is on. Callers omit
+    /// the row (and its section) when `FeatureFlags.isEnabled` is false.
     @ViewBuilder
-    private func featureLink<D: View>(
-        flag: String,
-        title: String,
-        systemImage: String,
-        @ViewBuilder destination: @escaping () -> D
-    ) -> some View {
-        gatedMoneyRow(
-            enabled: flags.isEnabled(flag),
-            title: title,
-            systemImage: systemImage
-        ) {
-            destination()
-        }
-    }
-
-    /// Quote + browse share two insurance flags. No NavigationLink into a purchase surface when both are off.
-    @ViewBuilder
-    private func insuranceCatalogRow<D: View>(
+    private func moneyRow<D: View>(
         title: String,
         systemImage: String,
         accessibilityHint: String? = nil,
         @ViewBuilder destination: @escaping () -> D
     ) -> some View {
-        gatedMoneyRow(
-            enabled: insuranceEnabled,
-            title: title,
-            systemImage: systemImage,
-            accessibilityHint: accessibilityHint
-        ) {
-            destination()
-        }
-    }
-
-    /// Interactive destination only while `FeatureFlags.isEnabled` is true. Off rows are static — no Request/Purchase path.
-    @ViewBuilder
-    private func gatedMoneyRow<D: View>(
-        enabled: Bool,
-        title: String,
-        systemImage: String,
-        accessibilityHint: String? = nil,
-        @ViewBuilder destination: @escaping () -> D
-    ) -> some View {
-        Group {
-            if enabled {
-                NavigationLink {
-                    // Defer construction until open — hub is already nested under Account LazyView.
-                    LazyView { destination() }
-                } label: {
-                    HStack {
-                        Label(title, systemImage: systemImage)
-                        Spacer()
-                        Text("On")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(BrandTheme.success)
-                    }
-                    .frame(minHeight: 44)
-                }
-                .accessibilityHint(accessibilityHint ?? "Open \(title)")
-            } else {
-                HStack(alignment: .center, spacing: 12) {
-                    Label(title, systemImage: systemImage)
-                    Spacer(minLength: 8)
-                    Text("Not in this App Store build")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(BrandTheme.textSecondary)
-                        .multilineTextAlignment(.trailing)
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .allowsHitTesting(false)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(title), not in this App Store build")
+        NavigationLink {
+            // Defer construction until open — hub is already nested under Account LazyView.
+            LazyView { destination() }
+        } label: {
+            HStack {
+                Label(title, systemImage: systemImage)
+                Spacer()
+                Text("On")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BrandTheme.success)
             }
+            .frame(minHeight: 44)
         }
+        .accessibilityHint(accessibilityHint ?? "Open \(title)")
         .listRowBackground(BrandTheme.navyElevated)
     }
 }

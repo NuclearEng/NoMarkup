@@ -59,6 +59,8 @@ struct ContractDetailView: View {
     @State private var releasingPaymentID: String?
     /// True while create → PaymentSheet → process is running (services fund escrow).
     @State private var isPayingEscrow = false
+    /// Inline pay error so the retry CTA sits next to the failure (not only the list banner).
+    @State private var payEscrowError: String?
     @State private var currentUserID: String?
     @State private var showCancelConfirm = false
     @State private var showMarkCompleteConfirm = false
@@ -115,15 +117,34 @@ struct ContractDetailView: View {
         contractPayments.filter(\.isPendingCapture)
     }
 
-    /// Customer may fund escrow when no held/released payment exists yet for this contract.
+    /// Recurring visits and installment plans use their own pay surfaces.
+    private func isOneShotServiceContract(_ contract: ContractDetail) -> Bool {
+        let timing = (contract.paymentTiming ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if timing == "recurring" || timing == "payment_plan" {
+            return false
+        }
+        let config = recurringConfig ?? contract.recurring
+        if let config, !config.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return false
+        }
+        return true
+    }
+
+    /// Customer may fund one-shot escrow when no held/released payment exists yet.
     private func canFundEscrow(for contract: ContractDetail) -> Bool {
+        guard isOneShotServiceContract(contract) else { return false }
         guard contract.isCustomer(userId: currentUserID) else { return false }
         guard let amount = contract.amountCents, amount > 0 else { return false }
         let status = contract.normalizedStatus
         // Payable after acceptance (active) and while completion is wrapping up.
         guard status == "active" || status == "completed" else { return false }
-        // Already funded or paid out — do not open a second charge for the same contract GMV.
-        if !heldEscrowPayments.isEmpty || !releasedEscrowPayments.isEmpty {
+        // Already funded, in flight, or paid out — do not open a second charge.
+        if !heldEscrowPayments.isEmpty || !releasedEscrowPayments.isEmpty || !pendingCapturePayments.isEmpty {
+            return false
+        }
+        if contractPayments.contains(where: { $0.normalizedStatus == "partially_refunded" }) {
             return false
         }
         return true
@@ -1452,7 +1473,10 @@ struct ContractDetailView: View {
                     }
 
                     Button {
-                        showPayEscrowConfirm = true
+                        // Open PaymentSheet directly. A stacked confirmationDialog
+                        // on this screen does not present, so the one-shot pay
+                        // surface never appeared.
+                        Task { await payAndHoldEscrow() }
                     } label: {
                         if isPayingEscrow {
                             ProgressView()
@@ -1460,7 +1484,9 @@ struct ContractDetailView: View {
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         } else {
                             Label(
-                                "Pay & hold escrow · \(MoneyFormat.usd(cents: contract.amountCents ?? 0))",
+                                payEscrowError == nil
+                                    ? "Pay & hold escrow · \(MoneyFormat.usd(cents: contract.amountCents ?? 0))"
+                                    : "Try again · \(MoneyFormat.usd(cents: contract.amountCents ?? 0))",
                                 systemImage: "creditcard.fill"
                             )
                             .frame(maxWidth: .infinity, minHeight: 44)
@@ -1470,12 +1496,20 @@ struct ContractDetailView: View {
                     .tint(BrandTheme.accent)
                     .foregroundStyle(BrandTheme.ctaLabelOnGold)
                     .disabled(isBusyForEscrowActions)
+                    .accessibilityIdentifier("contract.payEscrow")
                     .accessibilityHint(
-                        recurringAuthorizationDisclosure(for: contract) == nil
-                            ? "Creates a PaymentIntent for this contract amount, opens PaymentSheet, then captures into escrow"
-                            : "Charges the server contract amount via Apple Pay or card. Recurring schedule continues until you cancel."
+                        "Creates a PaymentIntent for this contract amount, opens PaymentSheet, then captures into escrow"
                     )
                     .listRowBackground(BrandTheme.navyElevated)
+
+                    if let payEscrowError {
+                        Text(payEscrowError)
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.destructive)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel(payEscrowError)
+                            .listRowBackground(BrandTheme.navyElevated)
+                    }
                 }
 
                 if held.isEmpty && released.isEmpty && !canPay {
@@ -2496,16 +2530,19 @@ struct ContractDetailView: View {
         guard let contract else { return }
         guard canFundEscrow(for: contract) else {
             statusIsError = true
-            statusMessage = "This contract is not payable, or escrow is already funded."
+            payEscrowError = "This contract is not payable, or escrow is already funded."
+            statusMessage = payEscrowError
             return
         }
         guard let amountCents = contract.amountCents, amountCents > 0 else {
             statusIsError = true
-            statusMessage = "Contract has no server amount to charge."
+            payEscrowError = "Contract has no server amount to charge."
+            statusMessage = payEscrowError
             return
         }
 
         isPayingEscrow = true
+        payEscrowError = nil
         statusMessage = nil
         statusIsError = false
         defer { isPayingEscrow = false }
@@ -2526,8 +2563,9 @@ struct ContractDetailView: View {
                 try await RailACheckout.presentPaymentSheet(clientSecret: secret)
             } else {
                 statusIsError = true
-                statusMessage =
+                payEscrowError =
                     "Payment created but no confirmable client_secret was returned. Retry shortly, or check Stripe configuration."
+                statusMessage = payEscrowError
                 await refreshSideData()
                 return
             }
@@ -2545,20 +2583,24 @@ struct ContractDetailView: View {
                 contractPayments.insert(held, at: 0)
             }
             statusIsError = false
+            payEscrowError = nil
             statusMessage =
                 "Payment complete — \(held.displayAmount) is held in escrow. Release after you approve the work."
             await refreshSideData()
         } catch let error as RailACheckout.CheckoutError where error.isCanceled {
             statusIsError = false
+            payEscrowError = nil
             statusMessage =
                 "Payment canceled. You can try again; create uses a sticky Idempotency-Key so retries reuse the same intent."
             await refreshSideData()
         } catch let error as APIClientError where error.isUnauthorized {
             statusIsError = true
-            statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+            payEscrowError = "Sign in required. Your session is missing or expired — please sign in again."
+            statusMessage = payEscrowError
         } catch {
             statusIsError = true
-            statusMessage = error.localizedDescription
+            payEscrowError = error.localizedDescription
+            statusMessage = payEscrowError
             await refreshSideData()
         }
     }

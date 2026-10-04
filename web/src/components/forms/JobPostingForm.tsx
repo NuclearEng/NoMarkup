@@ -39,12 +39,19 @@ import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { useFairPrice } from '@/hooks/useAnalytics';
 import { useCategories } from '@/hooks/useCategories';
+import { useImageUpload } from '@/hooks/useImageUpload';
 import { useCreateJob } from '@/hooks/useJobs';
 import { useProperties, type Property } from '@/hooks/useProperties';
 import { ENABLE_LIVE_AUCTION } from '@/lib/constants';
 import { api } from '@/lib/api';
 import { jobPostingSchema, type JobPostingFormValues } from '@/lib/validations';
-import { AUCTION_TYPE, type CreateJobInput, type MarketRange, type SubmitAnswerInput } from '@/types';
+import {
+  AUCTION_TYPE,
+  UPLOAD_CONTEXT,
+  type CreateJobInput,
+  type MarketRange,
+  type SubmitAnswerInput,
+} from '@/types';
 
 const STEPS = [
   { title: 'Category', description: 'What type of service do you need?' },
@@ -109,6 +116,8 @@ function fairPriceToMarketRange(fairPrice: {
 export function JobPostingForm() {
   const [step, setStep] = useState(0);
   const [photos, setPhotos] = useState<File[]>([]);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const photoUpload = useImageUpload({ context: UPLOAD_CONTEXT.JOB_PHOTO });
   const [useInstantMatch, setUseInstantMatch] = useState(false);
   // Wave 5 services-polish state — kept outside react-hook-form because
   // these fields aren't covered by jobPostingSchema (Zod schema lives
@@ -227,13 +236,31 @@ export function JobPostingForm() {
     };
   }
 
+  async function uploadedJobPhotoUrls(): Promise<string[] | null> {
+    if (photos.length === 0) return [];
+    const urls: string[] = [];
+    for (const file of photos) {
+      const outcome = await photoUpload.upload(file);
+      if (!outcome.ok) {
+        form.setError('root', { message: `Couldn't upload a photo: ${outcome.error}` });
+        return null;
+      }
+      urls.push(outcome.result.confirmedUrl);
+    }
+    return urls;
+  }
+
   async function handlePublish() {
     const valid = await form.trigger();
     if (!valid) return;
 
+    setUploadingPhotos(true);
     try {
+      const photoUrls = await uploadedJobPhotoUrls();
+      if (photoUrls === null) return;
       const values = form.getValues();
       const input = buildCreateInput(values);
+      if (photoUrls.length > 0) input.photo_urls = photoUrls;
       input.publish = true;
       const createdJob = await createJob.mutateAsync(input);
 
@@ -264,6 +291,8 @@ export function JobPostingForm() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to publish job';
       form.setError('root', { message });
+    } finally {
+      setUploadingPhotos(false);
     }
   }
 
@@ -277,18 +306,24 @@ export function JobPostingForm() {
       return;
     }
 
+    setUploadingPhotos(true);
     try {
+      const photoUrls = await uploadedJobPhotoUrls();
+      if (photoUrls === null) return;
       const values = form.getValues();
       const input = buildCreateInput(values);
+      if (photoUrls.length > 0) input.photo_urls = photoUrls;
       await createJob.mutateAsync(input);
       router.push('/jobs/mine' as Route);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save draft';
       form.setError('root', { message });
+    } finally {
+      setUploadingPhotos(false);
     }
   }
 
-  const isPending = createJob.isPending;
+  const isPending = createJob.isPending || uploadingPhotos;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -418,7 +453,7 @@ export function JobPostingForm() {
                       disabled={isPending}
                       className="min-h-[44px]"
                     >
-                      {isPending ? 'Publishing...' : 'Publish Job'}
+                      {uploadingPhotos ? 'Uploading photos…' : isPending ? 'Publishing...' : 'Publish Job'}
                     </Button>
                     <Button
                       type="button"
@@ -427,7 +462,7 @@ export function JobPostingForm() {
                       disabled={isPending}
                       className="min-h-[44px]"
                     >
-                      {isPending ? 'Saving...' : 'Save as Draft'}
+                      {uploadingPhotos ? 'Uploading photos…' : createJob.isPending ? 'Saving...' : 'Save as Draft'}
                     </Button>
                   </>
                 ) : null}

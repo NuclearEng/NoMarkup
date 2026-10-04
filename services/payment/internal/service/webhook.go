@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 	"github.com/nomarkup/nomarkup/services/payment/internal/observability"
 	"github.com/stripe/stripe-go/v82"
@@ -163,6 +164,8 @@ func (s *PaymentService) dispatchWebhookEvent(ctx context.Context, event stripe.
 		return s.handleChargeRefunded(ctx, event)
 	case "account.updated":
 		return s.handleAccountUpdated(ctx, event)
+	case "payout.paid", "payout.failed", "payout.canceled":
+		return s.handlePayoutEvent(ctx, event)
 
 	// Payment-method setup. This is the authoritative signal that a buyer's card
 	// is saved and chargeable.
@@ -494,11 +497,11 @@ func (s *PaymentService) handleTransferCreated(ctx context.Context, event stripe
 
 // handleAccountUpdated persists Stripe Connect onboarding completion so the
 // local DB stays in sync with Stripe. Stripe sends account.updated whenever
-// requirements/capabilities/details change; we treat onboarding as "complete"
-// when the account has details_submitted=true AND charges_enabled=true AND
-// payouts_enabled=true (the three signals that the account can actually
-// receive money). Otherwise we set it to false so a regression in any of
-// these (e.g. Stripe re-requesting documents) is reflected in the DB.
+// requirements/capabilities/details change.
+//
+// Onboarding-complete means the account can receive platform transfers — not
+// that it can charge cards. Accounts v2 recipients never request
+// card_payments, so charges_enabled can stay false forever.
 func (s *PaymentService) handleAccountUpdated(ctx context.Context, event stripe.Event) error {
 	var acct stripe.Account
 	if err := json.Unmarshal(event.Data.Raw, &acct); err != nil {
@@ -510,7 +513,22 @@ func (s *PaymentService) handleAccountUpdated(ctx context.Context, event stripe.
 		return nil
 	}
 
-	complete := acct.DetailsSubmitted && acct.ChargesEnabled && acct.PayoutsEnabled
+	v2Status := ""
+	v2Attempted := false
+	var v2Err error
+	if s.stripe != nil && !s.stripe.IsDevMode() && accountsV2Enabled() {
+		v2Attempted = true
+		v2Status, _, v2Err = s.stripe.getConnectedAccountV2Capabilities(ctx, acct.ID)
+		if v2Err != nil {
+			slog.WarnContext(ctx, "account.updated: v2 capability lookup failed; not requiring charges_enabled",
+				"event_id", event.ID,
+				"account_id", acct.ID,
+				"error", v2Err,
+			)
+		}
+	}
+
+	complete := connectOnboardingComplete(acct, v2Status, v2Attempted, v2Err)
 	if err := s.repo.SetStripeOnboardingComplete(ctx, acct.ID, complete); err != nil {
 		return fmt.Errorf("update onboarding flag: %w", err)
 	}
@@ -521,9 +539,127 @@ func (s *PaymentService) handleAccountUpdated(ctx context.Context, event stripe.
 		"details_submitted", acct.DetailsSubmitted,
 		"charges_enabled", acct.ChargesEnabled,
 		"payouts_enabled", acct.PayoutsEnabled,
+		"v2_transfers_status", v2Status,
 		"onboarding_complete", complete,
 	)
 	return nil
+}
+
+// connectOnboardingComplete reports whether a connected account can receive
+// platform transfers. Formula:
+//
+//   - v2 lookup succeeded with a stripe_transfers status: details_submitted
+//     AND status == "active". charges_enabled is ignored.
+//   - v2 lookup failed: details_submitted AND (payouts_enabled OR payload
+//     transfers capability active). Do NOT require charges_enabled.
+//   - v2 lookup succeeded with empty caps (legacy Express object):
+//     details_submitted AND (transfers capability active OR (payouts_enabled
+//     AND charges_enabled)).
+//   - v2 not attempted (dev / flag off): details_submitted AND (transfers
+//     capability active OR payouts_enabled) so recipient webhooks complete
+//     without charges_enabled while v1 all-three-true still completes.
+func connectOnboardingComplete(acct stripe.Account, v2TransfersStatus string, v2Attempted bool, v2LookupErr error) bool {
+	if !acct.DetailsSubmitted {
+		return false
+	}
+	payloadTransfersReady := acct.Capabilities != nil &&
+		acct.Capabilities.Transfers == stripe.AccountCapabilityStatusActive
+
+	switch {
+	case v2Attempted && v2LookupErr == nil && v2TransfersStatus != "":
+		return v2TransfersStatus == "active"
+	case v2Attempted && v2LookupErr != nil:
+		return payloadTransfersReady || acct.PayoutsEnabled
+	case v2Attempted && v2TransfersStatus == "":
+		return payloadTransfersReady || (acct.PayoutsEnabled && acct.ChargesEnabled)
+	default:
+		return payloadTransfersReady || acct.PayoutsEnabled
+	}
+}
+
+// handlePayoutEvent processes payout.paid / payout.failed / payout.canceled
+// on a connected account. Signature verification and dedup wrap this via
+// HandleWebhook. Notification delivery is fail-soft: a missing provider or
+// unwired notifier is ACK'd so Stripe does not retry-storm.
+func (s *PaymentService) handlePayoutEvent(ctx context.Context, event stripe.Event) error {
+	var po stripe.Payout
+	if err := json.Unmarshal(event.Data.Raw, &po); err != nil {
+		return fmt.Errorf("parse %s: %w", event.Type, err)
+	}
+
+	accountID := event.Account
+	slog.InfoContext(ctx, "stripe connect payout event",
+		"event_id", event.ID,
+		"event_type", event.Type,
+		"payout_id", po.ID,
+		"account", accountID,
+		"amount", po.Amount,
+		"failure_code", string(po.FailureCode),
+		"status", string(po.Status),
+	)
+
+	if accountID == "" {
+		slog.WarnContext(ctx, "payout event missing connected account id, acking",
+			"event_id", event.ID, "payout_id", po.ID)
+		return nil
+	}
+
+	providerID, err := s.repo.FindUserIDByStripeAccountID(ctx, accountID)
+	if err != nil {
+		if errors.Is(err, domain.ErrStripeAccountNotFound) {
+			slog.WarnContext(ctx, "payout event for unknown connect account, acking",
+				"event_id", event.ID, "account", accountID, "payout_id", po.ID)
+			return nil
+		}
+		return fmt.Errorf("payout event resolve provider: %w", err)
+	}
+
+	if s.notify == nil {
+		slog.WarnContext(ctx, "payout event: notifier unwired, acking",
+			"event_id", event.ID, "provider_id", providerID, "payout_id", po.ID)
+		return nil
+	}
+
+	typ, title, body := payoutNotificationCopy(event.Type, po)
+	data := map[string]string{
+		"payout_id":    po.ID,
+		"account_id":   accountID,
+		"amount_cents": fmt.Sprintf("%d", po.Amount),
+		"status":       string(po.Status),
+		"failure_code": string(po.FailureCode),
+		"event_type":   string(event.Type),
+	}
+	if err := s.notify.Send(ctx, providerID, typ, title, body, "/payouts", data); err != nil {
+		slog.WarnContext(ctx, "payout notification failed (event kept)",
+			"event_id", event.ID,
+			"provider_id", providerID,
+			"payout_id", po.ID,
+			"error", err,
+		)
+	}
+	return nil
+}
+
+func payoutNotificationCopy(eventType stripe.EventType, po stripe.Payout) (notificationv1.NotificationType, string, string) {
+	amount := formatCents(po.Amount)
+	switch eventType {
+	case "payout.paid":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT,
+			"Payout sent",
+			fmt.Sprintf("%s is on its way to your bank account.", amount)
+	case "payout.canceled":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED,
+			"Payout canceled",
+			fmt.Sprintf("Your %s payout was canceled. The funds remain in your Stripe balance.", amount)
+	default: // payout.failed
+		reason := string(po.FailureCode)
+		if reason == "" {
+			reason = "the payout could not be completed"
+		}
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED,
+			"Payout failed",
+			fmt.Sprintf("Your %s payout failed (%s). Update your bank details and try again.", amount, reason)
+	}
 }
 
 func (s *PaymentService) handleChargeRefunded(ctx context.Context, event stripe.Event) error {

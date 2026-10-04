@@ -71,10 +71,8 @@ Payment dual-rail design remains the long-term architecture; this cut only freez
 
 ## Regulated rails (server flags — restated)
 
-**Policy (2026-07-26):** Client hard-offs for BNPL / insurance / advances / instant payout are **removed**.  
-`FeatureFlags.iOSHardOffKeys` is **empty** (reserved for emergency kill-switches only).  
-Rails are controlled by **server feature flags** + gateway `RequireFlag` (fail closed when off).  
-Native UI lives under **Account → Business & finance** (`BusinessFeaturesHubView`).
+**Policy (2026-08-21+):** v1 App Store binary **hard-offs** regulated keys in `FeatureFlags.iOSHardOffKeys` (BNPL, working capital, insurance*, legal, lead_gen, instant payout) **and** server `RequireFlag` fail-closes the API. Hub **omits** off-flag purchase rows (no “Not in this App Store build” ads).  
+Keep review/prod flags **OFF** until licenses. Expenses / invoices / tax stay available.
 
 | Key | Product surface | Gate |
 |-----|-----------------|------|
@@ -129,7 +127,7 @@ Use with seed accounts (`customer@nomarkup.com` primary) and live API. Full past
 | Account discloses omission | Account + Plan limits copy retained |
 | Plan limits: no purchase CTA | Free: “Included free for launch”; paid: read-only; no web digital upgrade link |
 | No digital Stripe Checkout in binary | No deep-link/paywall for tiers |
-| Regulated rails server-gated | `iOSHardOffKeys` empty; hub gated by `isEnabled` + server flags |
+| Regulated rails gated | `iOSHardOffKeys` populated + server `RequireFlag`; hub omits off-flag purchase rows |
 | ASC free-tier lock (decision) | **Locked** in this doc + backlog FR-12 |
 | ASC notes paste (ops) | Human pastes checklist §11 / this one-liner into ASC |
 | B2 not claimed | Metadata does not advertise subscriptions |

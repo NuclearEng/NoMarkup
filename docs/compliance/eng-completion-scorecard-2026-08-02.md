@@ -1,6 +1,6 @@
 # Engineering completion scorecard — consumer dual-rail
 
-**Date:** 2026-08-02 (honesty sweep 2026-08-12)  
+**Date:** 2026-08-02 (honesty sweep 2026-08-27)  
 **Scope:** In-scope **consumer** product engineering for **services reverse-auction + goods marketplace dual-rail** (web + iOS + gateway + Go/Rust services).  
 **Not in scope for this score:** App Store ops packaging, founder secrets, vendor contracts (Checkr), regulated licenses, Phase 2 Instant AI.
 
@@ -10,14 +10,14 @@
 
 | Bar | Score | Meaning |
 |-----|------:|---------|
-| **Engineering consumer dual-rail (in-scope FR eng work)** | **Core shipped — not 100** | Auction → contract → escrow → review (services) and list → bid/BIN → order → release/dispute (goods) are **in code**. Named FR stubs remain (see residuals). Do not treat this as a clean 100. |
+| **Engineering consumer dual-rail (in-scope FR eng work)** | **Core shipped** (named FR residuals **closed**) | Auction → contract → escrow → review (services) and list → bid/BIN → order → release/dispute (goods) are **in code**. FR-3.1 encode, web phone OTP, and web contract/order no-show **shipped**. Not a clean 100 vs Decision-IDs / founder ops. |
 | **Full PRD eng-max** | **Core shipped — not 100** | Companion scorecard. Checkr + StoreKit **scaffolded** fail-closed; Instant MapKit drive ETA shipped; AI tracking residual Decision-ID. **ADMIN-IOS SUPERSEDED** — consumer admin desk shipped. |
 | **App Store eng packaging pack** | **Docs packaged** | Review Notes, content rating answers, privacy inventory, export compliance key, screenshot matrix, launch board, TestFlight founder steps exist. **Portal submit** still founder (**ASC-OPS**). Not a submit-ready claim. |
 | **App Store “submitted / live”** | **Not ready** | Requires Team signing, ASC uploads, screenshots capture, always-on review API, seed password in ASC secure field. |
 
 **Handoff:** founder/next engineer start at [`TURNOVER-2026-08-02.md`](./TURNOVER-2026-08-02.md).
 
-**Honesty clause:** “Core shipped” means dual-rail journeys exist in code. It does **not** mean ASC portal was clicked, licenses are live, Instant AI tracking shipped, or every named FR stub is gone.
+**Honesty clause:** “Core shipped” means dual-rail journeys exist in code. Named FR-3.1 / web OTP / no-show residuals are **closed**. It does **not** mean ASC portal was clicked, production is live, licenses are live, Instant AI tracking shipped, or App Store submit READY.
 
 ---
 
@@ -97,15 +97,18 @@ Tracker: `docs/planning/adversarial-action-tracker.md`.
 
 ## Honest residuals (do **not** zero the dual-rail eng bar)
 
-**In-scope dual-rail core is shipped; this is not a 100.** Remaining items:
+**In-scope dual-rail core is shipped.** Named FR-3.1 / OTP / no-show residuals are **closed**. Remaining items are founder / Decision-ID — do not re-open the Swift/web bugs.
 
 | Residual | Class | Notes |
 |----------|-------|-------|
-| **Web phone OTP / no-show** | FR stub — **gap-close in progress 2026-08-12** | Gateway `/auth/send-phone-otp` + `/auth/verify-phone` exist. Web client OTP UI not in `web/src`. Contract `ReportNoShow` type exists; no web report-no-show mutation. Do not claim done. |
-| **iOS FR-3.1 schedule encode** | Bug (parallel fix) | `PostJobView` picker uses `specific`/`range` (API wants `specific_date`/`date_range`); dates collected, **not sent**. Prior “FIXED” claim was false. |
-| **Live Stripe dogfood** | Ops-adjacent verify | FR-16.7 ladder + BNPL/advances under real keys when rails enabled — implementation exists. |
+| **Web phone OTP** | **Closed (2026-08-27)** | `PhoneOtpForm.tsx` on profile + settings/account; `useSendPhoneOtp` / `useVerifyPhone` in `useProfile.ts`. Gateway `/auth/send-phone-otp` + `/auth/verify-phone`. |
+| **FR-1.9 transact gate** | **Closed (2026-08-27)** | `RequirePhoneVerified` on bid / BIN / pay / tip / instant-payout. Unverified → 403 `phone_not_verified`. Seed users are verified. Twilio still founder for SMS delivery. |
+| **Web contract + order no-show** | **Closed (2026-08-27)** | `useReportNoShow` + `useReportOrderNoShow`; contract and order pages. |
+| **iOS FR-3.1 schedule encode** | **Closed (2026-08-27)** | `PostJobView` uses `specific_date` / `date_range` and sends dates. Tests: `CreateJobScheduleTests.swift`. |
+| **Live Stripe dogfood** | Ops-adjacent verify | FR-16.7 ladder + BNPL/advances under real keys when rails enabled — implementation exists. **Founder:** live keys. |
 | **Instant AI + live GPS tracking** | **INSTANT-AI-P2** | Soft haversine approx travel **shipped**; traffic-aware live ETA + AI match remain Phase 2. |
-| **ASC / Checkr / StoreKit / founder secrets** | Decision-IDs above | Explicit OUT_OF_SCOPE. **ADMIN-IOS no longer OOS** (desk shipped). |
+| **ASC / Checkr / StoreKit / founder secrets** | Decision-IDs above | Explicit OUT_OF_SCOPE. **ADMIN-IOS no longer OOS** (desk shipped). Lightsail, DNS A, `DEPLOY_PROVISIONED`, SendGrid, Sentry, Twilio, Apple Pay PLACEHOLDER, OAuth consoles stay founder. Production origin does **not** resolve. |
+| **Off-session charge env pair** | **OFFSESSION-LEGAL** | Default **off**. Do not flip. |
 | **Historical security-gate prose** | Doc drift | Prefer this scorecard + SUPERSEDED money ADR over older “MON residual Open” language. |
 
 **Closed this final eng wave (2026-08-02):** FR-6.2 real review columns; map `schedule_type`; web job `distance_km`; Instant soft travel; property photos; FR-18.7 deeper prefill; FR-8.6 server `q=` (already shipped earlier same day).
@@ -122,18 +125,18 @@ No **open MAJOR money race** from MON-14–18 remains in the adversarial tracker
 - MON-14–18 money races are **code-closed** (2026-07-27).
 - Consumer iOS is not a thin shell relative to web for dual-rail journeys.
 - Consumer iOS **admin desk exists** (role-gated `AdminConsoleView`).
+- iOS FR-3.1 schedule encode, web phone OTP UI, and web contract/order no-show mutations are **shipped**.
 
 **Not allowed:**
 
 - “PRD fully implemented” or “eng 100/100.”
-- “App Store submit READY” without ASC-OPS / PRE-05 / device smoke / Apple Pay domain / founder secrets.
+- “App Store submit READY” or “production is live.”
 - “Instant AI / live GPS ETA shipped.”
 - “StoreKit / Checkr live.”
 - “Admin was removed from the consumer binary.”
-- “Web phone OTP / contract no-show shipped” (gap-close in progress 2026-08-12).
 - “Regulated rails live” without R6 licenses + flags + dogfood.
 - “FR-6.2 fully asymmetric wire storage” (labels only today).
-- “iOS FR-3.1 schedule FIXED” (tokens + dates still wrong as of this sweep).
+- “`DEPLOY_PROVISIONED=true`” / production origin resolves (it does **not**).
 
 ---
 
@@ -141,7 +144,7 @@ No **open MAJOR money race** from MON-14–18 remains in the adversarial tracker
 
 | Doc | Role |
 |-----|------|
-| [`full-prd-completion-scorecard-2026-08-02.md`](./full-prd-completion-scorecard-2026-08-02.md) | Full PRD vs Decision-IDs (FR-1…19 + Phases 2–9) — core shipped, not 100 |
+| [`full-prd-completion-scorecard-2026-08-02.md`](./full-prd-completion-scorecard-2026-08-02.md) | Full PRD vs Decision-IDs (FR-1…19 + Phases 2–9) — core shipped; named FR residuals closed |
 | [`asc-packaging-checklist.md`](./asc-packaging-checklist.md) | **ASC packaging** ops bar (submit packaging — not eng-max) |
 | `prd-ios-parity-backlog.md` | Unified backlog + wave log |
 | `ios-prd-coverage-audit-2026-07-27.md` | FR census + 2026-08-02 delta |

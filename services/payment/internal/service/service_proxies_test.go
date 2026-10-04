@@ -121,6 +121,34 @@ func TestPaymentService_CreateStripeAccount(t *testing.T) {
 		_, err := svc.CreateStripeAccount(context.Background(), "user-1", "test@example.com", "Acme")
 		require.Error(t, err)
 	})
+
+	t.Run("clears_synthetic_acct_dev_before_live_create", func(t *testing.T) {
+		t.Parallel()
+		var writes []string
+		repo := &mockPaymentRepo{
+			getStripeAccountIDFn: func(_ context.Context, userID string) (string, error) {
+				assert.Equal(t, "user-1", userID)
+				return "acct_dev_seed@example.com", nil
+			},
+			setStripeAccountIDFn: func(_ context.Context, _, accountID string) error {
+				writes = append(writes, accountID)
+				return nil
+			},
+		}
+		ss := &StripeService{
+			devMode: false,
+			testCreateAccount: func(_ context.Context, email, businessName string) (string, error) {
+				assert.Equal(t, "test@example.com", email)
+				assert.Equal(t, "Acme", businessName)
+				return "acct_1Live", nil
+			},
+		}
+		svc := NewPaymentService(repo, ss)
+		acctID, err := svc.CreateStripeAccount(context.Background(), "user-1", "test@example.com", "Acme")
+		require.NoError(t, err)
+		assert.Equal(t, "acct_1Live", acctID)
+		assert.Equal(t, []string{"", "acct_1Live"}, writes)
+	})
 }
 
 func TestPaymentService_GetStripeOnboardingLink(t *testing.T) {
@@ -182,6 +210,7 @@ func TestPaymentService_GetStripeAccountStatus(t *testing.T) {
 		svc := newTestPaymentService(repo, nil)
 		status, err := svc.GetStripeAccountStatus(context.Background(), "user-1")
 		require.NoError(t, err)
+		assert.False(t, status.AccountExists)
 		assert.False(t, status.ChargesEnabled)
 		assert.False(t, status.PayoutsEnabled)
 		assert.False(t, status.DetailsSubmitted)
@@ -200,6 +229,8 @@ func TestPaymentService_GetStripeAccountStatus(t *testing.T) {
 		assert.Equal(t, "acct_xyz", status.AccountID)
 		// Dev-mode Stripe stub returns charges/payouts/details all enabled.
 		assert.True(t, status.ChargesEnabled)
+		// Non-synthetic id is a real account on file (dev stub included).
+		assert.True(t, status.AccountExists)
 	})
 
 	t.Run("synthetic_acct_dev_against_live_key_returns_not_started", func(t *testing.T) {
@@ -216,6 +247,7 @@ func TestPaymentService_GetStripeAccountStatus(t *testing.T) {
 		svc := NewPaymentService(repo, &StripeService{devMode: false})
 		status, err := svc.GetStripeAccountStatus(context.Background(), "user-1")
 		require.NoError(t, err)
+		assert.False(t, status.AccountExists)
 		assert.False(t, status.ChargesEnabled)
 		assert.False(t, status.PayoutsEnabled)
 		assert.False(t, status.DetailsSubmitted)

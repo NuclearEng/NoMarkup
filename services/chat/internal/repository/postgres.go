@@ -29,7 +29,7 @@ func (r *PostgresRepository) CreateChannel(ctx context.Context, channel *domain.
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO chat_channels (job_id, customer_id, provider_id, channel_type, status)
 		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (job_id, customer_id, provider_id) DO UPDATE SET updated_at = now()
+		ON CONFLICT (job_id, customer_id, provider_id) WHERE job_id IS NOT NULL DO UPDATE SET updated_at = now()
 		RETURNING id, created_at, updated_at`,
 		channel.JobID, channel.CustomerID, channel.ProviderID, channel.ChannelType, channel.Status,
 	).Scan(&id, &createdAt, &updatedAt)
@@ -51,7 +51,7 @@ func (r *PostgresRepository) CreateChannel(ctx context.Context, channel *domain.
 func (r *PostgresRepository) getChannelByJobAndUsers(ctx context.Context, jobID, customerID, providerID string) (*domain.Channel, error) {
 	var ch domain.Channel
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, job_id, customer_id, provider_id, status, channel_type,
+		SELECT id, COALESCE(job_id::text, ''), customer_id, provider_id, status, channel_type,
 		       customer_last_read_at, provider_last_read_at, last_message_at,
 		       message_count, created_at, updated_at
 		FROM chat_channels
@@ -74,7 +74,7 @@ func (r *PostgresRepository) getChannelByJobAndUsers(ctx context.Context, jobID,
 func (r *PostgresRepository) GetChannel(ctx context.Context, channelID string, userID string) (*domain.Channel, error) {
 	var ch domain.Channel
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, job_id, customer_id, provider_id, status, channel_type,
+		SELECT id, COALESCE(job_id::text, ''), customer_id, provider_id, status, channel_type,
 		       customer_last_read_at, provider_last_read_at, last_message_at,
 		       message_count, created_at, updated_at
 		FROM chat_channels
@@ -170,7 +170,7 @@ func (r *PostgresRepository) ListChannels(ctx context.Context, userID string, pa
 	}
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT c.id, c.job_id, c.customer_id, c.provider_id, c.status, c.channel_type,
+		SELECT c.id, COALESCE(c.job_id::text, ''), c.customer_id, c.provider_id, c.status, c.channel_type,
 		       c.customer_last_read_at, c.provider_last_read_at, c.last_message_at,
 		       c.message_count, c.created_at, c.updated_at,
 		       m.id, m.channel_id, m.sender_id, m.message_type, m.content, m.created_at,

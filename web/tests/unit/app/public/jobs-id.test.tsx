@@ -57,7 +57,10 @@ vi.mock('@/components/jobs/BidPushPrompt', () => ({ BidPushPrompt: stubModule('p
 vi.mock('@/components/jobs/MarketRangeDisplay', () => ({ MarketRangeDisplay: stubModule('market-range') }));
 vi.mock('@/components/jobs/PermitIntelligenceBanner', () => ({ PermitIntelligenceBanner: stubModule('permit') }));
 vi.mock('@/components/jobs/SavingsBadge', () => ({ SavingsBadge: stubModule('savings-badge') }));
+vi.mock('@/components/jobs/ReportJobButton', () => ({ ReportJobButton: stubModule('report-job') }));
 vi.mock('@/components/jobs/ViewerCount', () => ({ ViewerCount: stubModule('viewer-count') }));
+vi.mock('@/components/jobs/JobAnswers', () => ({ JobAnswers: stubModule('job-answers') }));
+vi.mock('@/components/chat/ChatRelayAlias', () => ({ ChatRelayAlias: () => null }));
 vi.mock('@/components/terminal/terminal-toolbar', () => ({ TerminalToolbar: stubModule('terminal-toolbar') }));
 vi.mock('@/components/terminal/terminal-grid', () => ({ TerminalGrid: stubModule('terminal-grid') }));
 
@@ -79,6 +82,7 @@ vi.mock('@/hooks/useCountdown', () => ({
 }));
 vi.mock('@/hooks/useJobs', () => ({
   useJob: vi.fn(),
+  useRepostJob: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 vi.mock('@/hooks/useInstantMatch', () => ({
   useCreateInstantMatch: vi.fn(),
@@ -732,6 +736,8 @@ describe('(public)/jobs/[id]/page', () => {
     });
     renderClient();
     expect(screen.getByTestId('bid-list')).toBeDefined();
+    expect(screen.getByTestId('job-repost')).toBeDefined();
+    expect(screen.getByRole('button', { name: /Repost job/i })).toBeDefined();
   });
 
   it('falls back to provider_business_name when display_name is empty in BidActivityFeed', () => {

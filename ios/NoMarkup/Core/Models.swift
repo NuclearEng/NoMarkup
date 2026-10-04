@@ -1689,6 +1689,8 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
     /// Present once the seller has stamped their half of the mutual handshake.
     var sellerConfirmedAt: String?
     var pickupConfirmedAt: String?
+    /// Pickup thread. Empty until the order channel exists.
+    var channelId: String?
 
     var displayTitle: String {
         let t = listingTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

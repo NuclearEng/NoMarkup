@@ -26,6 +26,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { PasskeySignInButton } from '@/components/auth/PasskeySignInButton';
 import { OAuthButtons, OAuthDivider } from '@/components/auth/oauth-buttons';
 import { getApiErrorMessage } from '@/lib/api';
 import { messageForOAuthError } from '@/lib/oauth-errors';
@@ -202,6 +203,11 @@ export function LoginForm() {
       <CardContent className="relative z-[2]">
         <OAuthButtons />
         <OAuthDivider />
+        <PasskeySignInButton
+          email={form.watch('email')}
+          disabled={form.formState.isSubmitting}
+          onSignedIn={finishLogin}
+        />
         <Form {...form}>
           <form
             onSubmit={(e) => void form.handleSubmit(onSubmit)(e)}

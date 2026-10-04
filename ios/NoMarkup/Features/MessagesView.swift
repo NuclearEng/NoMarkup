@@ -428,6 +428,8 @@ struct ChatThreadView: View {
     @State private var needsSignIn = false
     @State private var showWebSafari = false
     @State private var draft = ""
+    /// Quick replies from `GET /me/chat/templates` (saved rows, then defaults).
+    @State private var quickReplies: [ChatQuickReply] = []
     @State private var isSending = false
     @State private var isUploadingPhoto = false
     @State private var isUploadingFile = false
@@ -827,6 +829,7 @@ struct ChatThreadView: View {
             currentUserID = await APIClient.shared.currentUserID()
             // Open thread: load + mark read (auth required path inside helper).
             await loadMessages(showLoading: true, markRead: true)
+            await loadQuickReplies()
         }
         .task(id: channel.id) {
             await runChatSocketLifecycle()
@@ -1174,6 +1177,41 @@ struct ChatThreadView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if canCompose, !quickReplies.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(quickReplies) { reply in
+                            Button {
+                                draft = reply.body
+                                composerFocused = true
+                                if reply.stored {
+                                    let templateID = reply.id
+                                    Task {
+                                        try? await APIClient.shared.recordChatTemplateUse(id: templateID)
+                                    }
+                                }
+                            } label: {
+                                Text(reply.body)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 12)
+                                    .frame(minHeight: 44)
+                                    .foregroundStyle(BrandTheme.textPrimary)
+                                    .background(
+                                        BrandTheme.surfaceRaised,
+                                        in: Capsule()
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Insert: \(reply.body)")
+                            .accessibilityIdentifier("messages.quickReply")
+                        }
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Quick replies")
+            }
+
             HStack(alignment: .bottom, spacing: 8) {
                 // Photo attach — library (PhotosPicker). Imaging job_photo context.
                 PhotosPicker(
@@ -1332,6 +1370,32 @@ struct ChatThreadView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(BrandTheme.navyElevated)
+    }
+
+    @MainActor
+    private func loadQuickReplies() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            quickReplies = []
+            return
+        }
+        do {
+            let response = try await APIClient.shared.fetchChatTemplates()
+            var rows: [ChatQuickReply] = (response.templates ?? []).compactMap { template in
+                let body = template.body.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !template.id.isEmpty, !body.isEmpty else { return nil }
+                return ChatQuickReply(id: template.id, body: body, stored: true)
+            }
+            for (index, body) in (response.defaults ?? []).enumerated() {
+                let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                rows.append(ChatQuickReply(id: "default-\(index)", body: trimmed, stored: false))
+            }
+            quickReplies = rows
+        } catch {
+            if quickReplies.isEmpty {
+                quickReplies = []
+            }
+        }
     }
 
     private func isMine(_ message: ChatMessage) -> Bool {

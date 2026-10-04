@@ -1232,6 +1232,7 @@ func (h *ListingOrdersHandler) GetOrder(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	h.ensureListingOrderChannel(r.Context(), &order)
 	writeJSON(w, http.StatusOK, order)
 }
 
@@ -1281,7 +1282,38 @@ func (h *ListingOrdersHandler) ListMyOrders(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	for i := range orders {
+		h.ensureListingOrderChannel(r.Context(), &orders[i])
+	}
+
 	writeJSON(w, http.StatusOK, listMyOrdersResponse{Orders: orders})
+}
+
+// ensureListingOrderChannel opens the buyer/seller pickup thread once, idempotently.
+// Buyer is customer_id and seller is provider_id so the existing membership checks
+// apply. A failure leaves channel_id empty; the order itself still loads.
+func (h *ListingOrdersHandler) ensureListingOrderChannel(ctx context.Context, order *orderResponse) {
+	if h.db == nil || order == nil {
+		return
+	}
+	if order.ListingID == "" || order.BuyerID == "" || order.SellerID == "" || order.BuyerID == order.SellerID {
+		return
+	}
+	var channelID string
+	err := h.db.QueryRow(ctx, `
+		INSERT INTO chat_channels (listing_id, customer_id, provider_id, channel_type, status)
+		VALUES ($1, $2, $3, 'contract', 'active')
+		ON CONFLICT (listing_id, customer_id, provider_id) WHERE listing_id IS NOT NULL
+		DO UPDATE SET updated_at = chat_channels.updated_at
+		RETURNING id::text`,
+		order.ListingID, order.BuyerID, order.SellerID,
+	).Scan(&channelID)
+	if err != nil {
+		slog.ErrorContext(ctx, "listing order chat channel",
+			"order_id", order.ID, "listing_id", order.ListingID, "error", err)
+		return
+	}
+	order.ChannelID = &channelID
 }
 
 // hasRole is defined in bid.go and shared across the package.

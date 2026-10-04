@@ -26,9 +26,9 @@ export function VerifyEmailContent() {
 
   const verify = useCallback(async (verifyToken: string) => {
     try {
-      await api.postUnauthed<VerifyEmailResponse>(
-        `/api/v1/auth/verify-email?token=${encodeURIComponent(verifyToken)}`,
-      );
+      await api.postUnauthed<VerifyEmailResponse>('/api/v1/auth/verify-email', {
+        token: verifyToken,
+      });
       setState('success');
     } catch (error) {
       setState('error');

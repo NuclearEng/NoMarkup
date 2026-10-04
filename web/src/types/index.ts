@@ -798,6 +798,12 @@ export interface StripeAccountStatus {
   dashboard?: string;
   /** "v2" | "v1" when inferred */
   accounts_api?: string;
+  /**
+   * False when no live Connect account is on file (including synthetic acct_dev).
+   * Absent on older payloads — treat absent + every capability flag false as
+   * not started.
+   */
+  account_exists?: boolean;
 }
 
 /** Connect embedded AccountSession (single-use client_secret). */

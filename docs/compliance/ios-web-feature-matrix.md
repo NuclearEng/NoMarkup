@@ -1,6 +1,6 @@
 # iOS ↔ Web feature matrix
 
-**Date:** 2026-08-02 (parity loop re-audit; honesty 2026-08-12)  
+**Date:** 2026-08-02 (parity loop re-audit; honesty 2026-08-27)  
 **Scope:** Native iOS app (`ios/NoMarkup`) vs product web (`web/`, zone `no-markup.com`).  
 **Honesty rule:** status is measured against shipped native code + gateway routes.
 
@@ -21,10 +21,11 @@ Legend:
 |-------------|---------|------------|--------|
 | Home / product shell | — | **live** | LIVE auction cards, offline banner |
 | Auth (login, SIWA, register, MFA, logout) | auth/* | **live** | Enable MFA + server logout |
+| Phone OTP verify | auth/send-phone-otp, auth/verify-phone | **live** | Web: `PhoneOtpForm.tsx` on profile + settings/account; `useSendPhoneOtp` / `useVerifyPhone`. iOS: onboarding + VerificationCenter. Twilio vendor key = founder. |
 | Change password / age / ToS accept | change-password, age-status, tos | **live** | `TermsAcceptanceView` |
 | Trust tiers | trust/tiers | **live** | `TrustTiersView` |
 | Plan limits (read-only) | subscriptions/tiers | **live** | No StoreKit IAP; web-only paid digital |
-| Post job / drafts / publish | jobs, drafts, publish | **partial** (schedule) | Photos: library **+ camera**. **FR-3.1 encode broken:** picker uses `specific`/`range` (API: `specific_date`/`date_range`); dates not sent. Prior “FIXED” was false. |
+| Post job / drafts / publish | jobs, drafts, publish | **live** | Photos: library **+ camera**. **FR-3.1 encode shipped:** `PostJobView` uses `specific_date`/`date_range` and sends dates (`CreateJobScheduleTests.swift`). |
 | Jobs browse/map/detail/award | jobs/* | **live** | Reverse auction + owner close/cancel |
 | Marketplace + autocomplete | listings, autocomplete | **live** | Typeahead + category filter |
 | Category tree picker | categories/tree | **live** | `CategoryPickerView` |
@@ -35,12 +36,12 @@ Legend:
 | Properties / watchlist / wishlist / saved | me/* | **live** | |
 | Seller analytics / sales CSV / calendar ICS | seller-analytics, sales.csv, calendar.ics | **live** | Share sheet exports |
 | Quote templates / verification docs | providers/me/* | **live** | Camera + library document upload |
-| Stripe Connect / payment methods | stripe, payments | **live** | |
-| Orders escrow | orders/* | **live** | |
+| Stripe Connect / payment methods | stripe, payments | **live** | Web: embedded Connect onboarding. iOS: Account Links (Safari). Live keys = founder. |
+| Orders escrow | orders/* | **live** | Pay, pickup confirm, disputes, **order no-show** (`useReportOrderNoShow` / `reportOrderNoShow`) |
 | Messages / notifications / prefs / APNs | channels, notifications | **live** | |
 | Referrals / NPS / markets / savings | me/referrals, nps, markets, savings | **live** | |
 | Provider workspace lite | providers/me | **live** | |
-| Contracts advanced | contracts/* | **live** | Change orders, tip, guarantee, reports |
+| Contracts advanced | contracts/* | **live** | Change orders, tip, guarantee, **contract no-show** (`useReportNoShow` / `reportContractNoShow`), abandonment |
 | Photo / camera upload | images/* | **live** | `PhotosPicker` + `UIImagePickerController` camera |
 | **BNPL installments** | payments/installment-plans | **live** | `InstallmentsListView` + API; gated by `customer_bnpl` **server flag** (no iOS hard-off) |
 | **Per-job insurance** | insurance/* | **live** | Policies + products browse; flag `per_job_insurance` |
@@ -58,7 +59,8 @@ Legend:
 | Chat / auction WebSocket | /ws/* | **live** | Chat WS + hybrid poll; auction + spectator WS; FR-8.1 inquiry; FR-8.8 share-contact; PDF attach live |
 | Instant payout (prod Stripe) | payments/instant-payout | **live** (flag-gated) | Gateway → payment service gRPC InstantPayout (no gateway `payout_dev_*` with live keys) |
 | Bid ladder sort/filter | jobs bids | **live** | Price / trust / rating / volume + trust band + min jobs filters |
-| Job schedule preference | jobs create | **partial** | Picker UI on PostJob. Tokens + dates **not** correctly encoded (see FR-3.1). Browse filters use `specific_date`/`date_range` correctly. |
+| Job schedule preference (FR-3.1) | jobs create | **live** | `PostJobView` picker + encode: `flexible` / `specific_date` / `date_range` + ISO dates. Browse filters match. Tests: `CreateJobScheduleTests.swift`. |
+| Contract / order no-show | contracts/{id}/report-noshow, orders/{id}/report-no-show | **live** | Web mutations + iOS contract/order detail. Not an open eng residual. |
 | Recurring auto-approve + rate | contracts recurring PATCH | **live** | iOS toggle + future rate |
 | Tab unread badges | channels + notifications | **live** | Messages + Account tab badges |
 | PDF verification + chat attach | images upload (document/chat_attachment) | **live** | Imaging PDF pass-through; iOS + web chat PDF |

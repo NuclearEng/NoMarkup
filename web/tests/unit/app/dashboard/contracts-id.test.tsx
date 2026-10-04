@@ -63,6 +63,10 @@ vi.mock('@/components/contracts/ContractAcceptance', () => ({
   ContractAcceptance: () => createElement('div', { 'data-testid': 'contract-acceptance' }),
 }));
 
+vi.mock('@/components/contracts/ContractOneShotPay', () => ({
+  ContractOneShotPay: () => createElement('div', { 'data-testid': 'contract-one-shot-pay' }),
+}));
+
 vi.mock('@/components/contracts/GuaranteeCoverage', () => ({
   GuaranteeCoverage: () => createElement('div', { 'data-testid': 'guarantee-coverage' }),
 }));
@@ -712,6 +716,45 @@ describe('ContractDetailPage', () => {
     const confirms = screen.getAllByRole('button', { name: /Report abandonment/i });
     fireEvent.click(confirms[confirms.length - 1] as HTMLElement);
     expect(reportAbandonmentMutate).toHaveBeenCalled();
+  });
+
+  it('mounts one-shot pay for an active non-recurring customer contract', () => {
+    authUser.user = { id: 'cust-1' };
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({ status: 'active', payment_timing: 'upfront' }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.getByTestId('contract-one-shot-pay')).toBeDefined();
+  });
+
+  it('hides one-shot pay when the contract is recurring, pending, or not the customer', () => {
+    authUser.user = { id: 'cust-1' };
+    contractState.isLoading = false;
+    contractState.data = {
+      contract: makeContract({ status: 'active', payment_timing: 'recurring' }),
+      change_orders: [],
+    };
+    const { unmount } = render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.queryByTestId('contract-one-shot-pay')).toBeNull();
+    unmount();
+
+    contractState.data = {
+      contract: makeContract({ status: 'pending_acceptance', payment_timing: 'completion' }),
+      change_orders: [],
+    };
+    const pending = render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.queryByTestId('contract-one-shot-pay')).toBeNull();
+    pending.unmount();
+
+    authUser.user = { id: 'prov-1' };
+    contractState.data = {
+      contract: makeContract({ status: 'active', payment_timing: 'upfront' }),
+      change_orders: [],
+    };
+    render(withQueryClient(createElement(ContractDetailPage)));
+    expect(screen.queryByTestId('contract-one-shot-pay')).toBeNull();
   });
 
   it('hides report CTAs from the provider', () => {

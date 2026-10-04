@@ -150,6 +150,9 @@ type StripeService struct {
 	// testFailRefund, when non-nil, is returned by CreateRefund instead of
 	// calling Stripe / DevStore (unit tests only — never set in production).
 	testFailRefund error
+	// testCreateAccount, when non-nil, replaces Connect account create
+	// (unit tests only — never set in production).
+	testCreateAccount func(ctx context.Context, email, businessName string) (string, error)
 }
 
 // NewStripeService creates a new StripeService for the given deployment
@@ -228,6 +231,9 @@ func IsPlaceholderStripeKey(key string) bool {
 // (dashboard=express, platform fees/losses, stripe_transfers). Falls back to
 // legacy Express v1 when STRIPE_ACCOUNTS_V2=false.
 func (s *StripeService) CreateStripeAccount(ctx context.Context, email, businessName string) (string, error) {
+	if s.testCreateAccount != nil {
+		return s.testCreateAccount(ctx, email, businessName)
+	}
 	if s.devMode {
 		slog.Info("dev mode: stub CreateStripeAccount", "email", email)
 		return "acct_dev_" + email, nil
@@ -328,6 +334,11 @@ func (s *StripeService) GetAccountStatus(ctx context.Context, accountID string) 
 			StripeTransfersStatus: "active",
 			Dashboard:             "express",
 			AccountsAPI:           "v2",
+			// Dev mode has no live Stripe account; the stub id (including
+			// acct_dev_*) is the account on file. A real key never reaches this
+			// branch for synthetic ids — GetStripeAccountStatus returns the
+			// not-started status with AccountExists false instead.
+			AccountExists: true,
 		}, nil
 	}
 
@@ -337,6 +348,7 @@ func (s *StripeService) GetAccountStatus(ctx context.Context, accountID string) 
 			"account_id", accountID)
 		return &domain.StripeAccountStatus{
 			AccountID:             accountID,
+			AccountExists:         false,
 			ChargesEnabled:        false,
 			PayoutsEnabled:        false,
 			DetailsSubmitted:      false,
@@ -358,6 +370,7 @@ func (s *StripeService) GetAccountStatus(ctx context.Context, accountID string) 
 				"account_id", accountID, "error", err)
 			return &domain.StripeAccountStatus{
 				AccountID:             accountID,
+				AccountExists:         false,
 				ChargesEnabled:        false,
 				PayoutsEnabled:        false,
 				DetailsSubmitted:      false,
@@ -380,6 +393,9 @@ func (s *StripeService) GetAccountStatus(ctx context.Context, accountID string) 
 		DetailsSubmitted: acct.DetailsSubmitted,
 		Requirements:     requirements,
 		AccountsAPI:      "v1",
+		// Account.Get succeeded — a real Connect account is on file, even
+		// when onboarding is still incomplete.
+		AccountExists: true,
 	}
 
 	// Legacy Express capability path.
@@ -1122,7 +1138,8 @@ func (s *StripeService) CreateRefund(ctx context.Context, paymentIntentID string
 // CreateConnectInstantPayout creates an instant payout on a connected account
 // (Stripe Connect Instant Payouts). In dev mode returns a payout_dev_* id
 // keyed by idempotencyKey. In production NEVER fabricates a payout id — either
-// Stripe succeeds or an error is returned.
+// Stripe succeeds or an error is returned. Fail-closes (no Stripe payout call)
+// when the connected account cannot receive platform transfers.
 func (s *StripeService) CreateConnectInstantPayout(ctx context.Context, amountCents int64, currency, connectAccountID, idempotencyKey string) (string, error) {
 	if idempotencyKey == "" {
 		return "", fmt.Errorf("create connect instant payout: idempotency key required")
@@ -1132,6 +1149,11 @@ func (s *StripeService) CreateConnectInstantPayout(ctx context.Context, amountCe
 	}
 	if amountCents <= 0 {
 		return "", fmt.Errorf("create connect instant payout: amount must be positive")
+	}
+	// Dev mode: EnsureTransferDestinationReady is a no-op. Production: never
+	// create a payout against an account that cannot receive transfers.
+	if err := s.EnsureTransferDestinationReady(ctx, connectAccountID); err != nil {
+		return "", err
 	}
 	if s.devMode {
 		slog.Info("dev mode: stub CreateConnectInstantPayout",

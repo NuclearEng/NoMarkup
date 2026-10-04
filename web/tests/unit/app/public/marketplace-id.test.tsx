@@ -72,6 +72,10 @@ vi.mock('@/stores/auth-store', () => ({
 
 // Offer child components are exercised in their own suites; here we stub
 // them to assert the parent's gating/wiring (which surface renders when).
+vi.mock('@/components/chat/ChatRelayAlias', () => ({
+  ChatRelayAlias: () => null,
+}));
+
 vi.mock('@/components/marketplace/OfferModal', () => ({
   OfferModal: ({ open }: { open: boolean }) =>
     open
@@ -186,7 +190,17 @@ describe('ListingDetailClient', () => {
     renderClient();
     expect(screen.getAllByText('Test sofa').length).toBeGreaterThan(0);
     expect(screen.getByText('Test description')).toBeDefined();
-    expect(screen.getByText('$75.00')).toBeDefined();
+    // AnimatedPrice splits the currency string across digit spans, and the
+    // sticky dock renders a second copy. Match the price node, not one glyph.
+    const prices = screen.getAllByText((_, element) => {
+      if (!element) return false;
+      const isPrice = element.textContent === '$75.00';
+      const childIsPrice = Array.from(element.children).some(
+        (child) => child.textContent === '$75.00',
+      );
+      return isPrice && !childIsPrice;
+    });
+    expect(prices.length).toBeGreaterThan(0);
   });
 
   it('renders the seller card with display name and trust tier', () => {
@@ -211,7 +225,8 @@ describe('ListingDetailClient', () => {
 
   it('renders the bid panel and timer', () => {
     renderClient();
-    expect(screen.getByTestId('bid-panel')).toBeDefined();
+    // Sidebar panel plus the mobile sticky dock both mount the bid panel.
+    expect(screen.getAllByTestId('bid-panel').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('timer').length).toBeGreaterThan(0);
   });
 

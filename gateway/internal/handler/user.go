@@ -10,9 +10,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // maxDisplayNameLen bounds the user-facing display name. 80 chars is generous
@@ -23,6 +23,10 @@ const maxDisplayNameLen = 80
 type UserHandler struct {
 	userClient userv1.UserServiceClient
 	db         *pgxpool.Pool
+	// sessions sets the refresh cookie after EnableRole. The cookie path is
+	// /api/v1/auth, so this request cannot read or rotate the existing cookie.
+	// Nil skips the cookie (tests); production wires the auth handler.
+	sessions *AuthHandler
 }
 
 // NewUserHandler creates a new UserHandler.
@@ -30,6 +34,13 @@ type UserHandler struct {
 // have a corresponding gRPC RPC. If db is nil, those endpoints degrade gracefully.
 func NewUserHandler(userClient userv1.UserServiceClient, db *pgxpool.Pool) *UserHandler {
 	return &UserHandler{userClient: userClient, db: db}
+}
+
+// WithSessionIssuer wires the auth handler so EnableRole can set the refresh
+// cookie the same way login does. Returns the handler for chaining.
+func (h *UserHandler) WithSessionIssuer(auth *AuthHandler) *UserHandler {
+	h.sessions = auth
+	return h
 }
 
 type updateUserRequest struct {
@@ -147,15 +158,43 @@ func (h *UserHandler) EnableRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.userClient.EnableRole(r.Context(), &userv1.EnableRoleRequest{
-		UserId: claims.UserID,
-		Role:   role,
+		UserId:     claims.UserID,
+		Role:       role,
+		DeviceInfo: r.UserAgent(),
+		IpAddress:  extractIP(r),
 	})
 	if err != nil {
 		writeGRPCError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoUserToJSON(resp.GetUser()))
+	body := protoUserToJSON(resp.GetUser())
+	if body == nil {
+		writeError(w, http.StatusInternalServerError, "enable role returned no user")
+		return
+	}
+	// Keep the flat user document clients already parse, and add the new
+	// session fields. Browsers take the refresh token only via the cookie;
+	// native clients cannot persist that cookie, so they get it in the body.
+	if tok := resp.GetAccessToken(); tok != "" {
+		body["access_token"] = tok
+	}
+	if exp := formatTimestamp(resp.GetAccessTokenExpiresAt()); exp != "" {
+		body["access_token_expires_at"] = exp
+	}
+	if h.sessions == nil {
+		slog.WarnContext(r.Context(), "enable role: session cookies not configured", "user_id", claims.UserID)
+	} else if rt := resp.GetRefreshToken(); rt != "" {
+		h.sessions.setRefreshTokenCookie(w, rt, claims.UserID)
+		h.sessions.touchIdleFromAccessToken(r.Context(), resp.GetAccessToken(), claims.UserID)
+	}
+	if wantsRefreshTokenInBody(r) {
+		if rt := resp.GetRefreshToken(); rt != "" {
+			body["refresh_token"] = rt
+		}
+	}
+
+	writeJSON(w, http.StatusOK, body)
 }
 
 type requestDeletionRequest struct {
@@ -294,9 +333,9 @@ func (h *UserHandler) GetSavings(w http.ResponseWriter, r *http.Request) {
 	savings := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var (
-			id, userID, jobID                          string
+			id, userID, jobID                             string
 			awardedCents, marketMedianCents, savingsCents int64
-			createdAt                                    time.Time
+			createdAt                                     time.Time
 		)
 		if err := rows.Scan(&id, &userID, &jobID, &awardedCents, &marketMedianCents, &savingsCents, &createdAt); err != nil {
 			slog.Error("failed to scan user savings row", "user_id", claims.UserID, "error", err)

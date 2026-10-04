@@ -3,6 +3,12 @@ import CoreSpotlight
 import SwiftUI
 import UniformTypeIdentifiers
 
+private struct JobAnswerDisplayRow: Identifiable, Hashable {
+    let id: String
+    let question: String
+    let answer: String
+}
+
 /// Job detail for a single services **reverse auction**.
 /// Providers bid **down** — lowest trusted bid can win.
 struct JobDetailView: View {
@@ -21,8 +27,14 @@ struct JobDetailView: View {
     @State private var bidEntries: [JobBidEntry] = []
     @State private var ladderState: BidLadderState = .idle
     @State private var showWebSafari = false
+    /// Public viewer count (`GET /jobs/{id}/viewer-count`). Shown at 2+.
+    @State private var viewerCount = 0
+    @State private var jobAnswerRows: [JobAnswerDisplayRow] = []
 
     @State private var bidAmountText = ""
+    @State private var quoteTemplates: [QuoteTemplate] = []
+    @State private var selectedQuoteTemplateID: String?
+    @State private var quoteTemplateBody = ""
     @State private var isPlacingBid = false
     @State private var bidStatusMessage: String?
     @State private var bidStatusIsError = false
@@ -441,6 +453,9 @@ struct JobDetailView: View {
         .task(id: ladderPollIdentity) {
             await pollBidLadderLoop()
         }
+        .task(id: jobID) {
+            await pollViewerCount()
+        }
         .onChange(of: scenePhase) { _, phase in
             handleScenePhaseChange(phase)
         }
@@ -643,7 +658,9 @@ struct JobDetailView: View {
             requestInstantMatchSection
             manageAuctionSection
             repostSection
+            jobAnswersSection
             detailsSection(job)
+            ChatRelayAliasSection(contextType: "job", contextID: jobID)
 
             if let description = job.description?.trimmingCharacters(in: .whitespacesAndNewlines),
                !description.isEmpty {
@@ -817,6 +834,7 @@ struct JobDetailView: View {
 
                 HStack(spacing: 10) {
                     bidCountChip(job: job)
+                    viewerCountChip
                     if liveAuctionStateAvailable {
                         Text("Live feed on")
                             .font(.caption2.weight(.bold).monospaced())
@@ -1089,6 +1107,7 @@ struct JobDetailView: View {
                         liveCountdownChip(iso: job.auctionEndsAt)
                     }
                     bidCountChip(job: job)
+                    viewerCountChip
                 }
 
                 ownerLiquidityLine(job)
@@ -1989,6 +2008,29 @@ struct JobDetailView: View {
                     .foregroundStyle(BrandTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if !isUpdate, !quoteTemplates.isEmpty {
+                    Menu {
+                        Button("None") {
+                            selectedQuoteTemplateID = nil
+                            quoteTemplateBody = ""
+                        }
+                        ForEach(quoteTemplates) { template in
+                            Button(template.displayName) {
+                                applyQuoteTemplate(template)
+                            }
+                        }
+                    } label: {
+                        Text(selectedQuoteTemplateID == nil ? "Quote template" : "Quote template applied")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                    .accessibilityIdentifier("jobDetail.quoteTemplate")
+                    if !quoteTemplateBody.isEmpty {
+                        Text("This note is sent in chat after the bid is placed.")
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                }
+
                 DollarAmountField(
                     text: $bidAmountText,
                     placeholder: "0.00",
@@ -2040,6 +2082,9 @@ struct JobDetailView: View {
                     : "Services are reverse auctions — enter dollars (for example 350.00), not cents. Lower than the leading bid wins. Provider role required."
             )
             .foregroundStyle(BrandTheme.textSecondary)
+        }
+        .task(id: auth.isAuthenticated) {
+            await loadQuoteTemplates()
         }
         .accessibilityIdentifier("jobDetail.placeBid")
     }
@@ -2283,6 +2328,11 @@ struct JobDetailView: View {
             BrandHaptics.success()
             bidStatusIsError = false
             bidStatusMessage = "Bid placed: \(MoneyFormat.usd(cents: cents))."
+            let openingBody = quoteTemplateBody
+            let templateID = selectedQuoteTemplateID
+            quoteTemplateBody = ""
+            selectedQuoteTemplateID = nil
+            await deliverQuoteOpening(body: openingBody, templateID: templateID)
             bidAmountText = ""
             // Value moment: invite push permission after first successful bid (NT.2).
             PushRegistration.shared.noteValueMoment()
@@ -2617,6 +2667,89 @@ struct JobDetailView: View {
         await refreshLiveAuctionState()
         await refreshLiveAuctionEvents()
         await loadMarketIntelligence()
+        await loadJobAnswers()
+    }
+
+    /// Ping (signed-in only) and refresh the public viewer count every 30s.
+    /// Logged-out visitors never POST ping-viewer — a 401 would drop the session.
+    @MainActor
+    private func pollViewerCount() async {
+        while !Task.isCancelled {
+            if auth.isAuthenticated, !auth.isScaffoldSession {
+                try? await APIClient.shared.pingJobViewer(jobId: jobID)
+            }
+            if let count = try? await APIClient.shared.fetchJobViewerCount(jobId: jobID) {
+                viewerCount = count
+            }
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+        }
+    }
+
+    @ViewBuilder
+    private var viewerCountChip: some View {
+        if viewerCount > 1 {
+            Text("\(viewerCount) viewing")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(BrandTheme.goldBright)
+                .accessibilityLabel("\(viewerCount) providers viewing now")
+                .accessibilityIdentifier("jobDetail.viewerCount")
+        }
+    }
+
+    @ViewBuilder
+    private var jobAnswersSection: some View {
+        if !jobAnswerRows.isEmpty {
+            Section {
+                ForEach(jobAnswerRows) { row in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(row.question)
+                            .font(.caption)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                        Text(row.answer)
+                            .font(.body)
+                            .foregroundStyle(BrandTheme.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("Project details").brandSectionHeader()
+            }
+        }
+    }
+
+    @MainActor
+    private func loadJobAnswers() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            jobAnswerRows = []
+            return
+        }
+        do {
+            let answers = try await APIClient.shared.fetchJobAnswers(jobId: jobID)
+            let categoryId = detail?.categoryId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let questions = categoryId.isEmpty
+                ? []
+                : (try? await APIClient.shared.fetchPublicCategoryQuestions(categoryId: categoryId)) ?? []
+            var prompts: [String: String] = [:]
+            for question in questions {
+                prompts[question.id] = question.question
+            }
+            jobAnswerRows = answers.compactMap { answer in
+                let value = answer.displayText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty else { return nil }
+                let prompt = prompts[answer.questionId]?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return JobAnswerDisplayRow(
+                    id: answer.id,
+                    question: prompt.isEmpty ? "Answer" : prompt,
+                    answer: value
+                )
+            }
+        } catch let error as APIClientError where error.isNotFound || error.isUnauthorized {
+            jobAnswerRows = []
+        } catch {
+            // Keep the last successful rows on a transient failure.
+        }
     }
 
     /// Resolve the signed-in provider's active bid on this job.
@@ -3083,6 +3216,42 @@ struct JobDetailView: View {
             auctionEvents = recent
         }
     }
+
+    private func applyQuoteTemplate(_ template: QuoteTemplate) {
+        selectedQuoteTemplateID = template.id
+        quoteTemplateBody = template.body?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if let cents = template.defaultAmountCents, cents > 0 {
+            bidAmountText = String(format: "%.2f", Double(cents) / 100.0)
+        }
+    }
+
+    @MainActor
+    private func loadQuoteTemplates() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else {
+            quoteTemplates = []
+            return
+        }
+        quoteTemplates = (try? await APIClient.shared.fetchMyQuoteTemplates()) ?? []
+    }
+
+    /// Best-effort opening note. The bid already stands if chat fails.
+    @MainActor
+    private func deliverQuoteOpening(body: String, templateID: String?) async {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clipped = String(trimmed.prefix(2000))
+        if !clipped.isEmpty {
+            do {
+                let channel = try await APIClient.shared.createChatChannel(jobId: jobID, channelType: "bid")
+                _ = try await APIClient.shared.sendChannelMessage(channelID: channel.id, content: clipped)
+            } catch {
+                let placed = bidStatusMessage ?? "Bid placed."
+                bidStatusMessage = "\(placed) The quote note was not sent."
+            }
+        }
+        if let templateID, !templateID.isEmpty {
+            try? await APIClient.shared.recordQuoteTemplateUse(id: templateID)
+        }
+    }
 }
 
 // MARK: - Ladder load state
@@ -3211,6 +3380,93 @@ private struct JobReportSheet: View {
         } catch {
             statusIsError = true
             statusMessage = error.localizedDescription
+        }
+    }
+}
+
+/// Caller-only email/phone relay for a job or listing. Phone hides when Twilio is unset.
+struct ChatRelayAliasSection: View {
+    let contextType: String
+    let contextID: String
+
+    @EnvironmentObject private var auth: AuthViewModel
+    @State private var alias: ChatAlias?
+    @State private var isBusy = false
+    @State private var errorMessage: String?
+    @State private var didLoad = false
+
+    var body: some View {
+        if auth.isAuthenticated, !auth.isScaffoldSession {
+            Section {
+                if let alias {
+                    Text(alias.emailAlias)
+                        .font(.footnote)
+                        .textSelection(.enabled)
+                        .accessibilityLabel("Relay email \(alias.emailAlias)")
+                    if let phone = alias.twilioProxyPhone?.trimmingCharacters(in: .whitespacesAndNewlines),
+                       !phone.isEmpty {
+                        Text(phone)
+                            .font(.footnote)
+                            .foregroundStyle(BrandTheme.textSecondary)
+                    }
+                } else {
+                    Button {
+                        Task { await createAlias() }
+                    } label: {
+                        if isBusy {
+                            ProgressView()
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        } else {
+                            Text("Create relay address")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                    }
+                    .disabled(isBusy)
+                    .accessibilityIdentifier("chatRelay.create")
+                }
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(BrandTheme.destructive)
+                }
+            } header: {
+                Text("Private contact relay").brandSectionHeader()
+            } footer: {
+                Text("Share this address instead of your real email. Only you can see it.")
+                    .foregroundStyle(BrandTheme.textSecondary)
+            }
+            .task(id: contextID) {
+                await loadAlias()
+            }
+        }
+    }
+
+    @MainActor
+    private func loadAlias() async {
+        guard auth.isAuthenticated, !auth.isScaffoldSession else { return }
+        do {
+            let rows = try await APIClient.shared.fetchChatAliases()
+            alias = rows.first { row in
+                row.contextType == contextType && row.contextId == contextID
+            }
+            didLoad = true
+            errorMessage = nil
+        } catch {
+            if !didLoad {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    @MainActor
+    private func createAlias() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            alias = try await APIClient.shared.createChatAlias(contextType: contextType, contextId: contextID)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

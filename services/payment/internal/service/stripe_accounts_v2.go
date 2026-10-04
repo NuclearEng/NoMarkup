@@ -38,19 +38,19 @@ func accountsV2Enabled() bool {
 // v2AccountCreateRequest is the JSON body for POST /v2/core/accounts.
 // Shape matches Stripe's marketplace recipient path (separate charges + transfers).
 type v2AccountCreateRequest struct {
-	Dashboard    string                    `json:"dashboard"`
-	DisplayName  string                    `json:"display_name,omitempty"`
-	ContactEmail string                    `json:"contact_email,omitempty"`
-	Defaults     v2AccountDefaults         `json:"defaults"`
-	Configuration v2AccountConfiguration   `json:"configuration"`
-	Identity     v2AccountIdentity         `json:"identity"`
-	Metadata     map[string]string         `json:"metadata,omitempty"`
-	Include      []string                  `json:"include,omitempty"`
+	Dashboard     string                 `json:"dashboard"`
+	DisplayName   string                 `json:"display_name,omitempty"`
+	ContactEmail  string                 `json:"contact_email,omitempty"`
+	Defaults      v2AccountDefaults      `json:"defaults"`
+	Configuration v2AccountConfiguration `json:"configuration"`
+	Identity      v2AccountIdentity      `json:"identity"`
+	Metadata      map[string]string      `json:"metadata,omitempty"`
+	Include       []string               `json:"include,omitempty"`
 }
 
 type v2AccountDefaults struct {
-	Currency        string                       `json:"currency,omitempty"`
-	Responsibilities v2AccountResponsibilities   `json:"responsibilities"`
+	Currency         string                    `json:"currency,omitempty"`
+	Responsibilities v2AccountResponsibilities `json:"responsibilities"`
 }
 
 type v2AccountResponsibilities struct {
@@ -72,6 +72,7 @@ type v2RecipientCapabilities struct {
 
 type v2StripeBalanceCaps struct {
 	StripeTransfers *v2RequestedCap `json:"stripe_transfers,omitempty"`
+	Payouts         *v2RequestedCap `json:"payouts,omitempty"`
 }
 
 type v2RequestedCap struct {
@@ -103,15 +104,15 @@ type v2AccountResponse struct {
 	} `json:"configuration"`
 }
 
-// createConnectedAccountV2 creates a marketplace recipient account via Accounts v2.
-// Dashboard: express · fees/losses: application · recipient stripe_transfers requested.
-// Does NOT request merchant/card_payments (longer onboarding, unnecessary for escrow payouts).
-func (s *StripeService) createConnectedAccountV2(ctx context.Context, email, businessName string) (string, error) {
+// newV2RecipientCreateRequest is the Accounts v2 create body for a marketplace
+// recipient: Express dashboard, platform fees/losses, stripe_transfers + payouts
+// on stripe_balance. Does NOT request merchant/card_payments.
+func newV2RecipientCreateRequest(email, businessName string) v2AccountCreateRequest {
 	display := businessName
 	if display == "" {
 		display = "NoMarkup provider"
 	}
-	body := v2AccountCreateRequest{
+	return v2AccountCreateRequest{
 		Dashboard:    "express",
 		DisplayName:  display,
 		ContactEmail: email,
@@ -127,6 +128,7 @@ func (s *StripeService) createConnectedAccountV2(ctx context.Context, email, bus
 				Capabilities: &v2RecipientCapabilities{
 					StripeBalance: &v2StripeBalanceCaps{
 						StripeTransfers: &v2RequestedCap{Requested: true},
+						Payouts:         &v2RequestedCap{Requested: true},
 					},
 				},
 			},
@@ -134,12 +136,19 @@ func (s *StripeService) createConnectedAccountV2(ctx context.Context, email, bus
 		// US marketplace MVP; expand when multi-country ships.
 		Identity: v2AccountIdentity{Country: "us"},
 		Metadata: map[string]string{
-			"platform":      "nomarkup",
-			"accounts_api":  "v2",
-			"charge_model":  "separate_charges_transfers",
+			"platform":     "nomarkup",
+			"accounts_api": "v2",
+			"charge_model": "separate_charges_transfers",
 		},
 		Include: []string{"configuration.recipient", "defaults", "identity"},
 	}
+}
+
+// createConnectedAccountV2 creates a marketplace recipient account via Accounts v2.
+// Dashboard: express · fees/losses: application · recipient stripe_transfers + payouts requested.
+// Does NOT request merchant/card_payments (longer onboarding, unnecessary for escrow payouts).
+func (s *StripeService) createConnectedAccountV2(ctx context.Context, email, businessName string) (string, error) {
+	body := newV2RecipientCreateRequest(email, businessName)
 
 	var out v2AccountResponse
 	if err := s.callStripeV2JSON(ctx, http.MethodPost, "/v2/core/accounts", body, stripeIdempotencyKey("connect-account-v2", email), &out); err != nil {

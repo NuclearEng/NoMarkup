@@ -370,6 +370,7 @@ struct ListingDetailView: View {
             buyNowSection(listing)
             offersSection(listing)
             detailsSection(listing)
+            ChatRelayAliasSection(contextType: "listing", contextID: listingID)
 
             if let description = listing.description?.trimmingCharacters(in: .whitespacesAndNewlines),
                !description.isEmpty {

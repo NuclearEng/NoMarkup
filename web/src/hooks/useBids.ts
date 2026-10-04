@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useShallow } from 'zustand/react/shallow';
 import { toast } from 'sonner';
 
-import { ApiError, api, clearIdempotencyKey, idempotencyHeader } from '@/lib/api';
+import { ApiError, api, clearIdempotencyKey, forbiddenTransactMessage, idempotencyHeader } from '@/lib/api';
 import { useAuctionStore } from '@/stores/auction-store';
 import { useCountdown } from '@/hooks/useCountdown';
 import { useAuthStore } from '@/stores/auth-store';
@@ -32,7 +32,9 @@ async function bidMutation(
 ): Promise<Bid> {
   const raw =
     method === 'POST'
-      ? await api.post<Record<string, unknown>>(path, input, extraHeaders)
+      ? extraHeaders
+        ? await api.post<Record<string, unknown>>(path, input, extraHeaders)
+        : await api.post<Record<string, unknown>>(path, input)
       : method === 'PATCH'
         ? await api.patch<Record<string, unknown>>(path, input)
         : await api.delete<Record<string, unknown>>(path);
@@ -44,7 +46,9 @@ function explainBidFailure(fallback: string): (err: unknown) => void {
     if (err instanceof ApiError) {
       const status = err.status;
       if (status === 403) {
-        toast.error('Only providers can place bids on service jobs.');
+        toast.error(
+          forbiddenTransactMessage(err, 'Only providers can place bids on service jobs.'),
+        );
         return;
       }
       if (status === 409) {

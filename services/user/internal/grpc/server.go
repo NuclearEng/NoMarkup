@@ -606,7 +606,21 @@ func (s *Server) EnableRole(ctx context.Context, req *userv1.EnableRoleRequest) 
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
-	return &userv1.EnableRoleResponse{User: domainUserToProto(user)}, nil
+	// Role is already on the user row. The caller's access JWT still carries
+	// the pre-grant roles until it expires, so reissue from the updated row.
+	if s.auth == nil {
+		return nil, status.Error(codes.Internal, "session issuer unavailable")
+	}
+	pair, err := s.auth.IssueSession(ctx, user, req.GetDeviceInfo(), req.GetIpAddress())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &userv1.EnableRoleResponse{
+		User:                 domainUserToProto(user),
+		AccessToken:          pair.AccessToken,
+		RefreshToken:         pair.RefreshToken,
+		AccessTokenExpiresAt: timestamppb.New(pair.AccessTokenExpiresAt),
+	}, nil
 }
 
 func (s *Server) GetProviderProfile(ctx context.Context, req *userv1.GetProviderProfileRequest) (*userv1.GetProviderProfileResponse, error) {

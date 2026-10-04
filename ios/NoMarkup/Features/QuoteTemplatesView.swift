@@ -158,7 +158,7 @@ struct QuoteTemplatesView: View {
             } header: {
                 Text(String(localized: "\(templates.count) templates")).brandSectionHeader()
             } footer: {
-                Text("Templates are private to your account. Apply them when placing service bids on the web or job detail flows.")
+                Text("Templates are private to your account.")
                     .foregroundStyle(BrandTheme.textSecondary)
             }
         }

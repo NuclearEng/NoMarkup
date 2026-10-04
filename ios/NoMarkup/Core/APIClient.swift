@@ -768,6 +768,56 @@ actor APIClient {
         )
     }
 
+    /// GET `/api/v1/me/chat/templates` — saved quick replies plus built-in defaults.
+    func fetchChatTemplates() async throws -> ChatTemplatesResponse {
+        try await getJSON(
+            pathComponents: ["api", "v1", "me", "chat", "templates"],
+            authorized: true
+        )
+    }
+
+    /// GET `/api/v1/me/chat/aliases` — caller-only relay rows.
+    func fetchChatAliases() async throws -> [ChatAlias] {
+        let wrapped: ChatAliasesResponse = try await getJSON(
+            pathComponents: ["api", "v1", "me", "chat", "aliases"],
+            authorized: true
+        )
+        return wrapped.aliases ?? []
+    }
+
+    /// POST `/api/v1/me/chat/aliases` — idempotent for the same context.
+    @discardableResult
+    func createChatAlias(contextType: String, contextId: String) async throws -> ChatAlias {
+        let type = contextType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let id = contextId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard type == "job" || type == "listing" else {
+            throw APIClientError.httpStatus(400, detail: "Relay context must be a job or a listing.")
+        }
+        guard !id.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Relay context id is required.")
+        }
+        struct Body: Encodable {
+            var contextType: String
+            var contextId: String
+        }
+        return try await postJSON(
+            pathComponents: ["api", "v1", "me", "chat", "aliases"],
+            body: Body(contextType: type, contextId: id),
+            authorized: .required
+        )
+    }
+
+    /// POST `/api/v1/me/chat/templates/{id}/use` — bump use_count. Non-fatal at the call site.
+    func recordChatTemplateUse(id: String) async throws {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        try await postEmpty(
+            pathComponents: ["api", "v1", "me", "chat", "templates", trimmed, "use"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
     /// POST `/api/v1/channels/{id}/read` — mark channel messages read for the caller (empty body).
     /// Gateway returns `{ "status": "ok" }`. Failures are caller-owned (UI usually best-effort).
     func markChannelRead(channelID: String) async throws {
@@ -1968,6 +2018,7 @@ actor APIClient {
         struct APIErrorBody: Decodable {
             let error: String?
             let message: String?
+            let code: String?
             let missing: [String]?
         }
         guard let body = try? JSONDecoder().decode(APIErrorBody.self, from: data) else {
@@ -2040,6 +2091,37 @@ struct EmptyBody: Encodable {}
 
 /// Encodes as `{}` for POSTs that require a JSON content-type but no fields.
 struct EmptyJSONObject: Encodable {}
+
+struct ChatAlias: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    var emailAlias: String
+    var twilioProxyPhone: String?
+    var contextType: String?
+    var contextId: String?
+}
+
+struct ChatAliasesResponse: Codable, Sendable {
+    var aliases: [ChatAlias]?
+    var twilioConfigured: Bool?
+}
+
+struct ChatMessageTemplate: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let body: String
+    var useCount: Int?
+}
+
+struct ChatTemplatesResponse: Codable, Sendable {
+    var templates: [ChatMessageTemplate]?
+    var defaults: [String]?
+}
+
+struct ChatQuickReply: Identifiable, Hashable, Sendable {
+    let id: String
+    let body: String
+    /// Stored templates have a server id and should POST `/{id}/use`. Defaults do not.
+    let stored: Bool
+}
 
 private extension Data {
     var trimmingASCIIWhitespace: Data {

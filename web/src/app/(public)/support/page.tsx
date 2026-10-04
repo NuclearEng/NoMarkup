@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { LegalDocument } from '@/components/compliance/LegalDocument';
+import { LegalServicesSupportLink } from '@/components/compliance/LegalServicesSupportLink';
 import { SupportContactForm } from '@/components/compliance/SupportContactForm';
 
 export const metadata: Metadata = {
@@ -27,9 +28,8 @@ export default function SupportPage() {
       footerNote={
         <>
           This page is a product-compliance baseline for App Store support and contact
-          requirements. It is not legal advice. For legal marketplace services (hire an attorney
-          via reverse auction), see <Link href="/legal">Legal Services</Link> — that is a product
-          surface, not these policies.
+          requirements. It is not legal advice.
+          <LegalServicesSupportLink />
         </>
       }
       sections={[

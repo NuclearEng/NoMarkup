@@ -215,6 +215,9 @@ type StripeAccountStatus struct {
 	Dashboard string
 	// AccountsAPI is "v2" or "v1" when we can infer how the account was created.
 	AccountsAPI string
+	// AccountExists is false when no live Connect account is on file (no row,
+	// or a synthetic acct_dev id). True when a real Connect account id is stored.
+	AccountExists bool
 }
 
 // CreatePaymentInput contains the data needed to create a new payment.
@@ -511,6 +514,9 @@ type PaymentRepository interface {
 	WithProviderAdvisoryLock(ctx context.Context, providerID string, fn func(ctx context.Context) error) error
 	GetStripeAccountID(ctx context.Context, userID string) (string, error)
 	SetStripeAccountID(ctx context.Context, userID string, stripeAccountID string) error
+	// FindUserIDByStripeAccountID resolves a Stripe Connect account ID back to
+	// the provider user_id that owns it. Used by payout.* webhooks.
+	FindUserIDByStripeAccountID(ctx context.Context, stripeAccountID string) (string, error)
 	// GetContractForPayment loads the parties + amount of a non-deleted contract
 	// so payment/installment flows can reconcile client input server-side.
 	GetContractForPayment(ctx context.Context, contractID string) (*ContractForPayment, error)

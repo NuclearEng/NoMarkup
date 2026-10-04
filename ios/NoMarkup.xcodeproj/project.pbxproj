@@ -46,6 +46,7 @@ A100000000000000000000F0 /* LazyView.swift in Sources */ = {isa = PBXBuildFile; 
 		A100000000000000000000F5 /* ClientActionLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F5 /* ClientActionLogView.swift */; };
 		A100000000000000000000F6 /* ActionAuditProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000F6 /* ActionAuditProbe.swift */; };
 		T1000000000000000000000F /* ClientActionLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1000000000000000000001F /* ClientActionLogTests.swift */; };
+		T10000000000000000000071 /* BusinessHubLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T10000000000000000000070 /* BusinessHubLayoutTests.swift */; };
 		A100000000000000000000D0 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000D0 /* StoreKitManager.swift */; };
 		A100000000000000000000D1 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B100000000000000000000D1 /* StoreKit.framework */; };
 		A10000000000000000000003 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* KeychainTokenStore.swift */; };
@@ -349,6 +350,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 		T1000000000000000000001D /* NotificationPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreferencesTests.swift; sourceTree = "<group>"; };
 		T1000000000000000000001E /* AgeGateMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgeGateMathTests.swift; sourceTree = "<group>"; };
 		T1000000000000000000001F /* ClientActionLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientActionLogTests.swift; sourceTree = "<group>"; };
+		T10000000000000000000070 /* BusinessHubLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusinessHubLayoutTests.swift; sourceTree = "<group>"; };
 		B100000000000000000000F4 /* ClientActionLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientActionLog.swift; sourceTree = "<group>"; };
 		B100000000000000000000F5 /* ClientActionLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientActionLogView.swift; sourceTree = "<group>"; };
 		B100000000000000000000F6 /* ActionAuditProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionAuditProbe.swift; sourceTree = "<group>"; };
@@ -562,6 +564,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				T1000000000000000000001D /* NotificationPreferencesTests.swift */,
 				T1000000000000000000001E /* AgeGateMathTests.swift */,
 				T1000000000000000000001F /* ClientActionLogTests.swift */,
+				T10000000000000000000070 /* BusinessHubLayoutTests.swift */,
 			);
 			path = NoMarkupTests;
 			sourceTree = "<group>";
@@ -1098,6 +1101,7 @@ B100000000000000000000F0 /* LazyView.swift */ = {isa = PBXFileReference; lastKno
 				T1000000000000000000000D /* NotificationPreferencesTests.swift in Sources */,
 				T1000000000000000000000E /* AgeGateMathTests.swift in Sources */,
 				T1000000000000000000000F /* ClientActionLogTests.swift in Sources */,
+				T10000000000000000000071 /* BusinessHubLayoutTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

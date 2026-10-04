@@ -57,6 +57,18 @@ vi.mock('@/components/auth/oauth-buttons', () => ({
   OAuthDivider: () => null,
 }));
 
+const flagBox = vi.hoisted(() => ({ passkeys: undefined as boolean | undefined }));
+vi.mock('@/hooks/useFeatureFlags', () => ({
+  useFeatureFlags: () => flagBox,
+}));
+
+const passkeysSupportedMock = vi.hoisted(() => vi.fn(() => false));
+const registerPasskeyMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/passkeys', () => ({
+  passkeysSupported: () => passkeysSupportedMock(),
+  registerPasskey: () => registerPasskeyMock(),
+}));
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
@@ -71,6 +83,9 @@ describe('RegisterForm', () => {
     vi.clearAllMocks();
     registerMock.mockReset();
     enableRoleMutateAsyncMock.mockReset();
+    flagBox.passkeys = undefined;
+    passkeysSupportedMock.mockReturnValue(false);
+    registerPasskeyMock.mockReset();
   });
 
   it('renders all fields, intent picker, and submit button', () => {
@@ -182,5 +197,32 @@ describe('RegisterForm', () => {
     if (form) fireEvent.submit(form);
 
     expect(await screen.findByText('Email already taken')).toBeDefined();
+  });
+
+  it('offers a passkey after signup only when the flag and browser allow it', async () => {
+    registerMock.mockResolvedValue(undefined);
+    flagBox.passkeys = true;
+    passkeysSupportedMock.mockReturnValue(true);
+    const user = userEvent.setup();
+    const { container } = render(createElement(RegisterForm));
+
+    await user.type(screen.getByPlaceholderText('Your name'), 'Cust User');
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'cust@example.com');
+    await user.type(screen.getByPlaceholderText('Create a password'), 'StrongPass1!');
+    await user.type(screen.getByPlaceholderText('Confirm your password'), 'StrongPass1!');
+
+    const form = container.querySelector('form');
+    expect(form).not.toBeNull();
+    if (form) fireEvent.submit(form);
+
+    expect(await screen.findByRole('button', { name: 'Save a passkey' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Not now' })).toBeDefined();
+    expect(pushMock).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Not now' }));
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith('/dashboard');
+    });
+    expect(registerPasskeyMock).not.toHaveBeenCalled();
   });
 });

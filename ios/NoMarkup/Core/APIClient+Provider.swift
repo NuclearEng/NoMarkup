@@ -274,6 +274,17 @@ extension APIClient {
         )
     }
 
+    /// POST `/api/v1/providers/me/quote-templates/{id}/use` — bump use_count after a bid applies it.
+    func recordQuoteTemplateUse(id: String) async throws {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        try await postEmpty(
+            pathComponents: ["api", "v1", "providers", "me", "quote-templates", trimmed, "use"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
     // MARK: Background check (FR-2.9 Checkr scaffold)
 
     /// GET `/api/v1/providers/me/background-check` — latest status or `not_started`.
@@ -957,6 +968,8 @@ struct QuoteTemplate: Codable, Sendable, Hashable, Identifiable {
     var useCount: Int?
     var createdAt: String?
 
+    // APIClient decodes with convertFromSnakeCase. Raw snake_case values are
+    // converted again and miss default_amount_cents / use_count / user_id.
     enum CodingKeys: String, CodingKey {
         case id
         case userId

@@ -255,11 +255,33 @@ extension APIClient {
             throw APIClientError.httpStatus(400, detail: "invalid role")
         }
         let body = EnableRoleRequestBody(role: trimmed)
-        return try await postJSON(
+        let data = try await postData(
             pathComponents: ["api", "v1", "users", "me", "roles"],
             body: body,
             authorized: .required
         )
+        let profileDecoder = JSONDecoder()
+        profileDecoder.keyDecodingStrategy = .convertFromSnakeCase
+        let profile: UserProfile
+        do {
+            profile = try profileDecoder.decode(UserProfile.self, from: data)
+        } catch {
+            throw APIClientError.decoding("Could not decode enable-role response: \(error.localizedDescription)")
+        }
+        // Gateway includes access_token for every client and refresh_token
+        // only when X-NoMarkup-Client is ios/android. Replace the pre-grant
+        // JWT so RequireProvider sees the new role immediately.
+        if let tokens = try? JSONDecoder().decode(AuthTokenPair.self, from: data) {
+            let access = tokens.accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !access.isEmpty {
+                try tokenStoreForAuth.save(access, for: .accessToken)
+                if let refresh = tokens.refreshToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !refresh.isEmpty {
+                    try tokenStoreForAuth.save(refresh, for: .refreshToken)
+                }
+            }
+        }
+        return profile
     }
 }
 

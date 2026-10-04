@@ -345,10 +345,20 @@ message UpdateUserResponse {
 message EnableRoleRequest {
   string user_id = 1;
   nomarkup.common.v1.UserRole role = 2;
+  // Optional session metadata stored on the newly issued refresh token.
+  // Empty is valid. The gateway supplies User-Agent and client IP.
+  string device_info = 3;
+  string ip_address = 4;
 }
 
 message EnableRoleResponse {
   User user = 1;
+  // Fresh RS256 access token whose role claims match User.roles after the
+  // grant. Clients must replace the pre-grant access token; it stays valid
+  // until expiry and still lacks the new role.
+  string access_token = 2;
+  string refresh_token = 3;
+  google.protobuf.Timestamp access_token_expires_at = 4;
 }
 
 message DeactivateAccountRequest {

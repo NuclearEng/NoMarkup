@@ -22,6 +22,7 @@ import { api, getApiErrorMessage } from '@/lib/api';
 import { changePasswordSchema } from '@/lib/validations';
 import type { ChangePasswordFormValues } from '@/lib/validations';
 import { ConnectedAccounts } from '@/components/settings/ConnectedAccounts';
+import { PasskeyEnrollment } from '@/components/settings/PasskeyEnrollment';
 import { useProfile } from '@/hooks/useProfile';
 import {
   useEnableMFA,
@@ -524,6 +525,8 @@ export default function SecuritySettingsPage() {
 
       {/* MFA */}
       <MFASection />
+
+      <PasskeyEnrollment />
 
       <div className="glass-divider" role="separator" />
 

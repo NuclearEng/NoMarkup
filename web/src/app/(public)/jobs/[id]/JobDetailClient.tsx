@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -12,6 +12,7 @@ import {
   MapPin,
   MessageSquare,
   Radio,
+  RefreshCw,
   Tag,
   Users,
   Wifi,
@@ -28,6 +29,7 @@ import { BidForm } from '@/components/bids/BidForm';
 import { BidList } from '@/components/bids/BidList';
 import { BidPriceChart } from '@/components/bids/BidPriceChart';
 import { LiveBidTicker } from '@/components/bids/LiveBidTicker';
+import { ChatRelayAlias } from '@/components/chat/ChatRelayAlias';
 import { ReportButton } from '@/components/chat/ReportButton';
 import { GradientMesh } from '@/components/landing/GradientMesh';
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
@@ -36,6 +38,7 @@ import { MarketRangeDisplay } from '@/components/jobs/MarketRangeDisplay';
 import { PermitIntelligenceBanner } from '@/components/jobs/PermitIntelligenceBanner';
 import { ReportJobButton } from '@/components/jobs/ReportJobButton';
 import { SavingsBadge } from '@/components/jobs/SavingsBadge';
+import { JobAnswers } from '@/components/jobs/JobAnswers';
 import { ViewerCount } from '@/components/jobs/ViewerCount';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
 import { TerminalGrid } from '@/components/terminal/terminal-grid';
@@ -50,7 +53,7 @@ import { useBidCount, useBidsForJob } from '@/hooks/useBids';
 import { useCreateChannel } from '@/hooks/useChannels';
 import { useCountdown } from '@/hooks/useCountdown';
 import { useCreateInstantMatch } from '@/hooks/useInstantMatch';
-import { useJob } from '@/hooks/useJobs';
+import { useJob, useRepostJob } from '@/hooks/useJobs';
 import { useSpectatorTerminal } from '@/hooks/useSpectatorTerminal';
 import { useTerminalHotkeys } from '@/hooks/useTerminalHotkeys';
 import { getApiErrorMessage } from '@/lib/api';
@@ -195,6 +198,17 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
     (job.offer_accepted_cents ?? 0) > 0;
 
   const createInstantMatch = useCreateInstantMatch(jobId);
+  const repostJob = useRepostJob();
+  const [confirmRepost, setConfirmRepost] = useState(false);
+
+  // Same owner gate as iOS JobDetailView.canRepost: finished without an award.
+  const canRepost =
+    isJobOwner &&
+    job !== undefined &&
+    (job.status === JOB_STATUS.CLOSED ||
+      job.status === JOB_STATUS.CLOSED_ZERO_BIDS ||
+      job.status === JOB_STATUS.EXPIRED ||
+      job.status === JOB_STATUS.CANCELLED);
 
   // The server already fetched the job (passed via initialData), so there is no
   // first-paint loading state. This error branch only fires if a background
@@ -436,6 +450,12 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
           />
         </div>
 
+        {isAuthenticated ? (
+          <div className="mx-auto max-w-[1400px] px-4 pb-4 sm:px-6">
+            <ChatRelayAlias contextType="job" contextId={jobId} />
+          </div>
+        ) : null}
+
         {/* Provider bid form — pinned to bottom for providers who can bid */}
         {canBid ? (
           <div className="sticky bottom-0 z-50 border-t border-white/[0.06] bg-background/95 backdrop-blur-md">
@@ -564,6 +584,8 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
             <h2 className="mb-2 text-lg font-semibold">Description</h2>
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{job.description}</p>
           </div>
+
+          <JobAnswers jobId={jobId} categoryId={job.category_id} />
 
           {/* Permit intelligence — shown for regulated categories */}
           <PermitIntelligenceBanner categorySlug={job.category_slug} />
@@ -798,6 +820,51 @@ export function JobDetailClient({ jobId, initialJob }: JobDetailClientProps) {
                       speed, not a hard formula.
                     </p>
                   </div>
+                ) : null}
+
+                {canRepost ? (
+                  <div className="space-y-2 border-t border-border/60 pt-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="min-h-[44px] w-full"
+                      data-testid="job-repost"
+                      disabled={repostJob.isPending}
+                      aria-busy={repostJob.isPending}
+                      onClick={() => {
+                        if (!confirmRepost) {
+                          setConfirmRepost(true);
+                          return;
+                        }
+                        repostJob.mutate(jobId, {
+                          onSuccess: (created) => {
+                            if (created.id) {
+                              router.push(`/jobs/${created.id}` as Route);
+                            }
+                          },
+                        });
+                      }}
+                    >
+                      {repostJob.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                      )}
+                      {repostJob.isPending
+                        ? 'Reposting…'
+                        : confirmRepost
+                          ? 'Confirm repost'
+                          : 'Repost job'}
+                    </Button>
+                    <p className="text-muted-foreground text-xs">
+                      Auction ended without an award, or you cancelled. Repost starts a fresh
+                      bidding window with the same details. Previous bids do not carry over.
+                    </p>
+                  </div>
+                ) : null}
+
+                {isAuthenticated ? (
+                  <ChatRelayAlias contextType="job" contextId={jobId} />
                 ) : null}
 
                 {/* Bidding section based on user role. BidForm handles both

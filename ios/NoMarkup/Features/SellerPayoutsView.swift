@@ -126,6 +126,9 @@ struct SellerPayoutsView: View {
                     if status?.isFullyOnboarded == true {
                         Text("Your Stripe account can charge and receive payouts.")
                             .foregroundStyle(BrandTheme.textSecondary)
+                    } else if shouldCreateAccount {
+                        Text("Connect Stripe to create your payout account. Setup opens after the account is created.")
+                            .foregroundStyle(BrandTheme.textSecondary)
                     } else {
                         Text("Complete Stripe setup so escrow can pay out to your bank.")
                             .foregroundStyle(BrandTheme.textSecondary)
@@ -133,46 +136,64 @@ struct SellerPayoutsView: View {
                 }
 
                 Section {
-                    if status == nil || status?.hasDetailsSubmitted != true {
+                    if shouldCreateAccount {
                         Button {
                             BrandHaptics.medium()
-                            Task { await createAccountIfNeeded() }
+                            Task { await connectAccount() }
                         } label: {
                             HStack {
-                                if isCreating {
+                                if isCreating || isOpeningOnboarding {
                                     ProgressView()
                                         .tint(BrandTheme.ctaLabelOnGold)
                                 }
-                                Text(isCreating ? "Creating…" : "Create Stripe account")
+                                Text(isCreating ? "Creating…" : "Connect with Stripe")
                                     .frame(maxWidth: .infinity)
                             }
                             .frame(minHeight: 48)
                         }
                         .brandPrimaryButton()
                         .disabled(isCreating || isOpeningOnboarding)
-                        .accessibilityHint("Creates a Stripe Express account for payouts if you do not have one yet")
-                    }
-
-                    Button {
-                        BrandHaptics.selection()
-                        Task { await openOnboarding() }
-                    } label: {
-                        HStack {
-                            if isOpeningOnboarding {
-                                ProgressView()
-                                    .tint(BrandTheme.accent)
+                        .accessibilityHint("Creates a Stripe Connect account, then opens onboarding")
+                    } else if status?.isFullyOnboarded == true {
+                        Button {
+                            BrandHaptics.selection()
+                            Task { await openOnboarding() }
+                        } label: {
+                            HStack {
+                                if isOpeningOnboarding {
+                                    ProgressView()
+                                        .tint(BrandTheme.accent)
+                                }
+                                Label(
+                                    isOpeningOnboarding ? "Opening…" : "Open onboarding",
+                                    systemImage: "safari"
+                                )
+                                .frame(maxWidth: .infinity)
                             }
-                            Label(
-                                isOpeningOnboarding ? "Opening…" : "Open onboarding",
-                                systemImage: "safari"
-                            )
-                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 48)
                         }
-                        .frame(minHeight: 48)
+                        .brandGhostButton()
+                        .disabled(isCreating || isOpeningOnboarding)
+                        .accessibilityHint("Opens Stripe Connect onboarding in Safari")
+                    } else {
+                        Button {
+                            BrandHaptics.medium()
+                            Task { await openOnboarding() }
+                        } label: {
+                            HStack {
+                                if isOpeningOnboarding {
+                                    ProgressView()
+                                        .tint(BrandTheme.ctaLabelOnGold)
+                                }
+                                Text(isOpeningOnboarding ? "Opening…" : "Complete setup")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .frame(minHeight: 48)
+                        }
+                        .brandPrimaryButton()
+                        .disabled(isCreating || isOpeningOnboarding)
+                        .accessibilityHint("Opens Stripe Connect onboarding for the existing account")
                     }
-                    .brandGhostButton()
-                    .disabled(isCreating || isOpeningOnboarding)
-                    .accessibilityHint("Opens Stripe Connect onboarding in Safari")
                 }
             } else {
                 Section {
@@ -259,8 +280,24 @@ struct SellerPayoutsView: View {
         }
     }
 
+    /// No status yet, or the server says no live Connect account is on file.
+    private var shouldCreateAccount: Bool {
+        guard let status else { return true }
+        return status.needsAccountCreate
+    }
+
+    /// POST the account create, then open onboarding. Not-started must not
+    /// skip straight to the Account Link — that 422s while acct_dev is stored.
     @MainActor
-    private func createAccountIfNeeded() async {
+    private func connectAccount() async {
+        let created = await createAccountIfNeeded()
+        guard created else { return }
+        await openOnboarding()
+    }
+
+    @MainActor
+    @discardableResult
+    private func createAccountIfNeeded() async -> Bool {
         errorMessage = nil
         statusMessage = nil
         isCreating = true
@@ -274,10 +311,13 @@ struct SellerPayoutsView: View {
                 statusMessage = "Stripe account created. Open onboarding to finish."
             }
             status = try? await APIClient.shared.fetchStripeAccountStatus()
+            return true
         } catch let error as APIClientError where error.isUnauthorized {
             needsSignIn = true
+            return false
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 

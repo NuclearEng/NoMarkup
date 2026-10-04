@@ -60,6 +60,8 @@ vi.mock('@/lib/api', () => {
       if (err instanceof Error && err.message) return err.message;
       return fallback;
     },
+    forbiddenTransactMessage: (err: InstanceType<typeof ApiError>, partyFallback: string) =>
+      err.userMessage(partyFallback),
   };
 });
 

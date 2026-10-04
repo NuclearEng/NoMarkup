@@ -723,6 +723,24 @@ func (a *Auth) ValidateVerificationToken(token string) (string, error) {
 	return userID, nil
 }
 
+// IssueSession mints a new access+refresh pair for a user whose roles (or
+// other claims) just changed. It starts a new refresh-token family, the same
+// way login does: the caller replaces the client's cookie. The previous
+// family stays valid until it expires or is revoked.
+//
+// The access token's role claims are taken from user.Roles, so the caller
+// must pass the user row after the role update, not the pre-grant snapshot.
+func (a *Auth) IssueSession(ctx context.Context, user *domain.User, deviceInfo, ipAddress string) (*domain.TokenPair, error) {
+	if user == nil || user.ID == "" {
+		return nil, fmt.Errorf("issue session: %w", domain.ErrUserNotFound)
+	}
+	pair, err := a.generateTokenPair(ctx, user, deviceInfo, ipAddress, "", nil)
+	if err != nil {
+		return nil, fmt.Errorf("issue session: %w", err)
+	}
+	return pair, nil
+}
+
 // generateTokenPair creates a new access token + refresh token and stores the refresh token.
 // generateTokenPair mints an access+refresh pair. familyID and parentID carry
 // the session lineage: pass "" and nil to start a NEW family (a fresh

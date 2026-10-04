@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { CheckCircle, DollarSign, Loader2, Minus, Plus, Zap } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
 
 import { FairPriceBand } from '@/components/analytics/FairPriceBand';
 import { BidSuggestion } from '@/components/bids/BidSuggestion';
@@ -22,6 +23,12 @@ import { Input } from '@/components/ui/input';
 import { MonoPrice } from '@/components/ui/mono-price';
 import { useFairPrice } from '@/hooks/useAnalytics';
 import { useAcceptOffer, usePlaceBid, useUpdateBid } from '@/hooks/useBids';
+import { useCreateChannel, useSendMessage } from '@/hooks/useChannels';
+import {
+  useIncrementQuoteTemplateUse,
+  useQuoteTemplates,
+} from '@/hooks/useQuoteTemplates';
+import { sendQuoteOpeningMessage } from '@/lib/quote-bid';
 import { cn, formatCents } from '@/lib/utils';
 import { bidSchema, type BidFormValues } from '@/lib/validations';
 import type { Bid, MarketRange } from '@/types';
@@ -66,6 +73,11 @@ export function BidForm({
   const placeBid = usePlaceBid();
   const updateBid = useUpdateBid();
   const acceptOffer = useAcceptOffer();
+  const createChannel = useCreateChannel();
+  const sendMessage = useSendMessage();
+  const incrementTemplateUse = useIncrementQuoteTemplateUse();
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [quoteBody, setQuoteBody] = useState('');
 
   // Live Fair-Price hint — skip on dock (density; intel lives in terminal widgets).
   const {
@@ -76,6 +88,8 @@ export function BidForm({
 
   const auctionClosed = isAuctionClosed(auctionEndsAt);
   const isUpdate = existingBid !== null;
+  const templatesQuery = useQuoteTemplates({ enabled: !isUpdate, retry: false });
+  const quoteTemplates = templatesQuery.isError ? [] : (templatesQuery.data ?? []);
 
   const form = useForm<BidFormValues>({
     resolver: zodResolver(bidSchema),
@@ -152,8 +166,42 @@ export function BidForm({
     form.setValue('amountDollars', next, { shouldValidate: true, shouldDirty: true });
   }
 
+  function applyQuoteTemplate(id: string) {
+    if (!id) {
+      setSelectedTemplateId('');
+      setQuoteBody('');
+      return;
+    }
+    const template = quoteTemplates.find((row) => row.id === id);
+    if (!template) return;
+    setSelectedTemplateId(id);
+    setQuoteBody(template.body);
+    const cents = template.default_amount_cents;
+    if (typeof cents === 'number' && Number.isInteger(cents) && cents > 0) {
+      form.setValue('amountDollars', cents / 100, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }
+
+  async function deliverQuoteNote(templateId: string, body: string): Promise<void> {
+    const result = await sendQuoteOpeningMessage({
+      jobId,
+      body,
+      createChannel: (input) => createChannel.mutateAsync(input),
+      sendMessage: (input) => sendMessage.mutateAsync(input),
+    });
+    incrementTemplateUse.mutate(templateId);
+    if (result === 'failed') {
+      toast.error('Bid placed. The quote note was not sent in chat.');
+    }
+  }
+
   function handleConfirmedSubmit() {
     const cents = Math.round(form.getValues('amountDollars') * 100);
+    const openingBody = quoteBody;
+    const templateId = selectedTemplateId;
 
     if (existingBid !== null) {
       updateBid.mutate(
@@ -170,6 +218,9 @@ export function BidForm({
         {
           onSuccess: () => {
             setShowConfirm(false);
+            if (templateId && openingBody.trim()) {
+              void deliverQuoteNote(templateId, openingBody);
+            }
           },
         },
       );
@@ -323,6 +374,36 @@ export function BidForm({
                     −{String(Math.round(pct * 100))}%
                   </Button>
                 ))}
+              </div>
+            ) : null}
+            {!isUpdate && quoteTemplates.length > 0 ? (
+              <div className="space-y-1">
+                <label htmlFor={`quote-template-${jobId}`} className="text-sm font-medium">
+                  Quote template
+                </label>
+                <select
+                  id={`quote-template-${jobId}`}
+                  className="border-input bg-background min-h-11 w-full rounded-md border px-3 text-sm"
+                  value={selectedTemplateId}
+                  onChange={(event) => {
+                    applyQuoteTemplate(event.target.value);
+                  }}
+                >
+                  <option value="">Choose a saved quote</option>
+                  {quoteTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                      {typeof template.default_amount_cents === 'number'
+                        ? ` (${formatCents(template.default_amount_cents)})`
+                        : ''}
+                    </option>
+                  ))}
+                </select>
+                {quoteBody.trim() ? (
+                  <p className="text-muted-foreground text-xs">
+                    This note is sent in chat after the bid is placed.
+                  </p>
+                ) : null}
               </div>
             ) : null}
             <FormField

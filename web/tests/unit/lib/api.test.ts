@@ -5,6 +5,7 @@ import {
   api,
   downloadAuthenticated,
   fetchMeActivity,
+  forbiddenTransactMessage,
   getApiErrorMessage,
   parseMeActivityPayload,
 } from '@/lib/api';
@@ -63,6 +64,48 @@ describe('ApiError', () => {
       const err = new ApiError(500, '');
       expect(err.userMessage('fallback')).toBe('fallback');
     });
+  });
+
+  describe('phone_not_verified', () => {
+    it('detects FR-1.9 403 with machine code', () => {
+      const err = new ApiError(
+        403,
+        JSON.stringify({
+          error: 'Phone verification required before transacting. Verify your phone in Account → Verification.',
+          code: 'phone_not_verified',
+        }),
+      );
+      expect(err.code()).toBe('phone_not_verified');
+      expect(err.isPhoneNotVerified()).toBe(true);
+      expect(err.userMessage('fallback')).toContain('Verify your phone');
+    });
+
+    it('does not treat other 403s as phone verification', () => {
+      const err = new ApiError(403, JSON.stringify({ error: 'forbidden' }));
+      expect(err.isPhoneNotVerified()).toBe(false);
+    });
+  });
+});
+
+describe('forbiddenTransactMessage', () => {
+  it('prefers phone verification copy over a party fallback', () => {
+    const err = new ApiError(
+      403,
+      JSON.stringify({
+        error: 'Phone verification required before transacting. Verify your phone in Account → Verification.',
+        code: 'phone_not_verified',
+      }),
+    );
+    expect(forbiddenTransactMessage(err, 'Only providers can place bids.')).toContain(
+      'Verify your phone',
+    );
+  });
+
+  it('keeps the party fallback for other 403s', () => {
+    const err = new ApiError(403, JSON.stringify({ error: 'forbidden' }));
+    expect(forbiddenTransactMessage(err, 'Only providers can place bids.')).toBe(
+      'Only providers can place bids.',
+    );
   });
 });
 

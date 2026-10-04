@@ -65,6 +65,15 @@ vi.mock('@/lib/api', () => ({
     userMessage(fallback: string) {
       return this.message || fallback;
     }
+    isPhoneNotVerified() {
+      return false;
+    }
+  },
+  forbiddenTransactMessage: (err: { isPhoneNotVerified?: () => boolean; userMessage: (f: string) => string }, partyFallback: string) => {
+    if (typeof err.isPhoneNotVerified === 'function' && err.isPhoneNotVerified()) {
+      return err.userMessage('Phone verification required before transacting.');
+    }
+    return partyFallback;
   },
 }));
 

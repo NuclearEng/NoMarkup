@@ -70,6 +70,7 @@ const PROTECTED_PREFIXES: readonly string[] = [
   '/jobs/recurring',
   '/messages',
   '/notifications',
+  '/onboarding',
   '/orders',
   '/me',
   '/payments',

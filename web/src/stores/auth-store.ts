@@ -42,6 +42,8 @@ interface AuthActions {
   ) => Promise<void>;
   logout: () => Promise<void>;
   refreshToken: () => Promise<boolean>;
+  /** Adopt a session the server already minted (passkey verify). */
+  adoptSession: (data: AuthResponse) => void;
   setUser: (user: User) => void;
   reset: () => void;
 }
@@ -206,6 +208,22 @@ export const useAuthStore = create<AuthState & AuthActions>()((set) => ({
       set({ ...initialState, isHydrating: false });
       return false;
     }
+  },
+
+  adoptSession: (data: AuthResponse) => {
+    const payload = parseJwtPayload(data.access_token);
+    const userId = data.user_id || (payload ? payload.sub : '');
+    if (!payload || userId === '') {
+      clearTokens();
+      throw new Error('Sign-in succeeded but the session could not be restored. Please try again.');
+    }
+    setAccessToken(data.access_token);
+    set({
+      user: userFromJwt(userId, payload),
+      accessToken: data.access_token,
+      isAuthenticated: true,
+      isHydrating: false,
+    });
   },
 
   setUser: (user: User) => {

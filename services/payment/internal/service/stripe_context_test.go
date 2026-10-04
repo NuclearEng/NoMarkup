@@ -227,6 +227,9 @@ func allStripeCalls() []stripeCallCase {
 // stripe-go's shouldRetry declines to retry once the request context is in
 // error — otherwise cancellation would only shorten one attempt out of three.
 func TestStripeCalls_HonourCallerDeadline(t *testing.T) {
+	// These cases pin stripe-go's SDK backend (params.Context). Accounts v2
+	// create uses a separate JSON HTTP client and is covered elsewhere.
+	t.Setenv("STRIPE_ACCOUNTS_V2", "false")
 	srv := newHangingStripeServer(t)
 	useStripeTestBackend(t, srv.URL, 2, 0)
 
@@ -265,6 +268,7 @@ func TestStripeCalls_HonourCallerDeadline(t *testing.T) {
 // shape of the same bug: a caller whose client already hung up. The request
 // must never leave the process.
 func TestStripeCalls_AlreadyCancelledContextReturnsImmediately(t *testing.T) {
+	t.Setenv("STRIPE_ACCOUNTS_V2", "false")
 	srv := newHangingStripeServer(t)
 	useStripeTestBackend(t, srv.URL, 2, 0)
 
@@ -367,6 +371,7 @@ func TestStripeBackend_PerAttemptTimeoutBoundsACallerWithNoDeadline(t *testing.T
 // mutating call must carry a key, and that key must be a pure function of its
 // arguments (never random) or the retry would be a second distinct write.
 func TestStripeMutatingCalls_SendDeterministicIdempotencyKey(t *testing.T) {
+	t.Setenv("STRIPE_ACCOUNTS_V2", "false")
 	var mu sync.Mutex
 	var keys []string
 
@@ -379,7 +384,7 @@ func TestStripeMutatingCalls_SendDeterministicIdempotencyKey(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		// A body every resource in this file can decode into. latest_charge is
 		// present so the transfer paths resolve a source transaction.
-		_, _ = w.Write([]byte(`{"id":"obj_1","latest_charge":{"id":"ch_1"},"items":{"data":[{"id":"si_1"}]}}`))
+		_, _ = w.Write([]byte(`{"id":"obj_1","latest_charge":{"id":"ch_1"},"items":{"data":[{"id":"si_1"}]},"charges_enabled":true,"payouts_enabled":true,"details_submitted":true,"capabilities":{"transfers":"active"}}`))
 	}))
 	t.Cleanup(srv.Close)
 

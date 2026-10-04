@@ -37,6 +37,14 @@ vi.mock('@/components/auth/oauth-buttons', () => ({
   OAuthDivider: () => null,
 }));
 
+vi.mock('@/hooks/useFeatureFlags', () => ({
+  useFeatureFlags: () => ({}),
+}));
+
+vi.mock('@/components/auth/PasskeySignInButton', () => ({
+  PasskeySignInButton: () => null,
+}));
+
 const { LoginForm } = await import('@/components/forms/LoginForm');
 const { MFARequiredError } = await import('@/stores/auth-store');
 

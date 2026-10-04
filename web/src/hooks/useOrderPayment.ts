@@ -31,7 +31,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { ApiError, api, clearIdempotencyKey, idempotencyHeader } from '@/lib/api';
+import { ApiError, api, clearIdempotencyKey, forbiddenTransactMessage, idempotencyHeader } from '@/lib/api';
 import type { PaymentIntentEnvelope } from '@/lib/payment-outcome';
 
 export interface OrderPaymentIntentResponse extends PaymentIntentEnvelope {
@@ -63,7 +63,7 @@ export function describeOrderPaymentFailure(err: unknown): string {
           'This order is no longer awaiting payment. Refresh to see its current status.',
         );
       case 403:
-        return 'Only the buyer on this order can pay for it.';
+        return forbiddenTransactMessage(err, 'Only the buyer on this order can pay for it.');
       case 503:
         return 'Payments are temporarily unavailable. Please try again in a few minutes.';
       default:

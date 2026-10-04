@@ -437,6 +437,7 @@ private enum AuthHTTP {
         struct APIErrorBody: Decodable {
             let error: String?
             let message: String?
+            let code: String?
         }
         guard let body = try? JSONDecoder().decode(APIErrorBody.self, from: data) else {
             return nil

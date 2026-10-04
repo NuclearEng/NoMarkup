@@ -42,6 +42,35 @@ function isPayoutReady(status: {
   return status.payouts_enabled && status.details_submitted;
 }
 
+/**
+ * Not-started must POST account create. account_exists false wins.
+ * When the flag is absent, every capability off fails toward create — a 200
+ * not-started payload used to be treated as an incomplete existing account.
+ */
+function needsStripeAccountCreate(status: {
+  account_exists?: boolean;
+  charges_enabled?: boolean;
+  payouts_enabled?: boolean;
+  details_submitted?: boolean;
+  transfers_ready?: boolean;
+} | null | undefined): boolean {
+  if (!status) {
+    return true;
+  }
+  if (status.account_exists === false) {
+    return true;
+  }
+  if (status.account_exists === true) {
+    return false;
+  }
+  return (
+    !status.charges_enabled &&
+    !status.payouts_enabled &&
+    !status.details_submitted &&
+    !status.transfers_ready
+  );
+}
+
 export function StripeOnboarding() {
   const { data: accountStatus, isLoading, isError, error, refetch } = useStripeAccountStatus();
   const createAccount = useCreateStripeAccount();
@@ -137,8 +166,10 @@ export function StripeOnboarding() {
     );
   }
 
-  // No Stripe account yet
-  if (isNotFound || !accountStatus) {
+  // No Stripe account yet (404, missing payload, or not-started 200).
+  // `!accountStatus` is the same create path as needsStripeAccountCreate and
+  // narrows the status for the payout-ready branches below.
+  if (isNotFound || !accountStatus || needsStripeAccountCreate(accountStatus)) {
     return (
       <Card>
         <CardHeader>

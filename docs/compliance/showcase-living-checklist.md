@@ -36,7 +36,7 @@
 - [ ] Money: integer cents server-side; Idempotency-Key on money mutations
 - [ ] PII: secretbox inventory respected; geometry coarsened where required
 - [ ] Stripe: no raw PAN; webhook signature verify on server
-- [ ] iOS regulated rails gated by **server flags** (`FeatureFlags.iOSHardOffKeys` empty; `isEnabled` defaults false; hub under Account → Business & finance)
+- [ ] iOS regulated rails gated by **server flags** + `iOSHardOffKeys` hard-off in this binary; hub omits off-flag purchase rows
 - [ ] Feature flags fail closed in production for enforced routes (`RequireFlag`); review/prod keep regulated keys off until compliance exit
 
 ### Performance (targets — measure before claiming)

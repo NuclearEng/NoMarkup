@@ -241,6 +241,9 @@ message GetStripeAccountStatusResponse {
   string dashboard = 7;
   // "v2" | "v1" when inferred
   string accounts_api = 8;
+  // False for the default not-started status and for synthetic acct_dev ids
+  // that are not a live Connect account. True when a real account id is on file.
+  bool account_exists = 9;
 }
 
 message GetStripeDashboardLinkRequest {

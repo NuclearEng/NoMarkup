@@ -332,28 +332,46 @@ export const listingZipSchema = z
   .string()
   .regex(/^\d{5}(-\d{4})?$/, 'Pickup zip must be a valid 5-digit zip code');
 
-export const listingPostingSchema = z.object({
-  categoryId: z.string().min(1, 'Category is required'),
-  title: listingTitleSchema,
-  description: listingDescriptionSchema,
-  photoUrls: z
-    .array(z.string().url('Each photo must be a valid URL'))
-    .min(1, 'At least one photo is required')
-    .max(10, 'You can upload up to 10 photos'),
-  pickupZip: listingZipSchema,
-  pickupAddress: z.string().max(200).optional().or(z.literal('')),
-  startingPriceDollars: z
-    .number()
-    .positive('Starting price must be greater than $0')
-    .max(1_000_000, 'Starting price is too large'),
-  auctionDurationHours: z.union([z.literal(24), z.literal(48), z.literal(168)], {
-    required_error: 'Pick an auction duration',
-  }),
-  // Condition is optional — empty string = "seller didn't say".
-  condition: z
-    .enum(['', 'new', 'like_new', 'very_good', 'good', 'acceptable', 'for_parts'])
-    .optional(),
-});
+export const listingPostingSchema = z
+  .object({
+    categoryId: z.string().min(1, 'Category is required'),
+    title: listingTitleSchema,
+    description: listingDescriptionSchema,
+    photoUrls: z
+      .array(z.string().url('Each photo must be a valid URL'))
+      .min(1, 'At least one photo is required')
+      .max(10, 'You can upload up to 10 photos'),
+    pickupZip: listingZipSchema,
+    pickupAddress: z.string().max(200).optional().or(z.literal('')),
+    startingPriceDollars: z
+      .number()
+      .positive('Starting price must be greater than $0')
+      .max(1_000_000, 'Starting price is too large'),
+    buyNowDollars: z
+      .number()
+      .positive('Buy now must be greater than $0')
+      .max(1_000_000, 'Buy now price is too large')
+      .optional(),
+    auctionDurationHours: z.union([z.literal(24), z.literal(48), z.literal(168)], {
+      required_error: 'Pick an auction duration',
+    }),
+    // Condition is optional — empty string = "seller didn't say".
+    condition: z
+      .enum(['', 'new', 'like_new', 'very_good', 'good', 'acceptable', 'for_parts'])
+      .optional(),
+  })
+  .superRefine((values, ctx) => {
+    if (values.buyNowDollars === undefined) return;
+    const buyCents = Math.round(values.buyNowDollars * 100);
+    const startCents = Math.round(values.startingPriceDollars * 100);
+    if (buyCents < startCents) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['buyNowDollars'],
+        message: 'Buy now must be at least the starting price.',
+      });
+    }
+  });
 
 export type ListingPostingFormValues = z.infer<typeof listingPostingSchema>;
 

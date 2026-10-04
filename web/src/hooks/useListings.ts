@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import type { UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { ApiError, api, clearIdempotencyKey, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
+import { ApiError, api, clearIdempotencyKey, forbiddenTransactMessage, getApiErrorMessage, idempotencyHeader } from '@/lib/api';
 import { saveDraft } from '@/lib/offline-drafts';
 import type {
   AutocompleteResponse,
@@ -51,7 +51,9 @@ function explainListingFailure(fallback: string): (err: unknown) => void {
     if (err instanceof ApiError) {
       const status = err.status;
       if (status === 403) {
-        toast.error('Sellers cannot bid on their own listings.');
+        toast.error(
+          forbiddenTransactMessage(err, 'Sellers cannot bid on their own listings.'),
+        );
         return;
       }
       if (status === 409) {

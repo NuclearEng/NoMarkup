@@ -1,5 +1,14 @@
 import SwiftUI
 
+private struct PreQuoteDraft: Equatable {
+    var text = ""
+    var numberText = ""
+    var selections: [String] = []
+    var flag: Bool?
+    var date = Date()
+    var dateTouched = false
+}
+
 /// Native create flow for service reverse-auction jobs (`POST /api/v1/jobs`).
 /// Pass `preferInstantMatch: true` from the Home “I need help now” CTA (§13 Instant).
 struct PostJobView: View {
@@ -25,6 +34,10 @@ struct PostJobView: View {
     @State private var locationAddress = ""
     @State private var categoryId = ""
     @State private var categoryName = ""
+    /// Pre-quote questions for the selected category (`GET /categories/{id}/questions`).
+    @State private var preQuoteQuestions: [CategoryQuestion] = []
+    @State private var preQuoteDrafts: [String: PreQuoteDraft] = [:]
+    @State private var preQuoteLoadFailed = false
     /// FR-11 market range band after category select (soft-hide when no data).
     @State private var marketRange: MarketRangeResponse?
     @State private var durationHours = 24
@@ -112,7 +125,10 @@ struct PostJobView: View {
         .brandNavigationBarChrome()
         .tint(BrandTheme.accent)
         .onChange(of: categoryId) { _, newValue in
-            Task { await refreshMarketRange(categoryId: newValue) }
+            Task {
+                await refreshMarketRange(categoryId: newValue)
+                await loadPreQuoteQuestions(categoryId: newValue)
+            }
         }
         .onChange(of: selectedPropertyId) { _, newId in
             applyPropertySelection(id: newId)
@@ -311,6 +327,16 @@ struct PostJobView: View {
             .accessibilityLabel("Service category")
             .accessibilityValue(categoryName.isEmpty ? "Not selected" : categoryName)
             .accessibilityHint("Opens the category tree picker")
+
+            if preQuoteLoadFailed {
+                Text("Could not load category questions. You can still post the job — providers will ask in chat.")
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(preQuoteQuestions) { question in
+                preQuoteField(question)
+            }
 
             if let marketRange, marketRange.isUsable {
                 MarketRangeBar(
@@ -948,6 +974,15 @@ struct PostJobView: View {
                 }
             }
 
+            let answers = collectedPreQuoteAnswers()
+            if !answers.isEmpty {
+                do {
+                    try await APIClient.shared.submitJobAnswers(jobId: job.id, answers: answers)
+                } catch {
+                    // Non-fatal — the job exists. Providers can clarify scope in chat.
+                }
+            }
+
             // Primary create succeeded — success haptic even if Instant soft-failed (warning below).
             if instantMatchSoftError != nil {
                 BrandHaptics.warning()
@@ -991,6 +1026,148 @@ struct PostJobView: View {
         if !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             locationAddress = ""
         }
+    }
+
+    private func draftBinding(for id: String) -> Binding<PreQuoteDraft> {
+        Binding(
+            get: { preQuoteDrafts[id] ?? PreQuoteDraft() },
+            set: { preQuoteDrafts[id] = $0 }
+        )
+    }
+
+    @ViewBuilder
+    private func preQuoteField(_ question: CategoryQuestion) -> some View {
+        let binding = draftBinding(for: question.id)
+        let title = question.required == true ? "\(question.question) *" : question.question
+        switch question.questionType {
+        case "number":
+            TextField(title, text: binding.numberText, prompt: Text("Number"))
+                .keyboardType(.decimalPad)
+                .foregroundStyle(BrandTheme.textPrimary)
+                .frame(minHeight: 44)
+                .accessibilityLabel(title)
+        case "boolean":
+            Picker(title, selection: binding.flag) {
+                Text("Not answered").tag(Optional<Bool>.none)
+                Text("Yes").tag(Optional<Bool>.some(true))
+                Text("No").tag(Optional<Bool>.some(false))
+            }
+            .frame(minHeight: 44)
+            .accessibilityLabel(title)
+        case "date":
+            DatePicker(
+                title,
+                selection: Binding(
+                    get: { binding.wrappedValue.date },
+                    set: { newDate in
+                        var draft = binding.wrappedValue
+                        draft.date = newDate
+                        draft.dateTouched = true
+                        binding.wrappedValue = draft
+                    }
+                ),
+                displayedComponents: .date
+            )
+            .frame(minHeight: 44)
+            .accessibilityLabel(title)
+        case "select":
+            Picker(title, selection: binding.text) {
+                Text("Select…").tag("")
+                ForEach(question.options ?? [], id: \.self) { option in
+                    Text(option).tag(option)
+                }
+            }
+            .frame(minHeight: 44)
+            .accessibilityLabel(title)
+        case "multiselect":
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .foregroundStyle(BrandTheme.textPrimary)
+                Text("Choose all that apply.")
+                    .font(.caption)
+                    .foregroundStyle(BrandTheme.textSecondary)
+                ForEach(question.options ?? [], id: \.self) { option in
+                    let selected = binding.wrappedValue.selections.contains(option)
+                    Button {
+                        var draft = binding.wrappedValue
+                        if selected {
+                            draft.selections.removeAll { $0 == option }
+                        } else {
+                            draft.selections.append(option)
+                        }
+                        binding.wrappedValue = draft
+                    } label: {
+                        Label(option, systemImage: selected ? "checkmark.circle.fill" : "circle")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(option)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+        default:
+            TextField(title, text: binding.text, prompt: Text("Your answer"), axis: .vertical)
+                .lineLimit(2 ... 6)
+                .foregroundStyle(BrandTheme.textPrimary)
+                .frame(minHeight: 44)
+                .accessibilityLabel(title)
+        }
+    }
+
+    @MainActor
+    private func loadPreQuoteQuestions(categoryId: String) async {
+        let trimmed = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+        preQuoteDrafts = [:]
+        preQuoteLoadFailed = false
+        guard !trimmed.isEmpty else {
+            preQuoteQuestions = []
+            return
+        }
+        do {
+            preQuoteQuestions = try await APIClient.shared.fetchPublicCategoryQuestions(categoryId: trimmed)
+        } catch {
+            preQuoteQuestions = []
+            preQuoteLoadFailed = true
+        }
+    }
+
+    private func collectedPreQuoteAnswers() -> [SubmitJobAnswerBody] {
+        preQuoteQuestions.compactMap { question in
+            let draft = preQuoteDrafts[question.id] ?? PreQuoteDraft()
+            switch question.questionType {
+            case "number":
+                let trimmed = draft.numberText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let value = Double(trimmed), value.isFinite else { return nil }
+                return SubmitJobAnswerBody(questionId: question.id, answerText: nil, answerJson: .number(value))
+            case "boolean":
+                guard let flag = draft.flag else { return nil }
+                return SubmitJobAnswerBody(questionId: question.id, answerText: nil, answerJson: .bool(flag))
+            case "date":
+                guard draft.dateTouched else { return nil }
+                return SubmitJobAnswerBody(
+                    questionId: question.id,
+                    answerText: Self.preQuoteDayString(draft.date),
+                    answerJson: nil
+                )
+            case "multiselect":
+                let ordered = (question.options ?? []).filter { draft.selections.contains($0) }
+                guard !ordered.isEmpty else { return nil }
+                return SubmitJobAnswerBody(questionId: question.id, answerText: nil, answerJson: .strings(ordered))
+            default:
+                let trimmed = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                return SubmitJobAnswerBody(questionId: question.id, answerText: trimmed, answerJson: nil)
+            }
+        }
+    }
+
+    private static func preQuoteDayString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     /// FR-11: load market/range, fall back to fair-price (p25/p50/p75). Soft-hide on miss.

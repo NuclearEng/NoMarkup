@@ -180,6 +180,73 @@ extension APIClient {
             authorized: .required
         )
     }
+
+    /// GET `/api/v1/jobs/{id}/viewer-count` — public active-viewer count.
+    func fetchJobViewerCount(jobId: String) async throws -> Int {
+        let trimmed = jobId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        let payload: JobViewerCountResponse = try await getJSON(
+            pathComponents: ["api", "v1", "jobs", trimmed, "viewer-count"],
+            authorized: false
+        )
+        return max(0, payload.count ?? 0)
+    }
+
+    /// POST `/api/v1/jobs/{id}/ping-viewer` — auth-only presence ping. 204.
+    /// Logged-out callers must not hit this: a 401 would bounce the session.
+    func pingJobViewer(jobId: String) async throws {
+        let trimmed = jobId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        try await postEmpty(
+            pathComponents: ["api", "v1", "jobs", trimmed, "ping-viewer"],
+            body: EmptyJSONObject(),
+            authorized: .required
+        )
+    }
+
+    /// GET `/api/v1/categories/{id}/questions` — public pre-quote set.
+    /// Named apart from the admin `fetchCategoryQuestions` (same path, row type
+    /// without select options). Swift cannot overload on the return type alone.
+    func fetchPublicCategoryQuestions(categoryId: String) async throws -> [CategoryQuestion] {
+        let trimmed = categoryId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let payload: PublicCategoryQuestionsResponse = try await getJSON(
+            pathComponents: ["api", "v1", "categories", trimmed, "questions"],
+            authorized: false
+        )
+        return (payload.questions ?? []).sorted { ($0.displayOrder ?? 0) < ($1.displayOrder ?? 0) }
+    }
+
+    /// GET `/api/v1/jobs/{id}/answers` — owner, admin, or a provider with a bid.
+    func fetchJobAnswers(jobId: String) async throws -> [JobQuestionAnswer] {
+        let trimmed = jobId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        let payload: JobAnswersResponse = try await getJSON(
+            pathComponents: ["api", "v1", "jobs", trimmed, "answers"],
+            authorized: true
+        )
+        return payload.answers ?? []
+    }
+
+    /// POST `/api/v1/jobs/{id}/answers` — job owner upserts pre-quote answers.
+    func submitJobAnswers(jobId: String, answers: [SubmitJobAnswerBody]) async throws {
+        let trimmed = jobId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw APIClientError.httpStatus(400, detail: "Job id is required.")
+        }
+        guard !answers.isEmpty else { return }
+        let _: SavedAnswersResponse = try await postJSON(
+            pathComponents: ["api", "v1", "jobs", trimmed, "answers"],
+            body: SubmitJobAnswersBody(answers: answers),
+            authorized: .required
+        )
+    }
 }
 
 // MARK: - Request bodies (camelCase → snake_case via encoder)
@@ -196,6 +263,122 @@ private struct RepostJobBody: Encodable {
     let startingBidCents: Int64?
     let offerAcceptedCents: Int64?
     let auctionDurationHours: Int?
+}
+
+struct JobViewerCountResponse: Codable, Sendable {
+    var count: Int?
+}
+
+struct CategoryQuestion: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    var categoryId: String?
+    let question: String
+    let questionType: String
+    let options: [String]?
+    var required: Bool?
+    var displayOrder: Int?
+}
+
+struct PublicCategoryQuestionsResponse: Codable, Sendable {
+    var questions: [CategoryQuestion]?
+}
+
+enum JobAnswerJSONValue: Codable, Hashable, Sendable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case strings([String])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+            return
+        }
+        if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+            return
+        }
+        if let value = try? container.decode(Double.self) {
+            self = .number(value)
+            return
+        }
+        if let value = try? container.decode(String.self) {
+            self = .string(value)
+            return
+        }
+        if let value = try? container.decode([String].self) {
+            self = .strings(value)
+            return
+        }
+        self = .null
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .number(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        case .strings(let value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        }
+    }
+
+    var displayText: String {
+        switch self {
+        case .string(let value):
+            return value
+        case .number(let value):
+            if value.rounded() == value {
+                return String(Int(value))
+            }
+            return String(value)
+        case .bool(let value):
+            return value ? "Yes" : "No"
+        case .strings(let value):
+            return value.joined(separator: ", ")
+        case .null:
+            return ""
+        }
+    }
+}
+
+struct JobQuestionAnswer: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let questionId: String
+    var answerText: String?
+    var answerJson: JobAnswerJSONValue?
+
+    var displayText: String {
+        let text = answerText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !text.isEmpty { return text }
+        return answerJson?.displayText ?? ""
+    }
+}
+
+struct JobAnswersResponse: Codable, Sendable {
+    var answers: [JobQuestionAnswer]?
+}
+
+struct SubmitJobAnswerBody: Encodable, Sendable {
+    let questionId: String
+    let answerText: String?
+    let answerJson: JobAnswerJSONValue?
+}
+
+private struct SubmitJobAnswersBody: Encodable {
+    let answers: [SubmitJobAnswerBody]
+}
+
+private struct SavedAnswersResponse: Codable, Sendable {
+    var saved: Int?
 }
 
 // MARK: - Instant match (customer create)

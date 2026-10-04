@@ -32,6 +32,7 @@ type mockUserClient struct {
 	registerFn               func(ctx context.Context, req *userv1.RegisterRequest) (*userv1.RegisterResponse, error)
 	loginFn                  func(ctx context.Context, req *userv1.LoginRequest) (*userv1.LoginResponse, error)
 	verifyEmailFn            func(ctx context.Context, req *userv1.VerifyEmailRequest) (*userv1.VerifyEmailResponse, error)
+	enableRoleFn             func(ctx context.Context, req *userv1.EnableRoleRequest) (*userv1.EnableRoleResponse, error)
 }
 
 func (m *mockUserClient) Register(ctx context.Context, req *userv1.RegisterRequest, _ ...grpc.CallOption) (*userv1.RegisterResponse, error) {

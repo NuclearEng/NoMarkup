@@ -11,11 +11,15 @@ class FakeApiError extends Error {
   constructor(
     public status: number,
     public body: string,
+    public phoneNotVerified = false,
   ) {
     super(`API error ${String(status)}`);
   }
   userMessage(fallback: string): string {
     return this.body || fallback;
+  }
+  isPhoneNotVerified(): boolean {
+    return this.phoneNotVerified;
   }
 }
 
@@ -26,6 +30,14 @@ vi.mock('@/lib/api', () => ({
   }),
   clearIdempotencyKey: () => undefined,
   ApiError: FakeApiError,
+  forbiddenTransactMessage: (err: FakeApiError, partyFallback: string) => {
+    if (typeof err.isPhoneNotVerified === 'function' && err.isPhoneNotVerified()) {
+      return err.userMessage(
+        'Phone verification required before transacting. Verify your phone in Account → Verification.',
+      );
+    }
+    return partyFallback;
+  },
 }));
 
 const { describeOrderPaymentFailure, useOrderPaymentIntent } = await import(
@@ -67,6 +79,14 @@ describe('describeOrderPaymentFailure', () => {
     expect(describeOrderPaymentFailure(new FakeApiError(403, ''))).toMatch(
       /only the buyer/i,
     );
+  });
+
+  it('explains FR-1.9 403 as phone verification, not wrong party', () => {
+    expect(
+      describeOrderPaymentFailure(
+        new FakeApiError(403, 'Phone verification required before transacting.', true),
+      ),
+    ).toMatch(/phone verification required/i);
   });
 
   it('explains a 503 as temporary', () => {

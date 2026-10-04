@@ -24,6 +24,8 @@ struct MyOrdersView: View {
     @State private var pendingPickupOrder: ListingOrderSummary?
     @State private var pendingSellerConfirmOrder: ListingOrderSummary?
     @State private var reviewOrder: ListingOrderSummary?
+    @State private var orderChatChannel: ChatChannelSummary?
+    @State private var openingChatOrderID: String?
 
     private var isBusy: Bool {
         payingOrderID != nil || actingOrderID != nil
@@ -98,6 +100,9 @@ struct MyOrdersView: View {
         .brandNavigationBarChrome()
         .task { await load() }
         .refreshable { await load() }
+        .navigationDestination(item: $orderChatChannel) { channel in
+            ChatThreadView(channel: channel)
+        }
         .sheet(item: $disputeOrder) { order in
             OrderDisputeSheet(order: order) { message, isError in
                 statusMessage = message
@@ -285,6 +290,25 @@ struct MyOrdersView: View {
                 .accessibilityHint("Reports that the other party did not show up for pickup")
             }
 
+            if let channelID = order.channelId?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !channelID.isEmpty {
+                Button {
+                    Task { await openOrderChat(channelID: channelID, orderID: order.id) }
+                } label: {
+                    if openingChatOrderID == order.id {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    } else {
+                        Label("Open chat", systemImage: "bubble.left.and.bubble.right")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isBusy || openingChatOrderID != nil)
+                .accessibilityHint("Opens the private pickup thread for this order")
+                .accessibilityIdentifier("orders.openChat")
+            }
+
             if showReview {
                 Button {
                     reviewOrder = order
@@ -331,6 +355,18 @@ struct MyOrdersView: View {
             if orders.isEmpty {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    @MainActor
+    private func openOrderChat(channelID: String, orderID: String) async {
+        openingChatOrderID = orderID
+        defer { openingChatOrderID = nil }
+        do {
+            orderChatChannel = try await APIClient.shared.fetchChatChannel(channelID: channelID)
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
         }
     }
 

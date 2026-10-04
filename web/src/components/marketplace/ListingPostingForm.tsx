@@ -65,7 +65,7 @@ const STEP_FIELDS: Record<number, (keyof ListingPostingFormValues)[]> = {
   1: ['title', 'description', 'condition'],
   2: ['photoUrls'],
   3: ['pickupZip'],
-  4: ['startingPriceDollars', 'auctionDurationHours'],
+  4: ['startingPriceDollars', 'buyNowDollars', 'auctionDurationHours'],
   5: [],
 };
 
@@ -190,6 +190,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
       pickupZip: '',
       pickupAddress: '',
       startingPriceDollars: 0,
+      buyNowDollars: undefined,
       auctionDurationHours: 48,
       condition: '',
     },
@@ -208,6 +209,10 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
       pickup_zip: values.pickupZip,
       pickup_address: values.pickupAddress || undefined,
       starting_price_cents: Math.round(values.startingPriceDollars * 100),
+      buy_now_price_cents:
+        values.buyNowDollars !== undefined && values.buyNowDollars > 0
+          ? Math.round(values.buyNowDollars * 100)
+          : undefined,
       auction_duration_hours: values.auctionDurationHours,
       // Empty string in the form = "Don't say"; serialize as null so the
       // gateway persists NULL rather than rejecting an unknown value.
@@ -831,6 +836,45 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                 />
                 <FormField
                   control={form.control}
+                  name="buyNowDollars"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Buy now (optional)</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <span className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2">
+                            $
+                          </span>
+                          <Input
+                            type="number"
+                            min={1}
+                            step="0.01"
+                            inputMode="decimal"
+                            value={field.value ?? ''}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              if (raw.trim() === '') {
+                                field.onChange(undefined);
+                                return;
+                              }
+                              const v = Number(raw);
+                              field.onChange(Number.isFinite(v) ? v : undefined);
+                            }}
+                            placeholder="Leave blank for auction only"
+                            className="min-h-[44px] pl-8 font-mono tabular-nums"
+                            aria-label="Buy now price in dollars"
+                          />
+                        </div>
+                      </FormControl>
+                      <FormDescription>
+                        A buyer can end the auction immediately at this price. Leave blank to stay auction-only. Must be at least the starting price.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="auctionDurationHours"
                   render={({ field }) => (
                     <FormItem>
@@ -886,6 +930,14 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                     className="text-base font-semibold text-zinc-100"
                   />
                 </ReviewRow>
+                {values.buyNowDollars !== undefined && values.buyNowDollars > 0 ? (
+                  <ReviewRow label="Buy now">
+                    <MonoPrice
+                      cents={Math.round(values.buyNowDollars * 100)}
+                      className="text-base font-semibold text-zinc-100"
+                    />
+                  </ReviewRow>
+                ) : null}
                 <ReviewRow label="Duration">
                   {DURATIONS.find((d) => d.value === values.auctionDurationHours)?.label ??
                     `${String(values.auctionDurationHours)}h`}

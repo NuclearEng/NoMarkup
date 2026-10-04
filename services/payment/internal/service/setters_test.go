@@ -34,3 +34,9 @@ func TestPaymentService_SetRecurringPaymentFailureHandler_AcceptsNil(t *testing.
 	svc := newTestPaymentService(&mockPaymentRepo{}, nil)
 	assert.NotPanics(t, func() { svc.SetRecurringPaymentFailureHandler(nil) })
 }
+
+func TestPaymentService_SetNotifier_AcceptsNil(t *testing.T) {
+	t.Parallel()
+	svc := newTestPaymentService(&mockPaymentRepo{}, nil)
+	assert.NotPanics(t, func() { svc.SetNotifier(nil) })
+}

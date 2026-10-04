@@ -91,4 +91,12 @@ describe('ProviderBusinessPage', () => {
     const expensesLink = screen.getByText('Expense Tracking').closest('a');
     expect(expensesLink?.getAttribute('href')).toBe('/provider/business/expenses');
   });
+
+  it('does not list disabled money-rail purchase destinations', () => {
+    render(withQueryClient(createElement(ProviderBusinessPage)));
+    expect(screen.queryByText(/Payment plans/i)).toBeNull();
+    expect(screen.queryByText(/Instant payout/i)).toBeNull();
+    expect(screen.queryByText(/Working capital/i)).toBeNull();
+    expect(screen.queryByText(/Not in this App Store build/i)).toBeNull();
+  });
 });

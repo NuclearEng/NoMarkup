@@ -87,10 +87,85 @@ describe('StripeOnboarding', () => {
     expect(screen.getByRole('button', { name: /Connect with Stripe/ })).toBeDefined();
   });
 
+  it('shows the Connect CTA for a not-started 200 (every capability false)', async () => {
+    const user = userEvent.setup();
+    const mutateAsync = vi.fn().mockResolvedValue({});
+    useCreate.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useCreateStripeAccount>);
+    useStatus.mockReturnValue({
+      data: {
+        account_id: '',
+        charges_enabled: false,
+        payouts_enabled: false,
+        details_submitted: false,
+        requirements: null,
+        transfers_ready: false,
+        account_exists: false,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useStripeAccountStatus>);
+
+    render(createElement(StripeOnboarding));
+    expect(screen.getByRole('button', { name: /Connect with Stripe/ })).toBeDefined();
+    expect(screen.queryByRole('button', { name: /Complete setup/i })).toBeNull();
+    await user.click(screen.getByRole('button', { name: /Connect with Stripe/ }));
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalled();
+    });
+  });
+
+  it('shows the Connect CTA when account_exists is absent and every capability is false', () => {
+    useStatus.mockReturnValue({
+      data: {
+        account_id: '',
+        charges_enabled: false,
+        payouts_enabled: false,
+        details_submitted: false,
+        requirements: null,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useStripeAccountStatus>);
+
+    render(createElement(StripeOnboarding));
+    expect(screen.getByRole('button', { name: /Connect with Stripe/ })).toBeDefined();
+  });
+
+  it('keeps Complete setup when an account exists but is not payout-ready', () => {
+    useStatus.mockReturnValue({
+      data: {
+        account_id: 'acct_123',
+        account_exists: true,
+        charges_enabled: false,
+        payouts_enabled: false,
+        details_submitted: false,
+        requirements: null,
+        transfers_ready: false,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof useStripeAccountStatus>);
+
+    render(createElement(StripeOnboarding));
+    expect(screen.getByRole('heading', { name: /Complete Stripe setup/i })).toBeDefined();
+    expect(screen.queryByRole('button', { name: /Connect with Stripe/ })).toBeNull();
+  });
+
   it('shows incomplete state when charges/payouts are not enabled', () => {
     useStatus.mockReturnValue({
       data: {
         account_id: 'acct_123',
+        account_exists: true,
         charges_enabled: false,
         payouts_enabled: false,
         details_submitted: true,
@@ -102,7 +177,7 @@ describe('StripeOnboarding', () => {
     } as unknown as ReturnType<typeof useStripeAccountStatus>);
 
     render(createElement(StripeOnboarding));
-    expect(screen.getByText('Complete Stripe Setup')).toBeDefined();
+    expect(screen.getByRole('heading', { name: /complete stripe setup/i })).toBeDefined();
     expect(screen.getByText(/Pending requirements/)).toBeDefined();
     expect(screen.getByText(/legal entity.verification.document/)).toBeDefined();
   });
@@ -122,8 +197,8 @@ describe('StripeOnboarding', () => {
     } as unknown as ReturnType<typeof useStripeAccountStatus>);
 
     render(createElement(StripeOnboarding));
-    expect(screen.getByText('Stripe Connected')).toBeDefined();
-    expect(screen.getByText('Charges enabled')).toBeDefined();
+    expect(screen.getByRole('heading', { name: /stripe connected/i })).toBeDefined();
+    expect(screen.getByText('Transfers ready')).toBeDefined();
     expect(screen.getByText('Payouts enabled')).toBeDefined();
   });
 
@@ -234,6 +309,7 @@ describe('StripeOnboarding', () => {
     useStatus.mockReturnValue({
       data: {
         account_id: 'acct_123',
+        account_exists: true,
         charges_enabled: false,
         payouts_enabled: false,
         details_submitted: true,
@@ -246,7 +322,7 @@ describe('StripeOnboarding', () => {
 
     render(createElement(StripeOnboarding));
     expect(screen.queryByText(/Pending requirements/)).toBeNull();
-    expect(screen.getByRole('button', { name: /Complete Setup/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /complete setup/i })).toBeDefined();
   });
 
   it('redirects via Complete Setup when an onboarding URL is returned', async () => {
@@ -261,6 +337,7 @@ describe('StripeOnboarding', () => {
     useStatus.mockReturnValue({
       data: {
         account_id: 'acct_123',
+        account_exists: true,
         charges_enabled: false,
         payouts_enabled: false,
         details_submitted: true,
@@ -272,7 +349,7 @@ describe('StripeOnboarding', () => {
     } as unknown as ReturnType<typeof useStripeAccountStatus>);
 
     render(createElement(StripeOnboarding));
-    await user.click(screen.getByRole('button', { name: /Complete Setup/ }));
+    await user.click(screen.getByRole('button', { name: /complete setup/i }));
 
     await waitFor(() => {
       expect(refetch).toHaveBeenCalled();
@@ -292,6 +369,7 @@ describe('StripeOnboarding', () => {
     useStatus.mockReturnValue({
       data: {
         account_id: 'acct_123',
+        account_exists: true,
         charges_enabled: false,
         payouts_enabled: false,
         details_submitted: true,
@@ -304,7 +382,7 @@ describe('StripeOnboarding', () => {
 
     render(createElement(StripeOnboarding));
     const before = window.location.href;
-    await user.click(screen.getByRole('button', { name: /Complete Setup/ }));
+    await user.click(screen.getByRole('button', { name: /complete setup/i }));
 
     await waitFor(() => {
       expect(refetch).toHaveBeenCalled();
@@ -320,6 +398,7 @@ describe('StripeOnboarding', () => {
     useStatus.mockReturnValue({
       data: {
         account_id: 'acct_123',
+        account_exists: true,
         charges_enabled: false,
         payouts_enabled: false,
         details_submitted: true,

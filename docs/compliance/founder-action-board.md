@@ -11,6 +11,7 @@ Process start is already fail-closed for JWT public-key load, Stripe keys (payme
 | Facebook OAuth | Meta Developer → Facebook Login; register `…/callback/facebook` | `FACEBOOK_CLIENT_ID` (+ secret in store) | same |
 | Apple Sign In | Developer → Sign in with Apple Services ID | `APPLE_CLIENT_ID` (+ secret / native audience) | same |
 | SendGrid | Create account → API key → from-address | `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` | same |
+| Twilio | Account + SMS number so phone OTP actually delivers (FR-1.9). Empty SID logs OTP in dev only. | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | `make founder-secrets-check` |
 | Sentry | Create project → DSN | `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | same |
 | Stripe webhook | Dashboard endpoint `https://api.no-markup.com/api/v1/webhooks/stripe` | `STRIPE_WEBHOOK_SECRET` | same (payment also refuses to start if missing) |
 | Stripe publishable | Live/test `pk_` for web + iOS Rail A | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` / `NOMARKUP_STRIPE_PUBLISHABLE_KEY` | same |

@@ -172,6 +172,7 @@ func (h *PaymentHandler) GetStripeAccountStatus(w http.ResponseWriter, r *http.R
 		"stripe_transfers_status": resp.GetStripeTransfersStatus(),
 		"dashboard":               resp.GetDashboard(),
 		"accounts_api":            resp.GetAccountsApi(),
+		"account_exists":          resp.GetAccountExists(),
 	})
 }
 

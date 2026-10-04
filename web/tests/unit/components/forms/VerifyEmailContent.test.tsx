@@ -52,6 +52,9 @@ describe('VerifyEmailContent', () => {
     await waitFor(() => {
       expect(screen.getByText(/Your email has been verified/)).toBeDefined();
     });
+    expect(api.postUnauthed).toHaveBeenCalledWith('/api/v1/auth/verify-email', {
+      token: 'abc',
+    });
   });
 
   it('shows error state when verification fails', async () => {

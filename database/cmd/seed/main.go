@@ -104,6 +104,14 @@ const (
 	providerUserID  = "00000000-0000-0000-0000-000000000003"
 	provider2UserID = "00000000-0000-0000-0000-000000000004"
 
+	// Unique fictional E.164 numbers (NANPA 555-01xx). FR-1.9 gates transact
+	// routes on users.phone_verified; seed accounts must stay usable in dogfood
+	// even when Twilio is unset.
+	seedAdminPhone     = "+15555550101"
+	seedCustomerPhone  = "+15555550102"
+	seedProviderPhone  = "+15555550103"
+	seedProvider2Phone = "+15555550104"
+
 	propertyID = "00000000-0000-0000-0000-000000000010"
 
 	providerProfileID  = "00000000-0000-0000-0000-000000000020"
@@ -239,18 +247,21 @@ func main() {
 	// silently leaves the old hashes in place — the bug we were called to fix
 	// (Bug 4: seed password mismatch). Other identity fields are kept stable.
 	_, err = tx.Exec(ctx, `
-		INSERT INTO users (id, email, email_verified, password_hash, display_name, roles, status, timezone, dob, dob_verified_at)
+		INSERT INTO users (id, email, email_verified, password_hash, display_name, roles, status, timezone, dob, dob_verified_at, phone, phone_verified)
 		VALUES
-			($1, 'admin@nomarkup.com',    true, $5, 'Admin User',     '{admin}',    'active', 'America/Los_Angeles', DATE '1995-01-01', now()),
-			($2, 'customer@nomarkup.com', true, $5, 'Jane Customer',  '{customer}', 'active', 'America/New_York',    DATE '1995-01-01', now()),
-			($3, 'provider@nomarkup.com', true, $5, 'Mike Provider',  '{provider}', 'active', 'America/Chicago',     DATE '1995-01-01', now()),
-			($4, 'provider2@nomarkup.com', true, $5, 'Sarah Provider', '{provider}', 'active', 'America/Denver',     DATE '1995-01-01', now())
+			($1, 'admin@nomarkup.com',    true, $5, 'Admin User',     '{admin}',    'active', 'America/Los_Angeles', DATE '1995-01-01', now(), $6, true),
+			($2, 'customer@nomarkup.com', true, $5, 'Jane Customer',  '{customer}', 'active', 'America/New_York',    DATE '1995-01-01', now(), $7, true),
+			($3, 'provider@nomarkup.com', true, $5, 'Mike Provider',  '{provider}', 'active', 'America/Chicago',     DATE '1995-01-01', now(), $8, true),
+			($4, 'provider2@nomarkup.com', true, $5, 'Sarah Provider', '{provider}', 'active', 'America/Denver',     DATE '1995-01-01', now(), $9, true)
 		ON CONFLICT (id) DO UPDATE SET
 			password_hash = EXCLUDED.password_hash,
 			dob = COALESCE(users.dob, EXCLUDED.dob),
 			dob_verified_at = COALESCE(users.dob_verified_at, EXCLUDED.dob_verified_at),
+			phone = COALESCE(users.phone, EXCLUDED.phone),
+			phone_verified = true,
 			updated_at = now()`,
 		adminUserID, customerUserID, providerUserID, provider2UserID, passwordHash,
+		seedAdminPhone, seedCustomerPhone, seedProviderPhone, seedProvider2Phone,
 	)
 	if err != nil {
 		log.Fatalf("insert users: %v", err)
@@ -624,7 +635,7 @@ func main() {
 		INSERT INTO chat_channels (id, job_id, customer_id, provider_id,
 			channel_type, status, last_message_at, message_count)
 		VALUES ($1, $2, $3, $4, 'contract', 'active', $5, 3)
-		ON CONFLICT (job_id, customer_id, provider_id) DO UPDATE SET
+		ON CONFLICT (job_id, customer_id, provider_id) WHERE job_id IS NOT NULL DO UPDATE SET
 			channel_type = 'contract',
 			status = 'active',
 			last_message_at = EXCLUDED.last_message_at,

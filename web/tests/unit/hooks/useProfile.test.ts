@@ -14,6 +14,8 @@ import {
   useUpdateProfile,
   useVerifyPhone,
 } from '@/hooks/useProfile';
+import { getAccessToken } from '@/lib/auth';
+import { useAuthStore } from '@/stores/auth-store';
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -114,14 +116,22 @@ describe('useUpdateProfile', () => {
   });
 });
 
+function unsignedJwt(claims: { sub: string; email: string; roles: string[] }): string {
+  const json = JSON.stringify({ ...claims, exp: 9_999_999_999, iat: 1 });
+  const segment = Buffer.from(json, 'utf8').toString('base64');
+  return `e30.${segment}.sig`;
+}
+
 describe('useEnableRole', () => {
   let client: QueryClient;
   beforeEach(() => {
     vi.resetAllMocks();
     client = qc();
+    useAuthStore.getState().reset();
   });
   afterEach(() => {
     client.clear();
+    useAuthStore.getState().reset();
   });
 
   it('posts the role + invalidates the profile cache', async () => {
@@ -140,6 +150,48 @@ describe('useEnableRole', () => {
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/users/me/roles', { role: 'provider' });
     expect(result.current.data?.roles).toContain('provider');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['profile'] });
+  });
+
+  it('stores the new access token and keeps provider on the auth user', async () => {
+    const token = unsignedJwt({
+      sub: 'u-1',
+      email: 'jane@example.com',
+      roles: ['customer', 'provider'],
+    });
+    useAuthStore.setState({
+      user: {
+        id: 'u-1',
+        email: 'jane@example.com',
+        displayName: 'Jane Doe',
+        avatarUrl: null,
+        roles: ['customer'],
+        status: 'active',
+        emailVerified: true,
+        phoneVerified: false,
+        mfaEnabled: false,
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+      accessToken: 'old-customer-token',
+      isAuthenticated: true,
+      isHydrating: false,
+    });
+    vi.mocked(api.post).mockResolvedValueOnce({
+      ...mockApiUser,
+      roles: ['customer', 'provider'],
+      access_token: token,
+      access_token_expires_at: '2026-10-02T00:15:00Z',
+    });
+
+    const { result } = renderHook(() => useEnableRole(), { wrapper: wrap(client) });
+    result.current.mutate('provider');
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(getAccessToken()).toBe(token);
+    expect(useAuthStore.getState().accessToken).toBe(token);
+    expect(useAuthStore.getState().user?.roles).toContain('provider');
+    expect(useAuthStore.getState().user?.displayName).toBe('Jane Doe');
   });
 });
 

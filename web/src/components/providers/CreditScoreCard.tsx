@@ -10,6 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { useFeatureFlag } from '@/hooks/useFeatureFlags';
 import { useCreditLimit } from '@/hooks/useWorkingCapital';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -64,7 +65,13 @@ function getUtilizationColor(utilizationRatio: number): {
 }
 
 export function CreditScoreCard() {
+  const workingCapitalEnabled = useFeatureFlag('working_capital');
   const { data: creditLimit, isLoading } = useCreditLimit();
+
+  // Hide the advances credit surface entirely when the rail is off (ASR-3.2.1.viii).
+  if (!workingCapitalEnabled) {
+    return null;
+  }
 
   if (isLoading) {
     return (

@@ -1007,6 +1007,9 @@ struct StripeAccountStatus: Codable, Sendable, Hashable {
     var requirements: [String]?
     var accountId: String?
     var stripeAccountId: String?
+    /// Absent on older payloads. False means no live Connect account.
+    var accountExists: Bool?
+    var transfersReady: Bool?
 
     var isReadyForPayouts: Bool {
         chargesEnabled == true && payoutsEnabled == true && detailsSubmitted == true
@@ -1020,6 +1023,18 @@ struct StripeAccountStatus: Codable, Sendable, Hashable {
 
     var needsOnboarding: Bool {
         detailsSubmitted != true || chargesEnabled != true
+    }
+
+    /// Not-started must POST account create. Explicit false wins. When the
+    /// flag is absent, every capability off fails toward create.
+    var needsAccountCreate: Bool {
+        if let accountExists {
+            return !accountExists
+        }
+        return hasChargesEnabled == false
+            && hasPayoutsEnabled == false
+            && hasDetailsSubmitted == false
+            && transfersReady != true
     }
 }
 

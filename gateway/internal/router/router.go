@@ -27,7 +27,8 @@ import (
 // dbPool is used by per-route ownership middleware (RequireOwnership /
 // RequirePartyAccess / RequireJoinedPartyAccess) to verify that the
 // authenticated user owns or is a party to the resource identified by the
-// URL path parameter. Required.
+// URL path parameter, and by RequirePhoneVerified on transact mutations
+// (FR-1.9). Required.
 //
 // dbReadPool (if different) is passed to read-heavy handlers (search, analytics,
 // public catalog, pricing index, seller reports) so they hit the replica.
@@ -117,6 +118,10 @@ func New(
 	backgroundCheckHandler *handler.BackgroundCheckHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
+
+	// FR-1.9: phone OTP required before transacting. Attach only to money /
+	// bid-authorization mutations — not browse, profile, or the OTP routes.
+	phoneVerified := middleware.RequirePhoneVerified(dbPool)
 
 	// Global middleware stack
 	r.Use(middleware.Recovery)
@@ -285,10 +290,11 @@ func New(
 		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
 			Post("/{id}/repost", jobHandler.Repost)
 		// MON-06/22: money-adjacent mutation requires Idempotency-Key (parity with listing bids).
-		r.With(authMW.Handler, middleware.RequireIdempotencyKey(cacheClient)).
+		// FR-1.9: bids authorize later charges — phone verified required.
+		r.With(authMW.Handler, phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 			Post("/{id}/bids", bidHandler.PlaceBid)
-		r.With(authMW.Handler).Post("/{id}/bids/accept-offer", bidHandler.AcceptOffer)
-		r.With(authMW.Handler).Post("/{id}/bids/{bidID}/award", bidHandler.AwardBid)
+		r.With(authMW.Handler, phoneVerified).Post("/{id}/bids/accept-offer", bidHandler.AcceptOffer)
+		r.With(authMW.Handler, phoneVerified).Post("/{id}/bids/{bidID}/award", bidHandler.AwardBid)
 
 		// Viewer count (ping requires auth, count is public)
 		r.With(authMW.Handler).Post("/{id}/ping-viewer", jobHandler.PingViewer)
@@ -561,9 +567,9 @@ func New(
 		// they complete OR lose the auction (released → trusted forever).
 		// Captured on confirmed no-show. eBay/Whatnot ship this; we now do too.
 		// MON-06/22: SetupIntent mint + confirm are money-adjacent — Idempotency-Key required.
-		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+		r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 			Post("/listings/{id}/bid-bond", bidBondHandler.CreateBidBond)
-		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+		r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 			Post("/listings/{id}/bid-bond/confirm", bidBondHandler.ConfirmBidBond)
 
 		// ── Followable seller (Whatnot retention mechanic) ──────────────
@@ -654,10 +660,10 @@ func New(
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireFlag(dbPool, cacheClient, "working_capital"))
 					r.Route("/me/advances", func(r chi.Router) {
-						r.Post("/", workingCapitalHandler.RequestAdvance)
+						r.With(phoneVerified).Post("/", workingCapitalHandler.RequestAdvance)
 						r.Get("/", workingCapitalHandler.ListMyAdvances)
 						r.Get("/{id}", workingCapitalHandler.GetAdvance)
-						r.With(middleware.RequireIdempotencyKey(cacheClient)).Post("/{id}/repay", workingCapitalHandler.RepayAdvance)
+						r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).Post("/{id}/repay", workingCapitalHandler.RepayAdvance)
 					})
 					r.Get("/me/credit-limit", workingCapitalHandler.GetCreditLimit)
 				})
@@ -779,7 +785,7 @@ func New(
 				// Customer-only enforcement is internal to the handler;
 				// RequirePartyAccess above already screens out non-parties.
 				// Money mutation: Idempotency-Key required (MON-23 / MON-06).
-				r.With(middleware.RequireIdempotencyKey(cacheClient)).
+				r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 					Post("/{id}/tip", contractTipHandler.Tip)
 
 				// Recurring contracts (FR-18) — config + instances under the
@@ -829,7 +835,7 @@ func New(
 			// Pay retry — money mutation: Idempotency-Key required (MON-06/22).
 			// Re-enters ChargeListingWinner so auction winners / dismissed-sheet
 			// buyers can fund escrow. See listing_orders.go::PayOrder.
-			r.With(middleware.RequireIdempotencyKey(cacheClient)).
+			r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 				Post("/{id}/pay", listingOrdersHandler.PayOrder)
 			r.Post("/{id}/confirm-pickup", listingOrdersHandler.ConfirmPickup)
 			r.Post("/{id}/file-dispute", listingOrdersHandler.FileListingDispute)
@@ -857,9 +863,9 @@ func New(
 		// MON-06/22: SetupIntent mint + confirm are money-adjacent — Idempotency-Key
 		// required (parity with bid-bond). /promote/confirm charges the tier price
 		// off-session and only then flips listings.is_promoted.
-		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+		r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 			Post("/listings/{id}/promote", promotedListingsHandler.PromoteListing)
-		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+		r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 			Post("/listings/{id}/promote/confirm", promotedListingsHandler.ConfirmPromotion)
 
 		// ── Marketplace buyer/seller write paths ────────────────────────
@@ -878,7 +884,7 @@ func New(
 		// instead let chi's merged /listings subtree resolve the literal
 		// `mine` node without auth middleware → empty claims → 401.
 		// MON-06/22: money-adjacent mutations require Idempotency-Key.
-		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+		r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 			Post("/listings/{id}/bids", listingsHandler.PlaceListingBid)
 
 		// Seller write paths — create, edit, cancel, delete-draft.
@@ -893,7 +899,7 @@ func New(
 		// auction flips to status='sold' and a listing_orders row is
 		// created in escrow_status='pending_payment' (never held without PI).
 		// See listings_bid.go::BuyItNow. Idempotency-Key required (MON-06/22).
-		r.With(middleware.RequireIdempotencyKey(cacheClient)).
+		r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 			Post("/listings/{id}/buy-now", listingsHandler.BuyItNow)
 
 		// 60-second eBay-style retraction window for the leading bidder.
@@ -910,9 +916,9 @@ func New(
 		// RequireFlag marketplace_offers so UI-off is API-off (money-adjacent).
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireFlag(dbPool, cacheClient, "marketplace_offers"))
-			r.Post("/listings/{id}/offers", offersHandler.CreateOffer)
+			r.With(phoneVerified).Post("/listings/{id}/offers", offersHandler.CreateOffer)
 			r.Get("/listings/{id}/offers", offersHandler.ListOffersForListing)
-			r.With(middleware.RequireIdempotencyKey(cacheClient)).
+			r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 				Patch("/offers/{id}", offersHandler.UpdateOffer)
 		})
 
@@ -944,7 +950,7 @@ func New(
 		// Payment routes — all POST/PUT mutations require an Idempotency-Key.
 		r.Route("/payments", func(r chi.Router) {
 			r.Use(middleware.RequireIdempotencyKey(cacheClient))
-			r.Post("/", paymentHandler.CreatePayment)
+			r.With(phoneVerified).Post("/", paymentHandler.CreatePayment)
 			r.Get("/", paymentHandler.ListPayments)
 			r.Post("/setup-intent", paymentHandler.CreateSetupIntent)
 			r.Get("/methods", paymentHandler.ListPaymentMethods)
@@ -957,6 +963,7 @@ func New(
 			// addition to the feature flag so a customer token gets 403, not a
 			// downstream "payouts not enabled" error.
 			r.With(middleware.RequireProvider).
+				With(phoneVerified).
 				With(middleware.RequireFlag(dbPool, cacheClient, "instant_payout")).
 				Post("/instant-payout", paymentHandler.InstantPayout)
 			// Net withdrawable balance for the instant-payout UI (gross cleared
@@ -972,15 +979,15 @@ func New(
 					IDColumn: "id", URLParam: "id",
 				}))
 				r.Get("/{id}", paymentHandler.GetPayment)
-				r.Post("/{id}/process", paymentHandler.ProcessPayment)
-				r.Post("/{id}/refund", paymentHandler.RefundPayment)
-				r.Post("/{id}/release", paymentHandler.ReleasePayment)
+				r.With(phoneVerified).Post("/{id}/process", paymentHandler.ProcessPayment)
+				r.With(phoneVerified).Post("/{id}/refund", paymentHandler.RefundPayment)
+				r.With(phoneVerified).Post("/{id}/release", paymentHandler.ReleasePayment)
 			})
 
 			// BNPL installment plan routes — gated behind the customer_bnpl flag.
 			r.Route("/installment-plans", func(r chi.Router) {
 				r.Use(middleware.RequireFlag(dbPool, cacheClient, "customer_bnpl"))
-				r.Post("/", installmentHandler.CreateInstallmentPlan)
+				r.With(phoneVerified).Post("/", installmentHandler.CreateInstallmentPlan)
 				r.Get("/", installmentHandler.ListInstallmentPlans)
 				r.Get("/{id}", installmentHandler.GetInstallmentPlan)
 			})
@@ -1008,7 +1015,7 @@ func New(
 		r.Route("/insurance", func(r chi.Router) {
 			r.Use(middleware.RequireFlag(dbPool, cacheClient, "per_job_insurance"))
 			r.Post("/quote", insuranceHandler.GetQuote)
-			r.Post("/purchase", insuranceHandler.PurchaseInsurance)
+			r.With(phoneVerified).Post("/purchase", insuranceHandler.PurchaseInsurance)
 			r.Get("/policies", insuranceHandler.ListPolicies)
 			r.Get("/policies/{id}", insuranceHandler.GetPolicy)
 			r.Post("/claims", insuranceHandler.FileClaim)

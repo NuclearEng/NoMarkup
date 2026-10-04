@@ -534,11 +534,13 @@ func (h *OAuthHandler) completeOAuthLogin(w http.ResponseWriter, r *http.Request
 
 	// Redirect to the frontend with the access token as a fragment (not query param)
 	// to avoid it being logged in server access logs.
-	redirectPath := "/dashboard"
-	if result.GetIsNewUser() {
-		redirectPath = "/onboarding"
-	} else if next := oauthNextFromCookie(r); next != "" {
-		redirectPath = next
+	// New accounts land on Finish setup. Returning users still honor oauth_next.
+	// Provider business setup stays at /provider/onboarding and is chosen later.
+	redirectPath := "/onboarding"
+	if !result.GetIsNewUser() {
+		if next := oauthNextFromCookie(r); next != "" {
+			redirectPath = next
+		}
 	}
 	h.clearOAuthNextCookie(w)
 

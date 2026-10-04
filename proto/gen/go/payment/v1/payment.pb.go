@@ -738,7 +738,10 @@ type GetStripeAccountStatusResponse struct {
 	// express | full | none when known
 	Dashboard string `protobuf:"bytes,7,opt,name=dashboard,proto3" json:"dashboard,omitempty"`
 	// "v2" | "v1" when inferred
-	AccountsApi   string `protobuf:"bytes,8,opt,name=accounts_api,json=accountsApi,proto3" json:"accounts_api,omitempty"`
+	AccountsApi string `protobuf:"bytes,8,opt,name=accounts_api,json=accountsApi,proto3" json:"accounts_api,omitempty"`
+	// False for the default not-started status and for synthetic acct_dev ids
+	// that are not a live Connect account. True when a real account id is on file.
+	AccountExists bool `protobuf:"varint,9,opt,name=account_exists,json=accountExists,proto3" json:"account_exists,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -827,6 +830,13 @@ func (x *GetStripeAccountStatusResponse) GetAccountsApi() string {
 		return x.AccountsApi
 	}
 	return ""
+}
+
+func (x *GetStripeAccountStatusResponse) GetAccountExists() bool {
+	if x != nil {
+		return x.AccountExists
+	}
+	return false
 }
 
 type GetStripeDashboardLinkRequest struct {
@@ -9935,7 +9945,7 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\x1fGetStripeOnboardingLinkResponse\x12%\n" +
 	"\x0eonboarding_url\x18\x01 \x01(\tR\ronboardingUrl\"8\n" +
 	"\x1dGetStripeAccountStatusRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\"\xe5\x02\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"\x8c\x03\n" +
 	"\x1eGetStripeAccountStatusResponse\x12'\n" +
 	"\x0fcharges_enabled\x18\x01 \x01(\bR\x0echargesEnabled\x12'\n" +
 	"\x0fpayouts_enabled\x18\x02 \x01(\bR\x0epayoutsEnabled\x12+\n" +
@@ -9944,7 +9954,8 @@ const file_payment_v1_payment_proto_rawDesc = "" +
 	"\x0ftransfers_ready\x18\x05 \x01(\bR\x0etransfersReady\x126\n" +
 	"\x17stripe_transfers_status\x18\x06 \x01(\tR\x15stripeTransfersStatus\x12\x1c\n" +
 	"\tdashboard\x18\a \x01(\tR\tdashboard\x12!\n" +
-	"\faccounts_api\x18\b \x01(\tR\vaccountsApi\"8\n" +
+	"\faccounts_api\x18\b \x01(\tR\vaccountsApi\x12%\n" +
+	"\x0eaccount_exists\x18\t \x01(\bR\raccountExists\"8\n" +
 	"\x1dGetStripeDashboardLinkRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\"E\n" +
 	"\x1eGetStripeDashboardLinkResponse\x12#\n" +

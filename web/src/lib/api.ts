@@ -35,6 +35,21 @@ export class ApiError extends Error {
     if (this.body && this.body.length < 200) return this.body;
     return fallback;
   }
+
+  /** Gateway machine code, e.g. `phone_not_verified` (FR-1.9). */
+  code(): string | undefined {
+    try {
+      const parsed = JSON.parse(this.body) as { code?: string };
+      if (parsed.code && parsed.code.length > 0) return parsed.code;
+    } catch {
+      // not JSON
+    }
+    return undefined;
+  }
+
+  isPhoneNotVerified(): boolean {
+    return this.status === 403 && this.code() === 'phone_not_verified';
+  }
 }
 
 /**
@@ -65,6 +80,18 @@ function humanizeMoneyMessage(msg: string): string {
       currency: 'USD',
     }).format(cents / 100);
   });
+}
+
+/** FR-1.9: 403 on transact routes is phone OTP, not a role/party error. */
+export function forbiddenTransactMessage(err: ApiError, partyFallback: string): string {
+  if (typeof err.isPhoneNotVerified === 'function' && err.isPhoneNotVerified()) {
+    return humanizeMoneyMessage(
+      err.userMessage(
+        'Phone verification required before transacting. Verify your phone in Account → Verification.',
+      ),
+    );
+  }
+  return partyFallback;
 }
 
 export function getApiErrorMessage(err: unknown, fallback: string): string {

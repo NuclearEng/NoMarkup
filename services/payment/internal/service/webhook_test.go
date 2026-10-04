@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -99,16 +100,15 @@ func TestHandleWebhook_dedup_skips_duplicate_event(t *testing.T) {
 
 // TestHandleWebhook_account_updated_persists_onboarding_complete verifies
 // that the account.updated event flips provider_profiles.stripe_onboarding_complete
-// when the account has details_submitted, charges_enabled, and payouts_enabled
-// all true. Without this, the local DB column stays false forever even after
-// providers finish onboarding.
+// when the account can receive platform transfers. Recipients never request
+// card_payments, so charges_enabled is not required.
 func TestHandleWebhook_account_updated_persists_onboarding_complete(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name             string
-		acct             stripe.Account
-		expectComplete   bool
+		name           string
+		acct           stripe.Account
+		expectComplete bool
 	}{
 		{
 			name: "all_three_true_marks_complete",
@@ -117,6 +117,29 @@ func TestHandleWebhook_account_updated_persists_onboarding_complete(t *testing.T
 				DetailsSubmitted: true,
 				ChargesEnabled:   true,
 				PayoutsEnabled:   true,
+			},
+			expectComplete: true,
+		},
+		{
+			name: "recipient_without_charges_enabled_marks_complete",
+			acct: stripe.Account{
+				ID:               "acct_recip",
+				DetailsSubmitted: true,
+				ChargesEnabled:   false,
+				PayoutsEnabled:   true,
+			},
+			expectComplete: true,
+		},
+		{
+			name: "v1_transfers_active_without_charges_marks_complete",
+			acct: stripe.Account{
+				ID:               "acct_tr",
+				DetailsSubmitted: true,
+				ChargesEnabled:   false,
+				PayoutsEnabled:   false,
+				Capabilities: &stripe.AccountCapabilities{
+					Transfers: stripe.AccountCapabilityStatusActive,
+				},
 			},
 			expectComplete: true,
 		},
@@ -222,4 +245,195 @@ func TestHandleWebhook_first_delivery_marks_processed(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, recorded, "event should be recorded before dispatch")
 	assert.Equal(t, "evt_xyz", markedID, "event should be marked processed after dispatch")
+}
+
+func TestConnectOnboardingComplete_Formula(t *testing.T) {
+	t.Parallel()
+
+	recipient := stripe.Account{
+		ID:               "acct_r",
+		DetailsSubmitted: true,
+		ChargesEnabled:   false,
+		PayoutsEnabled:   true,
+	}
+	v1Ready := stripe.Account{
+		ID:               "acct_v1",
+		DetailsSubmitted: true,
+		ChargesEnabled:   true,
+		PayoutsEnabled:   true,
+	}
+	v1Transfers := stripe.Account{
+		ID:               "acct_t",
+		DetailsSubmitted: true,
+		ChargesEnabled:   false,
+		PayoutsEnabled:   false,
+		Capabilities: &stripe.AccountCapabilities{
+			Transfers: stripe.AccountCapabilityStatusActive,
+		},
+	}
+
+	assert.True(t, connectOnboardingComplete(recipient, "active", true, nil),
+		"v2 stripe_transfers active completes without charges_enabled")
+	assert.False(t, connectOnboardingComplete(recipient, "pending", true, nil),
+		"v2 stripe_transfers pending is not complete even with payouts_enabled")
+	assert.True(t, connectOnboardingComplete(recipient, "", true, errors.New("v2 down")),
+		"v2 lookup failure does not require charges_enabled")
+	assert.False(t, connectOnboardingComplete(recipient, "", true, nil),
+		"empty v2 caps on a recipient uses v1 formula (needs charges+payouts or transfers)")
+	assert.True(t, connectOnboardingComplete(v1Ready, "", true, nil),
+		"legacy Express all-three-true still completes")
+	assert.True(t, connectOnboardingComplete(v1Transfers, "", true, nil),
+		"legacy Express transfers capability active completes")
+	assert.True(t, connectOnboardingComplete(recipient, "", false, nil),
+		"payload-only recipient with payouts_enabled completes")
+	assert.False(t, connectOnboardingComplete(stripe.Account{
+		DetailsSubmitted: false, PayoutsEnabled: true, ChargesEnabled: true,
+	}, "active", true, nil), "details_submitted is always required")
+}
+
+type payoutNotifyRecorder struct {
+	userID string
+	typ    notificationv1.NotificationType
+	title  string
+	calls  int
+	err    error
+}
+
+func (r *payoutNotifyRecorder) Send(_ context.Context, userID string, typ notificationv1.NotificationType,
+	title, _, _ string, _ map[string]string) error {
+	r.calls++
+	r.userID = userID
+	r.typ = typ
+	r.title = title
+	return r.err
+}
+
+func TestHandleWebhook_PayoutEvents(t *testing.T) {
+	t.Parallel()
+
+	newPayoutEvent := func(t *testing.T, eventID, eventType, accountID string, po stripe.Payout) stripe.Event {
+		t.Helper()
+		event := newEvent(t, eventID, eventType, po)
+		event.Account = accountID
+		return event
+	}
+
+	t.Run("paid_notifies_payout_sent", func(t *testing.T) {
+		t.Parallel()
+		event := newPayoutEvent(t, "evt_po_paid", "payout.paid", "acct_1", stripe.Payout{
+			ID:     "po_paid",
+			Amount: 12500,
+			Status: stripe.PayoutStatusPaid,
+		})
+		rec := &payoutNotifyRecorder{}
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findUserIDByStripeAccountIDFn: func(_ context.Context, accountID string) (string, error) {
+				assert.Equal(t, "acct_1", accountID)
+				return "provider-1", nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+		svc.SetNotifier(rec)
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.Equal(t, 1, rec.calls)
+		assert.Equal(t, "provider-1", rec.userID)
+		assert.Equal(t, notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT, rec.typ)
+		assert.Equal(t, "Payout sent", rec.title)
+	})
+
+	t.Run("failed_notifies_payment_failed", func(t *testing.T) {
+		t.Parallel()
+		event := newPayoutEvent(t, "evt_po_fail", "payout.failed", "acct_2", stripe.Payout{
+			ID:          "po_fail",
+			Amount:      5000,
+			Status:      stripe.PayoutStatusFailed,
+			FailureCode: stripe.PayoutFailureCodeCouldNotProcess,
+		})
+		rec := &payoutNotifyRecorder{}
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findUserIDByStripeAccountIDFn: func(_ context.Context, _ string) (string, error) {
+				return "provider-2", nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+		svc.SetNotifier(rec)
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.Equal(t, 1, rec.calls)
+		assert.Equal(t, notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED, rec.typ)
+		assert.Equal(t, "Payout failed", rec.title)
+	})
+
+	t.Run("canceled_notifies_payment_failed", func(t *testing.T) {
+		t.Parallel()
+		event := newPayoutEvent(t, "evt_po_can", "payout.canceled", "acct_3", stripe.Payout{
+			ID:     "po_can",
+			Amount: 8000,
+			Status: stripe.PayoutStatusCanceled,
+		})
+		rec := &payoutNotifyRecorder{}
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findUserIDByStripeAccountIDFn: func(_ context.Context, _ string) (string, error) {
+				return "provider-3", nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+		svc.SetNotifier(rec)
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+		assert.Equal(t, 1, rec.calls)
+		assert.Equal(t, notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED, rec.typ)
+		assert.Equal(t, "Payout canceled", rec.title)
+	})
+
+	t.Run("unknown_account_acks_without_notify", func(t *testing.T) {
+		t.Parallel()
+		event := newPayoutEvent(t, "evt_po_unk", "payout.paid", "acct_unknown", stripe.Payout{
+			ID: "po_unk", Amount: 100, Status: stripe.PayoutStatusPaid,
+		})
+		rec := &payoutNotifyRecorder{}
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+		svc.SetNotifier(rec)
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err, "unknown account must ACK so Stripe does not retry")
+		assert.Zero(t, rec.calls)
+	})
+
+	t.Run("no_notifier_acks", func(t *testing.T) {
+		t.Parallel()
+		event := newPayoutEvent(t, "evt_po_nonote", "payout.paid", "acct_4", stripe.Payout{
+			ID: "po_nn", Amount: 100, Status: stripe.PayoutStatusPaid,
+		})
+		repo := &mockPaymentRepo{
+			recordStripeEventStartFn:   func(_ context.Context, _, _ string) (bool, error) { return false, nil },
+			markStripeEventProcessedFn: func(_ context.Context, _ string) error { return nil },
+			findUserIDByStripeAccountIDFn: func(_ context.Context, _ string) (string, error) {
+				return "provider-4", nil
+			},
+		}
+		svc := newTestPaymentService(repo, nil)
+		svc.SetWebhookValidator(&fakeWebhookValidator{event: event})
+
+		err := svc.HandleWebhook(context.Background(), []byte(`{}`), "sig")
+		require.NoError(t, err)
+	})
 }

@@ -21,9 +21,17 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h1 className="gold-text text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="mt-1 text-zinc-300">Manage your account preferences.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="gold-text text-2xl font-bold tracking-tight">Settings</h1>
+          <p className="mt-1 text-zinc-300">Manage your account preferences.</p>
+        </div>
+        <Link
+          href={'/onboarding' as Route}
+          className="inline-flex min-h-11 items-center text-sm font-medium text-zinc-100 underline-offset-2 hover:underline"
+        >
+          Finish setup
+        </Link>
       </div>
 
       {/* Settings tab navigation */}
