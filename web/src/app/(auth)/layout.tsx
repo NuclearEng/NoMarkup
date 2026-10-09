@@ -3,7 +3,7 @@ import { GradientMesh } from '@/components/landing/GradientMesh';
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="dark relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#070b14] px-4 py-8">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background px-4 py-8">
       {/* Animated gradient mesh background — same as hero */}
       <GradientMesh className="z-0" />
 
@@ -23,7 +23,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       />
 
       <div className="animate-fade-in relative z-[2] mb-8">
-        <Logo size="lg" />
+        {/* Real SpringBoard tile (iOS AppIcon) — priority for auth LCP brand */}
+        <Logo size="lg" priority />
       </div>
       <div className="animate-auth-card-enter relative z-[2] w-full max-w-md">{children}</div>
     </div>

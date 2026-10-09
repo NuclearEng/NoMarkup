@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import { API_BASE_URL, MAX_UPLOAD_SIZE_BYTES } from '@/lib/constants';
 import type { ConfirmUploadResponse, UploadContext, UploadURLResponse } from '@/types';
@@ -14,6 +14,15 @@ export interface UploadResult {
   confirmedUrl: string;
 }
 
+/**
+ * Outcome of an upload attempt. Carries the failure reason on the unhappy path
+ * so callers can show the actual reason ("Use JPEG, PNG, or WEBP", "Max 10 MB",
+ * the server's rejection message) instead of a bare "Upload failed".
+ */
+export type UploadOutcome =
+  | { ok: true; result: UploadResult }
+  | { ok: false; error: string };
+
 interface UseImageUploadOptions {
   context: UploadContext;
   maxSizeBytes?: number;
@@ -23,11 +32,22 @@ interface UseImageUploadOptions {
 }
 
 interface UseImageUploadReturn {
-  upload: (file: File) => Promise<UploadResult | null>;
+  upload: (file: File) => Promise<UploadOutcome>;
   status: UploadStatus;
   progress: number;
   error: string | null;
   reset: () => void;
+}
+
+/** Short, human-readable list of accepted formats, e.g. "JPEG, PNG, or WEBP". */
+function describeAcceptedTypes(types: string[]): string {
+  const names = types.map((t) => {
+    if (t === 'application/pdf') return 'PDF';
+    return t.replace('image/', '').toUpperCase();
+  });
+  if (names.length === 0) return 'a supported format';
+  if (names.length === 1) return names[0] ?? 'a supported format';
+  return `${names.slice(0, -1).join(', ')}, or ${names[names.length - 1] ?? ''}`;
 }
 
 function formatBytes(bytes: number): string {
@@ -64,27 +84,26 @@ export function useImageUpload(options: UseImageUploadOptions): UseImageUploadRe
   }, []);
 
   const upload = useCallback(
-    async (file: File): Promise<UploadResult | null> => {
+    async (file: File): Promise<UploadOutcome> => {
       // Reset previous state
       setError(null);
       setProgress(0);
 
-      // Validate file type
-      if (!acceptedTypes.includes(file.type)) {
-        const msg = `File type "${file.type}" is not accepted. Allowed: ${acceptedTypes.join(', ')}`;
+      const fail = (msg: string): UploadOutcome => {
         setStatus('error');
         setError(msg);
         onError?.(msg);
-        return null;
+        return { ok: false, error: msg };
+      };
+
+      // Validate file type
+      if (!acceptedTypes.includes(file.type)) {
+        return fail(`Use ${describeAcceptedTypes(acceptedTypes)}.`);
       }
 
       // Validate file size
       if (file.size > maxSizeBytes) {
-        const msg = `File size ${formatBytes(file.size)} exceeds the ${formatBytes(maxSizeBytes)} limit`;
-        setStatus('error');
-        setError(msg);
-        onError?.(msg);
-        return null;
+        return fail(`Max ${formatBytes(maxSizeBytes)} — this file is ${formatBytes(file.size)}.`);
       }
 
       try {
@@ -162,11 +181,9 @@ export function useImageUpload(options: UseImageUploadOptions): UseImageUploadRe
         );
 
         if (!confirmResponse.content_type_valid) {
-          const msg = `Server rejected file: detected content type "${confirmResponse.actual_content_type}"`;
-          setStatus('error');
-          setError(msg);
-          onError?.(msg);
-          return null;
+          return fail(
+            `Server rejected file: detected content type "${confirmResponse.actual_content_type}"`,
+          );
         }
 
         const result: UploadResult = {
@@ -177,13 +194,9 @@ export function useImageUpload(options: UseImageUploadOptions): UseImageUploadRe
         setStatus('complete');
         setProgress(100);
         onSuccess?.(result);
-        return result;
+        return { ok: true, result };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Upload failed';
-        setStatus('error');
-        setError(msg);
-        onError?.(msg);
-        return null;
+        return fail(getApiErrorMessage(err, 'Upload failed'));
       }
     },
     [context, maxSizeBytes, acceptedTypes, onSuccess, onError],

@@ -1,0 +1,160 @@
+name: iOS CI
+
+# ── IOS-TEST.1 (CI half) — iOS unit tests on a macOS runner ─────
+# Intentionally a SEPARATE workflow from `.github/workflows/ci.yml`
+# (same split rationale as security-scan.yml / QA-10):
+#   1. macOS runners bill ~10× Linux minutes. `on.paths` filters apply to a
+#      WHOLE workflow, so folding this into ci.yml would either path-filter
+#      all of CI or put a macOS runner on every push/PR of an already long
+#      graph. A separate workflow scopes the spend to `ios/**` changes only.
+#   2. This is a REAL gate — no continue-on-error. When it runs, red blocks;
+#      the path filter (not soft-fail) is what keeps it off unrelated PRs.
+#
+# Branch-protection caveat (Founder-Action, same class as QA-10): a
+# path-filtered workflow reports NO check at all on non-iOS PRs, so do NOT
+# add "iOS Unit Tests" to required status checks on `main` without a
+# same-name no-op twin for non-iOS paths — otherwise every unrelated PR
+# hangs on "Expected — waiting for status".
+#
+# Scope: `NoMarkupTests` only (pure-logic unit tests — AppConfig, money/date
+# formatting, deep links; no backend needed). UI tests are excluded — see the
+# commented-out step at the bottom. On-device smoke stays manual per
+# docs/compliance/device-smoke-checklist.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-ci.yml"
+  # Manual runs (e.g. re-validating after a runner-image Xcode bump) without
+  # needing an ios/ diff.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # ASC upload floor is Xcode 26.0+ (docs/compliance/testflight-process.md §1;
+  # local dogfood pin is Xcode-26.5.0). CI selects the HIGHEST installed 26.x
+  # rather than hard-pinning 26.5.0 because runner images carry a moving set
+  # of point releases — a hard pin would break on every image refresh.
+  XCODE_MAJOR: "26"
+
+jobs:
+  ios-test:
+    name: iOS Unit Tests
+    # Runner labels cannot be SHA-pinned (only actions can), so a version-
+    # suffixed label — not macos-latest — is the closest analogue to the
+    # repo's pinning posture. The macOS 15 image ships current Xcode 26.x.
+    runs-on: macos-15
+    # Cost cap, not a target: cold run = SPM resolve + stripe-ios compile +
+    # simulator boot; warm-cache runs are much shorter.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Select Xcode 26.x (highest installed)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # GitHub images name installs /Applications/Xcode_26.0.app
+          # (underscore); the docs' local pin is Xcode-26.5.0.app (hyphen).
+          # Match both so this also works on a self-hosted mac set up per
+          # testflight-process.md §1.
+          candidates=(/Applications/Xcode_"${XCODE_MAJOR}"*.app /Applications/Xcode-"${XCODE_MAJOR}"*.app)
+          # Prefer GA builds; fall back to beta/RC only if that is all the
+          # image has (still 26.x, still above the ASC floor).
+          # ${arr[@]+...} guard: under `set -u`, bash 3.2 (macOS /bin/bash)
+          # treats expanding an EMPTY array as an unbound variable — without
+          # the guard, the no-Xcode-26 path would die here instead of
+          # reaching the clear ::error:: below.
+          pool=()
+          for app in ${candidates[@]+"${candidates[@]}"}; do
+            case "$(basename "${app}" | tr '[:upper:]' '[:lower:]')" in
+              *beta*|*release_candidate*) ;;
+              *) pool+=("${app}") ;;
+            esac
+          done
+          if [ ${#pool[@]} -eq 0 ] && [ ${#candidates[@]} -gt 0 ]; then
+            echo "::warning::No GA Xcode ${XCODE_MAJOR}.x on this image — falling back to prerelease."
+            pool=("${candidates[@]}")
+          fi
+          if [ ${#pool[@]} -eq 0 ]; then
+            echo "Installed Xcode apps on this image:"
+            # find, not `ls Xcode*.app`: nullglob is on, so a no-match glob
+            # would collapse to bare `ls -d` (listing ".") instead of nothing.
+            find /Applications -maxdepth 1 -name 'Xcode*.app' 2>/dev/null || true
+            echo "::error::No Xcode ${XCODE_MAJOR}.x on this runner image. ASC upload floor is Xcode ${XCODE_MAJOR}.0+ (docs/compliance/testflight-process.md §1) — bump runs-on to an image that ships it (see github.com/actions/runner-images)."
+            exit 1
+          fi
+          selected="$(printf '%s\n' "${pool[@]}" | sort -V | tail -n1)"
+          echo "Selecting ${selected}"
+          sudo xcode-select -s "${selected}/Contents/Developer"
+          echo "DEVELOPER_DIR=${selected}/Contents/Developer" >> "$GITHUB_ENV"
+          xcodebuild -version
+
+      # SPM dependency cache (stripe-ios is the heavy checkout), keyed on the
+      # committed Package.resolved. ONLY SourcePackages is cached — full
+      # DerivedData deliberately is not: stale incremental-build state is a
+      # flake source, and fat cache up/downloads bill macOS minutes.
+      - name: Cache SPM checkouts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ios/DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('ios/NoMarkup.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      # Documented command: testflight-process.md §8 (unit tests before
+      # upload, TEST.1) + device-smoke-checklist.md Preflight P5. Simulator
+      # destination needs no signing identity. iPhone 16 is in every Xcode
+      # 26.x simulator set; if a future image drops it, xcodebuild's error
+      # lists the available destinations.
+      - name: Run unit tests (NoMarkupTests, iOS Simulator)
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project ios/NoMarkup.xcodeproj \
+            -scheme NoMarkup \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -only-testing:NoMarkupTests \
+            -derivedDataPath ios/DerivedData \
+            -resultBundlePath ios/TestResults/NoMarkupTests.xcresult
+
+      - name: Upload xcresult bundle
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-test-results-${{ github.run_id }}
+          path: ios/TestResults/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # ── UI tests: intentionally NOT run in CI ─────────────────
+      # NoMarkupUITests boots the full app per test (slow on shared macOS
+      # runners), and the credentialed flows XCTSkip without
+      # NOMARKUP_UI_TEST_EMAIL / NOMARKUP_UI_TEST_PASSWORD + a live gateway
+      # (ios/NoMarkupUITests/NoMarkupUITests.swift:77-84,120) — in CI they
+      # would mostly bill minutes to assert skips; only the cold-launch smoke
+      # would run for real. If that trade changes (e.g. nightly with a seeded
+      # stack), enable:
+      # - name: Run UI tests (NoMarkupUITests)
+      #   run: |
+      #     set -euo pipefail
+      #     xcodebuild test \
+      #       -project ios/NoMarkup.xcodeproj \
+      #       -scheme NoMarkup \
+      #       -destination 'platform=iOS Simulator,name=iPhone 16' \
+      #       -only-testing:NoMarkupUITests \
+      #       -derivedDataPath ios/DerivedData \
+      #       -resultBundlePath ios/TestResults/NoMarkupUITests.xcresult

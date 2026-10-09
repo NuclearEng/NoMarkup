@@ -1,7 +1,28 @@
 .PHONY: up down dev dev-full dev-infra dev-status dev-logs migrate-up migrate-down seed proto-gen proto-gen-go proto-gen-rust \
-       setup-tools test lint fmt build-gateway build-web build-engines clean
+       verify-proto setup-tools test lint fmt build-gateway build-web build-engines build-services build build-all clean \
+       ios-archive-lint ios-archive founder-secrets-check origin-check encrypt-pii encrypt-pii-dry-run \
+       e2e-catalog e2e-ios-catalog generate-catalog check-catalog
 
 # ── Native Dev (bin/dev) ─────────────────────────────────────
+
+# catalog.yaml is SSOT; catalog.json is generated (Playwright + Chi contract read JSON).
+generate-catalog:
+	node docs/workflows/generate-catalog.mjs
+
+check-catalog: generate-catalog
+	git diff --exit-code -- docs/workflows/catalog.json
+
+# Catalog-driven E2E. CI (no SEED_PASSWORD) runs the VCR/backendless path.
+# Full login + hop walk needs bin/dev + SEED_PASSWORD.
+e2e-catalog:
+	cd web && npx playwright test tests/e2e/catalog --project=chromium
+
+# iOS catalog: login hop + Account row walk must appear in Request log.
+e2e-ios-catalog:
+	DEVELOPER_DIR="$${DEVELOPER_DIR:-/Applications/Xcode-26.5.0.app/Contents/Developer}" \
+	xcodebuild test -project ios/NoMarkup.xcodeproj -scheme NoMarkup \
+	  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+	  -only-testing:NoMarkupUITests/NoMarkupUITests/testCatalogAllPersonasRequestLogAndRows
 
 dev:
 	bin/dev up
@@ -46,13 +67,57 @@ seed:
 	@echo "Seeding database with dev data..."
 	cd database && go run ./cmd/seed
 
+# Demo seed: base seed + 40 marketplace listings distributed across closing-time
+# buckets so the /marketplace scoreboard reads as a populated live event for VC
+# walkthroughs. See database/cmd/seed/marketplace_demo.go.
+seed-demo:
+	@echo "Seeding database with demo marketplace fixture (40 listings, 8 critical, 12 urgent, 20 normal)..."
+	cd database && SEED_DEMO_MARKETPLACE=1 go run ./cmd/seed
+
+# Bring the local stack up, run migrations, and seed the demo marketplace.
+# Use this before a live demo to get a populated scoreboard from a clean DB.
+demo-up: dev-infra migrate-up seed-demo
+	@echo ""
+	@echo "Demo stack ready."
+	@echo "  Web:        http://localhost:3000/marketplace"
+	@echo "  Gateway:    http://localhost:8080"
+	@echo "  Login:      customer@nomarkup.com / Password123!"
+	@echo ""
+	@echo "Pre-demo checklist: docs/demo-script.md (T-30)"
+
+# Backfill / re-key the PII columns declared by migrations 031 and 033.
+# Idempotent per VALUE, not per flag: a value already sealed under
+# ENCRYPTION_KEY is skipped byte-for-byte, so re-running is a no-op rather than
+# a double encryption. Set ENCRYPTION_KEY_PREVIOUS to re-key after a rotation;
+# there is no flag to clear first. The tool REFUSES to run if it finds
+# ciphertext neither key can open. See docs/operations/encryption-key-rotation.md.
+encrypt-pii:
+	@echo "Backfilling PII encryption..."
+	cd database && go run ./cmd/encrypt-pii
+
+encrypt-pii-dry-run:
+	cd database && go run ./cmd/encrypt-pii -dry-run
+
+# Founder-action secrets inventory. Reports present/missing/placeholder
+# only — never prints values. Exit 0 in development; fail-closed when
+# ENVIRONMENT=production or scripts/founder-secrets-check.sh --strict.
+# Does not close Founder-Action residuals. See docs/compliance/founder-action-board.md.
+founder-secrets-check:
+	./scripts/founder-secrets-check.sh
+
+# Public origin probe (F7). Default allow-down (exit 0 with FAIL rows)
+# so CI without DNS is not red. ORIGIN_CHECK_STRICT=1 or --strict fails.
+# Canonical hosts: https://no-markup.com and https://api.no-markup.com
+origin-check:
+	./scripts/origin-check.sh
+
 # ── Toolchain Setup ───────────────────────────────────────────
 
 setup-tools:
 	@echo "Installing protobuf toolchain..."
 	brew install protobuf
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
 	brew install golang-migrate
 	@echo "Generating RSA keypair for JWT..."
 	@mkdir -p keys
@@ -84,13 +149,38 @@ proto-gen-go:
 		proto/notification/v1/notification.proto \
 		proto/imaging/v1/imaging.proto \
 		proto/subscription/v1/subscription.proto \
-		proto/analytics/v1/analytics.proto
+		proto/analytics/v1/analytics.proto \
+		proto/listing/v1/listing.proto
 	@echo "Go proto generation complete."
 
 proto-gen-rust:
 	@echo "Generating Rust protobuf code (via tonic-build)..."
 	cd engines && cargo build --all
 	@echo "Rust proto generation complete (code in engines/target/)."
+
+# Verify generated proto code is up-to-date with the .proto sources and that
+# all Go consumers still compile against it. CI runs this — a broken .proto
+# now fails the build instead of silently persisting behind hand-written
+# stand-in files (which is how an audit-period Stripe webhook regression
+# went undetected for weeks; see docs/TODOS.md S8).
+verify-proto:
+	@echo "Regenerating protobuf code..."
+	$(MAKE) proto-gen-go
+	@echo "Verifying no proto drift (working tree must be clean after regen)..."
+	@if [ -n "$$(git status --porcelain proto/gen)" ]; then \
+		echo "ERROR: proto/gen has drift — regenerate locally and commit:"; \
+		git status --porcelain proto/gen; \
+		git --no-pager diff -- proto/gen | head -200; \
+		exit 1; \
+	fi
+	@echo "Running go vet across all Go modules..."
+	cd gateway && go vet ./...
+	cd services/user && go vet ./...
+	cd services/job && go vet ./...
+	cd services/payment && go vet ./...
+	cd services/chat && go vet ./...
+	cd services/notification && go vet ./...
+	@echo "Proto verification passed."
 
 # ── Testing ───────────────────────────────────────────────────
 
@@ -153,6 +243,30 @@ build-web:
 build-engines:
 	cd engines && cargo build --release
 
+build-services:
+	@for svc in user job payment chat notification; do \
+		echo "Building service: $$svc"; \
+		(cd services/$$svc && go build -o bin/server ./cmd/server) || exit 1; \
+	done
+	@echo "All Go services built."
+
+# ── iOS archive (IOS-DIST.1) ──────────────────────────────────
+# Fail-closed archive path: lint gates the archive (the Xcode scheme pre-action
+# runs the same script, but Xcode ignores pre-action exit codes — this target
+# does not). Requires DEVELOPER_DIR → Xcode 26+ (docs/compliance/testflight-process.md §1).
+
+ios-archive-lint:
+	./scripts/ios-archive-lint.sh
+
+ios-archive: ios-archive-lint
+	cd ios && xcodebuild archive \
+		-scheme NoMarkup \
+		-project NoMarkup.xcodeproj \
+		-configuration Release \
+		-archivePath build/NoMarkup.xcarchive \
+		-destination 'generic/platform=iOS'
+	@echo "Archive at ios/build/NoMarkup.xcarchive — upload via Xcode Organizer (testflight-process.md §4)."
+
 # ── Clean ─────────────────────────────────────────────────────
 
 clean:
@@ -161,3 +275,28 @@ clean:
 	rm -rf services/*/bin
 	rm -rf engines/target
 	rm -rf coverage
+
+# ── ML / Data Moat (gap-closure-plan) ─────────────────────────
+ml-train-synthetic:
+	cd ml && python -m pricing.train --synthetic --export both --out /tmp/nomarkup-price-synth.onnx || echo "pip install -r ml/requirements.txt first"
+	cd ml && python -m fraud.train --synthetic --export both --out /tmp/nomarkup-fraud-synth.onnx || true
+	@echo "ML synthetic training complete (artifacts in /tmp)"
+
+# Aggregate build for "Build Everything"
+build: build-gateway build-web build-engines
+	@echo "Core components built (gateway + web + engines)."
+
+build-all: build-gateway build-web build-engines build-services
+	@echo ""
+	@echo "=========================================="
+	@echo "FULL SOURCE BUILD COMPLETE"
+	@echo "  - Web (Next.js)"
+	@echo "  - Gateway (Go)"
+	@echo "  - Services (Go: user, job, payment, chat, notification)"
+	@echo "  - Engines (Rust --release: bidding, fraud, trust, underwriting, pricing, imaging)"
+	@echo "=========================================="
+	@echo "Binaries:"
+	@ls -lh gateway/bin/server 2>/dev/null || true
+	@ls -lh services/*/bin/server 2>/dev/null | cat
+	@ls -lh engines/target/release/nomarkup-*-engine 2>/dev/null | cat
+	@echo "Build artifacts ready."

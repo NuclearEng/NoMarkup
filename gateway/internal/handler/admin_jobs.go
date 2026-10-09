@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -89,8 +88,8 @@ func (h *AdminJobsHandler) ListJobs(w http.ResponseWriter, r *http.Request) {
 // SuspendJob handles POST /api/v1/admin/jobs/{id}/suspend.
 func (h *AdminJobsHandler) SuspendJob(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "id")
-	if jobID == "" {
-		writeError(w, http.StatusBadRequest, "job id required")
+	if !isValidUUID(jobID) {
+		writeError(w, http.StatusBadRequest, "invalid job id")
 		return
 	}
 
@@ -103,8 +102,7 @@ func (h *AdminJobsHandler) SuspendJob(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Reason == "" {
@@ -130,8 +128,8 @@ func (h *AdminJobsHandler) SuspendJob(w http.ResponseWriter, r *http.Request) {
 // RemoveJob handles POST /api/v1/admin/jobs/{id}/remove.
 func (h *AdminJobsHandler) RemoveJob(w http.ResponseWriter, r *http.Request) {
 	jobID := chi.URLParam(r, "id")
-	if jobID == "" {
-		writeError(w, http.StatusBadRequest, "job id required")
+	if !isValidUUID(jobID) {
+		writeError(w, http.StatusBadRequest, "invalid job id")
 		return
 	}
 
@@ -144,8 +142,7 @@ func (h *AdminJobsHandler) RemoveJob(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Reason == "" {

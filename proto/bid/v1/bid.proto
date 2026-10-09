@@ -253,6 +253,8 @@ message CheckAuctionDeadlinesResponse {
 
 message GetBidAnalyticsRequest {
   string job_id = 1;
+  // Must match jobs.customer_id. Empty is denied (sealed-auction IDOR).
+  string customer_id = 2;
 }
 
 message GetBidAnalyticsResponse {

@@ -3,6 +3,7 @@
 import { ArrowLeft, ChevronDown, ChevronUp, Download, Loader2, Printer } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { InvoiceTemplate } from '@/components/providers/InvoiceTemplate';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useContracts } from '@/hooks/useContracts';
 import { useProviderProfile } from '@/hooks/useProviderProfile';
 import { useGenerateInvoice } from '@/hooks/useTaxForms';
+import { printAuthenticatedDocument } from '@/lib/print';
 import { formatCents } from '@/lib/utils';
 import type { Contract } from '@/types';
 
@@ -29,19 +31,27 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
   providerAddress?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const generateInvoice = useGenerateInvoice();
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
-  function handlePrint() {
-    window.print();
+  async function handlePrint() {
+    setPrinting(true);
+    try {
+      // Print the server-generated invoice document (full data + its own
+      // institutional print stylesheet), not the live dashboard page.
+      await printAuthenticatedDocument(`/api/v1/contracts/${contract.id}/invoice/download`);
+    } catch {
+      toast.error('Could not open the invoice for printing. Please try again.');
+    } finally {
+      setPrinting(false);
+    }
   }
 
   function handleGenerateInvoice() {
-    generateInvoice.mutate(contract.id, {
-      onSuccess: (url) => {
-        setDownloadUrl(url);
-      },
-    });
+    // useGenerateInvoice fetches the invoice with auth headers and triggers
+    // a blob download as part of the mutation, so there's no follow-up URL
+    // to surface here.
+    generateInvoice.mutate(contract.id);
   }
 
   return (
@@ -92,24 +102,18 @@ function InvoiceRow({ contract, providerName, providerAddress }: {
               )}
               Generate Invoice
             </Button>
-            {downloadUrl ? (
-              <a
-                href={downloadUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex min-h-[44px] items-center gap-1 rounded-md border border-white/10 px-3 py-2 text-sm hover:bg-white/[0.06]"
-              >
-                <Download className="h-4 w-4" aria-hidden="true" />
-                Download PDF
-              </a>
-            ) : null}
             <Button
               variant="outline"
               size="sm"
               className="min-h-[44px] gap-2"
-              onClick={handlePrint}
+              disabled={printing}
+              onClick={() => void handlePrint()}
             >
-              <Printer className="h-4 w-4" aria-hidden="true" />
+              {printing ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Printer className="h-4 w-4" aria-hidden="true" />
+              )}
               Print Invoice
             </Button>
           </div>
@@ -139,8 +143,8 @@ export default function InvoicesPage() {
   const isLoading = contractsLoading || profileLoading;
 
   const contracts = contractsData?.contracts ?? [];
-  const providerName = profile?.businessName ?? 'Provider';
-  const providerAddress = profile?.serviceAddress ?? undefined;
+  const providerName = profile?.business_name ?? 'Provider';
+  const providerAddress = profile?.service_address ?? undefined;
 
   return (
     <PageTransition>

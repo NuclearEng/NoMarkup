@@ -15,7 +15,7 @@ pub struct BiddingEngine {
 
 impl BiddingEngine {
     #[must_use]
-    pub fn new(pool: PgPool, redis: Option<redis::aio::MultiplexedConnection>) -> Self {
+    pub const fn new(pool: PgPool, redis: Option<redis::aio::MultiplexedConnection>) -> Self {
         Self { pool, redis }
     }
 
@@ -26,46 +26,73 @@ impl BiddingEngine {
     ///
     /// Returns `BidError` if the auction is not active, the provider already bid,
     /// or the amount is invalid.
+    // The p99 < 1ms path (CLAUDE.md §8). `skip_all` keeps the `&self` pool out
+    // of the span; `err` marks the span failed without a second log line.
+    #[tracing::instrument(
+        skip_all,
+        fields(job_id = %job_id, provider_id = %provider_id, amount_cents),
+        err
+    )]
     pub async fn place_bid(
         &self,
         job_id: Uuid,
         provider_id: Uuid,
         amount_cents: i64,
     ) -> Result<Bid, BidError> {
+        let _timer = crate::metrics::BID_PROCESSING_DURATION.start_timer();
         if amount_cents <= 0 {
             return Err(BidError::InvalidAmount(
                 "amount must be greater than zero".into(),
             ));
         }
 
+        // Open the transaction up front and lock the job row with FOR UPDATE so
+        // the read -> snipe-extension-count check -> snipe-extension UPDATE below
+        // is serialized against concurrent bids on the same job. Without the lock,
+        // two bids in the final snipe window can both pass the
+        // `snipe_extension_count < 3` check (TOCTOU) and both extend the deadline,
+        // or interleave so an extension is computed against a stale deadline.
+        // Mirrors the locked read in `award_bid`.
+        let mut tx = self.pool.begin().await?;
+
         // Validate auction is active and not expired.
         let job = sqlx::query_as::<_, JobRow>(
             "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
-             FROM jobs WHERE id = $1",
+             FROM jobs WHERE id = $1 FOR UPDATE",
         )
         .bind(job_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or(BidError::JobNotFound)?;
+
+        // A customer must not bid on their own job. Self-bidding lets the owner
+        // pollute their own sealed-bid pool, inflate bid_count, trigger their own
+        // offer-accepted threshold, and award themselves. Symmetric with the
+        // forward path's seller-can't-bid guard (forward.rs).
+        if job.customer_id == provider_id {
+            return Err(BidError::PermissionDenied(
+                "you cannot bid on your own job".into(),
+            ));
+        }
 
         if job.status != "active" {
             return Err(BidError::AuctionNotActive);
         }
 
-        if let Some(ends_at) = job.auction_ends_at {
-            if ends_at <= Utc::now() {
-                return Err(BidError::AuctionClosed);
-            }
+        if let Some(ends_at) = job.auction_ends_at
+            && ends_at <= Utc::now()
+        {
+            return Err(BidError::AuctionClosed);
         }
 
         // Validate bid does not exceed the starting bid (maximum price cap).
-        if let Some(starting_bid) = job.starting_bid_cents {
-            if amount_cents > starting_bid {
-                return Err(BidError::AboveStartingBid {
-                    amount: amount_cents,
-                    starting_bid,
-                });
-            }
+        if let Some(starting_bid) = job.starting_bid_cents
+            && amount_cents > starting_bid
+        {
+            return Err(BidError::AboveStartingBid {
+                amount: amount_cents,
+                starting_bid,
+            });
         }
 
         // Check if bid amount meets the offer-accepted threshold for auto-accept.
@@ -73,10 +100,20 @@ impl BiddingEngine {
             .offer_accepted_cents
             .is_some_and(|offer| amount_cents <= offer);
 
-        // Insert bid and increment bid count in a single transaction to
-        // prevent race conditions where the count diverges from actual bids.
-        let mut tx = self.pool.begin().await?;
-
+        // Insert bid and let the database trigger maintain bid_count.
+        //
+        // NOTE: jobs.bid_count is maintained by the AFTER-INSERT trigger
+        // bids_update_bid_count installed by migration 029 and switched
+        // to atomic delta updates (`bid_count = bid_count + 1`) by
+        // migration 030. We MUST NOT also do an explicit increment from
+        // app code — under concurrency, an explicit `+1` racing the
+        // trigger's atomic delta produces over-counts, and a recomputing
+        // trigger (the v029 form) racing in-flight inserts produces
+        // under-counts. Tier 1 audit caught both modes via
+        // services/job/internal/service/bid_race_test.go.
+        //
+        // The job row is already locked FOR UPDATE on the transaction `tx`
+        // opened at the top of this function; reuse it here.
         let bid = sqlx::query_as::<_, Bid>(
             "INSERT INTO bids (job_id, provider_id, amount_cents, original_amount_cents, is_offer_accepted) \
              VALUES ($1, $2, $3, $3, $4) \
@@ -95,11 +132,6 @@ impl BiddingEngine {
                 BidError::DatabaseError(e)
             }
         })?;
-
-        sqlx::query("UPDATE jobs SET bid_count = bid_count + 1 WHERE id = $1")
-            .bind(job_id)
-            .execute(&mut *tx)
-            .await?;
 
         // Live auction: record event and check anti-snipe
         if job.auction_type == "live" {
@@ -135,21 +167,21 @@ impl BiddingEngine {
         tx.commit().await?;
 
         // Publish to Redis for live streaming (fire-and-forget)
-        if job.auction_type == "live" {
-            if let Some(ref mut redis_conn) = self.redis.clone() {
-                let event = serde_json::json!({
-                    "type": "bid_placed",
-                    "job_id": job_id.to_string(),
-                    "amount_cents": amount_cents,
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
-                });
-                let topic = format!("auction:{}", job_id);
-                let _ = redis::cmd("PUBLISH")
-                    .arg(&topic)
-                    .arg(event.to_string())
-                    .query_async::<()>(redis_conn)
-                    .await;
-            }
+        if job.auction_type == "live"
+            && let Some(ref mut redis_conn) = self.redis.clone()
+        {
+            let event = serde_json::json!({
+                "type": "bid_placed",
+                "job_id": job_id.to_string(),
+                "amount_cents": amount_cents,
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+            });
+            let topic = format!("auction:{job_id}");
+            let _ = redis::cmd("PUBLISH")
+                .arg(&topic)
+                .arg(event.to_string())
+                .query_async::<()>(redis_conn)
+                .await;
         }
 
         tracing::info!(
@@ -183,7 +215,17 @@ impl BiddingEngine {
             ));
         }
 
-        let existing = self.get_bid(bid_id).await?;
+        // Lock the parent job FOR UPDATE and re-check auction open state — same
+        // fail-closed rules as place_bid. Without this, a provider could lower an
+        // still-`active` bid row after the opportunity closed (status change or
+        // auction_ends_at in the past) while place_bid correctly rejected.
+        let mut tx = self.pool.begin().await?;
+
+        let existing = sqlx::query_as::<_, Bid>("SELECT * FROM bids WHERE id = $1 FOR UPDATE")
+            .bind(bid_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(BidError::BidNotFound)?;
 
         if existing.provider_id != provider_id {
             return Err(BidError::NotBidOwner);
@@ -193,6 +235,24 @@ impl BiddingEngine {
         }
         if new_amount >= existing.amount_cents {
             return Err(BidError::BelowMinimum);
+        }
+
+        let job = sqlx::query_as::<_, JobRow>(
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
+             FROM jobs WHERE id = $1 FOR UPDATE",
+        )
+        .bind(existing.job_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(BidError::JobNotFound)?;
+
+        if job.status != "active" {
+            return Err(BidError::AuctionNotActive);
+        }
+        if let Some(ends_at) = job.auction_ends_at
+            && ends_at <= Utc::now()
+        {
+            return Err(BidError::AuctionClosed);
         }
 
         // Build the update entry for the JSONB array.
@@ -214,34 +274,26 @@ impl BiddingEngine {
         .bind(new_amount)
         .bind(update_json)
         .bind(bid_id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await?;
 
-        // Live auction: record event and check anti-snipe
-        let auction_type: String = sqlx::query_scalar(
-            "SELECT auction_type FROM jobs WHERE id = (SELECT job_id FROM bids WHERE id = $1)"
-        )
-        .bind(bid_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(BidError::DatabaseError)?;
-
-        if auction_type == "live" {
+        // Live auction: record event and check anti-snipe (job row already locked).
+        if job.auction_type == "live" {
             sqlx::query(
                 "INSERT INTO auction_bid_events (job_id, amount_cents, event_type) VALUES ($1, $2, 'bid_updated')"
             )
             .bind(bid.job_id)
             .bind(new_amount)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(BidError::DatabaseError)?;
 
-            // Anti-snipe check
+            // Anti-snipe check — same window as place_bid.
             let snipe_window: bool = sqlx::query_scalar(
                 "SELECT auction_ends_at IS NOT NULL AND auction_ends_at - INTERVAL '5 minutes' <= now() AND snipe_extension_count < 3 FROM jobs WHERE id = $1"
             )
             .bind(bid.job_id)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *tx)
             .await
             .map_err(BidError::DatabaseError)?;
 
@@ -250,12 +302,16 @@ impl BiddingEngine {
                     "UPDATE jobs SET auction_ends_at = auction_ends_at + INTERVAL '5 minutes', snipe_extension_count = snipe_extension_count + 1, updated_at = now() WHERE id = $1"
                 )
                 .bind(bid.job_id)
-                .execute(&self.pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(BidError::DatabaseError)?;
             }
+        }
 
-            // Publish to Redis
+        tx.commit().await?;
+
+        if job.auction_type == "live" {
+            // Publish to Redis after commit so subscribers never see a rolled-back amount.
             if let Some(ref mut redis_conn) = self.redis.clone() {
                 let event = serde_json::json!({
                     "type": "bid_updated",
@@ -282,16 +338,15 @@ impl BiddingEngine {
         Ok(bid)
     }
 
-    /// Withdraw an active bid. Decrements the job's bid count.
+    /// Withdraw an active bid.
+    ///
+    /// `jobs.bid_count` is maintained solely by the AFTER-UPDATE trigger from
+    /// migration 030. App-level `bid_count - 1` here double-decremented.
     ///
     /// # Errors
     ///
     /// Returns `BidError` if the bid is not found, not owned, or not active.
-    pub async fn withdraw_bid(
-        &self,
-        bid_id: Uuid,
-        provider_id: Uuid,
-    ) -> Result<Bid, BidError> {
+    pub async fn withdraw_bid(&self, bid_id: Uuid, provider_id: Uuid) -> Result<Bid, BidError> {
         let existing = self.get_bid(bid_id).await?;
 
         if existing.provider_id != provider_id {
@@ -304,22 +359,16 @@ impl BiddingEngine {
         let bid = sqlx::query_as::<_, Bid>(
             "UPDATE bids \
              SET status = 'withdrawn', withdrawn_at = now(), updated_at = now() \
-             WHERE id = $1 \
+             WHERE id = $1 AND status = 'active' \
              RETURNING *",
         )
         .bind(bid_id)
         .fetch_one(&self.pool)
         .await?;
 
-        // Decrement job bid count.
-        sqlx::query("UPDATE jobs SET bid_count = GREATEST(bid_count - 1, 0) WHERE id = $1")
-            .bind(existing.job_id)
-            .execute(&self.pool)
-            .await?;
-
         // Live auction: record withdrawal event
         let auction_type: String = sqlx::query_scalar(
-            "SELECT auction_type FROM jobs WHERE id = (SELECT job_id FROM bids WHERE id = $1)"
+            "SELECT auction_type FROM jobs WHERE id = (SELECT job_id FROM bids WHERE id = $1)",
         )
         .bind(bid_id)
         .fetch_one(&self.pool)
@@ -367,39 +416,96 @@ impl BiddingEngine {
         job_id: Uuid,
         provider_id: Uuid,
     ) -> Result<Bid, BidError> {
+        // Instant-match accept is an EXCLUSIVE claim: the first provider to
+        // accept an offer wins the job, and every subsequent accept must fail.
+        // The only DB-level guard previously was UNIQUE(job_id, provider_id),
+        // which stops the SAME provider double-accepting but lets two DIFFERENT
+        // providers both INSERT an offer-accepted bid — a double-award race
+        // (two concurrent accepts → two `is_offer_accepted` bids on one job).
+        //
+        // Fix: run the whole accept inside a transaction that locks the job row
+        // FOR UPDATE (mirroring `place_bid` / `award_bid`), then reject if the
+        // job has already been claimed — either it has left `active` status
+        // (already awarded/matched) or an offer-accepted bid already exists.
+        // Under the row lock the two concurrent accepts are serialized: the
+        // first transitions the job to `awarded` and commits; the second
+        // re-reads the now-`awarded` status (or sees the existing offer bid)
+        // and returns a clean error → 4xx, never a second accepted bid.
+        let mut tx = self.pool.begin().await?;
+
         let job = sqlx::query_as::<_, JobRow>(
             "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
-             FROM jobs WHERE id = $1",
+             FROM jobs WHERE id = $1 FOR UPDATE",
         )
         .bind(job_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or(BidError::JobNotFound)?;
+
+        // A customer must not accept the offer on their own job (self-dealing).
+        if job.customer_id == provider_id {
+            return Err(BidError::PermissionDenied(
+                "you cannot bid on your own job".into(),
+            ));
+        }
 
         let offer_cents = job
             .offer_accepted_cents
             .ok_or_else(|| BidError::InvalidAmount("job has no offer accepted price".into()))?;
+        if offer_cents <= 0 {
+            return Err(BidError::InvalidAmount(
+                "offer accepted price must be greater than zero".into(),
+            ));
+        }
+        if let Some(starting_bid) = job.starting_bid_cents
+            && offer_cents > starting_bid
+        {
+            return Err(BidError::AboveStartingBid {
+                amount: offer_cents,
+                starting_bid,
+            });
+        }
 
+        // The job must still be open. A non-`active` status means it has already
+        // been awarded/matched by a competing accept (or otherwise closed) — the
+        // second accept loses here. AuctionNotActive → failed_precondition → 422.
         if job.status != "active" {
             return Err(BidError::AuctionNotActive);
         }
 
-        if let Some(ends_at) = job.auction_ends_at {
-            if ends_at <= Utc::now() {
-                return Err(BidError::AuctionClosed);
-            }
+        if let Some(ends_at) = job.auction_ends_at
+            && ends_at <= Utc::now()
+        {
+            return Err(BidError::AuctionClosed);
+        }
+
+        // Backstop guard, still under the FOR UPDATE lock: if any offer-accepted
+        // bid already exists for this job, the offer has been claimed. This
+        // catches the race even if the job-status transition below is ever
+        // bypassed, and rejects with AlreadyBid → already_exists → 409 Conflict.
+        let already_accepted: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM bids WHERE job_id = $1 AND status = 'awarded')",
+        )
+        .bind(job_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(BidError::DatabaseError)?;
+
+        if already_accepted {
+            return Err(BidError::AlreadyBid);
         }
 
         // Insert bid at the offer price with is_offer_accepted = true.
+        // UNIQUE(job_id, provider_id) still guards the same-provider retry case.
         let bid = sqlx::query_as::<_, Bid>(
-            "INSERT INTO bids (job_id, provider_id, amount_cents, original_amount_cents, is_offer_accepted) \
-             VALUES ($1, $2, $3, $3, true) \
+            "INSERT INTO bids (job_id, provider_id, amount_cents, original_amount_cents, is_offer_accepted, status) \
+             VALUES ($1, $2, $3, $3, true, 'awarded') \
              RETURNING *",
         )
         .bind(job_id)
         .bind(provider_id)
         .bind(offer_cents)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
             if is_unique_violation(&e) {
@@ -409,10 +515,24 @@ impl BiddingEngine {
             }
         })?;
 
-        sqlx::query("UPDATE jobs SET bid_count = bid_count + 1 WHERE id = $1")
-            .bind(job_id)
-            .execute(&self.pool)
-            .await?;
+        // Atomically claim the job for this provider. Transitioning the job out
+        // of `active` is what makes a concurrent second accept fail its
+        // `status != "active"` check above once this tx commits.
+        sqlx::query(
+            "UPDATE jobs SET status = 'awarded', \
+             awarded_provider_id = $1, awarded_bid_id = $2, awarded_at = now(), \
+             updated_at = now() \
+             WHERE id = $3",
+        )
+        .bind(provider_id)
+        .bind(bid.id)
+        .bind(job_id)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        crate::metrics::BIDS_AWARDED_TOTAL.inc();
 
         tracing::info!(
             bid_id = %bid.id,
@@ -432,12 +552,18 @@ impl BiddingEngine {
     /// # Errors
     ///
     /// Returns `BidError` if validation fails or the transaction cannot complete.
+    #[tracing::instrument(
+        skip_all,
+        fields(job_id = %job_id, bid_id = %bid_id, customer_id = %customer_id),
+        err
+    )]
     pub async fn award_bid(
         &self,
         job_id: Uuid,
         bid_id: Uuid,
         customer_id: Uuid,
     ) -> Result<Bid, BidError> {
+        let _timer = crate::metrics::BID_PROCESSING_DURATION.start_timer();
         let mut tx = self.pool.begin().await?;
 
         // Validate customer owns the job. Lock the row to prevent concurrent awards.
@@ -454,6 +580,14 @@ impl BiddingEngine {
             return Err(BidError::PermissionDenied(
                 "only the job owner can award a bid".into(),
             ));
+        }
+
+        // MON-19: job must still be open under the FOR UPDATE lock. Without this,
+        // a concurrent award / offer-accept / cancel can leave the row non-active
+        // while we still mark a bid awarded and rewrite job status. Mirrors the
+        // place_bid / accept_offer guards.
+        if job.status != "active" {
+            return Err(BidError::AuctionNotActive);
         }
 
         // Validate bid exists, is active, and belongs to this job.
@@ -505,6 +639,8 @@ impl BiddingEngine {
 
         tx.commit().await?;
 
+        crate::metrics::BIDS_AWARDED_TOTAL.inc();
+
         tracing::info!(
             bid_id = %bid_id,
             job_id = %job_id,
@@ -526,6 +662,19 @@ impl BiddingEngine {
     /// # Errors
     ///
     /// Returns `BidError` if the job is not found or the user doesn't own it.
+    // `bid_count` is the candidate count an operator needs to tell "this
+    // auction has 4000 bids" apart from "the database is slow" — it is filled
+    // in after the query below.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            job_id = %job_id,
+            sort_field,
+            sort_direction,
+            bid_count = tracing::field::Empty,
+        ),
+        err
+    )]
     pub async fn list_bids_for_job(
         &self,
         job_id: Uuid,
@@ -561,18 +710,22 @@ impl BiddingEngine {
             "asc" => "ASC",
             _ => {
                 // Default direction: ASC for price, DESC for created_at.
-                if column == "amount_cents" { "ASC" } else { "DESC" }
+                if column == "amount_cents" {
+                    "ASC"
+                } else {
+                    "DESC"
+                }
             }
         };
 
-        let query = format!(
-            "SELECT * FROM bids WHERE job_id = $1 ORDER BY {column} {direction}"
-        );
+        let query = format!("SELECT * FROM bids WHERE job_id = $1 ORDER BY {column} {direction}");
 
         let bids = sqlx::query_as::<_, Bid>(&query)
             .bind(job_id)
             .fetch_all(&self.pool)
             .await?;
+
+        tracing::Span::current().record("bid_count", bids.len());
 
         Ok(bids)
     }
@@ -654,6 +807,60 @@ impl BiddingEngine {
             .ok_or(BidError::BidNotFound)
     }
 
+    /// Get a single bid by ID, enforcing that the requester is allowed to view it.
+    ///
+    /// In a sealed reverse auction the full details of a bid (amount, provider,
+    /// status) must only be visible to:
+    /// - the **bid owner** (the provider who placed it),
+    /// - the **job's customer** (the owner of the auction), or
+    /// - an **admin** (`is_admin == true`).
+    ///
+    /// Any other authenticated user — e.g. a competing provider — must be denied,
+    /// otherwise rivals could read each other's sealed bids by GUID (IDOR).
+    ///
+    /// # Errors
+    ///
+    /// - `BidError::BidNotFound` if the bid does not exist.
+    /// - `BidError::JobNotFound` if the bid's job is missing (data integrity issue).
+    /// - `BidError::PermissionDenied` if the requester is not the bid owner, the job
+    ///   customer, or an admin.
+    pub async fn get_bid_authorized(
+        &self,
+        bid_id: Uuid,
+        requesting_user_id: Uuid,
+        is_admin: bool,
+    ) -> Result<Bid, BidError> {
+        let bid = self.get_bid(bid_id).await?;
+
+        // Admins may view any bid (e.g. dispute resolution, support).
+        if is_admin {
+            return Ok(bid);
+        }
+
+        // The bid owner (provider who placed it) may always view it.
+        if bid.provider_id == requesting_user_id {
+            return Ok(bid);
+        }
+
+        // The customer who owns the auction may view bids on their job.
+        let job = sqlx::query_as::<_, JobRow>(
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
+             FROM jobs WHERE id = $1",
+        )
+        .bind(bid.job_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or(BidError::JobNotFound)?;
+
+        if job.customer_id == requesting_user_id {
+            return Ok(bid);
+        }
+
+        Err(BidError::PermissionDenied(
+            "not authorized to view this bid".into(),
+        ))
+    }
+
     /// Get the count of active bids for a job.
     ///
     /// # Errors
@@ -678,27 +885,46 @@ impl BiddingEngine {
     /// Returns `BidError` on database errors.
     #[allow(clippy::cast_possible_truncation)]
     pub async fn expire_auction(&self, job_id: Uuid) -> Result<i32, BidError> {
+        let mut tx = self.pool.begin().await?;
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM jobs WHERE id = $1 FOR UPDATE",
+        )
+        .bind(job_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        let Some(status) = status else {
+            return Err(BidError::JobNotFound);
+        };
+        // Never clobber an awarded/closed job. A late expire sweep must not
+        // rewrite `awarded` to `closed_zero_bids` just because active bids
+        // were already consumed by accept/award.
+        if status != "active" {
+            return Ok(0);
+        }
+
         let result = sqlx::query(
             "UPDATE bids SET status = 'expired', updated_at = now() \
              WHERE job_id = $1 AND status = 'active'",
         )
         .bind(job_id)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
 
         let expired_count = result.rows_affected() as i32;
 
-        // Update job status based on whether there were bids.
         let new_status = if expired_count > 0 {
             "closed"
         } else {
             "closed_zero_bids"
         };
-        sqlx::query("UPDATE jobs SET status = $1 WHERE id = $2")
+        sqlx::query("UPDATE jobs SET status = $1 WHERE id = $2 AND status = 'active'")
             .bind(new_status)
             .bind(job_id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+
+        tx.commit().await?;
 
         tracing::info!(job_id = %job_id, expired_count, "auction expired");
 
@@ -710,6 +936,16 @@ impl BiddingEngine {
     /// # Errors
     ///
     /// Returns `BidError` on database errors.
+    // The sweep: an unbounded scan whose cost is driven by how many auctions
+    // it finds, so the counts are the whole diagnostic story.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            expired_count = tracing::field::Empty,
+            closing_soon_count = tracing::field::Empty,
+        ),
+        err
+    )]
     pub async fn check_auction_deadlines(
         &self,
         before: DateTime<Utc>,
@@ -740,16 +976,45 @@ impl BiddingEngine {
         let expired_ids: Vec<Uuid> = expired.into_iter().map(|r| r.id).collect();
         let closing_ids: Vec<Uuid> = closing_soon.into_iter().map(|r| r.id).collect();
 
+        let span = tracing::Span::current();
+        span.record("expired_count", expired_ids.len());
+        span.record("closing_soon_count", closing_ids.len());
+
         Ok((expired_ids, closing_ids))
     }
 
     /// Get aggregate bid analytics for a job.
     ///
+    /// Sealed reverse-auction amounts (lowest / highest / median) are owner-only,
+    /// matching [`Self::list_bids_for_job`]. A competing provider must not
+    /// reconstruct the sealed ladder via this RPC.
+    ///
     /// # Errors
     ///
-    /// Returns `BidError` on database errors.
+    /// Returns `BidError::JobNotFound` if the job is missing,
+    /// `BidError::PermissionDenied` if `customer_id` is not the job owner,
+    /// or a database error.
     #[allow(clippy::cast_possible_truncation)]
-    pub async fn get_bid_analytics(&self, job_id: Uuid) -> Result<BidAnalytics, BidError> {
+    pub async fn get_bid_analytics(
+        &self,
+        job_id: Uuid,
+        customer_id: Uuid,
+    ) -> Result<BidAnalytics, BidError> {
+        let job = sqlx::query_as::<_, JobRow>(
+            "SELECT id, status, offer_accepted_cents, starting_bid_cents, auction_ends_at, customer_id, auction_type, snipe_extension_count \
+             FROM jobs WHERE id = $1",
+        )
+        .bind(job_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or(BidError::JobNotFound)?;
+
+        if job.customer_id != customer_id {
+            return Err(BidError::PermissionDenied(
+                "only the job owner can view bids".into(),
+            ));
+        }
+
         let stats: AnalyticsRow = sqlx::query_as(
             "SELECT \
                COUNT(*)::bigint as total_bids, \
@@ -787,11 +1052,13 @@ impl BiddingEngine {
         .ok_or(BidError::JobNotFound)?;
 
         if row.3 != "live" {
-            return Err(BidError::FeatureNotEnabled("live auctions not enabled for this job".into()));
+            return Err(BidError::FeatureNotEnabled(
+                "live auctions not enabled for this job".into(),
+            ));
         }
 
         let lowest: Option<i64> = sqlx::query_scalar(
-            "SELECT MIN(amount_cents) FROM bids WHERE job_id = $1 AND status = 'active'"
+            "SELECT MIN(amount_cents) FROM bids WHERE job_id = $1 AND status = 'active'",
         )
         .bind(job_id)
         .fetch_one(&self.pool)
@@ -844,6 +1111,10 @@ struct JobRow {
     auction_ends_at: Option<DateTime<Utc>>,
     customer_id: Uuid,
     auction_type: String,
+    // Selected by the JobRow query for row-shape parity, but the snipe-extension
+    // logic re-reads the live count in its own atomic UPDATE (TOCTOU-safe), so it
+    // is never read off this struct. Same situation as `id` above.
+    #[allow(dead_code)]
     snipe_extension_count: i32,
 }
 
@@ -881,6 +1152,9 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 /// Returns `Ok(())` when `amount_cents > 0`, or `BidError::InvalidAmount` otherwise.
 /// This is the same check used inside `place_bid` and `update_bid`, extracted for
 /// testability and benchmarking.
+// Part of the lib's public, unit/integration/bench-tested surface; the gRPC
+// binary inlines the equivalent check, so it is unused in the `bin` target only.
+#[allow(dead_code)]
 #[must_use]
 pub fn validate_bid_amount(amount_cents: i64) -> Result<(), BidError> {
     if amount_cents <= 0 {
@@ -894,6 +1168,9 @@ pub fn validate_bid_amount(amount_cents: i64) -> Result<(), BidError> {
 /// Rank bids by amount ascending (lowest bid wins in a reverse auction).
 ///
 /// Returns a new `Vec<Bid>` sorted from lowest to highest `amount_cents`.
+// Lib/test/bench surface; the gRPC binary ranks via SQL `ORDER BY`, so this is
+// unused in the `bin` target only.
+#[allow(dead_code)]
 #[must_use]
 pub fn rank_bids(bids: &[Bid]) -> Vec<Bid> {
     let mut sorted = bids.to_vec();
@@ -904,6 +1181,9 @@ pub fn rank_bids(bids: &[Bid]) -> Vec<Bid> {
 /// Determine whether a bid qualifies as an "offer accepted" bid.
 ///
 /// Returns `true` when the offer threshold is set and `amount_cents` is at or below it.
+// Lib/test/bench surface; the gRPC binary derives this inline in `place_bid`, so
+// this standalone helper is unused in the `bin` target only.
+#[allow(dead_code)]
 #[must_use]
 pub fn is_offer_accepted(offer_accepted_cents: Option<i64>, amount_cents: i64) -> bool {
     offer_accepted_cents.is_some_and(|offer| amount_cents <= offer)
@@ -978,10 +1258,7 @@ mod tests {
     #[test]
     fn rank_bids_equal_amounts_stable() {
         let p = Uuid::now_v7();
-        let bids = vec![
-            make_bid(2000, p, "active"),
-            make_bid(2000, p, "active"),
-        ];
+        let bids = vec![make_bid(2000, p, "active"), make_bid(2000, p, "active")];
 
         let ranked = rank_bids(&bids);
         assert_eq!(ranked.len(), 2);
@@ -1038,13 +1315,14 @@ mod tests {
             BidError::AuctionClosed.to_string(),
             "auction is closed or not active"
         );
-        assert_eq!(
-            BidError::BidNotFound.to_string(),
-            "bid not found"
-        );
+        assert_eq!(BidError::BidNotFound.to_string(), "bid not found");
         assert_eq!(
             BidError::AlreadyBid.to_string(),
             "provider already has an active bid on this job"
+        );
+        assert_eq!(
+            BidError::PermissionDenied("only the job owner can view bids".into()).to_string(),
+            "permission denied: only the job owner can view bids"
         );
     }
 

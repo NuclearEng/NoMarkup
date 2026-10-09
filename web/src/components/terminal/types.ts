@@ -64,4 +64,14 @@ export interface WidgetProps {
   startingPriceCents: number;
   marketRange: MarketRange;
   mockProviders: readonly MockProvider[];
+  /** Real job id for a11y / deep links — never "demo" on live surfaces. */
+  jobId?: string;
+  /** Snipe extensions triggered this auction (stream or REST). */
+  snipeExtensionCount?: number;
+  /** Job body for the details widget (empty → honest empty state). */
+  jobDescription?: string;
+  /** Display title when description is short. */
+  jobTitle?: string;
+  /** Category label for badges. */
+  jobCategory?: string;
 }

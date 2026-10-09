@@ -2,7 +2,7 @@
 # Multi-stage build for the User Service.
 # Build context must be the repository root.
 
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.5-alpine AS builder
 WORKDIR /app
 RUN echo "══════════════════════════════════════════════════════════" && \
     echo "  USER-SERVICE · Build started"                            && \
@@ -37,8 +37,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 # ── Runtime ──────────────────────────────────────────────────
 FROM alpine:3.20
-RUN apk --no-cache add ca-certificates
-COPY --from=builder /server /server
+RUN apk --no-cache add ca-certificates && \
+    addgroup -S app && adduser -S app -G app -u 10001
+COPY --from=builder --chown=app:app /server /server
 RUN echo "  [3/3] ✔ user-service image ready · $(du -h /server | awk '{print $1}')"
+USER app
 EXPOSE 50051
 ENTRYPOINT ["/server"]

@@ -27,7 +27,7 @@ export default function ProviderChallengesPage() {
     (challengeId: string) => {
       setJoiningId(challengeId);
       joinChallenge.mutate(challengeId, {
-        onSettled: () => setJoiningId(null),
+        onSettled: () => { setJoiningId(null); },
       });
     },
     [joinChallenge],

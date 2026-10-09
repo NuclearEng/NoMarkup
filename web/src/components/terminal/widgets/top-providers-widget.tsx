@@ -40,8 +40,8 @@ export function TopProvidersWidget({ sim, startingPriceCents, mockProviders }: W
       <div className="min-h-0 flex-1 overflow-y-auto">
         {sim.orderBookBids.slice(0, 3).map((bid, idx) => {
           const provider = mockProviders.find((p) => p.name === bid.provider_name);
-          const tierKey = (bid.trust_tier as keyof typeof TIER_COLORS) || 'new';
-          const colors = TIER_COLORS[tierKey] ?? TIER_COLORS.new;
+          const tierKey = bid.trust_tier as keyof typeof TIER_COLORS;
+          const colors = TIER_COLORS[tierKey];
           const medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
           const medal = medals[idx] ?? '';
 

@@ -1,0 +1,9 @@
+{
+  "method": "GET",
+  "path": "/api/v1/admin/banking",
+  "status": 200,
+  "contentType": "application/json",
+  "body": {
+    "account": null
+  }
+}

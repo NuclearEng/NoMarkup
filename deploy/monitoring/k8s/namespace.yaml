@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    # Explicit so NetworkPolicy namespaceSelector
+    # kubernetes.io/metadata.name=monitoring matches even when the API server
+    # does not auto-label namespaces (older clusters).
+    kubernetes.io/metadata.name: monitoring
+    app.kubernetes.io/part-of: nomarkup
+    app.kubernetes.io/component: monitoring

@@ -2,13 +2,16 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // NotificationHandler handles HTTP endpoints for notifications.
@@ -76,7 +79,7 @@ func (h *NotificationHandler) ListNotifications(w http.ResponseWriter, r *http.R
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -97,6 +100,12 @@ func (h *NotificationHandler) MarkAsRead(w http.ResponseWriter, r *http.Request)
 	notificationID := chi.URLParam(r, "id")
 	if notificationID == "" {
 		writeError(w, http.StatusBadRequest, "notification id required")
+		return
+	}
+	// Validate the path UUID before the service call so a malformed id
+	// returns 400 instead of a 500 from downstream.
+	if !isValidUUID(notificationID) {
+		writeError(w, http.StatusBadRequest, "invalid notification id")
 		return
 	}
 
@@ -197,6 +206,32 @@ type updatePreferencesRequest struct {
 		SmsEnabled       bool   `json:"sms_enabled"`
 		InAppEnabled     bool   `json:"in_app_enabled"`
 	} `json:"preferences"`
+	// Pointers so an omitted field does not clear a stored master switch.
+	GlobalPushEnabled  *bool `json:"global_push_enabled"`
+	GlobalEmailEnabled *bool `json:"global_email_enabled"`
+	GlobalSmsEnabled   *bool `json:"global_sms_enabled"`
+}
+
+// isCriticalNotificationType is FR-17.3: payment failures, disputes, guarantee,
+// and account flags cannot be disabled by the user.
+func isCriticalNotificationType(t string) bool {
+	s := strings.ToLower(strings.TrimSpace(t))
+	if s == "" {
+		return false
+	}
+	if s == "payment_failed" {
+		return true
+	}
+	if strings.HasPrefix(s, "dispute_") {
+		return true
+	}
+	if strings.Contains(s, "guarantee") {
+		return true
+	}
+	if s == "account_flag" || strings.HasPrefix(s, "account_flag") {
+		return true
+	}
+	return false
 }
 
 // UpdatePreferences handles PUT /api/v1/notifications/preferences.
@@ -208,25 +243,49 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 	}
 
 	var req updatePreferencesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
+	}
+
+	// FR-17.3 — reject any attempt to disable critical notification types.
+	for _, p := range req.Preferences {
+		if !isCriticalNotificationType(p.NotificationType) {
+			continue
+		}
+		if !p.PushEnabled || !p.EmailEnabled || !p.InAppEnabled {
+			writeError(w, http.StatusBadRequest,
+				"critical notification preferences cannot be disabled (payment failures, disputes, guarantee)")
+			return
+		}
 	}
 
 	protoPrefs := make([]*notificationv1.NotificationPreference, 0, len(req.Preferences))
 	for _, p := range req.Preferences {
+		push := p.PushEnabled
+		email := p.EmailEnabled
+		inApp := p.InAppEnabled
+		if isCriticalNotificationType(p.NotificationType) {
+			// Belt-and-suspenders: force critical channels on even if a client
+			// races past the reject check above.
+			push = true
+			email = true
+			inApp = true
+		}
 		protoPrefs = append(protoPrefs, &notificationv1.NotificationPreference{
 			NotificationType: stringToNotificationType(p.NotificationType),
-			PushEnabled:      p.PushEnabled,
-			EmailEnabled:     p.EmailEnabled,
+			PushEnabled:      push,
+			EmailEnabled:     email,
 			SmsEnabled:       p.SmsEnabled,
-			InAppEnabled:     p.InAppEnabled,
+			InAppEnabled:     inApp,
 		})
 	}
 
 	resp, err := h.notifClient.UpdatePreferences(r.Context(), &notificationv1.UpdatePreferencesRequest{
-		UserId:      claims.UserID,
-		Preferences: protoPrefs,
+		UserId:             claims.UserID,
+		Preferences:        protoPrefs,
+		GlobalPushEnabled:  req.GlobalPushEnabled,
+		GlobalEmailEnabled: req.GlobalEmailEnabled,
+		GlobalSmsEnabled:   req.GlobalSmsEnabled,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -244,9 +303,20 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"preferences": prefs,
-	})
+	// UpdatePreferencesResponse intentionally carries only the per-type rows
+	// (proto contract), but GET returns the full envelope with the global
+	// toggles. Echo the same envelope here so a consumer reading the mutation
+	// result doesn't get undefined globals — fetch the authoritative globals.
+	out := map[string]interface{}{"preferences": prefs}
+	if cur, gerr := h.notifClient.GetPreferences(r.Context(), &notificationv1.GetPreferencesRequest{
+		UserId: claims.UserID,
+	}); gerr == nil {
+		out["global_push_enabled"] = cur.GetGlobalPushEnabled()
+		out["global_email_enabled"] = cur.GetGlobalEmailEnabled()
+		out["global_sms_enabled"] = cur.GetGlobalSmsEnabled()
+	}
+
+	writeJSON(w, http.StatusOK, out)
 }
 
 // --- Device registration ---
@@ -266,8 +336,7 @@ func (h *NotificationHandler) RegisterDevice(w http.ResponseWriter, r *http.Requ
 	}
 
 	var req registerDeviceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -328,21 +397,60 @@ type unsubscribeRequest struct {
 	Token string `json:"token"`
 }
 
+var errUnsubscribeTokenRequired = errors.New("token is required")
+
+// readUnsubscribeToken resolves the unsubscribe token.
+// A non-empty query token wins over the body, including JSON and a one-click
+// POST whose body is List-Unsubscribe=One-Click (RFC 8058). JSON is decoded
+// only when Content-Type contains application/json and the query token is
+// empty. Otherwise the form field "token" is accepted.
+func readUnsubscribeToken(r *http.Request) (string, error) {
+	if token := r.URL.Query().Get("token"); token != "" {
+		return token, nil
+	}
+	if strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
+		if r.Body == nil {
+			return "", errUnsubscribeTokenRequired
+		}
+		var req unsubscribeRequest
+		limited := http.MaxBytesReader(nil, r.Body, maxJSONBodyBytes)
+		if err := json.NewDecoder(limited).Decode(&req); err != nil {
+			return "", err
+		}
+		if req.Token == "" {
+			return "", errUnsubscribeTokenRequired
+		}
+		return req.Token, nil
+	}
+	if err := r.ParseForm(); err != nil {
+		return "", err
+	}
+	if token := r.PostForm.Get("token"); token != "" {
+		return token, nil
+	}
+	return "", errUnsubscribeTokenRequired
+}
+
 // Unsubscribe handles POST /api/v1/notifications/unsubscribe.
 func (h *NotificationHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
-	var req unsubscribeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	if req.Token == "" {
+	token, err := readUnsubscribeToken(r)
+	if err != nil || token == "" {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge,
+				fmt.Sprintf("request body too large: max %d bytes", maxJSONBodyBytes))
+			return
+		}
+		if err != nil && !errors.Is(err, errUnsubscribeTokenRequired) {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "token is required")
 		return
 	}
 
 	resp, err := h.notifClient.Unsubscribe(r.Context(), &notificationv1.UnsubscribeRequest{
-		Token: req.Token,
+		Token: token,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -428,6 +536,8 @@ func notificationTypeToString(nt notificationv1.NotificationType) string {
 		return "payment_released"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED:
 		return "payment_failed"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED:
+		return "payment_authentication_required"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT:
 		return "payout_sent"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_NEW_MESSAGE:
@@ -458,6 +568,20 @@ func notificationTypeToString(nt notificationv1.NotificationType) string {
 		return "recurring_upcoming"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_INSTANCE_READY:
 		return "recurring_instance_ready"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH:
+		return "wishlist_match"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_BID_OUTBID:
+		return "bid_outbid"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED:
+		return "job_matched"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_OFFER_RECEIVED:
+		return "offer_received"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_OFFER_COUNTERED:
+		return "offer_countered"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_PRICE_DROP:
+		return "price_drop"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_SELLER_NEW_LISTING:
+		return "seller_new_listing"
 	default:
 		return "unspecified"
 	}
@@ -499,6 +623,8 @@ func stringToNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_RELEASED
 	case "payment_failed":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED
+	case "payment_authentication_required":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED
 	case "payout_sent":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT
 	case "new_message":
@@ -529,6 +655,20 @@ func stringToNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_UPCOMING
 	case "recurring_instance_ready":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_RECURRING_INSTANCE_READY
+	case "wishlist_match":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_WISHLIST_MATCH
+	case "bid_outbid":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_BID_OUTBID
+	case "job_matched":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED
+	case "offer_received":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_OFFER_RECEIVED
+	case "offer_countered":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_OFFER_COUNTERED
+	case "price_drop":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PRICE_DROP
+	case "seller_new_listing":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_SELLER_NEW_LISTING
 	default:
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED
 	}
@@ -550,13 +690,16 @@ func notificationChannelToString(ch notificationv1.NotificationChannel) string {
 }
 
 func stringToDevicePlatform(s string) notificationv1.DevicePlatform {
-	switch s {
+	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "ios":
 		return notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS
 	case "android":
 		return notificationv1.DevicePlatform_DEVICE_PLATFORM_ANDROID
 	case "web":
 		return notificationv1.DevicePlatform_DEVICE_PLATFORM_WEB
+	case "ios_live_activity":
+		// IOS-SYS.LA.3: ActivityKit per-activity update token (not alert push).
+		return notificationv1.DevicePlatform_DEVICE_PLATFORM_IOS_LIVE_ACTIVITY
 	default:
 		return notificationv1.DevicePlatform_DEVICE_PLATFORM_UNSPECIFIED
 	}

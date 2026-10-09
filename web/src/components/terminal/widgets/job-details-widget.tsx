@@ -3,7 +3,15 @@
 import { Badge } from '@/components/ui/badge';
 import type { WidgetProps } from '../types';
 
-export function JobDetailsWidget(_props: WidgetProps) {
+export function JobDetailsWidget({
+  jobTitle,
+  jobDescription,
+  jobCategory,
+}: WidgetProps) {
+  const title = jobTitle?.trim() || null;
+  const description = jobDescription?.trim() || null;
+  const category = jobCategory?.trim() || null;
+
   return (
     <div className="flex h-full flex-col overflow-auto p-4">
       <div className="border-b border-white/[0.06] -mx-4 -mt-4 mb-3 px-4 py-2.5 rounded-t-2xl">
@@ -11,20 +19,26 @@ export function JobDetailsWidget(_props: WidgetProps) {
           Job Details
         </h3>
       </div>
-      <p className="text-zinc-300 text-sm leading-relaxed">
-        Complete kitchen renovation including cabinet replacement, countertop installation
-        (quartz), backsplash tiling, new plumbing fixtures, electrical updates for
-        under-cabinet lighting, and premium appliance installation. Kitchen is approximately
-        180 sq ft with an L-shaped layout. Looking for experienced contractors with kitchen
-        renovation expertise. All materials provided — labor only.
-      </p>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {['Kitchen', 'Renovation', 'Plumbing', 'Electrical', 'Tiling'].map((t) => (
-          <Badge key={t} variant="secondary" className="border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 text-[var(--brand-gold)] text-[10px]">
-            {t}
+      {title ? (
+        <p className="mb-2 text-sm font-semibold text-zinc-100">{title}</p>
+      ) : null}
+      {description ? (
+        <p className="text-sm leading-relaxed text-zinc-300 whitespace-pre-wrap">
+          {description}
+        </p>
+      ) : (
+        <p className="text-sm text-zinc-500">No description provided for this job.</p>
+      )}
+      {category ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <Badge
+            variant="secondary"
+            className="border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 text-[10px] text-[var(--brand-gold)]"
+          >
+            {category}
           </Badge>
-        ))}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

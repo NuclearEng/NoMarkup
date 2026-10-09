@@ -14,20 +14,41 @@ import (
 // --- Mock Analytics Repository ---
 
 type mockAnalyticsRepo struct {
-	getMarketRangeFn       func(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, zipCode string) (*domain.MarketRange, error)
-	getMarketTrendsFn      func(ctx context.Context, categoryID string, subcategoryID *string, region *string, startDate, endDate time.Time, groupBy string) ([]domain.PriceTrend, error)
-	getProviderAnalyticsFn func(ctx context.Context, providerID string, startDate, endDate time.Time) (*domain.ProviderAnalytics, error)
-	getProviderEarningsFn  func(ctx context.Context, providerID string, startDate, endDate time.Time, groupBy string) ([]domain.EarningsDataPoint, error)
-	getCustomerSpendingFn  func(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, error)
-	recordTransactionFn    func(ctx context.Context, transactionID, categoryID, subcategoryID, serviceTypeID, region string, amountCents, platformFeeCents int64, customerID, providerID string, completedAt time.Time) error
-	recordEventFn          func(ctx context.Context, eventType, userID string, properties map[string]string, occurredAt time.Time) error
+	getMarketRangeFn              func(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, zipCode string) (*domain.MarketRange, error)
+	getMarketRangeAtFn            func(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, lat, lng, radiusKm float64) (*domain.MarketRange, error)
+	getMarketTrendsFn             func(ctx context.Context, categoryID string, subcategoryID *string, region *string, startDate, endDate time.Time, groupBy string) ([]domain.PriceTrend, error)
+	getClearedPriceTransactionsFn func(ctx context.Context, categoryID string, asOf time.Time) ([]domain.ClearedPriceTransaction, error)
+	getCategoryIDBySlugFn         func(slug string) (string, error)
+	getProviderAnalyticsFn        func(ctx context.Context, providerID string, startDate, endDate time.Time) (*domain.ProviderAnalytics, error)
+	getProviderEarningsFn         func(ctx context.Context, providerID string, startDate, endDate time.Time, groupBy string) ([]domain.EarningsDataPoint, error)
+	getCustomerSpendingFn         func(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string, propertyID string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error)
+	recordTransactionFn           func(ctx context.Context, transactionID, categoryID, subcategoryID, serviceTypeID, region string, amountCents, platformFeeCents int64, customerID, providerID string, completedAt time.Time) error
+	recordEventFn                 func(ctx context.Context, eventType, userID string, properties map[string]string, occurredAt time.Time) error
 }
 
 func (m *mockAnalyticsRepo) GetMarketRange(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, zipCode string) (*domain.MarketRange, error) {
 	return m.getMarketRangeFn(ctx, categoryID, subcategoryID, serviceTypeID, zipCode)
 }
+func (m *mockAnalyticsRepo) GetMarketRangeAt(ctx context.Context, categoryID string, subcategoryID, serviceTypeID *string, lat, lng, radiusKm float64) (*domain.MarketRange, error) {
+	if m.getMarketRangeAtFn != nil {
+		return m.getMarketRangeAtFn(ctx, categoryID, subcategoryID, serviceTypeID, lat, lng, radiusKm)
+	}
+	return nil, domain.ErrMarketRangeNotFound
+}
 func (m *mockAnalyticsRepo) GetMarketTrends(ctx context.Context, categoryID string, subcategoryID *string, region *string, startDate, endDate time.Time, groupBy string) ([]domain.PriceTrend, error) {
 	return m.getMarketTrendsFn(ctx, categoryID, subcategoryID, region, startDate, endDate, groupBy)
+}
+func (m *mockAnalyticsRepo) GetClearedPriceTransactions(ctx context.Context, categoryID string, asOf time.Time) ([]domain.ClearedPriceTransaction, error) {
+	if m.getClearedPriceTransactionsFn != nil {
+		return m.getClearedPriceTransactionsFn(ctx, categoryID, asOf)
+	}
+	return nil, nil
+}
+func (m *mockAnalyticsRepo) GetCategoryIDBySlug(_ context.Context, slug string) (string, error) {
+	if m.getCategoryIDBySlugFn != nil {
+		return m.getCategoryIDBySlugFn(slug)
+	}
+	return "", nil
 }
 func (m *mockAnalyticsRepo) GetProviderAnalytics(ctx context.Context, providerID string, startDate, endDate time.Time) (*domain.ProviderAnalytics, error) {
 	return m.getProviderAnalyticsFn(ctx, providerID, startDate, endDate)
@@ -35,8 +56,8 @@ func (m *mockAnalyticsRepo) GetProviderAnalytics(ctx context.Context, providerID
 func (m *mockAnalyticsRepo) GetProviderEarnings(ctx context.Context, providerID string, startDate, endDate time.Time, groupBy string) ([]domain.EarningsDataPoint, error) {
 	return m.getProviderEarningsFn(ctx, providerID, startDate, endDate, groupBy)
 }
-func (m *mockAnalyticsRepo) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, error) {
-	return m.getCustomerSpendingFn(ctx, customerID, startDate, endDate, groupBy)
+func (m *mockAnalyticsRepo) GetCustomerSpending(ctx context.Context, customerID string, startDate, endDate time.Time, groupBy string, propertyID string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
+	return m.getCustomerSpendingFn(ctx, customerID, startDate, endDate, groupBy, propertyID)
 }
 func (m *mockAnalyticsRepo) RecordTransaction(ctx context.Context, transactionID, categoryID, subcategoryID, serviceTypeID, region string, amountCents, platformFeeCents int64, customerID, providerID string, completedAt time.Time) error {
 	return m.recordTransactionFn(ctx, transactionID, categoryID, subcategoryID, serviceTypeID, region, amountCents, platformFeeCents, customerID, providerID, completedAt)
@@ -107,6 +128,25 @@ func TestAnalyticsService_GetMarketRange(t *testing.T) {
 			assert.Equal(t, 42, mr.DataPoints)
 		})
 	}
+}
+
+func TestAnalyticsService_GetMarketRangeAt(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockAnalyticsRepo{
+		getMarketRangeAtFn: func(_ context.Context, _ string, _, _ *string, lat, lng, radiusKm float64) (*domain.MarketRange, error) {
+			assert.InDelta(t, 30.2672, lat, 0.0001)
+			assert.InDelta(t, -97.7431, lng, 0.0001)
+			assert.Equal(t, 80.0, radiusKm)
+			return &domain.MarketRange{ZipCode: "78701", MedianCents: 30000}, nil
+		},
+	}
+	svc := NewAnalyticsService(repo)
+
+	mr, err := svc.GetMarketRangeAt(context.Background(), "cat-1", nil, nil, 30.2672, -97.7431, 80)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	assert.Equal(t, "78701", mr.ZipCode)
 }
 
 // --- GetMarketTrends tests ---
@@ -256,25 +296,57 @@ func TestAnalyticsService_GetCustomerSpending(t *testing.T) {
 			t.Parallel()
 
 			repo := &mockAnalyticsRepo{
-				getCustomerSpendingFn: func(_ context.Context, _ string, _, _ time.Time, groupBy string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, error) {
+				getCustomerSpendingFn: func(_ context.Context, _ string, _, _ time.Time, groupBy string, propertyID string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
 					assert.Equal(t, tt.wantGroupBy, groupBy)
+					assert.Empty(t, propertyID)
 					return []domain.SpendingDataPoint{
 							{AmountCents: 25000, JobCount: 2},
 						}, []domain.CategorySpending{
 							{CategoryID: "cat-1", TotalSpentCents: 25000},
-						}, 25000, nil
+						}, 25000, 5000, nil
 				},
 			}
 			svc := NewAnalyticsService(repo)
 
-			spending, catSpending, total, err := svc.GetCustomerSpending(context.Background(), "cust-1", time.Now().Add(-30*24*time.Hour), time.Now(), tt.groupBy)
+			spending, catSpending, total, savings, err := svc.GetCustomerSpending(context.Background(), "cust-1", time.Now().Add(-30*24*time.Hour), time.Now(), tt.groupBy, "")
 
 			require.NoError(t, err)
 			assert.Len(t, spending, 1)
 			assert.Len(t, catSpending, 1)
 			assert.Equal(t, int64(25000), total)
+			assert.Equal(t, int64(5000), savings)
 		})
 	}
+}
+
+func TestAnalyticsService_GetCustomerSpending_PropertyScope(t *testing.T) {
+	t.Parallel()
+
+	const propID = "11111111-1111-1111-1111-111111111111"
+	repo := &mockAnalyticsRepo{
+		getCustomerSpendingFn: func(_ context.Context, customerID string, _, _ time.Time, groupBy string, propertyID string) ([]domain.SpendingDataPoint, []domain.CategorySpending, int64, int64, error) {
+			assert.Equal(t, "cust-1", customerID)
+			assert.Equal(t, "month", groupBy)
+			assert.Equal(t, propID, propertyID)
+			return []domain.SpendingDataPoint{
+					{AmountCents: 10000, JobCount: 1},
+				}, []domain.CategorySpending{
+					{CategoryID: "cat-1", TotalSpentCents: 10000},
+				}, 10000, 0, nil
+		},
+	}
+	svc := NewAnalyticsService(repo)
+
+	spending, cats, total, savings, err := svc.GetCustomerSpending(
+		context.Background(), "cust-1",
+		time.Now().Add(-30*24*time.Hour), time.Now(),
+		"", propID,
+	)
+	require.NoError(t, err)
+	assert.Len(t, spending, 1)
+	assert.Len(t, cats, 1)
+	assert.Equal(t, int64(10000), total)
+	assert.Equal(t, int64(0), savings)
 }
 
 // --- RecordTransaction tests ---

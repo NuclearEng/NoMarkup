@@ -1,9 +1,11 @@
 'use client';
 
 import type { Route } from 'next';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { PhoneOtpForm } from '@/components/forms/PhoneOtpForm';
 import { ProfileForm } from '@/components/forms/ProfileForm';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -32,7 +34,7 @@ export default function ProfilePage() {
   const enableRole = useEnableRole();
   const router = useRouter();
   const [editing, setEditing] = useState(false);
-  const isProviderRole = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
+  const _isProviderRole = user?.roles.includes(USER_ROLE.PROVIDER) ?? false;
   const { data: providerProfile } = useProviderProfile();
 
   if (isLoading) {
@@ -108,6 +110,7 @@ export default function ProfilePage() {
                     </Badge>
                   ))}
                   {user.emailVerified ? <Badge variant="outline" className="glass-badge text-xs">Email Verified</Badge> : null}
+                  {user.phoneVerified ? <Badge variant="outline" className="glass-badge text-xs">Phone Verified</Badge> : null}
                 </div>
               </div>
             </div>
@@ -141,6 +144,12 @@ export default function ProfilePage() {
                 Edit Profile
               </Button>
 
+              {isProvider ? (
+                <Button variant="outline" asChild className="min-h-[44px]">
+                  <Link href={'/provider/verification' as Route}>Verification documents</Link>
+                </Button>
+              ) : null}
+
               {!isProvider && !isAdmin ? (
                 <Button
                   variant="outline"
@@ -156,6 +165,15 @@ export default function ProfilePage() {
         </Card>
       )}
 
+      <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+        <CardHeader>
+          <CardTitle className="gold-text">Phone verification</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PhoneOtpForm initialPhone={user.phone} phoneVerified={user.phoneVerified} />
+        </CardContent>
+      </Card>
+
       {/* Provider business info */}
       {isProvider && providerProfile ? (
         <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
@@ -164,17 +182,17 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {providerProfile.businessName ? (
+              {providerProfile.business_name ? (
                 <div>
                   <dt className="text-zinc-300 text-sm font-medium">Business Name</dt>
-                  <dd className="text-sm">{providerProfile.businessName}</dd>
+                  <dd className="text-sm">{providerProfile.business_name}</dd>
                 </div>
               ) : null}
-              {providerProfile.serviceCategories.length > 0 ? (
+              {providerProfile.service_categories.length > 0 ? (
                 <div>
                   <dt className="text-zinc-300 text-sm font-medium">Service Categories</dt>
                   <dd className="flex flex-wrap gap-1 pt-1">
-                    {providerProfile.serviceCategories.map((cat) => (
+                    {providerProfile.service_categories.map((cat) => (
                       <Badge key={cat.id} variant="outline" className="glass-badge text-xs">
                         {cat.name}
                       </Badge>
@@ -184,27 +202,27 @@ export default function ProfilePage() {
               ) : null}
               <div>
                 <dt className="text-zinc-300 text-sm font-medium">Service Radius</dt>
-                <dd className="text-sm">{String(providerProfile.serviceRadiusKm)} km</dd>
+                <dd className="text-sm">{String(providerProfile.service_radius_km)} km</dd>
               </div>
               <div>
                 <dt className="text-zinc-300 text-sm font-medium">Jobs Completed</dt>
-                <dd className="text-sm">{String(providerProfile.jobsCompleted)}</dd>
+                <dd className="text-sm">{String(providerProfile.jobs_completed)}</dd>
               </div>
-              {providerProfile.onTimeRate !== null ? (
+              {providerProfile.on_time_rate !== null ? (
                 <div>
                   <dt className="text-zinc-300 text-sm font-medium">On-Time Rate</dt>
-                  <dd className="text-sm">{(providerProfile.onTimeRate * 100).toFixed(0)}%</dd>
+                  <dd className="text-sm">{(providerProfile.on_time_rate * 100).toFixed(0)}%</dd>
                 </div>
               ) : null}
               <div>
                 <dt className="text-zinc-300 text-sm font-medium">Stripe</dt>
                 <dd className="text-sm">
-                  {providerProfile.stripeOnboardingComplete ? 'Connected' : 'Not connected'}
+                  {providerProfile.stripe_onboarding_complete ? 'Connected' : 'Not connected'}
                 </dd>
               </div>
               <div>
                 <dt className="text-zinc-300 text-sm font-medium">Profile Completeness</dt>
-                <dd className="text-sm">{String(providerProfile.profileCompleteness)}%</dd>
+                <dd className="text-sm">{String(providerProfile.profile_completeness)}%</dd>
               </div>
             </dl>
             {providerProfile.bio ? (

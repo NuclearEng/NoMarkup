@@ -13,6 +13,7 @@ import "common/v1/common.proto";
 
 service ContractService {
   // Contract lifecycle
+  rpc CreateContractFromAward(CreateContractFromAwardRequest) returns (CreateContractFromAwardResponse);
   rpc GetContract(GetContractRequest) returns (GetContractResponse);
   rpc AcceptContract(AcceptContractRequest) returns (AcceptContractResponse);
   rpc StartWork(StartWorkRequest) returns (StartWorkResponse);
@@ -147,11 +148,31 @@ message RecurringInstance {
   int64 amount_cents = 5;
   bool auto_approved = 6;
   google.protobuf.Timestamp completed_at = 7;
+  // Customer approve timestamp (FR-18). Status may stay "completed" after approve;
+  // clients use this for durable hide-Approve UI across reloads.
+  google.protobuf.Timestamp approved_at = 8;
 }
 
 // ============================================================
 // Contract Lifecycle RPCs
 // ============================================================
+
+// CreateContractFromAwardRequest is sent by the gateway after the bidding
+// engine has marked a bid as awarded. It triggers contract creation in the
+// job/contract service so customer-accept → contract is wired end-to-end.
+message CreateContractFromAwardRequest {
+  string job_id = 1;
+  string bid_id = 2;
+  string customer_id = 3;
+  string provider_id = 4;
+  int64 amount_cents = 5;
+  // payment_timing defaults to "completion" when unspecified.
+  nomarkup.common.v1.PaymentTiming payment_timing = 6;
+}
+
+message CreateContractFromAwardResponse {
+  Contract contract = 1;
+}
 
 message GetContractRequest {
   string contract_id = 1;
@@ -303,6 +324,9 @@ message CancelContractResponse {
 
 message GetRecurringConfigRequest {
   string contract_id = 1;
+  // Contract party (customer or provider). Empty fails closed in job service
+  // requireContractParty — mesh callers must pass a known party id.
+  string requesting_user_id = 2;
 }
 
 message GetRecurringConfigResponse {
@@ -350,6 +374,8 @@ message CancelRecurringResponse {
 message ListRecurringInstancesRequest {
   string recurring_id = 1;
   nomarkup.common.v1.PaginationRequest pagination = 2;
+  // Contract party (customer or provider). Empty fails closed in job service.
+  string requesting_user_id = 3;
 }
 
 message ListRecurringInstancesResponse {

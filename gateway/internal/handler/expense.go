@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -39,8 +38,7 @@ func (h *ExpenseHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createExpenseRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -69,8 +67,11 @@ func (h *ExpenseHandler) CreateExpense(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "description is required")
 		return
 	}
-	if req.AmountCents <= 0 {
-		writeError(w, http.StatusBadRequest, "amount_cents must be positive")
+	// Bound the amount to the platform cap. Without an upper bound, a handful of
+	// near-int64-max expenses overflow the BIGINT SUM in ListExpenses and 500 the
+	// provider's entire expense list until the poisoned rows are deleted.
+	if msg := validateMoneyCents("amount_cents", req.AmountCents); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 	if req.ExpenseDate == "" {
@@ -170,6 +171,10 @@ func (h *ExpenseHandler) DeleteExpense(w http.ResponseWriter, r *http.Request) {
 	expenseID := chi.URLParam(r, "id")
 	if expenseID == "" {
 		writeError(w, http.StatusBadRequest, "expense id required")
+		return
+	}
+	if !isValidUUID(expenseID) {
+		writeError(w, http.StatusBadRequest, "invalid expense id")
 		return
 	}
 

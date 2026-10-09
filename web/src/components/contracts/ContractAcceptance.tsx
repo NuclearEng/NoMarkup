@@ -1,13 +1,14 @@
 'use client';
 
-import { CheckCircle, Loader2, XCircle } from 'lucide-react';
+import { CheckCircle, Clock, Loader2, XCircle } from 'lucide-react';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { useAcceptContract, useCancelContract } from '@/hooks/useContracts';
+import { useAcceptContract, useAcceptanceExpired, useCancelContract } from '@/hooks/useContracts';
+import { ApiError } from '@/lib/api';
 import { formatCents } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import type { Contract } from '@/types';
@@ -27,6 +28,18 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
 
   const isCustomer = user?.id === contract.customer_id;
   const isProvider = user?.id === contract.provider_id;
+
+  // Acceptance window closed — deadline in the past while still pending.
+  // When true we replace the Accept/Decline buttons with a clear expired state
+  // so the user never fires an accept the backend will reject with a 4xx.
+  const expired = useAcceptanceExpired(contract.status, contract.acceptance_deadline);
+
+  // Surface the backend's specific reason (e.g. "acceptance deadline has
+  // expired", "contract already accepted by this party") rather than a generic
+  // "Please try again." that hides why the action failed.
+  function errorMessage(err: unknown, fallback: string): string {
+    return err instanceof ApiError ? err.userMessage(fallback) : fallback;
+  }
 
   const currentUserAccepted =
     (isCustomer && contract.customer_accepted) || (isProvider && contract.provider_accepted);
@@ -90,6 +103,12 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
         {/* Acceptance status */}
         <div className="space-y-2">
           <p className="text-sm font-medium">Acceptance Status</p>
+          {expired ? (
+            <Badge variant="secondary" className="gap-1 text-muted-foreground">
+              <Clock className="h-3 w-3" aria-hidden="true" />
+              Acceptance window expired
+            </Badge>
+          ) : (
           <div className="flex items-center gap-2">
             {contract.customer_accepted ? (
               <Badge variant="default" className="gap-1">
@@ -114,13 +133,25 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
               </Badge>
             )}
           </div>
+          )}
         </div>
 
+        {/* Expired: window closed — explain, offer no accept action */}
+        {expired ? (
+          <div className="flex items-start gap-2 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>
+              The acceptance window for this contract has expired, so it can no longer be
+              accepted. No further action is needed here.
+            </span>
+          </div>
+        ) : null}
+
         {/* Actions */}
-        {isCustomer || isProvider ? (
+        {!expired && (isCustomer || isProvider) ? (
           <div className="space-y-3 border-t pt-4">
             {currentUserAccepted ? (
-              <div className="flex items-center gap-2 rounded-lg border bg-green-50 p-3 text-sm text-green-700">
+              <div className="flex items-center gap-2 rounded-lg border border-status-completed/30 bg-status-completed/10 p-3 text-sm text-status-completed">
                 <CheckCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
                 You have already accepted this contract. Waiting for the other party.
               </div>
@@ -158,7 +189,7 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
                 </div>
                 {cancelContract.isError ? (
                   <p className="text-destructive text-sm">
-                    Failed to decline contract. Please try again.
+                    {errorMessage(cancelContract.error, 'Failed to decline contract. Please try again.')}
                   </p>
                 ) : null}
               </div>
@@ -192,7 +223,7 @@ export function ContractAcceptance({ contract }: ContractAcceptanceProps) {
             )}
             {acceptContract.isError ? (
               <p className="text-destructive text-sm">
-                Failed to accept contract. Please try again.
+                {errorMessage(acceptContract.error, 'Failed to accept contract. Please try again.')}
               </p>
             ) : null}
           </div>

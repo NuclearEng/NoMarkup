@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -90,8 +89,8 @@ func (h *AdminUsersHandler) SearchUsers(w http.ResponseWriter, r *http.Request) 
 // GetUser handles GET /api/v1/admin/users/{id}.
 func (h *AdminUsersHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	if userID == "" {
-		writeError(w, http.StatusBadRequest, "user id required")
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
 
@@ -138,8 +137,8 @@ func (h *AdminUsersHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 // SuspendUser handles POST /api/v1/admin/users/{id}/suspend.
 func (h *AdminUsersHandler) SuspendUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	if userID == "" {
-		writeError(w, http.StatusBadRequest, "user id required")
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
 
@@ -152,8 +151,7 @@ func (h *AdminUsersHandler) SuspendUser(w http.ResponseWriter, r *http.Request) 
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Reason == "" {
@@ -176,11 +174,55 @@ func (h *AdminUsersHandler) SuspendUser(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// ReactivateUser handles POST /api/v1/admin/users/{id}/reactivate.
+//
+// Counterpart to SuspendUser — flips users.status back to 'active' and
+// clears the suspension reason. Existing refresh tokens stay revoked, so
+// the user must log in again. Body is optional; if present, `note` is
+// recorded in the admin audit log.
+func (h *AdminUsersHandler) ReactivateUser(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	// Body is optional — accept empty/missing payload.
+	var body struct {
+		Note string `json:"note"`
+	}
+	if r.ContentLength > 0 {
+		if !decodeJSON(w, r, &body) {
+			return
+		}
+	}
+
+	resp, err := h.userClient.AdminReactivateUser(r.Context(), &userv1.AdminReactivateUserRequest{
+		UserId:  userID,
+		AdminId: claims.UserID,
+		Note:    body.Note,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"user": adminUserToJSON(resp.GetUser()),
+	})
+}
+
 // BanUser handles POST /api/v1/admin/users/{id}/ban.
 func (h *AdminUsersHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
-	if userID == "" {
-		writeError(w, http.StatusBadRequest, "user id required")
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
 
@@ -193,8 +235,7 @@ func (h *AdminUsersHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Reason == "" {
@@ -279,16 +320,31 @@ func parseAdminUserRole(s string) commonv1.UserRole {
 	}
 }
 
+// parsePagination reads page/page_size for the gRPC-flavored list endpoints.
+//
+// Both values are clamped. page_size follows the same convention as
+// parseDirectPagination in admin_marketplace.go (default 20, ceiling
+// maxPageSize) so a client cannot ask a downstream service for an unbounded
+// result set — nothing clamps it further down the call chain. page is capped at
+// maxPageNumber because page is turned into an OFFSET downstream, and a
+// multi-million page number makes the database walk and discard every row
+// before it (a deep-pagination scan) even when page_size is small.
 func parsePagination(q url.Values) *commonv1.PaginationRequest {
 	page := int32(1)
 	pageSize := int32(20)
 	if p := q.Get("page"); p != "" {
 		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			if v > maxPageNumber {
+				v = maxPageNumber
+			}
 			page = int32(v)
 		}
 	}
 	if ps := q.Get("page_size"); ps != "" {
 		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
+			if v > maxPageSize {
+				v = maxPageSize
+			}
 			pageSize = int32(v)
 		}
 	}

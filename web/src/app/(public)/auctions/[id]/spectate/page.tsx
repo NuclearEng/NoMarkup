@@ -9,8 +9,10 @@ import { GradientMesh } from '@/components/landing/GradientMesh';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
 import { TerminalGrid } from '@/components/terminal/terminal-grid';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useJob } from '@/hooks/useJobs';
 import { useSpectatorTerminal } from '@/hooks/useSpectatorTerminal';
+import { useTerminalHotkeys } from '@/hooks/useTerminalHotkeys';
 import type { MarketRange } from '@/types';
 
 const FALLBACK_MARKET_RANGE: MarketRange = {
@@ -34,19 +36,28 @@ export default function SpectatorPage() {
   const startingPriceCents = job?.starting_bid_cents ?? 0;
   const marketRange = job?.market_range ?? FALLBACK_MARKET_RANGE;
 
+  useTerminalHotkeys({ enabled: !isLoading && !isError && !!job, mode: 'spectate' });
+
   if (isLoading) {
     return (
-      <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+      <div className="dark relative min-h-screen overflow-y-auto bg-background">
         <GradientMesh />
         <div
           className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
           aria-hidden="true"
         />
         <div className="relative z-[2] flex min-h-screen items-center justify-center">
-          <div className="space-y-6 text-center">
-            <div className="mx-auto h-8 w-2/3 max-w-xs animate-pulse rounded bg-white/10" />
-            <div className="mx-auto h-4 w-1/3 max-w-[140px] animate-pulse rounded bg-white/10" />
-            <div className="mx-auto h-96 w-full max-w-2xl animate-pulse rounded-xl border border-white/[0.06] bg-white/5" />
+          <div
+            className="mx-auto w-full max-w-2xl space-y-6 px-4 text-center"
+            role="status"
+            aria-label="Loading auction"
+          >
+            <Skeleton className="mx-auto h-8 w-2/3 max-w-xs" />
+            <Skeleton className="mx-auto h-4 w-1/3 max-w-[140px]" />
+            <Skeleton
+              variant="card"
+              className="mx-auto h-96 w-full border border-white/[0.06]"
+            />
           </div>
         </div>
       </div>
@@ -55,7 +66,7 @@ export default function SpectatorPage() {
 
   if (isError || !job) {
     return (
-      <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+      <div className="dark relative min-h-screen overflow-y-auto bg-background">
         <GradientMesh />
         <div
           className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
@@ -80,7 +91,7 @@ export default function SpectatorPage() {
   }
 
   return (
-    <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+    <div className="dark relative min-h-screen overflow-y-auto bg-background">
       {/* Animated gradient mesh */}
       <GradientMesh />
 
@@ -91,7 +102,7 @@ export default function SpectatorPage() {
       />
 
       {/* Sticky top bar */}
-      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-background/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
           <div className="flex items-center gap-3">
             <Link
@@ -102,9 +113,27 @@ export default function SpectatorPage() {
               <span className="hidden sm:inline">Back</span>
             </Link>
             <div className="h-4 w-px bg-white/10" />
-            <Badge className="gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400">
-              <Radio className="h-3 w-3 animate-pulse" />
-              LIVE
+            <Badge className="gap-1 border-white/10 bg-white/5 text-xs text-white/70">
+              <Radio className="h-3 w-3" aria-hidden="true" />
+              SPECTATE
+            </Badge>
+            {/* LIVE only when the spectator socket is open — never claim live without connection (FE-06). */}
+            <Badge
+              className={
+                isConnected
+                  ? 'gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400'
+                  : error
+                    ? 'gap-1 border-red-500/20 bg-red-500/10 text-xs text-red-400'
+                    : 'gap-1 border-amber-500/20 bg-amber-500/10 text-xs text-amber-300'
+              }
+              aria-live="polite"
+            >
+              {isConnected ? (
+                <Wifi className="h-3 w-3 animate-pulse" aria-hidden="true" />
+              ) : (
+                <WifiOff className="h-3 w-3" aria-hidden="true" />
+              )}
+              {isConnected ? 'LIVE' : error ? 'OFFLINE' : 'CONNECTING'}
             </Badge>
           </div>
 
@@ -189,6 +218,11 @@ export default function SpectatorPage() {
           startingPriceCents={startingPriceCents}
           marketRange={marketRange}
           mockProviders={providers}
+          jobId={jobId}
+          snipeExtensionCount={job.snipe_extension_count ?? 0}
+          jobTitle={job.title}
+          jobDescription={job.description}
+          jobCategory={job.category_name}
         />
       </div>
     </div>

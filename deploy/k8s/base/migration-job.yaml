@@ -1,0 +1,71 @@
+# Database migration Job template — NOT included in kustomization.yaml.
+#
+# Production deploys create a uniquely named Job per release via
+# .github/workflows/deploy.yml (db-migrate-<version>) so successive deploys
+# never collide with a completed Job. The image bakes database/migrations/
+# (deploy/docker/migrate.Dockerfile).
+#
+# Manual:
+#   kubectl apply -f deploy/k8s/base/migration-job.yaml
+#   kubectl wait --for=condition=complete job/db-migrate -n nomarkup --timeout=300s
+#
+# Forward-only in production (`up`). Down migrations are for local/dev only.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: db-migrate
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: nomarkup
+  annotations:
+    description: "Applies database/migrations via golang-migrate (forward-only)."
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: db-migrate
+        app.kubernetes.io/component: migration
+        app.kubernetes.io/part-of: nomarkup
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          # Built by CI from deploy/docker/migrate.Dockerfile; pin in overlays.
+          image: ghcr.io/nomarkup/migrate:latest
+          imagePullPolicy: IfNotPresent
+          # k8s expands $(DATABASE_URL) from the container env (secretKeyRef).
+          args:
+            - "-path=/migrations"
+            - "-database=$(DATABASE_URL)"
+            - "up"
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: nomarkup-secrets
+                  key: DATABASE_URL
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"

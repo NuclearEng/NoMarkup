@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useAuthStore } from '@/stores/auth-store';
+import { MFARequiredError, useAuthStore } from '@/stores/auth-store';
 
 // Mock the api module
 vi.mock('@/lib/api', () => ({
@@ -377,6 +377,246 @@ describe('useAuthStore', () => {
 
       const state = useAuthStore.getState();
       expect(state.user).toEqual(user);
+    });
+  });
+
+  describe('login (MFA branch)', () => {
+    it('throws MFARequiredError when login response indicates MFA is required', async () => {
+      vi.mocked(api.postUnauthed).mockResolvedValueOnce({
+        user_id: 'user-mfa-1',
+        access_token: '',
+        access_token_expires_at: new Date().toISOString(),
+        mfa_required: true,
+        mfa_challenge_token: 'mfa-challenge-token-abc',
+      });
+
+      let caught: unknown;
+      try {
+        await useAuthStore.getState().login('mfa@example.com', 'StrongP@ss1');
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(MFARequiredError);
+      const mfaErr = caught as MFARequiredError;
+      expect(mfaErr.userId).toBe('user-mfa-1');
+      expect(mfaErr.challengeToken).toBe('mfa-challenge-token-abc');
+      expect(mfaErr.name).toBe('MFARequiredError');
+      // Should NOT be authenticated when MFA is required
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.user).toBeNull();
+      expect(setAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('throws if MFA is required but the challenge token is missing', async () => {
+      const mockToken = createMockJwt({
+        sub: 'user-x',
+        email: 'x@example.com',
+        roles: ['customer'],
+        exp: Date.now() / 1000 + 3600,
+        iat: Date.now() / 1000,
+      });
+
+      vi.mocked(api.postUnauthed).mockResolvedValueOnce({
+        user_id: 'user-x',
+        access_token: mockToken,
+        access_token_expires_at: new Date(Date.now() + 3600000).toISOString(),
+        mfa_required: true,
+        mfa_challenge_token: null,
+      });
+
+      await expect(
+        useAuthStore.getState().login('x@example.com', 'p'),
+      ).rejects.toThrow(/MFA required but challenge missing/);
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.user).toBeNull();
+      expect(setAccessToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('completeMFALogin', () => {
+    it('verifies MFA and sets user from JWT payload', async () => {
+      const mockToken = createMockJwt({
+        sub: 'user-mfa-99',
+        email: 'mfa@example.com',
+        roles: ['provider'],
+        exp: Date.now() / 1000 + 3600,
+        iat: Date.now() / 1000,
+      });
+
+      vi.mocked(api.postUnauthed).mockResolvedValueOnce({
+        user_id: 'user-mfa-99',
+        access_token: mockToken,
+        access_token_expires_at: new Date(Date.now() + 3600000).toISOString(),
+      });
+
+      vi.mocked(parseJwtPayload).mockReturnValueOnce({
+        sub: 'user-mfa-99',
+        email: 'mfa@example.com',
+        roles: ['provider'],
+        exp: Date.now() / 1000 + 3600,
+        iat: Date.now() / 1000,
+      });
+
+      await useAuthStore
+        .getState()
+        .completeMFALogin('challenge-token-1', '123456');
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.accessToken).toBe(mockToken);
+      expect(state.user?.id).toBe('user-mfa-99');
+      expect(state.user?.email).toBe('mfa@example.com');
+      expect(state.user?.roles).toEqual(['provider']);
+      expect(setAccessToken).toHaveBeenCalledWith(mockToken);
+      expect(api.postUnauthed).toHaveBeenCalledWith(
+        '/api/v1/auth/mfa/verify',
+        { mfa_challenge_token: 'challenge-token-1', totp_code: '123456' },
+      );
+    });
+
+    it('falls back to JWT sub claim when response omits user_id', async () => {
+      const mockToken = createMockJwt({
+        sub: 'jwt-sub-user',
+        email: 'sub@example.com',
+        roles: ['customer'],
+        exp: Date.now() / 1000 + 3600,
+        iat: Date.now() / 1000,
+      });
+
+      vi.mocked(api.postUnauthed).mockResolvedValueOnce({
+        // No user_id in body
+        access_token: mockToken,
+        access_token_expires_at: new Date(Date.now() + 3600000).toISOString(),
+      });
+
+      vi.mocked(parseJwtPayload).mockReturnValueOnce({
+        sub: 'jwt-sub-user',
+        email: 'sub@example.com',
+        roles: ['customer'],
+        exp: Date.now() / 1000 + 3600,
+        iat: Date.now() / 1000,
+      });
+
+      await useAuthStore
+        .getState()
+        .completeMFALogin('challenge-2', '654321');
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.user?.id).toBe('jwt-sub-user');
+    });
+
+    it('rejects the session when JWT payload cannot be parsed', async () => {
+      vi.mocked(api.postUnauthed).mockResolvedValueOnce({
+        user_id: 'user-no-jwt',
+        access_token: 'not-a-jwt',
+        access_token_expires_at: new Date(Date.now() + 3600000).toISOString(),
+      });
+
+      vi.mocked(parseJwtPayload).mockReturnValueOnce(null);
+
+      await expect(
+        useAuthStore.getState().completeMFALogin('challenge-3', '111111'),
+      ).rejects.toThrow(/session could not be restored/);
+
+      const state = useAuthStore.getState();
+      expect(state.user).toBeNull();
+      expect(state.isAuthenticated).toBe(false);
+      expect(setAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('rejects the session when both response user_id and payload are missing', async () => {
+      vi.mocked(api.postUnauthed).mockResolvedValueOnce({
+        // No user_id
+        access_token: 'opaque',
+        access_token_expires_at: new Date(Date.now() + 3600000).toISOString(),
+      });
+
+      vi.mocked(parseJwtPayload).mockReturnValueOnce(null);
+
+      await expect(
+        useAuthStore.getState().completeMFALogin('challenge-empty', '222222'),
+      ).rejects.toThrow(/session could not be restored/);
+
+      const state = useAuthStore.getState();
+      expect(state.user).toBeNull();
+      expect(state.isAuthenticated).toBe(false);
+      expect(setAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('throws and leaves state untouched on API error', async () => {
+      vi.mocked(api.postUnauthed).mockRejectedValueOnce(
+        new ApiError(401, 'Invalid TOTP code'),
+      );
+
+      await expect(
+        useAuthStore.getState().completeMFALogin('challenge-bad', '000000'),
+      ).rejects.toThrow();
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.user).toBeNull();
+      expect(setAccessToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('refreshToken (JWT branches)', () => {
+    it('reconstructs user from JWT payload when refresh succeeds', async () => {
+      const newToken = createMockJwt({
+        sub: 'refresh-user-1',
+        email: 'refresh@example.com',
+        roles: ['customer'],
+        exp: Date.now() / 1000 + 3600,
+        iat: Date.now() / 1000,
+      });
+
+      vi.mocked(api.postUnauthed).mockResolvedValueOnce({
+        access_token: newToken,
+        refresh_token: 'rt',
+        access_token_expires_at: new Date(Date.now() + 3600000).toISOString(),
+      });
+
+      vi.mocked(parseJwtPayload).mockReturnValueOnce({
+        sub: 'refresh-user-1',
+        email: 'refresh@example.com',
+        roles: ['customer'],
+        exp: Date.now() / 1000 + 3600,
+        iat: Date.now() / 1000,
+      });
+
+      const ok = await useAuthStore.getState().refreshToken();
+
+      expect(ok).toBe(true);
+      const state = useAuthStore.getState();
+      expect(state.user?.id).toBe('refresh-user-1');
+      expect(state.user?.email).toBe('refresh@example.com');
+      expect(state.user?.roles).toEqual(['customer']);
+      expect(state.isHydrating).toBe(false);
+    });
+
+    it('clears isHydrating after a failed refresh', async () => {
+      useAuthStore.setState({ isHydrating: true });
+      vi.mocked(api.postUnauthed).mockRejectedValueOnce(new Error('boom'));
+
+      const ok = await useAuthStore.getState().refreshToken();
+
+      expect(ok).toBe(false);
+      expect(useAuthStore.getState().isHydrating).toBe(false);
+    });
+  });
+
+  describe('MFARequiredError', () => {
+    it('exposes userId and challengeToken with default message', () => {
+      const err = new MFARequiredError('uid', 'ctok');
+      expect(err.userId).toBe('uid');
+      expect(err.challengeToken).toBe('ctok');
+      expect(err.message).toBe('MFA verification required');
+      expect(err.name).toBe('MFARequiredError');
+      expect(err).toBeInstanceOf(Error);
     });
   });
 

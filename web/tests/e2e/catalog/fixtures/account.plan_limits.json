@@ -1,0 +1,15 @@
+{
+  "method": "GET",
+  "path": "/api/v1/subscriptions/tiers",
+  "status": 200,
+  "contentType": "application/json",
+  "body": {
+    "items": [
+      {
+        "id": "free",
+        "name": "Free",
+        "monthly_price_cents": 0
+      }
+    ]
+  }
+}

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -22,18 +22,30 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	chatv1 "github.com/nomarkup/nomarkup/proto/chat/v1"
 	chatgrpc "github.com/nomarkup/nomarkup/services/chat/internal/grpc"
+	"github.com/nomarkup/nomarkup/services/chat/internal/observability"
 	"github.com/nomarkup/nomarkup/services/chat/internal/repository"
 	"github.com/nomarkup/nomarkup/services/chat/internal/service"
 	"github.com/nomarkup/nomarkup/services/chat/internal/ws"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	logger := slog.New(observability.NewContextHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	}))
+	})))
 	slog.SetDefault(logger)
+
+	// SEC-03 / GAP-006: refuse to start outside development without the
+	// gateway↔chat shared secret. An empty secret would let anyone who can
+	// reach the chat WS port impersonate arbitrary user_id values.
+	if err := ws.RequireInternalWSSecret(); err != nil {
+		slog.Error("refusing to start chat service", "error", err)
+		os.Exit(1)
+	}
 
 	port := os.Getenv("CHAT_SERVICE_PORT")
 	if port == "" {
@@ -85,7 +97,7 @@ func main() {
 	defer stop()
 
 	// Initialize PostgreSQL connection pool.
-	pool, err := pgxpool.New(ctx, databaseURL)
+	pool, err := observability.NewPGXPool(ctx, databaseURL)
 	if err != nil {
 		slog.Error("failed to create database pool", "error", err)
 		os.Exit(1)
@@ -114,6 +126,9 @@ func main() {
 	}
 	rdb := redis.NewClient(redisOpts)
 	defer rdb.Close()
+	if err := redisotel.InstrumentTracing(rdb); err != nil {
+		slog.Warn("redis tracing instrumentation failed", "error", err)
+	}
 
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		slog.Warn("failed to ping redis, pub/sub disabled", "error", err)
@@ -125,11 +140,25 @@ func main() {
 	repo := repository.NewPostgresRepository(pool)
 	pubsub := service.NewPubSub(rdb)
 	svc := service.New(repo, pubsub)
+	// Wire the cold-open relay so a phone/email typed into a message body is
+	// rewritten to the recipient's alias until they reply (privacy promise:
+	// "your email and phone stay private until you reply"). DB-backed; safe to
+	// run unconditionally — it degrades to masking when no alias row exists.
+	svc.SetRelay(service.NewPGAliasLookup(pool))
+	// FR-8.1: a provider may only open a pre-award channel on a job they have
+	// bid on. CreateChannel now REFUSES when this is unset, so leaving it
+	// unwired denies access rather than silently disabling the check — which
+	// is what happened before: SetBidChecker had no callers at all.
+	svc.SetBidChecker(service.NewPGBidChecker(pool))
+	// FR-5.4: on customer Accept of proposed local terms, bind payment_timing /
+	// terms_json onto the live contract for the channel job when one exists.
+	// Pre-award channels with no contract residual to consent-only.
+	svc.SetLocalTermsBinder(service.NewPGLocalTermsBinder(pool))
 	srv := chatgrpc.NewServer(svc)
 
 	// Create WebSocket hub and handler.
 	hub := ws.NewHub()
-	wsHandler := ws.NewHandler(hub, pubsub)
+	wsHandler := ws.NewHandler(hub, pubsub, svc)
 
 	// Start gRPC server.
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
@@ -138,12 +167,38 @@ func main() {
 		os.Exit(1)
 	}
 
-	s := grpc.NewServer(
+	serverOpts := []grpc.ServerOption{
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
-		grpc.ChainUnaryInterceptor(loggingUnaryInterceptor),
-		grpc.ChainStreamInterceptor(loggingStreamInterceptor),
-	)
+		// RequestID first (it seeds the context both the recovery and logging
+		// interceptors read), then recovery — outside logging so a panic in
+		// either the logging interceptor or the handler is contained (RES-03).
+		grpc.ChainUnaryInterceptor(observability.RequestIDUnaryInterceptor, recoveryUnaryInterceptor, loggingUnaryInterceptor),
+		grpc.ChainStreamInterceptor(observability.RequestIDStreamInterceptor, recoveryStreamInterceptor, loggingStreamInterceptor),
+		grpc.KeepaliveEnforcementPolicy(grpcKeepaliveEnforcement()),
+		grpc.KeepaliveParams(grpcKeepaliveParams()),
+	}
+	var errMTLS error
+	serverOpts, errMTLS = meshServerOptions(serverOpts)
+	if errMTLS != nil {
+		slog.Error("failed to configure gRPC server mTLS", "error", errMTLS)
+		os.Exit(1)
+	}
+	s := grpc.NewServer(serverOpts...)
 	chatgrpc.Register(s, srv)
+
+	// Standard gRPC health service (grpc.health.v1.Health). REQUIRED — the
+	// Kubernetes deployment (deploy/k8s/base/chat/deployment.yaml) uses native
+	// gRPC liveness/readiness probes, and kubelet queries the EMPTY service
+	// name. Without this registration every probe returns UNIMPLEMENTED,
+	// readiness never passes and liveness restarts the pod (CrashLoopBackOff).
+	// Do not delete as "unused" — the only caller is kubelet.
+	healthSrv := health.NewServer()
+	healthpb.RegisterHealthServer(s, healthSrv)
+	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthSrv.SetServingStatus(chatv1.ChatService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
+
+	// Observability HTTP server (healthz / readyz / metrics + active_websocket_connections gauge).
+	startObservabilityServer(ctx, "chat-service", port, pool, rdb, hub)
 
 	go func() {
 		slog.Info("chat gRPC service starting", "port", port)
@@ -154,7 +209,7 @@ func main() {
 	}()
 
 	// Auction WebSocket handler
-	auctionHandler := ws.NewAuctionHandler(rdb)
+	auctionHandler := ws.NewAuctionHandler(rdb, svc)
 
 	// Start HTTP server for WebSocket connections.
 	mux := http.NewServeMux()
@@ -179,6 +234,11 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("shutting down chat service")
+
+	// Flip every health status to NOT_SERVING *before* draining so the k8s
+	// readiness probe pulls this pod out of rotation while in-flight RPCs and
+	// WebSocket connections finish.
+	healthSrv.Shutdown()
 
 	// Close all WebSocket connections gracefully.
 	hub.CloseAll()

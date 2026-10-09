@@ -16,6 +16,7 @@ var (
 	ErrTokenRevoked            = errors.New("token revoked")
 	ErrAccountSuspended        = errors.New("account suspended")
 	ErrAccountBanned           = errors.New("account banned")
+	ErrCannotSuspendBanned     = errors.New("cannot suspend a banned account")
 	ErrAccountDeactivated      = errors.New("account deactivated")
 	ErrProviderProfileNotFound = errors.New("provider profile not found")
 	ErrInvalidRole             = errors.New("invalid role")
@@ -23,14 +24,80 @@ var (
 	ErrInvalidToken            = errors.New("invalid or expired verification token")
 	ErrInvalidOTP              = errors.New("invalid OTP code")
 	ErrOTPExpired              = errors.New("OTP code expired")
+	ErrOTPRateLimited          = errors.New("otp rate limited")
+	ErrInvalidPhone            = errors.New("invalid phone number")
+	ErrServiceUnavailable      = errors.New("service temporarily unavailable")
 	ErrDocumentNotFound        = errors.New("document not found")
-	ErrInvalidMFACode          = errors.New("invalid MFA code")
-	ErrMFANotSetup             = errors.New("MFA not set up")
-	ErrMFAAlreadyEnabled       = errors.New("MFA already enabled")
+	ErrInvalidDocumentType     = errors.New("invalid document type")
+	ErrMissingFileName         = errors.New("file_name is required")
+	// ErrResubmissionLimitReached is FR-2.10 hard lockout: after 3 rejections
+	// for a document type, further uploads are refused (contact support).
+	ErrResubmissionLimitReached = errors.New("resubmission limit reached")
+	ErrInvalidMFACode           = errors.New("invalid MFA code")
+	ErrMFANotSetup              = errors.New("MFA not set up")
+	ErrMFAAlreadyEnabled        = errors.New("MFA already enabled")
 	ErrInvalidMFAChallengeToken = errors.New("invalid or expired MFA challenge token")
 	ErrEmailNotVerified         = errors.New("email not verified")
 	ErrPropertyNotFound         = errors.New("property not found")
+	// ErrInvalidPropertyPhotos — not http(s), over max 5, or empty after trim when required.
+	ErrInvalidPropertyPhotos = errors.New("invalid property photos")
+
+	// GDPR / CCPA erasure pipeline.
+	ErrDeletionAlreadyRequested  = errors.New("account deletion already requested")
+	ErrDeletionNotRequested      = errors.New("account deletion not requested")
+	ErrDeletionAlreadyFinalized  = errors.New("account deletion already finalized")
+	ErrDeletionGracePeriodActive = errors.New("account deletion grace period still active")
+	ErrDeletionConfirmation      = errors.New("deletion confirmation phrase invalid")
+
+	// ErrRefreshTokenReuse means an already-rotated refresh token was presented
+	// outside the benign-race grace window — i.e. two parties hold the same
+	// token, which is unambiguous evidence of compromise. The whole token
+	// family has been revoked. It maps to the SAME wire status and message as
+	// ErrTokenRevoked on purpose: an attacker must not be able to probe whether
+	// detection fired. The distinction lives in logs and metrics, not the
+	// response.
+	ErrRefreshTokenReuse = errors.New("refresh token reuse detected")
+
+	// ErrBatchTooLarge means a batch request exceeded the server-side cap. An
+	// unbounded id list is a trivial resource-exhaustion vector, so the cap is
+	// enforced server-side regardless of what the caller claims.
+	ErrBatchTooLarge = errors.New("batch size exceeds limit")
 )
+
+// DeletionGracePeriod is the window between a user requesting account
+// deletion and the cron finalizing it. Aligns with GDPR Article 17 (30 days)
+// and CCPA's 45-day default. Picking the shorter of the two is the safer
+// regulator-facing choice.
+const DeletionGracePeriod = 30 * 24 * time.Hour
+
+// DeletionConfirmationPhrase is the literal string the client must echo when
+// requesting deletion. The frontend renders this in the confirmation dialog
+// so the action cannot be triggered by an accidental click.
+const DeletionConfirmationPhrase = "DELETE"
+
+// PendingDeletion summarises a user that has an unfinalized deletion request.
+// Used by the cron worker to materialize the work queue.
+type PendingDeletion struct {
+	UserID              string
+	Email               string
+	StripeCustomerID    string
+	StripeAccountID     string
+	DeletionRequestedAt time.Time
+}
+
+// ErasureCounts holds per-table row anonymization counts so the audit log
+// can record exactly what was wiped during a finalize call.
+type ErasureCounts map[string]int64
+
+// FinalizeOutcome captures everything the cascade did so it can be both
+// returned over gRPC and written into the admin_audit_log payload.
+type FinalizeOutcome struct {
+	UserID                string
+	FinalizedAt           time.Time
+	Counts                ErasureCounts
+	StripeCustomerOutcome string
+	StripeAccountOutcome  string
+}
 
 // User represents a platform user.
 type User struct {
@@ -66,6 +133,35 @@ type RefreshToken struct {
 	ExpiresAt  time.Time
 	RevokedAt  *time.Time
 	CreatedAt  time.Time
+
+	// FamilyID identifies the session lineage this token belongs to. A fresh
+	// login/register/OAuth mints a new family; every rotation inherits its
+	// parent's. Reuse detection revokes by family, so one compromised lineage
+	// dies without touching the user's other devices.
+	FamilyID string
+	// ParentID is the token this one was rotated from (nil for a session root).
+	// Forensics only — revocation keys off FamilyID.
+	ParentID *string
+	// RotatedAt is set ONLY when the token was consumed by rotation. It is the
+	// discriminator between theft-replay and a benign replay of a token that
+	// was revoked by logout / password change / admin action: those set
+	// RevokedAt but never RotatedAt.
+	RotatedAt *time.Time
+}
+
+// PublicUser is the strictly-public projection of a user: the exact field set
+// that survives the gateway's PII strip for a non-self, non-admin caller
+// (gateway/internal/handler/user.go). It deliberately has no place to put
+// email, phone, or MFA state, so a batch lookup cannot become a privilege
+// escalation by omission of a check.
+type PublicUser struct {
+	ID           string
+	DisplayName  string
+	AvatarURL    string
+	Roles        []string
+	Status       string
+	CreatedAt    time.Time
+	LastActiveAt *time.Time
 }
 
 // OAuthAccount represents a linked OAuth provider account.
@@ -111,12 +207,24 @@ type TokenPair struct {
 }
 
 // ProviderProfile represents a provider's profile.
+//
+// ServiceAddress, EINTIN and InsurancePolicyNumber are PII at rest (migration
+// 031): they are nacl/secretbox ciphertext in the database and are decrypted by
+// the repository on read, so every field here is plaintext.
 type ProviderProfile struct {
-	ID                       string
-	UserID                   string
-	BusinessName             string
-	Bio                      string
-	ServiceAddress           string
+	ID                    string
+	UserID                string
+	BusinessName          string
+	Bio                   string
+	ServiceAddress        string
+	EINTIN                string
+	InsurancePolicyNumber string
+	// InsuranceProvider is a carrier name (not encrypted — not personal data).
+	InsuranceProvider string
+	// InsuranceExpiry is YYYY-MM-DD when set; empty when unset.
+	InsuranceExpiry string
+	// InsuranceCoverageCents is liability limit in integer cents; 0 = unset.
+	InsuranceCoverageCents   int64
 	Latitude                 *float64
 	Longitude                *float64
 	ServiceRadiusKm          float64
@@ -184,6 +292,15 @@ type UpdateProviderInput struct {
 	Latitude        *float64
 	Longitude       *float64
 	ServiceRadiusKm *float64
+	// EINTIN and InsurancePolicyNumber are PII-at-rest (CLAUDE.md §6,
+	// migration 031). The repository encrypts them on write and decrypts on
+	// read — callers pass and receive plaintext.
+	EINTIN                *string
+	InsurancePolicyNumber *string
+	// Insurance metadata (migration 012) — not secretbox-encrypted.
+	InsuranceProvider      *string
+	InsuranceExpiry        *string // YYYY-MM-DD or empty to clear
+	InsuranceCoverageCents *int64  // cents; 0 clears
 }
 
 // GlobalTermsInput holds provider global terms settings.
@@ -278,18 +395,33 @@ const (
 	DocStatusRejected    DocumentStatus = "rejected"
 )
 
+// MaxDocumentResubmissions is FR-2.10: max rejection/resubmission attempts
+// per document type before hard lockout (contact support).
+const MaxDocumentResubmissions = 3
+
 // Document represents a verification document uploaded by a provider.
 type Document struct {
-	ID              string
-	UserID          string
-	Type            DocumentType
-	Status          DocumentStatus
-	FileName        string
-	StorageURL      string
-	RejectionReason string
-	ExpiresAt       *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                string
+	UserID            string
+	Type              DocumentType
+	Status            DocumentStatus
+	FileName          string
+	StorageURL        string
+	MimeType          string
+	SizeBytes         int64
+	RejectionReason   string
+	ResubmissionCount int // FR-2.10: rejections of this document type / row (max 3)
+	ExpiresAt         *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// PendingDocument is a verification document awaiting admin review, joined with
+// the owning user's identity so the admin queue is actionable.
+type PendingDocument struct {
+	Document
+	UserEmail       string
+	UserDisplayName string
 }
 
 // Property represents a customer's physical property (e.g., home address).
@@ -305,6 +437,8 @@ type Property struct {
 	Longitude float64
 	Notes     string
 	IsPrimary bool
+	// PhotoURLs are public CDN URLs (0–5) for exterior/access photos.
+	PhotoURLs []string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -321,6 +455,8 @@ type CreatePropertyInput struct {
 	Longitude float64
 	Notes     string
 	IsPrimary bool
+	// PhotoURLs optional; max 5 public CDN URLs from the imaging pipeline.
+	PhotoURLs []string
 }
 
 // UpdatePropertyInput holds optional fields for updating a property.
@@ -328,6 +464,8 @@ type UpdatePropertyInput struct {
 	Nickname  *string
 	Notes     *string
 	IsPrimary *bool
+	// PhotoURLs when non-nil replaces the full photo list (may be empty to clear). Max 5.
+	PhotoURLs *[]string
 }
 
 // UserRepository defines persistence operations for users.
@@ -335,12 +473,34 @@ type UserRepository interface {
 	CreateUser(ctx context.Context, user *User) error
 	GetUserByID(ctx context.Context, id string) (*User, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
+	// GetPublicUsersByIDs resolves many ids in a SINGLE query (= ANY on the
+	// UUID primary key). Ids that do not exist (or are soft-deleted) are simply
+	// absent from the result — a missing id is not an error, because the
+	// callers are display-name hydration paths that must fail soft.
+	GetPublicUsersByIDs(ctx context.Context, ids []string) ([]PublicUser, error)
 	UpdateLastLogin(ctx context.Context, userID string, at time.Time) error
 	UpdateEmailVerified(ctx context.Context, userID string, verified bool) error
+	UpdatePassword(ctx context.Context, userID, passwordHash string) error
 
 	CreateRefreshToken(ctx context.Context, token *RefreshToken) error
 	GetRefreshToken(ctx context.Context, tokenHash string) (*RefreshToken, error)
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	// RotateRefreshTokenIfActive atomically consumes a refresh token only if it
+	// is currently active (not already revoked) and reports whether a row was
+	// actually consumed. The UPDATE ... WHERE revoked_at IS NULL is the atomic
+	// gate: of N concurrent refreshes sharing one single-use token, exactly one
+	// observes rows-affected == 1 (true); the rest see 0 (false) and must be
+	// rejected. This enforces one-time refresh-token rotation under concurrency.
+	//
+	// It also stamps rotated_at, which plain revocation (logout, password
+	// change, admin revoke) never does. That is what lets the caller tell a
+	// theft-replay apart from a replay of a legitimately-revoked token.
+	RotateRefreshTokenIfActive(ctx context.Context, tokenHash string) (bool, error)
+	// RevokeRefreshTokenFamily revokes every still-active token in a session
+	// lineage and returns how many it killed. Used by reuse detection: if two
+	// parties hold the same token, no descendant of that lineage can be
+	// trusted, including the one the thief just minted.
+	RevokeRefreshTokenFamily(ctx context.Context, familyID string) (int64, error)
 	RevokeAllUserTokens(ctx context.Context, userID string) error
 
 	UpdateUser(ctx context.Context, userID string, input UpdateUserInput) (*User, error)
@@ -368,6 +528,7 @@ type UserRepository interface {
 	GetDocumentByUserAndType(ctx context.Context, userID string, docType DocumentType) (*Document, error)
 	ListDocuments(ctx context.Context, userID string) ([]Document, error)
 	UpdateDocumentStatus(ctx context.Context, documentID string, status DocumentStatus, rejectionReason string) error
+	ListPendingDocuments(ctx context.Context, page, pageSize int) ([]PendingDocument, int, error)
 
 	// OAuth
 	FindUserByOAuth(ctx context.Context, provider, providerID string) (*User, error)
@@ -384,8 +545,18 @@ type UserRepository interface {
 	// Admin operations
 	SuspendUser(ctx context.Context, userID, reason, adminID string) error
 	BanUser(ctx context.Context, userID, reason, adminID string) error
+	// SuspendUserAndRevokeTokens performs both operations in a single
+	// transaction. Either both succeed or neither — there is no state where
+	// the user is suspended but their refresh tokens are still valid.
+	SuspendUserAndRevokeTokens(ctx context.Context, userID, reason, adminID string) error
+	// BanUserAndRevokeTokens performs both operations in a single
+	// transaction. Either both succeed or neither.
+	BanUserAndRevokeTokens(ctx context.Context, userID, reason, adminID string) error
+	// ReactivateUser flips a suspended/banned/deactivated user back to
+	// active and clears the suspension reason. No-op if already active.
+	ReactivateUser(ctx context.Context, userID, adminID string) error
 	InsertAuditLog(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
-	AdminSearchUsers(ctx context.Context, query, status string, page, pageSize int) ([]User, int, error)
+	AdminSearchUsers(ctx context.Context, query, status, role string, page, pageSize int) ([]User, int, error)
 
 	// Provider search
 	SearchProviders(ctx context.Context, input ProviderSearchInput) ([]ProviderSearchResult, int, error)
@@ -395,4 +566,26 @@ type UserRepository interface {
 	ListProperties(ctx context.Context, userID string) ([]Property, error)
 	UpdateProperty(ctx context.Context, propertyID string, input UpdatePropertyInput) (*Property, error)
 	DeleteProperty(ctx context.Context, propertyID string) error
+
+	// GDPR / CCPA erasure pipeline.
+	// MarkDeletionRequested records that the user has asked for erasure,
+	// returns ErrDeletionAlreadyRequested if there's already an unfinalized
+	// request, and ErrDeletionAlreadyFinalized if the user has already been
+	// finalized.
+	MarkDeletionRequested(ctx context.Context, userID, reason string, requestedAt time.Time) error
+	// ClearDeletionRequest removes a pending request (within grace period).
+	// Returns ErrDeletionNotRequested when nothing was pending and
+	// ErrDeletionAlreadyFinalized once finalize has run.
+	ClearDeletionRequest(ctx context.Context, userID string) error
+	// GetUserDeletionState returns the timestamps for a user — needed by
+	// admin tooling and the lifecycle service. Returns ErrUserNotFound
+	// if the user does not exist.
+	GetUserDeletionState(ctx context.Context, userID string) (requestedAt, finalizedAt *time.Time, err error)
+	// ListPendingFinalizations returns rows whose grace period has expired
+	// and have not yet been finalized. The cron worker drains this queue.
+	ListPendingFinalizations(ctx context.Context, olderThan time.Time, limit int) ([]PendingDeletion, error)
+	// FinalizeAccountDeletion runs the full anonymization cascade in a
+	// single transaction. Returns the per-table counts; idempotent
+	// (returns ErrDeletionAlreadyFinalized on a second call).
+	FinalizeAccountDeletion(ctx context.Context, userID string) (ErasureCounts, error)
 }

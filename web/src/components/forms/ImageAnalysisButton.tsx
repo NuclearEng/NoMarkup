@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { getAccessToken } from '@/lib/auth';
 
 export interface ImageAnalysisResult {
   category: string;
@@ -83,14 +84,36 @@ export function ImageAnalysisButton({ onResult, className }: ImageAnalysisButton
     try {
       const imageBase64 = await fileToBase64(file);
 
+      // The route verifies the access JWT server-side (it proxies a paid
+      // LLM call) — attach it explicitly; cookies alone are not accepted.
+      const accessToken = getAccessToken();
       const response = await fetch('/api/analyze-job-image', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({ imageBase64, mimeType: file.type }),
       });
 
       if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({ error: 'Unknown error' }));
+        // 503 (or a body flagged `aiUnavailable`) means the AI feature is not
+        // configured / temporarily down. AI auto-fill is an optional
+        // enhancement — show a soft, non-blocking notice and let the user fill
+        // in the details manually. Never block job posting.
+        const errorBody: unknown = await response.json().catch(() => null);
+        const unavailable =
+          response.status === 503 ||
+          (typeof errorBody === 'object' &&
+            errorBody !== null &&
+            'aiUnavailable' in errorBody &&
+            (errorBody as { aiUnavailable: unknown }).aiUnavailable === true);
+        if (unavailable) {
+          toast.info(
+            "Couldn't auto-analyze the photo — you can still fill in the details manually.",
+          );
+          return;
+        }
         const message =
           typeof errorBody === 'object' &&
           errorBody !== null &&
@@ -110,7 +133,11 @@ export function ImageAnalysisButton({ onResult, className }: ImageAnalysisButton
 
       onResult(data);
     } catch {
-      toast.error('Could not analyze image. Check your connection and try again.');
+      // Network failure — treat as a soft unavailable notice, never block the
+      // job-posting flow.
+      toast.info(
+        "Couldn't auto-analyze the photo — you can still fill in the details manually.",
+      );
     } finally {
       setIsAnalyzing(false);
     }

@@ -2,22 +2,55 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
+	"github.com/stripe/stripe-go/v82"
 )
 
 // SubscriptionService implements subscription business logic.
 type SubscriptionService struct {
-	repo   domain.SubscriptionRepository
-	stripe *StripeService
+	repo             domain.SubscriptionRepository
+	stripe           *StripeService
+	customers        *CustomerProvisioner
+	webhookValidator WebhookEventValidator
 }
 
 // NewSubscriptionService creates a new subscription service.
 func NewSubscriptionService(repo domain.SubscriptionRepository, stripe *StripeService) *SubscriptionService {
 	return &SubscriptionService{repo: repo, stripe: stripe}
+}
+
+// SetCustomerProvisioner supplies the Stripe Customer used when a live
+// subscription is created. Live creates fail closed when it is missing.
+func (s *SubscriptionService) SetCustomerProvisioner(p *CustomerProvisioner) {
+	s.customers = p
+}
+
+// SetWebhookValidator injects a WebhookEventValidator used to verify the Stripe
+// signature on subscription webhook deliveries. This is the ONLY supported way
+// to enable signature verification; there is no env-based bypass. Production
+// callers must wire a StripeWebhookValidator at startup (see cmd/server/main.go).
+func (s *SubscriptionService) SetWebhookValidator(v WebhookEventValidator) {
+	s.webhookValidator = v
+}
+
+// VerifyWebhookSignature verifies the raw subscription webhook payload against
+// its Stripe-Signature header. Security: verification is MANDATORY and fails
+// closed — if no validator is configured we refuse the event rather than
+// processing an unauthenticated payload. A non-nil error means the caller MUST
+// reject the webhook with a 4xx (never process it).
+func (s *SubscriptionService) VerifyWebhookSignature(payload []byte, signature string) (stripe.Event, error) {
+	if s.webhookValidator == nil {
+		slog.Error("subscription webhook validator not configured, refusing event")
+		return stripe.Event{}, fmt.Errorf("webhook validator not configured")
+	}
+	return s.webhookValidator.ConstructEvent(payload, signature)
 }
 
 // ListTiers returns all active subscription tiers.
@@ -30,6 +63,20 @@ func (s *SubscriptionService) GetTier(ctx context.Context, tierID string) (*doma
 	return s.repo.GetTier(ctx, tierID)
 }
 
+// subscriptionCreateStatus is active only when nothing is left to collect.
+// A client secret, or a live paid price with no secret yet, stays incomplete
+// until invoice.paid. Dev mode with an empty secret stays active so local
+// stacks without Stripe keys can exercise plan UX.
+func subscriptionCreateStatus(priceCents int64, devMode bool, clientSecret string) string {
+	if clientSecret != "" {
+		return "incomplete"
+	}
+	if priceCents > 0 && !devMode {
+		return "incomplete"
+	}
+	return "active"
+}
+
 // CreateSubscription creates a new subscription for a user.
 func (s *SubscriptionService) CreateSubscription(ctx context.Context, userID, tierID, billingInterval, paymentMethodID string) (*domain.Subscription, string, error) {
 	// Verify the tier exists.
@@ -38,10 +85,22 @@ func (s *SubscriptionService) CreateSubscription(ctx context.Context, userID, ti
 		return nil, "", err
 	}
 
-	// Check for existing active subscription.
-	existing, err := s.repo.GetSubscription(ctx, userID)
+	// Entitled rows block a second plan. An unpaid incomplete row is expired
+	// and replaced so a lost PaymentIntent confirmation can be retried
+	// without granting the tier or leaving two Stripe subscriptions open.
+	existing, err := s.repo.GetOpenSubscription(ctx, userID)
 	if err == nil && existing != nil {
-		return nil, "", fmt.Errorf("create subscription: %w", domain.ErrAlreadySubscribed)
+		if existing.Status != "incomplete" {
+			return nil, "", fmt.Errorf("create subscription: %w", domain.ErrAlreadySubscribed)
+		}
+		if existing.StripeSubscriptionID != "" {
+			if cancelErr := s.stripe.CancelStripeSubscription(ctx, existing.StripeSubscriptionID, true); cancelErr != nil {
+				return nil, "", fmt.Errorf("replace unpaid subscription: %w", cancelErr)
+			}
+		}
+		if statusErr := s.repo.UpdateSubscriptionStatus(ctx, existing.ID, "expired"); statusErr != nil {
+			return nil, "", fmt.Errorf("replace unpaid subscription: %w", statusErr)
+		}
 	}
 
 	// Determine the price based on billing interval.
@@ -57,8 +116,24 @@ func (s *SubscriptionService) CreateSubscription(ctx context.Context, userID, ti
 		stripePriceID = tier.StripePriceIDMonthly
 	}
 
+	// Live mode must bill a real Stripe Customer. Dev mode keeps the local stub.
+	stripeCustomerID := ""
+	if s.stripe != nil && !s.stripe.devMode {
+		if s.customers == nil {
+			return nil, "", fmt.Errorf("create subscription: stripe customer provisioner not configured")
+		}
+		id, custErr := s.customers.EnsureCustomer(ctx, userID)
+		if custErr != nil {
+			return nil, "", fmt.Errorf("create subscription: stripe customer: %w", custErr)
+		}
+		if id == "" {
+			return nil, "", fmt.Errorf("create subscription: stripe customer missing")
+		}
+		stripeCustomerID = id
+	}
+
 	// Create the Stripe subscription.
-	stripeSubID, clientSecret, err := s.stripe.CreateStripeSubscription(ctx, userID, stripePriceID, paymentMethodID)
+	stripeSubID, clientSecret, err := s.stripe.CreateStripeSubscription(ctx, userID, stripeCustomerID, stripePriceID, paymentMethodID)
 	if err != nil {
 		return nil, "", fmt.Errorf("create subscription stripe: %w", err)
 	}
@@ -74,7 +149,7 @@ func (s *SubscriptionService) CreateSubscription(ctx context.Context, userID, ti
 		UserID:               userID,
 		TierID:               tierID,
 		Tier:                 tier,
-		Status:               "active",
+		Status:               subscriptionCreateStatus(priceCents, s.stripe.devMode, clientSecret),
 		BillingInterval:      billingInterval,
 		CurrentPriceCents:    priceCents,
 		StripeSubscriptionID: stripeSubID,
@@ -121,19 +196,21 @@ func (s *SubscriptionService) CancelSubscription(ctx context.Context, userID, re
 }
 
 // ChangeSubscriptionTier changes the user's subscription to a new tier.
-func (s *SubscriptionService) ChangeSubscriptionTier(ctx context.Context, userID, newTierID, billingInterval string) (*domain.Subscription, int64, error) {
+// The bool is false when the new plan is not stored yet because the
+// proration invoice is unpaid. The string is that invoice's client secret.
+func (s *SubscriptionService) ChangeSubscriptionTier(ctx context.Context, userID, newTierID, billingInterval string) (*domain.Subscription, int64, string, bool, error) {
 	sub, err := s.repo.GetSubscription(ctx, userID)
 	if err != nil {
-		return nil, 0, fmt.Errorf("change tier: %w", domain.ErrNoActiveSubscription)
+		return nil, 0, "", false, fmt.Errorf("change tier: %w", domain.ErrNoActiveSubscription)
 	}
 
 	newTier, err := s.repo.GetTier(ctx, newTierID)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", false, err
 	}
 
 	if sub.TierID == newTierID && sub.BillingInterval == billingInterval {
-		return nil, 0, fmt.Errorf("change tier: %w", domain.ErrInvalidTierChange)
+		return nil, 0, "", false, fmt.Errorf("change tier: %w", domain.ErrInvalidTierChange)
 	}
 
 	// Determine new price and Stripe price ID.
@@ -149,22 +226,26 @@ func (s *SubscriptionService) ChangeSubscriptionTier(ctx context.Context, userID
 		stripePriceID = newTier.StripePriceIDMonthly
 	}
 
-	// Update the Stripe subscription.
-	newStripeSubID, prorationAmount, err := s.stripe.UpdateStripeSubscription(ctx, sub.StripeSubscriptionID, stripePriceID)
+	// Update the Stripe subscription. An unpaid proration invoice must not
+	// change the local tier: plan caps read that column.
+	update, err := s.stripe.UpdateStripeSubscription(ctx, sub.StripeSubscriptionID, stripePriceID)
 	if err != nil {
-		return nil, 0, fmt.Errorf("change tier stripe: %w", err)
+		return nil, 0, "", false, fmt.Errorf("change tier stripe: %w", err)
+	}
+	if !update.Applied {
+		return sub, update.ProrationCents, update.ClientSecret, false, nil
 	}
 
-	if err := s.repo.UpdateSubscriptionTier(ctx, sub.ID, newTierID, newPriceCents, billingInterval, newStripeSubID); err != nil {
-		return nil, 0, err
+	if err := s.repo.UpdateSubscriptionTier(ctx, sub.ID, newTierID, newPriceCents, billingInterval, update.SubscriptionID); err != nil {
+		return nil, 0, "", false, err
 	}
 
 	updatedSub, err := s.repo.GetSubscription(ctx, userID)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", false, err
 	}
 
-	return updatedSub, prorationAmount, nil
+	return updatedSub, update.ProrationCents, "", true, nil
 }
 
 // GetUsage returns the user's current usage against subscription limits.
@@ -260,10 +341,18 @@ func (s *SubscriptionService) CheckFeatureAccess(ctx context.Context, userID, fe
 }
 
 // ListInvoices retrieves invoices from Stripe for a user's subscription.
+//
+// Admin-granted and seed subscriptions often have an empty StripeSubscriptionID
+// (no Stripe object was ever created). Calling Stripe with an empty subscription
+// param returns parameter_invalid_empty → Internal → HTTP 500. Treat that as
+// "no billable invoices yet" and return an empty list instead.
 func (s *SubscriptionService) ListInvoices(ctx context.Context, userID string) ([]*domain.Invoice, error) {
 	sub, err := s.repo.GetSubscription(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list invoices: %w", domain.ErrNoActiveSubscription)
+	}
+	if sub == nil || strings.TrimSpace(sub.StripeSubscriptionID) == "" {
+		return []*domain.Invoice{}, nil
 	}
 
 	return s.stripe.ListStripeInvoices(ctx, sub.StripeSubscriptionID)
@@ -320,8 +409,11 @@ func (s *SubscriptionService) AdminGrantSubscription(ctx context.Context, userID
 	return sub, nil
 }
 
-// HandleSubscriptionWebhook processes Stripe subscription webhook events.
-func (s *SubscriptionService) HandleSubscriptionWebhook(ctx context.Context, eventType, stripeSubscriptionID string, periodStart, periodEnd *time.Time) error {
+// HandleSubscriptionWebhook processes Stripe subscription events.
+// billingReason is the invoice billing_reason. stripePriceID, when set, is
+// the price Stripe has already applied. Callers verify the signature with
+// stripe.webhooks.constructEvent() before this runs.
+func (s *SubscriptionService) HandleSubscriptionWebhook(ctx context.Context, eventType, stripeSubscriptionID string, periodStart, periodEnd *time.Time, billingReason, stripePriceID string) error {
 	switch eventType {
 	case "customer.subscription.updated":
 		sub, err := s.repo.GetSubscriptionByStripeID(ctx, stripeSubscriptionID)
@@ -330,10 +422,11 @@ func (s *SubscriptionService) HandleSubscriptionWebhook(ctx context.Context, eve
 		}
 		if periodStart != nil && periodEnd != nil {
 			if err := s.repo.UpdateSubscriptionPeriod(ctx, sub.ID, *periodStart, *periodEnd); err != nil {
-				return fmt.Errorf("webhook update period: %w", err)
+				return fmt.Errorf("update period: %w", err)
 			}
 		}
-		return nil
+		// Price sync runs only after stripe.webhooks.constructEvent() succeeded.
+		return s.applyObservedStripePrice(ctx, stripeSubscriptionID, stripePriceID)
 
 	case "customer.subscription.deleted":
 		sub, err := s.repo.GetSubscriptionByStripeID(ctx, stripeSubscriptionID)
@@ -347,6 +440,20 @@ func (s *SubscriptionService) HandleSubscriptionWebhook(ctx context.Context, eve
 		if err != nil {
 			return nil
 		}
+		// incomplete is not an entitlement. Promoting it to past_due would
+		// grant plan caps for a charge that never succeeded.
+		if sub.Status == "incomplete" {
+			return nil
+		}
+		// A failed proration invoice for a plan change must not mark the
+		// already-paid period past_due. pending_if_incomplete leaves the
+		// current subscription in place.
+		if billingReason == "subscription_update" {
+			return nil
+		}
+		if sub.Status != "active" && sub.Status != "trialing" {
+			return nil
+		}
 		return s.repo.UpdateSubscriptionStatus(ctx, sub.ID, "past_due")
 
 	case "invoice.paid":
@@ -354,12 +461,44 @@ func (s *SubscriptionService) HandleSubscriptionWebhook(ctx context.Context, eve
 		if err != nil {
 			return nil
 		}
-		if sub.Status == "past_due" {
-			return s.repo.UpdateSubscriptionStatus(ctx, sub.ID, "active")
+		// incomplete: first invoice just confirmed. past_due: a retry succeeded.
+		// active stays active. Entitlements read only active/trialing/past_due.
+		if sub.Status == "past_due" || sub.Status == "incomplete" {
+			if err := s.repo.UpdateSubscriptionStatus(ctx, sub.ID, "active"); err != nil {
+				return err
+			}
 		}
-		return nil
+		return s.applyObservedStripePrice(ctx, stripeSubscriptionID, stripePriceID)
 
 	default:
 		return nil
 	}
+}
+
+// applyObservedStripePrice stores the tier Stripe has already put on a paid
+// invoice or an applied subscription update. An unknown price is ignored.
+// Callers run this only after stripe.webhooks.constructEvent() succeeds.
+func (s *SubscriptionService) applyObservedStripePrice(ctx context.Context, stripeSubscriptionID, priceID string) error {
+	if !strings.HasPrefix(priceID, "price_") {
+		return nil
+	}
+	tier, interval, err := s.repo.GetTierByStripePriceID(ctx, priceID)
+	if err != nil {
+		if errors.Is(err, domain.ErrTierNotFound) {
+			return nil
+		}
+		return err
+	}
+	sub, err := s.repo.GetSubscriptionByStripeID(ctx, stripeSubscriptionID)
+	if err != nil {
+		return nil
+	}
+	priceCents := tier.MonthlyPriceCents
+	if interval == "annual" {
+		priceCents = tier.AnnualPriceCents
+	}
+	if sub.TierID == tier.ID && sub.BillingInterval == interval && sub.CurrentPriceCents == priceCents {
+		return nil
+	}
+	return s.repo.UpdateSubscriptionTier(ctx, sub.ID, tier.ID, priceCents, interval, stripeSubscriptionID)
 }

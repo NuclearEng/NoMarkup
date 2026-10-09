@@ -1,10 +1,14 @@
 'use client';
 
 import { Plus, Trash2 } from 'lucide-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 
+import { PreferredProvidersSection } from '@/components/properties/PreferredProvidersSection';
+import { PropertySpendLabel } from '@/components/properties/PropertySpendLabel';
 import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,24 +24,32 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { ImageUpload } from '@/components/ui/ImageUpload';
 import { Input } from '@/components/ui/input';
-import { useCreateProperty, useDeleteProperty, useProperties } from '@/hooks/useProperties';
+import {
+  useCreateProperty,
+  useDeleteProperty,
+  usePreferredProviders,
+  useProperties,
+} from '@/hooks/useProperties';
 import { propertySchema } from '@/lib/validations';
-import { formatCents } from '@/lib/utils';
 import type { PropertyFormValues } from '@/lib/validations';
+import { UPLOAD_CONTEXT } from '@/types';
 
 export default function PropertiesPage() {
   const { data: properties, isLoading, isError, refetch } = useProperties();
+  const preferred = usePreferredProviders();
   const createProperty = useCreateProperty();
   const deleteProperty = useDeleteProperty();
   const [showForm, setShowForm] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
 
   const form = useForm<PropertyFormValues>({
     resolver: zodResolver(propertySchema),
     defaultValues: {
       nickname: '',
-      address: '',
+      street: '',
       city: '',
       state: '',
       zip_code: '',
@@ -46,8 +58,9 @@ export default function PropertiesPage() {
   });
 
   async function onSubmit(values: PropertyFormValues) {
-    await createProperty.mutateAsync(values);
+    await createProperty.mutateAsync({ ...values, photo_urls: photoUrls });
     form.reset();
+    setPhotoUrls([]);
     setShowForm(false);
   }
 
@@ -80,6 +93,15 @@ export default function PropertiesPage() {
         </Button>
       </div>
 
+      {/* FR-19.2 account-wide preferred / top providers */}
+      <PreferredProvidersSection
+        providers={preferred.data?.providers}
+        isLoading={preferred.isLoading}
+        isError={preferred.isError}
+        preferredThreshold={preferred.data?.preferred_threshold}
+        scope="account"
+      />
+
       {/* Add Property Form */}
       {showForm ? (
         <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
@@ -105,7 +127,7 @@ export default function PropertiesPage() {
 
                 <FormField
                   control={form.control}
-                  name="address"
+                  name="street"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Street Address</FormLabel>
@@ -173,6 +195,28 @@ export default function PropertiesPage() {
                   )}
                 />
 
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-zinc-200">Photos (optional, up to 5)</p>
+                  <p className="text-xs text-zinc-400">
+                    Exterior or access photos · JPEG/PNG/WebP · 10 MB each. Reuses the platform image pipeline.
+                  </p>
+                  <ImageUpload
+                    context={UPLOAD_CONTEXT.JOB_PHOTO}
+                    multiple
+                    maxFiles={5}
+                    existingImages={photoUrls}
+                    onUploadComplete={(result) => {
+                      setPhotoUrls((prev) =>
+                        prev.length >= 5 ? prev : [...prev, result.confirmedUrl],
+                      );
+                    }}
+                    onRemove={(url) => {
+                      setPhotoUrls((prev) => prev.filter((u) => u !== url));
+                    }}
+                    placeholder="Add property photos"
+                  />
+                </div>
+
                 <div className="flex gap-2">
                   <Button
                     type="submit"
@@ -188,6 +232,7 @@ export default function PropertiesPage() {
                     onClick={() => {
                       setShowForm(false);
                       form.reset();
+                      setPhotoUrls([]);
                     }}
                   >
                     Cancel
@@ -244,7 +289,12 @@ export default function PropertiesPage() {
             <Card key={property.id} className="glass glass-highlight border border-[var(--brand-gold)]/10">
               <CardContent className="p-5">
                 <div className="mb-2 flex items-start justify-between">
-                  <h3 className="font-semibold">{property.nickname}</h3>
+                  <Link
+                    href={`/properties/${property.id}` as Route}
+                    className="min-h-11 font-semibold text-zinc-100 hover:text-[var(--brand-gold)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {property.nickname}
+                  </Link>
                   <Button
                     variant={deletingId === property.id ? 'destructive' : 'ghost'}
                     size="sm"
@@ -262,19 +312,23 @@ export default function PropertiesPage() {
                   </Button>
                 </div>
                 <p className="text-zinc-300 text-sm">
-                  {property.address}, {property.city}, {property.state} {property.zip_code}
+                  {property.address.street}, {property.address.city}, {property.address.state} {property.address.zip_code}
                 </p>
                 {property.notes ? (
                   <p className="text-zinc-300 mt-1 text-xs">{property.notes}</p>
                 ) : null}
-                <div className="mt-3 flex items-center gap-3">
+                <div className="mt-3 flex flex-wrap items-center gap-3">
                   <Badge variant="secondary">
-                    {String(property.active_jobs)} active job
-                    {property.active_jobs !== 1 ? 's' : ''}
+                    {String(property.active_jobs ?? 0)} active job
+                    {(property.active_jobs ?? 0) !== 1 ? 's' : ''}
                   </Badge>
-                  <span className="text-sm font-medium">
-                    {formatCents(property.total_spend_cents)} spent
-                  </span>
+                  <PropertySpendLabel propertyId={property.id} />
+                  <Link
+                    href={`/properties/${property.id}` as Route}
+                    className="text-sm font-medium text-[var(--brand-gold)] hover:underline min-h-11 inline-flex items-center"
+                  >
+                    View history
+                  </Link>
                 </div>
               </CardContent>
             </Card>

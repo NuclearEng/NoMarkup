@@ -1,0 +1,184 @@
+# PodDisruptionBudgets — keep at least one pod during voluntary disruptions
+# (node drains, cluster upgrades). Only multi-replica Deployments are listed;
+# meilisearch (RWO PVC, 1 replica) and otel-collector (1 replica) are omitted.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: user-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: user
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: user
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: job-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: job
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: job
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payment-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: payment
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: payment
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: chat-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: chat
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chat
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: notification-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: notification
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notification
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: bidding-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: bidding
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bidding
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fraud-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: fraud
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fraud
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: trust-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: trust
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trust
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: imaging-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: imaging
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: imaging
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pricing-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: pricing
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pricing
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: underwriting-pdb
+  namespace: nomarkup
+  labels:
+    app.kubernetes.io/name: underwriting
+    app.kubernetes.io/part-of: nomarkup
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: underwriting

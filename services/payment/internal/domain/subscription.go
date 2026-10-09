@@ -45,7 +45,7 @@ type Subscription struct {
 	UserID               string
 	TierID               string
 	Tier                 *SubscriptionTier
-	Status               string // active, past_due, cancelled, expired, trialing
+	Status               string // incomplete, trialing, active, past_due, cancelled, expired
 	BillingInterval      string // monthly, annual
 	CurrentPriceCents    int64
 	StripeSubscriptionID string
@@ -87,9 +87,15 @@ type SubscriptionUsage struct {
 type SubscriptionRepository interface {
 	ListTiers(ctx context.Context) ([]*SubscriptionTier, error)
 	GetTier(ctx context.Context, tierID string) (*SubscriptionTier, error)
+	// GetTierByStripePriceID resolves a Stripe Price id to the tier and the
+	// billing interval that price belongs to ("monthly" or "annual").
+	GetTierByStripePriceID(ctx context.Context, priceID string) (tier *SubscriptionTier, billingInterval string, err error)
 	UpdateTier(ctx context.Context, tierID string, updates map[string]interface{}) (*SubscriptionTier, error)
 	CreateSubscription(ctx context.Context, sub *Subscription) error
 	GetSubscription(ctx context.Context, userID string) (*Subscription, error)
+	// GetOpenSubscription includes incomplete (payment not confirmed). Entitlement
+	// reads must keep using GetSubscription, which excludes that status.
+	GetOpenSubscription(ctx context.Context, userID string) (*Subscription, error)
 	GetSubscriptionByStripeID(ctx context.Context, stripeSubscriptionID string) (*Subscription, error)
 	UpdateSubscriptionStatus(ctx context.Context, id string, status string) error
 	UpdateSubscriptionTier(ctx context.Context, id string, tierID string, priceCents int64, billingInterval string, stripeSubID string) error

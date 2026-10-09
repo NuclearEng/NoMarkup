@@ -43,8 +43,8 @@ export function ViewerCount({ jobId, className }: ViewerCountProps) {
     <div
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full',
-        'border border-amber-500/30 bg-amber-500/10 px-2.5 py-1',
-        'text-xs font-medium text-amber-600 dark:text-amber-400',
+        'border border-trust-medium/30 bg-trust-medium/10 px-2.5 py-1',
+        'text-xs font-medium text-trust-medium dark:text-trust-medium',
         'transition-transform duration-300',
         isPulsing && 'scale-105',
         className,

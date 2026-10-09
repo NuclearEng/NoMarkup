@@ -1,13 +1,16 @@
 package handler
 
 import (
-	"encoding/json"
+	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	fraudv1 "github.com/nomarkup/nomarkup/proto/fraud/v1"
+	trustv1 "github.com/nomarkup/nomarkup/proto/trust/v1"
 
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
@@ -15,11 +18,36 @@ import (
 // FraudHandler handles HTTP endpoints for fraud detection administration.
 type FraudHandler struct {
 	fraudClient fraudv1.FraudServiceClient
+	trustClient trustv1.TrustServiceClient // optional — recompute trust after a fraud review
 }
 
-// NewFraudHandler creates a new FraudHandler.
-func NewFraudHandler(fraudClient fraudv1.FraudServiceClient) *FraudHandler {
-	return &FraudHandler{fraudClient: fraudClient}
+// NewFraudHandler creates a new FraudHandler. trustClient may be nil (recompute
+// is then skipped); when set, reviewing a fraud alert recomputes the affected
+// user's trust score so a cleared flag actually lifts an under_review tier.
+func NewFraudHandler(fraudClient fraudv1.FraudServiceClient, trustClient trustv1.TrustServiceClient) *FraudHandler {
+	return &FraudHandler{fraudClient: fraudClient, trustClient: trustClient}
+}
+
+// recomputeTrustScore asynchronously recomputes a user's trust score. The
+// fraud-flag -> under_review override is baked into the stored tier at compute
+// time, so without a recompute after a fraud alert is resolved the tier stays
+// frozen at under_review even once the flag is gone. Fire-and-forget: trust is a
+// derived signal and must degrade gracefully (§15 fail soft) — a trust outage
+// must never fail the admin's fraud-review action.
+func (h *FraudHandler) recomputeTrustScore(userID string) {
+	if h.trustClient == nil || userID == "" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := h.trustClient.ComputeTrustScore(ctx, &trustv1.ComputeTrustScoreRequest{
+			UserId:        userID,
+			TriggerReason: "fraud_alert_reviewed",
+		}); err != nil {
+			slog.Warn("trust score recompute after fraud review failed", "user_id", userID, "error", err)
+		}
+	}()
 }
 
 // ListAlerts handles GET /api/v1/admin/fraud/alerts.
@@ -80,7 +108,7 @@ func (h *FraudHandler) ListAlerts(w http.ResponseWriter, r *http.Request) {
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -111,8 +139,7 @@ func (h *FraudHandler) ReviewAlert(w http.ResponseWriter, r *http.Request) {
 		RestrictUser    bool   `json:"restrict_user"`
 		BanUser         bool   `json:"ban_user"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 
@@ -134,6 +161,11 @@ func (h *FraudHandler) ReviewAlert(w http.ResponseWriter, r *http.Request) {
 		writeGRPCError(w, err)
 		return
 	}
+
+	// Reviewing an alert changes the user's active-flag state, which the trust
+	// tier is computed from. Recompute so a resolved flag actually lifts the
+	// frozen under_review tier (fire-and-forget; never blocks the response).
+	h.recomputeTrustScore(resp.GetAlert().GetUserId())
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"alert": fraudAlertToJSON(resp.GetAlert()),
@@ -173,15 +205,21 @@ func fraudAlertToJSON(a *fraudv1.FraudAlert) map[string]interface{} {
 		signals = append(signals, fraudSignalToJSON(s))
 	}
 
+	createdAt := formatTimestamp(a.GetCreatedAt())
 	result := map[string]interface{}{
-		"id":               a.GetId(),
-		"user_id":          a.GetUserId(),
-		"signals":          signals,
-		"aggregate_risk":   riskLevelToString(a.GetAggregateRisk()),
-		"status":           alertStatusToString(a.GetStatus()),
-		"assigned_to":      a.GetAssignedTo(),
-		"resolution_notes": a.GetResolutionNotes(),
-		"created_at":       formatTimestamp(a.GetCreatedAt()),
+		"id":                   a.GetId(),
+		"user_id":              a.GetUserId(),
+		"signals":              signals,
+		"aggregate_risk_level": riskLevelToString(a.GetAggregateRisk()),
+		"status":               alertStatusToString(a.GetStatus()),
+		"assigned_admin_id":    a.GetAssignedTo(),
+		"resolution_notes":     a.GetResolutionNotes(),
+		// The fraud proto has no separate updated_at/auto_resolved fields; emit
+		// stable defaults so the web contract (FraudAlert) shape is satisfied.
+		"auto_resolved": false,
+		"created_at":    createdAt,
+		"updated_at":    createdAt,
+		"resolved_at":   nil,
 	}
 	if a.GetResolvedAt() != nil {
 		result["resolved_at"] = formatTimestamp(a.GetResolvedAt())
@@ -194,17 +232,17 @@ func fraudSignalToJSON(s *fraudv1.FraudSignal) map[string]interface{} {
 		return map[string]interface{}{}
 	}
 	return map[string]interface{}{
-		"id":                 s.GetId(),
-		"user_id":            s.GetUserId(),
-		"signal_type":        fraudSignalTypeToString(s.GetSignalType()),
-		"confidence":         s.GetConfidence(),
-		"risk_level":         riskLevelToString(s.GetRiskLevel()),
-		"details":            s.GetDetails(),
-		"ip_address":         s.GetIpAddress(),
-		"device_fingerprint": s.GetDeviceFingerprint(),
-		"reference_type":     s.GetReferenceType(),
-		"reference_id":       s.GetReferenceId(),
-		"detected_at":        formatTimestamp(s.GetDetectedAt()),
+		"id":                    s.GetId(),
+		"user_id":               s.GetUserId(),
+		"signal_type":           fraudSignalTypeToString(s.GetSignalType()),
+		"confidence":            s.GetConfidence(),
+		"risk_level":            riskLevelToString(s.GetRiskLevel()),
+		"description":           s.GetDetails(),
+		"ip_address":            s.GetIpAddress(),
+		"device_fingerprint":    s.GetDeviceFingerprint(),
+		"reference_entity_type": s.GetReferenceType(),
+		"reference_entity_id":   s.GetReferenceId(),
+		"created_at":            formatTimestamp(s.GetDetectedAt()),
 	}
 }
 

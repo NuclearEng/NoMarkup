@@ -29,6 +29,16 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['.next/', 'node_modules/', 'coverage/', '*.config.*'],
+    ignores: [
+      '.next/',
+      'node_modules/',
+      'coverage/',
+      '*.config.*',
+      'next-env.d.ts',
+      // The service worker is a plain JS file consumed by the browser, not
+      // part of the TypeScript project — exclude it from type-checked lint.
+      'public/sw.js',
+      'public/**/*.js',
+    ],
   },
 );

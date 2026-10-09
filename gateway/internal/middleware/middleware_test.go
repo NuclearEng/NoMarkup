@@ -25,8 +25,15 @@ func generateTestKeyPair(t *testing.T) *rsa.PrivateKey {
 
 func signTestJWT(t *testing.T, key *rsa.PrivateKey, subject, email string, roles []string, expiresAt time.Time) string {
 	t.Helper()
+	return signTestJWTWithClaims(t, key, subject, email, roles, expiresAt, defaultJWTIssuer, defaultJWTAudience)
+}
+
+func signTestJWTWithClaims(t *testing.T, key *rsa.PrivateKey, subject, email string, roles []string, expiresAt time.Time, issuer, audience string) string {
+	t.Helper()
 	claims := tokenClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    issuer,
+			Audience:  jwt.ClaimStrings{audience},
 			Subject:   subject,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -57,7 +64,7 @@ func TestAuthMiddleware(t *testing.T) {
 	t.Parallel()
 
 	key := generateTestKeyPair(t)
-	authMw := NewAuthMiddleware(&key.PublicKey)
+	authMw := NewAuthMiddleware(&key.PublicKey, nil)
 
 	tests := []struct {
 		name           string
@@ -106,6 +113,18 @@ func TestAuthMiddleware(t *testing.T) {
 			wantStatus:     http.StatusUnauthorized,
 			wantBodySubstr: "invalid or expired token",
 		},
+		{
+			name:           "wrong_issuer_returns_401_invalid_claims",
+			authHeader:     "Bearer " + signTestJWTWithClaims(t, key, "user-123", "test@example.com", []string{"customer"}, time.Now().Add(15*time.Minute), "https://evil.example.com", defaultJWTAudience),
+			wantStatus:     http.StatusUnauthorized,
+			wantBodySubstr: "auth_invalid_claims",
+		},
+		{
+			name:           "wrong_audience_returns_401_invalid_claims",
+			authHeader:     "Bearer " + signTestJWTWithClaims(t, key, "user-123", "test@example.com", []string{"customer"}, time.Now().Add(15*time.Minute), defaultJWTIssuer, "other-audience"),
+			wantStatus:     http.StatusUnauthorized,
+			wantBodySubstr: "auth_invalid_claims",
+		},
 	}
 
 	for _, tt := range tests {
@@ -136,7 +155,7 @@ func TestAuthMiddleware_claims_in_context(t *testing.T) {
 	t.Parallel()
 
 	key := generateTestKeyPair(t)
-	authMw := NewAuthMiddleware(&key.PublicKey)
+	authMw := NewAuthMiddleware(&key.PublicKey, nil)
 
 	token := signTestJWT(t, key, "user-456", "admin@example.com", []string{"admin", "provider"}, time.Now().Add(15*time.Minute))
 
@@ -158,6 +177,72 @@ func TestAuthMiddleware_claims_in_context(t *testing.T) {
 	assert.Equal(t, "user-456", capturedClaims.UserID)
 	assert.Equal(t, "admin@example.com", capturedClaims.Email)
 	assert.Equal(t, []string{"admin", "provider"}, capturedClaims.Roles)
+}
+
+// signTestJWTWithMethod signs claims with an explicit RSA signing method
+// (RS256/RS384/RS512). Used to prove SEC-16 rejects non-RS256 algs.
+func signTestJWTWithMethod(t *testing.T, key *rsa.PrivateKey, method jwt.SigningMethod, subject string, expiresAt time.Time) string {
+	t.Helper()
+	claims := tokenClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    defaultJWTIssuer,
+			Audience:  jwt.ClaimStrings{defaultJWTAudience},
+			Subject:   subject,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
+		Email: "test@example.com",
+		Roles: []string{"customer"},
+	}
+	token := jwt.NewWithClaims(method, claims)
+	signed, err := token.SignedString(key)
+	require.NoError(t, err)
+	return signed
+}
+
+// SEC-16: WithValidMethods must accept RS256 only — RS384/RS512 are valid RSA
+// family algs but are not allowed for access tokens.
+func TestAuthMiddleware_rejects_non_RS256(t *testing.T) {
+	t.Parallel()
+
+	key := generateTestKeyPair(t)
+	authMw := NewAuthMiddleware(&key.PublicKey, nil)
+	exp := time.Now().Add(15 * time.Minute)
+
+	tests := []struct {
+		name   string
+		method jwt.SigningMethod
+	}{
+		{name: "RS384_rejected", method: jwt.SigningMethodRS384},
+		{name: "RS512_rejected", method: jwt.SigningMethodRS512},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tok := signTestJWTWithMethod(t, key, tt.method, "user-rs", exp)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			req.Header.Set("Authorization", "Bearer "+tok)
+			rec := httptest.NewRecorder()
+
+			authMw.Handler(okHandler()).ServeHTTP(rec, req)
+
+			assert.Equal(t, http.StatusUnauthorized, rec.Code)
+			assert.Contains(t, rec.Body.String(), "invalid or expired token")
+		})
+	}
+
+	t.Run("RS256_accepted", func(t *testing.T) {
+		t.Parallel()
+		tok := signTestJWTWithMethod(t, key, jwt.SigningMethodRS256, "user-rs256", exp)
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		authMw.Handler(okHandler()).ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "user-rs256", rec.Header().Get("X-User-ID"))
+	})
 }
 
 // --- RequireAdmin tests ---
@@ -218,6 +303,80 @@ func TestRequireAdmin(t *testing.T) {
 			rec := httptest.NewRecorder()
 
 			handler := RequireAdmin(okHandler())
+			handler.ServeHTTP(rec, req)
+
+			assert.Equal(t, tt.wantStatus, rec.Code)
+			if tt.wantBodySubstr != "" {
+				assert.Contains(t, rec.Body.String(), tt.wantBodySubstr)
+			}
+		})
+	}
+}
+
+// --- RequireProvider tests ---
+
+func TestRequireProvider(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		claims         *Claims
+		setClaims      bool
+		wantStatus     int
+		wantBodySubstr string
+	}{
+		{
+			name:       "provider_role_passes",
+			claims:     &Claims{UserID: "u1", Email: "a@b.com", Roles: []string{"provider"}},
+			setClaims:  true,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "admin_passes",
+			claims:     &Claims{UserID: "u2", Email: "a@b.com", Roles: []string{"admin"}},
+			setClaims:  true,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "provider_among_multiple_roles_passes",
+			claims:     &Claims{UserID: "u3", Email: "a@b.com", Roles: []string{"customer", "provider"}},
+			setClaims:  true,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:           "customer_only_returns_403",
+			claims:         &Claims{UserID: "u4", Email: "a@b.com", Roles: []string{"customer"}},
+			setClaims:      true,
+			wantStatus:     http.StatusForbidden,
+			wantBodySubstr: "provider access required",
+		},
+		{
+			name:           "empty_roles_returns_403",
+			claims:         &Claims{UserID: "u5", Email: "a@b.com", Roles: []string{}},
+			setClaims:      true,
+			wantStatus:     http.StatusForbidden,
+			wantBodySubstr: "provider access required",
+		},
+		{
+			name:           "no_claims_in_context_returns_401",
+			setClaims:      false,
+			wantStatus:     http.StatusUnauthorized,
+			wantBodySubstr: "authentication required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodGet, "/providers/me", nil)
+			if tt.setClaims {
+				ctx := context.WithValue(req.Context(), ClaimsContextKey, tt.claims)
+				req = req.WithContext(ctx)
+			}
+			rec := httptest.NewRecorder()
+
+			handler := RequireProvider(okHandler())
 			handler.ServeHTTP(rec, req)
 
 			assert.Equal(t, tt.wantStatus, rec.Code)
@@ -406,4 +565,41 @@ func TestRateLimit_passthrough(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "ok", rec.Body.String())
+}
+
+// SEC-06: auth-adjacent unauthenticated paths must land on TierAuth.
+func TestTierForPath_authPaths(t *testing.T) {
+	t.Parallel()
+	authPaths := []string{
+		"/api/v1/auth/register",
+		"/api/v1/auth/register-phone",
+		"/api/v1/auth/register-phone/send-otp",
+		"/api/v1/auth/send-phone-otp",
+		"/api/v1/auth/login",
+		"/api/v1/auth/resend-verification",
+		"/api/v1/auth/oauth/google",
+		"/api/v1/auth/callback/google",
+		"/api/v1/auth/oauth/facebook",
+		"/api/v1/auth/callback/facebook",
+		"/api/v1/auth/oauth/apple",
+		"/api/v1/auth/callback/apple",
+		"/api/v1/auth/apple/native",
+		"/api/v1/auth/google/native",
+		"/api/v1/auth/facebook/native",
+		"/api/v1/auth/mfa/verify",
+	}
+	for _, p := range authPaths {
+		p := p
+		t.Run(p, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, TierAuth, tierForPath(p), "path %s should be TierAuth", p)
+		})
+	}
+	// refresh stays standard (called on every navigation).
+	assert.Equal(t, TierStandard, tierForPath("/api/v1/auth/refresh"))
+}
+
+func TestTierForPath_rum(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, TierPublicRead, tierForPath("/api/v1/rum"))
 }

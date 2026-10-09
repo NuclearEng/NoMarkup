@@ -87,7 +87,7 @@ export function GuaranteeClaimForm({ contractId, onSuccess, className }: Guarant
     setEvidenceUrls((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     setErrors({});
 

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -39,8 +38,7 @@ func (h *VerificationHandler) UploadDocument(w http.ResponseWriter, r *http.Requ
 	}
 
 	var req uploadDocumentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -50,6 +48,15 @@ func (h *VerificationHandler) UploadDocument(w http.ResponseWriter, r *http.Requ
 	}
 	if req.FileURL == "" {
 		writeError(w, http.StatusBadRequest, "file_url is required")
+		return
+	}
+	// The file_url must point at an object the caller uploaded to our storage
+	// (documents/{userID}/...). Without this, a verification document could be
+	// registered against an arbitrary external URL or another user's object —
+	// the client-supplied mime_type/size_bytes are untrusted metadata; the only
+	// thing that anchors the record to real, owned content is the key namespace.
+	// An external URL has no {context}/{userID} shape and fails closed.
+	if !requireOwnedObject(w, req.FileURL, claims.UserID) {
 		return
 	}
 

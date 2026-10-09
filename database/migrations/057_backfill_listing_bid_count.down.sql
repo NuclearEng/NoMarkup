@@ -1,0 +1,10 @@
+-- 057_backfill_listing_bid_count (down)
+--
+-- No-op. This is a one-time data backfill of `listings.bid_count`.
+-- The original (wrong, inflated/drifted) values cannot be restored —
+-- they were corrupt by definition — so there is nothing meaningful to
+-- roll back to. Recomputing here would simply re-apply the up migration's
+-- correct value, which is harmless but pointless.
+--
+-- Intentionally left as a comment-only down migration so the pair is
+-- complete per §5 (every migration has a down file).

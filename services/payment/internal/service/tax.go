@@ -4,11 +4,35 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
 )
+
+// dummyPlatformEIN is the placeholder that used to be hardcoded onto generated
+// 1099-NEC forms. It must never be persisted as a payer EIN.
+const dummyPlatformEIN = "88-1234567"
+
+// usEINPattern is the IRS EIN display shape NN-NNNNNNN.
+var usEINPattern = regexp.MustCompile(`^\d{2}-\d{7}$`)
+
+// resolvePlatformEIN returns a trimmed US EIN suitable for a 1099-NEC payer
+// line, or ErrPlatformEINNotConfigured. Empty, whitespace, the dummy
+// 88-1234567, and non-US shapes are all rejected so a generated form never
+// ships a fake EIN.
+func resolvePlatformEIN(ein string) (string, error) {
+	ein = strings.TrimSpace(ein)
+	if ein == "" || ein == dummyPlatformEIN {
+		return "", domain.ErrPlatformEINNotConfigured
+	}
+	if !usEINPattern.MatchString(ein) {
+		return "", domain.ErrPlatformEINNotConfigured
+	}
+	return ein, nil
+}
 
 // GenerateTaxForm creates or updates a 1099-NEC tax form for a provider and year.
 func (s *PaymentService) GenerateTaxForm(ctx context.Context, providerID string, taxYear int) (*domain.TaxForm, error) {
@@ -21,10 +45,25 @@ func (s *PaymentService) GenerateTaxForm(ctx context.Context, providerID string,
 		return nil, fmt.Errorf("generate tax form: invalid tax year %d", taxYear)
 	}
 
+	platformEIN, err := resolvePlatformEIN(s.platformEIN)
+	if err != nil {
+		return nil, fmt.Errorf("generate tax form: %w", err)
+	}
+
 	// Get total provider earnings for the year.
 	totalEarnings, err := s.repo.GetProviderEarningsForYear(ctx, providerID, taxYear)
 	if err != nil {
 		return nil, fmt.Errorf("generate tax form: %w", err)
+	}
+
+	// Gate on the IRS $600 1099-NEC reporting threshold. Below this, a 1099-NEC
+	// is neither required nor valid, so emitting one would produce a misleading
+	// tax document. Fail closed with a precise, self-serve message (CLAUDE.md
+	// §15) rather than generating a $0/below-threshold form. The UI also shows a
+	// "Below Threshold" badge, but the authoritative check must live here at the
+	// service boundary — the client gate is bypassable via the direct API.
+	if totalEarnings < domain.Threshold1099NECCents {
+		return nil, fmt.Errorf("generate tax form: %w", domain.ErrBelow1099Threshold)
 	}
 
 	// Get provider profile (legal name, address).
@@ -55,7 +94,7 @@ func (s *PaymentService) GenerateTaxForm(ctx context.Context, providerID string,
 		TotalCompensationCents:  totalEarnings,
 		FederalTaxWithheldCents: 0,
 		StateTaxWithheldCents:   0,
-		PlatformEIN:             "88-1234567",
+		PlatformEIN:             platformEIN,
 		PlatformName:            "NoMarkup Inc.",
 		PDFURL:                  &pdfURL,
 		Status:                  "generated",
@@ -108,6 +147,18 @@ func (s *PaymentService) GenerateTaxFormHTML(ctx context.Context, providerID str
 	}
 
 	generatedDate := tf.CreatedAt.Format("January 2, 2006")
+
+	// All user/provider-controlled fields below MUST flow through htmlEscape
+	// before interpolation. The previous implementation interpolated raw
+	// strings via fmt.Sprintf, which let a provider with a display name like
+	// `<script>alert(1)</script>` inject script into a rendered/PDF tax form
+	// (downloaded by the provider themselves and potentially viewed by IRS
+	// reviewers / accountants). htmlEscape lives in invoice.go.
+	safeProviderName := htmlEscape(tf.ProviderLegalName)
+	safeProviderAddress := htmlEscape(tf.ProviderAddress)
+	safePlatformName := htmlEscape(tf.PlatformName)
+	safePlatformEIN := htmlEscape(tf.PlatformEIN)
+	safeTaxIDDisplay := htmlEscape(taxIDDisplay)
 
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
@@ -194,11 +245,11 @@ func (s *PaymentService) GenerateTaxFormHTML(ctx context.Context, providerID str
 </body>
 </html>`,
 		tf.TaxYear, tf.TaxYear,
-		tf.PlatformName, tf.PlatformEIN,
-		tf.ProviderLegalName, taxIDDisplay, tf.ProviderAddress,
+		safePlatformName, safePlatformEIN,
+		safeProviderName, safeTaxIDDisplay, safeProviderAddress,
 		dollars, fedWithheld, stateWithheld,
-		tf.PlatformName, tf.TaxYear,
-		generatedDate, tf.PlatformName, tf.ID,
+		safePlatformName, tf.TaxYear,
+		generatedDate, safePlatformName, htmlEscape(tf.ID),
 	)
 
 	return html, nil

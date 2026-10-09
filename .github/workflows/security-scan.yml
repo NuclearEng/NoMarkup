@@ -1,5 +1,23 @@
 name: Security Scan
 
+# ── QA-10 (Founder-Action residual) ─────────────────────────────
+# This workflow is intentionally SEPARATE from `.github/workflows/ci.yml`.
+# Reasons we do NOT fold scanners into `ci.yml` `build.needs`:
+#   1. GitHub Actions `needs` cannot cross workflows — coupling requires a
+#      merge of the two YAML files, which would also run scanners on every
+#      push/schedule path of the long CI graph (fullstack-security-test is
+#      already the long pole; cargo-audit install + govulncheck×6 still add
+#      runner minutes and noise to the "Build All" gate).
+#   2. Weekly cron (Monday 06:00 UTC) re-scans for new CVEs without a code
+#      change — that schedule does not belong on the PR unit/integration DAG.
+# Merge protection therefore depends on GitHub branch protection requiring
+# the single check below (not on ci.yml edges):
+#   Required status check name: **Security Gate**
+# Settings → Branches → Branch protection rule for `main` → Require status
+# checks → add "Security Gate". Verify on a PR that a red scan blocks merge.
+# Until that is configured, a green `CI / Build All` alone is NOT enough to
+# claim dependency scanners gated merges.
+
 on:
   pull_request:
     branches: [main]
@@ -12,7 +30,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.22"
+  # Pin the exact patch matching every go.mod's `toolchain go1.26.4`: setup-go
+  # v6 makes the installed version authoritative (ignores the directive), and a
+  # bare minor (e.g. "1.26") can resolve to an older patch whose stdlib carries
+  # vulns fixed in later patches (GO-2026-5039/-5037 fixed in 1.26.4).
+  # Bump this in lockstep with the toolchain directive.
+  GO_VERSION: "1.26.5"
   NODE_VERSION: 22
 
 jobs:
@@ -31,8 +54,8 @@ jobs:
           - services/chat
           - services/notification
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: ${{ matrix.dir }}/go.sum
@@ -47,9 +70,12 @@ jobs:
     name: Rust Cargo Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      # SHA-pinned: toolchain can't come from the ref name, pass it explicitly.
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: engines
       - name: Install cargo-audit
@@ -59,12 +85,21 @@ jobs:
         run: cargo audit
 
   # ── npm Audit ───────────────────────────────────────────────
+  # Policy (QA-15 residual — intentional, not an oversight):
+  #   • Scope: production deps only (`--omit=dev`). Dev/test tooling CVEs
+  #     (Playwright, Vitest, ESLint, types, etc.) do NOT fail this job.
+  #   • Severity gate: high + critical only (`--audit-level=high`).
+  #     moderate / low findings are residual and not CI-blocking.
+  #   • Full `npm audit` (with dev + moderate) may still report issues;
+  #     that is expected. Ratchet only by tightening flags here after
+  #     triage — do not claim "npm audit clean" without stating this policy.
+  # Documented also in docs/conventions.md (Security scan / dependency policy).
   npm-audit:
     name: npm Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -72,6 +107,20 @@ jobs:
       - name: Install dependencies
         working-directory: web
         run: npm ci
-      - name: Run npm audit (production dependencies)
+      - name: Run npm audit (production dependencies, high+)
         working-directory: web
         run: npm audit --omit=dev --audit-level=high
+
+  # ── Single required-check name for branch protection (QA-10) ──
+  # Matrix `go-vuln` expands to six check names; rust-audit + npm-audit add
+  # two more. Requiring all eight in branch protection is error-prone.
+  # This job succeeds only when every scanner above is green — Founder
+  # configures **exactly one** required check: "Security Gate".
+
+  security-gate:
+    name: Security Gate
+    needs: [go-vuln, rust-audit, npm-audit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All security scanners passed
+        run: echo "go-vuln (matrix) + rust-audit + npm-audit green"

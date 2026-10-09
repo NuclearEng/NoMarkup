@@ -21,7 +21,8 @@ import { TerminalGrid } from '@/components/terminal/terminal-grid';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useReplayTerminal, SPEED_OPTIONS } from '@/hooks/useReplayTerminal';
+import { useReplayTerminal, SPEED_OPTIONS, type SpeedOption } from '@/hooks/useReplayTerminal';
+import { useTerminalHotkeys } from '@/hooks/useTerminalHotkeys';
 import { formatCents } from '@/lib/utils';
 import type { MarketRange } from '@/types';
 
@@ -29,13 +30,13 @@ import type { MarketRange } from '@/types';
 
 function ReplayLoadingSkeleton() {
   return (
-    <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+    <div className="dark relative min-h-screen overflow-y-auto bg-background">
       <GradientMesh />
       <div
         className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
         aria-hidden="true"
       />
-      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-background/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
           <Skeleton className="h-6 w-24 bg-white/10" />
           <Skeleton className="h-6 w-64 bg-white/10" />
@@ -64,7 +65,7 @@ function ReplayLoadingSkeleton() {
 
 function ReplayNotFound() {
   return (
-    <div className="dark relative flex min-h-screen flex-col items-center justify-center overflow-y-auto bg-[#070b14]">
+    <div className="dark relative flex min-h-screen flex-col items-center justify-center overflow-y-auto bg-background">
       <GradientMesh />
       <div
         className="hero-vignette pointer-events-none absolute inset-0 z-[1]"
@@ -117,7 +118,7 @@ function CompletionOverlay({
       aria-modal="true"
       aria-label="Auction replay complete"
     >
-      <div className="mx-4 w-full max-w-md rounded-2xl border border-white/10 bg-[#0c0f18] p-8 shadow-2xl">
+      <div className="mx-4 w-full max-w-md rounded-2xl border border-white/10 bg-card p-8 shadow-2xl">
         <div className="flex flex-col items-center text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/15">
             <Trophy className="h-8 w-8 text-emerald-400" aria-hidden="true" />
@@ -218,6 +219,25 @@ export default function AuctionReplayPage() {
     return 100 / (replay.totalBidCount - 1);
   }, [replay.totalBidCount]);
 
+  useTerminalHotkeys({
+    enabled: !replay.isLoading && !replay.isError,
+    mode: 'replay',
+    replay: {
+      isPlaying: replay.isPlaying,
+      play: replay.handlePlay,
+      pause: replay.handlePause,
+      restart: replay.handleRestart,
+      speeds: SPEED_OPTIONS,
+      setSpeed: (s) => {
+        replay.handleSpeedChange(s as SpeedOption);
+      },
+      scrubBy: (delta) => {
+        const next = Math.min(100, Math.max(0, replay.scrubValue + delta * scrubStep));
+        replay.handleScrub([next]);
+      },
+    },
+  });
+
   if (replay.isLoading) {
     return <ReplayLoadingSkeleton />;
   }
@@ -227,7 +247,7 @@ export default function AuctionReplayPage() {
   }
 
   return (
-    <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+    <div className="dark relative min-h-screen overflow-y-auto bg-background">
       {/* Animated gradient mesh */}
       <GradientMesh />
 
@@ -238,7 +258,7 @@ export default function AuctionReplayPage() {
       />
 
       {/* ─── Sticky top bar ─── */}
-      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-background/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
           {/* Left: Back + Replay badge */}
           <div className="flex shrink-0 items-center gap-3">
@@ -336,7 +356,7 @@ export default function AuctionReplayPage() {
                   type="button"
                   role="radio"
                   aria-checked={replay.speed === s}
-                  onClick={() => replay.handleSpeedChange(s)}
+                  onClick={() => { replay.handleSpeedChange(s); }}
                   className={`flex h-7 min-w-[28px] items-center justify-center rounded px-1.5 text-[10px] font-medium transition-colors ${
                     replay.speed === s
                       ? 'bg-white/15 text-white'
@@ -376,7 +396,7 @@ export default function AuctionReplayPage() {
                 type="button"
                 role="radio"
                 aria-checked={replay.speed === s}
-                onClick={() => replay.handleSpeedChange(s)}
+                onClick={() => { replay.handleSpeedChange(s); }}
                 className={`flex h-6 min-w-[24px] items-center justify-center rounded px-1 text-[10px] font-medium transition-colors ${
                   replay.speed === s
                     ? 'bg-white/15 text-white'
@@ -403,6 +423,15 @@ export default function AuctionReplayPage() {
           startingPriceCents={replay.startingBidCents}
           marketRange={marketRange}
           mockProviders={replay.mockProviders}
+          jobId={jobId}
+          snipeExtensionCount={0}
+          jobTitle={replay.jobTitle}
+          jobDescription={
+            replay.jobTitle
+              ? `Replay of “${replay.jobTitle}”. Scrub timeline or press Space to play.`
+              : 'Auction replay'
+          }
+          jobCategory={replay.category}
         />
       </div>
 
@@ -414,7 +443,7 @@ export default function AuctionReplayPage() {
           totalSavingsCents={replay.totalSavingsCents}
           startingBidCents={replay.startingBidCents}
           onReplay={replay.handleRestart}
-          onDismiss={() => setOverlayDismissed(true)}
+          onDismiss={() => { setOverlayDismissed(true); }}
         />
       )}
     </div>

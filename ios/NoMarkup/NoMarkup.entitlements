@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sign in with Apple — enable capability in Xcode for your Team / App ID. -->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+	<!-- Apple Pay (Rail A) — merchant ID must match AppConfig.applePayMerchantId + Stripe Dashboard. -->
+	<key>com.apple.developer.in-app-payments</key>
+	<array>
+		<string>merchant.com.nomarkup.app</string>
+	</array>
+	<!--
+	  APNs environment.
+	  Xcode / the archive export path rewrites aps-environment for App Store / TestFlight
+	  (production) vs development provisioning (development). Keep "development" for local Debug
+	  so sandbox APNs works with APNS_PRODUCTION=false on the notification service.
+	  Do not treat this file as the sole production toggle — the signed entitlement on the
+	  archived binary is authoritative.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
+	<!-- App Group shared with NoMarkupWidget for auction snapshot timelines (IOS-SYS.WD.5). -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.nomarkup.app</string>
+	</array>
+	<!-- Universal Links + webcredentials (passkeys). Domain: no-markup.com (hyphenated). -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:no-markup.com</string>
+		<string>webcredentials:no-markup.com</string>
+	</array>
+</dict>
+</plist>

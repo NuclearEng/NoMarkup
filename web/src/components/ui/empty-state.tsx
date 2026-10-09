@@ -25,7 +25,11 @@ export function EmptyState({ icon, title, description, action, className }: Empt
       {description ? (
         <p className="text-muted-foreground mt-1 max-w-sm text-sm">{description}</p>
       ) : null}
-      {action ? <div className="mt-4">{action}</div> : null}
+      {action ? (
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-3 [&_button]:min-h-[44px] [&_a]:min-h-[44px]">
+          {action}
+        </div>
+      ) : null}
     </div>
   );
 }

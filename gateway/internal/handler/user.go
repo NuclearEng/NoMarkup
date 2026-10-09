@@ -1,22 +1,32 @@
 package handler
 
 import (
-	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
+
+// maxDisplayNameLen bounds the user-facing display name. 80 chars is generous
+// for a real name or handle while bounding the column against an unbounded blob.
+const maxDisplayNameLen = 80
 
 // UserHandler handles HTTP endpoints for user profiles.
 type UserHandler struct {
 	userClient userv1.UserServiceClient
 	db         *pgxpool.Pool
+	// sessions sets the refresh cookie after EnableRole. The cookie path is
+	// /api/v1/auth, so this request cannot read or rotate the existing cookie.
+	// Nil skips the cookie (tests); production wires the auth handler.
+	sessions *AuthHandler
 }
 
 // NewUserHandler creates a new UserHandler.
@@ -24,6 +34,13 @@ type UserHandler struct {
 // have a corresponding gRPC RPC. If db is nil, those endpoints degrade gracefully.
 func NewUserHandler(userClient userv1.UserServiceClient, db *pgxpool.Pool) *UserHandler {
 	return &UserHandler{userClient: userClient, db: db}
+}
+
+// WithSessionIssuer wires the auth handler so EnableRole can set the refresh
+// cookie the same way login does. Returns the handler for chaining.
+func (h *UserHandler) WithSessionIssuer(auth *AuthHandler) *UserHandler {
+	h.sessions = auth
+	return h
 }
 
 type updateUserRequest struct {
@@ -65,9 +82,38 @@ func (h *UserHandler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
+	}
+
+	// Server-side validation: never trust the client's Zod pass. A nil pointer
+	// means "field omitted, leave unchanged"; a present pointer must hold a
+	// valid value. Previously an empty display_name or a garbage timezone was
+	// persisted with a 200 — both are rejected here with an intuitive 400.
+	if req.DisplayName != nil {
+		trimmed := strings.TrimSpace(*req.DisplayName)
+		if trimmed == "" {
+			writeError(w, http.StatusBadRequest, "display_name cannot be empty")
+			return
+		}
+		if utf8.RuneCountInString(trimmed) > maxDisplayNameLen {
+			writeError(w, http.StatusBadRequest,
+				fmt.Sprintf("display_name must be at most %d characters", maxDisplayNameLen))
+			return
+		}
+		// ASR-1.2.a — display name is public UGC. Empty is already rejected above.
+		if rejectProhibitedUGC(w, r, trimmed) {
+			return
+		}
+		req.DisplayName = &trimmed
+	}
+	if req.Timezone != nil && *req.Timezone != "" {
+		// LoadLocation validates against the IANA tz database; an unknown zone
+		// (e.g. "Narnia/Nowhere") returns an error rather than being persisted.
+		if _, err := time.LoadLocation(*req.Timezone); err != nil {
+			writeError(w, http.StatusBadRequest, "timezone must be a valid IANA timezone (e.g. America/New_York)")
+			return
+		}
 	}
 
 	grpcReq := &userv1.UpdateUserRequest{
@@ -96,8 +142,7 @@ func (h *UserHandler) EnableRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req enableRoleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -106,17 +151,162 @@ func (h *UserHandler) EnableRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid role")
 		return
 	}
+	// Self-service role enablement may grant ONLY customer/provider. A user
+	// must never be able to elevate themselves to admin via this endpoint.
+	// The user-service already rejects role=="admin" (defense in depth), but
+	// we fail closed at the gateway boundary too so the privilege field a
+	// client controls is never forwarded as an admin grant. (§6 authz, §15.)
+	if role == commonv1.UserRole_USER_ROLE_ADMIN {
+		writeError(w, http.StatusForbidden, "admin role cannot be self-assigned")
+		return
+	}
 
 	resp, err := h.userClient.EnableRole(r.Context(), &userv1.EnableRoleRequest{
-		UserId: claims.UserID,
-		Role:   role,
+		UserId:     claims.UserID,
+		Role:       role,
+		DeviceInfo: r.UserAgent(),
+		IpAddress:  extractIP(r),
 	})
 	if err != nil {
 		writeGRPCError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoUserToJSON(resp.GetUser()))
+	body := protoUserToJSON(resp.GetUser())
+	if body == nil {
+		writeError(w, http.StatusInternalServerError, "enable role returned no user")
+		return
+	}
+	// Keep the flat user document clients already parse, and add the new
+	// session fields. Browsers take the refresh token only via the cookie;
+	// native clients cannot persist that cookie, so they get it in the body.
+	if tok := resp.GetAccessToken(); tok != "" {
+		body["access_token"] = tok
+	}
+	if exp := formatTimestamp(resp.GetAccessTokenExpiresAt()); exp != "" {
+		body["access_token_expires_at"] = exp
+	}
+	if h.sessions == nil {
+		slog.WarnContext(r.Context(), "enable role: session cookies not configured", "user_id", claims.UserID)
+	} else if rt := resp.GetRefreshToken(); rt != "" {
+		h.sessions.setRefreshTokenCookie(w, rt, claims.UserID)
+		h.sessions.touchIdleFromAccessToken(r.Context(), resp.GetAccessToken(), claims.UserID)
+	}
+	if wantsRefreshTokenInBody(r) {
+		if rt := resp.GetRefreshToken(); rt != "" {
+			body["refresh_token"] = rt
+		}
+	}
+
+	writeJSON(w, http.StatusOK, body)
+}
+
+type requestDeletionRequest struct {
+	Reason       string `json:"reason"`
+	Confirmation string `json:"confirmation"`
+}
+
+// RequestMyDeletion handles DELETE /api/v1/users/me — initiates GDPR/CCPA
+// erasure with a 30-day grace window. Returns the grace deadline in 200.
+//
+// The endpoint is intentionally non-blocking: the cascade itself runs
+// asynchronously via the user-service cron. Stripe / S3 cleanup happens at
+// finalize time, not request time.
+func (h *UserHandler) RequestMyDeletion(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	var req requestDeletionRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	resp, err := h.userClient.RequestAccountDeletion(r.Context(), &userv1.RequestAccountDeletionRequest{
+		UserId:       claims.UserID,
+		Reason:       req.Reason,
+		Confirmation: req.Confirmation,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	slog.Info("gdpr deletion request accepted",
+		"user_id", claims.UserID,
+		"created", resp.GetCreated(),
+		"grace_deadline", resp.GetGraceDeadline().AsTime(),
+	)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"created":        resp.GetCreated(),
+		"grace_deadline": resp.GetGraceDeadline().AsTime().UTC().Format(time.RFC3339),
+		"message":        "Account deletion requested. You can cancel within 30 days by signing in and clicking 'Restore my account'.",
+	})
+}
+
+// RestoreMyAccount handles POST /api/v1/users/me/restore — cancels a
+// pending deletion request within the grace window.
+func (h *UserHandler) RestoreMyAccount(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	resp, err := h.userClient.CancelAccountDeletion(r.Context(), &userv1.CancelAccountDeletionRequest{
+		UserId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"cancelled": resp.GetCancelled(),
+	})
+}
+
+// AdminFinalizeDeletion handles POST /api/v1/admin/users/{id}/finalize-deletion.
+// Compliance team uses this to expedite a finalize ahead of the 30-day cron.
+func (h *UserHandler) AdminFinalizeDeletion(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
+	userID := chi.URLParam(r, "id")
+	if userID == "" {
+		writeError(w, http.StatusBadRequest, "user id required")
+		return
+	}
+
+	resp, err := h.userClient.FinalizeAccountDeletion(r.Context(), &userv1.FinalizeAccountDeletionRequest{
+		UserId:  userID,
+		Force:   true,
+		AdminId: claims.UserID,
+	})
+	if err != nil {
+		writeGRPCError(w, err)
+		return
+	}
+
+	slog.Warn("gdpr admin override finalize",
+		"target_user_id", userID,
+		"admin_id", claims.UserID,
+		"counts", resp.GetRowsAffected(),
+		"stripe_customer_outcome", resp.GetStripeCustomerOutcome(),
+		"stripe_account_outcome", resp.GetStripeAccountOutcome(),
+	)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"finalized_at":            resp.GetFinalizedAt().AsTime().UTC().Format(time.RFC3339),
+		"rows_affected":           resp.GetRowsAffected(),
+		"stripe_customer_outcome": resp.GetStripeCustomerOutcome(),
+		"stripe_account_outcome":  resp.GetStripeAccountOutcome(),
+	})
 }
 
 // GetSavings handles GET /api/v1/users/me/savings.
@@ -147,9 +337,9 @@ func (h *UserHandler) GetSavings(w http.ResponseWriter, r *http.Request) {
 	savings := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var (
-			id, userID, jobID                          string
+			id, userID, jobID                             string
 			awardedCents, marketMedianCents, savingsCents int64
-			createdAt                                    time.Time
+			createdAt                                     time.Time
 		)
 		if err := rows.Scan(&id, &userID, &jobID, &awardedCents, &marketMedianCents, &savingsCents, &createdAt); err != nil {
 			slog.Error("failed to scan user savings row", "user_id", claims.UserID, "error", err)
@@ -177,9 +367,19 @@ func (h *UserHandler) GetSavings(w http.ResponseWriter, r *http.Request) {
 
 // GetUser handles GET /api/v1/users/{id}.
 func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "missing claims")
+		return
+	}
+
 	userID := chi.URLParam(r, "id")
 	if userID == "" {
 		writeError(w, http.StatusBadRequest, "user id required")
+		return
+	}
+	if !isValidUUID(userID) {
+		writeError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
 
@@ -191,7 +391,19 @@ func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, protoUserToJSON(resp.GetUser()))
+	result := protoUserToJSON(resp.GetUser())
+
+	// PII strip: only the user themselves or an admin may see contact details
+	// and security flags. Other callers get a public projection. (PII, §6)
+	if result != nil && userID != claims.UserID && !hasRole(claims, "admin") {
+		delete(result, "email")
+		delete(result, "email_verified")
+		delete(result, "phone")
+		delete(result, "phone_verified")
+		delete(result, "mfa_enabled")
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func parseUserRole(r string) commonv1.UserRole {

@@ -4,6 +4,23 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* iPhone / iPad: prevent horizontal rubber-band scroll from full-bleed sections;
+   keep form controls ≥16px so iOS does not auto-zoom on focus (Input/Textarea already use text-base). */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  overflow-x: clip;
+  overscroll-behavior-y: none;
+}
+/* Prefer dynamic viewport units where supported (mobile browser chrome). */
+@supports (height: 100dvh) {
+  .min-h-screen {
+    min-height: 100dvh;
+  }
+}
+
 :root {
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -23,11 +40,15 @@
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
 
-  /* NoMarkup brand */
+  /* NoMarkup brand — SSOT: qa/showcase/index.html + docs/brand/showcase-ssot.md */
   --brand-gold: #c9a84c;
   --brand-gold-dim: #a08839;
-  --brand-gold-bright: #e0c060;
+  --brand-gold-bright: #e4c566;
   --brand-gold-glow: rgba(201, 168, 76, 0.4);
+  --brand-teal: #4ecdc4;
+  --brand-teal-dim: #2a9d8f;
+  --brand-green: #22c55e;
+  --brand-green-dim: #16a34a;
 
   /* NoMarkup trust tier colors */
   --trust-low: 0 84% 60%;
@@ -76,29 +97,50 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Elevation (Material-style surface depth) */
+  --elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --elevation-2: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --elevation-3: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --elevation-4: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --elevation-5: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+  /* Motion — enter 250ms ease-out, exit 200ms ease-in */
+  --duration-enter: 250ms;
+  --duration-exit: 200ms;
+  --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dark {
-  /* Vivid dark terminal palette — matches demo/auction */
-  --background: #070b14;
-  --foreground: oklch(0.95 0 0);
-  --card: #0c0f18;
-  --card-foreground: oklch(0.95 0 0);
-  --popover: #0c0f18;
-  --popover-foreground: oklch(0.95 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: #141826;
-  --secondary-foreground: oklch(0.95 0 0);
-  --muted: #141826;
-  --muted-foreground: oklch(0.65 0 0);
-  --accent: #141826;
-  --accent-foreground: oklch(0.95 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
+  /* Tell the browser this surface is dark so native UI (scrollbars, form
+     controls, spinners) renders its dark-aware variant — a visible light
+     thumb instead of a near-black one that vanishes on --background
+     (#07080b). Root-cause fix for low-contrast native scrollbars on the
+     horizontal rails (e.g. "You may also like"). WCAG 2.2 SC 1.4.11. */
+  color-scheme: dark;
+
+  /* Showcase terminal palette — qa/showcase/index.html (docs/brand/showcase-ssot.md) */
+  --background: #07080b;
+  --foreground: #e8ecf1;
+  --card: #14161e;
+  --card-foreground: #e8ecf1;
+  --popover: #14161e;
+  --popover-foreground: #e8ecf1;
+  --primary: #e8ecf1;
+  --primary-foreground: #07080b;
+  --secondary: #0e1017;
+  --secondary-foreground: #e8ecf1;
+  --muted: #0e1017;
+  --muted-foreground: #8b949e;
+  --accent: #1a1d28;
+  --accent-foreground: #e8ecf1;
+  --destructive: #ef4444;
   --destructive-foreground: 0 0% 98%;
-  --border: oklch(1 0 0 / 8%);
+  --border: oklch(1 0 0 / 6%);
   --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.556 0 0);
+  --ring: #c9a84c;
 
   /* Apple System Colors — Dark */
   --apple-blue: #0a84ff;
@@ -115,10 +157,15 @@
   --apple-gray5: #2c2c2e;
   --apple-gray6: #1c1c1e;
 
-  --brand-gold: #d4af57;
-  --brand-gold-dim: #b89a45;
-  --brand-gold-bright: #e8c76e;
-  --brand-gold-glow: rgba(212, 175, 87, 0.4);
+  /* Brand gold — same scale as light / showcase (no dark-mode gold shift) */
+  --brand-gold: #c9a84c;
+  --brand-gold-dim: #a08839;
+  --brand-gold-bright: #e4c566;
+  --brand-gold-glow: rgba(201, 168, 76, 0.4);
+  --brand-teal: #4ecdc4;
+  --brand-teal-dim: #2a9d8f;
+  --brand-green: #22c55e;
+  --brand-green-dim: #16a34a;
 
   --trust-low: 0 63% 45%;
   --trust-medium: 38 80% 45%;
@@ -133,19 +180,27 @@
   --status-in-progress: 38 80% 45%;
   --status-completed: 142 60% 40%;
   --status-disputed: 0 63% 45%;
+
+  /* Elevation on dark terminal surfaces — slightly stronger ambient */
+  --elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.35);
+  --elevation-2: 0 1px 3px 0 rgb(0 0 0 / 0.45), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+  --elevation-3: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+  --elevation-4: 0 10px 15px -3px rgb(0 0 0 / 0.55), 0 4px 6px -4px rgb(0 0 0 / 0.45);
+  --elevation-5: 0 20px 25px -5px rgb(0 0 0 / 0.6), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: #0a0e19;
-  --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: #141826;
-  --sidebar-accent-foreground: oklch(0.95 0 0);
-  --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: #0e1017;
+  --sidebar-foreground: #e8ecf1;
+  --sidebar-primary: #c9a84c;
+  --sidebar-primary-foreground: #07080b;
+  --sidebar-accent: #1a1d28;
+  --sidebar-accent-foreground: #e8ecf1;
+  --sidebar-border: oklch(1 0 0 / 6%);
+  --sidebar-ring: #c9a84c;
 }
 
 body {
@@ -157,6 +212,31 @@ body {
 
 .dark {
   color: var(--foreground);
+}
+
+/* Visible scrollbar for horizontal rails on dark surfaces.
+   The native scrollbar thumb (the "slider" users drag) was rendering
+   near-black against --background (#07080b) and was effectively
+   invisible. color-scheme: dark (above) handles most browsers; this
+   makes the thumb an explicit, design-token muted gray so it always
+   clears WCAG 2.2 SC 1.4.11 (>=3:1 non-text contrast) in WebKit too.
+   Applied via the .rail-scroll class on overflow-x rails. */
+.rail-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-foreground) transparent;
+}
+.rail-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+.rail-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.rail-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--muted-foreground);
+  border-radius: 9999px;
+}
+.rail-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: var(--foreground);
 }
 
 @keyframes confetti-fall {
@@ -182,6 +262,8 @@ body {
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+
+  /* Core semantic surfaces */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -213,6 +295,88 @@ body {
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Brand gold / teal / green — utilities: bg-brand-gold, text-brand-teal, … */
+  --color-brand-gold: var(--brand-gold);
+  --color-brand-gold-dim: var(--brand-gold-dim);
+  --color-brand-gold-bright: var(--brand-gold-bright);
+  --color-brand-gold-glow: var(--brand-gold-glow);
+  --color-brand-teal: var(--brand-teal);
+  --color-brand-teal-dim: var(--brand-teal-dim);
+  --color-brand-green: var(--brand-green);
+  --color-brand-green-dim: var(--brand-green-dim);
+
+  /* Showcase type stack (next/font variables on <html>) */
+  --font-sans: var(--font-outfit), 'Outfit', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-syne), 'Syne', ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-instrument), 'Instrument Serif', Georgia, serif;
+  --font-mono: var(--font-jetbrains), 'JetBrains Mono', ui-monospace, monospace;
+  /* Legacy alias used by Logo / Header wordmark */
+  --font-brand: var(--font-syne), 'Syne', ui-sans-serif, system-ui, sans-serif;
+
+  /* Trust tiers — bg-trust-high, text-trust-low, … */
+  --color-trust-low: hsl(var(--trust-low));
+  --color-trust-medium: hsl(var(--trust-medium));
+  --color-trust-high: hsl(var(--trust-high));
+  --color-trust-elite: hsl(var(--trust-elite));
+
+  /* Bid state — bg-bid-active, text-bid-winning, … */
+  --color-bid-active: hsl(var(--bid-active));
+  --color-bid-winning: hsl(var(--bid-winning));
+  --color-bid-expired: hsl(var(--bid-expired));
+
+  /* Job status — bg-status-open, text-status-disputed, … */
+  --color-status-open: hsl(var(--status-open));
+  --color-status-in-progress: hsl(var(--status-in-progress));
+  --color-status-completed: hsl(var(--status-completed));
+  --color-status-disputed: hsl(var(--status-disputed));
+
+  /* Apple system colors (optional semantic aliases) */
+  --color-apple-blue: var(--apple-blue);
+  --color-apple-green: var(--apple-green);
+  --color-apple-red: var(--apple-red);
+  --color-apple-orange: var(--apple-orange);
+  --color-apple-yellow: var(--apple-yellow);
+  --color-apple-purple: var(--apple-purple);
+  --color-apple-pink: var(--apple-pink);
+  --color-apple-gray: var(--apple-gray);
+  --color-apple-gray2: var(--apple-gray2);
+  --color-apple-gray3: var(--apple-gray3);
+  --color-apple-gray4: var(--apple-gray4);
+  --color-apple-gray5: var(--apple-gray5);
+  --color-apple-gray6: var(--apple-gray6);
+
+  /* Elevation — shadow-elevation-1 … shadow-elevation-5 */
+  --shadow-elevation-1: var(--elevation-1);
+  --shadow-elevation-2: var(--elevation-2);
+  --shadow-elevation-3: var(--elevation-3);
+  --shadow-elevation-4: var(--elevation-4);
+  --shadow-elevation-5: var(--elevation-5);
+
+  /* Motion — duration-enter / duration-exit, ease-enter / ease-exit */
+  --duration-enter: 250ms;
+  --duration-exit: 200ms;
+  --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Strict type scale (xs…4xl) with line heights */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
 }
 
 /* Smooth page transitions */
@@ -881,8 +1045,16 @@ body {
   animation: auction-elapsed-fill 0.8s ease-out forwards;
 }
 
-/* Respect reduced motion preference */
+/* Respect reduced motion preference.
+   FE-11: Tailwind continuous utilities (pulse/spin/ping/bounce) are used heavily
+   for skeletons, pending spinners, live dots, and typing indicators — kill them
+   under reduce so elements stay visible without continuous motion. Also covers
+   custom celebration, marquee ticker, confetti, and decorative motion classes. */
 @media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-spin,
+  .animate-ping,
+  .animate-bounce,
   .animate-digit-roll-up,
   .animate-digit-roll-down,
   .animate-digit-flash-green,
@@ -911,6 +1083,7 @@ body {
   .animate-gradient,
   .animate-accept-attention,
   .animate-auction-elapsed,
+  .animate-auth-error,
   .ticker-track,
   .gradient-blob-1,
   .gradient-blob-2,
@@ -935,6 +1108,11 @@ body {
   .hero-gold-line-animated,
   .hero-strip-live-glow {
     animation: none !important;
+  }
+  /* One-shot enters: still show final state (visible, no transform). */
+  .animate-auth-error {
+    opacity: 1 !important;
+    transform: none !important;
   }
   .ticker-track {
     overflow-x: auto;
@@ -1027,17 +1205,26 @@ body {
     transform: translate(calc(-50% - 20px), calc(-50% + 30px)) scale(0.94);
   }
 }
+/* Atmospheric mesh fills live here (token SSOT) — not inline in components (FE-03). */
 .gradient-blob-1 {
   animation: gradient-blob-drift-1 45s ease-in-out infinite;
+  background: radial-gradient(circle, #0d1f4a 0%, #091333 40%, transparent 70%);
+  filter: blur(100px);
 }
 .gradient-blob-2 {
   animation: gradient-blob-drift-2 50s ease-in-out infinite;
+  background: radial-gradient(circle, #3d1f8e 0%, #241260 40%, transparent 70%);
+  filter: blur(110px);
 }
 .gradient-blob-3 {
   animation: gradient-blob-drift-3 55s ease-in-out infinite;
+  background: radial-gradient(circle, #0f4d3a 0%, #0a3328 40%, transparent 70%);
+  filter: blur(120px);
 }
 .gradient-blob-4 {
   animation: gradient-blob-drift-4 40s ease-in-out infinite;
+  background: radial-gradient(circle, #2a1f0e 0%, #0f0c05 40%, transparent 70%);
+  filter: blur(90px);
 }
 
 /* ================================================================
@@ -1051,7 +1238,7 @@ body {
 
 /* Hero-to-stats gradient bridge */
 .hero-stats-bridge {
-  background: linear-gradient(to bottom, #070b14 0%, var(--background) 100%);
+  background: linear-gradient(to bottom, #07080b 0%, var(--background) 100%);
 }
 
 /* Auction card outer glow halo */
@@ -1365,9 +1552,9 @@ body {
 /* Respect reduced motion — page transitions & stagger */
 @media (prefers-reduced-motion: reduce) {
   .animate-page-enter {
-    animation: none;
-    opacity: 1;
-    transform: none;
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
   .stagger-animated {
     animation: none !important;
@@ -1814,13 +2001,13 @@ body {
     radial-gradient(ellipse 80% 50% at 20% 20%, rgba(201, 168, 76, 0.03) 0%, transparent 60%),
     radial-gradient(ellipse 60% 40% at 80% 60%, rgba(139, 92, 246, 0.03) 0%, transparent 60%),
     radial-gradient(ellipse 50% 50% at 50% 80%, rgba(16, 185, 129, 0.025) 0%, transparent 50%),
-    #070b14;
+    #07080b;
 }
 
 /* ─── Glass sidebar panel ─── */
 .glass-sidebar {
   position: relative;
-  background: #0a0e19;
+  background: #0e1017;
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
   border-right: 1px solid rgba(201, 168, 76, 0.08);
@@ -2039,7 +2226,7 @@ body {
    ═══════════════════════════════════════════════════════════ */
 .glass-cta-gold {
   position: relative;
-  background: linear-gradient(135deg, #d4b55a, #c9a84c, #a08839);
+  background: linear-gradient(135deg, #e4c566, #c9a84c, #a08839);
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow:
     0 0 16px rgba(201, 168, 76, 0.25),
@@ -2266,7 +2453,7 @@ body {
   }
 }
 
-/* ─── Reduced-motion: disable all page-enter animations ─── */
+/* ─── Reduced-motion: entrances + remaining Tailwind utilities ─── */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-fade-in-up,
@@ -2275,11 +2462,90 @@ body {
   .animate-float,
   .animate-gradient,
   .animate-auth-card-enter,
+  .animate-auth-error,
   .animate-confetti-fall,
+  .animate-confetti-cascade,
+  .animate-page-enter,
+  .animate-pulse,
+  .animate-spin,
+  .animate-ping,
+  .animate-bounce,
   .stagger-children > * {
     animation: none !important;
     transition: none !important;
     opacity: 1 !important;
     transform: none !important;
+  }
+}
+
+/* ── Print: dedicated print-only document ──────────────────────────
+   The app is hard dark-themed (glass blur, gradient `gold-text` with a
+   transparent text-fill, ancestor backdrop-filters). Printing the live
+   DOM produced a blank/black PDF because those effects don't paint on a
+   white page and `gold-text` is literally transparent. Instead, surfaces
+   that want a printout render a dedicated, screen-hidden `.tax-summary-print`
+   (or similar `.print-only`) block styled with explicit white-bg / black
+   text, and we toggle `printing-region` on <body> while printing so ONLY
+   that block is visible. The invoice still prints its own standalone
+   server document via an iframe (see lib/print.ts). */
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm;
+  }
+
+  /* Force a clean white canvas regardless of the dark app theme. */
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  /* A transformed ancestor (page-enter holds `translateY(0)` via fill-mode
+     `both`) becomes the containing block for the absolutely-positioned print
+     block and can clip it to a blank page in Chrome's print engine. Clear
+     animations/transforms while printing so the print block pins to the page
+     origin reliably. */
+  body.printing-region .animate-page-enter {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+
+  /* Hide the entire on-screen app while a print region is active. */
+  body.printing-region * {
+    visibility: hidden !important;
+  }
+
+  /* Reveal only the print-only block and force institutional light styling. */
+  body.printing-region .tax-summary-print,
+  body.printing-region .tax-summary-print * {
+    visibility: visible !important;
+    color: #000 !important;
+    -webkit-text-fill-color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Pin the print block to the page origin and reveal it (it's `hidden`
+     via Tailwind `display:none` on screen). */
+  body.printing-region .tax-summary-print {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: #fff !important;
+    padding: 0;
+    color: #000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Belt-and-suspenders: anything explicitly marked no-print is removed. */
+  body.printing-region .no-print {
+    display: none !important;
   }
 }

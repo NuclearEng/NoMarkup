@@ -8,7 +8,6 @@ import { SavingsCelebration } from '@/components/bids/SavingsCelebration';
 import { GradientMesh } from '@/components/landing/GradientMesh';
 import { TerminalToolbar } from '@/components/terminal/terminal-toolbar';
 import { TerminalGrid } from '@/components/terminal/terminal-grid';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { AuctionBidEvent, MarketRange } from '@/types';
 
@@ -92,8 +91,6 @@ function useAuctionSimulation() {
       const timer = setTimeout(() => {
         const now = new Date().toISOString();
         const bidId = `demo-bid-${String(idx)}`;
-        const provider = MOCK_PROVIDERS[script.providerIdx];
-        if (!provider) return;
 
         setBids((prev) => [
           ...prev.map((b) => ({ ...b, is_new: false })),
@@ -148,7 +145,7 @@ function useAuctionSimulation() {
     start();
     return () => {
       timersRef.current.forEach(clearTimeout);
-    }; /* eslint-disable-next-line react-hooks/exhaustive-deps */
+    };  
   }, []);
 
   const orderBookBids = useMemo(
@@ -248,7 +245,7 @@ export default function AuctionDemoPage() {
     sim.currentLowest > 0 ? Math.round((savingsCents / STARTING_PRICE_CENTS) * 100) : 0;
 
   return (
-    <div className="dark relative min-h-screen overflow-y-auto bg-[#070b14]">
+    <div className="dark relative min-h-screen overflow-y-auto bg-background">
       {/* Animated gradient mesh — same as landing page */}
       <GradientMesh />
 
@@ -259,20 +256,21 @@ export default function AuctionDemoPage() {
       />
 
       {/* ─── Sticky top bar ─── */}
-      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#070b14]/90 backdrop-blur-md">
+      <div className="sticky top-0 z-50 border-b border-white/[0.06] bg-background/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-2.5 sm:px-6">
           <div className="flex items-center gap-3">
             <Link
               href="/"
-              className="flex items-center gap-1.5 text-sm text-white/65 transition-colors hover:text-white/80"
+              aria-label="Back to home"
+              className="flex min-h-[44px] min-w-[44px] items-center gap-1.5 -mx-1.5 px-1.5 text-sm text-white/65 transition-colors hover:text-white/80"
             >
               <ArrowLeft className="h-4 w-4" />
               <span className="hidden sm:inline">Back</span>
             </Link>
             <div className="h-4 w-px bg-white/10" />
-            <Badge className="gap-1 border-amber-500/20 bg-amber-500/10 text-xs text-amber-400">
-              <Zap className="h-3 w-3" />
-              Live Demo
+            <Badge className="gap-1 border-brand-gold/25 bg-brand-gold/10 font-mono text-[10px] uppercase tracking-wider text-brand-gold-bright">
+              <Zap className="h-3 w-3" aria-hidden="true" />
+              Live Demo · Reverse Auction
             </Badge>
           </div>
 
@@ -335,7 +333,7 @@ export default function AuctionDemoPage() {
         <SavingsCelebration
           savingsPercent={savingsPct}
           isVisible={sim.showCelebration}
-          onDismiss={() => sim.setShowCelebration(false)}
+          onDismiss={() => { sim.setShowCelebration(false); }}
         />
       )}
     </div>

@@ -1,46 +1,14 @@
 'use client';
 
-import { Zap } from 'lucide-react';
 import Link from 'next/link';
-import type { Route } from 'next';
-import { usePathname } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/stores/auth-store';
 import { USER_ROLE } from '@/types';
 
-function ProviderNav() {
-  const pathname = usePathname();
-
-  const navItems = [{ href: '/provider/offers', label: 'Instant Offers', icon: Zap }];
-
-  return (
-    <nav
-      aria-label="Provider navigation"
-      className="border-border/40 mb-6 flex gap-1 overflow-x-auto border-b pb-4"
-    >
-      {navItems.map((item) => {
-        const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-        return (
-          <Link
-            key={item.href}
-            href={item.href as Route}
-            className={`flex min-h-[36px] items-center gap-2 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
-              isActive
-                ? 'bg-primary/10 text-primary'
-                : 'hover:bg-muted/50 text-zinc-400 hover:text-zinc-200'
-            }`}
-            aria-current={isActive ? 'page' : undefined}
-          >
-            <item.icon className="h-4 w-4" aria-hidden="true" />
-            {item.label}
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
+// Provider section nav (Dashboard, Workspace, My Bids, Instant Offers, Team, …)
+// lives in the main sidebar's provider group — no separate in-page tab bar.
 export default function ProviderLayout({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((state) => state.user);
   const isHydrating = useAuthStore((state) => state.isHydrating);
@@ -48,8 +16,29 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
 
   if (isHydrating) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <div className="border-primary h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" />
+      <div
+        className="space-y-6"
+        role="status"
+        aria-live="polite"
+        aria-label="Loading provider section"
+      >
+        <div>
+          <Skeleton className="h-8 w-56" />
+          <Skeleton className="mt-2 h-4 w-72" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton
+              key={`provider-layout-stat-${String(i)}`}
+              className="h-28 rounded-xl"
+            />
+          ))}
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Skeleton className="h-48 rounded-xl" />
+          <Skeleton className="h-48 rounded-xl" />
+        </div>
+        <Skeleton className="h-44 rounded-xl" />
       </div>
     );
   }
@@ -76,10 +65,5 @@ export default function ProviderLayout({ children }: { children: React.ReactNode
     );
   }
 
-  return (
-    <div>
-      <ProviderNav />
-      {children}
-    </div>
-  );
+  return <div>{children}</div>;
 }

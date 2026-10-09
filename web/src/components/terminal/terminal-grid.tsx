@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ResponsiveGridLayout, useContainerWidth, verticalCompactor } from 'react-grid-layout';
 import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout';
 import { GripVertical, X } from 'lucide-react';
@@ -34,6 +34,11 @@ interface TerminalGridProps {
   startingPriceCents: number;
   marketRange: MarketRange;
   mockProviders: readonly MockProvider[];
+  jobId?: string;
+  snipeExtensionCount?: number;
+  jobDescription?: string;
+  jobTitle?: string;
+  jobCategory?: string;
 }
 
 export function TerminalGrid({
@@ -42,6 +47,11 @@ export function TerminalGrid({
   startingPriceCents,
   marketRange,
   mockProviders,
+  jobId,
+  snipeExtensionCount = 0,
+  jobDescription,
+  jobTitle,
+  jobCategory,
 }: TerminalGridProps) {
   const { layouts, activeLayoutId, isEditing, removeWidget, updateWidgetLayouts } =
     useTerminalLayoutStore();
@@ -51,7 +61,7 @@ export function TerminalGrid({
   });
 
   const activeLayout = layouts.find((l) => l.id === activeLayoutId);
-  const widgets = activeLayout?.widgets ?? [];
+  const widgets = useMemo(() => activeLayout?.widgets ?? [], [activeLayout?.widgets]);
 
   // Serialize widgets to a stable key so we only recompute layouts when data actually changes
   const widgetsKey = useMemo(
@@ -137,8 +147,24 @@ export function TerminalGrid({
       startingPriceCents,
       marketRange,
       mockProviders,
+      jobId,
+      snipeExtensionCount,
+      jobDescription,
+      jobTitle,
+      jobCategory,
     }),
-    [sim, auctionEndsAt, startingPriceCents, marketRange, mockProviders],
+    [
+      sim,
+      auctionEndsAt,
+      startingPriceCents,
+      marketRange,
+      mockProviders,
+      jobId,
+      snipeExtensionCount,
+      jobDescription,
+      jobTitle,
+      jobCategory,
+    ],
   );
 
   if (widgets.length === 0) {
@@ -196,16 +222,16 @@ export function TerminalGrid({
                 key={wp.widgetId}
                 className={`group/widget overflow-hidden rounded-2xl transition-shadow ${
                   isEditing
-                    ? 'border border-dashed border-[var(--brand-gold)]/30 bg-[#0d1120] hover:border-[var(--brand-gold)]/50 hover:shadow-md'
-                    : 'bg-[#0d1120]'
+                    ? 'border border-dashed border-[var(--brand-gold)]/30 bg-secondary hover:border-[var(--brand-gold)]/50 hover:shadow-md'
+                    : 'bg-secondary'
                 }`}
                 style={
                   !isEditing
                     ? {
                         border: '1px solid transparent',
                         backgroundImage: isLive
-                          ? 'linear-gradient(#0d1120, #0d1120), linear-gradient(135deg, rgba(34,197,94,0.45), rgba(201,168,76,0.12), rgba(201,168,76,0.3))'
-                          : 'linear-gradient(#0d1120, #0d1120), linear-gradient(135deg, rgba(201,168,76,0.4), rgba(201,168,76,0.1), rgba(201,168,76,0.3))',
+                          ? 'linear-gradient(var(--secondary), var(--secondary)), linear-gradient(135deg, color-mix(in srgb, var(--brand-green) 45%, transparent), color-mix(in srgb, var(--brand-gold) 12%, transparent), color-mix(in srgb, var(--brand-gold) 30%, transparent))'
+                          : 'linear-gradient(var(--secondary), var(--secondary)), linear-gradient(135deg, color-mix(in srgb, var(--brand-gold) 40%, transparent), color-mix(in srgb, var(--brand-gold) 10%, transparent), color-mix(in srgb, var(--brand-gold) 30%, transparent))',
                         backgroundOrigin: 'border-box',
                         backgroundClip: 'padding-box, border-box',
                         boxShadow:
@@ -226,7 +252,7 @@ export function TerminalGrid({
                     <Tooltip delayDuration={0}>
                       <TooltipTrigger asChild>
                         <button
-                          onClick={() => removeWidget(wp.widgetId)}
+                          onClick={() => { removeWidget(wp.widgetId); }}
                           className="rounded p-0.5 text-zinc-500 transition-colors hover:text-red-400"
                           aria-label={`Remove ${def?.label ?? wp.widgetId} widget`}
                         >
@@ -238,7 +264,7 @@ export function TerminalGrid({
                   </div>
                 )}
                 {/* Widget content */}
-                <div className={`${isEditing ? 'h-[calc(100%-28px)]' : 'h-full'}`}>
+                <div className={isEditing ? 'h-[calc(100%-28px)]' : 'h-full'}>
                   <WidgetRenderer widgetId={wp.widgetId} widgetProps={widgetProps} />
                 </div>
               </div>

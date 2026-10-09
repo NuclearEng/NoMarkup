@@ -62,7 +62,7 @@ export default function MyJobsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="flex-wrap glass glass-highlight">
+        <TabsList className="h-auto flex-wrap gap-1 glass glass-highlight">
           {TABS.map((tab) => (
             <TabsTrigger
               key={tab.value}

@@ -131,7 +131,7 @@ function QuickActionCard({
   icon: Icon,
   title,
   description,
-  accentColor,
+  accentColor: _accentColor,
 }: {
   href: Route;
   icon: LucideIcon;
@@ -554,7 +554,7 @@ export default function DashboardPage() {
   }
 
   const greeting = getTimeOfDayGreeting();
-  const firstName = user?.displayName?.split(' ')[0];
+  const firstName = user?.displayName.split(' ')[0];
 
   return (
     <PageTransition>

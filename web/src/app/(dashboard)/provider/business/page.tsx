@@ -1,7 +1,8 @@
 'use client';
 
-import { Calculator, FileText, Receipt } from 'lucide-react';
+import { Calculator, FileText, Receipt, ScrollText } from 'lucide-react';
 import Link from 'next/link';
+import type { Route } from 'next';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageTransition } from '@/components/ui/page-transition';
@@ -52,6 +53,12 @@ const BUSINESS_LINKS = [
     href: '/provider/business/expenses',
     icon: Calculator,
   },
+  {
+    title: 'Quote templates',
+    description: 'Save reusable bid wording and default amounts',
+    href: '/provider/business/quotes',
+    icon: ScrollText,
+  },
 ] as const;
 
 export default function ProviderBusinessPage() {
@@ -96,7 +103,7 @@ export default function ProviderBusinessPage() {
       {/* Business links */}
       <div className="grid gap-4 md:grid-cols-3">
         {BUSINESS_LINKS.map((link) => (
-          <Link key={link.href} href={link.href}>
+          <Link key={link.href} href={link.href as Route}>
             <Card className="glass glass-interactive h-full border border-[var(--brand-gold)]/10">
               <CardHeader className="flex flex-row items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">

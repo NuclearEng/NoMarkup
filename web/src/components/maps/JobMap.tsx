@@ -16,10 +16,32 @@ interface JobMapProps {
   onJobSelect?: (job: Job) => void;
 }
 
+function getMapboxToken(): string {
+  return process.env['NEXT_PUBLIC_MAPBOX_TOKEN'] ?? '';
+}
+
+/**
+ * A job is plottable only when it has finite lat/lng that aren't the (0,0)
+ * Null-Island placeholder a failed geocode can leave behind. Null, undefined,
+ * NaN, and non-numeric strings all fail Number.isFinite and must never reach
+ * Mapbox setLngLat (throws "Invalid LngLat object: (NaN, NaN)").
+ */
+function hasRealLocation(job: Job): boolean {
+  const lat = Number(job.location_lat);
+  const lng = Number(job.location_lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  if (lat === 0 && lng === 0) return false;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return false;
+  return true;
+}
+
+/** Safe [lng, lat] for Mapbox — only call after hasRealLocation. */
+function jobLngLat(job: Job): [number, number] {
+  return [Number(job.location_lng), Number(job.location_lat)];
+}
+
 function MapFallback({ jobs, onJobSelect }: { jobs: Job[]; onJobSelect?: (job: Job) => void }) {
-  const jobsWithLocation = jobs.filter(
-    (job) => job.location_lat !== null && job.location_lng !== null,
-  );
+  const jobsWithLocation = jobs.filter(hasRealLocation);
 
   return (
     <div className="bg-muted/30 rounded-xl border p-6">
@@ -82,12 +104,17 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState(false);
 
-  const mapboxToken = process.env['NEXT_PUBLIC_MAPBOX_TOKEN'];
+  const mapboxToken = getMapboxToken();
 
   useEffect(() => {
     if (!mapboxToken || !mapContainerRef.current || mapRef.current) return;
 
     let cancelled = false;
+
+    // Tracks whether the style finished loading. A non-fatal error AFTER load
+    // (a single missing tile/sprite/glyph, a telemetry blip) must NOT replace
+    // the whole map with the fallback — only a failure to load is fatal.
+    let loaded = false;
 
     async function initMap() {
       try {
@@ -95,7 +122,7 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
 
         if (cancelled || !mapContainerRef.current) return;
 
-        mapboxgl.accessToken = mapboxToken as string;
+        mapboxgl.accessToken = mapboxToken;
 
         const map = new mapboxgl.Map({
           container: mapContainerRef.current,
@@ -109,12 +136,14 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
         map.on('load', () => {
           if (cancelled) return;
           mapRef.current = map;
+          loaded = true;
           setMapLoaded(true);
         });
 
         map.on('error', () => {
           if (cancelled) return;
-          setMapError(true);
+          // Only fatal if the map never loaded; ignore post-load non-fatal errors.
+          if (!loaded) setMapError(true);
         });
       } catch {
         if (!cancelled) {
@@ -142,9 +171,7 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
 
     async function addMarkers() {
       const mapboxgl = (await import('mapbox-gl')).default;
-      const jobsWithLocation = jobs.filter(
-        (job) => job.location_lat !== null && job.location_lng !== null,
-      );
+      const jobsWithLocation = jobs.filter(hasRealLocation);
 
       // Remove existing markers via source if it exists
       if (map.getSource('jobs')) {
@@ -189,7 +216,7 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
         popup.setDOMContent(popupDiv);
 
         new mapboxgl.Marker(el)
-          .setLngLat([job.location_lng as number, job.location_lat as number])
+          .setLngLat(jobLngLat(job))
           .setPopup(popup)
           .addTo(map);
 
@@ -202,14 +229,14 @@ export function JobMap({ jobs, className, onJobSelect }: JobMapProps) {
       if (jobsWithLocation.length > 1) {
         const bounds = new mapboxgl.LngLatBounds();
         for (const job of jobsWithLocation) {
-          bounds.extend([job.location_lng as number, job.location_lat as number]);
+          bounds.extend(jobLngLat(job));
         }
         map.fitBounds(bounds, { padding: 50, maxZoom: 12 });
       } else if (jobsWithLocation.length === 1) {
         const singleJob = jobsWithLocation[0];
         if (singleJob) {
           map.flyTo({
-            center: [singleJob.location_lng as number, singleJob.location_lat as number],
+            center: jobLngLat(singleJob),
             zoom: 12,
           });
         }

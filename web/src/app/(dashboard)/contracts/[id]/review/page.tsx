@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, CheckCircle, Clock, Loader2, XCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Clock, XCircle } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -10,6 +10,7 @@ import { AnimatedIllustration } from '@/components/ui/animated-illustration';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageTransition } from '@/components/ui/page-transition';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useContract } from '@/hooks/useContracts';
 import { useReviewEligibility } from '@/hooks/useReviews';
 import { useAuthStore } from '@/stores/auth-store';
@@ -28,8 +29,14 @@ export default function ReviewPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-zinc-300" aria-hidden="true" />
+      <div
+        className="mx-auto max-w-2xl space-y-6"
+        role="status"
+        aria-label="Loading review"
+      >
+        <Skeleton className="h-5 w-36" />
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-72 w-full rounded-xl" />
       </div>
     );
   }

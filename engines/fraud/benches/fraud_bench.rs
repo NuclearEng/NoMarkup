@@ -1,13 +1,16 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+// Synthetic bench fixtures: small indices, lossy casts intentional.
+#![allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)]
+
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 use std::collections::HashMap;
 
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
-use nomarkup_fraud_engine::behavioral::{
-    compute_composite_risk, score_bid_patterns, score_fingerprint, score_ip_geolocation,
+use fraud::behavioral::{
     BidRecord, FingerprintAttributes, IpSessionRecord, RiskThresholds, SessionInfo,
+    compute_composite_risk, score_bid_patterns, score_fingerprint, score_ip_geolocation,
 };
 
 // ---------------------------------------------------------------------------
@@ -70,17 +73,12 @@ fn make_bid_records(n: usize, jobs: usize) -> Vec<BidRecord> {
 /// Build customer ID mapping and session data for shill detection.
 fn make_customer_context(
     bids: &[BidRecord],
-) -> (
-    HashMap<Uuid, Uuid>,
-    HashMap<Uuid, Vec<SessionInfo>>,
-) {
+) -> (HashMap<Uuid, Uuid>, HashMap<Uuid, Vec<SessionInfo>>) {
     let mut customer_ids: HashMap<Uuid, Uuid> = HashMap::new();
     let mut customer_sessions: HashMap<Uuid, Vec<SessionInfo>> = HashMap::new();
 
     for bid in bids {
-        let customer_id = *customer_ids
-            .entry(bid.job_id)
-            .or_insert_with(Uuid::now_v7);
+        let customer_id = *customer_ids.entry(bid.job_id).or_insert_with(Uuid::now_v7);
 
         customer_sessions.entry(customer_id).or_insert_with(|| {
             vec![SessionInfo {
@@ -99,8 +97,8 @@ fn make_ip_sessions(n: usize) -> Vec<IpSessionRecord> {
         .map(|i| IpSessionRecord {
             user_id: Uuid::now_v7(),
             ip_address: format!("192.168.1.{}", i % 256),
-            geo_lat: Some(37.7749 + (i as f64 * 0.01)),
-            geo_lng: Some(-122.4194 + (i as f64 * 0.01)),
+            geo_lat: Some((i as f64).mul_add(0.01, 37.7749)),
+            geo_lng: Some((i as f64).mul_add(0.01, -122.4194)),
             geo_country: Some("US".into()),
         })
         .collect()
@@ -160,13 +158,7 @@ fn bench_score_bid_patterns(c: &mut Criterion) {
             BenchmarkId::new("bids_x_jobs", format!("{bid_count}x{job_count}")),
             &(bids, customer_ids, customer_sessions),
             |b, (bids, cids, csess)| {
-                b.iter(|| {
-                    score_bid_patterns(
-                        black_box(bids),
-                        black_box(cids),
-                        black_box(csess),
-                    )
-                });
+                b.iter(|| score_bid_patterns(black_box(bids), black_box(cids), black_box(csess)));
             },
         );
     }

@@ -84,10 +84,13 @@ export function ImageUpload({
         ),
       );
 
-      // We use the hook's upload function but track per-file state manually
-      const result = await upload(fileState.file);
+      // We use the hook's upload function but track per-file state manually.
+      // The outcome carries the actual failure reason so we never show a bare
+      // "Upload failed" — the user sees wrong-type / too-large / server reasons.
+      const outcome = await upload(fileState.file);
 
-      if (result) {
+      if (outcome.ok) {
+        const { result } = outcome;
         setFileStates((prev) =>
           prev.map((s) =>
             s.id === fileState.id
@@ -100,7 +103,7 @@ export function ImageUpload({
         setFileStates((prev) =>
           prev.map((s) =>
             s.id === fileState.id
-              ? { ...s, status: 'error' as const, error: 'Upload failed' }
+              ? { ...s, status: 'error' as const, error: outcome.error }
               : s,
           ),
         );

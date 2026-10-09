@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -46,6 +46,10 @@ const PREFERENCE_CATEGORIES: CategoryGroup[] = [
       { type: NOTIFICATION_TYPE.PAYMENT_RECEIVED, label: 'Payment received' },
       { type: NOTIFICATION_TYPE.PAYMENT_RELEASED, label: 'Payment released' },
       { type: NOTIFICATION_TYPE.PAYMENT_FAILED, label: 'Payment failed' },
+      {
+        type: NOTIFICATION_TYPE.PAYMENT_AUTHENTICATION_REQUIRED,
+        label: 'Bank authentication (3DS)',
+      },
       { type: NOTIFICATION_TYPE.PAYOUT_SENT, label: 'Payout sent' },
     ],
   },
@@ -60,6 +64,15 @@ const PREFERENCE_CATEGORIES: CategoryGroup[] = [
     types: [
       { type: NOTIFICATION_TYPE.REVIEW_RECEIVED, label: 'Review received' },
       { type: NOTIFICATION_TYPE.REVIEW_REMINDER, label: 'Review reminder' },
+    ],
+  },
+  {
+    label: 'Marketplace',
+    types: [
+      { type: NOTIFICATION_TYPE.PRICE_DROP, label: 'Price drop on a watched listing' },
+      { type: NOTIFICATION_TYPE.SELLER_NEW_LISTING, label: 'New listing from a seller you follow' },
+      { type: NOTIFICATION_TYPE.BID_OUTBID, label: 'Outbid on a listing' },
+      { type: NOTIFICATION_TYPE.WISHLIST_MATCH, label: 'Wishlist match' },
     ],
   },
   {
@@ -81,12 +94,53 @@ function buildPreferenceMap(preferences: NotificationPreference[]): Map<Notifica
   return map;
 }
 
+// Matches services/notification defaultChannelPrefs: email only for critical
+// types. Push stays off, including price_drop and seller_new_listing.
+const DEFAULT_EMAIL_TYPES = new Set<string>([
+  'bid_awarded',
+  'contract_created',
+  'contract_accepted',
+  'payment_received',
+  'payment_released',
+  'payment_failed',
+  'dispute_opened',
+  'dispute_resolved',
+  'document_approved',
+  'document_rejected',
+  'document_expiring',
+  'tier_upgrade',
+  'tier_downgrade',
+  'completion_approved',
+  'work_completed',
+]);
+
 function getDefaultPreference(type: NotificationType): NotificationPreference {
   return {
     notification_type: type,
+    push_enabled: false,
+    email_enabled: DEFAULT_EMAIL_TYPES.has(type),
+    sms_enabled: false,
+    in_app_enabled: true,
+  };
+}
+
+/** FR-17.3 — payment failures, disputes, guarantee, account flags cannot be disabled. */
+function isCriticalNotificationType(type: string): boolean {
+  const t = type.trim().toLowerCase();
+  if (!t) return false;
+  if (t === 'payment_failed') return true;
+  if (t.startsWith('dispute_')) return true;
+  if (t.includes('guarantee')) return true;
+  if (t === 'account_flag' || t.startsWith('account_flag')) return true;
+  return false;
+}
+
+function forceCriticalEnabled(pref: NotificationPreference): NotificationPreference {
+  if (!isCriticalNotificationType(pref.notification_type)) return pref;
+  return {
+    ...pref,
     push_enabled: true,
     email_enabled: true,
-    sms_enabled: false,
     in_app_enabled: true,
   };
 }
@@ -100,16 +154,20 @@ export default function NotificationPreferencesPage() {
   const [globalEmail, setGlobalEmail] = useState(true);
   const [globalSms, setGlobalSms] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  // Latest dirty flag for the data effect. Not a dependency: clearing it on
+  // save must not re-apply the payload already in state.
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
 
-  // Sync server state into local state
+  // Sync server state into local state. Skip while the form is dirty so a
+  // refetch does not wipe in-progress edits. Save sets isDirty false, and the
+  // next payload can sync.
   useEffect(() => {
-    if (data) {
-      setPreferenceMap(buildPreferenceMap(data.preferences));
-      setGlobalPush(data.global_push_enabled);
-      setGlobalEmail(data.global_email_enabled);
-      setGlobalSms(data.global_sms_enabled);
-      setIsDirty(false);
-    }
+    if (!data || isDirtyRef.current) return;
+    setPreferenceMap(buildPreferenceMap(data.preferences));
+    setGlobalPush(data.global_push_enabled);
+    setGlobalEmail(data.global_email_enabled);
+    setGlobalSms(data.global_sms_enabled);
   }, [data]);
 
   function getPreference(type: NotificationType): NotificationPreference {
@@ -117,6 +175,10 @@ export default function NotificationPreferencesPage() {
   }
 
   function updatePref(type: NotificationType, field: keyof Omit<NotificationPreference, 'notification_type'>, value: boolean) {
+    if (isCriticalNotificationType(type) && value === false) {
+      // FR-17.3 — critical types stay on.
+      return;
+    }
     setPreferenceMap((prev) => {
       const next = new Map(prev);
       const current = next.get(type) ?? getDefaultPreference(type);
@@ -130,7 +192,7 @@ export default function NotificationPreferencesPage() {
     const allPrefs: NotificationPreference[] = [];
     for (const category of PREFERENCE_CATEGORIES) {
       for (const item of category.types) {
-        allPrefs.push(getPreference(item.type));
+        allPrefs.push(forceCriticalEnabled(getPreference(item.type)));
       }
     }
 
@@ -150,7 +212,8 @@ export default function NotificationPreferencesPage() {
         <div>
           <h1 className="gold-text text-2xl font-bold tracking-tight">Notification Preferences</h1>
           <p className="mt-1 text-zinc-300">
-            Choose how and when you want to be notified.
+            Choose how and when you want to be notified. Payment failures, disputes, and
+            guarantee alerts are required and cannot be turned off.
           </p>
         </div>
         <div className="space-y-4">
@@ -266,17 +329,32 @@ export default function NotificationPreferencesPage() {
               <div className="space-y-1">
                 {category.types.map((item, idx) => {
                   const pref = getPreference(item.type);
+                  const critical = isCriticalNotificationType(item.type);
                   return (
                     <div key={item.type}>
                       {idx > 0 ? <div className="glass-divider my-1" aria-hidden="true" /> : null}
                       <div className="flex min-h-[44px] flex-col gap-2 py-2 sm:flex-row sm:items-center sm:gap-4">
-                        <p className="flex-1 text-sm font-medium">{item.label}</p>
+                        <div className="flex flex-1 flex-col gap-0.5">
+                          <p className="text-sm font-medium">
+                            {item.label}
+                            {critical ? (
+                              <span className="ml-2 text-xs font-semibold text-[var(--brand-gold)]">
+                                Required
+                              </span>
+                            ) : null}
+                          </p>
+                          {critical ? (
+                            <p className="text-xs text-zinc-400">
+                              Critical alert — cannot be turned off.
+                            </p>
+                          ) : null}
+                        </div>
                         <div className="flex items-center gap-4">
                           {/* In-App: always on */}
                           <div className="flex w-16 flex-col items-center gap-1">
                             <span className="text-xs text-zinc-300 sm:hidden">In-App</span>
                             <Switch
-                              checked={pref.in_app_enabled}
+                              checked={critical ? true : pref.in_app_enabled}
                               disabled
                               aria-label={`In-app notification for ${item.label}`}
                             />
@@ -285,20 +363,20 @@ export default function NotificationPreferencesPage() {
                           <div className="flex w-16 flex-col items-center gap-1">
                             <span className="text-xs text-zinc-300 sm:hidden">Email</span>
                             <Switch
-                              checked={pref.email_enabled && globalEmail}
-                              disabled={!globalEmail}
+                              checked={critical ? true : pref.email_enabled && globalEmail}
+                              disabled={critical || !globalEmail}
                               onCheckedChange={(checked) => { updatePref(item.type, 'email_enabled', checked); }}
-                              aria-label={`Email notification for ${item.label}`}
+                              aria-label={`Email notification for ${item.label}${critical ? ' (required)' : ''}`}
                             />
                           </div>
                           {/* Push */}
                           <div className="flex w-16 flex-col items-center gap-1">
                             <span className="text-xs text-zinc-300 sm:hidden">Push</span>
                             <Switch
-                              checked={pref.push_enabled && globalPush}
-                              disabled={!globalPush}
+                              checked={critical ? true : pref.push_enabled && globalPush}
+                              disabled={critical || !globalPush}
                               onCheckedChange={(checked) => { updatePref(item.type, 'push_enabled', checked); }}
-                              aria-label={`Push notification for ${item.label}`}
+                              aria-label={`Push notification for ${item.label}${critical ? ' (required)' : ''}`}
                             />
                           </div>
                         </div>

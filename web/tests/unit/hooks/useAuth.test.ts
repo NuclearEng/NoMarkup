@@ -68,7 +68,7 @@ describe('useProfile', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.id).toBe('user-1');
     expect(result.current.data?.email).toBe('test@example.com');
@@ -94,7 +94,7 @@ describe('useProfile', () => {
       wrapper: createWrapper(queryClient),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
 
     expect(result.current.error).toBeDefined();
   });
@@ -124,7 +124,7 @@ describe('useUpdateProfile', () => {
 
     result.current.mutate({ display_name: 'Updated Name' });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.displayName).toBe('Updated Name');
     expect(vi.mocked(api.patch)).toHaveBeenCalledWith('/api/v1/users/me', {
@@ -142,7 +142,7 @@ describe('useUpdateProfile', () => {
 
     result.current.mutate({ display_name: 'X' });
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });
 
@@ -173,7 +173,7 @@ describe('useEnableRole', () => {
 
     result.current.mutate('provider');
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
     expect(result.current.data?.roles).toContain('provider');
     expect(vi.mocked(api.post)).toHaveBeenCalledWith('/api/v1/users/me/roles', {
@@ -191,6 +191,6 @@ describe('useEnableRole', () => {
 
     result.current.mutate('provider');
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() => { expect(result.current.isError).toBe(true); });
   });
 });

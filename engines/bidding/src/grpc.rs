@@ -2,7 +2,7 @@
 ///
 /// Module hierarchy mirrors proto package paths so relative imports resolve correctly.
 
-#[allow(clippy::all, clippy::pedantic, dead_code)]
+#[allow(clippy::all, clippy::pedantic, clippy::nursery, dead_code)]
 pub mod nomarkup {
     pub mod common {
         pub mod v1 {
@@ -33,7 +33,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::engine::BiddingEngine;
-use crate::models::{AuctionBidEvent as AuctionBidEventModel, Bid, BidError, LiveAuctionState as LiveAuctionStateModel};
+use crate::models::{Bid, BidError};
 
 /// gRPC service implementation wrapping the bidding engine.
 pub struct BidServiceImpl {
@@ -42,7 +42,7 @@ pub struct BidServiceImpl {
 
 impl BidServiceImpl {
     #[must_use]
-    pub fn new(engine: Arc<BiddingEngine>) -> Self {
+    pub const fn new(engine: Arc<BiddingEngine>) -> Self {
         Self { engine }
     }
 }
@@ -63,7 +63,11 @@ impl BidService for BidServiceImpl {
             return Err(Status::invalid_argument("amount_cents must be positive"));
         }
 
-        match self.engine.place_bid(job_id, provider_id, req.amount_cents).await {
+        match self
+            .engine
+            .place_bid(job_id, provider_id, req.amount_cents)
+            .await
+        {
             Ok(bid) => {
                 info!(bid_id = %bid.id, job_id = %job_id, provider_id = %provider_id, amount_cents = req.amount_cents, "grpc place_bid succeeded");
                 Ok(Response::new(bid_proto::PlaceBidResponse {
@@ -176,9 +180,28 @@ impl BidService for BidServiceImpl {
 
         let bid_id = parse_uuid(&req.bid_id, "bid_id")?;
 
+        // Enforce viewer authorization: a sealed-auction bid is only visible to
+        // the bid owner (provider), the job's customer, or an admin. Without this
+        // check any authenticated user could read a rival's sealed bid by GUID
+        // (IDOR). The gateway always sets `requesting_user_id` from JWT claims; a
+        // missing/empty value is treated as unauthenticated and denied.
+        if req.requesting_user_id.is_empty() {
+            warn!(bid_id = %bid_id, "get_bid rejected: missing requesting_user_id");
+            return Err(Status::permission_denied(
+                "requesting_user_id is required to view a bid",
+            ));
+        }
+        let requesting_user_id = parse_uuid(&req.requesting_user_id, "requesting_user_id")?;
+
+        // NOTE: the GetBidRequest proto carries no role field, so admin status
+        // cannot be asserted over this RPC; `is_admin` is false here. Owner and
+        // customer reads (the common cases) are fully supported. Granting admins
+        // read access requires a `requesting_user_role`/`is_admin` field on the
+        // proto (additive, v1-safe) or gRPC metadata — not done here to avoid
+        // regenerating the contract.
         let bid = self
             .engine
-            .get_bid(bid_id)
+            .get_bid_authorized(bid_id, requesting_user_id, false)
             .await
             .map_err(bid_error_to_status)?;
 
@@ -349,15 +372,10 @@ impl BidService for BidServiceImpl {
             .await
             .map_err(bid_error_to_status)?;
 
-        Ok(Response::new(
-            bid_proto::CheckAuctionDeadlinesResponse {
-                expired_job_ids: expired_ids.iter().map(ToString::to_string).collect(),
-                closing_soon_job_ids: closing_soon_ids
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect(),
-            },
-        ))
+        Ok(Response::new(bid_proto::CheckAuctionDeadlinesResponse {
+            expired_job_ids: expired_ids.iter().map(ToString::to_string).collect(),
+            closing_soon_job_ids: closing_soon_ids.iter().map(ToString::to_string).collect(),
+        }))
     }
 
     async fn get_bid_analytics(
@@ -367,10 +385,19 @@ impl BidService for BidServiceImpl {
         let req = request.into_inner();
 
         let job_id = parse_uuid(&req.job_id, "job_id")?;
+        // Empty customer_id is denied, not parsed as a nil UUID. Mesh callers
+        // must not omit the owner check (PRD-AUTH-01).
+        if req.customer_id.is_empty() {
+            warn!(job_id = %job_id, "get_bid_analytics rejected: missing customer_id");
+            return Err(Status::permission_denied(
+                "customer_id is required to view bid analytics",
+            ));
+        }
+        let customer_id = parse_uuid(&req.customer_id, "customer_id")?;
 
         let analytics = self
             .engine
-            .get_bid_analytics(job_id)
+            .get_bid_analytics(job_id, customer_id)
             .await
             .map_err(bid_error_to_status)?;
 
@@ -392,24 +419,30 @@ impl BidService for BidServiceImpl {
         let req = request.into_inner();
         let job_id = parse_uuid(&req.job_id, "job_id")?;
 
-        let state = self.engine.get_live_auction_state(job_id).await.map_err(|e| match e {
-            BidError::JobNotFound => Status::not_found("job not found"),
-            BidError::FeatureNotEnabled(msg) => Status::failed_precondition(msg),
-            BidError::DatabaseError(e) => {
-                tracing::error!("database error in get_live_auction_state: {}", e);
-                Status::internal("internal error")
-            }
-            e => Status::internal(format!("unexpected error: {}", e)),
-        })?;
+        let state = self
+            .engine
+            .get_live_auction_state(job_id)
+            .await
+            .map_err(|e| match e {
+                BidError::JobNotFound => Status::not_found("job not found"),
+                BidError::FeatureNotEnabled(msg) => Status::failed_precondition(msg),
+                BidError::DatabaseError(e) => {
+                    tracing::error!("database error in get_live_auction_state: {}", e);
+                    Status::internal("internal error")
+                }
+                e => Status::internal(format!("unexpected error: {e}")),
+            })?;
 
-        let recent_events = state.recent_events.iter().map(|e| {
-            bid_proto::AuctionBidEvent {
+        let recent_events = state
+            .recent_events
+            .iter()
+            .map(|e| bid_proto::AuctionBidEvent {
                 job_id: e.job_id.to_string(),
                 amount_cents: e.amount_cents,
                 event_type: e.event_type.clone(),
                 created_at: Some(datetime_to_proto(e.created_at)),
-            }
-        }).collect();
+            })
+            .collect();
 
         Ok(Response::new(bid_proto::GetLiveAuctionStateResponse {
             state: Some(bid_proto::LiveAuctionState {
@@ -431,22 +464,27 @@ impl BidService for BidServiceImpl {
         let req = request.into_inner();
         let job_id = parse_uuid(&req.job_id, "job_id")?;
 
-        let events = self.engine.get_auction_events(job_id).await.map_err(|e| match e {
-            BidError::DatabaseError(e) => {
-                tracing::error!("database error in get_auction_events: {}", e);
-                Status::internal("internal error")
-            }
-            e => Status::internal(format!("unexpected error: {}", e)),
-        })?;
+        let events = self
+            .engine
+            .get_auction_events(job_id)
+            .await
+            .map_err(|e| match e {
+                BidError::DatabaseError(e) => {
+                    tracing::error!("database error in get_auction_events: {}", e);
+                    Status::internal("internal error")
+                }
+                e => Status::internal(format!("unexpected error: {e}")),
+            })?;
 
-        let proto_events = events.iter().map(|e| {
-            bid_proto::AuctionBidEvent {
+        let proto_events = events
+            .iter()
+            .map(|e| bid_proto::AuctionBidEvent {
                 job_id: e.job_id.to_string(),
                 amount_cents: e.amount_cents,
                 event_type: e.event_type.clone(),
                 created_at: Some(datetime_to_proto(e.created_at)),
-            }
-        }).collect();
+            })
+            .collect();
 
         Ok(Response::new(bid_proto::GetAuctionEventsResponse {
             events: proto_events,
@@ -466,16 +504,15 @@ fn parse_uuid(s: &str, field: &str) -> Result<Uuid, Status> {
 
 fn bid_to_proto(bid: &Bid) -> bid_proto::Bid {
     // Parse bid_updates JSONB into proto BidUpdate list.
-    let bid_history: Vec<bid_proto::BidUpdate> = serde_json::from_value::<
-        Vec<crate::models::BidUpdate>,
-    >(bid.bid_updates.clone())
-    .unwrap_or_default()
-    .into_iter()
-    .map(|u| bid_proto::BidUpdate {
-        amount_cents: u.amount_cents,
-        updated_at: Some(datetime_to_proto(u.updated_at)),
-    })
-    .collect();
+    let bid_history: Vec<bid_proto::BidUpdate> =
+        serde_json::from_value::<Vec<crate::models::BidUpdate>>(bid.bid_updates.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|u| bid_proto::BidUpdate {
+                amount_cents: u.amount_cents,
+                updated_at: Some(datetime_to_proto(u.updated_at)),
+            })
+            .collect();
 
     bid_proto::Bid {
         id: bid.id.to_string(),
@@ -504,8 +541,12 @@ fn status_str_to_proto(s: &str) -> i32 {
     }
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-fn datetime_to_proto(dt: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap
+)]
+const fn datetime_to_proto(dt: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
     prost_types::Timestamp {
         seconds: dt.timestamp(),
         nanos: dt.timestamp_subsec_nanos() as i32,

@@ -22,11 +22,22 @@ type JobService struct {
 	search   *SearchEngine
 	matching *MatchingService
 	notifier NotificationSender
+	// retryQ is optional (ARC-16). When non-nil, Meilisearch failures that
+	// exhaust in-process retries are escalated to a Redis-backed durable
+	// queue. nil-safe — search still fails soft without Redis.
+	retryQ *SearchRetryQueue
 }
 
 // NewJobService creates a new job service.
 func NewJobService(repo domain.JobRepository, search *SearchEngine) *JobService {
 	return &JobService{repo: repo, search: search}
+}
+
+// WithSearchRetryQueue attaches the durable Meilisearch retry queue (ARC-16).
+// Returns the service for chaining. Safe to call with nil (no-op).
+func (s *JobService) WithSearchRetryQueue(q *SearchRetryQueue) *JobService {
+	s.retryQ = q
+	return s
 }
 
 // SetMatchingService wires in the provider matching engine.
@@ -53,6 +64,24 @@ func (s *JobService) CreateJob(ctx context.Context, input domain.CreateJobInput)
 	}
 	if input.AuctionDurationHours < 0 || input.AuctionDurationHours > 168 {
 		return nil, domain.ErrInvalidDuration
+	}
+	// Validate auction_type against the allowed set before insert so an invalid
+	// value (e.g. "open") returns a 400 instead of surfacing the DB CHECK
+	// constraint violation as a 500. Empty is allowed — the repository defaults
+	// it to "sealed".
+	if input.AuctionType != "" {
+		if _, ok := domain.ValidAuctionTypes[input.AuctionType]; !ok {
+			return nil, domain.ErrInvalidAuctionType
+		}
+	}
+	// Money is positive cents. A negative or zero starting bid (or accepted-offer
+	// price) corrupts the reverse auction: the bid handler rejects every positive
+	// bid as "exceeds starting bid", leaving a live-looking but un-biddable job.
+	if input.StartingBidCents != nil && *input.StartingBidCents <= 0 {
+		return nil, domain.ErrInvalidStartingBid
+	}
+	if input.OfferAcceptedCents != nil && *input.OfferAcceptedCents <= 0 {
+		return nil, domain.ErrInvalidStartingBid
 	}
 	if input.ScheduleType == "" {
 		input.ScheduleType = "flexible"
@@ -87,9 +116,19 @@ func (s *JobService) CreateJob(ctx context.Context, input domain.CreateJobInput)
 	return job, nil
 }
 
-// UpdateJob validates and updates a draft job.
-func (s *JobService) UpdateJob(ctx context.Context, jobID string, input domain.UpdateJobInput) (*domain.Job, error) {
-	job, err := s.repo.UpdateJob(ctx, jobID, input)
+// UpdateJob validates and updates a draft job. customerID is the authenticated
+// caller; the repository enforces that the caller owns the job.
+func (s *JobService) UpdateJob(ctx context.Context, jobID string, customerID string, input domain.UpdateJobInput) (*domain.Job, error) {
+	if customerID == "" {
+		return nil, fmt.Errorf("update job: %w", domain.ErrNotOwner)
+	}
+	if input.StartingBidCents != nil && *input.StartingBidCents <= 0 {
+		return nil, fmt.Errorf("update job: %w", domain.ErrInvalidStartingBid)
+	}
+	if input.OfferAcceptedCents != nil && *input.OfferAcceptedCents <= 0 {
+		return nil, fmt.Errorf("update job: %w", domain.ErrInvalidStartingBid)
+	}
+	job, err := s.repo.UpdateJob(ctx, jobID, customerID, input)
 	if err != nil {
 		return nil, fmt.Errorf("update job: %w", err)
 	}
@@ -114,25 +153,28 @@ func (s *JobService) GetJobDetail(ctx context.Context, jobID string, requestingU
 	return job, nil
 }
 
-// DeleteDraft soft-deletes a draft job.
-func (s *JobService) DeleteDraft(ctx context.Context, jobID string) error {
-	if err := s.repo.DeleteDraft(ctx, jobID); err != nil {
+// DeleteDraft soft-deletes a draft job. customerID is the authenticated caller;
+// the repository enforces that the caller owns the job.
+func (s *JobService) DeleteDraft(ctx context.Context, jobID string, customerID string) error {
+	if customerID == "" {
+		return fmt.Errorf("delete draft: %w", domain.ErrNotOwner)
+	}
+	if err := s.repo.DeleteDraft(ctx, jobID, customerID); err != nil {
 		return fmt.Errorf("delete draft: %w", err)
 	}
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — deleted draft may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "deleted draft may remain in search results")
 	}
 	return nil
 }
 
-// PublishJob transitions a draft job to active.
-func (s *JobService) PublishJob(ctx context.Context, jobID string) (*domain.Job, error) {
-	job, err := s.repo.PublishJob(ctx, jobID)
+// PublishJob transitions a draft job to active. customerID is the authenticated
+// caller; the repository enforces that the caller owns the job.
+func (s *JobService) PublishJob(ctx context.Context, jobID string, customerID string) (*domain.Job, error) {
+	if customerID == "" {
+		return nil, fmt.Errorf("publish job: %w", domain.ErrNotOwner)
+	}
+	job, err := s.repo.PublishJob(ctx, jobID, customerID)
 	if err != nil {
 		return nil, fmt.Errorf("publish job: %w", err)
 	}
@@ -154,12 +196,7 @@ func (s *JobService) CloseAuction(ctx context.Context, jobID string, customerID 
 		return nil, fmt.Errorf("close auction: %w", err)
 	}
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — closed job may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "closed job may remain in search results")
 	}
 	slog.Info("auction closed", "job_id", job.ID, "status", job.Status)
 	return job, nil
@@ -172,12 +209,7 @@ func (s *JobService) CancelJob(ctx context.Context, jobID string, customerID str
 		return nil, fmt.Errorf("cancel job: %w", err)
 	}
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — cancelled job may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "cancelled job may remain in search results")
 	}
 	slog.Info("job cancelled", "job_id", job.ID)
 	return job, nil
@@ -201,9 +233,9 @@ func (s *JobService) SearchJobs(ctx context.Context, input domain.SearchJobsInpu
 	return jobs, pagination, nil
 }
 
-// ListCustomerJobs lists jobs for a customer.
-func (s *JobService) ListCustomerJobs(ctx context.Context, customerID string, statusFilter *string, propertyID *string, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
-	jobs, pagination, err := s.repo.ListCustomerJobs(ctx, customerID, statusFilter, propertyID, page, pageSize)
+// ListCustomerJobs lists jobs for a customer with optional FR-19.3 filters.
+func (s *JobService) ListCustomerJobs(ctx context.Context, customerID string, filter domain.ListCustomerJobsFilter, page, pageSize int) ([]*domain.Job, *domain.Pagination, error) {
+	jobs, pagination, err := s.repo.ListCustomerJobs(ctx, customerID, filter, page, pageSize)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list customer jobs: %w", err)
 	}
@@ -274,7 +306,7 @@ func (s *JobService) RepostJob(ctx context.Context, jobID, customerID string, up
 		Publish:              true,
 	}
 
-	// Apply optional updates.
+	// Apply optional updates (customer may tweak scope / starting bid / duration on repost).
 	if updates != nil {
 		if updates.Title != nil {
 			input.Title = *updates.Title
@@ -287,6 +319,9 @@ func (s *JobService) RepostJob(ctx context.Context, jobID, customerID string, up
 		}
 		if updates.StartingBidCents != nil {
 			input.StartingBidCents = updates.StartingBidCents
+		}
+		if updates.OfferAcceptedCents != nil {
+			input.OfferAcceptedCents = updates.OfferAcceptedCents
 		}
 		if updates.AuctionDurationHours != nil {
 			input.AuctionDurationHours = *updates.AuctionDurationHours
@@ -326,12 +361,7 @@ func (s *JobService) AwardJob(ctx context.Context, jobID, customerID, providerID
 	}
 
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — awarded job may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "awarded job may remain in search results")
 	}
 
 	slog.Info("job awarded",
@@ -370,12 +400,7 @@ func (s *JobService) AdminSuspendJob(ctx context.Context, jobID, reason, adminID
 	}
 
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — suspended job may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "suspended job may remain in search results")
 	}
 
 	if err := s.repo.InsertAuditLog(ctx, adminID, "suspend_job", "job", jobID, map[string]any{
@@ -395,12 +420,7 @@ func (s *JobService) AdminRemoveJob(ctx context.Context, jobID, reason, adminID 
 	}
 
 	if s.search != nil {
-		if removeErr := s.search.RemoveJob(ctx, jobID); removeErr != nil {
-			slog.Error("SEARCH REMOVAL FAILED — removed job may remain in search results",
-				"job_id", jobID,
-				"error", removeErr,
-			)
-		}
+		s.removeJobFromSearchWithRetry(jobID, "removed job may remain in search results")
 	}
 
 	if err := s.repo.InsertAuditLog(ctx, adminID, "remove_job", "job", jobID, map[string]any{
@@ -415,7 +435,8 @@ func (s *JobService) AdminRemoveJob(ctx context.Context, jobID, reason, adminID 
 
 // indexJobWithRetry attempts to index a job in Meilisearch with up to 3 retries
 // using exponential backoff (1s, 2s, 4s). Runs in a goroutine so it does not
-// block the response to the caller. If all attempts fail, the final error is logged.
+// block the response to the caller. On exhaustion, escalates to the durable
+// Redis retry queue (ARC-16) when wired; otherwise dead-letters with metric.
 func (s *JobService) indexJobWithRetry(job *domain.Job, operation string) {
 	jobID := job.ID
 
@@ -438,17 +459,75 @@ func (s *JobService) indexJobWithRetry(job *domain.Job, operation string) {
 			}
 
 			if attempt == maxAttempts {
-				slog.Error("SEARCH INDEX FAILED — job will not appear in search results (all retries exhausted)",
+				slog.Error("SEARCH INDEX FAILED — escalating to durable retry (in-process retries exhausted)",
 					"job_id", jobID,
 					"operation", operation,
 					"attempts", maxAttempts,
 					"error", err,
 				)
+				escalateToDurableQueue(s.retryQ, SearchRetryTask{
+					Index:     searchRetryIndexJobs,
+					Op:        searchRetryOpIndex,
+					EntityID:  jobID,
+					Operation: operation,
+				})
 				return
 			}
 
 			backoff := time.Duration(1<<(attempt-1)) * time.Second // 1s, 2s
 			slog.Warn("search index failed, retrying",
+				"job_id", jobID,
+				"operation", operation,
+				"attempt", attempt,
+				"next_retry_in", backoff,
+				"error", err,
+			)
+			time.Sleep(backoff)
+		}
+	}()
+}
+
+// removeJobFromSearchWithRetry attempts to delete a job from the Meilisearch
+// index with up to 3 retries (exponential backoff 1s, 2s, 4s). Runs in a
+// goroutine. On exhaustion, escalates to the durable Redis retry queue
+// (ARC-16) when wired; otherwise dead-letters with metric + ERROR log.
+func (s *JobService) removeJobFromSearchWithRetry(jobID, operation string) {
+	go func() {
+		const maxAttempts = 3
+
+		ctx := context.Background()
+
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			err := s.search.RemoveJob(ctx, jobID)
+			if err == nil {
+				if attempt > 1 {
+					slog.Info("search remove succeeded after retry",
+						"job_id", jobID,
+						"operation", operation,
+						"attempt", attempt,
+					)
+				}
+				return
+			}
+
+			if attempt == maxAttempts {
+				slog.Error("SEARCH REMOVAL FAILED — escalating to durable retry (in-process retries exhausted)",
+					"job_id", jobID,
+					"operation", operation,
+					"attempts", maxAttempts,
+					"error", err,
+				)
+				escalateToDurableQueue(s.retryQ, SearchRetryTask{
+					Index:     searchRetryIndexJobs,
+					Op:        searchRetryOpRemove,
+					EntityID:  jobID,
+					Operation: operation,
+				})
+				return
+			}
+
+			backoff := time.Duration(1<<(attempt-1)) * time.Second
+			slog.Warn("search remove failed, retrying",
 				"job_id", jobID,
 				"operation", operation,
 				"attempt", attempt,
@@ -507,8 +586,18 @@ func (s *JobService) triggerProviderMatching(job *domain.Job) {
 	}()
 }
 
-// notifyProviderOfMatch sends a match notification to a single provider.
+// notifyProviderOfMatch records the match (F2 liquidity) then sends a
+// notification. The ledger write happens even when the push fails-soft or
+// the notifier is unset — the provider was selected.
 func (s *JobService) notifyProviderOfMatch(ctx context.Context, match domain.MatchedProvider, jobID, jobTitle, categoryName string) {
+	if err := s.repo.RecordJobMatchNotification(ctx, jobID, match.ProviderID); err != nil {
+		slog.Error("failed to record job match notification",
+			"provider_id", match.ProviderID,
+			"job_id", jobID,
+			"error", err,
+		)
+	}
+
 	if s.notifier == nil {
 		slog.Warn("notification sender not configured — skipping match notification",
 			"provider_id", match.ProviderID,

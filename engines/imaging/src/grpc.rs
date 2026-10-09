@@ -2,7 +2,7 @@
 ///
 /// Module hierarchy mirrors proto package paths so relative imports resolve correctly.
 
-#[allow(clippy::all, clippy::pedantic, dead_code)]
+#[allow(clippy::all, clippy::pedantic, clippy::nursery, dead_code)]
 pub mod nomarkup {
     pub mod common {
         pub mod v1 {
@@ -27,7 +27,8 @@ use tracing::{info, warn};
 
 use crate::engine::ImagePipeline;
 use crate::models::{
-    ImageFormat, ImageVariant, ImagingError, ProcessingOptions, ResizeMode, UploadContext,
+    ImageFormat, ImageVariant, ImagingError, MAX_BATCH_IMAGES, ProcessingOptions, ResizeMode,
+    UploadContext,
 };
 
 /// gRPC service implementation wrapping the image processing pipeline.
@@ -37,7 +38,7 @@ pub struct ImagingServiceImpl {
 
 impl ImagingServiceImpl {
     #[must_use]
-    pub fn new(pipeline: Arc<ImagePipeline>) -> Self {
+    pub const fn new(pipeline: Arc<ImagePipeline>) -> Self {
         Self { pipeline }
     }
 }
@@ -108,15 +109,33 @@ impl ImagingService for ImagingServiceImpl {
         }))
     }
 
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            batch_size = tracing::field::Empty,
+            succeeded = tracing::field::Empty,
+            failed = tracing::field::Empty,
+        )
+    )]
     async fn batch_process_images(
         &self,
         request: Request<imaging_proto::BatchProcessImagesRequest>,
     ) -> Result<Response<imaging_proto::BatchProcessImagesResponse>, Status> {
         let req = request.into_inner();
+        tracing::Span::current().record("batch_size", req.images.len());
         if req.images.is_empty() {
             return Err(Status::invalid_argument(
                 "at least one image request is required",
             ));
+        }
+        // Bound the CPU work one caller can request. Without this the batch
+        // size is whatever the client sends, and each image is tens of ms of
+        // decode/resize/encode on the blocking pool.
+        if req.images.len() > MAX_BATCH_IMAGES {
+            return Err(Status::invalid_argument(format!(
+                "batch too large: {} images exceeds the limit of {MAX_BATCH_IMAGES}; split the request",
+                req.images.len()
+            )));
         }
 
         let mut results = Vec::with_capacity(req.images.len());
@@ -172,6 +191,10 @@ impl ImagingService for ImagingServiceImpl {
             }
         }
 
+        let span = tracing::Span::current();
+        span.record("succeeded", succeeded);
+        span.record("failed", failed);
+
         Ok(Response::new(imaging_proto::BatchProcessImagesResponse {
             results,
             succeeded,
@@ -191,6 +214,15 @@ impl ImagingService for ImagingServiceImpl {
             return Err(Status::invalid_argument(
                 "at least one source_url is required",
             ));
+        }
+        // Same bound as BatchProcessImages — this path is heavier still, since
+        // every source renders four outputs (original + large + medium +
+        // thumbnail) plus a BlurHash.
+        if req.source_urls.len() > MAX_BATCH_IMAGES {
+            return Err(Status::invalid_argument(format!(
+                "batch too large: {} photos exceeds the limit of {MAX_BATCH_IMAGES}; split the request",
+                req.source_urls.len()
+            )));
         }
 
         let keys: Vec<String> = req.source_urls.iter().map(|u| url_to_key(u)).collect();
@@ -363,16 +395,15 @@ impl ImagingService for ImagingServiceImpl {
             .await
         {
             Ok((url, is_valid, actual_ct)) => {
-                let err = if is_valid {
-                    String::new()
-                } else {
-                    format!("unsupported content type: {actual_ct}")
-                };
+                // On the invalid path, carry the bare detected content type
+                // (e.g. "application/octet-stream") in `error`. The gateway
+                // surfaces it to the web client as `actual_content_type`, which
+                // renders it inline ("detected content type \"...\""), so a
+                // prefixed sentence would read awkwardly there.
+                let err = if is_valid { String::new() } else { actual_ct };
                 (url, is_valid, err)
             }
-            Err(ImagingError::NotFound(msg)) => {
-                (String::new(), false, msg)
-            }
+            Err(ImagingError::NotFound(msg)) => (String::new(), false, msg),
             Err(e) => return Err(imaging_error_to_status(e)),
         };
 
@@ -381,6 +412,34 @@ impl ImagingService for ImagingServiceImpl {
             valid,
             error: error_msg,
         }))
+    }
+
+    async fn delete_user_objects(
+        &self,
+        request: Request<imaging_proto::DeleteUserObjectsRequest>,
+    ) -> Result<Response<imaging_proto::DeleteUserObjectsResponse>, Status> {
+        let req = request.into_inner();
+        if req.user_id.is_empty() {
+            return Err(Status::invalid_argument("user_id is required"));
+        }
+
+        match self.pipeline.delete_user_objects(&req.user_id).await {
+            Ok(n) => {
+                info!(
+                    user_id = %req.user_id,
+                    objects_deleted = n,
+                    "grpc delete_user_objects completed"
+                );
+                let objects_deleted = i32::try_from(n).unwrap_or(i32::MAX);
+                Ok(Response::new(imaging_proto::DeleteUserObjectsResponse {
+                    objects_deleted,
+                }))
+            }
+            Err(e) => {
+                warn!(user_id = %req.user_id, error = %e, "grpc delete_user_objects failed");
+                Err(imaging_error_to_status(e))
+            }
+        }
     }
 }
 
@@ -393,7 +452,10 @@ impl ImagingService for ImagingServiceImpl {
 fn url_to_key(url: &str) -> String {
     // URLs like "http://localhost:9000/nomarkup/avatars/user1/raw/file.jpg"
     // We need to extract "avatars/user1/raw/file.jpg".
-    if let Some(rest) = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://")) {
+    if let Some(rest) = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+    {
         // Skip host, then skip bucket name (first path segment after host).
         if let Some(path_start) = rest.find('/') {
             let path = &rest[path_start + 1..];
@@ -445,7 +507,7 @@ fn proto_options_to_domain(
 }
 
 /// Convert proto resize mode int to domain enum.
-fn proto_resize_mode(v: i32) -> ResizeMode {
+const fn proto_resize_mode(v: i32) -> ResizeMode {
     match v {
         1 => ResizeMode::Fit,
         2 => ResizeMode::Fill,
@@ -480,7 +542,7 @@ fn variant_to_proto(v: &ImageVariant) -> imaging_proto::ImageVariant {
 }
 
 /// Convert a domain `ImageFormat` to proto enum i32.
-fn domain_format_to_proto(f: ImageFormat) -> i32 {
+const fn domain_format_to_proto(f: ImageFormat) -> i32 {
     match f {
         ImageFormat::Jpeg => 1,
         ImageFormat::Png => 2,
@@ -492,12 +554,13 @@ fn domain_format_to_proto(f: ImageFormat) -> i32 {
 fn parse_upload_context(s: &str) -> Result<UploadContext, Status> {
     UploadContext::from_str_context(s).ok_or_else(|| {
         Status::invalid_argument(format!(
-            "invalid context '{s}': expected one of avatar, portfolio, job_photo, document, review_photo"
+            "invalid context '{s}': expected one of avatar, portfolio, job_photo, document, review_photo, listing, chat_attachment"
         ))
     })
 }
 
 /// Map `ImagingError` to a gRPC `Status`.
+// (tests for the batch bounds live at the bottom of this file)
 fn imaging_error_to_status(err: ImagingError) -> Status {
     match err {
         ImagingError::InvalidArgument(msg) => Status::invalid_argument(msg),
@@ -523,6 +586,153 @@ fn imaging_error_to_status(err: ImagingError) -> Status {
         ImagingError::Internal(msg) => {
             tracing::error!(error = msg.as_str(), "internal imaging error");
             Status::internal("internal error")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A pipeline pointed at an S3 endpoint that is never contacted: every
+    /// assertion below is about request validation, which runs before the
+    /// first network call.
+    fn test_service() -> ImagingServiceImpl {
+        let config = aws_sdk_s3::config::Builder::new()
+            .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
+            .region(aws_sdk_s3::config::Region::new("us-east-1"))
+            .credentials_provider(aws_sdk_s3::config::Credentials::new(
+                "test", "test", None, None, "test",
+            ))
+            .force_path_style(true)
+            .build();
+
+        let pipeline = ImagePipeline::new(
+            aws_sdk_s3::Client::from_conf(config),
+            "test-bucket".to_string(),
+            "http://localhost:9000/test-bucket".to_string(),
+        );
+
+        ImagingServiceImpl::new(Arc::new(pipeline))
+    }
+
+    fn image_request(idx: usize) -> imaging_proto::ProcessImageRequest {
+        imaging_proto::ProcessImageRequest {
+            source_url: format!("http://localhost:9000/test-bucket/raw/{idx}.jpg"),
+            options: None,
+            context: String::new(),
+        }
+    }
+
+    /// An oversized batch is rejected up front, before any CPU work is queued.
+    /// Without this bound one caller could hand the engine an unbounded number
+    /// of decode/resize/encode jobs in a single RPC.
+    #[tokio::test]
+    async fn batch_process_rejects_oversized_batch() {
+        let service = test_service();
+
+        let images: Vec<_> = (0..=MAX_BATCH_IMAGES).map(image_request).collect();
+        let status = service
+            .batch_process_images(Request::new(imaging_proto::BatchProcessImagesRequest {
+                images,
+            }))
+            .await
+            .expect_err("batch above the cap must be rejected");
+
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(
+            status.message().contains("batch too large"),
+            "message should explain the limit, got: {}",
+            status.message()
+        );
+        assert!(status.message().contains(&MAX_BATCH_IMAGES.to_string()));
+    }
+
+    #[tokio::test]
+    async fn batch_process_rejects_empty_batch() {
+        let service = test_service();
+
+        let status = service
+            .batch_process_images(Request::new(imaging_proto::BatchProcessImagesRequest {
+                images: Vec::new(),
+            }))
+            .await
+            .expect_err("empty batch must be rejected");
+
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn delete_user_objects_rejects_empty_user_id() {
+        let service = test_service();
+        let status = service
+            .delete_user_objects(Request::new(imaging_proto::DeleteUserObjectsRequest {
+                user_id: String::new(),
+            }))
+            .await
+            .expect_err("empty user_id must be rejected before S3");
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[tokio::test]
+    async fn delete_user_objects_rejects_non_uuid() {
+        let service = test_service();
+        let status = service
+            .delete_user_objects(Request::new(imaging_proto::DeleteUserObjectsRequest {
+                user_id: "../secrets".into(),
+            }))
+            .await
+            .expect_err("non-UUID user_id must be rejected before S3");
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
+
+    /// The job-photo path renders four outputs per source, so it carries the
+    /// same bound.
+    #[tokio::test]
+    async fn process_job_photos_rejects_oversized_batch() {
+        let service = test_service();
+
+        let source_urls: Vec<String> = (0..=MAX_BATCH_IMAGES)
+            .map(|i| format!("http://localhost:9000/test-bucket/raw/{i}.jpg"))
+            .collect();
+
+        let status = service
+            .process_job_photos(Request::new(imaging_proto::ProcessJobPhotosRequest {
+                job_id: "job-1".to_string(),
+                source_urls,
+            }))
+            .await
+            .expect_err("photo batch above the cap must be rejected");
+
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert!(status.message().contains("batch too large"));
+    }
+
+    #[tokio::test]
+    async fn process_job_photos_rejects_empty_batch() {
+        let service = test_service();
+
+        let status = service
+            .process_job_photos(Request::new(imaging_proto::ProcessJobPhotosRequest {
+                job_id: "job-1".to_string(),
+                source_urls: Vec::new(),
+            }))
+            .await
+            .expect_err("empty photo batch must be rejected");
+
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
+
+    /// The cap must stay at or above the product limit (10 photos per job /
+    /// listing form) so a legitimate upload is never rejected.
+    #[test]
+    fn batch_cap_covers_the_product_photo_limit() {
+        const PRODUCT_PHOTO_LIMIT: usize = 10;
+        const {
+            assert!(
+                MAX_BATCH_IMAGES >= PRODUCT_PHOTO_LIMIT,
+                "cap must not reject a full 10-photo job posting"
+            );
         }
     }
 }

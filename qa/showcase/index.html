@@ -1410,6 +1410,132 @@
       margin-top: 0.125rem;
     }
 
+    /* Qualified lead generation callout */
+    .finserv__leadgen {
+      margin-top: 1.5rem;
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      background: linear-gradient(135deg, rgba(201,168,76,0.07), rgba(78,205,196,0.03));
+      border: 1px solid var(--gold-dim);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .finserv__leadgen-main { padding: 2.5rem; }
+    .finserv__leadgen-tag {
+      font-family: var(--font-mono);
+      font-size: 0.5625rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(201,168,76,0.12);
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      display: inline-block;
+      margin-bottom: 1.25rem;
+    }
+    .finserv__leadgen-main h3 {
+      font-family: var(--font-display);
+      font-size: 1.75rem;
+      line-height: 1.2;
+      color: var(--text-primary);
+      margin-bottom: 1rem;
+    }
+    .finserv__leadgen-main > p {
+      font-size: 0.9375rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+      max-width: 640px;
+    }
+    .finserv__leadgen-main > p strong { color: var(--gold); font-weight: 600; }
+    .finserv__leadgen-compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-top: 1.75rem;
+    }
+    .finserv__leadgen-col {
+      border-radius: 8px;
+      padding: 1.25rem;
+      border: 1px solid var(--border);
+    }
+    .finserv__leadgen-col--them { background: rgba(239,68,68,0.04); }
+    .finserv__leadgen-col--us {
+      background: rgba(34,197,94,0.05);
+      border-color: rgba(34,197,94,0.2);
+    }
+    .finserv__leadgen-col-label {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      display: block;
+      margin-bottom: 0.75rem;
+    }
+    .finserv__leadgen-col--them .finserv__leadgen-col-label { color: var(--red); }
+    .finserv__leadgen-col--us .finserv__leadgen-col-label { color: var(--green); }
+    .finserv__leadgen-col ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .finserv__leadgen-col li {
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      padding-left: 1.25rem;
+      position: relative;
+    }
+    .finserv__leadgen-col--them li::before {
+      content: '\2715';
+      position: absolute;
+      left: 0;
+      color: var(--text-tertiary);
+      font-size: 0.75rem;
+    }
+    .finserv__leadgen-col--us li::before {
+      content: '\2713';
+      position: absolute;
+      left: 0;
+      color: var(--green);
+      font-weight: 700;
+      font-size: 0.75rem;
+    }
+    .finserv__leadgen-stat {
+      padding: 2.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      text-align: center;
+      background: rgba(201,168,76,0.05);
+      border-left: 1px solid var(--gold-dim);
+    }
+    .finserv__leadgen-stat-value {
+      font-family: var(--font-mono);
+      font-size: 4rem;
+      font-weight: 600;
+      color: var(--gold);
+      line-height: 1;
+    }
+    .finserv__leadgen-stat-label {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-top: 0.5rem;
+    }
+    .finserv__leadgen-stat-note {
+      font-size: 0.75rem;
+      color: var(--text-tertiary);
+      line-height: 1.6;
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
     /* ═══════════════════════════════════════
        EXPANSION
        ═══════════════════════════════════════ */
@@ -1735,6 +1861,8 @@
       .flywheel__diagram { max-width: 360px; }
       .finserv__products { grid-template-columns: repeat(2, 1fr); }
       .finserv__take-rate { flex-direction: column; }
+      .finserv__leadgen { grid-template-columns: 1fr; }
+      .finserv__leadgen-stat { border-left: none; border-top: 1px solid var(--gold-dim); }
       .expansion__timeline { grid-template-columns: 1fr; }
       .metrics__grid { grid-template-columns: repeat(2, 1fr); }
     }
@@ -1745,6 +1873,8 @@
       .hero__stat-row { flex-direction: column; gap: 1.25rem; }
       .trust__dimensions { grid-template-columns: 1fr; }
       .finserv__products { grid-template-columns: 1fr; }
+      .finserv__leadgen-main { padding: 1.75rem; }
+      .finserv__leadgen-compare { grid-template-columns: 1fr; }
       .metrics__grid { grid-template-columns: 1fr; }
       .tech-layer { grid-template-columns: 1fr; gap: 0.75rem; }
       .footer__inner { flex-direction: column; gap: 1.5rem; text-align: center; }
@@ -2246,6 +2376,37 @@
           <div class="finserv__take-rate-segment finserv__take-rate-segment--guarantee">Guarantee 2&ndash;3%</div>
         </div>
         <div class="finserv__take-rate-label">12&ndash;20%</div>
+      </div>
+
+      <div class="finserv__leadgen reveal">
+        <div class="finserv__leadgen-main">
+          <span class="finserv__leadgen-tag">Phase 1 &middot; Live at launch</span>
+          <h3>Qualified leads that convert &mdash; not recycled ones.</h3>
+          <p>Service providers already pour marketing budget into lead-gen platforms that resell the same lead to five competitors and bill whether or not it ever becomes a job. That spend is a <strong>separate wallet</strong> from the transaction fee &mdash; and it's up for grabs. NoMarkup becomes the lead source: every lead is a real customer with a posted job and a verified budget, awarded <strong>exclusively</strong> to the winning provider, with a 10% fee charged only when a contract is actually won. Outcome-priced, exclusive, and cheaper than what providers pay today.</p>
+          <div class="finserv__leadgen-compare">
+            <div class="finserv__leadgen-col finserv__leadgen-col--them">
+              <span class="finserv__leadgen-col-label">Legacy lead-gen</span>
+              <ul>
+                <li>Same lead resold to 4&ndash;6 companies</li>
+                <li>Charged upfront, conversion or not</li>
+                <li>Unverified intent, tire-kickers</li>
+              </ul>
+            </div>
+            <div class="finserv__leadgen-col finserv__leadgen-col--us">
+              <span class="finserv__leadgen-col-label">NoMarkup</span>
+              <ul>
+                <li>Exclusive to the winning provider</li>
+                <li>10% charged only on a won contract</li>
+                <li>Real posted job, verified budget</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="finserv__leadgen-stat">
+          <div class="finserv__leadgen-stat-value">10%</div>
+          <div class="finserv__leadgen-stat-label">per won lead</div>
+          <div class="finserv__leadgen-stat-note">Validated with multi-million-dollar trade operators who already pay 10%+ for shared, lower-quality leads that frequently go nowhere.</div>
+        </div>
       </div>
 
       <div class="finserv__products">

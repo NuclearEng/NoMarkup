@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Service
+metadata:
+  # Load-bearing DNS for otel-collector backend:
+  #   http://tempo.monitoring.svc.cluster.local:4318
+  # Staging overlay patches otel-collector-backend to this host.
+  name: tempo
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: tempo
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: nomarkup
+    nomarkup.com/ops: "OPS-09"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: tempo
+  ports:
+    - name: http
+      port: 3200
+      targetPort: http
+      protocol: TCP
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP

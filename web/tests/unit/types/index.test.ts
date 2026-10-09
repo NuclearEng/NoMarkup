@@ -511,12 +511,20 @@ describe('NOTIFICATION_TYPE', () => {
     expect(NOTIFICATION_TYPE.TIER_DOWNGRADE).toBe('tier_downgrade');
   });
 
-  it('has exactly 26 notification types', () => {
-    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(26);
+  it('has expected marketplace wishlist notification', () => {
+    expect(NOTIFICATION_TYPE.WISHLIST_MATCH).toBe('wishlist_match');
+  });
+
+  it('has exactly 30 notification types', () => {
+    expect(Object.keys(NOTIFICATION_TYPE)).toHaveLength(30);
   });
 
   it('includes JOB_MATCHED (pre-matching)', () => {
     expect(NOTIFICATION_TYPE.JOB_MATCHED).toBe('job_matched');
+  });
+
+  it('includes BID_OUTBID (goods auction outbid)', () => {
+    expect(NOTIFICATION_TYPE.BID_OUTBID).toBe('bid_outbid');
   });
 
   it('produces the correct type', () => {
@@ -550,10 +558,11 @@ describe('UPLOAD_CONTEXT', () => {
     expect(UPLOAD_CONTEXT.JOB_PHOTO).toBe('job_photo');
     expect(UPLOAD_CONTEXT.DOCUMENT).toBe('document');
     expect(UPLOAD_CONTEXT.REVIEW_PHOTO).toBe('review_photo');
+    expect(UPLOAD_CONTEXT.LISTING).toBe('listing');
   });
 
-  it('has exactly 5 contexts', () => {
-    expect(Object.keys(UPLOAD_CONTEXT)).toHaveLength(5);
+  it('has exactly 6 contexts', () => {
+    expect(Object.keys(UPLOAD_CONTEXT)).toHaveLength(6);
   });
 
   it('produces the correct type', () => {

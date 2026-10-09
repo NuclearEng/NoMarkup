@@ -88,6 +88,43 @@ func (r *PostgresRepository) GetTier(ctx context.Context, tierID string) (*domai
 	return t, nil
 }
 
+func (r *PostgresRepository) GetTierByStripePriceID(ctx context.Context, priceID string) (*domain.SubscriptionTier, string, error) {
+	t := &domain.SubscriptionTier{}
+	var interval string
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, name, slug,
+		       monthly_price_cents, annual_price_cents,
+		       fee_discount_percentage,
+		       max_active_bids, max_service_categories,
+		       featured_placement, analytics_access, priority_support,
+		       verified_badge_boost, portfolio_image_limit, instant_enabled,
+		       sort_order, is_active,
+		       COALESCE(stripe_price_id_monthly, ''), COALESCE(stripe_price_id_annual, ''),
+		       created_at, updated_at,
+		       CASE WHEN stripe_price_id_annual = $1 THEN 'annual' ELSE 'monthly' END
+		FROM subscription_tiers
+		WHERE stripe_price_id_monthly = $1 OR stripe_price_id_annual = $1
+		LIMIT 1`, priceID).Scan(
+		&t.ID, &t.Name, &t.Slug,
+		&t.MonthlyPriceCents, &t.AnnualPriceCents,
+		&t.FeeDiscountPercentage,
+		&t.MaxActiveBids, &t.MaxServiceCategories,
+		&t.FeaturedPlacement, &t.AnalyticsAccess, &t.PrioritySupport,
+		&t.VerifiedBadgeBoost, &t.PortfolioImageLimit, &t.InstantEnabled,
+		&t.SortOrder, &t.IsActive,
+		&t.StripePriceIDMonthly, &t.StripePriceIDAnnual,
+		&t.CreatedAt, &t.UpdatedAt,
+		&interval,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, "", fmt.Errorf("get tier by price: %w", domain.ErrTierNotFound)
+		}
+		return nil, "", fmt.Errorf("get tier by price: %w", err)
+	}
+	return t, interval, nil
+}
+
 func (r *PostgresRepository) CreateSubscription(ctx context.Context, sub *domain.Subscription) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO subscriptions (
@@ -110,6 +147,14 @@ func (r *PostgresRepository) CreateSubscription(ctx context.Context, sub *domain
 }
 
 func (r *PostgresRepository) GetSubscription(ctx context.Context, userID string) (*domain.Subscription, error) {
+	return r.getSubscriptionByStatuses(ctx, userID, []string{"active", "trialing", "past_due"})
+}
+
+func (r *PostgresRepository) GetOpenSubscription(ctx context.Context, userID string) (*domain.Subscription, error) {
+	return r.getSubscriptionByStatuses(ctx, userID, []string{"active", "trialing", "past_due", "incomplete"})
+}
+
+func (r *PostgresRepository) getSubscriptionByStatuses(ctx context.Context, userID string, statuses []string) (*domain.Subscription, error) {
 	sub := &domain.Subscription{}
 	tier := &domain.SubscriptionTier{}
 
@@ -131,9 +176,9 @@ func (r *PostgresRepository) GetSubscription(ctx context.Context, userID string)
 		       t.created_at, t.updated_at
 		FROM subscriptions s
 		JOIN subscription_tiers t ON t.id = s.tier_id
-		WHERE s.user_id = $1 AND s.status IN ('active', 'trialing', 'past_due')
+		WHERE s.user_id = $1 AND s.status = ANY($2::text[])
 		ORDER BY s.created_at DESC
-		LIMIT 1`, userID).Scan(
+		LIMIT 1`, userID, statuses).Scan(
 		&sub.ID, &sub.UserID, &sub.TierID, &sub.Status, &sub.BillingInterval,
 		&sub.CurrentPriceCents,
 		&sub.StripeSubscriptionID, &sub.StripeCustomerID,
@@ -420,7 +465,7 @@ func (r *PostgresRepository) GetUsage(ctx context.Context, userID string) (activ
 
 	// Count service categories.
 	err = r.pool.QueryRow(ctx, `
-		SELECT COUNT(DISTINCT category_id) FROM provider_categories
+		SELECT COUNT(DISTINCT category_id) FROM provider_service_categories
 		WHERE provider_id = $1`, userID).Scan(&serviceCategories)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("get usage service categories: %w", err)
@@ -428,7 +473,7 @@ func (r *PostgresRepository) GetUsage(ctx context.Context, userID string) (activ
 
 	// Count portfolio images.
 	err = r.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM portfolio_images
+		SELECT COUNT(*) FROM provider_portfolio_images
 		WHERE provider_id = $1`, userID).Scan(&portfolioImages)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("get usage portfolio images: %w", err)

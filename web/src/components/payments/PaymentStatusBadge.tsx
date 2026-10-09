@@ -1,7 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import { PAYMENT_STATUS_CLASSES } from '@/lib/status-badge-classes';
+import { DEFAULT_STATUS_CLASS, PAYMENT_STATUS_CLASSES } from '@/lib/status-badge-classes';
 import { cn } from '@/lib/utils';
 import { PAYMENT_STATUS } from '@/types';
 
@@ -9,8 +9,6 @@ interface PaymentStatusBadgeProps {
   status: string;
   className?: string;
 }
-
-const DEFAULT_STATUS_CLASS = 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30';
 
 function getStatusColor(status: string): string {
   return PAYMENT_STATUS_CLASSES[status] ?? DEFAULT_STATUS_CLASS;

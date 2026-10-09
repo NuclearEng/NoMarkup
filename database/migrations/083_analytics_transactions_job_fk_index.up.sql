@@ -1,0 +1,99 @@
+-- Migration 083 — cover the unindexed FK analytics_transactions.job_id.
+-- First of the unindexed-foreign-key batch 083-097. Full rationale below.
+--
+-- ── What was measured ────────────────────────────────────────────────────
+-- Two prior audits disagreed on the count (32 vs 49), so it was re-derived
+-- directly from the catalog by joining pg_constraint to pg_index and looking
+-- for FK column sets that are not a leading prefix of any valid index:
+--
+--   * 49 FK constraints have no NON-PARTIAL covering index.
+--   * 8 of those 49 are in fact covered in practice, by a partial index whose
+--     predicate is exactly `<fk_column> IS NOT NULL`. PostgreSQL's predicate
+--     implication proves `col = $1` implies `col IS NOT NULL`, so such an index
+--     DOES serve both the lookup and the FK reference check. Confirmed by
+--     EXPLAIN on `SELECT 1 FROM t WHERE col = $1 FOR KEY SHARE`, which is the
+--     shape the FK trigger issues: the planner chose the partial index.
+--     These 8 are: payments.milestone_id, payments.recurring_instance_id,
+--     listings.current_bidder_id, jobs.awarded_provider_id,
+--     jobs.reposted_from_id, cookie_consent_log.user_id, events.actor_id,
+--     referrals.referred_id. They need nothing and get nothing here.
+--     (payments.milestone_id was on the reported hot list; it is already
+--     covered by idx_payments_milestone WHERE milestone_id IS NOT NULL.)
+--
+-- So the honest number is 41 genuinely uncovered FKs. This batch indexes 15.
+--
+-- ── Why an unindexed FK is worse than a slow query ───────────────────────
+-- Every DELETE on the parent table fires a reference check against each child.
+-- With no usable index that check is a sequential scan of the child, per
+-- deleted row. A GDPR user-erasure request (DELETE FROM users) currently scans
+-- analytics_transactions FOUR times — once each for job_id, customer_id,
+-- provider_id and contract_id — on the platform's largest append-only table.
+-- 083-086 close all four.
+--
+-- ── The 15 indexed here ──────────────────────────────────────────────────
+-- Money/hot paths: analytics_transactions.{job,customer,provider,contract}_id,
+-- advance_repayments.payment_id, scheduled_installments.payment_id,
+-- installment_plans.provider_id, jobs.awarded_bid_id,
+-- listing_offers.parent_offer_id.
+-- Volume/erasure paths: jobs.property_id, user_savings.job_id,
+-- properties.user_id, review_responses.user_id, wishlist_items.user_id,
+-- events.session_id.
+--
+-- ── The 26 deliberately SKIPPED, and why ─────────────────────────────────
+-- Every index costs write amplification on the hottest tables in the schema, so
+-- these are left uncovered on purpose:
+--
+--   1. Admin / moderation audit columns — nullable "which staff member acted"
+--      references on tables that only grow when a human intervenes:
+--      change_orders.proposed_by, contracts.cancelled_by,
+--      disputes.{opened_by,resolved_by,guarantee_reviewed_by},
+--      fraud_signals.reviewed_by, listing_reports.reviewed_by,
+--      marketplace_disputes.{opened_by,resolved_by},
+--      platform_bank_account.set_by_admin_id, platform_config.updated_by,
+--      provider_licenses.verified_by, recurring_configs.cancelled_by,
+--      review_flags.resolved_by, reviews.flagged_by, user_reports.reviewed_by,
+--      verification_documents.reviewed_by,
+--      working_capital_advances.reviewed_by.
+--      These are populated for a small minority of rows, are never a query
+--      predicate on a user-facing path, and the tables are small enough that
+--      the erasure-time scan is cheap. Revisit if any of them grows past ~1M
+--      rows.
+--
+--   2. Taxonomy references — job_tags.category_id,
+--      job_question_answers.question_id, wishlist_items.category_id,
+--      platform_fee_config.category_id, service_categories.parent_id, and
+--      jobs.{category_id,subcategory_id,service_type_id}. The parent tables
+--      (service_categories, category_questions) are reference data that is
+--      never deleted in production, so the FK-check cost is hypothetical. For
+--      the jobs columns specifically, migration 064 already added partial
+--      indexes (WHERE deleted_at IS NULL) that serve every actual query path;
+--      the only gap is a hard DELETE of a taxonomy row, which is a maintenance
+--      operation, not a request path. jobs is the highest-write table in the
+--      schema and does not need three more full indexes for that.
+--
+-- ── Why each index is its own migration file ─────────────────────────────
+-- CREATE INDEX CONCURRENTLY cannot run inside a transaction block, and
+-- golang-migrate's lib/pq postgres driver executes each file as a single
+-- simple-query Exec — which PostgreSQL wraps in an implicit transaction as soon
+-- as the file contains more than one statement. There is no `x-no-transaction`
+-- option for the postgres driver, and neither the Makefile, ci.yml nor
+-- deploy.yml passes anything equivalent. Verified empirically against migrate
+-- v4.19.1 + PostgreSQL 17: a one-statement file succeeds, a two-statement file
+-- fails with "CREATE INDEX CONCURRENTLY cannot run inside a transaction block",
+-- and an explicit mid-file COMMIT does not escape the implicit block either.
+--
+-- The trade-off accepted: 15 migration pairs instead of one, in exchange for
+-- zero write-blocking. The alternative — one migration with 15 plain
+-- CREATE INDEX statements — takes a SHARE lock on each table for the duration
+-- of its build, i.e. a write outage on analytics_transactions and jobs. Against
+-- the deploy Job's activeDeadlineSeconds: 600, with golang-migrate stamping
+-- dirty=true BEFORE it executes, that outage can also become a wedged pipeline
+-- requiring a manual `migrate force`. File count is the cheaper cost.
+--
+-- Operational note: an interrupted CONCURRENTLY build leaves an INVALID index.
+-- Find them with `SELECT indexrelid::regclass FROM pg_index WHERE NOT
+-- indisvalid;` and DROP INDEX CONCURRENTLY before re-running.
+--
+-- This one: GDPR user erasure and every job-scoped revenue rollup currently
+-- sequentially scan analytics_transactions because job_id is uncovered.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_analytics_transactions_job_fk ON analytics_transactions (job_id);

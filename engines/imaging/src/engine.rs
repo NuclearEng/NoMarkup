@@ -1,21 +1,241 @@
 /// Image processing pipeline backed by the `image` crate and AWS S3-compatible
-/// (MinIO) object storage.
+/// (`MinIO`) object storage.
 ///
-/// Handles resize, format conversion, EXIF stripping (by re-encoding),
-/// BlurHash generation, and context-specific processing pipelines for job
+/// Handles resize, format conversion, EXIF stripping, EXIF auto-orientation,
+/// `BlurHash` generation, and context-specific processing pipelines for job
 /// photos, portfolio images, avatars, and documents.
+///
+/// # Metadata (privacy) invariant
+///
+/// Every **image** byte sequence this pipeline uploads or returns is produced
+/// by a full decode → transform → re-encode cycle. The `image` crate's
+/// encoders write no EXIF/XMP/IPTC, so **no image output can carry the
+/// original's metadata** (camera GPS coordinates in particular). Because the
+/// EXIF orientation tag is dropped with the rest of the metadata, the decoder
+/// applies it to the pixels first (see [`decode_image`]), so stripped outputs
+/// still display upright.
+///
+/// **PDF exception (document / chat_attachment contexts only):** PDFs are
+/// stored pass-through after magic-byte sniff on confirm. Process endpoints
+/// that require an image decoder fail closed on PDF.
 use std::io::Cursor;
+use std::sync::Arc;
 
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
 use image::imageops::FilterType;
-use image::{DynamicImage, GenericImageView, ImageFormat as ImgFmt};
+use image::metadata::Orientation;
+use image::{
+    DynamicImage, GenericImageView, ImageDecoder, ImageFormat as ImgFmt, ImageReader, Limits,
+};
 use uuid::Uuid;
 
 use crate::models::{
-    ImageFormat, ImageVariant, ImagingError, ProcessedJobPhoto, ProcessingOptions, ResizeMode,
-    UploadContext, ALLOWED_MIME_TYPES, DEFAULT_QUALITY, MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS,
+    DEFAULT_QUALITY, ImageFormat, ImageVariant, ImagingError,
+    MAX_DECODE_ALLOC_BYTES, MAX_DECODE_DIMENSION, MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS,
+    ProcessedJobPhoto, ProcessingOptions, ResizeMode, UploadContext,
+    allowed_mime_types_for_object_key, extension_for_mime, is_pdf_bytes, sniff_content_type,
 };
+
+// ---------------------------------------------------------------------------
+// Blocking-pool boundary
+// ---------------------------------------------------------------------------
+//
+// Everything in this section is the CPU half of the pipeline. The S3 calls
+// around it stay on the async runtime; only pure decode/resize/encode/BlurHash
+// work crosses onto `spawn_blocking`.
+
+/// A CPU-rendered image, ready to hand to S3.
+#[derive(Debug, Clone)]
+pub struct RenderedImage {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Output of the single-image render stage.
+#[derive(Debug, Clone)]
+pub struct ProcessedRender {
+    pub image: RenderedImage,
+    pub original_width: u32,
+    pub original_height: u32,
+    pub blur_hash: Option<String>,
+}
+
+/// Run a CPU-bound image transform on Tokio's blocking pool.
+///
+/// Decode → resize → encode is pure CPU: a measured ~29.5 ms for one
+/// 1080p → 800 px WebP resize (`benches/imaging_bench.rs`). Executed inline on
+/// the async runtime it owns a Tokio worker for that entire time, and with
+/// roughly `num_cpus` concurrent requests every worker is busy — so *all*
+/// async work on the instance stalls, including this process's own gRPC health
+/// responses. The liveness probe then fails and Kubernetes restarts the pod
+/// mid-work. `spawn_blocking` moves the work onto the blocking pool, off the
+/// runtime's workers (CLAUDE.md §5: "Tokio — never block the runtime").
+///
+/// A panic inside the closure arrives as a `JoinError` and is mapped to
+/// `Internal` rather than unwinding through the connection.
+async fn run_cpu<F, T>(f: F) -> Result<T, ImagingError>
+where
+    F: FnOnce() -> Result<T, ImagingError> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| ImagingError::Internal(format!("image worker task failed: {e}")))?
+}
+
+/// Decode raw bytes into a shared image, off the async runtime.
+///
+/// Returns an `Arc` so the multi-variant pipelines can hand the same decoded
+/// image to several blocking renders without re-decoding or deep-copying it.
+// Split out from the render spans because the batch pipelines decode once and
+// render many: when a batch is slow, this span answers whether the cost was
+// the single decode or the N renders that followed.
+#[tracing::instrument(skip_all, fields(input_bytes = raw.len()), err)]
+pub async fn decode_shared(raw: Vec<u8>) -> Result<Arc<DynamicImage>, ImagingError> {
+    run_cpu(move || decode_image(&raw).map(Arc::new)).await
+}
+
+/// Full single-image render — validate, decode, resize, encode, and optionally
+/// compute the `BlurHash` — in one trip to the blocking pool.
+// The engine's real cost centre: ~29.5ms of CPU for one 1080p → 800px WebP
+// (p99 < 200ms, CLAUDE.md §8). The span deliberately wraps the *async* fn
+// rather than the closure inside `run_cpu`, for two reasons: `spawn_blocking`
+// moves the closure to another thread where the tracing context does not
+// follow, and wrapping out here also captures time spent *queued* for a
+// blocking worker — which is precisely how this engine degrades under load,
+// and would be invisible from inside the closure.
+#[tracing::instrument(
+    skip_all,
+    fields(
+        input_bytes = raw.len(),
+        format = ?opts.format,
+        quality = opts.quality,
+        blur_hash = opts.generate_blur_hash,
+        source_width = tracing::field::Empty,
+        source_height = tracing::field::Empty,
+        output_width = tracing::field::Empty,
+        output_height = tracing::field::Empty,
+        output_bytes = tracing::field::Empty,
+    ),
+    err
+)]
+pub async fn render_processed(
+    raw: Vec<u8>,
+    opts: ProcessingOptions,
+) -> Result<ProcessedRender, ImagingError> {
+    let rendered = run_cpu(move || {
+        validate_image_format(&raw)?;
+
+        let img = decode_image_with_orientation(&raw, opts.auto_orient)?;
+        let (original_width, original_height) = img.dimensions();
+
+        let resized = resize_image(&img, opts.max_width, opts.max_height, opts.resize_mode);
+        let data = encode_image(&resized, opts.format, opts.quality)?;
+        if data.is_empty() {
+            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
+        }
+
+        let (width, height) = resized.dimensions();
+        let blur_hash = if opts.generate_blur_hash {
+            Some(compute_blur_hash(&resized))
+        } else {
+            None
+        };
+
+        Ok(ProcessedRender {
+            image: RenderedImage {
+                data,
+                width,
+                height,
+            },
+            original_width,
+            original_height,
+            blur_hash,
+        })
+    })
+    .await?;
+
+    // Dimensions are the difference between "a slow engine" and "someone
+    // uploaded a 40-megapixel photo", which is the first question an operator
+    // asks about a slow image request.
+    let span = tracing::Span::current();
+    span.record("source_width", rendered.original_width);
+    span.record("source_height", rendered.original_height);
+    span.record("output_width", rendered.image.width);
+    span.record("output_height", rendered.image.height);
+    span.record("output_bytes", rendered.image.data.len());
+
+    Ok(rendered)
+}
+
+/// Resize and encode one variant of an already-decoded image, off the runtime.
+// Per *variant*, not per pixel or per row.
+#[tracing::instrument(
+    skip_all,
+    fields(max_width = max_w, max_height = max_h, format = ?fmt, quality),
+    err
+)]
+pub async fn render_variant(
+    img: Arc<DynamicImage>,
+    max_w: u32,
+    max_h: u32,
+    mode: ResizeMode,
+    fmt: ImageFormat,
+    quality: u8,
+) -> Result<RenderedImage, ImagingError> {
+    run_cpu(move || {
+        let resized = resize_image(&img, max_w, max_h, mode);
+        let data = encode_image(&resized, fmt, quality)?;
+        if data.is_empty() {
+            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
+        }
+
+        let (width, height) = resized.dimensions();
+        Ok(RenderedImage {
+            data,
+            width,
+            height,
+        })
+    })
+    .await
+}
+
+/// Re-encode an already-decoded image at full resolution, off the runtime.
+pub async fn render_full_size(
+    img: Arc<DynamicImage>,
+    fmt: ImageFormat,
+    quality: u8,
+) -> Result<RenderedImage, ImagingError> {
+    run_cpu(move || {
+        let data = encode_image(&img, fmt, quality)?;
+        if data.is_empty() {
+            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
+        }
+
+        let (width, height) = img.dimensions();
+        Ok(RenderedImage {
+            data,
+            width,
+            height,
+        })
+    })
+    .await
+}
+
+/// Compute the `BlurHash` off the runtime (a 32x32 downscale plus a DCT).
+#[tracing::instrument(skip_all, err)]
+pub async fn render_blur_hash(img: Arc<DynamicImage>) -> Result<String, ImagingError> {
+    run_cpu(move || Ok(compute_blur_hash(&img))).await
+}
+
+/// Center-crop to a square off the runtime.
+pub async fn render_center_square(
+    img: Arc<DynamicImage>,
+) -> Result<Arc<DynamicImage>, ImagingError> {
+    run_cpu(move || Ok(Arc::new(crop_center_square(&img)))).await
+}
 
 /// Core image pipeline — stateless beyond the S3 client handle.
 pub struct ImagePipeline {
@@ -27,12 +247,16 @@ pub struct ImagePipeline {
 impl ImagePipeline {
     /// Create a new pipeline.
     ///
-    /// * `s3_client` – configured `aws-sdk-s3` client (pointed at MinIO)
+    /// * `s3_client` – configured `aws-sdk-s3` client (pointed at `MinIO`)
     /// * `bucket` – the bucket name, e.g. `"nomarkup"`
     /// * `public_url_base` – base URL for constructing public object URLs,
     ///   e.g. `"http://localhost:9000/nomarkup"`
     #[must_use]
-    pub fn new(s3_client: aws_sdk_s3::Client, bucket: String, public_url_base: String) -> Self {
+    pub const fn new(
+        s3_client: aws_sdk_s3::Client,
+        bucket: String,
+        public_url_base: String,
+    ) -> Self {
         Self {
             s3_client,
             bucket,
@@ -45,55 +269,63 @@ impl ImagePipeline {
     // -----------------------------------------------------------------------
 
     /// Process a single image: download, resize/reformat, optionally compute
-    /// BlurHash, upload the result, and return the variant metadata.
+    /// `BlurHash`, upload the result, and return the variant metadata.
+    // One span per image, so a batch RPC shows N children and a slow batch can
+    // be attributed to a specific source object. The S3 round trips and the
+    // CPU render each get their own child span underneath, which is what
+    // separates "storage is slow" from "the encode is slow".
+    #[tracing::instrument(skip_all, fields(source_key = %source_key, format = ?opts.format), err)]
     pub async fn process_image(
         &self,
         source_key: &str,
         opts: &ProcessingOptions,
     ) -> Result<(ImageVariant, Option<String>), ImagingError> {
+        let _timer = crate::metrics::IMAGE_PROCESSING_DURATION.start_timer();
         let raw = self.download_from_s3(source_key).await?;
-        validate_image_format(&raw)?;
-        let img = decode_image(&raw)?;
-        let (orig_w, orig_h) = img.dimensions();
 
-        let resized = resize_image(&img, opts.max_width, opts.max_height, opts.resize_mode);
-        let encoded = encode_image(&resized, opts.format, opts.quality)?;
-        if encoded.is_empty() {
-            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
+        // Stripping is the only supported mode: the output below is always a
+        // re-encode (which drops all metadata), never a copy of the original
+        // bytes. `strip_exif=false` cannot round-trip metadata — surface that
+        // instead of silently ignoring the flag.
+        if !opts.strip_exif {
+            tracing::debug!(
+                source = source_key,
+                "strip_exif=false requested, but every output is re-encoded; \
+                 original metadata is not preserved"
+            );
         }
 
-        let (rw, rh) = resized.dimensions();
-        let dest_key = self.variant_key(source_key, "processed", opts.format);
-        self.upload_to_s3(&dest_key, &encoded, opts.format.mime_type())
-            .await?;
+        // Validate + decode + resize + encode (+ BlurHash) on the blocking
+        // pool; the S3 round trips on either side stay on the async runtime.
+        let rendered = render_processed(raw, opts.clone()).await?;
 
-        let blur_hash = if opts.generate_blur_hash {
-            Some(compute_blur_hash(&resized))
-        } else {
-            None
-        };
+        let dest_key = self.variant_key(source_key, "processed", opts.format);
+        self.upload_to_s3(&dest_key, &rendered.image.data, opts.format.mime_type())
+            .await?;
 
         let variant = ImageVariant {
             url: self.public_url(&dest_key),
-            width: rw,
-            height: rh,
+            width: rendered.image.width,
+            height: rendered.image.height,
             format: opts.format,
-            size_bytes: encoded.len() as u32,
+            size_bytes: rendered.image.data.len() as u32,
             variant_name: "processed".into(),
         };
 
+        crate::metrics::IMAGES_PROCESSED_TOTAL.inc();
+
         tracing::info!(
             source = source_key,
-            orig_w,
-            orig_h,
-            out_w = rw,
-            out_h = rh,
+            orig_w = rendered.original_width,
+            orig_h = rendered.original_height,
+            out_w = rendered.image.width,
+            out_h = rendered.image.height,
             format = ?opts.format,
-            size = encoded.len(),
+            size = rendered.image.data.len(),
             "image processed"
         );
 
-        Ok((variant, blur_hash))
+        Ok((variant, rendered.blur_hash))
     }
 
     /// Generate a single thumbnail from a source image.
@@ -105,30 +337,27 @@ impl ImagePipeline {
         mode: ResizeMode,
     ) -> Result<ImageVariant, ImagingError> {
         let raw = self.download_from_s3(source_key).await?;
-        let img = decode_image(&raw)?;
-        let resized = resize_image(&img, width, height, mode);
-        let encoded = encode_image(&resized, ImageFormat::Jpeg, DEFAULT_QUALITY)?;
-        if encoded.is_empty() {
-            return Err(ImagingError::Internal("encoder produced zero bytes".into()));
-        }
 
-        let (rw, rh) = resized.dimensions();
+        let img = decode_shared(raw).await?;
+        let rendered =
+            render_variant(img, width, height, mode, ImageFormat::Jpeg, DEFAULT_QUALITY).await?;
+
         let dest_key = self.variant_key(source_key, "thumbnail", ImageFormat::Jpeg);
-        self.upload_to_s3(&dest_key, &encoded, ImageFormat::Jpeg.mime_type())
+        self.upload_to_s3(&dest_key, &rendered.data, ImageFormat::Jpeg.mime_type())
             .await?;
 
         Ok(ImageVariant {
             url: self.public_url(&dest_key),
-            width: rw,
-            height: rh,
+            width: rendered.width,
+            height: rendered.height,
             format: ImageFormat::Jpeg,
-            size_bytes: encoded.len() as u32,
+            size_bytes: rendered.data.len() as u32,
             variant_name: "thumbnail".into(),
         })
     }
 
     /// Process a batch of job photos. For each photo, create large (1200),
-    /// medium (600), thumbnail (200) variants plus a BlurHash.
+    /// medium (600), thumbnail (200) variants plus a `BlurHash`.
     pub async fn process_job_photos(
         &self,
         job_id: &str,
@@ -138,18 +367,45 @@ impl ImagePipeline {
 
         for source_key in source_keys {
             let raw = self.download_from_s3(source_key).await?;
-            let img = decode_image(&raw)?;
-            let blur_hash = compute_blur_hash(&img);
+            let img = decode_shared(raw).await?;
+            let blur_hash = render_blur_hash(Arc::clone(&img)).await?;
+
+            // Privacy: never hand back the raw upload's URL. The raw object
+            // retains whatever EXIF the camera wrote — including GPS
+            // coordinates — so exposing it as `original_url` would leak the
+            // customer's location. Re-encode the original at full resolution
+            // (metadata-free, orientation already applied by decode_image)
+            // and return that sanitized copy as the "original".
+            let original = render_full_size(Arc::clone(&img), ImageFormat::Jpeg, 90).await?;
+            let original_key = format!("{job_id}/original/{}.jpg", Uuid::now_v7());
+            self.upload_to_s3(&original_key, &original.data, "image/jpeg")
+                .await?;
 
             let large = self
-                .create_variant(&img, source_key, job_id, "large", 1200, 1200, ResizeMode::Fit)
+                .create_variant(
+                    Arc::clone(&img),
+                    source_key,
+                    job_id,
+                    "large",
+                    1200,
+                    1200,
+                    ResizeMode::Fit,
+                )
                 .await?;
             let medium = self
-                .create_variant(&img, source_key, job_id, "medium", 600, 600, ResizeMode::Fit)
+                .create_variant(
+                    Arc::clone(&img),
+                    source_key,
+                    job_id,
+                    "medium",
+                    600,
+                    600,
+                    ResizeMode::Fit,
+                )
                 .await?;
             let thumbnail = self
                 .create_variant(
-                    &img,
+                    img,
                     source_key,
                     job_id,
                     "thumbnail",
@@ -160,7 +416,7 @@ impl ImagePipeline {
                 .await?;
 
             results.push(ProcessedJobPhoto {
-                original_url: self.public_url(source_key),
+                original_url: self.public_url(&original_key),
                 large,
                 medium,
                 thumbnail,
@@ -172,22 +428,30 @@ impl ImagePipeline {
     }
 
     /// Process a portfolio image: full (1600), display (800), thumbnail (300)
-    /// variants plus BlurHash.
+    /// variants plus `BlurHash`.
     pub async fn process_portfolio_image(
         &self,
         user_id: &str,
         source_key: &str,
     ) -> Result<(ImageVariant, ImageVariant, ImageVariant, String), ImagingError> {
         let raw = self.download_from_s3(source_key).await?;
-        let img = decode_image(&raw)?;
-        let blur_hash = compute_blur_hash(&img);
+        let img = decode_shared(raw).await?;
+        let blur_hash = render_blur_hash(Arc::clone(&img)).await?;
 
         let full = self
-            .create_variant(&img, source_key, user_id, "full", 1600, 1600, ResizeMode::Fit)
+            .create_variant(
+                Arc::clone(&img),
+                source_key,
+                user_id,
+                "full",
+                1600,
+                1600,
+                ResizeMode::Fit,
+            )
             .await?;
         let display = self
             .create_variant(
-                &img,
+                Arc::clone(&img),
                 source_key,
                 user_id,
                 "display",
@@ -198,7 +462,7 @@ impl ImagePipeline {
             .await?;
         let thumb = self
             .create_variant(
-                &img,
+                img,
                 source_key,
                 user_id,
                 "thumbnail",
@@ -219,15 +483,15 @@ impl ImagePipeline {
         source_key: &str,
     ) -> Result<(ImageVariant, ImageVariant, ImageVariant, String), ImagingError> {
         let raw = self.download_from_s3(source_key).await?;
-        let img = decode_image(&raw)?;
+        let img = decode_shared(raw).await?;
 
         // Center-crop to square before resizing.
-        let square = crop_center_square(&img);
-        let blur_hash = compute_blur_hash(&square);
+        let square = render_center_square(img).await?;
+        let blur_hash = render_blur_hash(Arc::clone(&square)).await?;
 
         let large = self
             .create_variant(
-                &square,
+                Arc::clone(&square),
                 source_key,
                 user_id,
                 "large",
@@ -238,7 +502,7 @@ impl ImagePipeline {
             .await?;
         let medium = self
             .create_variant(
-                &square,
+                Arc::clone(&square),
                 source_key,
                 user_id,
                 "medium",
@@ -249,7 +513,7 @@ impl ImagePipeline {
             .await?;
         let small = self
             .create_variant(
-                &square,
+                square,
                 source_key,
                 user_id,
                 "small",
@@ -272,30 +536,37 @@ impl ImagePipeline {
         _document_type: &str,
     ) -> Result<(ImageVariant, ImageVariant, u32, u32), ImagingError> {
         let raw = self.download_from_s3(source_key).await?;
-        let img = decode_image(&raw)?;
-        let (orig_w, orig_h) = img.dimensions();
+        // PDF is stored pass-through on confirm; process endpoints require a
+        // decodable image (admin thumbnails / EXIF strip). Fail closed.
+        if is_pdf_bytes(&raw) {
+            return Err(ImagingError::InvalidArgument(
+                "PDF documents are stored as pass-through; process/document requires an image"
+                    .into(),
+            ));
+        }
+        let img = decode_shared(raw).await?;
 
         // Re-encode at original size (strips EXIF, auto-orients).
-        let encoded = encode_image(&img, ImageFormat::Jpeg, 90)?;
-        let dest_key = format!(
-            "documents/{user_id}/processed/{}.jpg",
-            Uuid::now_v7()
-        );
-        self.upload_to_s3(&dest_key, &encoded, "image/jpeg").await?;
+        let original = render_full_size(Arc::clone(&img), ImageFormat::Jpeg, 90).await?;
+        let (orig_w, orig_h) = (original.width, original.height);
+
+        let dest_key = format!("documents/{user_id}/processed/{}.jpg", Uuid::now_v7());
+        self.upload_to_s3(&dest_key, &original.data, "image/jpeg")
+            .await?;
 
         let processed = ImageVariant {
             url: self.public_url(&dest_key),
             width: orig_w,
             height: orig_h,
             format: ImageFormat::Jpeg,
-            size_bytes: encoded.len() as u32,
+            size_bytes: original.data.len() as u32,
             variant_name: "processed".into(),
         };
 
         // Thumbnail for admin review UI.
         let thumb = self
             .create_variant(
-                &img,
+                img,
                 source_key,
                 user_id,
                 "doc-thumb",
@@ -319,8 +590,10 @@ impl ImagePipeline {
         file_size: i64,
         context: UploadContext,
     ) -> Result<(String, String, i64), ImagingError> {
-        // Validate MIME type.
-        if !ALLOWED_MIME_TYPES.contains(&mime_type) {
+        // Validate MIME type against the context allow-list. PDF is only
+        // accepted for document / chat_attachment; pure image contexts stay
+        // fail-closed on non-images.
+        if !context.allowed_mime_types().contains(&mime_type) {
             return Err(ImagingError::UnsupportedMimeType(mime_type.into()));
         }
 
@@ -337,10 +610,8 @@ impl ImagePipeline {
             ));
         }
 
-        // Determine extension from MIME type.
-        let ext = ImageFormat::from_mime(mime_type)
-            .map(|f| f.extension())
-            .unwrap_or("bin");
+        // Determine extension from MIME type (includes application/pdf → pdf).
+        let ext = extension_for_mime(mime_type);
 
         // Sanitize filename: take only the stem of the original filename.
         let stem = std::path::Path::new(filename)
@@ -363,12 +634,23 @@ impl ImagePipeline {
             .build()
             .map_err(|e| ImagingError::S3Error(format!("presign config: {e}")))?;
 
+        // Bind the declared size INTO the signature.
+        //
+        // `file_size` is supplied by the client and was only ever compared
+        // against MAX_FILE_SIZE_BYTES before signing — it never constrained
+        // the upload itself. A caller could declare 1 KB, receive a valid
+        // presigned URL, and then PUT gigabytes: S3 honours the signature, not
+        // our earlier check. Signing `content_length` makes S3 reject any body
+        // whose length differs from what was authorized, so the size limit is
+        // enforced by the storage layer rather than on trust.
+        let signed_len = file_size;
         let presigned = self
             .s3_client
             .put_object()
             .bucket(&self.bucket)
             .key(&object_key)
             .content_type(mime_type)
+            .content_length(signed_len)
             .presigned(presign_config)
             .await
             .map_err(|e| ImagingError::S3Error(format!("presign PUT: {e}")))?;
@@ -395,28 +677,23 @@ impl ImagePipeline {
         object_key: &str,
         _user_id: &str,
     ) -> Result<(String, bool, String), ImagingError> {
-        let head = self
-            .s3_client
-            .head_object()
-            .bucket(&self.bucket)
-            .key(object_key)
-            .send()
-            .await
-            .map_err(|e| {
-                let msg = format!("{e}");
-                if msg.contains("NoSuchKey") || msg.contains("NotFound") || msg.contains("404") {
-                    ImagingError::NotFound(format!("object not found: {object_key}"))
-                } else {
-                    ImagingError::S3Error(format!("HEAD {object_key}: {e}"))
-                }
-            })?;
+        // Download the object and sniff its REAL format from the magic bytes.
+        // We deliberately do NOT trust the stored Content-Type metadata: that
+        // value is whatever the client declared on the presigned PUT, so a
+        // text/binary file renamed `.jpg` and uploaded with
+        // `Content-Type: image/jpeg` would otherwise pass validation. Sniffing
+        // the bytes is the actual server-side MIME check (CLAUDE.md §6: never
+        // trust client-supplied content type; validate server-side).
+        let bytes = self.download_from_s3(object_key).await?;
 
-        let actual_ct = head
-            .content_type()
-            .unwrap_or("application/octet-stream")
-            .to_string();
+        // Magic-byte sniff: JPEG/PNG/WebP via image crate + PDF header.
+        // Never trust client-declared Content-Type on the presigned PUT.
+        let actual_ct = sniff_content_type(&bytes);
 
-        let valid = ALLOWED_MIME_TYPES.contains(&actual_ct.as_str());
+        // Context is inferred from the key prefix so PDF is only valid under
+        // documents/ and chat-attachments/; image-only prefixes stay fail-closed.
+        let allowed = allowed_mime_types_for_object_key(object_key);
+        let valid = allowed.contains(&actual_ct.as_str());
         let url = self.public_url(object_key);
 
         tracing::info!(
@@ -427,6 +704,24 @@ impl ImagePipeline {
         );
 
         Ok((url, valid, actual_ct))
+    }
+
+    /// GDPR erasure: delete every object stored for `user_id`.
+    ///
+    /// Covers (1) raw + `variant_key` outputs under `{context}/{user_id}/` for
+    /// every [`UploadContext`], and (2) `create_variant` outputs stored as
+    /// `{user_id}/{variant}/…` (avatar, portfolio, document thumbs).
+    ///
+    /// Job-keyed processed variants (`{job_id}/large/…`) are not included —
+    /// those keys are job UUIDs, not the user id. Raw job photos still live
+    /// under `job-photos/{user_id}/` and are deleted here.
+    pub async fn delete_user_objects(&self, user_id: &str) -> Result<u32, ImagingError> {
+        let prefixes = user_object_prefixes(user_id)?;
+        let mut deleted = 0u32;
+        for prefix in prefixes {
+            deleted += self.delete_prefix(&prefix).await?;
+        }
+        Ok(deleted)
     }
 
     // -----------------------------------------------------------------------
@@ -443,8 +738,13 @@ impl ImagePipeline {
             .send()
             .await
             .map_err(|e| {
-                let msg = format!("{e}");
-                if msg.contains("NoSuchKey") || msg.contains("NotFound") || msg.contains("404") {
+                // Match the typed service error, not the Display string: the SDK's
+                // error text doesn't contain "NoSuchKey", so a brittle string match
+                // mislabelled every missing object as an S3Error -> 500 instead of a
+                // 404. is_no_such_key() is the stable, version-safe check.
+                if e.as_service_error()
+                    .is_some_and(aws_sdk_s3::operation::get_object::GetObjectError::is_no_such_key)
+                {
                     ImagingError::NotFound(format!("object not found: {key}"))
                 } else {
                     ImagingError::S3Error(format!("GET {key}: {e}"))
@@ -482,10 +782,77 @@ impl ImagePipeline {
         Ok(())
     }
 
+    /// List + delete every object under `prefix`. Paginates; batches deletes
+    /// at 1000 (S3 DeleteObjects max). Empty prefix is success (0).
+    async fn delete_prefix(&self, prefix: &str) -> Result<u32, ImagingError> {
+        let mut deleted = 0u32;
+        let mut continuation: Option<String> = None;
+        loop {
+            let mut req = self
+                .s3_client
+                .list_objects_v2()
+                .bucket(&self.bucket)
+                .prefix(prefix);
+            if let Some(token) = continuation.as_ref() {
+                req = req.continuation_token(token);
+            }
+            let resp = req.send().await.map_err(|e| {
+                ImagingError::S3Error(format!("LIST {prefix}: {e}"))
+            })?;
+
+            let keys: Vec<String> = resp
+                .contents()
+                .iter()
+                .filter_map(|obj| obj.key().map(str::to_owned))
+                .collect();
+            if !keys.is_empty() {
+                deleted += self.delete_keys(&keys).await?;
+            }
+
+            if resp.is_truncated() == Some(true) {
+                continuation = resp.next_continuation_token().map(str::to_owned);
+                if continuation.is_none() {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(deleted)
+    }
+
+    async fn delete_keys(&self, keys: &[String]) -> Result<u32, ImagingError> {
+        let mut deleted = 0u32;
+        for chunk in keys.chunks(1000) {
+            let ids: Result<Vec<_>, _> = chunk
+                .iter()
+                .map(|k| aws_sdk_s3::types::ObjectIdentifier::builder().key(k).build())
+                .collect();
+            let ids = ids.map_err(|e| ImagingError::S3Error(format!("object identifier: {e}")))?;
+            let delete = aws_sdk_s3::types::Delete::builder()
+                .set_objects(Some(ids))
+                .quiet(true)
+                .build()
+                .map_err(|e| ImagingError::S3Error(format!("delete payload: {e}")))?;
+            self.s3_client
+                .delete_objects()
+                .bucket(&self.bucket)
+                .delete(delete)
+                .send()
+                .await
+                .map_err(|e| ImagingError::S3Error(format!("DELETE batch: {e}")))?;
+            deleted += u32::try_from(chunk.len()).unwrap_or(u32::MAX);
+        }
+        Ok(deleted)
+    }
+
     /// Create a resized variant, upload it, and return metadata.
+    ///
+    /// Takes the decoded image by `Arc` so the resize/encode can be moved onto
+    /// the blocking pool without cloning pixel data; the upload stays async.
     async fn create_variant(
         &self,
-        img: &DynamicImage,
+        img: Arc<DynamicImage>,
         _source_key: &str,
         context_id: &str,
         variant_name: &str,
@@ -493,22 +860,19 @@ impl ImagePipeline {
         max_h: u32,
         mode: ResizeMode,
     ) -> Result<ImageVariant, ImagingError> {
-        let resized = resize_image(img, max_w, max_h, mode);
-        let encoded = encode_image(&resized, ImageFormat::Jpeg, DEFAULT_QUALITY)?;
-        let (rw, rh) = resized.dimensions();
+        let rendered =
+            render_variant(img, max_w, max_h, mode, ImageFormat::Jpeg, DEFAULT_QUALITY).await?;
 
-        let dest_key = format!(
-            "{context_id}/{variant_name}/{}.jpg",
-            Uuid::now_v7()
-        );
-        self.upload_to_s3(&dest_key, &encoded, "image/jpeg").await?;
+        let dest_key = format!("{context_id}/{variant_name}/{}.jpg", Uuid::now_v7());
+        self.upload_to_s3(&dest_key, &rendered.data, "image/jpeg")
+            .await?;
 
         Ok(ImageVariant {
             url: self.public_url(&dest_key),
-            width: rw,
-            height: rh,
+            width: rendered.width,
+            height: rendered.height,
             format: ImageFormat::Jpeg,
-            size_bytes: encoded.len() as u32,
+            size_bytes: rendered.data.len() as u32,
             variant_name: variant_name.into(),
         })
     }
@@ -519,22 +883,41 @@ impl ImagePipeline {
             .rsplit('/')
             .next()
             .and_then(|f| f.rsplit_once('.'))
-            .map(|(s, _)| s)
-            .unwrap_or("img");
+            .map_or("img", |(s, _)| s);
 
         // Derive directory from source key.
-        let dir = source_key
-            .rsplit_once('/')
-            .map(|(d, _)| d)
-            .unwrap_or("misc");
+        let dir = source_key.rsplit_once('/').map_or("misc", |(d, _)| d);
 
-        format!("{dir}/{variant}/{stem}_{}.{}", Uuid::now_v7(), fmt.extension())
+        format!(
+            "{dir}/{variant}/{stem}_{}.{}",
+            Uuid::now_v7(),
+            fmt.extension()
+        )
     }
 
     /// Construct the public URL for an object key.
     fn public_url(&self, key: &str) -> String {
         format!("{}/{}", self.public_url_base, key)
     }
+}
+
+/// S3 prefixes drained on GDPR erasure for `user_id`.
+///
+/// Rejects non-UUID ids so a caller cannot inject `../` or a bucket-wide
+/// empty prefix.
+pub fn user_object_prefixes(user_id: &str) -> Result<Vec<String>, ImagingError> {
+    if Uuid::parse_str(user_id).is_err() {
+        return Err(ImagingError::InvalidArgument(
+            "user_id must be a UUID".into(),
+        ));
+    }
+    let mut prefixes: Vec<String> = UploadContext::ALL
+        .iter()
+        .map(|ctx| format!("{}/{user_id}/", ctx.path_prefix()))
+        .collect();
+    // create_variant stores avatar/portfolio/document thumbs as `{user_id}/{variant}/…`.
+    prefixes.push(format!("{user_id}/"));
+    Ok(prefixes)
 }
 
 // ---------------------------------------------------------------------------
@@ -551,9 +934,59 @@ fn validate_image_format(data: &[u8]) -> Result<(), ImagingError> {
     }
 }
 
-/// Decode raw bytes into a `DynamicImage`.
+/// Decode raw bytes into a `DynamicImage`, applying the EXIF orientation tag
+/// to the pixels (auto-orient always on — this is the right default for every
+/// context pipeline, since all outputs are re-encoded without metadata and
+/// would otherwise display sideways for camera-rotated photos).
 fn decode_image(data: &[u8]) -> Result<DynamicImage, ImagingError> {
-    image::load_from_memory(data).map_err(|e| ImagingError::DecodeError(e.to_string()))
+    decode_image_with_orientation(data, true)
+}
+
+/// Decode raw bytes into a `DynamicImage`.
+///
+/// When `auto_orient` is true, the EXIF orientation tag is read from the
+/// metadata (the `image` crate does NOT apply it on decode for JPEG) and the
+/// corresponding rotation/flip is applied to the pixels, so re-encoded outputs
+/// — which carry no EXIF — still display upright.
+///
+/// Fail-soft: a missing, unreadable, or garbage EXIF segment is treated as
+/// orientation 1 (no transform); it never fails the decode.
+fn decode_image_with_orientation(
+    data: &[u8],
+    auto_orient: bool,
+) -> Result<DynamicImage, ImagingError> {
+    // Bound the decode. Without explicit limits a small, well-formed
+    // "decompression bomb" (a few KB of PNG describing enormous dimensions)
+    // allocates its full uncompressed size before anything else runs — and an
+    // allocator abort is one of the few failures a catch_unwind boundary
+    // cannot rescue, so it takes the whole process down rather than one
+    // request. The caps below sit far above any legitimate photo.
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_DECODE_DIMENSION);
+    limits.max_image_height = Some(MAX_DECODE_DIMENSION);
+    limits.max_alloc = Some(MAX_DECODE_ALLOC_BYTES);
+
+    let mut reader = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_err(|e| ImagingError::DecodeError(e.to_string()))?;
+    reader.limits(limits);
+
+    let mut decoder = reader
+        .into_decoder()
+        .map_err(|e| ImagingError::DecodeError(e.to_string()))?;
+
+    // Must be read before consuming the decoder. unwrap_or = fail-soft on
+    // corrupt EXIF.
+    let orientation = if auto_orient {
+        decoder.orientation().unwrap_or(Orientation::NoTransforms)
+    } else {
+        Orientation::NoTransforms
+    };
+
+    let mut img = DynamicImage::from_decoder(decoder)
+        .map_err(|e| ImagingError::DecodeError(e.to_string()))?;
+    img.apply_orientation(orientation);
+    Ok(img)
 }
 
 /// Resize an image according to the given mode and maximum dimensions.
@@ -600,7 +1033,11 @@ fn resize_image(img: &DynamicImage, max_w: u32, max_h: u32, mode: ResizeMode) ->
 }
 
 /// Encode a `DynamicImage` to bytes in the specified format and quality.
-fn encode_image(img: &DynamicImage, fmt: ImageFormat, quality: u8) -> Result<Vec<u8>, ImagingError> {
+fn encode_image(
+    img: &DynamicImage,
+    fmt: ImageFormat,
+    quality: u8,
+) -> Result<Vec<u8>, ImagingError> {
     let mut buf = Cursor::new(Vec::new());
 
     match fmt {
@@ -632,10 +1069,10 @@ fn crop_center_square(img: &DynamicImage) -> DynamicImage {
     img.crop_imm(x, y, side, side)
 }
 
-/// Compute a simple BlurHash string from a downscaled image.
+/// Compute a simple `BlurHash` string from a downscaled image.
 ///
 /// This is a lightweight implementation that produces a valid 4x3 component
-/// BlurHash. The image is first downscaled to 32x32, then the DC and AC
+/// `BlurHash`. The image is first downscaled to 32x32, then the DC and AC
 /// components are computed via DCT and base83-encoded.
 fn compute_blur_hash(img: &DynamicImage) -> String {
     let small = img.resize_exact(32, 32, FilterType::Lanczos3).to_rgba8();
@@ -718,7 +1155,7 @@ fn encode_blurhash(cx: usize, cy: usize, factors: &[[f64; 3]]) -> String {
     }
 
     let quantised_max = if max_ac > 0.0 {
-        ((max_ac * 166.0 - 0.5).floor() as u32).clamp(0, 82)
+        (max_ac.mul_add(166.0, -0.5).floor() as u32).clamp(0, 82)
     } else {
         0
     };
@@ -727,7 +1164,7 @@ fn encode_blurhash(cx: usize, cy: usize, factors: &[[f64; 3]]) -> String {
     let real_max = if quantised_max == 0 {
         1.0
     } else {
-        (quantised_max as f64 + 1.0) / 167.0
+        (f64::from(quantised_max) + 1.0) / 167.0
     };
 
     // DC component.
@@ -749,7 +1186,7 @@ fn linear_to_srgb(value: f64) -> u32 {
     let s = if v <= 0.003_130_8 {
         v * 12.92
     } else {
-        1.055 * v.powf(1.0 / 2.4) - 0.055
+        1.055f64.mul_add(v.powf(1.0 / 2.4), -0.055)
     };
     (s * 255.0 + 0.5) as u32
 }
@@ -785,8 +1222,8 @@ fn encode_ac(r: f64, g: f64, b: f64, max_ac: f64) -> u32 {
 mod tests {
     use super::*;
     use crate::models::{
-        ImageFormat, ImagingError, ProcessingOptions, ResizeMode, UploadContext,
-        ALLOWED_MIME_TYPES, DEFAULT_QUALITY, MAX_FILE_SIZE_BYTES, PRESIGN_EXPIRY_SECS,
+        ALLOWED_MIME_TYPES, DEFAULT_QUALITY, ImageFormat, ImagingError, MAX_FILE_SIZE_BYTES,
+        PRESIGN_EXPIRY_SECS, ProcessingOptions, ResizeMode, UploadContext,
     };
     use image::{DynamicImage, RgbaImage};
 
@@ -816,10 +1253,16 @@ mod tests {
 
     #[test]
     fn image_format_from_mime() {
-        assert_eq!(ImageFormat::from_mime("image/jpeg"), Some(ImageFormat::Jpeg));
+        assert_eq!(
+            ImageFormat::from_mime("image/jpeg"),
+            Some(ImageFormat::Jpeg)
+        );
         assert_eq!(ImageFormat::from_mime("image/jpg"), Some(ImageFormat::Jpeg));
         assert_eq!(ImageFormat::from_mime("image/png"), Some(ImageFormat::Png));
-        assert_eq!(ImageFormat::from_mime("image/webp"), Some(ImageFormat::WebP));
+        assert_eq!(
+            ImageFormat::from_mime("image/webp"),
+            Some(ImageFormat::WebP)
+        );
         assert_eq!(ImageFormat::from_mime("image/gif"), None);
         assert_eq!(ImageFormat::from_mime("text/html"), None);
     }
@@ -860,13 +1303,33 @@ mod tests {
 
     #[test]
     fn upload_context_from_str() {
-        assert_eq!(UploadContext::from_str_context("avatar"), Some(UploadContext::Avatar));
-        assert_eq!(UploadContext::from_str_context("portfolio"), Some(UploadContext::Portfolio));
-        assert_eq!(UploadContext::from_str_context("job_photo"), Some(UploadContext::JobPhoto));
-        assert_eq!(UploadContext::from_str_context("document"), Some(UploadContext::Document));
+        assert_eq!(
+            UploadContext::from_str_context("avatar"),
+            Some(UploadContext::Avatar)
+        );
+        assert_eq!(
+            UploadContext::from_str_context("portfolio"),
+            Some(UploadContext::Portfolio)
+        );
+        assert_eq!(
+            UploadContext::from_str_context("job_photo"),
+            Some(UploadContext::JobPhoto)
+        );
+        assert_eq!(
+            UploadContext::from_str_context("document"),
+            Some(UploadContext::Document)
+        );
         assert_eq!(
             UploadContext::from_str_context("review_photo"),
             Some(UploadContext::ReviewPhoto)
+        );
+        assert_eq!(
+            UploadContext::from_str_context("listing"),
+            Some(UploadContext::Listing)
+        );
+        assert_eq!(
+            UploadContext::from_str_context("chat_attachment"),
+            Some(UploadContext::ChatAttachment)
         );
         assert_eq!(UploadContext::from_str_context("unknown"), None);
     }
@@ -878,6 +1341,70 @@ mod tests {
         assert_eq!(UploadContext::JobPhoto.path_prefix(), "job-photos");
         assert_eq!(UploadContext::Document.path_prefix(), "documents");
         assert_eq!(UploadContext::ReviewPhoto.path_prefix(), "review-photos");
+        assert_eq!(UploadContext::Listing.path_prefix(), "listings");
+        assert_eq!(UploadContext::ChatAttachment.path_prefix(), "chat-attachments");
+    }
+
+    #[test]
+    fn user_object_prefixes_cover_every_context_and_variant_root() {
+        let uid = "550e8400-e29b-41d4-a716-446655440000";
+        let prefixes = super::user_object_prefixes(uid).expect("valid uuid");
+        assert_eq!(prefixes.len(), UploadContext::ALL.len() + 1);
+        for ctx in UploadContext::ALL {
+            let expected = format!("{}/{uid}/", ctx.path_prefix());
+            assert!(
+                prefixes.contains(&expected),
+                "missing prefix {expected}, got {prefixes:?}"
+            );
+        }
+        assert!(prefixes.contains(&format!("{uid}/")));
+    }
+
+    #[test]
+    fn user_object_prefixes_reject_non_uuid() {
+        assert!(super::user_object_prefixes("").is_err());
+        assert!(super::user_object_prefixes("../").is_err());
+        assert!(super::user_object_prefixes("not-a-uuid").is_err());
+        assert!(super::user_object_prefixes("avatars/").is_err());
+    }
+
+    #[test]
+    fn pdf_only_on_document_and_chat_contexts() {
+        assert!(UploadContext::Document.allows_pdf());
+        assert!(UploadContext::ChatAttachment.allows_pdf());
+        assert!(!UploadContext::Avatar.allows_pdf());
+        assert!(!UploadContext::JobPhoto.allows_pdf());
+        assert!(!UploadContext::Listing.allows_pdf());
+        assert!(UploadContext::Document
+            .allowed_mime_types()
+            .contains(&"application/pdf"));
+        assert!(!UploadContext::Avatar
+            .allowed_mime_types()
+            .contains(&"application/pdf"));
+    }
+
+    #[test]
+    fn sniff_content_type_pdf_and_images() {
+        assert_eq!(sniff_content_type(b"%PDF-1.4 rest"), "application/pdf");
+        assert_eq!(
+            sniff_content_type(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0]),
+            "image/jpeg"
+        );
+        assert_eq!(sniff_content_type(b"not-an-image"), "application/octet-stream");
+        assert!(is_pdf_bytes(b"%PDF-1.7"));
+        assert!(!is_pdf_bytes(b"JFIF"));
+    }
+
+    #[test]
+    fn object_key_prefix_gates_pdf() {
+        assert!(allowed_mime_types_for_object_key("documents/u/raw/a.pdf")
+            .contains(&"application/pdf"));
+        assert!(allowed_mime_types_for_object_key("chat-attachments/u/raw/a.pdf")
+            .contains(&"application/pdf"));
+        assert!(!allowed_mime_types_for_object_key("avatars/u/raw/a.pdf")
+            .contains(&"application/pdf"));
+        assert!(!allowed_mime_types_for_object_key("job-photos/u/raw/a.pdf")
+            .contains(&"application/pdf"));
     }
 
     // ------------------------------------------------------------------
@@ -890,6 +1417,10 @@ mod tests {
         assert!(ALLOWED_MIME_TYPES.contains(&"image/png"));
         assert!(ALLOWED_MIME_TYPES.contains(&"image/webp"));
         assert!(!ALLOWED_MIME_TYPES.contains(&"image/gif"));
+        // Global image list stays PDF-free; document context is separate.
+        assert!(!ALLOWED_MIME_TYPES.contains(&"application/pdf"));
+        assert_eq!(extension_for_mime("application/pdf"), "pdf");
+        assert_eq!(extension_for_mime("image/jpeg"), "jpg");
     }
 
     #[test]
@@ -1045,6 +1576,194 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
+    // EXIF stripping + auto-orient
+    // ------------------------------------------------------------------
+
+    /// Build a minimal EXIF APP1 segment (marker + length + "Exif\0\0" +
+    /// little-endian TIFF block) carrying an orientation tag (0x0112) and a
+    /// GPS IFD (0x8825) with a GPSLatitudeRef entry — i.e. exactly the kind
+    /// of location-bearing metadata a phone camera writes.
+    fn exif_app1_segment(orientation: u16) -> Vec<u8> {
+        let mut tiff = Vec::new();
+        // TIFF header: byte order, magic 42, IFD0 offset 8.
+        tiff.extend_from_slice(b"II");
+        tiff.extend_from_slice(&42u16.to_le_bytes());
+        tiff.extend_from_slice(&8u32.to_le_bytes());
+        // IFD0 (at offset 8): 2 entries.
+        tiff.extend_from_slice(&2u16.to_le_bytes());
+        // Entry 1 — Orientation (0x0112), SHORT, count 1, inline value.
+        tiff.extend_from_slice(&0x0112u16.to_le_bytes());
+        tiff.extend_from_slice(&3u16.to_le_bytes());
+        tiff.extend_from_slice(&1u32.to_le_bytes());
+        tiff.extend_from_slice(&orientation.to_le_bytes());
+        tiff.extend_from_slice(&[0, 0]);
+        // Entry 2 — GPS IFD pointer (0x8825), LONG, count 1, offset 38.
+        tiff.extend_from_slice(&0x8825u16.to_le_bytes());
+        tiff.extend_from_slice(&4u16.to_le_bytes());
+        tiff.extend_from_slice(&1u32.to_le_bytes());
+        tiff.extend_from_slice(&38u32.to_le_bytes());
+        // Next-IFD offset: none.
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+        // GPS IFD (at offset 38): 1 entry — GPSLatitudeRef (0x0001), ASCII "N\0".
+        tiff.extend_from_slice(&1u16.to_le_bytes());
+        tiff.extend_from_slice(&0x0001u16.to_le_bytes());
+        tiff.extend_from_slice(&2u16.to_le_bytes());
+        tiff.extend_from_slice(&2u32.to_le_bytes());
+        tiff.extend_from_slice(b"N\0\0\0");
+        tiff.extend_from_slice(&0u32.to_le_bytes());
+
+        let mut app1 = vec![0xFF, 0xE1];
+        // Segment length covers the length field itself + payload.
+        let len = 2 + 6 + tiff.len();
+        app1.extend_from_slice(&(len as u16).to_be_bytes());
+        app1.extend_from_slice(b"Exif\0\0");
+        app1.extend_from_slice(&tiff);
+        app1
+    }
+
+    /// Splice an APP1 segment into a freshly encoded JPEG, right after SOI —
+    /// the position the EXIF spec mandates.
+    fn splice_app1(jpeg: &[u8], app1: &[u8]) -> Vec<u8> {
+        assert_eq!(&jpeg[..2], &[0xFF, 0xD8], "fixture must start with SOI");
+        let mut out = Vec::with_capacity(jpeg.len() + app1.len());
+        out.extend_from_slice(&jpeg[..2]);
+        out.extend_from_slice(app1);
+        out.extend_from_slice(&jpeg[2..]);
+        out
+    }
+
+    /// Encode a `w`x`h` test image as JPEG with an EXIF segment carrying the
+    /// given orientation plus a GPS tag.
+    fn jpeg_with_exif(w: u32, h: u32, orientation: u16) -> Vec<u8> {
+        let jpeg = encode_image(&make_test_image(w, h), ImageFormat::Jpeg, 90)
+            .expect("encode EXIF fixture");
+        splice_app1(&jpeg, &exif_app1_segment(orientation))
+    }
+
+    fn contains_subsequence(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack.windows(needle.len()).any(|w| w == needle)
+    }
+
+    #[test]
+    fn exif_fixture_actually_carries_exif_and_gps() {
+        // Sanity-check the fixture builder: if this fails, the strip tests
+        // below prove nothing.
+        let bytes = jpeg_with_exif(64, 32, 6);
+        assert!(contains_subsequence(&bytes, b"Exif"));
+        // GPS IFD pointer tag (0x8825 little-endian, type LONG) as laid out
+        // by exif_app1_segment.
+        assert!(contains_subsequence(&bytes, &[0x25, 0x88, 0x04, 0x00]));
+        // And the decoder agrees there is an orientation to apply.
+        let mut decoder = ImageReader::new(Cursor::new(bytes.as_slice()))
+            .with_guessed_format()
+            .expect("guess format")
+            .into_decoder()
+            .expect("decoder");
+        assert_eq!(
+            decoder.orientation().expect("read orientation"),
+            Orientation::Rotate90
+        );
+    }
+
+    #[test]
+    fn pipeline_output_strips_exif_and_gps_for_every_format() {
+        let input = jpeg_with_exif(64, 32, 1);
+        assert!(contains_subsequence(&input, b"Exif"));
+
+        // Same composition as every pipeline path: decode → resize → encode.
+        let img = decode_image(&input).expect("decode");
+        let resized = resize_image(&img, 32, 32, ResizeMode::Fit);
+
+        for fmt in [ImageFormat::Jpeg, ImageFormat::Png, ImageFormat::WebP] {
+            let out = encode_image(&resized, fmt, DEFAULT_QUALITY).expect("encode");
+            assert!(
+                !contains_subsequence(&out, b"Exif"),
+                "{fmt:?} output must not contain an EXIF segment"
+            );
+            assert!(
+                !contains_subsequence(&out, &[0x25, 0x88, 0x04, 0x00]),
+                "{fmt:?} output must not contain the GPS IFD entry"
+            );
+        }
+    }
+
+    #[test]
+    fn full_size_reencode_strips_exif() {
+        // The job-photo "original" path re-encodes WITHOUT resizing — make
+        // sure that path is metadata-free too.
+        let input = jpeg_with_exif(64, 32, 1);
+        let img = decode_image(&input).expect("decode");
+        let out = encode_image(&img, ImageFormat::Jpeg, 90).expect("encode");
+        assert!(!contains_subsequence(&out, b"Exif"));
+    }
+
+    #[test]
+    fn auto_orient_rotates_orientation_6_dimensions() {
+        // Orientation 6 = 90° CW: an 80x40 landscape must come out 40x80.
+        let input = jpeg_with_exif(80, 40, 6);
+        let img = decode_image(&input).expect("decode");
+        assert_eq!(img.dimensions(), (40, 80));
+    }
+
+    #[test]
+    fn auto_orient_orientation_3_keeps_dimensions() {
+        // Orientation 3 = 180°: dimensions unchanged, decode still succeeds.
+        let input = jpeg_with_exif(80, 40, 3);
+        let img = decode_image(&input).expect("decode");
+        assert_eq!(img.dimensions(), (80, 40));
+    }
+
+    #[test]
+    fn auto_orient_disabled_ignores_orientation_tag() {
+        let input = jpeg_with_exif(80, 40, 6);
+        let img = decode_image_with_orientation(&input, false).expect("decode");
+        assert_eq!(img.dimensions(), (80, 40));
+    }
+
+    #[test]
+    fn oriented_image_survives_reencode_with_rotated_dimensions() {
+        // End-to-end: rotated camera shot → pipeline → upright, EXIF-free.
+        let input = jpeg_with_exif(80, 40, 6);
+        let img = decode_image(&input).expect("decode");
+        let out = encode_image(&img, ImageFormat::Jpeg, DEFAULT_QUALITY).expect("encode");
+        assert!(!contains_subsequence(&out, b"Exif"));
+        let roundtrip = decode_image(&out).expect("decode output");
+        assert_eq!(roundtrip.dimensions(), (40, 80));
+    }
+
+    #[test]
+    fn garbage_exif_payload_decodes_without_panic() {
+        // Valid APP1 framing, "Exif\0\0" magic, garbage TIFF body.
+        let jpeg =
+            encode_image(&make_test_image(48, 24), ImageFormat::Jpeg, 90).expect("encode fixture");
+        let mut app1 = vec![0xFF, 0xE1];
+        let garbage = [0xABu8; 40];
+        app1.extend_from_slice(&((2 + 6 + garbage.len()) as u16).to_be_bytes());
+        app1.extend_from_slice(b"Exif\0\0");
+        app1.extend_from_slice(&garbage);
+        let input = splice_app1(&jpeg, &app1);
+
+        // Fail-soft: garbage EXIF → orientation 1, decode still succeeds.
+        let img = decode_image(&input).expect("decode with garbage EXIF");
+        assert_eq!(img.dimensions(), (48, 24));
+    }
+
+    #[test]
+    fn out_of_range_orientation_values_are_treated_as_identity() {
+        // EXIF orientation is only defined for 1..=8; 0 and 9+ are invalid
+        // tag values and must fall back to no-transform, never panic.
+        for orientation in [0u16, 9, 99, u16::MAX] {
+            let input = jpeg_with_exif(80, 40, orientation);
+            let img = decode_image(&input).expect("decode");
+            assert_eq!(
+                img.dimensions(),
+                (80, 40),
+                "invalid orientation {orientation} must not transform"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
     // srgb_to_linear / linear_to_srgb
     // ------------------------------------------------------------------
 
@@ -1146,7 +1865,12 @@ mod tests {
         // BlurHash format: 1 (size flag) + 1 (max AC) + 4 (DC) + (4*3-1)*2 (AC) = 28
         let img = make_test_image(64, 64);
         let hash = compute_blur_hash(&img);
-        assert_eq!(hash.len(), 28, "4x3 BlurHash should be 28 chars, got {}", hash.len());
+        assert_eq!(
+            hash.len(),
+            28,
+            "4x3 BlurHash should be 28 chars, got {}",
+            hash.len()
+        );
     }
 
     #[test]
@@ -1204,6 +1928,154 @@ mod tests {
         assert_eq!(v.width, 800);
         assert_eq!(v.height, 600);
         assert_eq!(v.format, ImageFormat::Jpeg);
+    }
+
+    // ------------------------------------------------------------------
+    // Blocking-pool boundary
+    // ------------------------------------------------------------------
+
+    /// The CPU stage must run on the blocking pool, not on a runtime worker.
+    ///
+    /// The runtime here has exactly one async worker thread, which is the
+    /// sharpest form of the production failure: if decode/resize/encode is
+    /// polled inline, nothing else on that thread — including this process's
+    /// own gRPC health handler — makes progress until it finishes.
+    ///
+    /// The test asserts both directions so it cannot silently pass if the
+    /// `spawn_blocking` hop is removed:
+    ///
+    ///   * control — the same work called directly advances the heartbeat by
+    ///     exactly zero ticks (the old behaviour),
+    ///   * treatment — the same work via [`render_processed`] lets the
+    ///     heartbeat keep ticking.
+    #[test]
+    fn cpu_render_runs_off_the_async_runtime() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::time::Duration;
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build single-worker runtime");
+
+        rt.block_on(async {
+            let raw = encode_image(&make_test_image(1600, 1200), ImageFormat::Jpeg, 90)
+                .expect("encode fixture");
+
+            let ticks = Arc::new(AtomicU64::new(0));
+            let counter = Arc::clone(&ticks);
+            let heartbeat = tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
+            });
+
+            // Let the heartbeat get scheduled and start ticking.
+            tokio::time::sleep(Duration::from_millis(20)).await;
+
+            let opts = ProcessingOptions {
+                max_width: 800,
+                max_height: 800,
+                generate_blur_hash: true,
+                ..ProcessingOptions::default()
+            };
+
+            // Control: the pre-fix code path — pure CPU polled inline. There is
+            // no await between these two reads, so on a single-worker runtime
+            // the heartbeat provably cannot advance.
+            let before_inline = ticks.load(Ordering::Relaxed);
+            let img = decode_image_with_orientation(&raw, opts.auto_orient).expect("decode");
+            let resized = resize_image(&img, opts.max_width, opts.max_height, opts.resize_mode);
+            let inline_encoded = encode_image(&resized, opts.format, opts.quality).expect("encode");
+            let after_inline = ticks.load(Ordering::Relaxed);
+
+            assert!(!inline_encoded.is_empty());
+            assert_eq!(
+                after_inline, before_inline,
+                "control: inline CPU work starves every other task on the runtime"
+            );
+
+            // Treatment: the same work through the blocking-pool boundary.
+            let before = ticks.load(Ordering::Relaxed);
+            let rendered = render_processed(raw, opts).await.expect("render");
+            let after = ticks.load(Ordering::Relaxed);
+
+            heartbeat.abort();
+
+            assert!(!rendered.image.data.is_empty());
+            assert!(rendered.blur_hash.is_some());
+            assert_eq!(rendered.original_width, 1600);
+            assert_eq!(rendered.original_height, 1200);
+            assert!(
+                after > before,
+                "runtime must keep polling other tasks while the CPU render is in flight \
+                 (heartbeat ticks {before} -> {after})"
+            );
+        });
+    }
+
+    /// Every render helper is an `async fn` that hands its work to
+    /// `spawn_blocking`, so a panic inside the image crate arrives as a
+    /// `JoinError` and becomes an `Internal` error instead of unwinding
+    /// through the gRPC connection.
+    #[tokio::test]
+    async fn render_helpers_surface_decode_errors_not_panics() {
+        let err = decode_shared(vec![0, 1, 2, 3])
+            .await
+            .expect_err("garbage bytes must not decode");
+        assert!(matches!(err, ImagingError::DecodeError(_)));
+
+        let err = render_processed(vec![0, 1, 2, 3], ProcessingOptions::default())
+            .await
+            .expect_err("garbage bytes must not render");
+        // guess_format runs first, so this is the unsupported-format arm.
+        assert!(matches!(
+            err,
+            ImagingError::DecodeError(_) | ImagingError::UnsupportedFormat(_)
+        ));
+    }
+
+    /// The multi-variant paths share one decoded image across renders.
+    #[tokio::test]
+    async fn render_variant_reuses_a_shared_decode() {
+        let raw = encode_image(&make_test_image(400, 300), ImageFormat::Jpeg, 90)
+            .expect("encode fixture");
+        let img = decode_shared(raw).await.expect("decode");
+
+        let large = render_variant(
+            Arc::clone(&img),
+            200,
+            200,
+            ResizeMode::Fit,
+            ImageFormat::Jpeg,
+            DEFAULT_QUALITY,
+        )
+        .await
+        .expect("render large");
+        let small = render_variant(
+            Arc::clone(&img),
+            50,
+            50,
+            ResizeMode::Exact,
+            ImageFormat::Jpeg,
+            DEFAULT_QUALITY,
+        )
+        .await
+        .expect("render small");
+
+        assert!(large.width <= 200 && large.height <= 200);
+        assert_eq!((small.width, small.height), (50, 50));
+        assert!(!large.data.is_empty() && !small.data.is_empty());
+
+        // The source image is still owned solely by this test plus the two
+        // completed renders' released clones.
+        assert_eq!(Arc::strong_count(&img), 1);
+
+        let square = render_center_square(img).await.expect("crop");
+        assert_eq!(square.dimensions(), (300, 300));
+        let hash = render_blur_hash(square).await.expect("blur hash");
+        assert_eq!(hash.len(), 28);
     }
 
     // ------------------------------------------------------------------

@@ -4,6 +4,7 @@ vendor/
 
 # Build outputs
 .next/
+.next-*/
 out/
 .turbo/
 target/
@@ -16,6 +17,8 @@ database/seed
 
 # Coverage & test
 coverage/
+coverage.out
+*.coverprofile
 *.test
 *.prof
 
@@ -24,6 +27,7 @@ coverage/
 .env.local
 .env.production
 .env.*.local
+qa/scripts/qa-creds.env
 *.pem
 *.key
 keys/
@@ -74,3 +78,13 @@ npm-debug.log*
 .claude/worktrees/
 .claude/settings.local.json
 .gstack/
+.vite/
+.claude/scheduled_tasks.lock
+
+# iOS (native client)
+ios/build/
+ios/**/xcuserdata/
+**/DerivedData/
+*.xcuserstate
+ios/NoMarkupUITests/Credentials.local
+ios/DerivedData*/

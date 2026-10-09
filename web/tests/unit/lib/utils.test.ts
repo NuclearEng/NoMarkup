@@ -1,6 +1,12 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-import { cn, formatCents, formatRelativeTime } from '@/lib/utils';
+import {
+  canNextImageLoad,
+  cn,
+  formatCents,
+  formatRelativeTime,
+  isAcceptanceExpired,
+} from '@/lib/utils';
 
 describe('cn', () => {
   it('merges class names', () => {
@@ -8,7 +14,8 @@ describe('cn', () => {
   });
 
   it('handles conditional classes', () => {
-    const result = cn('base', false && 'hidden', 'extra');
+    const isHidden = false as boolean;
+    const result = cn('base', isHidden && 'hidden', 'extra');
     expect(result).toBe('base extra');
   });
 
@@ -70,6 +77,29 @@ describe('formatCents', () => {
   });
 });
 
+describe('isAcceptanceExpired', () => {
+  const now = new Date('2026-06-07T12:00:00Z').getTime();
+
+  it('is true when pending_acceptance and the deadline is in the past', () => {
+    expect(isAcceptanceExpired('pending_acceptance', '2026-06-01T00:00:00Z', now)).toBe(true);
+  });
+
+  it('is false when the deadline is still in the future', () => {
+    expect(isAcceptanceExpired('pending_acceptance', '2099-01-01T00:00:00Z', now)).toBe(false);
+  });
+
+  it('is false for non-pending statuses even with a past deadline', () => {
+    expect(isAcceptanceExpired('active', '2000-01-01T00:00:00Z', now)).toBe(false);
+    expect(isAcceptanceExpired('cancelled', '2000-01-01T00:00:00Z', now)).toBe(false);
+  });
+
+  it('is false (fails open) for a missing or unparseable deadline', () => {
+    expect(isAcceptanceExpired('pending_acceptance', null, now)).toBe(false);
+    expect(isAcceptanceExpired('pending_acceptance', undefined, now)).toBe(false);
+    expect(isAcceptanceExpired('pending_acceptance', 'not-a-date', now)).toBe(false);
+  });
+});
+
 describe('formatRelativeTime', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -124,5 +154,42 @@ describe('formatRelativeTime', () => {
     const date = new Date('2026-01-15T12:00:00Z');
     const result = formatRelativeTime(date);
     expect(result).toBe('Jan 15');
+  });
+});
+
+describe('canNextImageLoad', () => {
+  it('returns false for null/undefined/empty', () => {
+    expect(canNextImageLoad(null)).toBe(false);
+    expect(canNextImageLoad(undefined)).toBe(false);
+    expect(canNextImageLoad('')).toBe(false);
+  });
+
+  it('allows relative paths and data URIs', () => {
+    expect(canNextImageLoad('/static/photo.jpg')).toBe(true);
+    expect(canNextImageLoad('data:image/png;base64,abc')).toBe(true);
+  });
+
+  it('allows allowlisted remote hosts (next.config remotePatterns)', () => {
+    // MUST mirror `images.remotePatterns` in next.config.ts exactly. When a host
+    // is added/removed there, this list moves with it.
+    expect(canNextImageLoad('http://localhost:9000/nomarkup-dev/p.jpg')).toBe(true);
+    expect(
+      canNextImageLoad('https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=800'),
+    ).toBe(true);
+    expect(canNextImageLoad('https://picsum.photos/seed/nomarkup/800/600')).toBe(true);
+  });
+
+  it('rejects un-allowlisted remote hosts so the page degrades instead of crashing', () => {
+    // Regression guard: a host that is NOT in next.config's remotePatterns must
+    // never be handed to next/image, which throws "Invalid src prop … hostname
+    // not configured" and crashes the whole tree to the root error boundary.
+    expect(canNextImageLoad('https://example.com/p.jpg')).toBe(false);
+    expect(canNextImageLoad('https://evil.cdn.example.net/p.jpg')).toBe(false);
+    // Sub-domain / suffix confusion must not sneak past the exact-host check.
+    expect(canNextImageLoad('https://images.unsplash.com.evil.test/p.jpg')).toBe(false);
+  });
+
+  it('rejects unparseable values', () => {
+    expect(canNextImageLoad('not a url')).toBe(false);
   });
 });

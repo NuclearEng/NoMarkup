@@ -1,0 +1,43 @@
+# NoMarkup Alertmanager — minimal in-cluster config
+#
+# Receives alerts from Prometheus (same namespace Service DNS: alertmanager:9093).
+# Default route is a null receiver so the evaluation path is real without
+# requiring Slack/PagerDuty/email secrets. Wire a real receiver before go-live.
+#
+# Apply path: kubectl apply -k deploy/monitoring
+# Docs: docs/operations/monitoring-stack.md
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: blackhole
+  group_by: [alertname, namespace, priority]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # Keep critical/P0 grouped tighter for when a real pager is attached.
+    - matchers:
+        - priority = P0
+      receiver: blackhole
+      group_wait: 10s
+      repeat_interval: 1h
+
+receivers:
+  - name: blackhole
+    # No integrations — alerts still appear on Prometheus /alerts and in
+    # Alertmanager /#/alerts. Replace with pagerduty_configs / slack_configs
+    # (from a Secret-mounted file) before production on-call.
+    # Example (do not commit secrets):
+    # slack_configs:
+    #   - api_url_file: /etc/alertmanager/secrets/slack-webhook
+    #     channel: '#nomarkup-alerts'
+    #     send_resolved: true
+
+inhibit_rules:
+  - source_matchers:
+      - severity = critical
+    target_matchers:
+      - severity = warning
+    equal: [alertname, namespace]

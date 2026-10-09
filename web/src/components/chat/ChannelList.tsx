@@ -2,22 +2,51 @@
 
 import { MessageSquare, Search } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useChannels } from '@/hooks/useChannels';
 import { cn, formatRelativeTime } from '@/lib/utils';
+import { useAuthStore } from '@/stores/auth-store';
 import { useChatStore } from '@/stores/chat-store';
 import { CHANNEL_TYPE } from '@/types';
 import type { Channel } from '@/types';
 
+// Friendly fallback shown when the other party's display name can't be
+// resolved. Never fall back to a raw UUID — that's the bug we're fixing.
+const OTHER_PARTY_FALLBACK = 'Conversation';
+
+/** Debounce for FR-8.6 server inbox search (`q` on GET /channels). */
+const SEARCH_DEBOUNCE_MS = 300;
+
+/**
+ * Picks the conversation's "other party" relative to the logged-in user.
+ * If the viewer is the customer, the other party is the provider, and vice
+ * versa. Returns the resolved display name (falling back to a friendly
+ * placeholder, never a UUID) plus the id for keys/labels.
+ */
+function otherParty(
+  channel: Channel,
+  currentUserId: string | undefined,
+): { id: string; name: string } {
+  const viewerIsCustomer = currentUserId === channel.customer_id;
+  const id = viewerIsCustomer ? channel.provider_id : channel.customer_id;
+  const name = viewerIsCustomer ? channel.provider_name : channel.customer_name;
+  return { id, name: name && name.trim() ? name : OTHER_PARTY_FALLBACK };
+}
+
 function channelTypeLabel(channelType: string): string {
   switch (channelType) {
     case CHANNEL_TYPE.PRE_AWARD:
+    case 'bid':
       return 'Pre-Award';
+    case CHANNEL_TYPE.INQUIRY:
+    case 'inquiry':
+      return 'Inquiry';
     case CHANNEL_TYPE.CONTRACT:
       return 'Contract';
     case CHANNEL_TYPE.SUPPORT:
@@ -32,7 +61,15 @@ function truncateMessage(content: string, maxLength: number): string {
   return content.slice(0, maxLength) + '...';
 }
 
-function ChannelListItem({ channel, isActive }: { channel: Channel; isActive: boolean }) {
+function ChannelListItem({
+  channel,
+  isActive,
+  currentUserId,
+}: {
+  channel: Channel;
+  isActive: boolean;
+  currentUserId: string | undefined;
+}) {
   const setActiveChannel = useChatStore((state) => state.setActiveChannel);
   const lastMessagePreview = channel.last_message
     ? truncateMessage(channel.last_message.content, 50)
@@ -41,7 +78,7 @@ function ChannelListItem({ channel, isActive }: { channel: Channel; isActive: bo
     ? formatRelativeTime(new Date(channel.last_message.created_at))
     : formatRelativeTime(new Date(channel.created_at));
 
-  const otherPartyId = channel.provider_id || channel.customer_id;
+  const { name: otherPartyName } = otherParty(channel, currentUserId);
 
   return (
     <button
@@ -53,15 +90,15 @@ function ChannelListItem({ channel, isActive }: { channel: Channel; isActive: bo
           ? 'border-primary bg-primary/5'
           : 'border-transparent hover:bg-muted',
       )}
-      aria-label={`Open conversation with ${otherPartyId}`}
+      aria-label={`Open conversation with ${otherPartyName}`}
       aria-current={isActive ? 'true' : undefined}
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium">
-        {otherPartyId.charAt(0).toUpperCase()}
+        {otherPartyName.charAt(0).toUpperCase()}
       </div>
       <div className="flex-1 overflow-hidden">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium">{otherPartyId}</span>
+          <span className="truncate text-sm font-medium">{otherPartyName}</span>
           <span className="shrink-0 text-xs text-muted-foreground">{lastMessageTime}</span>
         </div>
         <p className="truncate text-xs text-muted-foreground">{lastMessagePreview}</p>
@@ -82,14 +119,14 @@ function ChannelListItem({ channel, isActive }: { channel: Channel; isActive: bo
 
 function ChannelListSkeleton() {
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" aria-busy="true" aria-label="Loading conversations">
       {[1, 2, 3, 4].map((i) => (
         <div key={i} className="flex items-start gap-3 rounded-md p-3">
-          <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-muted" />
+          <Skeleton variant="circular" className="h-10 w-10 shrink-0" />
           <div className="flex-1 space-y-2">
-            <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-full animate-pulse rounded bg-muted" />
-            <div className="h-4 w-12 animate-pulse rounded bg-muted" />
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-4 w-12" />
           </div>
         </div>
       ))}
@@ -99,17 +136,35 @@ function ChannelListSkeleton() {
 
 export function ChannelList() {
   const [searchQuery, setSearchQuery] = useState('');
+  // Debounced server `q` — local filter still runs on the returned page as interim.
+  const [debouncedQ, setDebouncedQ] = useState('');
   const activeChannelId = useChatStore((state) => state.activeChannelId);
-  const { data, isLoading, isError } = useChannels({ page: 1, per_page: 50 });
+  const currentUserId = useAuthStore((state) => state.user?.id);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQ(searchQuery.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchQuery]);
+
+  const { data, isLoading, isError } = useChannels({
+    page: 1,
+    per_page: 50,
+    q: debouncedQ || undefined,
+  });
 
   const channels = data?.channels ?? [];
 
+  // Local filter as interim while the user types (before debounce) and as a
+  // client-side refine over the server page after `q` lands.
   const filteredChannels = searchQuery
     ? channels.filter((channel) => {
         const query = searchQuery.toLowerCase();
-        const matchesParty =
-          channel.customer_id.toLowerCase().includes(query) ||
-          channel.provider_id.toLowerCase().includes(query);
+        const { name } = otherParty(channel, currentUserId);
+        const matchesParty = name.toLowerCase().includes(query);
         const matchesMessage = channel.last_message?.content
           .toLowerCase()
           .includes(query);
@@ -165,6 +220,7 @@ export function ChannelList() {
                 key={channel.id}
                 channel={channel}
                 isActive={activeChannelId === channel.id}
+                currentUserId={currentUserId}
               />
             ))}
           </div>

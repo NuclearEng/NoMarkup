@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
@@ -560,8 +559,7 @@ func (h *ChallengeHandler) AdminCreateChallenge(w http.ResponseWriter, r *http.R
 		SeasonName      *string `json:"season_name"`
 		MaxParticipants *int    `json:"max_participants"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 

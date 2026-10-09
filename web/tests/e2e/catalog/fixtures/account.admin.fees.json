@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "path": "/api/v1/admin/payments/fee-config",
+  "status": 200,
+  "contentType": "application/json",
+  "body": {
+    "service_fee_bps": 500,
+    "goods_fee_bps": 800
+  }
+}

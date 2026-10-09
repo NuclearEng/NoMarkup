@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, getApiErrorMessage } from '@/lib/api';
 import type { ExpensesResponse, ProviderExpense } from '@/types';
 
 interface ExpenseParams {
@@ -50,8 +50,8 @@ export function useCreateExpense() {
       toast.success('Expense added');
       void queryClient.invalidateQueries({ queryKey: ['expenses'] });
     },
-    onError: () => {
-      toast.error('Failed to add expense');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to add expense'));
     },
   });
 }
@@ -66,8 +66,8 @@ export function useDeleteExpense() {
       toast.success('Expense deleted');
       void queryClient.invalidateQueries({ queryKey: ['expenses'] });
     },
-    onError: () => {
-      toast.error('Failed to delete expense');
+    onError: (err) => {
+      toast.error(getApiErrorMessage(err, 'Failed to delete expense'));
     },
   });
 }

@@ -11,7 +11,7 @@ use crate::models::{
     SignalTypeRow, TimestampRow, UserRiskProfileData, UserSessionRow,
 };
 
-/// SQL fragment selecting fraud_signals columns with NUMERIC casts for f64.
+/// SQL fragment selecting `fraud_signals` columns with NUMERIC casts for f64.
 const SIGNAL_SELECT: &str = "\
     SELECT id, user_id, signal_type, signal_subtype, severity, \
       confidence::float8 AS confidence, description, evidence_json, \
@@ -19,7 +19,7 @@ const SIGNAL_SELECT: &str = "\
       auto_actioned, auto_action, created_at, updated_at \
     FROM fraud_signals";
 
-/// SQL fragment selecting user_sessions columns with NUMERIC casts for f64.
+/// SQL fragment selecting `user_sessions` columns with NUMERIC casts for f64.
 const SESSION_SELECT: &str = "\
     SELECT id, user_id, ip_address::text AS ip_address, user_agent, \
       device_fingerprint, \
@@ -34,7 +34,7 @@ pub struct FraudDetector {
 
 impl FraudDetector {
     #[must_use]
-    pub fn new(pool: PgPool) -> Self {
+    pub const fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
@@ -53,6 +53,21 @@ impl FraudDetector {
     /// # Errors
     ///
     /// Returns `FraudError` on database errors.
+    // The fraud pipeline's money path (p99 < 50ms, CLAUDE.md §8). `skip_all`
+    // is load-bearing here, not stylistic: auto-recorded arguments would put
+    // the raw IP address and device fingerprint on the span, and both are PII
+    // that must not reach the collector. Only the derived score and decision
+    // are recorded.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            user_id = %user_id,
+            amount_cents,
+            risk_score = tracing::field::Empty,
+            decision = tracing::field::Empty,
+        ),
+        err
+    )]
     pub async fn check_transaction(
         &self,
         user_id: Uuid,
@@ -61,6 +76,7 @@ impl FraudDetector {
         ip_address: &str,
         device_fingerprint: &str,
     ) -> Result<CheckResult, FraudError> {
+        let _timer = crate::metrics::FRAUD_SCORING_DURATION.start_timer();
         let mut score: f64 = 0.0;
         let mut reasons = Vec::new();
 
@@ -149,6 +165,10 @@ impl FraudDetector {
         let mut result = CheckResult::from_score(score);
         result.reasons = reasons;
 
+        let span = tracing::Span::current();
+        span.record("risk_score", score);
+        span.record("decision", tracing::field::debug(result.decision));
+
         tracing::info!(
             user_id = %user_id,
             score = score,
@@ -166,11 +186,24 @@ impl FraudDetector {
     /// 2. Device fingerprint -- fingerprint associated with known fraud
     /// 3. Email domain -- disposable email detection (simple heuristic)
     /// 4. Velocity -- registrations from same IP/device in last 24h
-    /// 5. Multi-account -- same fingerprint across different user_ids
+    /// 5. Multi-account -- same fingerprint across different `user_ids`
     ///
     /// # Errors
     ///
     /// Returns `FraudError` on database errors.
+    // `email_domain`, never `email`: the domain is what every heuristic here
+    // actually keys on (disposable-provider lists, domain-wide abuse), while
+    // the local part is a direct personal identifier with no diagnostic value.
+    // See `email_domain` for the full reasoning.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            email_domain = email_domain(email),
+            risk_score = tracing::field::Empty,
+            decision = tracing::field::Empty,
+        ),
+        err
+    )]
     pub async fn check_registration(
         &self,
         email: &str,
@@ -178,6 +211,7 @@ impl FraudDetector {
         device_fingerprint: &str,
         _phone: &str,
     ) -> Result<CheckResult, FraudError> {
+        let _timer = crate::metrics::FRAUD_SCORING_DURATION.start_timer();
         let mut score: f64 = 0.0;
         let mut reasons = Vec::new();
 
@@ -269,8 +303,14 @@ impl FraudDetector {
         let mut result = CheckResult::from_score(score);
         result.reasons = reasons;
 
+        let span = tracing::Span::current();
+        span.record("risk_score", score);
+        span.record("decision", tracing::field::debug(result.decision));
+
         tracing::info!(
-            email = email,
+            // Was `email = email`: a second copy of the same PII defect as the
+            // gRPC layer, shipping a full address to logs on every signup.
+            email_domain = email_domain(email),
             score = score,
             decision = ?result.decision,
             "registration check completed"
@@ -289,6 +329,19 @@ impl FraudDetector {
     /// # Errors
     ///
     /// Returns `FraudError` on database errors.
+    // Runs inline on the bidding path, so it inherits the p99 < 1ms bid budget
+    // on top of its own. Same PII rule as `check_transaction`: no raw IP or
+    // fingerprint on the span.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            provider_id = %provider_id,
+            customer_id = %customer_id,
+            risk_score = tracing::field::Empty,
+            shill_bid_detected = tracing::field::Empty,
+        ),
+        err
+    )]
     pub async fn check_bid(
         &self,
         provider_id: Uuid,
@@ -298,6 +351,7 @@ impl FraudDetector {
         ip_address: &str,
         device_fingerprint: &str,
     ) -> Result<CheckResult, FraudError> {
+        let _timer = crate::metrics::FRAUD_SCORING_DURATION.start_timer();
         let mut reasons = Vec::new();
 
         // 1. Shared IP between bidder and job poster.
@@ -321,8 +375,9 @@ impl FraudDetector {
         }
 
         // 1b. Shared device fingerprint between bidder and job poster.
-        let mut fingerprint_score: f64 = 0.0;
-        if !device_fingerprint.is_empty() {
+        let fingerprint_score: f64 = if device_fingerprint.is_empty() {
+            0.0
+        } else {
             let shared_device: CountRow = sqlx::query_as(
                 "SELECT COUNT(*)::bigint AS count FROM user_sessions \
                  WHERE user_id = $1 \
@@ -335,16 +390,15 @@ impl FraudDetector {
             .await?;
 
             let shared_score: f64 = if shared_device.count > 0 {
-                reasons
-                    .push("Bidder and job poster share the same device fingerprint".into());
+                reasons.push("Bidder and job poster share the same device fingerprint".into());
                 0.5
             } else {
                 0.0
             };
 
             let device_score = Self::score_device_fingerprint(device_fingerprint, "");
-            fingerprint_score = shared_score.max(device_score);
-        }
+            shared_score.max(device_score)
+        };
 
         // 2. Velocity: bids from this provider in the last hour.
         let bid_velocity: CountRow = sqlx::query_as(
@@ -410,6 +464,10 @@ impl FraudDetector {
             behavioral::AutoAction::Block | behavioral::AutoAction::Challenge
         );
 
+        let span = tracing::Span::current();
+        span.record("risk_score", composite.score);
+        span.record("shill_bid_detected", result.shill_bid_detected);
+
         tracing::info!(
             provider_id = %provider_id,
             customer_id = %customer_id,
@@ -466,15 +524,13 @@ impl FraudDetector {
             Some(reference_type)
         };
 
-        let row = sqlx::query_as::<_, FraudSignalRow>(
-            &format!(
-                "INSERT INTO fraud_signals \
+        let row = sqlx::query_as::<_, FraudSignalRow>(&format!(
+            "INSERT INTO fraud_signals \
                    (user_id, signal_type, signal_subtype, severity, confidence, \
                     description, evidence_json, related_entity_id, related_entity_type) \
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
                  RETURNING {RETURNING_COLS}"
-            ),
-        )
+        ))
         .bind(user_id)
         .bind(signal_type.as_db_str())
         .bind(signal_type.as_subtype_str())
@@ -498,6 +554,10 @@ impl FraudDetector {
 
         let alert_created = pending_count.count >= 3;
 
+        if alert_created {
+            crate::metrics::FRAUD_ALERTS_CREATED_TOTAL.inc();
+        }
+
         tracing::info!(
             user_id = %user_id,
             signal_type = signal_type.as_db_str(),
@@ -506,10 +566,7 @@ impl FraudDetector {
             "fraud signal recorded"
         );
 
-        Ok(RecordedSignal {
-            row,
-            alert_created,
-        })
+        Ok(RecordedSignal { row, alert_created })
     }
 
     /// Batch record multiple fraud signals.
@@ -517,10 +574,21 @@ impl FraudDetector {
     /// # Errors
     ///
     /// Returns `FraudError` on database errors.
+    // Batch size is the single attribute that explains this span's duration.
+    #[tracing::instrument(skip_all, fields(batch_size = signals.len()), err)]
     #[allow(clippy::too_many_arguments)]
     pub async fn batch_record_signals(
         &self,
-        signals: Vec<(Uuid, SignalType, f64, String, String, String, String, String)>,
+        signals: Vec<(
+            Uuid,
+            SignalType,
+            f64,
+            String,
+            String,
+            String,
+            String,
+            String,
+        )>,
     ) -> Result<(i32, i32), FraudError> {
         let mut recorded = 0i32;
         let mut alerts_created = 0i32;
@@ -636,28 +704,28 @@ impl FraudDetector {
         }
 
         // Anomaly 2: Different country than recent sessions.
-        if let Some(country) = geo_country {
-            if !country.is_empty() {
-                let recent_country: Option<GeoCountryRow> = sqlx::query_as(
-                    "SELECT geo_country FROM user_sessions \
+        if let Some(country) = geo_country
+            && !country.is_empty()
+        {
+            let recent_country: Option<GeoCountryRow> = sqlx::query_as(
+                "SELECT geo_country FROM user_sessions \
                      WHERE user_id = $1 \
                        AND geo_country IS NOT NULL \
                        AND session_start >= now() - interval '7 days' \
                        AND session_start < now() - interval '1 minute' \
                      ORDER BY session_start DESC LIMIT 1",
-                )
-                .bind(user_id)
-                .fetch_optional(&self.pool)
-                .await?;
+            )
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await?;
 
-                if let Some(prev) = recent_country {
-                    if prev.geo_country != country {
-                        anomalies.push(format!(
-                            "Geo mismatch: session from {} but recent sessions from {}",
-                            country, prev.geo_country
-                        ));
-                    }
-                }
+            if let Some(prev) = recent_country
+                && prev.geo_country != country
+            {
+                anomalies.push(format!(
+                    "Geo mismatch: session from {} but recent sessions from {}",
+                    country, prev.geo_country
+                ));
             }
         }
 
@@ -705,25 +773,24 @@ impl FraudDetector {
         let offset = i64::from((page - 1).max(0)) * i64::from(page_size.max(1));
         let limit = i64::from(page_size.clamp(1, 100));
 
-        let rows = sqlx::query_as::<_, UserSessionRow>(
-            &format!(
-                "{SESSION_SELECT} \
+        let rows = sqlx::query_as::<_, UserSessionRow>(&format!(
+            "{SESSION_SELECT} \
                  WHERE user_id = $1 \
                  ORDER BY session_start DESC \
                  LIMIT $2 OFFSET $3"
-            ),
-        )
+        ))
         .bind(user_id)
         .bind(limit)
         .bind(offset)
         .fetch_all(&self.pool)
         .await?;
 
-        let count: CountRow =
-            sqlx::query_as("SELECT COUNT(*)::bigint AS count FROM user_sessions WHERE user_id = $1")
-                .bind(user_id)
-                .fetch_one(&self.pool)
-                .await?;
+        let count: CountRow = sqlx::query_as(
+            "SELECT COUNT(*)::bigint AS count FROM user_sessions WHERE user_id = $1",
+        )
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await?;
 
         Ok((rows, count.count))
     }
@@ -770,20 +837,18 @@ impl FraudDetector {
         .await?;
 
         // Last signal timestamp.
-        let last_signal: TimestampRow = sqlx::query_as(
-            "SELECT MAX(created_at) AS ts FROM fraud_signals WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let last_signal: TimestampRow =
+            sqlx::query_as("SELECT MAX(created_at) AS ts FROM fraud_signals WHERE user_id = $1")
+                .bind(user_id)
+                .fetch_one(&self.pool)
+                .await?;
 
         // Last reviewed timestamp.
-        let last_reviewed: TimestampRow = sqlx::query_as(
-            "SELECT MAX(reviewed_at) AS ts FROM fraud_signals WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let last_reviewed: TimestampRow =
+            sqlx::query_as("SELECT MAX(reviewed_at) AS ts FROM fraud_signals WHERE user_id = $1")
+                .bind(user_id)
+                .fetch_one(&self.pool)
+                .await?;
 
         // Calculate risk score: based on signal count, severity, and recency.
         let risk_score = self.calculate_risk_score(user_id).await?;
@@ -799,7 +864,7 @@ impl FraudDetector {
             .bind(user_id)
             .fetch_one(&self.pool)
             .await
-            .map_or(false, |r| r.count > 0);
+            .is_ok_and(|r| r.count > 0);
 
         let recent_signal_types: Vec<SignalType> = recent_types
             .iter()
@@ -825,6 +890,10 @@ impl FraudDetector {
     /// - Number of signals (weighted by recency)
     /// - Severity distribution
     /// - Active vs dismissed ratio
+    // Four sequential severity counts over a 90-day window — the usual
+    // suspect when a profile lookup is slow, and invisible from the outside
+    // without its own span.
+    #[tracing::instrument(skip_all, fields(user_id = %user_id), err)]
     async fn calculate_risk_score(&self, user_id: Uuid) -> Result<f64, FraudError> {
         // Count signals by severity in last 90 days.
         let high: CountRow = sqlx::query_as(
@@ -858,9 +927,11 @@ impl FraudDetector {
         .await?;
 
         // Weighted score: high=0.4 per signal, medium=0.2, low=0.05. Capped at 1.0.
-        let score = (high.count as f64 * 0.4
-            + medium.count as f64 * 0.2
-            + low.count as f64 * 0.05)
+        let score = (low.count as f64)
+            .mul_add(
+                0.05,
+                (high.count as f64).mul_add(0.4, medium.count as f64 * 0.2),
+            )
             .clamp(0.0, 1.0);
 
         Ok(score)
@@ -876,13 +947,11 @@ impl FraudDetector {
     ///
     /// Returns `FraudError` on database errors.
     pub async fn get_signal(&self, signal_id: Uuid) -> Result<FraudSignalRow, FraudError> {
-        sqlx::query_as::<_, FraudSignalRow>(&format!(
-            "{SIGNAL_SELECT} WHERE id = $1"
-        ))
-        .bind(signal_id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| FraudError::SignalNotFound(signal_id.to_string()))
+        sqlx::query_as::<_, FraudSignalRow>(&format!("{SIGNAL_SELECT} WHERE id = $1"))
+            .bind(signal_id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| FraudError::SignalNotFound(signal_id.to_string()))
     }
 
     // -----------------------------------------------------------------------
@@ -892,14 +961,11 @@ impl FraudDetector {
     /// Score a device fingerprint using heuristic analysis from the behavioral
     /// module.  Returns a risk score in 0.0..=1.0.
     ///
-    /// The `fingerprint_json` is parsed from the device_fingerprint field
+    /// The `fingerprint_json` is parsed from the `device_fingerprint` field
     /// (which may be a JSON blob or an opaque hash).  If parsing fails, a
     /// default mid-range score is returned to avoid blocking legitimate users.
     #[must_use]
-    pub fn score_device_fingerprint(
-        device_fingerprint: &str,
-        user_agent: &str,
-    ) -> f64 {
+    pub fn score_device_fingerprint(device_fingerprint: &str, user_agent: &str) -> f64 {
         let attrs = parse_fingerprint_attributes(device_fingerprint, user_agent);
         behavioral::score_fingerprint(&attrs)
     }
@@ -993,11 +1059,10 @@ impl FraudDetector {
             .fetch_all(&self.pool)
             .await?;
 
-            let count: CountRow = sqlx::query_as(
-                "SELECT COUNT(*)::bigint AS count FROM fraud_signals",
-            )
-            .fetch_one(&self.pool)
-            .await?;
+            let count: CountRow =
+                sqlx::query_as("SELECT COUNT(*)::bigint AS count FROM fraud_signals")
+                    .fetch_one(&self.pool)
+                    .await?;
 
             (rows, count.count)
         };
@@ -1020,11 +1085,16 @@ impl FraudDetector {
         let auto_actioned = action.is_some();
         let auto_action = action.map(ToString::to_string);
 
-        sqlx::query(
+        // Only review an alert that is not already in a terminal state. Without
+        // this guard a resolved verdict could be flipped indefinitely, and each
+        // re-review re-stamps auto_action (restrict/ban) — re-firing the
+        // downstream enforcement side effect on an already-decided alert.
+        // 'confirmed' (investigating) is intermediate and may still advance.
+        let result = sqlx::query(
             "UPDATE fraud_signals \
              SET status = $1, reviewed_at = now(), auto_actioned = $2, \
                  auto_action = $3, updated_at = now() \
-             WHERE id = $4",
+             WHERE id = $4 AND status NOT IN ('actioned', 'dismissed')",
         )
         .bind(new_status)
         .bind(auto_actioned)
@@ -1032,6 +1102,21 @@ impl FraudDetector {
         .bind(signal_id)
         .execute(&self.pool)
         .await?;
+
+        if result.rows_affected() == 0 {
+            // Distinguish a missing alert (404) from an already-terminal one (400).
+            let exists: bool =
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM fraud_signals WHERE id = $1)")
+                    .bind(signal_id)
+                    .fetch_one(&self.pool)
+                    .await?;
+            if exists {
+                return Err(FraudError::InvalidArgument(
+                    "alert is already resolved".to_string(),
+                ));
+            }
+            return Err(FraudError::SignalNotFound(signal_id.to_string()));
+        }
 
         self.get_signal(signal_id).await
     }
@@ -1043,11 +1128,9 @@ impl FraudDetector {
     /// Returns `FraudError` on database errors.
     #[allow(clippy::cast_possible_truncation)]
     pub async fn admin_get_dashboard_stats(&self) -> Result<DashboardStats, FraudError> {
-        let total: CountRow = sqlx::query_as(
-            "SELECT COUNT(*)::bigint AS count FROM fraud_signals",
-        )
-        .fetch_one(&self.pool)
-        .await?;
+        let total: CountRow = sqlx::query_as("SELECT COUNT(*)::bigint AS count FROM fraud_signals")
+            .fetch_one(&self.pool)
+            .await?;
 
         let open: CountRow = sqlx::query_as(
             "SELECT COUNT(*)::bigint AS count FROM fraud_signals \
@@ -1172,39 +1255,39 @@ fn parse_fingerprint_attributes(
             .to_string();
         let plugin_count = val
             .get("pluginCount")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let font_count = val
             .get("fontCount")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let screen_w = val
             .get("screenWidth")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let screen_h = val
             .get("screenHeight")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let tz_offset = val
             .get("timezoneOffset")
-            .and_then(|v| v.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .unwrap_or(0) as i32;
         let dnt = val
             .get("doNotTrack")
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
         let cores = val
             .get("hardwareConcurrency")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let mem = val
             .get("deviceMemory")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
         let attr_count = val
             .get("attributeCount")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32;
 
         behavioral::FingerprintAttributes {
@@ -1242,6 +1325,29 @@ fn parse_fingerprint_attributes(
 // Disposable email domain detection
 // ---------------------------------------------------------------------------
 
+/// The domain half of an email address, for logs and spans.
+///
+/// Registration checks used to log the full address, which put a personal
+/// identifier into structured logs and — once the engines started exporting
+/// spans — would have shipped it to the OpenTelemetry collector too. The
+/// domain is the part every heuristic in this module actually keys on
+/// (disposable providers, domain-wide abuse patterns); the local part is pure
+/// PII with no diagnostic value, so it is dropped rather than hashed.
+///
+/// Anything that is not a plausible address collapses to `"invalid"` rather
+/// than echoing the input back into the log — a malformed "email" is exactly
+/// where an attacker would try to smuggle a payload.
+pub fn email_domain(email: &str) -> &str {
+    match email.split_once('@') {
+        Some((local, domain))
+            if !local.is_empty() && !domain.is_empty() && !domain.contains('@') =>
+        {
+            domain
+        }
+        _ => "invalid",
+    }
+}
+
 /// Simple heuristic for disposable/temporary email providers.
 fn is_disposable_email(email: &str) -> bool {
     const DISPOSABLE_DOMAINS: &[&str] = &[
@@ -1264,9 +1370,7 @@ fn is_disposable_email(email: &str) -> bool {
 
     if let Some(domain) = email.rsplit('@').next() {
         let domain_lower = domain.to_lowercase();
-        DISPOSABLE_DOMAINS
-            .iter()
-            .any(|d| domain_lower == *d)
+        DISPOSABLE_DOMAINS.iter().any(|d| domain_lower == *d)
     } else {
         false
     }
@@ -1281,7 +1385,7 @@ struct GeoCountryRow {
     geo_country: String,
 }
 
-/// RETURNING clause columns for fraud_signals INSERT.
+/// RETURNING clause columns for `fraud_signals` INSERT.
 const RETURNING_COLS: &str = "\
     id, user_id, signal_type, signal_subtype, severity, \
     confidence::float8 AS confidence, description, evidence_json, \
@@ -1317,6 +1421,42 @@ fn i32_from_i64(v: i64) -> i32 {
 mod tests {
     use super::*;
     use crate::models::{CheckResult, FraudDecision, RiskLevel, SignalType};
+
+    // ------------------------------------------------------------------
+    // email_domain (PII redaction)
+    // ------------------------------------------------------------------
+
+    /// Regression guard for a real defect: `check_registration` and its gRPC
+    /// wrapper both put the caller's full email address on a `tracing` field.
+    /// Once the engines started exporting spans that stopped being a local log
+    /// line and became PII shipped to the collector. The local part must never
+    /// survive.
+    #[test]
+    fn email_domain_never_leaks_the_local_part() {
+        for (email, expected) in [
+            ("alice@example.com", "example.com"),
+            ("Bob.Smith+tag@Mail.example.co.uk", "Mail.example.co.uk"),
+            ("x@mailinator.com", "mailinator.com"),
+        ] {
+            let domain = super::email_domain(email);
+            assert_eq!(domain, expected);
+            let local = email.split('@').next().expect("split always yields one");
+            assert!(
+                !domain.contains(local),
+                "local part {local:?} leaked into {domain:?}"
+            );
+        }
+    }
+
+    /// Malformed input must collapse to a constant, not be echoed back into
+    /// the log where it would be both useless and attacker-controlled.
+    #[test]
+    fn email_domain_rejects_malformed_addresses() {
+        for bad in ["", "no-at-sign", "trailing@", "@leading", "a@b@c"] {
+            let domain = super::email_domain(bad);
+            assert_eq!(domain, "invalid", "input {bad:?} should not be echoed");
+        }
+    }
 
     // ------------------------------------------------------------------
     // is_disposable_email
@@ -1430,13 +1570,22 @@ mod tests {
 
     #[test]
     fn fraud_decision_from_risk_levels() {
-        assert_eq!(FraudDecision::from_risk_level(RiskLevel::Low), FraudDecision::Allow);
+        assert_eq!(
+            FraudDecision::from_risk_level(RiskLevel::Low),
+            FraudDecision::Allow
+        );
         assert_eq!(
             FraudDecision::from_risk_level(RiskLevel::Medium),
             FraudDecision::AllowWithReview
         );
-        assert_eq!(FraudDecision::from_risk_level(RiskLevel::High), FraudDecision::Challenge);
-        assert_eq!(FraudDecision::from_risk_level(RiskLevel::Critical), FraudDecision::Block);
+        assert_eq!(
+            FraudDecision::from_risk_level(RiskLevel::High),
+            FraudDecision::Challenge
+        );
+        assert_eq!(
+            FraudDecision::from_risk_level(RiskLevel::Critical),
+            FraudDecision::Block
+        );
     }
 
     #[test]
@@ -1496,12 +1645,11 @@ mod tests {
     #[test]
     fn signal_type_proto_roundtrip() {
         for i in 1..=9 {
-            let st = match SignalType::from_proto_i32(i) {
-                Some(s) => s,
-                None => {
-                    tracing::warn!(value = i, "skipping unknown signal type proto value");
-                    continue;
-                }
+            let st = if let Some(s) = SignalType::from_proto_i32(i) {
+                s
+            } else {
+                tracing::warn!(value = i, "skipping unknown signal type proto value");
+                continue;
             };
             assert_eq!(st.to_proto_i32(), i);
         }
@@ -1619,7 +1767,7 @@ mod tests {
             fn risk_level_valid_range(score in 0.0..=1.0_f64) {
                 let level = RiskLevel::from_score(score);
                 let proto = level.to_proto_i32();
-                prop_assert!(proto >= 1 && proto <= 4);
+                prop_assert!((1..=4).contains(&proto));
             }
 
             #[test]
@@ -1627,7 +1775,7 @@ mod tests {
                 let level = RiskLevel::from_score(score);
                 let decision = FraudDecision::from_risk_level(level);
                 let proto = decision.to_proto_i32();
-                prop_assert!(proto >= 1 && proto <= 4);
+                prop_assert!((1..=4).contains(&proto));
             }
 
             #[test]

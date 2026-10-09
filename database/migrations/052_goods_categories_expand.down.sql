@@ -1,0 +1,33 @@
+-- Rollback for 052_goods_categories_expand.
+-- Deletes the added goods categories (children cascade via parent_id FK).
+DELETE FROM service_categories WHERE slug IN (
+  'goods-baby-kids',
+  'goods-property-rentals',
+  'goods-property-for-sale',
+  'goods-free-stuff',
+  'goods-apparel',
+  'goods-bags-luggage',
+  'goods-jewelry-watches',
+  'goods-health-beauty',
+  'goods-cell-phones',
+  'goods-computers',
+  'goods-cameras-photo',
+  'goods-tvs-video',
+  'goods-audio',
+  'goods-video-games',
+  'goods-entertainment',
+  'goods-musical-instruments',
+  'goods-major-appliances',
+  'goods-small-appliances',
+  'goods-home-improvement',
+  'goods-home-goods',
+  'goods-office-supplies',
+  'goods-pet-supplies',
+  'goods-toys-games',
+  'goods-arts-crafts',
+  'goods-antiques',
+  'goods-hobbies',
+  'goods-family',
+  'goods-auto-parts',
+  'goods-classifieds'
+);

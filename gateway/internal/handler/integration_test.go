@@ -12,7 +12,6 @@ import (
 
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -84,7 +83,7 @@ func TestIntegration_FullRegistrationFlow(t *testing.T) {
 			t.Parallel()
 
 			client := &mockUserClient{registerFn: tt.mockFn}
-			h := NewAuthHandler(client, false)
+			h := NewAuthHandler(client, false, "test-session-secret")
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -95,7 +94,7 @@ func TestIntegration_FullRegistrationFlow(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, rec.Code)
 
 			if tt.wantUserID != "" {
-				result := decodeJSON(t, rec)
+				result := decodeJSONResponse(t, rec)
 				assert.Equal(t, tt.wantUserID, result["user_id"])
 				// Should also contain token fields.
 				assert.NotEmpty(t, result["access_token"])
@@ -123,7 +122,7 @@ func TestIntegration_LoginThenVerifyEmail(t *testing.T) {
 		},
 	}
 
-	h := NewAuthHandler(loginClient, false)
+	h := NewAuthHandler(loginClient, false, "test-session-secret")
 
 	// Login request.
 	loginBody := `{"email":"verify@test.com","password":"Pass123!"}`
@@ -134,7 +133,7 @@ func TestIntegration_LoginThenVerifyEmail(t *testing.T) {
 	h.Login(loginRec, loginReq)
 	assert.Equal(t, http.StatusOK, loginRec.Code)
 
-	loginResult := decodeJSON(t, loginRec)
+	loginResult := decodeJSONResponse(t, loginRec)
 	assert.Equal(t, "user-login-verify", loginResult["user_id"])
 
 	// Step 2: Verify email.
@@ -198,7 +197,7 @@ func TestIntegration_AuthenticatedJobCreation(t *testing.T) {
 			t.Parallel()
 
 			client := &mockJobClient{createJobFn: tt.mockFn}
-			h := NewJobHandler(client)
+			h := NewJobHandler(client, nil, nil, nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewBufferString(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -212,7 +211,7 @@ func TestIntegration_AuthenticatedJobCreation(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, rec.Code)
 
 			if tt.wantStatus == http.StatusCreated {
-				result := decodeJSON(t, rec)
+				result := decodeJSONResponse(t, rec)
 				assert.Equal(t, "job-created-1", result["id"])
 			}
 		})
@@ -231,7 +230,7 @@ func TestIntegration_SearchJobsEndpoint(t *testing.T) {
 			}, nil
 		},
 	}
-	h := NewJobHandler(client)
+	h := NewJobHandler(client, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?q=fix", nil)
 	rec := httptest.NewRecorder()
@@ -239,7 +238,7 @@ func TestIntegration_SearchJobsEndpoint(t *testing.T) {
 	h.Search(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	result := decodeJSON(t, rec)
+	result := decodeJSONResponse(t, rec)
 	jobs, ok := result["jobs"].([]interface{})
 	require.True(t, ok)
 	assert.Len(t, jobs, 1)

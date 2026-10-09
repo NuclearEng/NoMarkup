@@ -19,6 +19,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { MonoPrice } from '@/components/ui/mono-price';
 import { useUpdateBid, useWithdrawBid } from '@/hooks/useBids';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { bidSchema, type BidFormValues } from '@/lib/validations';
@@ -141,19 +142,18 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
         <div className="flex items-baseline justify-between">
           <div>
             <p className="text-xs text-zinc-400">Your Bid</p>
-            <p
-              className="text-2xl font-bold text-zinc-100"
-              style={{ textShadow: '0 0 16px rgba(16,185,129,0.15)' }}
-            >
-              {formatCents(bid.amount_cents)}
-            </p>
+            <MonoPrice
+              cents={bid.amount_cents}
+              className="text-2xl font-bold text-zinc-100 [text-shadow:0_0_16px_hsl(var(--bid-winning)/0.15)]"
+            />
           </div>
           {bid.original_amount_cents !== bid.amount_cents ? (
             <div className="text-right">
               <p className="text-xs text-zinc-400">Original</p>
-              <p className="text-sm text-zinc-400 line-through">
-                {formatCents(bid.original_amount_cents)}
-              </p>
+              <MonoPrice
+                cents={bid.original_amount_cents}
+                className="text-sm text-zinc-400 line-through"
+              />
             </div>
           ) : null}
         </div>
@@ -190,7 +190,9 @@ export function ProviderBidCard({ bid, jobTitle }: ProviderBidCardProps) {
               <div className="mt-2 space-y-2 border-l-2 pl-4">
                 {bid.bid_history.map((update, index) => (
                   <div key={update.updated_at} className="flex items-center gap-2 text-sm">
-                    <span className="font-medium">{formatCents(update.amount_cents)}</span>
+                    <span className="font-mono font-medium tabular-nums tracking-tight">
+                      {formatCents(update.amount_cents)}
+                    </span>
                     <span className="text-muted-foreground">
                       {formatRelativeTime(new Date(update.updated_at))}
                     </span>

@@ -4,13 +4,12 @@
 //! composite scores and verifying tier determination logic without a database.
 
 use trust::models::{
-    all_tier_requirements, DimensionScores, FeedbackDetails, FraudDetails, RiskDetails,
-    TrustTier, VolumeDetails,
+    DimensionScores, FeedbackDetails, TrustTier, VolumeDetails, all_tier_requirements,
 };
 use trust::scoring::{
+    DecayConfig, FeedbackInput, FraudInput, ReviewDataPoint, RiskInput, VolumeInput,
     composite_score, compute_feedback_score, compute_fraud_score, compute_risk_score,
-    compute_volume_score, decay_weight, recency_weighted_average, DecayConfig, FeedbackInput,
-    FraudInput, ReviewDataPoint, RiskInput, VolumeInput,
+    compute_volume_score, decay_weight, recency_weighted_average,
 };
 
 // ---------------------------------------------------------------------------
@@ -22,7 +21,7 @@ fn end_to_end_new_user_gets_low_score() {
     // A brand new user with no activity should get a low overall score.
     let feedback = compute_feedback_score(&FeedbackInput {
         average_rating: 0.0,
-        weighted_average_rating: 0.0,
+        weighted_average_rating: None,
         total_reviews: 0,
         five_star_count: 0,
         one_star_count: 0,
@@ -34,7 +33,9 @@ fn end_to_end_new_user_gets_low_score() {
         total_completed: 0,
         recent_completed: 0,
         repeat_customers: 0,
-        completion_rate: 1.0,
+        // No contracts means no completion data; NaN simulates the 0/0
+        // case that the aggregation layer produces for a brand-new user.
+        completion_rate: f64::NAN,
         avg_response_time_hours: 0.0,
     });
 
@@ -67,7 +68,7 @@ fn end_to_end_excellent_provider_gets_high_score() {
     // jobs, no disputes, and no fraud signals.
     let feedback = compute_feedback_score(&FeedbackInput {
         average_rating: 4.9,
-        weighted_average_rating: 4.9,
+        weighted_average_rating: Some(4.9),
         total_reviews: 50,
         five_star_count: 48,
         one_star_count: 0,
@@ -111,7 +112,7 @@ fn end_to_end_risky_user_gets_low_score() {
     // Simulate a user with many disputes, cancellations, and fraud signals.
     let feedback = compute_feedback_score(&FeedbackInput {
         average_rating: 2.5,
-        weighted_average_rating: 2.5,
+        weighted_average_rating: Some(2.5),
         total_reviews: 10,
         five_star_count: 1,
         one_star_count: 4,
@@ -143,7 +144,10 @@ fn end_to_end_risky_user_gets_low_score() {
     let overall = composite_score(feedback, volume, risk, fraud);
 
     // Risky user should have a low overall score.
-    assert!(overall < 0.5, "Expected low score for risky user, got {overall}");
+    assert!(
+        overall < 0.5,
+        "Expected low score for risky user, got {overall}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +158,10 @@ fn end_to_end_risky_user_gets_low_score() {
 fn tier_determination_new_user() {
     // Score below 0.50 with no jobs -> New tier.
     let requirements = all_tier_requirements();
-    let rising_req = requirements.iter().find(|r| r.tier == TrustTier::Rising).unwrap();
+    let rising_req = requirements
+        .iter()
+        .find(|r| r.tier == TrustTier::Rising)
+        .unwrap();
 
     // Below Rising threshold.
     let overall = 0.30;
@@ -164,8 +171,14 @@ fn tier_determination_new_user() {
 #[test]
 fn tier_determination_rising_user() {
     let requirements = all_tier_requirements();
-    let rising_req = requirements.iter().find(|r| r.tier == TrustTier::Rising).unwrap();
-    let trusted_req = requirements.iter().find(|r| r.tier == TrustTier::Trusted).unwrap();
+    let rising_req = requirements
+        .iter()
+        .find(|r| r.tier == TrustTier::Rising)
+        .unwrap();
+    let trusted_req = requirements
+        .iter()
+        .find(|r| r.tier == TrustTier::Trusted)
+        .unwrap();
 
     // Meet Rising but not Trusted requirements.
     let overall = 0.60;
@@ -196,8 +209,14 @@ fn tier_determination_rising_user() {
 #[test]
 fn tier_determination_trusted_user() {
     let requirements = all_tier_requirements();
-    let trusted_req = requirements.iter().find(|r| r.tier == TrustTier::Trusted).unwrap();
-    let top_rated_req = requirements.iter().find(|r| r.tier == TrustTier::TopRated).unwrap();
+    let trusted_req = requirements
+        .iter()
+        .find(|r| r.tier == TrustTier::Trusted)
+        .unwrap();
+    let top_rated_req = requirements
+        .iter()
+        .find(|r| r.tier == TrustTier::TopRated)
+        .unwrap();
 
     let overall = 0.75;
     let volume = VolumeDetails {
@@ -205,7 +224,7 @@ fn tier_determination_trusted_user() {
         jobs_last_90_days: 5,
         repeat_customers: 4,
         on_time_rate: 0.95,
-        total_gmv_cents: 200000,
+        total_gmv_cents: 200_000,
     };
     let feedback = FeedbackDetails {
         average_rating: 4.3,
@@ -228,7 +247,10 @@ fn tier_determination_trusted_user() {
 #[test]
 fn tier_determination_top_rated_user() {
     let requirements = all_tier_requirements();
-    let top_rated_req = requirements.iter().find(|r| r.tier == TrustTier::TopRated).unwrap();
+    let top_rated_req = requirements
+        .iter()
+        .find(|r| r.tier == TrustTier::TopRated)
+        .unwrap();
 
     let overall = 0.92;
     let volume = VolumeDetails {
@@ -267,6 +289,8 @@ fn dimension_scores_overall_weighted_correctly() {
         fraud: 1.0,
     };
 
+    // Must use the same plain (non-fused) FP ops as the engine's weighting.
+    #[allow(clippy::suboptimal_flops)]
     let expected = 0.8 * 0.35 + 0.6 * 0.20 + 0.9 * 0.25 + 1.0 * 0.20;
     let overall = scores.overall();
     assert!((overall - expected).abs() < f64::EPSILON);
@@ -315,10 +339,10 @@ fn decay_weight_very_old_review_above_minimum() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn recency_weighted_average_no_reviews_returns_zero() {
+fn recency_weighted_average_no_reviews_returns_none() {
     let config = DecayConfig::default();
     let avg = recency_weighted_average(&[], &config);
-    assert!((avg).abs() < f64::EPSILON);
+    assert!(avg.is_none(), "empty review set should return None");
 }
 
 #[test]
@@ -328,7 +352,7 @@ fn recency_weighted_average_single_review() {
         rating: 4.5,
         age_days: 0.0,
     }];
-    let avg = recency_weighted_average(&reviews, &config);
+    let avg = recency_weighted_average(&reviews, &config).expect("some average");
     assert!((avg - 4.5).abs() < 0.01);
 }
 
@@ -348,7 +372,7 @@ fn recency_weighted_average_recent_reviews_weighted_more() {
         },
     ];
 
-    let avg = recency_weighted_average(&reviews, &config);
+    let avg = recency_weighted_average(&reviews, &config).expect("some average");
 
     // Should be closer to 5.0 than to 3.0 (unweighted average)
     // because the 5-star review is much more recent.

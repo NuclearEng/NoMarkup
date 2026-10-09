@@ -19,9 +19,15 @@ spec:
         app.kubernetes.io/part-of: nomarkup
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "50054"
+        prometheus.io/port: "51054"
         prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: payment
           image: ghcr.io/nomarkup/payment:latest
@@ -30,24 +36,61 @@ spec:
             - name: grpc
               containerPort: 50054
               protocol: TCP
+            - name: metrics
+              containerPort: 51054
+              protocol: TCP
           env:
             - name: PAYMENT_SERVICE_PORT
               value: "50054"
+            - name: METRICS_PORT
+              value: "51054"
+            - name: TRUST_ENGINE_ADDR
+              value: "trust:50057"
+            - name: UNDERWRITING_ENGINE_ADDR
+              value: "underwriting:50060"
+            # Required for marketplace notifications (escrow released, dispute
+            # filed/resolved, and — since off-session collection — payment
+            # captured / card declined / authentication required). Without it the
+            # payment service falls back to localhost:50059, which does not
+            # resolve in-cluster, and every notification is silently dropped.
+            - name: NOTIFICATION_SERVICE_ADDR
+              value: "notification:50059"
+            # FR-18.8: pause recurring on payment_intent.payment_failed when the
+            # payment row has recurring_instance_id. ContractService lives on job.
+            - name: JOB_SERVICE_ADDR
+              value: "job:50052"
+            - name: APP_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: nomarkup-config
+                  key: APP_VERSION
+                  optional: true
           envFrom:
             - configMapRef:
                 name: nomarkup-config
             - secretRef:
                 name: nomarkup-secrets
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # Observability HTTP on SERVICE_PORT+1000 (docs/operations/metrics.md).
+          # gRPC health is SERVING-at-boot only; /readyz fails when Postgres is down.
           livenessProbe:
-            grpc:
-              port: 50054
+            httpGet:
+              path: /healthz
+              port: metrics
             initialDelaySeconds: 10
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
-            grpc:
-              port: 50054
+            httpGet:
+              path: /readyz
+              port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5

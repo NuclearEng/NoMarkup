@@ -4,15 +4,30 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+// escrowReleaser lists and releases held services-escrow payments. Used by
+// the 7-day auto-approve path as a System actor. Nil is fail-closed: the
+// sweeper must not complete the contract while money cannot be released.
+type escrowReleaser interface {
+	ListEscrowPaymentIDs(ctx context.Context, customerID, contractID string) ([]string, error)
+	ReleaseEscrow(ctx context.Context, paymentID, reason string) error
+}
 
 // ContractService implements contract business logic.
 type ContractService struct {
 	contractRepo domain.ContractRepository
 	jobRepo      domain.JobRepository
+	// pendingTerms applies chat-accepted local terms when the contract is
+	// created after a pre-award Accept (FR-5.4 residual). Nil = skip.
+	pendingTerms PendingLocalTermsApplier
+	escrow       escrowReleaser
 }
 
 // NewContractService creates a new contract service.
@@ -21,6 +36,18 @@ func NewContractService(contractRepo domain.ContractRepository, jobRepo domain.J
 		contractRepo: contractRepo,
 		jobRepo:      jobRepo,
 	}
+}
+
+// SetPendingLocalTermsApplier wires FR-5.4 residual: apply pre-award accepted
+// chat local terms onto the new contract. Optional; nil keeps award path only.
+func (s *ContractService) SetPendingLocalTermsApplier(a PendingLocalTermsApplier) {
+	s.pendingTerms = a
+}
+
+// SetEscrowReleaser wires the payment mesh for 7-day auto-approve escrow
+// release. Required for the sweeper: a nil releaser is a hard error per row.
+func (s *ContractService) SetEscrowReleaser(r escrowReleaser) {
+	s.escrow = r
 }
 
 // CreateContractFromAward creates a contract from a bid award.
@@ -64,14 +91,61 @@ func (s *ContractService) CreateContractFromAward(
 		slog.Warn("failed to update job status to contract_pending", "job_id", jobID, "error", err)
 	}
 
+	// FR-5.4 residual: customer may have accepted proposed terms in chat
+	// before this contract existed. Bind them now. Fail soft — award must
+	// never fail because terms re-apply failed.
+	created = s.applyPendingLocalTermsSoft(ctx, created)
+
 	slog.Info("contract created from award",
 		"contract_id", created.ID,
 		"job_id", jobID,
 		"bid_id", bidID,
 		"amount_cents", amountCents,
+		"payment_timing", created.PaymentTiming,
 	)
 
 	return created, nil
+}
+
+// applyPendingLocalTermsSoft runs PendingLocalTermsApplier after award.
+// Never returns an error to the award path; logs and returns the original
+// contract when apply fails or is a no-op.
+func (s *ContractService) applyPendingLocalTermsSoft(ctx context.Context, created *domain.Contract) *domain.Contract {
+	if s.pendingTerms == nil || created == nil {
+		return created
+	}
+	boundID, err := s.pendingTerms.ApplyPendingLocalTerms(
+		ctx, created.JobID, created.CustomerID, created.ProviderID,
+	)
+	if err != nil {
+		slog.Warn("pending local terms apply failed after award (fail-soft)",
+			"contract_id", created.ID,
+			"job_id", created.JobID,
+			"customer_id", created.CustomerID,
+			"provider_id", created.ProviderID,
+			"error", err,
+		)
+		return created
+	}
+	if boundID == "" {
+		return created
+	}
+	// Re-load so response reflects payment_timing / terms_json bind.
+	updated, err := s.contractRepo.GetContract(ctx, created.ID)
+	if err != nil {
+		slog.Warn("pending local terms applied but re-fetch failed",
+			"contract_id", created.ID,
+			"bound_contract_id", boundID,
+			"error", err,
+		)
+		return created
+	}
+	slog.Info("pending local terms applied after award",
+		"contract_id", updated.ID,
+		"job_id", updated.JobID,
+		"payment_timing", updated.PaymentTiming,
+	)
+	return updated
 }
 
 // AcceptContract validates user is party and within deadline, then accepts.
@@ -106,10 +180,15 @@ func (s *ContractService) AcceptContract(ctx context.Context, contractID, userID
 		return nil, fmt.Errorf("accept contract: %w", err)
 	}
 
-	// If contract is now active, update job status.
+	// If contract is now active, update job status and seed FR-18 recurring config
+	// when the underlying job was posted as is_recurring.
 	if updated.Status == "active" {
 		if err := s.contractRepo.UpdateJobStatus(ctx, updated.JobID, "in_progress"); err != nil {
 			slog.Warn("failed to update job status to in_progress", "job_id", updated.JobID, "error", err)
+		}
+		if err := s.ensureRecurringConfigForActiveContract(ctx, updated); err != nil {
+			slog.Warn("failed to ensure recurring config on accept",
+				"contract_id", contractID, "job_id", updated.JobID, "error", err)
 		}
 	}
 
@@ -246,7 +325,15 @@ func (s *ContractService) MarkComplete(ctx context.Context, contractID, provider
 		return nil, fmt.Errorf("mark complete: %w", err)
 	}
 
+	// The "providerID" param is the authenticated caller's user ID. Only the
+	// provider may mark a contract complete. Distinguish the customer (who IS a
+	// party, but lacks this permission) from a true non-party: the customer gets
+	// a clear "only the provider can complete" message rather than the
+	// misleading "not a party to this contract".
 	if contract.ProviderID != providerID {
+		if contract.CustomerID == providerID {
+			return nil, fmt.Errorf("mark complete: %w", domain.ErrNotContractProvider)
+		}
 		return nil, fmt.Errorf("mark complete: %w", domain.ErrNotContractParty)
 	}
 
@@ -258,7 +345,7 @@ func (s *ContractService) MarkComplete(ctx context.Context, contractID, provider
 	if contract.PaymentTiming == "milestone" {
 		for _, m := range contract.Milestones {
 			if m.Status != "approved" {
-				return nil, fmt.Errorf("mark complete: all milestones must be approved")
+				return nil, fmt.Errorf("mark complete: %w", domain.ErrMilestonesNotApproved)
 			}
 		}
 	}
@@ -268,12 +355,15 @@ func (s *ContractService) MarkComplete(ctx context.Context, contractID, provider
 		return nil, fmt.Errorf("mark complete: %w", err)
 	}
 
-	// Update job status.
-	if err := s.contractRepo.UpdateJobStatus(ctx, updated.JobID, "completed"); err != nil {
-		slog.Warn("failed to update job status to completed", "job_id", updated.JobID, "error", err)
-	}
+	// Do NOT move the job to "completed" here. The provider has only marked
+	// work done; the contract is still active and awaiting customer approval
+	// (or 7-day auto-release). The job is finalised to "completed" in
+	// ApproveCompletion, when escrow would release. Marking it completed now
+	// would diverge the job from a still-active contract and let the customer
+	// see a finished job while the approval step is still pending.
 
-	slog.Info("contract marked complete", "contract_id", contractID, "provider_id", providerID)
+	slog.Info("contract marked complete by provider, awaiting customer approval",
+		"contract_id", contractID, "provider_id", providerID)
 	return updated, nil
 }
 
@@ -302,12 +392,17 @@ func (s *ContractService) ApproveCompletion(ctx context.Context, contractID, cus
 		slog.Warn("failed to update job status to completed", "job_id", updated.JobID, "error", err)
 	}
 
+	// Escrow is released by the gateway after this RPC succeeds, as the
+	// customer actor (ApproveCompletion is itself confirmation — no extra
+	// proof-of-work gate). The 7-day auto path releases here via System.
+
 	slog.Info("contract completion approved", "contract_id", contractID, "customer_id", customerID)
 	return updated, nil
 }
 
 // AutoReleaseCompletedContracts finds contracts where the provider marked complete
-// more than 7 days ago without customer action and auto-approves them.
+// more than 7 days ago without customer action and auto-approves them, releasing
+// held services escrow as a System actor (the provider must never self-release).
 func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) error {
 	contracts, err := s.contractRepo.GetContractsAwaitingApproval(ctx, 7*24*time.Hour)
 	if err != nil {
@@ -315,6 +410,43 @@ func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) err
 	}
 
 	for _, c := range contracts {
+		// Release escrow BEFORE finalising the contract. If payment is down
+		// we skip this row so the next sweep retries; completing first would
+		// drop the contract from GetContractsAwaitingApproval and leave money
+		// held. Unpaid (no escrow rows) and already-released/refunded are
+		// fail-soft and still complete.
+		if err := s.releaseContractEscrowAsSystem(ctx, c.ID, c.CustomerID); err != nil {
+			slog.Warn("auto release: escrow release failed; will retry next sweep",
+				"contract_id", c.ID,
+				"job_id", c.JobID,
+				"error", err,
+			)
+			continue
+		}
+
+		// Customer approve-completion may have already flipped status to
+		// completed while escrow release failed. Those rows still need the
+		// money sweep but must not re-run ApproveCompletion.
+		if c.Status == "completed" {
+			slog.Info("auto released escrow on already-completed contract",
+				"contract_id", c.ID,
+				"job_id", c.JobID,
+			)
+			continue
+		}
+
+		// Finalise the contract (active+completed_at → completed), the same
+		// terminal transition a customer approval performs. Without this the
+		// contract would stay 'active' forever and be re-selected on every
+		// sweep. Only after the contract is terminal do we finalise the job.
+		if _, err := s.contractRepo.ApproveCompletion(ctx, c.ID); err != nil {
+			slog.Warn("auto release: failed to complete contract",
+				"contract_id", c.ID,
+				"job_id", c.JobID,
+				"error", err,
+			)
+			continue
+		}
 		if err := s.contractRepo.UpdateJobCompleted(ctx, c.JobID); err != nil {
 			slog.Warn("auto release: failed to update job completed",
 				"contract_id", c.ID,
@@ -330,6 +462,183 @@ func (s *ContractService) AutoReleaseCompletedContracts(ctx context.Context) err
 	}
 
 	return nil
+}
+
+// releaseContractEscrowAsSystem lists escrow payments for the contract and
+// releases each with ReleaseActor.System. No payments and skippable status
+// errors (not escrow / not found) return nil so auto-approve can still
+// complete. A nil releaser or hard mesh/Stripe error is returned so the
+// sweep retries and the row stays awaiting.
+func (s *ContractService) releaseContractEscrowAsSystem(ctx context.Context, contractID, customerID string) error {
+	if s.escrow == nil {
+		return fmt.Errorf("escrow releaser unset")
+	}
+
+	ids, err := s.escrow.ListEscrowPaymentIDs(ctx, customerID, contractID)
+	if err != nil {
+		return fmt.Errorf("list escrow for contract %s: %w", contractID, err)
+	}
+
+	var firstHard error
+	for _, id := range ids {
+		if err := s.escrow.ReleaseEscrow(ctx, id, "auto_release"); err != nil {
+			if skippableEscrowReleaseErr(err) {
+				slog.Warn("auto release: payment not in escrow; continuing",
+					"contract_id", contractID,
+					"payment_id", id,
+					"error", err,
+				)
+				continue
+			}
+			slog.Warn("auto release: ReleaseEscrow failed",
+				"contract_id", contractID,
+				"payment_id", id,
+				"error", err,
+			)
+			if firstHard == nil {
+				firstHard = err
+			}
+		}
+	}
+	return firstHard
+}
+
+func skippableEscrowReleaseErr(err error) bool {
+	if err == nil {
+		return true
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	if st.Code() == codes.NotFound {
+		return true
+	}
+	// Only the already-released / wrong-state CAS. Provider-not-set-up and
+	// transfers-not-ready are also FailedPrecondition and must stay hard.
+	return st.Code() == codes.FailedPrecondition && strings.Contains(st.Message(), "invalid status")
+}
+
+// --- Change Order Methods ---
+
+// ProposeChangeOrder lets the provider propose a scope/price change on an active
+// contract. Only the provider may propose; the contract must be active. The
+// delta is validated server-side (integer cents): it must be non-zero, and the
+// resulting contract amount must stay strictly positive and within a sane bound
+// (no absurd values). The amount math is never trusted to the client.
+func (s *ContractService) ProposeChangeOrder(
+	ctx context.Context,
+	contractID, proposedBy, description string,
+	amountDeltaCents int64,
+) (*domain.ChangeOrder, error) {
+	contract, err := s.contractRepo.GetContract(ctx, contractID)
+	if err != nil {
+		return nil, fmt.Errorf("propose change order: %w", err)
+	}
+
+	// Only the provider may propose a change order. A customer is a party but
+	// lacks this permission; a true non-party gets the not-a-party error.
+	if contract.ProviderID != proposedBy {
+		if contract.CustomerID == proposedBy {
+			return nil, fmt.Errorf("propose change order: %w", domain.ErrChangeOrderNotProposer)
+		}
+		return nil, fmt.Errorf("propose change order: %w", domain.ErrNotContractParty)
+	}
+
+	if contract.Status != "active" {
+		return nil, fmt.Errorf("propose change order: %w", domain.ErrContractNotActive)
+	}
+
+	// Validate the delta server-side. Reject a no-op (zero) delta, a delta that
+	// would drive the contract to zero/negative, and absurd magnitudes. The
+	// upper bound (1 trillion cents = $10B) guards against overflow/typos.
+	const maxAmountCents int64 = 1_000_000_000_000
+	if amountDeltaCents == 0 {
+		return nil, fmt.Errorf("propose change order: %w", domain.ErrInvalidChangeOrderDelta)
+	}
+	if amountDeltaCents < -maxAmountCents || amountDeltaCents > maxAmountCents {
+		return nil, fmt.Errorf("propose change order: %w", domain.ErrInvalidChangeOrderDelta)
+	}
+	newAmount := contract.AmountCents + amountDeltaCents
+	if newAmount <= 0 || newAmount > maxAmountCents {
+		return nil, fmt.Errorf("propose change order: %w", domain.ErrInvalidChangeOrderDelta)
+	}
+
+	order := &domain.ChangeOrder{
+		ContractID:       contractID,
+		ProposedBy:       proposedBy,
+		Description:      description,
+		AmountDeltaCents: amountDeltaCents,
+		Status:           "proposed",
+	}
+
+	created, err := s.contractRepo.CreateChangeOrder(ctx, order)
+	if err != nil {
+		return nil, fmt.Errorf("propose change order: %w", err)
+	}
+
+	slog.Info("change order proposed",
+		"change_order_id", created.ID,
+		"contract_id", contractID,
+		"proposed_by", proposedBy,
+		"amount_delta_cents", amountDeltaCents,
+	)
+	return created, nil
+}
+
+// RespondToChangeOrder lets the customer accept or reject a proposed change
+// order. Only the customer may respond. On accept, the contract amount and the
+// single-milestone amount are adjusted by the delta atomically in the repo; the
+// status guard there makes a double-accept a clean ErrChangeOrderNotPending
+// (409). On reject, no money moves.
+func (s *ContractService) RespondToChangeOrder(
+	ctx context.Context,
+	changeOrderID, userID string,
+	accepted bool,
+) (*domain.ChangeOrder, error) {
+	order, err := s.contractRepo.GetChangeOrder(ctx, changeOrderID)
+	if err != nil {
+		return nil, fmt.Errorf("respond to change order: %w", err)
+	}
+
+	contract, err := s.contractRepo.GetContract(ctx, order.ContractID)
+	if err != nil {
+		return nil, fmt.Errorf("respond to change order: %w", err)
+	}
+
+	// Only the customer may respond. The provider proposed it; letting them
+	// also approve would let one party unilaterally change the contract amount.
+	if contract.CustomerID != userID {
+		if contract.ProviderID == userID {
+			return nil, fmt.Errorf("respond to change order: %w", domain.ErrChangeOrderNotResponder)
+		}
+		return nil, fmt.Errorf("respond to change order: %w", domain.ErrNotContractParty)
+	}
+
+	// Guard at the service layer too (the repo also guards atomically): a change
+	// order that is not still proposed cannot be responded to.
+	if order.Status != "proposed" {
+		return nil, fmt.Errorf("respond to change order: %w", domain.ErrChangeOrderNotPending)
+	}
+
+	var updated *domain.ChangeOrder
+	if accepted {
+		updated, err = s.contractRepo.AcceptChangeOrder(ctx, changeOrderID)
+	} else {
+		updated, err = s.contractRepo.RejectChangeOrder(ctx, changeOrderID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("respond to change order: %w", err)
+	}
+
+	slog.Info("change order responded",
+		"change_order_id", changeOrderID,
+		"contract_id", order.ContractID,
+		"user_id", userID,
+		"accepted", accepted,
+		"status", updated.Status,
+	)
+	return updated, nil
 }
 
 // --- Dispute Methods ---
@@ -355,6 +664,12 @@ func (s *ContractService) OpenDispute(
 	// Validate the contract is in a disputable status.
 	if contract.Status != "active" && contract.Status != "completed" {
 		return nil, fmt.Errorf("open dispute: %w", domain.ErrInvalidStatusTransition)
+	}
+	// A NoMarkup Guarantee claim covers delivered work, so it requires a
+	// COMPLETED contract. A regular mid-job dispute may be opened while active,
+	// but a guarantee claim on an active, never-completed contract is invalid.
+	if isGuaranteeClaim && contract.Status != "completed" {
+		return nil, fmt.Errorf("open dispute: %w", domain.ErrGuaranteeNotCompleted)
 	}
 
 	dispute := &domain.Dispute{
@@ -409,6 +724,44 @@ func (s *ContractService) ListDisputes(ctx context.Context, contractID *string, 
 	return disputes, pagination, nil
 }
 
+// normalizeResolutionType maps the resolution type a client may send to the
+// canonical value the `disputes.resolution_type` CHECK constraint accepts.
+//
+// The admin UI speaks in dispute-outcome terms (favor_customer / favor_provider
+// / split), while the database column stores money-movement terms
+// (full_refund / release_payment / partial_refund / ...). We translate the
+// former and pass the latter through unchanged, so both vocabularies are valid
+// inputs and an unknown value is rejected as a clean 4xx rather than blowing up
+// on a constraint violation (SQLSTATE 23514).
+func normalizeResolutionType(rt string) (string, error) {
+	switch rt {
+	// Admin-UI outcome vocabulary.
+	case "favor_customer":
+		return "full_refund", nil
+	case "favor_provider":
+		return "release_payment", nil
+	case "split":
+		return "partial_refund", nil
+	// Canonical DB vocabulary (pass-through).
+	case "release_payment", "partial_refund", "full_refund",
+		"contract_terminated", "dismissed", "guarantee_invoked":
+		return rt, nil
+	default:
+		return "", fmt.Errorf("%w: %q", domain.ErrInvalidResolutionType, rt)
+	}
+}
+
+// normalizeGuaranteeOutcome validates the optional guarantee outcome against the
+// `disputes.guarantee_outcome` CHECK constraint. Empty is allowed (stored NULL).
+func normalizeGuaranteeOutcome(go_ string) (string, error) {
+	switch go_ {
+	case "", "replacement_provider", "refund", "denied":
+		return go_, nil
+	default:
+		return "", fmt.Errorf("%w: %q", domain.ErrInvalidGuaranteeOutcome, go_)
+	}
+}
+
 // AdminResolveDispute resolves a dispute and logs an audit entry.
 func (s *ContractService) AdminResolveDispute(
 	ctx context.Context,
@@ -416,6 +769,17 @@ func (s *ContractService) AdminResolveDispute(
 	refundAmountCents int64,
 	guaranteeOutcome string,
 ) (*domain.Dispute, error) {
+	// Translate/validate inputs against the DB CHECK constraints before any DB
+	// write, so a bad enum is a clean 400 rather than a 500.
+	normalizedType, err := normalizeResolutionType(resolutionType)
+	if err != nil {
+		return nil, fmt.Errorf("admin resolve dispute: %w", err)
+	}
+	normalizedOutcome, err := normalizeGuaranteeOutcome(guaranteeOutcome)
+	if err != nil {
+		return nil, fmt.Errorf("admin resolve dispute: %w", err)
+	}
+
 	// Validate the dispute exists before resolving.
 	existingDispute, err := s.contractRepo.GetDispute(ctx, disputeID)
 	if err != nil {
@@ -426,16 +790,42 @@ func (s *ContractService) AdminResolveDispute(
 		return nil, fmt.Errorf("admin resolve dispute: %w", domain.ErrDisputeAlreadyResolved)
 	}
 
-	resolved, err := s.contractRepo.ResolveDispute(ctx, disputeID, resolutionType, notes, adminID, refundAmountCents, guaranteeOutcome)
+	// Money guard (CLAUDE.md §6 — all price calculations server-side, fail
+	// closed). The admin-supplied payout is untrusted client input. Enforce
+	// two invariants here, BEFORE the row is written, so neither a negative
+	// payout nor a payout exceeding the covered contract amount can ever be
+	// persisted — the guarantee can refund at most what was contracted, and
+	// never a negative amount. The gateway clamps too, but this is the
+	// authoritative check (the gateway is not the only possible caller).
+	if refundAmountCents < 0 {
+		return nil, fmt.Errorf("admin resolve dispute: %w: payout must be non-negative", domain.ErrInvalidGuaranteePayout)
+	}
+	if refundAmountCents > 0 {
+		// Load the covered contract to read its amount cap. The dispute always
+		// carries the contract id; a missing contract is a hard error rather
+		// than an uncapped payout.
+		coveredContract, cerr := s.contractRepo.GetContract(ctx, existingDispute.ContractID)
+		if cerr != nil {
+			return nil, fmt.Errorf("admin resolve dispute: load covered contract: %w", cerr)
+		}
+		if refundAmountCents > coveredContract.AmountCents {
+			return nil, fmt.Errorf(
+				"admin resolve dispute: %w: payout %d exceeds covered contract amount %d",
+				domain.ErrInvalidGuaranteePayout, refundAmountCents, coveredContract.AmountCents,
+			)
+		}
+	}
+
+	resolved, err := s.contractRepo.ResolveDispute(ctx, disputeID, normalizedType, notes, adminID, refundAmountCents, normalizedOutcome)
 	if err != nil {
 		return nil, fmt.Errorf("admin resolve dispute: %w", err)
 	}
 
 	// Log audit entry.
 	auditDetails := map[string]any{
-		"dispute_id":         disputeID,
-		"contract_id":        resolved.ContractID,
-		"resolution_type":    resolutionType,
+		"dispute_id":          disputeID,
+		"contract_id":         resolved.ContractID,
+		"resolution_type":     resolutionType,
 		"refund_amount_cents": refundAmountCents,
 	}
 	if guaranteeOutcome != "" {

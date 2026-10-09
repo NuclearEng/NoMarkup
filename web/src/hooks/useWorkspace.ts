@@ -1,9 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import { api, getApiErrorMessage } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
-import { API_BASE_URL } from '@/lib/constants';
 
 // ----------------------------------------------------------------
 // Types
@@ -62,10 +61,6 @@ export function useCheckIn(contractId: string) {
   return useMutation({
     mutationFn: (): Promise<CheckInResponse> => {
       return new Promise<CheckInResponse>((resolve, reject) => {
-        if (!navigator.geolocation) {
-          reject(new Error('Geolocation is not supported by your browser'));
-          return;
-        }
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             api
@@ -74,14 +69,17 @@ export function useCheckIn(contractId: string) {
                 lng: pos.coords.longitude,
               })
               .then(resolve)
-              .catch((err: unknown) => reject(err));
+              .catch((err: unknown) => {
+                reject(err instanceof Error ? err : new Error(String(err)));
+              });
           },
           (err) => {
+            // ASR-5.1.5 — GPS is required for check-in (no note-only API).
             reject(
               new Error(
                 err.code === err.PERMISSION_DENIED
-                  ? 'Location access was denied. Please enable location in your browser settings.'
-                  : 'Unable to determine your location. Please try again.',
+                  ? 'GPS is required for check-in so we can confirm you arrived at the job site (stored with the contract for dispute protection). Enable location access and try again.'
+                  : 'GPS is required for check-in. We could not read your location — check that location services are on, then try again.',
               ),
             );
           },
@@ -92,11 +90,10 @@ export function useCheckIn(contractId: string) {
     onSuccess: () => {
       toast.success('Checked in successfully');
       void queryClient.invalidateQueries({ queryKey: ['work-session', contractId] });
+      void queryClient.invalidateQueries({ queryKey: ['work-evidence', contractId] });
     },
     onError: (err: unknown) => {
-      const message =
-        err instanceof Error ? err.message : 'Failed to check in. Please try again.';
-      toast.error(message);
+      toast.error(getApiErrorMessage(err, 'Failed to check in. Please try again.'));
     },
   });
 }
@@ -110,10 +107,6 @@ export function useCheckOut(contractId: string) {
   return useMutation({
     mutationFn: (): Promise<CheckOutResponse> => {
       return new Promise<CheckOutResponse>((resolve, reject) => {
-        if (!navigator.geolocation) {
-          reject(new Error('Geolocation is not supported by your browser'));
-          return;
-        }
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             api
@@ -122,7 +115,9 @@ export function useCheckOut(contractId: string) {
                 lng: pos.coords.longitude,
               })
               .then(resolve)
-              .catch((err: unknown) => reject(err));
+              .catch((err: unknown) => {
+                reject(err instanceof Error ? err : new Error(String(err)));
+              });
           },
           (err) => {
             reject(
@@ -144,11 +139,10 @@ export function useCheckOut(contractId: string) {
         hours > 0 ? `${String(hours)}h ${String(mins)}m` : `${String(mins)} min`;
       toast.success(`Checked out — worked ${label}`);
       void queryClient.invalidateQueries({ queryKey: ['work-session', contractId] });
+      void queryClient.invalidateQueries({ queryKey: ['work-evidence', contractId] });
     },
     onError: (err: unknown) => {
-      const message =
-        err instanceof Error ? err.message : 'Failed to check out. Please try again.';
-      toast.error(message);
+      toast.error(getApiErrorMessage(err, 'Failed to check out. Please try again.'));
     },
   });
 }
@@ -158,6 +152,8 @@ export function useCheckOut(contractId: string) {
  * Uses fetch directly (not api.post) because multipart forms can't use JSON Content-Type.
  */
 export function useUploadCompletionPhoto(contractId: string) {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({
       file,
@@ -176,8 +172,9 @@ export function useUploadCompletionPhoto(contractId: string) {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
+      // Relative URL keeps this same-origin through the Next rewrite proxy.
       const response = await fetch(
-        `${API_BASE_URL}/api/v1/contracts/${contractId}/completion-photos`,
+        `/api/v1/contracts/${contractId}/completion-photos`,
         {
           method: 'POST',
           headers,
@@ -195,11 +192,10 @@ export function useUploadCompletionPhoto(contractId: string) {
     },
     onSuccess: (data) => {
       toast.success(`${data.phase === 'before' ? 'Before' : 'After'} photo uploaded`);
+      void queryClient.invalidateQueries({ queryKey: ['work-evidence', contractId] });
     },
     onError: (err: unknown) => {
-      const message =
-        err instanceof Error ? err.message : 'Failed to upload photo. Please try again.';
-      toast.error(message);
+      toast.error(getApiErrorMessage(err, 'Failed to upload photo. Please try again.'));
     },
   });
 }

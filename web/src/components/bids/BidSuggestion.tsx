@@ -11,23 +11,23 @@ interface BidSuggestionProps {
 export function BidSuggestion({ categorySlug, zipCode }: BidSuggestionProps) {
   const { data, isLoading } = usePricingByCategory(categorySlug, zipCode);
 
-  if (isLoading || !data?.prices?.length) return null;
+  if (isLoading || !data?.prices.length) return null;
 
   const pricing = data.prices[0];
   if (!pricing) return null;
 
   return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm dark:border-blue-800 dark:bg-blue-950/30">
-      <div className="mb-1 font-medium text-blue-900 dark:text-blue-100">
+    <div className="rounded-lg border border-bid-active/30 bg-bid-active/10 p-3 text-sm">
+      <div className="mb-1 font-medium text-bid-active">
         Market insight
       </div>
-      <div className="text-blue-700 dark:text-blue-300">
+      <div className="text-bid-active/90">
         Similar jobs in this area typically close at{' '}
         <span className="font-semibold tabular-nums">
           {formatCents(pricing.p25_price_cents)}&ndash;{formatCents(pricing.p75_price_cents)}
         </span>
       </div>
-      <div className="mt-1 text-xs text-blue-500 dark:text-blue-400">
+      <div className="mt-1 text-xs text-bid-active/80">
         Based on {String(pricing.completed_jobs)} completed job
         {pricing.completed_jobs !== 1 ? 's' : ''}
       </div>

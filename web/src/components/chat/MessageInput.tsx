@@ -1,8 +1,10 @@
 'use client';
 
-import { FileText, Send, X } from 'lucide-react';
+import { FileText, Paperclip, Send, X } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
+import { QuickReplyTemplates } from '@/components/chat/QuickReplyTemplates';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -13,10 +15,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useSendMessage } from '@/hooks/useChannels';
+import { useSendMessage, useSendProposedTerms } from '@/hooks/useChannels';
+import { useImageUpload } from '@/hooks/useImageUpload';
 import { useSendTypingIndicator } from '@/hooks/useWebSocket';
+import { getApiErrorMessage } from '@/lib/api';
 import { chatMessageSchema } from '@/lib/validations';
-import { CHANNEL_STATUS } from '@/types';
+import { CHANNEL_STATUS, UPLOAD_CONTEXT } from '@/types';
 
 const MAX_CHAR_COUNT = 2000;
 const MAX_ROWS = 4;
@@ -26,6 +30,26 @@ interface ProposedTerms {
   amount: string;
   milestones: string;
   description: string;
+}
+
+/**
+ * Format dollars form input as a display amount for POST …/proposed-terms.
+ * Amount is a human-readable USD string (server stores it on the proposal body);
+ * integer-cent conversion for contract binding is done server-side from metadata.
+ */
+function formatProposedAmountDisplay(raw: string): string {
+  const cleaned = raw.trim().replace(/[$,\s]/g, '');
+  const n = Number.parseFloat(cleaned);
+  if (!Number.isFinite(n) || n <= 0) {
+    // Fall back to user text with a $ prefix when parse fails but non-empty.
+    const t = raw.trim();
+    if (!t) return '';
+    return t.startsWith('$') ? t : `$${t}`;
+  }
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(n);
 }
 
 function ProposeTermsForm({
@@ -151,20 +175,35 @@ function ProposeTermsForm({
 export function MessageInput({
   channelId,
   channelStatus,
+  /**
+   * Provider-only Propose Terms control. Parent must set true only when JWT
+   * user is the channel provider; server still enforces provider-only on POST.
+   */
+  canProposeTerms = false,
 }: {
   channelId: string;
   channelStatus: string;
+  canProposeTerms?: boolean;
 }) {
   const [content, setContent] = useState('');
   const [showProposeTerms, setShowProposeTerms] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const sendMessage = useSendMessage();
+  const sendProposedTerms = useSendProposedTerms();
   const sendTypingIndicator = useSendTypingIndicator(channelId);
+  // FR-8.3 — PDF attach via chat_attachment context (imaging pass-through).
+  const pdfUpload = useImageUpload({
+    context: UPLOAD_CONTEXT.CHAT_ATTACHMENT,
+    acceptedTypes: ['application/pdf'],
+  });
 
   const isDisabled =
     channelStatus === CHANNEL_STATUS.READ_ONLY || channelStatus === CHANNEL_STATUS.CLOSED;
 
   const isValid = chatMessageSchema.safeParse(content).success;
+  const isPending =
+    sendMessage.isPending || sendProposedTerms.isPending || pdfUpload.status === 'uploading' || pdfUpload.status === 'getting_url' || pdfUpload.status === 'confirming';
 
   const resizeTextarea = useCallback(() => {
     const textarea = textareaRef.current;
@@ -186,7 +225,7 @@ export function MessageInput({
   }
 
   function handleSubmit() {
-    if (!isValid || sendMessage.isPending) return;
+    if (!isValid || isPending) return;
 
     void sendMessage
       .mutateAsync({ channelId, input: { content: content.trim() } })
@@ -208,24 +247,75 @@ export function MessageInput({
     }
   }
 
-  function handleProposeTerms(terms: ProposedTerms) {
-    const termsMessage = [
-      '[Proposed Terms]',
-      `Payment Type: ${terms.paymentType}`,
-      `Amount: $${terms.amount}`,
-      terms.milestones ? `Milestones:\n${terms.milestones}` : '',
-      `Description: ${terms.description}`,
-    ]
-      .filter(Boolean)
-      .join('\n');
+  function handleTemplateSelect(body: string) {
+    // Insert at the cursor when there is one; otherwise append. Keeps
+    // the user's in-progress text intact when they pick a quick reply.
+    const ta = textareaRef.current;
+    if (!ta) {
+      setContent((prev) => (prev ? `${prev} ${body}` : body));
+      return;
+    }
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const next = content.slice(0, start) + body + content.slice(end);
+    if (next.length <= MAX_CHAR_COUNT) {
+      setContent(next);
+      requestAnimationFrame(() => {
+        ta.focus();
+        const caret = start + body.length;
+        ta.setSelectionRange(caret, caret);
+      });
+    }
+  }
 
-    void sendMessage
-      .mutateAsync({ channelId, input: { content: termsMessage } })
+  async function handlePdfSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || isPending || isDisabled) return;
+    const outcome = await pdfUpload.upload(file);
+    if (!outcome.ok) {
+      toast.error(outcome.error);
+      return;
+    }
+    try {
+      await sendMessage.mutateAsync({
+        channelId,
+        input: {
+          content: outcome.result.confirmedUrl,
+          message_type: 'file',
+        },
+      });
+      toast.success('PDF attached');
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to send PDF.'));
+    }
+  }
+
+  function handleProposeTerms(terms: ProposedTerms) {
+    // POST …/proposed-terms (not plain text) so message_type=proposed_terms and
+    // Accept can bind metadata onto the live contract (FR-5.4).
+    const amount = formatProposedAmountDisplay(terms.amount);
+    if (!amount) {
+      toast.error('Enter a valid amount.');
+      return;
+    }
+
+    void sendProposedTerms
+      .mutateAsync({
+        channelId,
+        input: {
+          payment_type: terms.paymentType,
+          amount,
+          milestones: terms.milestones,
+          description: terms.description,
+        },
+      })
       .then(() => {
         setShowProposeTerms(false);
+        toast.success('Proposed terms sent. Waiting for customer Accept or Reject.');
       })
-      .catch(() => {
-        // Error handled by TanStack Query
+      .catch((err) => {
+        toast.error(getApiErrorMessage(err, 'Failed to send proposed terms.'));
       });
   }
 
@@ -241,25 +331,49 @@ export function MessageInput({
 
   return (
     <div className="border-t p-3">
-      {showProposeTerms ? (
+      {showProposeTerms && canProposeTerms ? (
         <ProposeTermsForm
           onSubmit={handleProposeTerms}
           onCancel={() => { setShowProposeTerms(false); }}
-          isPending={sendMessage.isPending}
+          isPending={sendProposedTerms.isPending}
         />
       ) : (
         <>
+          <QuickReplyTemplates onSelect={handleTemplateSelect} className="-mx-3 -mt-3 mb-2" />
           <div className="flex items-end gap-2">
+            {canProposeTerms ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 shrink-0"
+                onClick={() => { setShowProposeTerms(true); }}
+                aria-label="Propose terms"
+                title="Propose Terms"
+              >
+                <FileText className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            ) : null}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf"
+              className="sr-only"
+              onChange={(e) => { void handlePdfSelected(e); }}
+              aria-hidden="true"
+              tabIndex={-1}
+            />
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className="h-11 w-11 shrink-0"
-              onClick={() => { setShowProposeTerms(true); }}
-              aria-label="Propose terms"
-              title="Propose Terms"
+              disabled={isPending || isDisabled}
+              onClick={() => { fileInputRef.current?.click(); }}
+              aria-label="Attach PDF"
+              title="Attach PDF (max 10 MB)"
             >
-              <FileText className="h-4 w-4" aria-hidden="true" />
+              <Paperclip className="h-4 w-4" aria-hidden="true" />
             </Button>
             <div className="relative flex-1">
               <textarea
@@ -269,7 +383,7 @@ export function MessageInput({
                 onKeyDown={handleKeyDown}
                 placeholder="Type a message..."
                 rows={1}
-                disabled={sendMessage.isPending}
+                disabled={isPending}
                 className="flex min-h-[44px] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Message input"
               />
@@ -278,7 +392,7 @@ export function MessageInput({
               type="button"
               size="icon"
               className="h-11 w-11 shrink-0"
-              disabled={!isValid || sendMessage.isPending}
+              disabled={!isValid || isPending}
               onClick={handleSubmit}
               aria-label="Send message"
             >
@@ -287,7 +401,7 @@ export function MessageInput({
           </div>
           <div className="mt-1 flex items-center justify-between">
             <p className="text-[10px] text-muted-foreground">
-              Press Enter to send, Shift+Enter for a new line
+              Enter to send · PDF attach up to 10 MB
             </p>
             <p
               className={`text-[10px] ${content.length > MAX_CHAR_COUNT - 100 ? 'text-amber-600' : 'text-muted-foreground'}`}

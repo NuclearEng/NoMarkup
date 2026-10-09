@@ -19,11 +19,11 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - "nomarkup.com"
-        - "www.nomarkup.com"
+        - "no-markup.com"
+        - "www.no-markup.com"
       secretName: nomarkup-tls
   rules:
-    - host: "nomarkup.com"
+    - host: "no-markup.com"
       http:
         paths:
           - path: /api/
@@ -66,10 +66,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - "nomarkup.com"
+        - "no-markup.com"
       secretName: nomarkup-tls
   rules:
-    - host: "nomarkup.com"
+    - host: "no-markup.com"
       http:
         paths:
           - path: /ws/

@@ -1,8 +1,11 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CreditCard, Download } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
+import { PaymentConfirmation } from '@/components/payments/PaymentConfirmation';
 import { SubscriptionTierCard } from '@/components/payments/SubscriptionTierCard';
 import { SubscriptionTierComparison } from '@/components/payments/SubscriptionTierComparison';
 import { Badge } from '@/components/ui/badge';
@@ -13,16 +16,35 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   useCancelSubscription,
+  changeTierConfirmationSecret,
+  subscriptionConfirmationSecret,
   useChangeTier,
+  useCreateSubscription,
   useInvoices,
   useSubscription,
   useTiers,
   useUsage,
 } from '@/hooks/useSubscription';
+import { SUBSCRIPTION_RENEWAL_DISCLOSURE } from '@/lib/constants';
+import { PAYMENT_OUTCOME } from '@/lib/payment-outcome';
 import { cn } from '@/lib/utils';
-import { formatCents } from '@/lib/utils';
+import { formatCents, humanizeStatus, subscriptionTierLabel } from '@/lib/utils';
 import { BILLING_INTERVAL, SUBSCRIPTION_STATUS } from '@/types';
 import type { BillingInterval } from '@/types';
+
+function checkoutPrompt(
+  secret: string,
+  label: string,
+  cents: number | undefined,
+  interval: BillingInterval,
+): { secret: string; label: string; priceLabel: string; intervalLabel: string } {
+  return {
+    secret,
+    label,
+    priceLabel: typeof cents === 'number' ? formatCents(cents) : '',
+    intervalLabel: interval === BILLING_INTERVAL.ANNUAL ? 'per year' : 'per month',
+  };
+}
 
 function getStatusBadgeVariant(
   status: string,
@@ -53,6 +75,8 @@ function getStatusLabel(status: string): string {
       return 'Expired';
     case SUBSCRIPTION_STATUS.TRIALING:
       return 'Trial';
+    case SUBSCRIPTION_STATUS.INCOMPLETE:
+      return 'Payment required';
     default:
       return status;
   }
@@ -89,29 +113,89 @@ function UsageBar({ label, current, max }: UsageBarProps) {
 }
 
 export default function SubscriptionPage() {
+  const queryClient = useQueryClient();
   const { data: subscriptionData, isLoading: subLoading, isError: subError } = useSubscription();
   const { data: tiersData, isLoading: tiersLoading } = useTiers();
   const { data: usageData } = useUsage();
   const { data: invoicesData } = useInvoices();
   const changeTier = useChangeTier();
+  const createSubscription = useCreateSubscription();
   const cancelSubscription = useCancelSubscription();
 
   const [billingInterval, setBillingInterval] = useState<BillingInterval>(BILLING_INTERVAL.MONTHLY);
   const [cancelReason, setCancelReason] = useState('');
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [checkout, setCheckout] = useState<{
+    secret: string;
+    label: string;
+    priceLabel: string;
+    intervalLabel: string;
+  } | null>(null);
 
   const subscription = subscriptionData?.subscription;
   const tiers = tiersData?.tiers ?? [];
   const usage = usageData;
+
+  // Read proration off the mutation result here, where `data` is still typed
+  // `... | undefined`. Inside the `isSuccess` branch below TanStack narrows
+  // `data` to non-null, but in practice the success flag can flip a render
+  // before `data` is populated, so we keep this nullable and default to 0.
+  const prorationCents = changeTier.data?.proration_amount_cents ?? 0;
   const invoices = invoicesData?.invoices ?? [];
 
   function handleSelectTier(tierId: string) {
-    if (!subscription) return;
-    void changeTier.mutateAsync({
-      new_tier_id: tierId,
-      billing_interval: billingInterval,
-    });
+    if (!subscription) {
+      void createSubscription
+        .mutateAsync({
+          tier_id: tierId,
+          billing_interval: billingInterval,
+          payment_method_id: '',
+        })
+        .then((created) => {
+          const createdSecret = subscriptionConfirmationSecret(created);
+          if (createdSecret.length === 0) {
+            setCheckout(null);
+            return;
+          }
+          const tier = tiers.find((row) => row.id === tierId);
+          const cents =
+            billingInterval === BILLING_INTERVAL.ANNUAL
+              ? tier?.annual_price_cents
+              : tier?.monthly_price_cents;
+          setCheckout(
+            checkoutPrompt(
+              createdSecret,
+              typeof cents === 'number' ? `Pay ${formatCents(cents)}` : 'Pay now',
+              cents,
+              billingInterval,
+            ),
+          );
+        })
+        .catch(() => {
+          setCheckout(null);
+        });
+      return;
+    }
+    void changeTier
+      .mutateAsync({
+        new_tier_id: tierId,
+        billing_interval: billingInterval,
+      })
+      .then((result) => {
+        const secret = changeTierConfirmationSecret(result);
+        if (result.tier_applied === false && secret) {
+          const tier = tiers.find((row) => row.id === tierId);
+          const cents =
+            billingInterval === BILLING_INTERVAL.ANNUAL
+              ? tier?.annual_price_cents
+              : tier?.monthly_price_cents;
+          setCheckout(checkoutPrompt(secret, 'Confirm plan change', cents, billingInterval));
+        }
+      })
+      .catch(() => {
+        setCheckout(null);
+      });
   }
 
   function handleCancel() {
@@ -187,7 +271,7 @@ export default function SubscriptionPage() {
           <CardContent className="space-y-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-xl font-bold">{subscription.tier.name}</p>
+                <p className="text-xl font-bold">{subscriptionTierLabel(subscription.tier)}</p>
                 <p className="text-sm text-zinc-300">
                   {formatCents(subscription.current_price_cents)}/
                   {subscription.billing_interval === BILLING_INTERVAL.ANNUAL ? 'year' : 'month'}
@@ -271,9 +355,46 @@ export default function SubscriptionPage() {
             <div className="flex items-center justify-between text-sm">
               <span className="text-zinc-300">Current platform fee</span>
               <span className="font-semibold">
-                {String(usage.current_fee_percentage)}%
+                {(usage.current_fee_percentage * 100).toFixed(0)}%
               </span>
             </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {checkout ? (
+        <Card className="glass glass-highlight border border-[var(--brand-gold)]/10">
+          <CardHeader>
+            <CardTitle className="gold-text text-lg">Confirm payment</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4 text-sm text-zinc-300">
+              {checkout.priceLabel.length > 0 ? (
+                <>
+                  {checkout.priceLabel} {checkout.intervalLabel}.{' '}
+                </>
+              ) : null}
+              This plan starts after the charge succeeds. Closing this form does not activate it.{' '}
+              {SUBSCRIPTION_RENEWAL_DISCLOSURE}
+            </p>
+            <PaymentConfirmation
+              clientSecret={checkout.secret}
+              submitLabel={checkout.label}
+              returnPath="/settings/subscription"
+              onOutcome={(outcome) => {
+                if (
+                  outcome.kind === PAYMENT_OUTCOME.SUCCEEDED ||
+                  outcome.kind === PAYMENT_OUTCOME.PROCESSING
+                ) {
+                  toast.success('Payment submitted. Your plan starts when the charge clears.');
+                  setCheckout(null);
+                  void queryClient.invalidateQueries({ queryKey: ['subscription'] });
+                }
+              }}
+              onCancel={() => {
+                setCheckout(null);
+              }}
+            />
           </CardContent>
         </Card>
       ) : null}
@@ -282,7 +403,10 @@ export default function SubscriptionPage() {
       {tiers.length > 0 ? (
         <div className="space-y-4">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-xl font-bold">Plans</h2>
+            <div>
+              <h2 className="text-xl font-bold">Plans</h2>
+              <p className="mt-1 max-w-xl text-sm text-zinc-300">{SUBSCRIPTION_RENEWAL_DISCLOSURE}</p>
+            </div>
             <div className="flex items-center gap-3">
               {/* Billing interval toggle */}
               <Tabs
@@ -355,9 +479,30 @@ export default function SubscriptionPage() {
               Failed to change plan. Please try again.
             </div>
           ) : null}
-          {changeTier.isSuccess ? (
+          {changeTier.isSuccess && changeTier.data?.tier_applied === false && !checkout ? (
+            <div className="rounded-lg border border-[var(--brand-gold)]/20 bg-[var(--brand-gold)]/10 p-3 text-sm text-zinc-200">
+              Your current plan stays until the charge succeeds.
+            </div>
+          ) : null}
+          {changeTier.isSuccess && changeTier.data?.tier_applied !== false ? (
             <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg p-3 text-sm">
               Plan changed successfully.
+              {prorationCents > 0 ? (
+                <>
+                  {' '}
+                  A prorated charge of{' '}
+                  <span className="font-semibold">{formatCents(prorationCents)}</span> applies for
+                  the rest of this billing period.
+                </>
+              ) : null}
+              {prorationCents < 0 ? (
+                <>
+                  {' '}
+                  A prorated credit of{' '}
+                  <span className="font-semibold">{formatCents(Math.abs(prorationCents))}</span>{' '}
+                  will be applied to your next invoice.
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -404,7 +549,7 @@ export default function SubscriptionPage() {
                       variant={invoice.status === 'paid' ? 'default' : 'outline'}
                       className="text-xs"
                     >
-                      {invoice.status}
+                      {humanizeStatus(invoice.status)}
                     </Badge>
                   </div>
                   <div className="w-10">

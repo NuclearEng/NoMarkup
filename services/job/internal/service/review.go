@@ -4,9 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
+	"time"
 
 	"github.com/nomarkup/nomarkup/services/job/internal/domain"
 )
+
+// MaxReviewPhotos is the product limit for review photos (matches
+// reviews_photo_urls_len CHECK / properties.photo_urls).
+const MaxReviewPhotos = 5
 
 // ReviewService implements review business logic.
 type ReviewService struct {
@@ -22,10 +28,29 @@ func NewReviewService(reviewRepo domain.ReviewRepository, contractRepo domain.Co
 	}
 }
 
+// CreateReviewInput holds optional category ratings for CreateReview (FR-6.2).
+// Customer→provider uses Quality/Communication/Timeliness/Value.
+// Provider→customer uses PaymentPromptness/ScopeAccuracy/Access.
+// All category ratings are optional; when present they must be 1–5.
+type CreateReviewInput struct {
+	ContractID              string
+	ReviewerID              string
+	OverallRating           int
+	QualityRating           *int
+	CommunicationRating     *int
+	TimelinessRating        *int
+	ValueRating             *int
+	PaymentPromptnessRating *int
+	ScopeAccuracyRating     *int
+	AccessRating            *int
+	Comment                 string
+	PhotoURLs               []string
+}
+
 // CreateReview creates a review after validating eligibility and input.
-func (s *ReviewService) CreateReview(ctx context.Context, contractID, reviewerID string, overallRating int, qualityRating, communicationRating, timelinessRating, valueRating *int, comment string, photoURLs []string) (*domain.Review, error) {
+func (s *ReviewService) CreateReview(ctx context.Context, in CreateReviewInput) (*domain.Review, error) {
 	// Check eligibility.
-	elig, err := s.reviewRepo.CheckReviewEligibility(ctx, contractID, reviewerID)
+	elig, err := s.reviewRepo.CheckReviewEligibility(ctx, in.ContractID, in.ReviewerID)
 	if err != nil {
 		return nil, fmt.Errorf("create review: %w", err)
 	}
@@ -33,55 +58,78 @@ func (s *ReviewService) CreateReview(ctx context.Context, contractID, reviewerID
 		return nil, fmt.Errorf("create review: %w", domain.ErrAlreadyReviewed)
 	}
 	if !elig.Eligible {
+		// Distinguish closed window so clients show an actionable message.
+		if !elig.WindowClosesAt.IsZero() && time.Now().After(elig.WindowClosesAt) {
+			return nil, fmt.Errorf("create review: %w", domain.ErrReviewWindowClosed)
+		}
 		return nil, fmt.Errorf("create review: %w", domain.ErrNotEligible)
 	}
 
 	// Validate overall rating.
-	if overallRating < 1 || overallRating > 5 {
+	if in.OverallRating < 1 || in.OverallRating > 5 {
 		return nil, fmt.Errorf("create review: overall rating must be between 1 and 5")
 	}
 
-	// Validate optional ratings.
-	for _, r := range []*int{qualityRating, communicationRating, timelinessRating, valueRating} {
+	// Validate optional category ratings (1–5 when present).
+	for _, r := range []*int{
+		in.QualityRating, in.CommunicationRating, in.TimelinessRating, in.ValueRating,
+		in.PaymentPromptnessRating, in.ScopeAccuracyRating, in.AccessRating,
+	} {
 		if r != nil && (*r < 1 || *r > 5) {
 			return nil, fmt.Errorf("create review: all ratings must be between 1 and 5")
 		}
 	}
 
 	// Validate comment length.
-	if len(comment) < 50 {
+	if len(in.Comment) < 50 {
 		return nil, fmt.Errorf("create review: comment must be at least 50 characters")
 	}
 
 	// Determine direction and reviewee.
-	contract, err := s.contractRepo.GetContract(ctx, contractID)
+	contract, err := s.contractRepo.GetContract(ctx, in.ContractID)
 	if err != nil {
 		return nil, fmt.Errorf("create review: %w", err)
 	}
 
-	var direction, revieweeID string
-	if reviewerID == contract.CustomerID {
+	// Persisted column is reviewer_role: "customer" or "provider".
+	var role, direction, revieweeID string
+	if in.ReviewerID == contract.CustomerID {
+		role = "customer"
 		direction = "customer_to_provider"
 		revieweeID = contract.ProviderID
-	} else if reviewerID == contract.ProviderID {
+	} else if in.ReviewerID == contract.ProviderID {
+		role = "provider"
 		direction = "provider_to_customer"
 		revieweeID = contract.CustomerID
 	} else {
 		return nil, fmt.Errorf("create review: %w", domain.ErrNotEligible)
 	}
 
+	photoURLs, err := normalizeReviewPhotoURLs(in.PhotoURLs)
+	if err != nil {
+		return nil, fmt.Errorf("create review: %w", err)
+	}
+
+	// Persist persona-appropriate category ratings only. Cross-direction dims
+	// are ignored so a mis-wired client cannot pollute the wrong columns.
 	review := &domain.Review{
-		ContractID:          contractID,
-		ReviewerID:          reviewerID,
-		RevieweeID:          revieweeID,
-		Direction:           direction,
-		OverallRating:       overallRating,
-		QualityRating:       qualityRating,
-		CommunicationRating: communicationRating,
-		TimelinessRating:    timelinessRating,
-		ValueRating:         valueRating,
-		Comment:             comment,
-		PhotoURLs:           photoURLs,
+		ContractID:    in.ContractID,
+		ReviewerID:    in.ReviewerID,
+		RevieweeID:    revieweeID,
+		ReviewerRole:  role,
+		OverallRating: in.OverallRating,
+		ReviewText:    in.Comment,
+		PhotoURLs:     photoURLs,
+	}
+	if role == "customer" {
+		review.QualityRating = in.QualityRating
+		review.CommunicationRating = in.CommunicationRating
+		review.TimelinessRating = in.TimelinessRating
+		review.ValueRating = in.ValueRating
+	} else {
+		review.PaymentPromptnessRating = in.PaymentPromptnessRating
+		review.ScopeAccuracyRating = in.ScopeAccuracyRating
+		review.AccessRating = in.AccessRating
 	}
 
 	created, err := s.reviewRepo.CreateReview(ctx, review)
@@ -90,8 +138,8 @@ func (s *ReviewService) CreateReview(ctx context.Context, contractID, reviewerID
 	}
 
 	// Check if both parties have reviewed and publish if so.
-	if err := s.reviewRepo.PublishPendingReviews(ctx, contractID); err != nil {
-		slog.Warn("failed to publish pending reviews", "contract_id", contractID, "error", err)
+	if err := s.reviewRepo.PublishPendingReviews(ctx, in.ContractID); err != nil {
+		slog.Warn("failed to publish pending reviews", "contract_id", in.ContractID, "error", err)
 	}
 
 	// Re-fetch to get potentially updated status.
@@ -102,12 +150,40 @@ func (s *ReviewService) CreateReview(ctx context.Context, contractID, reviewerID
 
 	slog.Info("review created",
 		"review_id", created.ID,
-		"contract_id", contractID,
-		"reviewer_id", reviewerID,
+		"contract_id", in.ContractID,
+		"reviewer_id", in.ReviewerID,
 		"direction", direction,
 	)
 
 	return created, nil
+}
+
+// normalizeReviewPhotoURLs trims, drops empties, dedupes, enforces max 5, and
+// rejects non-http(s) URLs. Empty input is valid (no photos).
+func normalizeReviewPhotoURLs(in []string) ([]string, error) {
+	if len(in) == 0 {
+		return []string{}, nil
+	}
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, u := range in {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+			return nil, fmt.Errorf("%w: photo_urls must be http(s) CDN URLs", domain.ErrInvalidReviewPhotos)
+		}
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		out = append(out, u)
+		if len(out) > MaxReviewPhotos {
+			return nil, fmt.Errorf("%w: at most %d review photos", domain.ErrInvalidReviewPhotos, MaxReviewPhotos)
+		}
+	}
+	return out, nil
 }
 
 // GetReview retrieves a review by ID.

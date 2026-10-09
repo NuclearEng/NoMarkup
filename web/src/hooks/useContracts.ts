@@ -1,13 +1,76 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import { api } from '@/lib/api';
+import {
+  canOfferDirections,
+  formatExactAddress,
+  formatLatLng,
+  isDirectionsReady,
+  type ExactAddress,
+} from '@/components/maps/DirectionsButton';
+import { ApiError, api } from '@/lib/api';
+import { isAcceptanceExpired } from '@/lib/utils';
 import type { Contract, ContractDetail, ContractsResponse, Dispute, Milestone } from '@/types';
+
+/**
+ * Hydration-safe check for whether a contract's acceptance window has closed
+ * (status still `pending_acceptance` AND `acceptance_deadline` in the past).
+ *
+ * Returns `false` until mounted so the SSR render and the first client render
+ * agree (no `Date.now()` in the initial render → no hydration mismatch — same
+ * mounted-guard pattern as `AcceptanceCountdown` / `useCountdown`). After mount
+ * it reflects real time and re-checks once per minute so a contract that
+ * crosses its deadline while the page is open flips to expired on its own.
+ */
+export function useAcceptanceExpired(
+  status: string,
+  acceptanceDeadline: string | null | undefined,
+): boolean {
+  const [nowMs, setNowMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    const interval = setInterval(() => {
+      setNowMs(Date.now());
+    }, 60000);
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+
+  if (nowMs === null) return false;
+  return isAcceptanceExpired(status, acceptanceDeadline, nowMs);
+}
 
 interface ContractsParams {
   status?: string;
   page?: number;
   page_size?: number;
+}
+
+// Gateway contract handlers return the contract object at the top level
+// (not wrapped in { contract }). This helper centralizes the unwrap so the
+// mutation hooks keep their { contract } contract-shaped return type.
+async function postContract(path: string): Promise<Contract> {
+  const raw = await api.post<Record<string, unknown>>(path);
+  return raw as unknown as Contract;
+}
+
+// Milestone mutations have the same flat-shape behavior.
+async function postMilestone(path: string, body?: unknown): Promise<Milestone> {
+  const raw = await api.post<Record<string, unknown>>(path, body);
+  return raw as unknown as Milestone;
+}
+
+function explainFailure(fallback: string): (err: unknown) => void {
+  return (err: unknown) => {
+    if (err instanceof ApiError) {
+      toast.error(err.userMessage(fallback));
+      return;
+    }
+    toast.error(fallback);
+  };
 }
 
 export function useContract(id: string) {
@@ -24,6 +87,41 @@ export function useContract(id: string) {
       };
     },
     enabled: !!id,
+  });
+}
+
+interface PartyJobPayload {
+  exact_address?: ExactAddress | null;
+  location_address?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
+}
+
+/**
+ * Authenticated GET /jobs/{id} so party-only exact_address is included.
+ * Falls back to location_address, then lat/lng. Soft-fails to null.
+ */
+export function resolvePartyDirectionsAddress(job: PartyJobPayload | null | undefined): string | null {
+  if (!job) return null;
+  if (isDirectionsReady(job.exact_address)) {
+    return formatExactAddress(job.exact_address);
+  }
+  const line = job.location_address?.trim() ?? '';
+  if (canOfferDirections(line)) return line;
+  return formatLatLng(job.location_lat, job.location_lng);
+}
+
+export function usePartyJobLocation(jobId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['jobs', jobId, 'party-location'],
+    queryFn: async () => {
+      const res = await api.get<{ job?: PartyJobPayload } & PartyJobPayload>(`/api/v1/jobs/${jobId}`);
+      const job = res.job ?? res;
+      return resolvePartyDirectionsAddress(job);
+    },
+    enabled: !!jobId && enabled,
+    staleTime: 60_000,
+    retry: false,
   });
 }
 
@@ -45,18 +143,13 @@ export function useAcceptContract() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api
-        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/accept`)
-        .then((res) => res.contract),
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/accept`),
     onSuccess: (_data, id) => {
       toast.success('Contract accepted');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', id] });
     },
-    onError: () => {
-      toast.error('Failed to accept contract');
-    },
+    onError: explainFailure('Failed to accept contract'),
   });
 }
 
@@ -64,16 +157,13 @@ export function useStartWork() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api.post<{ contract: Contract }>(`/api/v1/contracts/${id}/start`).then((res) => res.contract),
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/start`),
     onSuccess: (_data, id) => {
       toast.success('Work started');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', id] });
     },
-    onError: () => {
-      toast.error('Failed to start work');
-    },
+    onError: explainFailure('Failed to start work'),
   });
 }
 
@@ -81,18 +171,13 @@ export function useMarkComplete() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api
-        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/complete`)
-        .then((res) => res.contract),
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/complete`),
     onSuccess: (_data, id) => {
       toast.success('Work marked as complete');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', id] });
     },
-    onError: () => {
-      toast.error('Failed to mark work as complete');
-    },
+    onError: explainFailure('Failed to mark work as complete'),
   });
 }
 
@@ -100,18 +185,13 @@ export function useApproveCompletion() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api
-        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/approve-completion`)
-        .then((res) => res.contract),
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/approve-completion`),
     onSuccess: (_data, id) => {
-      toast.success('Completion approved — payment released');
+      toast.success('Completion approved. Release escrow separately if funds are still held.');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', id] });
     },
-    onError: () => {
-      toast.error('Failed to approve completion');
-    },
+    onError: explainFailure('Failed to approve completion'),
   });
 }
 
@@ -119,18 +199,13 @@ export function useCancelContract() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      api
-        .post<{ contract: Contract }>(`/api/v1/contracts/${id}/cancel`)
-        .then((res) => res.contract),
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/cancel`),
     onSuccess: (_data, id) => {
       toast.success('Contract cancelled');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', id] });
     },
-    onError: () => {
-      toast.error('Failed to cancel contract');
-    },
+    onError: explainFailure('Failed to cancel contract'),
   });
 }
 
@@ -139,17 +214,13 @@ export function useSubmitMilestone() {
 
   return useMutation({
     mutationFn: (variables: { milestoneId: string; contractId: string }) =>
-      api
-        .post<{ milestone: Milestone }>(`/api/v1/milestones/${variables.milestoneId}/submit`)
-        .then((res) => res.milestone),
+      postMilestone(`/api/v1/milestones/${variables.milestoneId}/submit`),
     onSuccess: (_data, variables) => {
       toast.success('Milestone submitted for review');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
     },
-    onError: () => {
-      toast.error('Failed to submit milestone');
-    },
+    onError: explainFailure('Failed to submit milestone'),
   });
 }
 
@@ -158,17 +229,13 @@ export function useApproveMilestone() {
 
   return useMutation({
     mutationFn: (variables: { milestoneId: string; contractId: string }) =>
-      api
-        .post<{ milestone: Milestone }>(`/api/v1/milestones/${variables.milestoneId}/approve`)
-        .then((res) => res.milestone),
+      postMilestone(`/api/v1/milestones/${variables.milestoneId}/approve`),
     onSuccess: (_data, variables) => {
       toast.success('Milestone approved');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
     },
-    onError: () => {
-      toast.error('Failed to approve milestone');
-    },
+    onError: explainFailure('Failed to approve milestone'),
   });
 }
 
@@ -177,19 +244,89 @@ export function useRequestRevision() {
 
   return useMutation({
     mutationFn: (variables: { milestoneId: string; contractId: string; revisionNotes: string }) =>
-      api
-        .post<{ milestone: Milestone }>(`/api/v1/milestones/${variables.milestoneId}/revision`, {
-          revision_notes: variables.revisionNotes,
-        })
-        .then((res) => res.milestone),
+      postMilestone(`/api/v1/milestones/${variables.milestoneId}/revision`, {
+        revision_notes: variables.revisionNotes,
+      }),
     onSuccess: (_data, variables) => {
       toast.success('Revision requested');
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
     },
-    onError: () => {
-      toast.error('Failed to request revision');
+    onError: explainFailure('Failed to request revision'),
+  });
+}
+
+export function useProposeChangeOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (variables: {
+      contractId: string;
+      description: string;
+      amount_delta_cents: number;
+    }) =>
+      api.post<Record<string, unknown>>(
+        `/api/v1/contracts/${variables.contractId}/change-orders`,
+        {
+          description: variables.description,
+          amount_delta_cents: variables.amount_delta_cents,
+        },
+      ),
+    onSuccess: (_data, variables) => {
+      toast.success('Change order proposed');
+      void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
     },
+    onError: explainFailure('Failed to propose change order'),
+  });
+}
+
+export function useRespondToChangeOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (variables: {
+      contractId: string;
+      changeOrderId: string;
+      accepted: boolean;
+    }) =>
+      api.put<Record<string, unknown>>(
+        `/api/v1/contracts/${variables.contractId}/change-orders/${variables.changeOrderId}`,
+        { accepted: variables.accepted },
+      ),
+    onSuccess: (_data, variables) => {
+      toast.success(variables.accepted ? 'Change order approved' : 'Change order rejected');
+      void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
+      void queryClient.invalidateQueries({ queryKey: ['contracts'] });
+    },
+    onError: explainFailure('Failed to respond to change order'),
+  });
+}
+
+export function useReportNoShow() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/report-noshow`),
+    onSuccess: (_data, id) => {
+      toast.success('Provider no-show reported');
+      void queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      void queryClient.invalidateQueries({ queryKey: ['contract', id] });
+    },
+    onError: explainFailure('Failed to report no-show'),
+  });
+}
+
+export function useReportAbandonment() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => postContract(`/api/v1/contracts/${id}/report-abandonment`),
+    onSuccess: (_data, id) => {
+      toast.success('Abandonment reported');
+      void queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      void queryClient.invalidateQueries({ queryKey: ['contract', id] });
+    },
+    onError: explainFailure('Failed to report abandonment'),
   });
 }
 
@@ -212,8 +349,6 @@ export function useOpenDispute() {
       toast.success('Claim submitted successfully');
       void queryClient.invalidateQueries({ queryKey: ['contract', variables.contractId] });
     },
-    onError: () => {
-      toast.error('Failed to submit claim');
-    },
+    onError: explainFailure('Failed to submit claim'),
   });
 }

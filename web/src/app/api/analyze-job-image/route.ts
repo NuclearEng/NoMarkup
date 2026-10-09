@@ -1,11 +1,33 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
-const requestSchema = z.object({
-  imageBase64: z.string().min(1),
-  mimeType: z.string().min(1),
-});
+import { gateAiRoute } from '@/lib/server/ai-route-gate';
+
+// Hard-coded model — the client MUST NOT influence model selection. This
+// prevents an attacker from forcing an expensive model (e.g. claude-opus) on
+// every call.
+const MODEL_ID = 'claude-haiku-4-5-20251001';
+
+// 5 MB of raw image bytes → base64-encoded is ~5 MB * 4/3.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_BASE64_LEN = Math.ceil((MAX_IMAGE_BYTES * 4) / 3);
+// Generous ceiling for the full JSON payload (base64 + small envelope).
+const MAX_BODY_BYTES = MAX_BASE64_LEN + 4 * 1024;
+
+const supportedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const;
+type SupportedMimeType = (typeof supportedMimeTypes)[number];
+const isSupportedMimeType = (mime: string): mime is SupportedMimeType =>
+  (supportedMimeTypes as readonly string[]).includes(mime);
+
+// `.strict()` rejects unknown fields — stops a client from smuggling in a
+// `model` override or other unapproved parameters.
+const requestSchema = z
+  .object({
+    imageBase64: z.string().min(1).max(MAX_BASE64_LEN, 'image too large'),
+    mimeType: z.string().min(1),
+  })
+  .strict();
 
 const claudeResponseSchema = z.object({
   category: z.string(),
@@ -15,10 +37,72 @@ const claudeResponseSchema = z.object({
   budget_max_cents: z.number().int(),
 });
 
-export async function POST(request: Request): Promise<NextResponse> {
+// isSameOrigin guards this expensive LLM endpoint against cross-site callers
+// (CSRF-style cost amplification). Browsers always attach an Origin header on
+// cross-site fetch POSTs, so a *present* Origin that doesn't match this app's
+// own host is rejected. We compare against the request's own host (derived
+// from the Host header or, failing that, the request URL). When neither an
+// Origin nor a Referer is present, we allow the request — non-browser callers
+// that already passed the Bearer/cookie auth check above land here, and a
+// malicious cross-site page can never suppress the Origin header.
+function isSameOrigin(request: NextRequest): boolean {
+  const expectedHost = request.headers.get('host') ?? request.nextUrl.host;
+
+  const sourceHeader = request.headers.get('origin') ?? request.headers.get('referer');
+  if (!sourceHeader) return true;
+
+  if (!expectedHost) return false;
+
+  try {
+    return new URL(sourceHeader).host === expectedHost;
+  } catch {
+    return false;
+  }
+}
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  // 1. Auth + per-user rate limit. The middleware only checks for the
+  // PRESENCE of a session indicator; this verifies the RS256 access JWT
+  // (signature, exp, iss, aud) and enforces a sliding-window budget keyed by
+  // the token's `sub` — this route spends real money per call.
+  const gate = gateAiRoute(request);
+  if (!gate.ok) {
+    return gate.response;
+  }
+
+  // 1b. Origin check — reject cross-site callers outright.
+  if (!isSameOrigin(request)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
+  // 2. Content-Type must be JSON.
+  const contentType = request.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('application/json')) {
+    return NextResponse.json(
+      { error: 'Content-Type must be application/json' },
+      { status: 415 },
+    );
+  }
+
+  // 3. Reject oversized bodies before parsing.
+  const contentLength = request.headers.get('content-length');
+  if (contentLength) {
+    const declared = Number.parseInt(contentLength, 10);
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: 'payload too large' }, { status: 413 });
+    }
+  }
+
+  // AI photo analysis is an enhancement, not a requirement. When the provider
+  // key is unset (common in dev), degrade gracefully with a clean 503 +
+  // `aiUnavailable` flag instead of a 500 — the client treats this as a soft,
+  // non-blocking notice so the user can still fill the job details manually.
   const apiKey = process.env['ANTHROPIC_API_KEY'];
   if (!apiKey) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 500 });
+    return NextResponse.json(
+      { aiUnavailable: true, error: 'AI photo analysis is not configured.' },
+      { status: 503 },
+    );
   }
 
   let body: unknown;
@@ -30,16 +114,17 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: 'imageBase64 and mimeType are required' }, { status: 400 });
+    const tooLarge = parsed.error.issues.some((i) => i.message === 'image too large');
+    if (tooLarge) {
+      return NextResponse.json({ error: 'payload too large' }, { status: 413 });
+    }
+    return NextResponse.json(
+      { error: 'imageBase64 and mimeType are required' },
+      { status: 400 },
+    );
   }
 
   const { imageBase64, mimeType } = parsed.data;
-
-  // Validate mime type is a supported image format
-  const supportedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const;
-  type SupportedMimeType = (typeof supportedMimeTypes)[number];
-  const isSupportedMimeType = (mime: string): mime is SupportedMimeType =>
-    (supportedMimeTypes as readonly string[]).includes(mime);
 
   if (!isSupportedMimeType(mimeType)) {
     return NextResponse.json(
@@ -53,7 +138,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   let messageContent: string;
   try {
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: MODEL_ID,
       max_tokens: 512,
       messages: [
         {
@@ -78,11 +163,20 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const block = response.content[0];
     if (!block || block.type !== 'text') {
-      return NextResponse.json({ error: 'Unexpected response format from AI' }, { status: 502 });
+      return NextResponse.json(
+        { aiUnavailable: true, error: 'AI photo analysis is temporarily unavailable.' },
+        { status: 503 },
+      );
     }
     messageContent = block.text;
   } catch {
-    return NextResponse.json({ error: 'Failed to analyze image' }, { status: 502 });
+    // LLM call failed (network, rate limit, auth, provider outage). This is a
+    // predictable condition for an optional enhancement — degrade to a clean
+    // 503 rather than a 500/502 so the job-posting flow keeps working.
+    return NextResponse.json(
+      { aiUnavailable: true, error: 'AI photo analysis is temporarily unavailable.' },
+      { status: 503 },
+    );
   }
 
   // Strip markdown code fences if present

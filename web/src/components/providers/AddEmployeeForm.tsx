@@ -9,7 +9,6 @@ import { useForm } from 'react-hook-form';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Form,
   FormControl,
@@ -63,7 +62,6 @@ export function AddEmployeeForm() {
       dateOfBirth: '',
       role: 'technician',
       ssnLastFour: '',
-      backgroundCheckConsent: false,
       licenseNumber: '',
       licenseState: '',
       licenseExpiry: '',
@@ -401,28 +399,9 @@ export function AddEmployeeForm() {
               ) : null}
             </div>
 
-            <FormField
-              control={form.control}
-              name="backgroundCheckConsent"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      className="mt-0.5 min-h-[20px] min-w-[20px]"
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel className="cursor-pointer">Background Check Consent</FormLabel>
-                    <FormDescription>
-                      I consent to a background check for this employee. A background check is
-                      required before they can be dispatched to customer locations.
-                    </FormDescription>
-                  </div>
-                </FormItem>
-              )}
-            />
+            <p className="text-sm text-muted-foreground">
+              This form does not run a background check, and dispatch does not wait on one.
+            </p>
           </CardContent>
         </Card>
 

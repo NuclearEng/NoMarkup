@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"time"
 
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	jobv1 "github.com/nomarkup/nomarkup/proto/job/v1"
@@ -19,12 +20,20 @@ import (
 // Server implements the JobService gRPC server.
 type Server struct {
 	jobv1.UnimplementedJobServiceServer
-	svc *service.JobService
+	svc       *service.JobService
+	analytics *service.AnalyticsService // optional; powers GetFairPrice
 }
 
 // NewServer creates a new gRPC server for the job service.
 func NewServer(svc *service.JobService) *Server {
 	return &Server{svc: svc}
+}
+
+// WithAnalytics wires the analytics service so the JobService can answer the
+// GetFairPrice RPC. Optional: if unset, GetFairPrice fails soft (has_data=false).
+func (s *Server) WithAnalytics(a *service.AnalyticsService) *Server {
+	s.analytics = a
+	return s
 }
 
 // Register registers the job service with a gRPC server.
@@ -130,7 +139,7 @@ func (s *Server) UpdateJob(ctx context.Context, req *jobv1.UpdateJobRequest) (*j
 		input.PhotoURLs = req.GetPhotoUrls()
 	}
 
-	job, err := s.svc.UpdateJob(ctx, req.GetJobId(), input)
+	job, err := s.svc.UpdateJob(ctx, req.GetJobId(), req.GetCustomerId(), input)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -142,6 +151,12 @@ func (s *Server) GetJob(ctx context.Context, req *jobv1.GetJobRequest) (*jobv1.G
 	job, err := s.svc.GetJobDetail(ctx, req.GetJobId(), req.GetRequestingUserId())
 	if err != nil {
 		return nil, mapDomainError(err)
+	}
+
+	// Draft jobs are visible only to their owner. For non-owner viewers (and
+	// unauthenticated callers) return NotFound to avoid confirming existence.
+	if job.Status == "draft" && req.GetRequestingUserId() != job.CustomerID {
+		return nil, status.Error(codes.NotFound, "job not found")
 	}
 
 	detail := &jobv1.JobDetail{
@@ -172,14 +187,14 @@ func (s *Server) GetJob(ctx context.Context, req *jobv1.GetJobRequest) (*jobv1.G
 }
 
 func (s *Server) DeleteDraft(ctx context.Context, req *jobv1.DeleteDraftRequest) (*jobv1.DeleteDraftResponse, error) {
-	if err := s.svc.DeleteDraft(ctx, req.GetJobId()); err != nil {
+	if err := s.svc.DeleteDraft(ctx, req.GetJobId(), req.GetCustomerId()); err != nil {
 		return nil, mapDomainError(err)
 	}
 	return &jobv1.DeleteDraftResponse{}, nil
 }
 
 func (s *Server) PublishJob(ctx context.Context, req *jobv1.PublishJobRequest) (*jobv1.PublishJobResponse, error) {
-	job, err := s.svc.PublishJob(ctx, req.GetJobId())
+	job, err := s.svc.PublishJob(ctx, req.GetJobId(), req.GetCustomerId())
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -200,6 +215,42 @@ func (s *Server) CancelJob(ctx context.Context, req *jobv1.CancelJobRequest) (*j
 		return nil, mapDomainError(err)
 	}
 	return &jobv1.CancelJobResponse{Job: domainJobToProto(job)}, nil
+}
+
+// RepostJob creates a fresh auction from a closed/expired/cancelled job (FR-3.10).
+func (s *Server) RepostJob(ctx context.Context, req *jobv1.RepostJobRequest) (*jobv1.RepostJobResponse, error) {
+	var updates *domain.UpdateJobInput
+	if req.Title != nil || req.Description != nil || req.StartingBidCents != nil ||
+		req.OfferAcceptedCents != nil || req.AuctionDurationHours != nil {
+		u := domain.UpdateJobInput{}
+		if req.Title != nil {
+			t := req.GetTitle()
+			u.Title = &t
+		}
+		if req.Description != nil {
+			d := req.GetDescription()
+			u.Description = &d
+		}
+		if req.StartingBidCents != nil {
+			v := req.GetStartingBidCents()
+			u.StartingBidCents = &v
+		}
+		if req.OfferAcceptedCents != nil {
+			v := req.GetOfferAcceptedCents()
+			u.OfferAcceptedCents = &v
+		}
+		if req.AuctionDurationHours != nil {
+			h := int(req.GetAuctionDurationHours())
+			u.AuctionDurationHours = &h
+		}
+		updates = &u
+	}
+
+	job, err := s.svc.RepostJob(ctx, req.GetOriginalJobId(), req.GetCustomerId(), updates)
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &jobv1.RepostJobResponse{NewJob: domainJobToProto(job)}, nil
 }
 
 func (s *Server) SearchJobs(ctx context.Context, req *jobv1.SearchJobsRequest) (*jobv1.SearchJobsResponse, error) {
@@ -229,6 +280,10 @@ func (s *Server) SearchJobs(ctx context.Context, req *jobv1.SearchJobsRequest) (
 	if req.RecurringOnly != nil {
 		v := req.GetRecurringOnly()
 		input.RecurringOnly = &v
+	}
+	if req.StatusFilter != nil {
+		sf := protoJobStatusToString(req.GetStatusFilter())
+		input.StatusFilter = &sf
 	}
 
 	if sort := req.GetSort(); sort != nil {
@@ -272,6 +327,12 @@ func (s *Server) GetJobsOnMap(ctx context.Context, req *jobv1.GetJobsOnMapReques
 		v := req.GetMaxPriceCents()
 		input.MaxPriceCents = &v
 	}
+	if req.ScheduleType != nil {
+		st := protoScheduleTypeToString(req.GetScheduleType())
+		if st != "" {
+			input.ScheduleType = &st
+		}
+	}
 
 	pins, err := s.svc.GetJobsOnMap(ctx, input)
 	if err != nil {
@@ -303,15 +364,28 @@ func (s *Server) GetJobsOnMap(ctx context.Context, req *jobv1.GetJobsOnMapReques
 }
 
 func (s *Server) ListCustomerJobs(ctx context.Context, req *jobv1.ListCustomerJobsRequest) (*jobv1.ListCustomerJobsResponse, error) {
-	var statusFilter *string
+	filter := domain.ListCustomerJobsFilter{}
 	if req.StatusFilter != nil {
 		sf := protoJobStatusToString(req.GetStatusFilter())
-		statusFilter = &sf
+		filter.StatusFilter = &sf
 	}
-	var propertyID *string
 	if req.PropertyId != nil {
 		v := req.GetPropertyId()
-		propertyID = &v
+		filter.PropertyID = &v
+	}
+	if req.CategoryId != nil {
+		v := req.GetCategoryId()
+		if v != "" {
+			filter.CategoryID = &v
+		}
+	}
+	if ts := req.GetDateFrom(); ts != nil {
+		t := ts.AsTime()
+		filter.DateFrom = &t
+	}
+	if ts := req.GetDateTo(); ts != nil {
+		t := ts.AsTime()
+		filter.DateTo = &t
 	}
 
 	page := 1
@@ -325,7 +399,7 @@ func (s *Server) ListCustomerJobs(ctx context.Context, req *jobv1.ListCustomerJo
 		}
 	}
 
-	jobs, pagination, err := s.svc.ListCustomerJobs(ctx, req.GetCustomerId(), statusFilter, propertyID, page, pageSize)
+	jobs, pagination, err := s.svc.ListCustomerJobs(ctx, req.GetCustomerId(), filter, page, pageSize)
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
@@ -620,6 +694,11 @@ func domainJobToProto(j *domain.Job) *jobv1.Job {
 		pb.CompletedAt = timestamppb.New(*j.CompletedAt)
 	}
 
+	// FR-10.7: geo-scoped search only (nil otherwise).
+	if j.DistanceKm != nil {
+		pb.DistanceKm = j.DistanceKm
+	}
+
 	return pb
 }
 
@@ -740,6 +819,8 @@ func mapDomainError(err error) error {
 		return status.Error(codes.FailedPrecondition, "job is not active")
 	case errors.Is(err, domain.ErrNotOwner):
 		return status.Error(codes.PermissionDenied, "not the job owner")
+	case errors.Is(err, domain.ErrNotRepostable):
+		return status.Error(codes.FailedPrecondition, "job must be closed, expired, or cancelled to repost")
 	case errors.Is(err, domain.ErrInvalidStatus):
 		return status.Error(codes.FailedPrecondition, "invalid status transition")
 	case errors.Is(err, domain.ErrCategoryNotFound):
@@ -754,8 +835,53 @@ func mapDomainError(err error) error {
 		return status.Error(codes.InvalidArgument, "category is required")
 	case errors.Is(err, domain.ErrInvalidDuration):
 		return status.Error(codes.InvalidArgument, "auction duration must be between 1 and 168 hours")
+	case errors.Is(err, domain.ErrInvalidAuctionType):
+		return status.Error(codes.InvalidArgument, "auction type must be one of: sealed, live")
+	case errors.Is(err, domain.ErrInvalidStartingBid):
+		return status.Error(codes.InvalidArgument, "starting bid must be a positive amount in cents")
+	case errors.Is(err, domain.ErrDraftLimitExceeded):
+		// Predictable user condition (10-draft cap, FR-3.11) — must not 500.
+		return status.Error(codes.FailedPrecondition, "maximum of 10 draft jobs allowed")
 	default:
 		slog.Error("unmapped domain error", "error", err)
 		return status.Error(codes.Internal, "internal error")
 	}
+}
+
+// GetFairPrice gathers candidate cleared prices for the requested category and
+// delegates the estimate to the Rust pricing engine. It fails soft: a missing
+// analytics wiring, a candidate-gathering failure, or an engine error all yield
+// has_data=false rather than an error, so the surface degrades gracefully.
+func (s *Server) GetFairPrice(ctx context.Context, req *jobv1.GetFairPriceRequest) (*jobv1.GetFairPriceResponse, error) {
+	if s.analytics == nil {
+		slog.WarnContext(ctx, "GetFairPrice called but analytics service not wired")
+		return &jobv1.GetFairPriceResponse{HasData: false}, nil
+	}
+
+	var asOf time.Time // zero → service uses now()
+	if req.GetAsOf() > 0 {
+		asOf = time.Unix(req.GetAsOf(), 0).UTC()
+	}
+
+	fp, err := s.analytics.GetFairPrice(ctx, req.GetCategoryId(), req.GetCategorySlug(), req.GetZip(), req.GetMarketId(), asOf, req.GetSide())
+	if err != nil {
+		// GetFairPrice is designed to fail soft and not return errors, but guard
+		// anyway: never surface a 500 for a pricing estimate.
+		slog.ErrorContext(ctx, "GetFairPrice: unexpected service error, returning no data", "error", err)
+		return &jobv1.GetFairPriceResponse{HasData: false}, nil
+	}
+
+	return &jobv1.GetFairPriceResponse{
+		HasData:         fp.HasData,
+		PriceCents:      fp.PriceCents,
+		P25Cents:        fp.P25Cents,
+		P75Cents:        fp.P75Cents,
+		CiLoCents:       fp.CILoCents,
+		CiHiCents:       fp.CIHiCents,
+		NEff:            fp.NEff,
+		Confidence:      fp.Confidence,
+		ConfidenceLabel: fp.ConfidenceLabel,
+		LevelUsed:       fp.LevelUsed,
+		ModelVersion:    fp.ModelVersion,
+	}, nil
 }

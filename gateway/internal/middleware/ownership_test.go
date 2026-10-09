@@ -81,9 +81,17 @@ func TestRequireOwnership(t *testing.T) {
 		URLParam:    "id",
 	}
 
+	// Valid UUIDs — the middleware now rejects non-UUID ids with 400 before
+	// touching the DB, so test fixtures must use well-formed UUIDs.
+	const (
+		jobOwned       = "00000000-0000-7000-8000-000000000001"
+		jobOther       = "00000000-0000-7000-8000-000000000002"
+		jobNonexistent = "00000000-0000-7000-8000-0000000000ff"
+	)
+
 	db := newMockQuerier(map[string]*mockRow{
-		"job-1": {values: []interface{}{"user-owner"}},
-		"job-2": {values: []interface{}{"user-other"}},
+		jobOwned: {values: []interface{}{"user-owner"}},
+		jobOther: {values: []interface{}{"user-other"}},
 	})
 
 	tests := []struct {
@@ -98,14 +106,14 @@ func TestRequireOwnership(t *testing.T) {
 			name:       "owner_can_access_resource",
 			claims:     &Claims{UserID: "user-owner", Email: "owner@example.com", Roles: []string{"customer"}},
 			setClaims:  true,
-			urlParam:   "job-1",
+			urlParam:   jobOwned,
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:           "non_owner_gets_403",
 			claims:         &Claims{UserID: "user-attacker", Email: "attacker@example.com", Roles: []string{"customer"}},
 			setClaims:      true,
-			urlParam:       "job-1",
+			urlParam:       jobOwned,
 			wantStatus:     http.StatusForbidden,
 			wantBodySubstr: "forbidden",
 		},
@@ -113,20 +121,20 @@ func TestRequireOwnership(t *testing.T) {
 			name:       "admin_bypasses_ownership_check",
 			claims:     &Claims{UserID: "user-admin", Email: "admin@example.com", Roles: []string{"admin"}},
 			setClaims:  true,
-			urlParam:   "job-1",
+			urlParam:   jobOwned,
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "admin_among_multiple_roles_bypasses",
 			claims:     &Claims{UserID: "user-multi", Email: "multi@example.com", Roles: []string{"customer", "admin"}},
 			setClaims:  true,
-			urlParam:   "job-2",
+			urlParam:   jobOther,
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:           "unauthenticated_request_gets_401",
 			setClaims:      false,
-			urlParam:       "job-1",
+			urlParam:       jobOwned,
 			wantStatus:     http.StatusUnauthorized,
 			wantBodySubstr: "unauthorized",
 		},
@@ -134,7 +142,7 @@ func TestRequireOwnership(t *testing.T) {
 			name:           "empty_user_id_gets_401",
 			claims:         &Claims{UserID: "", Email: "empty@example.com", Roles: []string{"customer"}},
 			setClaims:      true,
-			urlParam:       "job-1",
+			urlParam:       jobOwned,
 			wantStatus:     http.StatusUnauthorized,
 			wantBodySubstr: "unauthorized",
 		},
@@ -142,9 +150,17 @@ func TestRequireOwnership(t *testing.T) {
 			name:           "nonexistent_resource_gets_404",
 			claims:         &Claims{UserID: "user-owner", Email: "owner@example.com", Roles: []string{"customer"}},
 			setClaims:      true,
-			urlParam:       "job-nonexistent",
+			urlParam:       jobNonexistent,
 			wantStatus:     http.StatusNotFound,
 			wantBodySubstr: "not found",
+		},
+		{
+			name:           "malformed_uuid_gets_400",
+			claims:         &Claims{UserID: "user-owner", Email: "owner@example.com", Roles: []string{"customer"}},
+			setClaims:      true,
+			urlParam:       "not-a-uuid",
+			wantStatus:     http.StatusBadRequest,
+			wantBodySubstr: "invalid resource ID",
 		},
 		{
 			name:           "missing_url_param_gets_400",
@@ -199,8 +215,13 @@ func TestRequirePartyAccess(t *testing.T) {
 		URLParam: "id",
 	}
 
+	const (
+		contractOne         = "00000000-0000-7000-8000-00000000c001"
+		contractNonexistent = "00000000-0000-7000-8000-00000000c0ff"
+	)
+
 	db := newMockQuerier(map[string]*mockRow{
-		"contract-1": {values: []interface{}{"user-customer", "user-provider"}},
+		contractOne: {values: []interface{}{"user-customer", "user-provider"}},
 	})
 
 	tests := []struct {
@@ -215,21 +236,21 @@ func TestRequirePartyAccess(t *testing.T) {
 			name:       "customer_party_can_access",
 			claims:     &Claims{UserID: "user-customer", Email: "customer@example.com", Roles: []string{"customer"}},
 			setClaims:  true,
-			urlParam:   "contract-1",
+			urlParam:   contractOne,
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "provider_party_can_access",
 			claims:     &Claims{UserID: "user-provider", Email: "provider@example.com", Roles: []string{"provider"}},
 			setClaims:  true,
-			urlParam:   "contract-1",
+			urlParam:   contractOne,
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:           "unrelated_user_gets_403",
 			claims:         &Claims{UserID: "user-stranger", Email: "stranger@example.com", Roles: []string{"customer"}},
 			setClaims:      true,
-			urlParam:       "contract-1",
+			urlParam:       contractOne,
 			wantStatus:     http.StatusForbidden,
 			wantBodySubstr: "forbidden",
 		},
@@ -237,13 +258,13 @@ func TestRequirePartyAccess(t *testing.T) {
 			name:       "admin_bypasses_party_check",
 			claims:     &Claims{UserID: "user-admin", Email: "admin@example.com", Roles: []string{"admin"}},
 			setClaims:  true,
-			urlParam:   "contract-1",
+			urlParam:   contractOne,
 			wantStatus: http.StatusOK,
 		},
 		{
 			name:           "unauthenticated_request_gets_401",
 			setClaims:      false,
-			urlParam:       "contract-1",
+			urlParam:       contractOne,
 			wantStatus:     http.StatusUnauthorized,
 			wantBodySubstr: "unauthorized",
 		},
@@ -251,9 +272,17 @@ func TestRequirePartyAccess(t *testing.T) {
 			name:           "nonexistent_resource_gets_404",
 			claims:         &Claims{UserID: "user-customer", Email: "customer@example.com", Roles: []string{"customer"}},
 			setClaims:      true,
-			urlParam:       "contract-nonexistent",
+			urlParam:       contractNonexistent,
 			wantStatus:     http.StatusNotFound,
 			wantBodySubstr: "not found",
+		},
+		{
+			name:           "malformed_uuid_gets_400",
+			claims:         &Claims{UserID: "user-customer", Email: "customer@example.com", Roles: []string{"customer"}},
+			setClaims:      true,
+			urlParam:       "not-a-uuid",
+			wantStatus:     http.StatusBadRequest,
+			wantBodySubstr: "invalid resource ID",
 		},
 		{
 			name:           "missing_url_param_gets_400",
@@ -337,12 +366,13 @@ func TestRequireOwnership_database_error(t *testing.T) {
 		URLParam:    "id",
 	}
 
+	const jobErr = "00000000-0000-7000-8000-0000000000e1"
 	db := newMockQuerier(map[string]*mockRow{
-		"job-err": {err: fmt.Errorf("connection refused")},
+		jobErr: {err: fmt.Errorf("connection refused")},
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-err", nil)
-	req = withChiURLParam(req, "id", "job-err")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+jobErr, nil)
+	req = withChiURLParam(req, "id", jobErr)
 	ctx := context.WithValue(req.Context(), ClaimsContextKey, &Claims{
 		UserID: "user-1", Email: "a@b.com", Roles: []string{"customer"},
 	})
@@ -352,8 +382,10 @@ func TestRequireOwnership_database_error(t *testing.T) {
 	handler := RequireOwnership(db, resource)(okHandler())
 	handler.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
-	assert.Contains(t, rec.Body.String(), "service unavailable")
+	// A genuine DB error maps to 500 (not 503) — the resource may well exist; the
+	// database is just unreachable, which is an internal server error.
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Contains(t, rec.Body.String(), "internal server error")
 }
 
 func TestRequireOwnership_no_rows_returns_404(t *testing.T) {
@@ -366,12 +398,13 @@ func TestRequireOwnership_no_rows_returns_404(t *testing.T) {
 		URLParam:    "id",
 	}
 
+	const jobNoRows = "00000000-0000-7000-8000-0000000000e2"
 	db := newMockQuerier(map[string]*mockRow{
-		"job-norows": {err: pgx.ErrNoRows},
+		jobNoRows: {err: pgx.ErrNoRows},
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/job-norows", nil)
-	req = withChiURLParam(req, "id", "job-norows")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs/"+jobNoRows, nil)
+	req = withChiURLParam(req, "id", jobNoRows)
 	ctx := context.WithValue(req.Context(), ClaimsContextKey, &Claims{
 		UserID: "user-1", Email: "a@b.com", Roles: []string{"customer"},
 	})
@@ -398,12 +431,13 @@ func TestRequirePartyAccess_database_error(t *testing.T) {
 		URLParam: "id",
 	}
 
+	const contractErr = "00000000-0000-7000-8000-00000000c0e1"
 	db := newMockQuerier(map[string]*mockRow{
-		"contract-err": {err: fmt.Errorf("connection refused")},
+		contractErr: {err: fmt.Errorf("connection refused")},
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/contracts/contract-err", nil)
-	req = withChiURLParam(req, "id", "contract-err")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/contracts/"+contractErr, nil)
+	req = withChiURLParam(req, "id", contractErr)
 	ctx := context.WithValue(req.Context(), ClaimsContextKey, &Claims{
 		UserID: "user-1", Email: "a@b.com", Roles: []string{"customer"},
 	})
@@ -413,8 +447,9 @@ func TestRequirePartyAccess_database_error(t *testing.T) {
 	handler := RequirePartyAccess(db, cfg)(okHandler())
 	handler.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
-	assert.Contains(t, rec.Body.String(), "service unavailable")
+	// A genuine DB error maps to 500 (not 503).
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Contains(t, rec.Body.String(), "internal server error")
 }
 
 func TestRequirePartyAccess_no_rows_returns_404(t *testing.T) {
@@ -428,12 +463,13 @@ func TestRequirePartyAccess_no_rows_returns_404(t *testing.T) {
 		URLParam: "id",
 	}
 
+	const contractNoRows = "00000000-0000-7000-8000-00000000c0e2"
 	db := newMockQuerier(map[string]*mockRow{
-		"contract-norows": {err: pgx.ErrNoRows},
+		contractNoRows: {err: pgx.ErrNoRows},
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/contracts/contract-norows", nil)
-	req = withChiURLParam(req, "id", "contract-norows")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/contracts/"+contractNoRows, nil)
+	req = withChiURLParam(req, "id", contractNoRows)
 	ctx := context.WithValue(req.Context(), ClaimsContextKey, &Claims{
 		UserID: "user-1", Email: "a@b.com", Roles: []string{"customer"},
 	})

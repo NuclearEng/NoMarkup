@@ -66,15 +66,20 @@ message Review {
   string reviewee_id = 4;
   ReviewDirection direction = 5;
   int32 overall_rating = 6;     // 1-5
-  int32 quality_rating = 7;     // 1-5, customer→provider only
-  int32 communication_rating = 8;  // 1-5
-  int32 timeliness_rating = 9;  // 1-5
-  int32 value_rating = 10;      // 1-5, customer→provider only
+  // Customer → provider category ratings (1-5; 0 = not set)
+  int32 quality_rating = 7;
+  int32 communication_rating = 8;
+  int32 timeliness_rating = 9;
+  int32 value_rating = 10;
   string comment = 11;
   repeated string photo_urls = 12;
   ReviewResponse response = 13;
   bool is_flagged = 14;
   google.protobuf.Timestamp created_at = 15;
+  // Provider → customer category ratings (1-5; 0 = not set) — FR-6.2
+  int32 payment_promptness_rating = 16;
+  int32 scope_accuracy_rating = 17;
+  int32 access_rating = 18; // property access
 }
 
 message ReviewResponse {
@@ -93,12 +98,17 @@ message CreateReviewRequest {
   string contract_id = 1;
   string reviewer_id = 2;
   int32 overall_rating = 3;
+  // Customer → provider category ratings (optional, 1-5)
   optional int32 quality_rating = 4;
   optional int32 communication_rating = 5;
   optional int32 timeliness_rating = 6;
   optional int32 value_rating = 7;
   string comment = 8;           // 50 char minimum
   repeated string photo_urls = 9;
+  // Provider → customer category ratings (optional, 1-5) — FR-6.2
+  optional int32 payment_promptness_rating = 10;
+  optional int32 scope_accuracy_rating = 11;
+  optional int32 access_rating = 12;
 }
 
 message CreateReviewResponse {

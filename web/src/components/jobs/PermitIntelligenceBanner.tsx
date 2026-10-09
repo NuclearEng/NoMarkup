@@ -45,9 +45,9 @@ export function PermitIntelligenceBanner({ categorySlug }: PermitIntelligenceBan
   return (
     <div
       role="note"
-      className="flex items-start gap-3 rounded-lg border border-blue-500/20 bg-blue-500/10 px-4 py-3 text-sm text-blue-300"
+      className="flex items-start gap-3 rounded-lg border border-bid-active/20 bg-bid-active/10 px-4 py-3 text-sm text-bid-active"
     >
-      <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" aria-hidden="true" />
+      <Info className="mt-0.5 h-4 w-4 shrink-0 text-bid-active" aria-hidden="true" />
       <p className="flex-1">
         This type of work typically requires a permit. Ask your provider to confirm permit status
         before work begins.
@@ -55,7 +55,7 @@ export function PermitIntelligenceBanner({ categorySlug }: PermitIntelligenceBan
       <button
         type="button"
         onClick={handleDismiss}
-        className="shrink-0 rounded p-1 hover:bg-blue-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        className="shrink-0 rounded p-1 hover:bg-bid-active/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-bid-active"
         aria-label="Dismiss permit information notice"
       >
         <X className="h-3.5 w-3.5" aria-hidden="true" />

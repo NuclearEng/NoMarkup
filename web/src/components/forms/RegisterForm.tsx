@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import type { Route } from 'next';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { Briefcase, Wrench } from 'lucide-react';
@@ -27,7 +28,12 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { OAuthButtons, OAuthDivider } from '@/components/auth/oauth-buttons';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useEnableRole } from '@/hooks/useProfile';
+import { api, getApiErrorMessage } from '@/lib/api';
+import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
+import { messageForOAuthError } from '@/lib/oauth-errors';
+import { passkeysSupported, registerPasskey } from '@/lib/passkeys';
 import { cn } from '@/lib/utils';
 import { registerSchema } from '@/lib/validations';
 import { useAuthStore } from '@/stores/auth-store';
@@ -37,10 +43,25 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const register = useAuthStore((s) => s.register);
   const enableRole = useEnableRole();
+  const flags = useFeatureFlags();
   const [formError, setFormError] = useState<string | null>(null);
   const [intent, setIntent] = useState<'customer' | 'provider'>('customer');
+  const [offerPasskey, setOfferPasskey] = useState(false);
+  const [nextPath, setNextPath] = useState<Route | null>(null);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
+
+  // OAuth failures redirect to /login by default; if a caller lands on register
+  // with the same ?error= codes, show them here too.
+  useEffect(() => {
+    const message = messageForOAuthError(searchParams.get('error'));
+    if (message) {
+      setFormError(message);
+    }
+  }, [searchParams]);
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -52,19 +73,61 @@ export function RegisterForm() {
     },
   });
 
+  // A referral code arrives via the share link (/register?ref=CODE). After a
+  // successful registration the new account is authenticated, so we redeem the
+  // code to attribute the referral. Best-effort: a bad/expired code or a
+  // network blip must never block account creation, so failures are swallowed.
+  async function attributeReferral() {
+    if (typeof window === 'undefined') return;
+    const code = new URLSearchParams(window.location.search).get('ref')?.trim();
+    if (!code) return;
+    try {
+      await api.post('/api/v1/me/referrals/redeem', { code: code.toUpperCase() });
+    } catch {
+      // Non-fatal: the user can still redeem manually from /me/referrals.
+    }
+  }
+
   async function onSubmit(values: RegisterFormValues) {
     setFormError(null);
     try {
       await register(values.email, values.password, values.displayName);
+      await attributeReferral();
+      const destination: Route =
+        intent === 'provider' ? '/provider/onboarding' : '/dashboard';
       if (intent === 'provider') {
         await enableRole.mutateAsync(USER_ROLE.PROVIDER);
-        router.push('/provider/onboarding');
-      } else {
-        router.push('/dashboard');
       }
+      // Same gate as iOS: offer enrollment only when the server flag is on
+      // and this browser can create a passkey. Otherwise go straight in.
+      if (flags.passkeys === true && passkeysSupported()) {
+        setNextPath(destination);
+        setPasskeyError(null);
+        setOfferPasskey(true);
+        return;
+      }
+      router.push(destination);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Registration failed';
-      setFormError(message);
+      setFormError(getApiErrorMessage(error, 'Registration failed'));
+    }
+  }
+
+  function continueAfterRegister(): void {
+    if (nextPath) {
+      router.push(nextPath);
+    }
+  }
+
+  async function onSavePasskey(): Promise<void> {
+    setPasskeyError(null);
+    setPasskeyBusy(true);
+    try {
+      await registerPasskey();
+      continueAfterRegister();
+    } catch (error) {
+      setPasskeyError(getApiErrorMessage(error, 'Could not add a passkey'));
+    } finally {
+      setPasskeyBusy(false);
     }
   }
 
@@ -92,15 +155,57 @@ export function RegisterForm() {
 
   const strength = getPasswordStrength(passwordValue);
 
+  if (offerPasskey) {
+    return (
+      <Card className="border border-[rgba(201,168,76,0.12)] bg-card shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
+        <CardHeader className="relative z-[2]">
+          <CardTitle className="text-3xl font-bold tracking-tight text-white">
+            Save a passkey?
+          </CardTitle>
+          <CardDescription className="text-white/65">
+            Sign in next time with this device. Nothing to type or phish.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="relative z-[2] space-y-3">
+          <Button
+            type="button"
+            className="min-h-[44px] w-full"
+            disabled={passkeyBusy}
+            onClick={() => {
+              void onSavePasskey();
+            }}
+          >
+            {passkeyBusy ? 'Saving passkey…' : 'Save a passkey'}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="min-h-[44px] w-full text-[var(--brand-gold)]"
+            disabled={passkeyBusy}
+            onClick={continueAfterRegister}
+          >
+            Not now
+          </Button>
+          {passkeyError ? (
+            <p role="alert" className="text-destructive text-sm">
+              {passkeyError}
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
-    <Card className="border border-[rgba(201,168,76,0.12)] bg-[#0c0f18] shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <Card className="border border-[rgba(201,168,76,0.12)] bg-card shadow-[0_12px_40px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.04)]">
       <div className="relative z-[2] h-[3px] bg-gradient-to-r from-[var(--brand-gold-dim)] via-[var(--brand-gold)] to-[var(--brand-gold-bright)]" />
       <CardHeader className="relative z-[2] text-center">
         <CardTitle className="text-3xl font-bold tracking-tight text-white">
           Create an account
         </CardTitle>
         <CardDescription className="text-white/65">
-          Enter your details below to get started
+          Join NoMarkup — fair market rates, not the markup. {BUYER_PAYS_AGREED_PRICE}
         </CardDescription>
       </CardHeader>
       <CardContent className="relative z-[2]">
@@ -143,6 +248,9 @@ export function RegisterForm() {
             <p className="mt-0.5 text-xs text-white/50">Grow your business</p>
           </button>
         </div>
+        <p className="mt-2 text-center text-xs text-white/50">
+          Pick your main goal — you can do both, and add the other anytime from your profile.
+        </p>
 
         <OAuthButtons />
         <OAuthDivider />
@@ -222,7 +330,7 @@ export function RegisterForm() {
                       <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                         <div
                           className={`password-strength-bar h-full rounded-full ${strength.color}`}
-                          style={{ width: `${(strength.score / 5) * 100}%` }}
+                          style={{ width: `${String((strength.score / 5) * 100)}%` }}
                         />
                       </div>
                       <p className="text-xs text-white/60">{strength.label}</p>
@@ -267,14 +375,28 @@ export function RegisterForm() {
           </form>
         </Form>
       </CardContent>
-      <CardFooter className="relative z-[2] justify-center border-t border-white/10 pt-6">
-        <p className="text-sm text-white/65">
+      <CardFooter className="relative z-[2] flex-col gap-3 border-t border-white/10 pt-6">
+        <p className="text-center text-sm text-white/65">
           Already have an account?{' '}
           <Link
             href="/login"
             className="font-medium text-[var(--brand-gold)] underline-offset-4 hover:underline"
           >
             Sign in
+          </Link>
+        </p>
+        <p className="text-center text-xs text-white/45">
+          By creating an account you agree to our{' '}
+          <Link href="/terms" className="underline-offset-4 hover:text-white/70 hover:underline">
+            Terms
+          </Link>{' '}
+          and{' '}
+          <Link href="/privacy" className="underline-offset-4 hover:text-white/70 hover:underline">
+            Privacy Policy
+          </Link>
+          .{' '}
+          <Link href="/support" className="underline-offset-4 hover:text-white/70 hover:underline">
+            Support
           </Link>
         </p>
       </CardFooter>

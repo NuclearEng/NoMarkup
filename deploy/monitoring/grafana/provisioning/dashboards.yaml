@@ -11,5 +11,7 @@ providers:
     updateIntervalSeconds: 30
     allowUiUpdates: true
     options:
-      path: /var/lib/grafana/dashboards
+      # ConfigMap-mounted dashboards (k8s) or bind-mount (local).
+      # Writable grafana data stays on /var/lib/grafana (emptyDir in k8s).
+      path: /etc/grafana/dashboards
       foldersFromFilesStructure: false

@@ -1,0 +1,9 @@
+PLACEHOLDER — replace before production Apple Pay
+
+This file must be replaced with the Apple Pay domain association content
+provided by Stripe (Dashboard → Settings → Payment methods → Apple Pay →
+Add domain) or Apple Developer. Until then, Apple Pay domain verification
+will fail.
+
+ASR-5.1.2.vii. Do not ship this placeholder to a production domain that claims
+Apple Pay support.

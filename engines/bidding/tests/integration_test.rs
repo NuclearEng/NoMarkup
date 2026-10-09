@@ -223,6 +223,7 @@ fn bid_analytics_default_state() {
 fn bid_error_messages_are_descriptive() {
     let errors: Vec<(BidError, &str)> = vec![
         (BidError::AuctionClosed, "closed"),
+        // MON-19: award_bid returns AuctionNotActive when job.status != active under FOR UPDATE.
         (BidError::AuctionNotActive, "not in active"),
         (BidError::BelowMinimum, "lower"),
         (BidError::AlreadyBid, "already"),
@@ -230,10 +231,7 @@ fn bid_error_messages_are_descriptive() {
         (BidError::BidNotActive, "not in active"),
         (BidError::BidNotFound, "not found"),
         (BidError::JobNotFound, "not found"),
-        (
-            BidError::InvalidAmount("test".into()),
-            "test",
-        ),
+        (BidError::InvalidAmount("test".into()), "test"),
         (
             BidError::AboveStartingBid {
                 amount: 10000,
@@ -241,19 +239,14 @@ fn bid_error_messages_are_descriptive() {
             },
             "starting bid",
         ),
-        (
-            BidError::PermissionDenied("denied".into()),
-            "denied",
-        ),
+        (BidError::PermissionDenied("denied".into()), "denied"),
     ];
 
     for (err, expected_substring) in errors {
         let msg = err.to_string();
         assert!(
             msg.to_lowercase().contains(expected_substring),
-            "Error '{}' should contain '{}'",
-            msg,
-            expected_substring
+            "Error '{msg}' should contain '{expected_substring}'"
         );
     }
 }

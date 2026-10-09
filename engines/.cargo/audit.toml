@@ -1,0 +1,16 @@
+# cargo-audit configuration for the engines workspace.
+# Only PERMANENT, justified exceptions belong here — every entry must say why
+# it is safe AND what would make it removable. Revisit on every dep bump.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 — rsa: Marvin timing side-channel. No fixed upstream
+    # release exists (tracked since 2023). Safe to ignore here because rsa is a
+    # LOCK-ONLY artifact: it enters Cargo.lock as an optional dependency of
+    # sqlx-mysql, but this workspace enables only sqlx's `postgres` feature, so
+    # rsa is never compiled into or linked in any engine binary
+    # (`cargo tree -i rsa` is empty). Remove this entry if (a) upstream ships a
+    # fix, or (b) a mysql driver is ever enabled — at which point this becomes
+    # a REAL finding that must be fixed, not ignored.
+    "RUSTSEC-2023-0071",
+]

@@ -7,7 +7,21 @@ import { chromium } from '@playwright/test';
  */
 async function globalSetup() {
   const baseURL = 'http://localhost:3000';
-  const pages = ['/login', '/register', '/forgot-password', '/reset-password?token=warmup'];
+  // Warm auth shells plus public/protected routes that axe e2e scans (FE-01).
+  // Protected paths redirect unauth → /login (already warmed); still useful so
+  // middleware + dashboard layout compile before the first axe test.
+  const pages = [
+    '/login',
+    '/register',
+    '/forgot-password',
+    '/reset-password?token=warmup',
+    '/',
+    '/marketplace',
+    '/jobs',
+    '/pricing',
+    '/dashboard',
+    '/settings/security',
+  ];
 
   const browser = await chromium.launch();
   const context = await browser.newContext({ baseURL });
