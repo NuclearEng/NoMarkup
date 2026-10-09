@@ -286,6 +286,25 @@ func (d *DevStore) ConfirmPaymentIntent(piID, paymentMethodID, idempotencyKey st
 	return "succeeded", nil
 }
 
+// MarkPaymentIntentCanceled moves a dev intent that cannot capture to canceled.
+// succeeded, requires_capture, and processing are left as they are. The returned
+// status is the status after the call. An unknown id returns "".
+func (d *DevStore) MarkPaymentIntentCanceled(piID string) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	pi, ok := d.paymentIntents[piID]
+	if !ok {
+		return ""
+	}
+	switch pi.Status {
+	case "succeeded", "requires_capture", "processing", "canceled":
+		return pi.Status
+	default:
+		pi.Status = "canceled"
+		return "canceled"
+	}
+}
+
 // PaymentIntentStatus reports a dev intent's status (test helper).
 func (d *DevStore) PaymentIntentStatus(piID string) string {
 	d.mu.RLock()

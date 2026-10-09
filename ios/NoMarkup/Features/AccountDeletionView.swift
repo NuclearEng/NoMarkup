@@ -11,12 +11,24 @@ struct AccountDeletionView: View {
     @State private var isSubmitting = false
     @State private var resultMessage: String?
     @State private var resultIsError = false
+    @State private var acceptedDeletion = false
 
     private let requiredPhrase = "DELETE"
+    private let acceptedDeletionMessage =
+        "Deletion request accepted. You will be signed out. You can restore the account on the website within 30 days. This iPhone app does not restore the account."
 
     var body: some View {
         Group {
-            if auth.isScaffoldSession || !auth.isAuthenticated {
+            if acceptedDeletion {
+                BrandEmptyState(
+                    title: "Request accepted",
+                    systemImage: "checkmark.circle",
+                    message: acceptedDeletionMessage,
+                    actionTitle: "Done",
+                    action: { dismiss() }
+                )
+                .accessibilityIdentifier("accountDeletion.accepted")
+            } else if auth.isScaffoldSession || !auth.isAuthenticated {
                 BrandEmptyState(
                     title: "Sign in required",
                     systemImage: "trash",
@@ -41,7 +53,7 @@ struct AccountDeletionView: View {
     private var deletionForm: some View {
         Form {
             Section {
-                Text("Requesting deletion schedules permanent removal of your NoMarkup account after a grace period (typically 30 days on the server). You can cancel during the grace window on web or a future app build.")
+                Text("Requesting deletion schedules permanent removal of your NoMarkup account after a grace period (typically 30 days on the server). You can restore the account on the website within 30 days. This iPhone app does not restore the account.")
                     .font(.subheadline)
                     .foregroundStyle(BrandTheme.textSecondary)
             } header: {
@@ -131,9 +143,9 @@ struct AccountDeletionView: View {
             // Gateway: DELETE /api/v1/users/me  body { reason, confirmation: "DELETE" }
             try await APIClient.shared.requestAccountDeletion(reason: "user_requested_ios")
             resultIsError = false
-            resultMessage = "Deletion request accepted. You will be signed out. You can restore within 30 days via web or app."
+            resultMessage = acceptedDeletionMessage
+            acceptedDeletion = true
             auth.signOut()
-            dismiss()
         } catch {
             resultIsError = true
             resultMessage = error.localizedDescription

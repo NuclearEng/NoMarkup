@@ -19,7 +19,7 @@ const (
 
 	// defaultJWTIssuer is the issuer (`iss`) claim used when JWT_ISSUER is unset.
 	// Must match the gateway's expected issuer.
-	defaultJWTIssuer = "https://auth.nomarkup.com"
+	defaultJWTIssuer = "https://auth.no-markup.com"
 	// defaultJWTAudience is the audience (`aud`) claim used when JWT_AUDIENCE is
 	// unset. Must match the gateway's expected audience.
 	defaultJWTAudience = "nomarkup-api"

@@ -148,7 +148,7 @@ Backend services fail closed on missing or invalid configuration. Copy `.env.exa
 |---|---|---|
 | `ENVIRONMENT` | ✅ always | `development` / `staging` / `production`. Services refuse to start if unset/invalid. |
 | `STRIPE_WEBHOOK_SECRET` | ✅ payment service | Webhook signature verified on every request; no bypass. |
-| `JWT_ISSUER`, `JWT_AUDIENCE` | recommended | Checked on every access token. Default `https://auth.nomarkup.com` / `nomarkup-api`. |
+| `JWT_ISSUER`, `JWT_AUDIENCE` | recommended | Checked on every access token. Default `https://auth.no-markup.com` / `nomarkup-api`. |
 | `WS_ALLOWED_ORIGINS` | recommended | WebSocket origin allowlist (CSWSH defense). Defaults to production hosts. |
 | `INTERNAL_WS_SECRET` | prod | Shared secret the chat/auction WS backend requires from the gateway dial, so it stops trusting gateway-supplied `user_id`. Set on both gateway and chat. |
 | `TRUSTED_PROXIES` | recommended | CIDRs whose `X-Forwarded-For` / `X-Real-IP` the gateway honors. Defaults to loopback + RFC1918. |

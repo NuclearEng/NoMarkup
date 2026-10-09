@@ -56,6 +56,12 @@ var (
 	ErrNotBuyer             = errors.New("user is not the buyer for this order")
 	ErrDisputeWindowClosed  = errors.New("dispute window closed")
 	ErrDisputeAlreadyOpen   = errors.New("dispute already open for this order")
+	// ErrPaymentIntentCapturable means the PaymentIntent can still capture
+	// (succeeded, requires_capture, or processing). The listing stays sold.
+	ErrPaymentIntentCapturable = errors.New("payment intent can still be captured")
+	// ErrListingNotRelistable means the listing is not sold and is not already
+	// back on sale with an open auction, so it must not be forced active.
+	ErrListingNotRelistable = errors.New("listing cannot be returned to sale")
 )
 
 // PendingListingTransferPrefix marks stripe_transfer_id while a release worker
@@ -192,6 +198,16 @@ type MarketplaceRepository interface {
 	ResolveMarketplaceDispute(ctx context.Context, disputeID, resolution, notes, adminID string, refundCents, transferCents int64) (*MarketplaceDispute, error)
 
 	IncrementSellerTaxForm(ctx context.Context, sellerID string, taxYear int, grossPaymentsCents int64) error
+
+	// ListingSaleState reads listing status, the current bidder (empty when
+	// null), and auction_ends_at. A missing listing returns ErrListingNotRelistable.
+	ListingSaleState(ctx context.Context, listingID string) (status string, currentBidderID string, auctionEndsAt time.Time, err error)
+	// AbandonUnpaidListingOrder marks a pending_payment order payment_failed and
+	// returns its sold listing to active in one transaction. payment_failed is
+	// accepted as a retry. Any other escrow status is ErrInvalidEscrowState.
+	// A listing that cannot be relisted rolls the order update back and returns
+	// ErrListingNotRelistable. Does not increment payment_attempts.
+	AbandonUnpaidListingOrder(ctx context.Context, orderID, reason string) (*UnpaidListingCancelResult, error)
 }
 
 // ConnectAccountResolver resolves a platform user id to their Stripe Connect
@@ -367,6 +383,10 @@ type MarketplaceService struct {
 	// OFFSESSION-LEGAL pairing as off-session charge: MARKETPLACE_PAYMENT_EXPIRY
 	// cannot stay true without MARKETPLACE_OFFSESSION_TOS_VERSION.
 	expireUnfunded bool
+
+	// taxRegistered limits collection to configured 2-letter state codes.
+	// Nil or empty collects 0. Not a registration claim.
+	taxRegistered map[string]struct{}
 }
 
 // NewMarketplaceService constructs a service with sane defaults.
@@ -391,6 +411,40 @@ func (s *MarketplaceService) SetCustomerProvisioner(p *CustomerProvisioner) {
 // wins. See MarketplaceService.offSessionCharge.
 func (s *MarketplaceService) SetOffSessionCharge(enabled bool) {
 	s.offSessionCharge = enabled
+}
+
+// SetTaxRegisteredStates replaces the states sales tax may be collected for.
+// Codes are uppercased and trimmed; only 2-letter A-Z codes are kept.
+// A nil or empty list collects nothing.
+func (s *MarketplaceService) SetTaxRegisteredStates(states []string) {
+	if len(states) == 0 {
+		s.taxRegistered = nil
+		return
+	}
+	next := make(map[string]struct{}, len(states))
+	for _, raw := range states {
+		code := strings.ToUpper(strings.TrimSpace(raw))
+		if len(code) != 2 || code[0] < 'A' || code[0] > 'Z' || code[1] < 'A' || code[1] > 'Z' {
+			continue
+		}
+		next[code] = struct{}{}
+	}
+	if len(next) == 0 {
+		s.taxRegistered = nil
+		return
+	}
+	s.taxRegistered = next
+}
+
+// collectableTaxCents resolves the pickup zip and returns tax only when that
+// state is configured for collection. Otherwise the tax is 0.
+func (s *MarketplaceService) collectableTaxCents(subtotal int64, zip string) (state string, tax int64) {
+	state = StateFromZip(zip)
+	tax = ComputeTaxCents(subtotal, state)
+	if _, ok := s.taxRegistered[state]; !ok {
+		return state, 0
+	}
+	return state, tax
 }
 
 // OffSessionChargeEnabled reports whether merchant-initiated collection is armed.
@@ -638,7 +692,7 @@ func (s *MarketplaceService) ChargeListingWinner(ctx context.Context, orderID st
 	// so mint-time and charge-time stay aligned when both load the same config.
 	// MONEY: integer bps math with fractional cent rounded UP.
 	feeCents := s.resolveMarketplaceFeeCents(ctx, order.AmountCents)
-	taxState, taxCents := ComputeTaxCentsForZip(order.AmountCents, order.PickupZipCode)
+	taxState, taxCents := s.collectableTaxCents(order.AmountCents, order.PickupZipCode)
 	totalCents := order.AmountCents + feeCents + taxCents
 
 	// Idempotency key: deterministic per order + stage so retries dedupe.
@@ -798,7 +852,7 @@ func (s *MarketplaceService) ConfirmPickup(ctx context.Context, orderID, actorUs
 		return nil, fmt.Errorf("confirm pickup: %w", err)
 	}
 
-	if err := s.notifier.NotifyPaymentReleased(ctx, order.SellerID, order.ID, order.AmountCents-order.FeeCents); err != nil {
+	if err := s.notifier.NotifyPaymentReleased(ctx, order.SellerID, order.ID, goodsSellerItemPayout(order.AmountCents)); err != nil {
 		slog.Warn("failed to notify seller of payment release",
 			"order_id", order.ID,
 			"seller_id", order.SellerID,
@@ -833,11 +887,21 @@ func (s *MarketplaceService) resolveSellerConnectAccount(ctx context.Context, se
 	return "", fmt.Errorf("resolve seller connect account: no account resolver configured")
 }
 
+// goodsSellerItemPayout is the item price transferred to the seller.
+// The buyer PaymentIntent is item + platform fee + tax, so subtracting the
+// fee from the seller as well would collect it twice.
+func goodsSellerItemPayout(amountCents int64) int64 {
+	if amountCents < 0 {
+		return 0
+	}
+	return amountCents
+}
+
 // releaseToSeller is the shared "transfer + flip status" code used by
-// ConfirmPickup AND AutoReleaseListingOrders. Computes seller payout =
-// amount - fee (tax stays with platform), creates the Stripe transfer, and
-// updates the order to released. Also stamps the seller_tax_forms 1099-K
-// running total.
+// ConfirmPickup AND AutoReleaseListingOrders. The seller receives the item
+// price (fee and tax stay with the platform), the Stripe transfer is created,
+// and the order is updated to released. Also stamps the seller_tax_forms
+// 1099-K running total.
 //
 // Callers that race with FileListingDispute must pass an order already claimed
 // via ClaimListingOrderForRelease (durable pending transfer marker). ConfirmPickup
@@ -858,10 +922,7 @@ func (s *MarketplaceService) releaseToSeller(ctx context.Context, order *Marketp
 		return fmt.Errorf("release to seller: order disputed: %w", ErrInvalidEscrowState)
 	}
 
-	sellerPayout := order.AmountCents - order.FeeCents
-	if sellerPayout < 0 {
-		sellerPayout = 0
-	}
+	sellerPayout := goodsSellerItemPayout(order.AmountCents)
 
 	// MON-08: resolve seller UUID → Stripe Connect acct_* before transfer.
 	dest, err := s.resolveSellerConnectAccount(ctx, order.SellerID)
@@ -988,14 +1049,14 @@ func (s *MarketplaceService) FileListingDispute(ctx context.Context, orderID, bu
 
 // ResolveListingDispute is the admin path. Resolution is one of:
 //   - "refund_full": full charged total goes back to buyer; seller gets nothing
-//   - "refund_partial": refundCents to buyer, the remaining (amount - fee) - (refundCents - tax) to seller (cents-precise)
-//   - "release_to_seller": no refund; seller gets full payout
+//   - "refund_partial": refundCents to buyer; the seller keeps the item price that was not refunded
+//   - "release_to_seller": no refund; seller receives the item price
 //   - "no_action": close dispute, leave order in disputed (admin will revisit)
 //
 // For refund_partial the caller passes refundToBuyerCents explicitly. The
-// seller portion is computed as: max(0, amount_cents - fee_cents - refundToBuyerCents_minus_tax_portion).
-// To keep it predictable, we treat refundToBuyerCents as cents off the bid
-// amount only (tax is always platform-side). Seller transfer = max(0, amount - fee - refundToBuyerCents).
+// buyer was charged item + fee + tax. The refund consumes tax, then the fee,
+// then the item. Seller transfer = max(0, item price - item cents refunded).
+// The fee is not subtracted from the seller a second time.
 func (s *MarketplaceService) ResolveListingDispute(
 	ctx context.Context,
 	disputeID, adminID, resolution, notes string,
@@ -1028,25 +1089,21 @@ func (s *MarketplaceService) ResolveListingDispute(
 		if refundToBuyerCents < 0 || refundToBuyerCents > order.AmountCents+order.TaxCents+order.FeeCents {
 			return nil, fmt.Errorf("resolve dispute: refund_to_buyer out of range")
 		}
-		// Seller still gets the unrefunded portion of the bid amount minus fee.
-		// Tax is platform-collected and not paid out; we treat refund as
-		// coming first from tax + fee + amount in that order.
-		// For simplicity v1: seller payout = max(0, (amount - fee) - max(0, refund - tax - fee))
+		// The buyer was charged item + fee + tax. Refund consumes tax, then
+		// the fee, then the item. The seller is paid the item price that
+		// was not refunded. The fee is not subtracted a second time.
 		net := refundToBuyerCents - order.TaxCents - order.FeeCents
 		if net < 0 {
 			net = 0
 		}
-		transferToSellerCents = (order.AmountCents - order.FeeCents) - net
+		transferToSellerCents = goodsSellerItemPayout(order.AmountCents) - net
 		if transferToSellerCents < 0 {
 			transferToSellerCents = 0
 		}
 		newOrderStatus = "partially_refunded"
 	case "release_to_seller":
 		refundToBuyerCents = 0
-		transferToSellerCents = order.AmountCents - order.FeeCents
-		if transferToSellerCents < 0 {
-			transferToSellerCents = 0
-		}
+		transferToSellerCents = goodsSellerItemPayout(order.AmountCents)
 		newOrderStatus = "released"
 	case "no_action":
 		// Close dispute, leave order in disputed.
@@ -1607,4 +1664,53 @@ func (s *MarketplaceService) AutoReleaseListingOrders(ctx context.Context, batch
 		)
 	}
 	return released, nil
+}
+
+// UnpaidListingCancelResult is a successful buyer or admin cancel of an
+// unfunded goods order. EscrowStatus is payment_failed and ListingStatus is active.
+type UnpaidListingCancelResult struct {
+	OrderID       string
+	ListingID     string
+	EscrowStatus  string
+	ListingStatus string
+}
+
+// CancelUnpaidListingOrder cancels an unpaid goods order and returns the
+// listing to sale. The PaymentIntent is canceled first. succeeded,
+// requires_capture, and processing are left untouched and the listing stays
+// sold. The row update is status-guarded so a funded order cannot be canceled.
+func (s *MarketplaceService) CancelUnpaidListingOrder(ctx context.Context, orderID, actorUserID, actorRole string) (*UnpaidListingCancelResult, error) {
+	order, err := s.repo.GetListingOrder(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	if actorRole != "admin" && actorUserID != order.BuyerID {
+		return nil, ErrNotBuyer
+	}
+	if order.EscrowStatus != "pending_payment" && order.EscrowStatus != "payment_failed" {
+		return nil, ErrInvalidEscrowState
+	}
+	if order.EscrowStatus == "payment_failed" {
+		status, bidder, ends, stateErr := s.repo.ListingSaleState(ctx, order.ListingID)
+		if stateErr != nil {
+			return nil, fmt.Errorf("listing sale state: %w: %w", stateErr, ErrListingNotRelistable)
+		}
+		if status == "active" && bidder == "" && ends.After(s.now()) {
+			return &UnpaidListingCancelResult{
+				OrderID:       order.ID,
+				ListingID:     order.ListingID,
+				EscrowStatus:  "payment_failed",
+				ListingStatus: "active",
+			}, nil
+		}
+	}
+	if order.PaymentIntentID != "" {
+		if s.stripe == nil {
+			return nil, fmt.Errorf("cancel unpaid listing order: payments are not configured")
+		}
+		if err := s.stripe.CancelUncapturablePaymentIntent(ctx, order.PaymentIntentID, "listing-order-cancel:"+order.ID); err != nil {
+			return nil, err
+		}
+	}
+	return s.repo.AbandonUnpaidListingOrder(ctx, order.ID, "buyer canceled unpaid order")
 }

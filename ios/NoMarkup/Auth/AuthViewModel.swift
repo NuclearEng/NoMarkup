@@ -283,7 +283,16 @@ final class AuthViewModel: ObservableObject {
     /// RootView observes `isAuthenticated` → false and already calls `push.resetSessionState()`.
     private func handleDefinitiveAuthFailure(reason: AuthFailureReason) {
         beginNewSessionEpoch()
+        // Capture Bearer and end activities before Keychain clear. Unregister
+        // must not re-read Keychain or block the signed-out UI flip.
+        let accessForUnregister = (try? tokenStore.read(.accessToken))
+            .flatMap { $0.isEmpty ? nil : $0 }
+        let deviceKey = PushRegistration.shared.deviceTokenHex.flatMap { $0.isEmpty ? nil : $0 }
+        let liveActivityAuctionIDs = AuctionLiveActivityController.endAllLocal()
         try? tokenStore.clearSession()
+        WidgetSharedStore.clear()
+        PushRegistration.shared.clearBadge()
+        Task { await SpotlightIndex.deleteAll() }
         isAuthenticated = false
         isScaffoldSession = false
         shouldPresentOnboarding = false
@@ -292,6 +301,18 @@ final class AuthViewModel: ObservableObject {
         switch reason {
         case .refreshRejected, .sessionExpired:
             statusMessage = "Your session expired. Please sign in again."
+        }
+        Task {
+            await Self.unregisterPushDevice(
+                deviceKey: deviceKey,
+                accessToken: accessForUnregister
+            )
+            for auctionID in liveActivityAuctionIDs {
+                await Self.unregisterPushDevice(
+                    deviceKey: "liveactivity:\(auctionID)",
+                    accessToken: accessForUnregister
+                )
+            }
         }
     }
 
@@ -534,6 +555,9 @@ final class AuthViewModel: ObservableObject {
         let refreshForLogout = try? tokenStore.read(.refreshToken)
         let shouldCallServer = !isScaffoldSession
         let deviceKey = PushRegistration.shared.deviceTokenHex.flatMap { $0.isEmpty ? nil : $0 }
+        // End activities before Keychain clear. Their device keys unregister
+        // below with the captured Bearer — never via APIClient.
+        let liveActivityAuctionIDs = AuctionLiveActivityController.endAllLocal()
 
         do {
             try tokenStore.clearSession()
@@ -565,6 +589,12 @@ final class AuthViewModel: ObservableObject {
             await Self.withTimeout(seconds: 3) {
                 await Self.unregisterPushDevice(
                     deviceKey: deviceKey,
+                    accessToken: accessForUnregister
+                )
+            }
+            for auctionID in liveActivityAuctionIDs {
+                await Self.unregisterPushDevice(
+                    deviceKey: "liveactivity:\(auctionID)",
                     accessToken: accessForUnregister
                 )
             }

@@ -150,7 +150,7 @@ struct CreateListingView: View {
     private var basicsStepSections: some View {
         Section {
             Text(
-                "Local pickup only (≈25 mi). Buyers bid up in a forward auction. Escrow holds payment until pickup — no platform markup on the winning bid."
+                "Local pickup only (≈25 mi). Buyers bid up in a forward auction. The buyer pays the item price plus disclosed fees and tax, and the seller receives the item price. Escrow holds funds until local pickup."
             )
             .font(.subheadline)
             .foregroundStyle(BrandTheme.textSecondary)
@@ -349,7 +349,7 @@ struct CreateListingView: View {
             Text("Review").brandSectionHeader()
         } footer: {
             Text(
-                "Buyers bid up from your start price. Escrow holds payment until local pickup — no platform markup on the winning bid."
+                "Buyers bid up from your start price. The buyer pays the item price plus disclosed fees and tax, and the seller receives the item price. Escrow holds funds until local pickup."
             )
             .foregroundStyle(BrandTheme.textSecondary)
         }

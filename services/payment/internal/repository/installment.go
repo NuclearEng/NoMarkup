@@ -275,18 +275,65 @@ func (r *PostgresRepository) UpdateScheduledInstallmentStatus(ctx context.Contex
 		// charges never create). Writing it into payment_id failed every UPDATE with
 		// SQLSTATE 22P02, silently leaving installments stuck 'scheduled'. We keep
 		// payment_id NULL here and record the Stripe charge in its own column.
+		//
+		// A row that is already paid is not counted again. A second confirm must
+		// not bump attempts (that counter seeds later charge idempotency keys).
+		// Same-statement snapshot: the status read sees the pre-update row, so
+		// updated_count distinguishes a new paid write from an already-paid row.
+		var updatedCount int64
+		var priorStatus *string
+		err := r.pool.QueryRow(ctx, `
+			WITH updated AS (
+				UPDATE scheduled_installments SET
+					status = $1,
+					paid_at = now(),
+					stripe_payment_intent_id = $2,
+					last_attempt_at = now(),
+					attempts = attempts + 1,
+					updated_at = now()
+				WHERE id = $3 AND status <> 'paid'
+				RETURNING id
+			)
+			SELECT
+				(SELECT COUNT(*) FROM updated),
+				(SELECT s.status FROM scheduled_installments s WHERE s.id = $3)`,
+			status, paymentID, id).Scan(&updatedCount, &priorStatus)
+		if err != nil {
+			return fmt.Errorf("update scheduled installment status: %w", err)
+		}
+		if updatedCount > 0 {
+			return nil
+		}
+		if priorStatus != nil && *priorStatus == "paid" {
+			return nil
+		}
+		return fmt.Errorf("update scheduled installment status: not found")
+	case "processing":
+		// In-flight PaymentIntents stay on this attempt. Incrementing attempts
+		// here would mint a new idempotency key and charge the customer again.
 		query = `UPDATE scheduled_installments SET
-			status = $1, paid_at = now(), stripe_payment_intent_id = $2,
-			last_attempt_at = now(), attempts = attempts + 1,
+			status = $1, last_attempt_at = now(),
+			stripe_payment_intent_id = COALESCE($2, stripe_payment_intent_id),
 			updated_at = now()
 			WHERE id = $3`
 		args = []interface{}{status, paymentID, id}
-	case "processing":
+	case "processing_failed":
+		// Only a row parked as processing may consume an attempt. A cron
+		// decline already counted its attempt via the failed branch.
 		query = `UPDATE scheduled_installments SET
-			status = $1, last_attempt_at = now(), attempts = attempts + 1,
+			status = CASE WHEN attempts + 1 >= 3 THEN 'failed' ELSE 'retrying' END,
+			last_attempt_at = now(), attempts = attempts + 1,
 			updated_at = now()
-			WHERE id = $2`
-		args = []interface{}{status, id}
+			WHERE id = $1 AND status = 'processing'`
+		args = []interface{}{id}
+		tag, err := r.pool.Exec(ctx, query, args...)
+		if err != nil {
+			return fmt.Errorf("update scheduled installment status: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return nil
+		}
+		return nil
 	case "failed":
 		query = `UPDATE scheduled_installments SET
 			status = CASE WHEN attempts + 1 >= 3 THEN 'failed' ELSE 'retrying' END,

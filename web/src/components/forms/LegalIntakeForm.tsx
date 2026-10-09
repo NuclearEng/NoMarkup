@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowRight, Scale, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Scale } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo } from 'react';
@@ -422,10 +422,7 @@ export function LegalIntakeForm({ presetMatterCategoryId }: LegalIntakeFormProps
                   {isPending ? 'Posting…' : 'Post my legal job'}
                   {!isPending ? <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" /> : null}
                 </Button>
-                <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                  <ShieldCheck className="h-4 w-4 text-emerald-400" aria-hidden="true" />
-                  Every attorney&apos;s bar license is verified before they can bid.
-                </p>
+
               </div>
             </form>
           </Form>

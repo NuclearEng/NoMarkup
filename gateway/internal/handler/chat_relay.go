@@ -6,7 +6,7 @@ package handler
 // In dev, neither the inbound mail forwarder (Postmark/SES inbound) nor
 // the Twilio Proxy service is wired up. The contract here is:
 //
-//   - Email: ALWAYS generate an alias-{nanoid}@relay.nomarkup.com on first
+//   - Email: ALWAYS generate an alias-{nanoid}@relay.no-markup.com on first
 //     POST. The notification service uses this as the From: header when a
 //     message is "cold-open" (recipient has not yet replied). Setting up
 //     the inbound forwarder (POST /webhooks/inbound-mail → look up alias
@@ -56,12 +56,12 @@ func NewChatRelayHandler(db *pgxpool.Pool) *ChatRelayHandler {
 }
 
 // relayDomain is the subdomain inbound mail is routed to. Override with
-// CHAT_RELAY_DOMAIN in production (e.g. relay.nomarkup.com).
+// CHAT_RELAY_DOMAIN in production (e.g. relay.no-markup.com).
 func relayDomain() string {
 	if d := os.Getenv("CHAT_RELAY_DOMAIN"); d != "" {
 		return d
 	}
-	return "relay.nomarkup.com"
+	return "relay.no-markup.com"
 }
 
 // twilioConfigured reports whether the Twilio proxy service is wired up.

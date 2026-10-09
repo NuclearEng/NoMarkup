@@ -40,6 +40,9 @@ var (
 	ErrPlatformBankAccountNotFound = errors.New("platform bank account not found")
 	// ErrTipAlreadyRecorded is returned when contracts.tip_amount_cents is already non-zero.
 	ErrTipAlreadyRecorded = errors.New("tip already recorded")
+	// ErrTipPayoutPending means the customer was charged and the seller
+	// transfer has not landed. Do not start a second charge.
+	ErrTipPayoutPending = errors.New("tip charged but provider payout is pending")
 	// ErrContractNotCompleted is returned when a tip is attempted on a non-completed contract.
 	ErrContractNotCompleted = errors.New("contract is not completed")
 	// ErrInstantPayoutInsufficientBalance — claim under advisory lock found net
@@ -520,6 +523,9 @@ type PaymentRepository interface {
 	// GetContractForPayment loads the parties + amount of a non-deleted contract
 	// so payment/installment flows can reconcile client input server-side.
 	GetContractForPayment(ctx context.Context, contractID string) (*ContractForPayment, error)
+	// GetRecurringInstanceAmount loads the contract and visit price for a
+	// recurring instance. The client amount must match it.
+	GetRecurringInstanceAmount(ctx context.Context, instanceID string) (contractID string, amountCents int64, err error)
 	// SetContractTipIfZero CAS-sets contracts.tip_amount_cents only when still 0.
 	// Returns true when this call won the race and recorded the tip.
 	SetContractTipIfZero(ctx context.Context, contractID string, tipAmountCents int64) (bool, error)

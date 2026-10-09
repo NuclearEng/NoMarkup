@@ -62,10 +62,11 @@ type mockPaymentRepo struct {
 	getProviderEarningsFn func(ctx context.Context, providerID string, taxYear int) (int64, error)
 	getProviderProfileFn  func(ctx context.Context, providerID string) (string, string, error)
 	// Invoice methods
-	getContractDetailFn        func(ctx context.Context, contractID string) (*domain.ContractDetail, error)
-	getContractForPaymentFn    func(ctx context.Context, contractID string) (*domain.ContractForPayment, error)
-	getMilestonesForContractFn func(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error)
-	getPaymentsForContractFn   func(ctx context.Context, contractID string) ([]*domain.Payment, error)
+	getContractDetailFn          func(ctx context.Context, contractID string) (*domain.ContractDetail, error)
+	getContractForPaymentFn      func(ctx context.Context, contractID string) (*domain.ContractForPayment, error)
+	getRecurringInstanceAmountFn func(ctx context.Context, instanceID string) (string, int64, error)
+	getMilestonesForContractFn   func(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error)
+	getPaymentsForContractFn     func(ctx context.Context, contractID string) ([]*domain.Payment, error)
 	// Stripe customer ID + admin list/details/revenue
 	getStripeCustomerIDFn    func(ctx context.Context, userID string) (string, error)
 	adminListPaymentsFn      func(ctx context.Context, userID, statusFilter string, startTime, endTime *time.Time, page, pageSize int) ([]*domain.Payment, int, int64, int64, error)
@@ -89,6 +90,7 @@ type mockPaymentRepo struct {
 	sumInstantPayoutsLast24hFn      func(ctx context.Context, providerID string) (int64, error)
 	sumAllInstantPayoutsFn          func(ctx context.Context, providerID string) (int64, error)
 	sumEligibleInstantPayoutCentsFn func(ctx context.Context, providerID string) (int64, error)
+	setContractTipIfZeroFn          func(ctx context.Context, contractID string, tipAmountCents int64) (bool, error)
 	lookupInstantPayoutByKeyFn      func(ctx context.Context, providerID, key string) (*domain.InstantPayout, bool, error)
 	claimInstantPayoutFn            func(ctx context.Context, providerID string, amountCents, feeCents, netCents int64, key string) (*domain.InstantPayout, error)
 	completeInstantPayoutFn         func(ctx context.Context, payoutID, stripePayoutID string) error
@@ -477,7 +479,16 @@ func (m *mockPaymentRepo) GetContractForPayment(ctx context.Context, contractID 
 		Status:      "active",
 	}, nil
 }
-func (m *mockPaymentRepo) SetContractTipIfZero(_ context.Context, _ string, _ int64) (bool, error) {
+func (m *mockPaymentRepo) GetRecurringInstanceAmount(ctx context.Context, instanceID string) (string, int64, error) {
+	if m.getRecurringInstanceAmountFn != nil {
+		return m.getRecurringInstanceAmountFn(ctx, instanceID)
+	}
+	return "", 0, errRecurringInstanceUnconfigured
+}
+func (m *mockPaymentRepo) SetContractTipIfZero(ctx context.Context, contractID string, tipAmountCents int64) (bool, error) {
+	if m.setContractTipIfZeroFn != nil {
+		return m.setContractTipIfZeroFn(ctx, contractID, tipAmountCents)
+	}
 	return true, nil
 }
 func (m *mockPaymentRepo) GetMilestonesForContract(ctx context.Context, contractID string) ([]*domain.MilestoneDetail, error) {

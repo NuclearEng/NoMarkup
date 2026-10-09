@@ -11,7 +11,7 @@ import { verifyAccessToken, verifyJwt } from '@/lib/server/verify-jwt';
 const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const { privateKey: otherPrivateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 
-const ISSUER = 'https://auth.nomarkup.com';
+const ISSUER = 'https://auth.no-markup.com';
 const AUDIENCE = 'nomarkup-api';
 
 const NOW_MS = 1_750_000_000_000;

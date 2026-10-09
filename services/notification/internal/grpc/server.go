@@ -188,8 +188,15 @@ func (s *Server) GetPreferences(ctx context.Context, req *notificationv1.GetPref
 
 	protoPrefs := make([]*notificationv1.NotificationPreference, 0, len(prefs.Preferences))
 	for typeStr, cp := range prefs.Preferences {
+		if strings.HasPrefix(typeStr, "_") {
+			continue
+		}
+		nt := stringToProtoNotificationType(typeStr)
+		if nt == notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED {
+			continue
+		}
 		protoPrefs = append(protoPrefs, &notificationv1.NotificationPreference{
-			NotificationType: stringToProtoNotificationType(typeStr),
+			NotificationType: nt,
 			PushEnabled:      cp.Push,
 			EmailEnabled:     cp.Email,
 			SmsEnabled:       cp.SMS,
@@ -197,11 +204,22 @@ func (s *Server) GetPreferences(ctx context.Context, req *notificationv1.GetPref
 		})
 	}
 
+	globalPush, globalEmail, globalSMS := true, true, false
+	if cp, ok := prefs.Preferences["_global_push"]; ok {
+		globalPush = cp.Push
+	}
+	if cp, ok := prefs.Preferences["_global_email"]; ok {
+		globalEmail = cp.Push
+	}
+	if cp, ok := prefs.Preferences["_global_sms"]; ok {
+		globalSMS = cp.Push
+	}
+
 	return &notificationv1.GetPreferencesResponse{
 		Preferences:        protoPrefs,
-		GlobalPushEnabled:  true,
-		GlobalEmailEnabled: true,
-		GlobalSmsEnabled:   false,
+		GlobalPushEnabled:  globalPush,
+		GlobalEmailEnabled: globalEmail,
+		GlobalSmsEnabled:   globalSMS,
 	}, nil
 }
 
@@ -210,6 +228,11 @@ func (s *Server) UpdatePreferences(ctx context.Context, req *notificationv1.Upda
 	prefsMap := make(map[string]domain.ChannelPrefs)
 	for _, p := range req.GetPreferences() {
 		typeStr := protoNotificationTypeToString(p.GetNotificationType())
+		// Unspecified is not a stored type. Dropping it keeps a partial client
+		// payload from writing a junk key over the merged document.
+		if typeStr == "" || typeStr == "unspecified" {
+			continue
+		}
 		prefsMap[typeStr] = domain.ChannelPrefs{
 			InApp: p.GetInAppEnabled(),
 			Email: p.GetEmailEnabled(),
@@ -221,7 +244,9 @@ func (s *Server) UpdatePreferences(ctx context.Context, req *notificationv1.Upda
 	domainPrefs := &domain.NotificationPreferences{
 		UserID:      req.GetUserId(),
 		Preferences: prefsMap,
-		EmailDigest: "daily",
+		GlobalPush:  req.GlobalPushEnabled,
+		GlobalEmail: req.GlobalEmailEnabled,
+		GlobalSMS:   req.GlobalSmsEnabled,
 	}
 
 	updated, err := s.svc.UpdatePreferences(ctx, domainPrefs)
@@ -231,8 +256,15 @@ func (s *Server) UpdatePreferences(ctx context.Context, req *notificationv1.Upda
 
 	protoPrefs := make([]*notificationv1.NotificationPreference, 0, len(updated.Preferences))
 	for typeStr, cp := range updated.Preferences {
+		if strings.HasPrefix(typeStr, "_") {
+			continue
+		}
+		nt := stringToProtoNotificationType(typeStr)
+		if nt == notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED {
+			continue
+		}
 		protoPrefs = append(protoPrefs, &notificationv1.NotificationPreference{
-			NotificationType: stringToProtoNotificationType(typeStr),
+			NotificationType: nt,
 			PushEnabled:      cp.Push,
 			EmailEnabled:     cp.Email,
 			SmsEnabled:       cp.SMS,
@@ -364,6 +396,10 @@ func protoNotificationTypeToString(nt notificationv1.NotificationType) string {
 		return "bid_outbid"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED:
 		return "job_matched"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_PRICE_DROP:
+		return "price_drop"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_SELLER_NEW_LISTING:
+		return "seller_new_listing"
 	default:
 		return "unspecified"
 	}
@@ -443,6 +479,10 @@ func stringToProtoNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_BID_OUTBID
 	case "job_matched":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_JOB_MATCHED
+	case "price_drop":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PRICE_DROP
+	case "seller_new_listing":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_SELLER_NEW_LISTING
 	default:
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED
 	}

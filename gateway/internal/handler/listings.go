@@ -556,10 +556,23 @@ func (h *ListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
 	// 30s CDN TTL + 2m stale-while-revalidate absorbs catalog traffic while
 	// keeping listings fresh; per-user watchlist/bid state is hydrated
 	// client-side, never in this response.
-	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{
+	payload := map[string]interface{}{
 		"listings":   results,
 		"pagination": pageMeta(page, pageSize, total),
-	}, 30, 120)
+	}
+	// The iOS body omits paid placement. A shared cache must not reuse the
+	// web catalog response for that client, or the reverse.
+	w.Header().Add("Vary", noMarkupClientHeader)
+	if iosClient(r) {
+		for i := range results {
+			stripPaidPlacement(&results[i])
+		}
+		// Stripped body must not enter the public catalog cache.
+		w.Header().Set("Cache-Control", privateCachePolicy)
+		writeJSON(w, http.StatusOK, payload)
+		return
+	}
+	writeCachedJSON(w, r, http.StatusOK, payload, 30, 120)
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -718,6 +731,14 @@ func (h *ListingsHandler) GetListing(w http.ResponseWriter, r *http.Request) {
 	// Public listing detail → edge-cacheable. Short 15s TTL (auctions move
 	// fast) + 1m stale-while-revalidate; live bid state is fetched separately
 	// by the client island, so a slightly-stale snapshot here is safe.
+	w.Header().Add("Vary", noMarkupClientHeader)
+	if iosClient(r) {
+		stripPaidPlacement(&d.listingJSON)
+		// Stripped body must not enter the public catalog cache.
+		w.Header().Set("Cache-Control", privateCachePolicy)
+		writeJSON(w, http.StatusOK, map[string]interface{}{"listing": d})
+		return
+	}
 	writeCachedJSON(w, r, http.StatusOK, map[string]interface{}{"listing": d}, 15, 60)
 }
 

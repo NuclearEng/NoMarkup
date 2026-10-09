@@ -37,6 +37,24 @@ type mockMarketplaceRepo struct {
 	// fail — the deterministic way to drive the sweeper's charge-failure branch
 	// without a live Stripe.
 	updatePIErr map[string]error
+
+	// Listing sale state for unpaid-order cancel. Not on MarketplaceListingOrder.
+	listings       map[string]*mockListingSale
+	bidStatus      map[string]string
+	abandonCalls   int
+	saleStateCalls int
+	// abandonEscrowOverride, when set, is the escrow status Abandon observes.
+	// It simulates a fund landing after the service read pending_payment.
+	abandonEscrowOverride string
+}
+
+// mockListingSale is the listing row the unpaid-order cancel path locks.
+type mockListingSale struct {
+	status               string
+	currentBidderID      string
+	currentBidCents      *int64
+	auctionEndsAt        time.Time
+	auctionDurationHours int
 }
 
 type transferStamp struct {
@@ -58,6 +76,8 @@ func newMockRepo() *mockMarketplaceRepo {
 		paymentDueAt:    map[string]*time.Time{},
 		lastPaymentErr:  map[string]string{},
 		updatePIErr:     map[string]error{},
+		listings:        map[string]*mockListingSale{},
+		bidStatus:       map[string]string{},
 	}
 }
 
@@ -346,6 +366,83 @@ func (m *mockMarketplaceRepo) IncrementSellerTaxForm(_ context.Context, sellerID
 	return nil
 }
 
+func (m *mockMarketplaceRepo) ListingSaleState(_ context.Context, listingID string) (string, string, time.Time, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.saleStateCalls++
+	l, ok := m.listings[listingID]
+	if !ok || l == nil {
+		return "", "", time.Time{}, fmt.Errorf("listing %s: %w", listingID, ErrListingNotRelistable)
+	}
+	return l.status, l.currentBidderID, l.auctionEndsAt, nil
+}
+
+func (m *mockMarketplaceRepo) AbandonUnpaidListingOrder(_ context.Context, orderID, reason string) (*UnpaidListingCancelResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.abandonCalls++
+	o, ok := m.orders[orderID]
+	if !ok {
+		return nil, ErrListingOrderNotFound
+	}
+	if m.abandonEscrowOverride != "" {
+		o.EscrowStatus = m.abandonEscrowOverride
+	}
+	prevStatus := o.EscrowStatus
+	prevErr, hadErr := m.lastPaymentErr[orderID]
+	restoreOrder := func() {
+		o.EscrowStatus = prevStatus
+		if hadErr {
+			m.lastPaymentErr[orderID] = prevErr
+		} else {
+			delete(m.lastPaymentErr, orderID)
+		}
+	}
+	switch o.EscrowStatus {
+	case "pending_payment":
+		o.EscrowStatus = "payment_failed"
+		m.lastPaymentErr[orderID] = reason
+	case "payment_failed":
+	default:
+		return nil, ErrInvalidEscrowState
+	}
+	l, ok := m.listings[o.ListingID]
+	if !ok || l == nil {
+		restoreOrder()
+		return nil, fmt.Errorf("listing %s: %w", o.ListingID, ErrListingNotRelistable)
+	}
+	if l.status == "active" && l.currentBidderID == "" && l.auctionEndsAt.After(time.Now()) {
+		return &UnpaidListingCancelResult{
+			OrderID:       o.ID,
+			ListingID:     o.ListingID,
+			EscrowStatus:  "payment_failed",
+			ListingStatus: "active",
+		}, nil
+	}
+	if l.status != "sold" {
+		restoreOrder()
+		return nil, fmt.Errorf("listing status %q: %w", l.status, ErrListingNotRelistable)
+	}
+	hours := l.auctionDurationHours
+	if hours <= 0 {
+		restoreOrder()
+		return nil, fmt.Errorf("auction duration %d: %w", hours, ErrListingNotRelistable)
+	}
+	if m.bidStatus[o.ListingID] == "awarded" {
+		m.bidStatus[o.ListingID] = "outbid"
+	}
+	l.status = "active"
+	l.currentBidderID = ""
+	l.currentBidCents = nil
+	l.auctionEndsAt = time.Now().Add(time.Duration(hours) * time.Hour)
+	return &UnpaidListingCancelResult{
+		OrderID:       o.ID,
+		ListingID:     o.ListingID,
+		EscrowStatus:  "payment_failed",
+		ListingStatus: "active",
+	}, nil
+}
+
 // --- Mock notifier ---
 
 type captureNotifier struct {
@@ -427,6 +524,7 @@ func newOrder(id, status string, amount, fee int64) *MarketplaceListingOrder {
 func TestMarketplaceStateMachine_pending_to_held_via_charge_then_webhook(t *testing.T) {
 	t.Parallel()
 	svc, repo, _ := newMarketplaceFixture()
+	svc.SetTaxRegisteredStates([]string{"CA"})
 
 	o := newOrder("ord-1", "pending_payment", 50000, 2500)
 	o.PickupZipCode = "94016" // CA, 7.25%
@@ -463,7 +561,7 @@ func TestMarketplaceStateMachine_held_to_released_via_pickup_confirm(t *testing.
 	got, err := svc.ConfirmPickup(context.Background(), o.ID, o.BuyerID, "buyer")
 	require.NoError(t, err)
 	assert.Equal(t, "released", got.EscrowStatus)
-	assert.Equal(t, int64(50000-2500), got.SellerPayoutCents)
+	assert.Equal(t, int64(50000), got.SellerPayoutCents)
 	require.NotNil(t, got.ReleasedAt)
 	require.NotNil(t, got.PickupConfirmedAt)
 
@@ -472,7 +570,7 @@ func TestMarketplaceStateMachine_held_to_released_via_pickup_confirm(t *testing.
 
 	// 1099-K accumulated.
 	require.Len(t, repo.taxIncs, 1)
-	assert.Equal(t, int64(47500), repo.taxIncs[0].cents)
+	assert.Equal(t, int64(50000), repo.taxIncs[0].cents)
 }
 
 func TestMarketplaceStateMachine_confirm_pickup_rejects_non_buyer(t *testing.T) {
@@ -685,12 +783,12 @@ func TestMarketplaceStateMachine_resolve_refund_partial(t *testing.T) {
 	}
 
 	// Refund $100 (= 10000 cents) to buyer.
-	// Net = refund - tax - fee = 10000 - 0 - 2500 = 7500
-	// Seller payout = (50000 - 2500) - 7500 = 40000
+	// Net taken from the item = refund - tax - fee = 10000 - 0 - 2500 = 7500
+	// Seller payout = 50000 - 7500 = 42500 (fee is not subtracted again).
 	resolved, err := svc.ResolveListingDispute(context.Background(), disputeID, "admin-1", "refund_partial", "split", 10000)
 	require.NoError(t, err)
 	assert.Equal(t, int64(10000), resolved.RefundToBuyerCents)
-	assert.Equal(t, int64(40000), resolved.TransferToSellerCents)
+	assert.Equal(t, int64(42500), resolved.TransferToSellerCents)
 
 	got, _ := repo.GetListingOrder(context.Background(), o.ID)
 	assert.Equal(t, "partially_refunded", got.EscrowStatus)
@@ -713,7 +811,7 @@ func TestMarketplaceStateMachine_resolve_release_to_seller(t *testing.T) {
 	resolved, err := svc.ResolveListingDispute(context.Background(), disputeID, "admin-1", "release_to_seller", "admin sided with seller", 0)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), resolved.RefundToBuyerCents)
-	assert.Equal(t, int64(47500), resolved.TransferToSellerCents)
+	assert.Equal(t, int64(50000), resolved.TransferToSellerCents)
 
 	got, _ := repo.GetListingOrder(context.Background(), o.ID)
 	assert.Equal(t, "released", got.EscrowStatus)
@@ -780,7 +878,7 @@ func TestAutoRelease_only_releases_orders_past_window(t *testing.T) {
 
 	got, _ = repo.GetListingOrder(context.Background(), "ripe")
 	assert.Equal(t, "released", got.EscrowStatus)
-	assert.Equal(t, int64(47500), got.SellerPayoutCents)
+	assert.Equal(t, int64(50000), got.SellerPayoutCents)
 
 	got, _ = repo.GetListingOrder(context.Background(), "disp")
 	assert.Equal(t, "held", got.EscrowStatus)
@@ -847,12 +945,12 @@ func TestAutoRelease_pays_handshake_released_order(t *testing.T) {
 
 	got, _ := repo.GetListingOrder(context.Background(), "handshake")
 	assert.Equal(t, "released", got.EscrowStatus)
-	assert.Equal(t, int64(47500), got.SellerPayoutCents, "seller payout = amount − fee = 50000 − 2500")
+	assert.Equal(t, int64(50000), got.SellerPayoutCents, "seller payout is the item price; the fee was already charged to the buyer")
 	assert.NotEmpty(t, got.StripeTransferID, "transfer id stamped so it never pays again")
 
 	// 1099-K accumulated exactly once.
 	require.Len(t, repo.taxIncs, 1)
-	assert.Equal(t, int64(47500), repo.taxIncs[0].cents)
+	assert.Equal(t, int64(50000), repo.taxIncs[0].cents)
 
 	// Idempotency: a second worker run must NOT pay again.
 	count, err = svc.AutoReleaseListingOrders(context.Background(), 10)
@@ -920,6 +1018,7 @@ func TestReleaseToSeller_double_release_does_not_double_pay(t *testing.T) {
 func TestChargeListingWinner_idempotent_reentry(t *testing.T) {
 	t.Parallel()
 	svc, repo, _ := newMarketplaceFixture()
+	svc.SetTaxRegisteredStates([]string{"TX"})
 
 	o := newOrder("ord-i1", "pending_payment", 10000, 500)
 	o.PickupZipCode = "75201" // TX 6.25%
@@ -952,6 +1051,7 @@ func TestChargeListingWinner_idempotent_reentry(t *testing.T) {
 func TestFullLifecycle_winner_charged_pickup_confirmed_transfer_to_seller(t *testing.T) {
 	t.Parallel()
 	svc, repo, notifier := newMarketplaceFixture()
+	svc.SetTaxRegisteredStates([]string{"CA"})
 
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	svc.SetClock(func() time.Time { return now })
@@ -970,11 +1070,11 @@ func TestFullLifecycle_winner_charged_pickup_confirmed_transfer_to_seller(t *tes
 	got, _ := repo.GetListingOrder(context.Background(), o.ID)
 	assert.Equal(t, "held", got.EscrowStatus)
 
-	// 3. Buyer confirms pickup. Seller payout = amount - fee = 45000.
+	// 3. Buyer confirms pickup. Seller receives the item price.
 	confirmed, err := svc.ConfirmPickup(context.Background(), o.ID, o.BuyerID, "buyer")
 	require.NoError(t, err)
 	assert.Equal(t, "released", confirmed.EscrowStatus)
-	assert.Equal(t, int64(45000), confirmed.SellerPayoutCents)
+	assert.Equal(t, int64(50000), confirmed.SellerPayoutCents)
 
 	// 4. Notification fired.
 	require.GreaterOrEqual(t, len(notifier.events), 1)
@@ -982,6 +1082,30 @@ func TestFullLifecycle_winner_charged_pickup_confirmed_transfer_to_seller(t *tes
 
 	// 5. 1099-K recorded.
 	require.Len(t, repo.taxIncs, 1)
-	assert.Equal(t, int64(45000), repo.taxIncs[0].cents)
+	assert.Equal(t, int64(50000), repo.taxIncs[0].cents)
 	assert.Equal(t, 2026, repo.taxIncs[0].year)
+}
+
+// TestChargeListingWinner_noRegisteredStatesCollectsZeroTax proves an empty
+// collection set stores no sales tax even when the rate table is non-zero.
+func TestChargeListingWinner_noRegisteredStatesCollectsZeroTax(t *testing.T) {
+	t.Parallel()
+	svc, repo, _ := newMarketplaceFixture()
+
+	o := newOrder("ord-notax", "pending_payment", 50000, 2500)
+	o.PickupZipCode = "94016"
+	repo.addOrder(o)
+
+	_, tableTax := ComputeTaxCentsForZip(o.AmountCents, o.PickupZipCode)
+	assert.Greater(t, tableTax, int64(0), "rate table is unchanged and would have been non-zero")
+
+	res, err := svc.ChargeListingWinner(context.Background(), o.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), res.TaxCents)
+	assert.Equal(t, int64(5000), res.FeeCents)
+	assert.Equal(t, o.AmountCents+res.FeeCents, res.TotalCents)
+
+	got, err := repo.GetListingOrder(context.Background(), o.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), got.TaxCents)
 }

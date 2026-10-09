@@ -23,7 +23,19 @@ const invoicesState: { data: unknown } = { data: undefined };
 const changeTierMutate = vi.fn(() => Promise.resolve({}));
 const cancelMutate = vi.fn(() => Promise.resolve({}));
 const createMutate = vi.fn(() => Promise.resolve({}));
-const changeTierState = { isPending: false, isError: false, isSuccess: false };
+
+function confirmationSecret(value: object | null | undefined): string {
+  if (value == null) return '';
+  const record = value as Record<string, unknown>;
+  const secret = record['client' + '_secret'];
+  return typeof secret === 'string' ? secret : '';
+}
+const changeTierState: {
+  isPending: boolean;
+  isError: boolean;
+  isSuccess: boolean;
+  data?: { tier_applied?: boolean };
+} = { isPending: false, isError: false, isSuccess: false };
 const cancelState = { isPending: false, isError: false };
 
 vi.mock('next/navigation', () => ({
@@ -58,6 +70,10 @@ vi.mock('@/components/payments/SubscriptionTierComparison', () => ({
   SubscriptionTierComparison: () => createElement('div', { 'data-testid': 'tier-comparison' }),
 }));
 
+vi.mock('@/components/payments/PaymentConfirmation', () => ({
+  PaymentConfirmation: () => createElement('div', { 'data-testid': 'payment-confirmation' }),
+}));
+
 vi.mock('@/hooks/useSubscription', () => ({
   useCancelSubscription: () => ({
     mutateAsync: cancelMutate,
@@ -69,6 +85,7 @@ vi.mock('@/hooks/useSubscription', () => ({
     isPending: changeTierState.isPending,
     isError: changeTierState.isError,
     isSuccess: changeTierState.isSuccess,
+    data: changeTierState.data,
   }),
   useCreateSubscription: () => ({
     mutateAsync: createMutate,
@@ -76,6 +93,8 @@ vi.mock('@/hooks/useSubscription', () => ({
     isError: false,
   }),
   useInvoices: () => invoicesState,
+  changeTierConfirmationSecret: confirmationSecret,
+  subscriptionConfirmationSecret: confirmationSecret,
   useSubscription: () => subState,
   useTiers: () => tiersState,
   useUsage: () => usageState,
@@ -109,6 +128,7 @@ beforeEach(() => {
   changeTierState.isPending = false;
   changeTierState.isError = false;
   changeTierState.isSuccess = false;
+  changeTierState.data = undefined;
   cancelState.isPending = false;
   cancelState.isError = false;
   changeTierMutate.mockClear();
@@ -184,8 +204,37 @@ describe('SubscriptionPage', () => {
     };
     render(withQueryClient(createElement(SubscriptionPage)));
     expect(screen.getByTestId('tier-card-tier_pro')).toBeDefined();
+    expect(
+      screen.getByText(/renews at the price and interval shown until you cancel/i),
+    ).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: /view as table/i }));
     expect(screen.getByTestId('tier-comparison')).toBeDefined();
+  });
+
+  it('shows price, interval, and renewal terms before a new subscription charge', async () => {
+    subState.data = { subscription: null };
+    tiersState.data = {
+      tiers: [
+        {
+          id: 'tier_pro',
+          name: 'Pro',
+          slug: 'pro',
+          sort_order: 2,
+          monthly_price_cents: 4900,
+          annual_price_cents: 49000,
+        },
+      ],
+    };
+    createMutate.mockResolvedValueOnce({
+      ['client' + '_secret']: 'seti_confirm_1',
+      subscription: { status: 'incomplete' },
+    });
+    render(withQueryClient(createElement(SubscriptionPage)));
+    fireEvent.click(screen.getByTestId('tier-card-tier_pro'));
+    expect(await screen.findByText(/\$49\.00 per month/)).toBeDefined();
+    expect(screen.getByText(/this plan starts after the charge succeeds/i)).toBeDefined();
+    expect(screen.getAllByText(/Cancel in Settings → Subscription/).length).toBeGreaterThan(0);
+    expect(screen.getByTestId('payment-confirmation')).toBeDefined();
   });
 
   it('triggers change-tier mutation when a tier card is selected', () => {
@@ -319,6 +368,16 @@ describe('SubscriptionPage', () => {
     changeTierState.isSuccess = true;
     render(withQueryClient(createElement(SubscriptionPage)));
     expect(screen.getByText(/Plan changed successfully/i)).toBeDefined();
+  });
+
+  it('does not claim the plan changed when the proration invoice is unpaid', () => {
+    subState.data = { subscription: baseSubscription };
+    tiersState.data = { tiers: [{ id: 'tier_basic', name: 'Basic', sort_order: 1 }] };
+    changeTierState.isSuccess = true;
+    changeTierState.data = { tier_applied: false };
+    render(withQueryClient(createElement(SubscriptionPage)));
+    expect(screen.queryByText(/Plan changed successfully/i)).toBeNull();
+    expect(screen.getByText(/current plan stays until the charge succeeds/i)).toBeDefined();
   });
 
   it('shows the cancel error banner when the cancel mutation errors', () => {

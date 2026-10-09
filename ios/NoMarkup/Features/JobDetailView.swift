@@ -23,6 +23,7 @@ struct JobDetailView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showReportSheet = false
+    @State private var showReportUserSheet = false
     @State private var showBlockConfirm = false
     @State private var isBlockingUser = false
     @State private var blockStatusMessage: String?
@@ -334,6 +335,19 @@ struct JobDetailView: View {
         return nil
     }
 
+    /// Poster (`job.customer_id`) when it is someone else. Missing or self hides Report user.
+    private var posterUserID: String? {
+        let raw = detail?.customerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !raw.isEmpty else { return nil }
+        if let me = currentUserID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !me.isEmpty,
+           raw.caseInsensitiveCompare(me) == .orderedSame
+        {
+            return nil
+        }
+        return raw
+    }
+
     /// Customer who posted the job (JWT `sub` matches `job.customer_id`).
     private var isJobOwner: Bool {
         guard let customerId = detail?.customerId?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -579,6 +593,14 @@ struct JobDetailView: View {
                 showReportSheet = false
             }
         }
+        .sheet(isPresented: $showReportUserSheet) {
+            if let userID = posterUserID {
+                UserReportSheet(userID: userID) {
+                    showReportUserSheet = false
+                }
+                .environmentObject(auth)
+            }
+        }
         .confirmationDialog(
             "Block this user?",
             isPresented: $showBlockConfirm,
@@ -762,6 +784,17 @@ struct JobDetailView: View {
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
                 .accessibilityIdentifier("jobDetail.report")
+
+                if posterUserID != nil {
+                    Button {
+                        showReportUserSheet = true
+                    } label: {
+                        Label("Report user", systemImage: "exclamationmark.bubble")
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                    .accessibilityHint("Report the person who posted this job")
+                    .accessibilityIdentifier("jobDetail.reportUser")
+                }
             }
         }
         .brandListBackground()

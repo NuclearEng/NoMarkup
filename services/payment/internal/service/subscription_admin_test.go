@@ -239,7 +239,7 @@ func TestSubscriptionService_HandleSubscriptionWebhook_Coverage(t *testing.T) {
 		svc := newTestSubService(repo)
 		ps := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 		pe := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
-		err := svc.HandleSubscriptionWebhook(context.Background(), "customer.subscription.updated", "sub_xyz", &ps, &pe)
+		err := svc.HandleSubscriptionWebhook(context.Background(), "customer.subscription.updated", "sub_xyz", &ps, &pe, "", "")
 		require.NoError(t, err)
 		assert.Equal(t, ps, capturedStart)
 		assert.Equal(t, pe, capturedEnd)
@@ -258,7 +258,7 @@ func TestSubscriptionService_HandleSubscriptionWebhook_Coverage(t *testing.T) {
 			},
 		}
 		svc := newTestSubService(repo)
-		err := svc.HandleSubscriptionWebhook(context.Background(), "customer.subscription.deleted", "sub_xyz", nil, nil)
+		err := svc.HandleSubscriptionWebhook(context.Background(), "customer.subscription.deleted", "sub_xyz", nil, nil, "", "")
 		require.NoError(t, err)
 		assert.Equal(t, "expired", capturedStatus)
 	})
@@ -272,7 +272,7 @@ func TestSubscriptionService_HandleSubscriptionWebhook_Coverage(t *testing.T) {
 		}
 		svc := newTestSubService(repo)
 		// Should NOT propagate error — Stripe must get a 200 to stop retrying.
-		err := svc.HandleSubscriptionWebhook(context.Background(), "customer.subscription.deleted", "sub_unknown", nil, nil)
+		err := svc.HandleSubscriptionWebhook(context.Background(), "customer.subscription.deleted", "sub_unknown", nil, nil, "", "")
 		require.NoError(t, err)
 	})
 }

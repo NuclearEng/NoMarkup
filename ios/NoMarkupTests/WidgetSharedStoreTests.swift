@@ -122,4 +122,26 @@ final class WidgetSharedStoreTests: XCTestCase {
         WidgetBidSnapshotSync.applyServices([active, withdrawn])
         XCTAssertEqual(WidgetSharedStore.load().servicesBidCount, 1)
     }
+
+    func testClearRemovesGoodsAuctionWrittenByReplaceRail() {
+        let later = Date().addingTimeInterval(7200)
+        WidgetSharedStore.replaceRail(
+            .goods,
+            activeCount: 1,
+            auctions: [
+                WidgetSharedStore.AuctionSnapshot(
+                    id: "listing-clear",
+                    title: "Table",
+                    endsAt: later,
+                    amountCents: 9_000,
+                    kind: WidgetSharedStore.BidRail.goods.kind
+                ),
+            ]
+        )
+        XCTAssertEqual(WidgetSharedStore.load().auctions.map(\.id), ["listing-clear"])
+        WidgetSharedStore.clear()
+        let snap = WidgetSharedStore.load()
+        XCTAssertTrue(snap.auctions.isEmpty)
+        XCTAssertEqual(snap.activeBidCount, 0)
+    }
 }

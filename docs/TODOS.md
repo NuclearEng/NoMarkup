@@ -190,7 +190,7 @@ Already shipped:
 
 ### Founder-Action — 6. Wire email verification — SendGrid (Phase 1)
 **Code (Done):** `services/notification/internal/service/email.go` is fully wired to the SendGrid v3 API. When `apiKey == ""` it operates in dev-mode (logs the would-be email). Email verification token generation + handler are in place (P1 #12 below). The user-service call for "send verification email" delegates to the notification service.
-**Founder-Action:** create the SendGrid account → get API key → set `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` (e.g. `notifications@nomarkup.com`), and (optionally) a verification template ID in the production secrets store. Re-roll the notification pod and the dev-mode warning will switch off.
+**Founder-Action:** create the SendGrid account → get API key → set `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` (e.g. `notifications@no-markup.com`), and (optionally) a verification template ID in the production secrets store. Re-roll the notification pod and the dev-mode warning will switch off. The owned zone is hyphenated `no-markup.com`.
 **Machine-check (does not close this item):** `make founder-secrets-check` reports `SENDGRID_API_KEY` as present/missing/placeholder. Fail-closed with `--strict` or `ENVIRONMENT=production`. Never prints the key.
 
 #### (original spec preserved below)

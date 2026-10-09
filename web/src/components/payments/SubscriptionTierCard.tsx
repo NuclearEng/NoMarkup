@@ -4,6 +4,7 @@ import { Check, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SUBSCRIPTION_RENEWAL_DISCLOSURE } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import { formatCents, subscriptionTierLabel } from '@/lib/utils';
 import { BILLING_INTERVAL } from '@/types';
@@ -106,6 +107,13 @@ export function SubscriptionTierCard({
         {billingInterval === BILLING_INTERVAL.ANNUAL ? (
           <p className="mt-1 text-xs text-muted-foreground">
             {formatCents(priceCents)} billed annually
+          </p>
+        ) : null}
+        {priceCents > 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {formatCents(priceCents)}{' '}
+            {billingInterval === BILLING_INTERVAL.ANNUAL ? 'per year' : 'per month'}.{' '}
+            {SUBSCRIPTION_RENEWAL_DISCLOSURE}
           </p>
         ) : null}
       </CardHeader>

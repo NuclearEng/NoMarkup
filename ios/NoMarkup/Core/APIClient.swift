@@ -1072,6 +1072,18 @@ actor APIClient {
         )
     }
 
+    /// POST `/api/v1/orders/{id}/cancel-unpaid` — buyer abandons an order still awaiting payment.
+    /// Idempotency-Key: `order-cancel-unpaid:{orderId}` (same header style as `payOrder`).
+    @discardableResult
+    func cancelUnpaidOrder(orderId: String) async throws -> CancelUnpaidOrderResponse {
+        try await postJSON(
+            pathComponents: ["api", "v1", "orders", orderId, "cancel-unpaid"],
+            body: EmptyJSONObject(),
+            authorized: .required,
+            headers: ["Idempotency-Key": "order-cancel-unpaid:\(orderId)"]
+        )
+    }
+
     /// GET `/api/v1/me/orders` — buyer/seller order list (Bearer required).
     func fetchMyOrders() async throws -> MyOrdersResponse {
         try await getJSON(

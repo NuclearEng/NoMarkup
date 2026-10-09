@@ -46,7 +46,10 @@ function normalizeListing<T extends Listing>(listing: RawListing<T>): T {
   return { ...listing, photos: listing.photos ?? [] } as T;
 }
 
-function explainListingFailure(fallback: string): (err: unknown) => void {
+function explainListingFailure(
+  fallback: string,
+  options?: { conflictMessage?: string },
+): (err: unknown) => void {
   return (err: unknown) => {
     if (err instanceof ApiError) {
       const status = err.status;
@@ -57,6 +60,13 @@ function explainListingFailure(fallback: string): (err: unknown) => void {
         return;
       }
       if (status === 409) {
+        // Bid placement keeps the auction-specific copy. Other callers (unpaid
+        // cancel) pass conflictMessage so a capturable payment is not rewritten
+        // into that bid sentence — the service text says the listing stays sold.
+        if (options?.conflictMessage !== undefined) {
+          toast.error(getApiErrorMessage(err, options.conflictMessage));
+          return;
+        }
         toast.error('Bid rejected: auction not active, ended, or you already hold the high bid.');
         return;
       }
@@ -538,5 +548,41 @@ export function useReportOrderNoShow() {
       void qc.invalidateQueries({ queryKey: ['listingOrders', 'mine'] });
     },
     onError: explainListingFailure('Failed to report no-show'),
+  });
+}
+
+type CancelUnpaidOrderResult = {
+  order_id: string;
+  listing_id: string;
+  escrow_status: string;
+  listing_status: string;
+};
+
+/**
+ * POST /api/v1/orders/{id}/cancel-unpaid — buyer abandons an order that is
+ * still awaiting payment so the listing can be listed again.
+ */
+export function useCancelUnpaidOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) =>
+      api.post<CancelUnpaidOrderResult>(
+        `/api/v1/orders/${orderId}/cancel-unpaid`,
+        {},
+        idempotencyHeader(`order-cancel-unpaid:${orderId}`),
+      ),
+    onSuccess: (data, orderId) => {
+      clearIdempotencyKey(`order-cancel-unpaid:${orderId}`);
+      toast.success('Unpaid order canceled. The listing is for sale again.');
+      void qc.invalidateQueries({ queryKey: ['listingOrders', orderId] });
+      void qc.invalidateQueries({ queryKey: ['listingOrders', 'mine'] });
+      if (data.listing_id) {
+        void qc.invalidateQueries({ queryKey: ['listings', data.listing_id] });
+      }
+    },
+    onError: explainListingFailure('Could not cancel this unpaid order', {
+      conflictMessage:
+        'This order can no longer be canceled. If payment already went through, the listing stays sold.',
+    }),
   });
 }

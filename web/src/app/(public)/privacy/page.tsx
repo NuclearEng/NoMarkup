@@ -86,8 +86,8 @@ export default function PrivacyPolicyPage() {
                 </li>
                 <li>
                   <strong>Photos and media</strong> — images you upload for jobs, listings,
-                  completion proof, or profile, processed for display and (where enabled) quality
-                  or safety analysis.
+                  completion proof, or profile. They are stored and shown with that item.
+                  NoMarkup does not screen those images for safety.
                 </li>
                 <li>
                   <strong>Payments</strong> — payment method metadata, Stripe customer and Connect

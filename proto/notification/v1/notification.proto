@@ -111,6 +111,10 @@ enum NotificationType {
   // SCA / 3DS — buyer must complete bank authentication (distinct from a hard
   // decline). UI should render an Authenticate CTA, not a generic failure icon.
   NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED = 45;
+  // Goods marketplace alerts. Distinct from LIVE_AUCTION_PRICE_DROP, which is
+  // the services live-auction arena event.
+  NOTIFICATION_TYPE_PRICE_DROP = 46;
+  NOTIFICATION_TYPE_SELLER_NEW_LISTING = 47;
 }
 
 message Notification {

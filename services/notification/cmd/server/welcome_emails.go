@@ -197,13 +197,9 @@ func processWelcomeStage(ctx context.Context, pool *pgxpool.Pool, svc *service.S
 			data["user_email"] = u.email
 		}
 
-		// Request email + in-app for the welcome cadence. These are the
-		// intended channels for onboarding, but SendNotification filters
-		// this set against any preference the user has EXPLICITLY stored for
-		// the type (filterByExplicitPrefs) — so a user who turned off email
-		// for `welcome_day_1` gets in-app only, not email. We don't pre-seed
-		// these types into defaultChannelPrefs, so an untouched user keeps
-		// receiving the cadence on both channels.
+		// Request email + in-app. SendNotification keeps promotional email
+		// only when the user has stored email=true for this type. An
+		// untouched account gets the in-app row and does not get the email.
 		channels := []string{"in_app", "email"}
 
 		if _, _, err := svc.SendNotification(ctx, u.userID, stage.notifType,

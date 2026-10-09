@@ -8,14 +8,14 @@ import (
 
 // Sentinel errors for the contract domain.
 var (
-	ErrContractNotFound        = errors.New("contract not found")
+	ErrContractNotFound = errors.New("contract not found")
 	// ErrJobAlreadyContracted means the job already carries a LIVE contract
 	// for a DIFFERENT bid (migration 078's uq_contracts_live_job). Awarding a
 	// second bid would start a parallel escrow lifecycle against the same job,
 	// so it is refused. Retrying the award of the SAME bid is not this error —
 	// that returns the existing contract (CreateContract is idempotent per
 	// bid). Gateways should map this to 409 Conflict.
-	ErrJobAlreadyContracted = errors.New("job already has a live contract for a different bid")
+	ErrJobAlreadyContracted    = errors.New("job already has a live contract for a different bid")
 	ErrNotContractParty        = errors.New("not a party to this contract")
 	ErrNotContractProvider     = errors.New("only the provider can mark this contract complete")
 	ErrAlreadyAccepted         = errors.New("contract already accepted by this party")
@@ -51,6 +51,9 @@ var (
 	ErrRecurringInvalidFrequency = errors.New("invalid recurrence frequency")
 	ErrRecurringInvalidRate      = errors.New("invalid recurring rate")
 	ErrRecurringInstanceState    = errors.New("invalid recurring instance status transition")
+	// ErrRecurringCustomerOnly is returned when a provider tries to change the
+	// visit rate or turn auto-approve on. The provider may turn auto-approve off.
+	ErrRecurringCustomerOnly = errors.New("only the customer can change the recurring rate or turn on auto-approve")
 )
 
 // Contract represents a contract between customer and provider.

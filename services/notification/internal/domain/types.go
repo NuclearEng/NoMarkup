@@ -37,6 +37,12 @@ type NotificationPreferences struct {
 	UserID      string
 	Preferences map[string]ChannelPrefs // notification_type -> channel prefs
 	EmailDigest string                  // "immediate", "daily", "weekly", "off"
+	// Global channel switches for this write. Nil means the caller did not
+	// send one, so the stored switch is kept. The stored values live in
+	// Preferences under the _global_push, _global_email, and _global_sms keys.
+	GlobalPush  *bool
+	GlobalEmail *bool
+	GlobalSMS   *bool
 }
 
 // ChannelPrefs defines per-channel enable/disable settings for a notification type.
@@ -67,6 +73,8 @@ type NotificationRepository interface {
 	GetPreferences(ctx context.Context, userID string) (*NotificationPreferences, error)
 	UpsertPreferences(ctx context.Context, prefs *NotificationPreferences) (*NotificationPreferences, error)
 	DisableEmailByToken(ctx context.Context, token string) (userEmail string, err error)
+	// IssueUnsubscribeToken persists a new email unsubscribe token for userID and returns it.
+	IssueUnsubscribeToken(ctx context.Context, userID string) (string, error)
 }
 
 // DeviceTokenRepository defines persistence operations for device tokens.

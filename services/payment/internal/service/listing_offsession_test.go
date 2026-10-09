@@ -73,6 +73,7 @@ func TestOffSession_EndToEnd_ProvisionSaveChargeHold(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, repo, notifier, dir, ss := offSessionFixture(t)
+	svc.SetTaxRegisteredStates([]string{"CA"})
 
 	// --- provision + save a card ---
 	o := newOrder("e2e", "pending_payment", 50000, 5000)

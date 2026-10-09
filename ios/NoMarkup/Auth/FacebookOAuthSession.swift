@@ -154,12 +154,6 @@ final class FacebookOAuthSession: NSObject, ASWebAuthenticationPresentationConte
     // MARK: - Helpers
 
     private static func randomURLSafeString(byteCount: Int) -> String {
-        var bytes = [UInt8](repeating: 0, count: byteCount)
-        let status = SecRandomCopyBytes(kSecRandomDefault, byteCount, &bytes)
-        precondition(status == errSecSuccess, "SecRandomCopyBytes failed")
-        return Data(bytes).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+        OAuthNonceFallback.urlSafeRandom(byteCount: byteCount)
     }
 }

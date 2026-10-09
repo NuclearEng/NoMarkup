@@ -3,6 +3,7 @@
 import { Check, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { SUBSCRIPTION_RENEWAL_DISCLOSURE } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import { formatCents, subscriptionTierLabel } from '@/lib/utils';
 import { BILLING_INTERVAL } from '@/types';
@@ -84,7 +85,9 @@ export function SubscriptionTierComparison({
   const sortedTiers = [...tiers].sort((a, b) => a.sort_order - b.sort_order);
 
   return (
-    <div className="overflow-x-auto">
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">{SUBSCRIPTION_RENEWAL_DISCLOSURE}</p>
+      <div className="overflow-x-auto">
       <table className="w-full border-collapse text-left">
         <thead>
           <tr>
@@ -180,6 +183,7 @@ export function SubscriptionTierComparison({
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

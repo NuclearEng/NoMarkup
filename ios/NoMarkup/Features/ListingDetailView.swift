@@ -109,13 +109,13 @@ struct ListingDetailView: View {
     /// `NSUserActivity` type donated when the user views a listing.
     private static let viewListingActivityType = "com.nomarkup.app.viewListing"
 
-    /// One-sentence goods bid / BIN authorization (ToS §5, tos-2026-08-12-bid-auth).
+    /// Goods bid / BIN authorization (ToS §5, tos-2026-08-12-bid-auth).
     private static let bidAuthorizationDisclosure =
-        "Placing a goods bid or Buy it now authorizes NoMarkup to charge your saved payment method if you win, for the winning amount plus disclosed fees and tax; if the charge fails, you can pay from the order page."
+        "Placing a goods bid or Buy it now authorizes NoMarkup to charge your saved payment method if you win, for the winning amount plus disclosed fees and tax; if the charge fails, you can pay from the order page. If payment has not been captured, you can cancel the unpaid order from the order page and the listing goes back on sale. A payment that can still be captured cannot be canceled that way."
 
-    /// Buyer pays the agreed price. Platform take is seller-side; the client does not invent a percent.
+    /// Goods: buyer pays item price plus disclosed fees and tax. Seller receives the item price.
     private static let buyerPaysAgreedPriceLine =
-        "You pay the agreed price. The platform fee is taken from the seller’s payout."
+        "The buyer pays the item price plus disclosed fees and tax, and the seller receives the item price. Escrow holds funds until local pickup."
 
     /// On-device Spotlight summary — public-safe fields only (category + pickup area).
     private var spotlightDescription: String {

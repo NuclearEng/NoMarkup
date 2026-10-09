@@ -826,8 +826,8 @@ struct ContractDetailView: View {
             } footer: {
                 Text(
                     config.hasPaymentRetryInfo
-                        ? "Payment setup failed previously; the platform retries CreatePayment on a day-3/day-7 schedule (pauses at 3 failures). Continues until you cancel. Pause stops new visits; cancel ends after the next occurrence notice. Money is never invented client-side."
-                        : "Continues until you cancel. Pause stops new visits; cancel ends the schedule after the next occurrence notice. Approving a visit may open PaymentSheet for that visit’s server amount (held escrow). Cancel with Cancel schedule on this contract or Recurring jobs. Money is never invented client-side."
+                        ? "Payment setup failed previously; the platform retries CreatePayment on a day-3/day-7 schedule (pauses at 3 failures). This schedule continues at the rate and frequency shown until you cancel. Cancel with Cancel schedule on this contract or Recurring jobs. A visit can charge the saved card for that visit’s server amount, held in escrow, or open payment confirmation if the card is not charged."
+                        : "This schedule continues at the rate and frequency shown until you cancel. Cancel with Cancel schedule on this contract or Recurring jobs. Pause stops new visits. Approving a visit can charge the saved card for that visit’s server amount, held in escrow, or open payment confirmation if the card is not charged."
                 )
                 .foregroundStyle(BrandTheme.textSecondary)
             }
@@ -1361,7 +1361,7 @@ struct ContractDetailView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(BrandTheme.textSecondary)
             if let url = photo.safeImageURL {
-                ModeratedAsyncImage(url: url) { phase in
+                ModeratedAsyncImage(url: url, requireTapToReveal: true) { phase in
                     switch phase {
                     case .success(let image):
                         image
@@ -3160,6 +3160,7 @@ struct ContractDetailView: View {
 
     @MainActor
     private func uploadCompletionJPEG(_ jpeg: Data, phase: CompletionPhotoPhase) async throws {
+        try await SensitivePhotoUploadGate.refuseIfSensitive(jpeg)
         let response = try await APIClient.shared.uploadCompletionPhoto(
             contractId: contractID,
             imageJPEG: jpeg,

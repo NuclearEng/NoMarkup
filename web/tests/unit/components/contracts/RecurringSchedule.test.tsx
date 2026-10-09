@@ -150,6 +150,12 @@ describe('RecurringSchedule', () => {
     expect(screen.getByText(/2 of 3/)).toBeDefined();
     expect(screen.getByText(/Next auto-retry/i)).toBeDefined();
     expect(screen.getByText(/Weekly/i)).toBeDefined();
+    expect(
+      screen.getByText(/continues at the rate and frequency shown until you cancel/i),
+    ).toBeDefined();
+    expect(
+      screen.getByText(/charge the saved card for that visit’s server amount/i),
+    ).toBeDefined();
   });
 
   it('returns null when gateway has no recurring config', async () => {

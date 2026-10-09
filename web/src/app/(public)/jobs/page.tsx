@@ -122,16 +122,17 @@ const EMPTY_RESPONSE: JobsResponse = {
 /**
  * Server-fetch the public jobs list. 30s revalidate (CLAUDE.md §14) — long
  * enough for edge cache hits, short enough that first paint is not badly
- * stale. Client island refetches on filter change. Empty response on error
- * so the page never throws (graceful degrade).
+ * stale. Client island refetches on filter change. A non-OK response or a
+ * thrown fetch returns null so a 5xx is not seeded as an empty catalog. A
+ * 200 body with jobs: [] stays an empty list.
  */
-async function fetchJobs(queryString: string): Promise<JobsResponse> {
+async function fetchJobs(queryString: string): Promise<JobsResponse | null> {
   try {
     const url = queryString
       ? `${API_URL}/api/v1/jobs?${queryString}`
       : `${API_URL}/api/v1/jobs`;
     const res = await serverFetch(url, { next: { revalidate: 30 } });
-    if (!res.ok) return EMPTY_RESPONSE;
+    if (!res.ok) return null;
     const body = (await res.json()) as {
       jobs?: Job[] | null;
       pagination?: JobsResponse['pagination'] | null;
@@ -141,7 +142,7 @@ async function fetchJobs(queryString: string): Promise<JobsResponse> {
       pagination: body.pagination ?? EMPTY_RESPONSE.pagination,
     };
   } catch {
-    return EMPTY_RESPONSE;
+    return null;
   }
 }
 
@@ -153,8 +154,9 @@ async function fetchJobs(queryString: string): Promise<JobsResponse> {
  *   client would build) and seeds the client island so first paint is real
  *   cards — no skeleton flash on the default / deep-linked browse.
  * - Interactive filters, pagination, and retry stay in JobsSearchClient.
- * - Fetch errors return EMPTY_RESPONSE (fail soft); the island still mounts
- *   and TanStack refetches client-side. Root layout still forces dynamic
+ * - Fetch errors return null (not EMPTY_RESPONSE). The island still mounts
+ *   without initialData so TanStack isError can show the error state, and
+ *   refetches client-side. Root layout still forces dynamic
  *   rendering via CSP nonce (`headers()`); the DATA fetch is revalidated
  *   independently (30s).
  */

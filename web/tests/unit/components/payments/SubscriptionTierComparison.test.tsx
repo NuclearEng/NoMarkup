@@ -64,6 +64,9 @@ describe('SubscriptionTierComparison', () => {
       }),
     );
 
+    expect(
+      screen.getByText(/renews at the price and interval shown until you cancel/i),
+    ).toBeDefined();
     expect(screen.getByText('Basic')).toBeDefined();
     expect(screen.getByText('Pro')).toBeDefined();
     expect(screen.getByText('Elite')).toBeDefined();

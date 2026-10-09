@@ -34,3 +34,17 @@ func TestCORS_AllowsIdempotencyKeyPreflight(t *testing.T) {
 		t.Fatalf("Access-Control-Allow-Headers = %q, want it to include Idempotency-Key", allowHeaders)
 	}
 }
+
+func TestCORS_ProductionEmptyListDoesNotAllowAll(t *testing.T) {
+	t.Parallel()
+	handler := CORS([]string{"*"}, true)(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/markets", nil)
+	req.Header.Set("Origin", "https://evil.example")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, production with no explicit origins must not allow a cross-origin request", got)
+	}
+}

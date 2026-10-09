@@ -144,6 +144,10 @@ const (
 	// SCA / 3DS — buyer must complete bank authentication (distinct from a hard
 	// decline). UI should render an Authenticate CTA, not a generic failure icon.
 	NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED NotificationType = 45
+	// Goods marketplace alerts. Distinct from LIVE_AUCTION_PRICE_DROP, which is
+	// the services live-auction arena event.
+	NotificationType_NOTIFICATION_TYPE_PRICE_DROP         NotificationType = 46
+	NotificationType_NOTIFICATION_TYPE_SELLER_NEW_LISTING NotificationType = 47
 )
 
 // Enum value maps for NotificationType.
@@ -195,6 +199,8 @@ var (
 		43: "NOTIFICATION_TYPE_OFFER_RECEIVED",
 		44: "NOTIFICATION_TYPE_OFFER_COUNTERED",
 		45: "NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED",
+		46: "NOTIFICATION_TYPE_PRICE_DROP",
+		47: "NOTIFICATION_TYPE_SELLER_NEW_LISTING",
 	}
 	NotificationType_value = map[string]int32{
 		"NOTIFICATION_TYPE_UNSPECIFIED":                     0,
@@ -243,6 +249,8 @@ var (
 		"NOTIFICATION_TYPE_OFFER_RECEIVED":                  43,
 		"NOTIFICATION_TYPE_OFFER_COUNTERED":                 44,
 		"NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED": 45,
+		"NOTIFICATION_TYPE_PRICE_DROP":                      46,
+		"NOTIFICATION_TYPE_SELLER_NEW_LISTING":              47,
 	}
 )
 
@@ -1892,7 +1900,7 @@ const file_notification_v1_notification_proto_rawDesc = "" +
 	"\x19NOTIFICATION_CHANNEL_PUSH\x10\x01\x12\x1e\n" +
 	"\x1aNOTIFICATION_CHANNEL_EMAIL\x10\x02\x12\x1c\n" +
 	"\x18NOTIFICATION_CHANNEL_SMS\x10\x03\x12\x1f\n" +
-	"\x1bNOTIFICATION_CHANNEL_IN_APP\x10\x04*\xcf\x0e\n" +
+	"\x1bNOTIFICATION_CHANNEL_IN_APP\x10\x04*\x9b\x0f\n" +
 	"\x10NotificationType\x12!\n" +
 	"\x1dNOTIFICATION_TYPE_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19NOTIFICATION_TYPE_NEW_BID\x10\x01\x12!\n" +
@@ -1940,7 +1948,9 @@ const file_notification_v1_notification_proto_rawDesc = "" +
 	"\x1cNOTIFICATION_TYPE_BID_OUTBID\x10*\x12$\n" +
 	" NOTIFICATION_TYPE_OFFER_RECEIVED\x10+\x12%\n" +
 	"!NOTIFICATION_TYPE_OFFER_COUNTERED\x10,\x125\n" +
-	"1NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED\x10-*\xa7\x01\n" +
+	"1NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED\x10-\x12 \n" +
+	"\x1cNOTIFICATION_TYPE_PRICE_DROP\x10.\x12(\n" +
+	"$NOTIFICATION_TYPE_SELLER_NEW_LISTING\x10/*\xa7\x01\n" +
 	"\x0eDevicePlatform\x12\x1f\n" +
 	"\x1bDEVICE_PLATFORM_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13DEVICE_PLATFORM_IOS\x10\x01\x12\x1b\n" +

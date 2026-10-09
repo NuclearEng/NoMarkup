@@ -1224,6 +1224,8 @@ export const NOTIFICATION_TYPE = {
   // Goods Best-Offer chain
   OFFER_RECEIVED: 'offer_received',
   OFFER_COUNTERED: 'offer_countered',
+  PRICE_DROP: 'price_drop',
+  SELLER_NEW_LISTING: 'seller_new_listing',
 } as const;
 export type NotificationType = (typeof NOTIFICATION_TYPE)[keyof typeof NOTIFICATION_TYPE];
 
@@ -1325,6 +1327,7 @@ export const SUBSCRIPTION_STATUS = {
   CANCELLED: 'cancelled',
   EXPIRED: 'expired',
   TRIALING: 'trialing',
+  INCOMPLETE: 'incomplete',
 } as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUS)[keyof typeof SUBSCRIPTION_STATUS];
 
@@ -1395,6 +1398,11 @@ export interface CreateSubscriptionInput {
   payment_method_id: string;
 }
 
+export interface CreateSubscriptionResult {
+  subscription: Subscription;
+  client_secret?: string;
+}
+
 export interface CancelSubscriptionInput {
   reason: string;
   cancel_immediately: boolean;
@@ -1403,6 +1411,13 @@ export interface CancelSubscriptionInput {
 export interface ChangeTierInput {
   new_tier_id: string;
   billing_interval: BillingInterval;
+}
+
+export interface ChangeTierResult {
+  subscription: Subscription;
+  proration_amount_cents: number;
+  /** False keeps the current plan until the proration invoice is paid. */
+  tier_applied?: boolean;
 }
 
 // Analytics types

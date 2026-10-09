@@ -61,8 +61,11 @@ function SearchIllustration() {
 }
 
 export interface JobsSearchClientProps {
-  /** Server-seeded first page (RSC) so first paint skips the skeleton. */
-  initialJobs: JobsResponse;
+  /**
+   * Server-seeded first page (RSC) so first paint skips the skeleton.
+   * Null when the catalog fetch failed — omit initialData so isError can render.
+   */
+  initialJobs: JobsResponse | null;
   /**
    * Filter set parsed from the page URL (?q=&category_id=&…). Seeds the
    * first-paint state so a deep-linked / shared search URL renders the
@@ -119,7 +122,7 @@ export function JobsSearchClient({
     geoAwareFilters.location_lng === seedFilters.location_lng;
   const { data, isLoading, isError, refetch } = useSearchJobs(
     geoAwareFilters,
-    isSeedFilters ? { initialData: initialJobs } : undefined,
+    initialJobs != null && isSeedFilters ? { initialData: initialJobs } : undefined,
   );
 
   const currentPage = filters.page ?? 1;

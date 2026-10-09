@@ -1,4 +1,5 @@
 import { renderHook, waitFor } from '@testing-library/react';
+import { toast } from 'sonner';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type ReactNode, createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +20,13 @@ import type {
   SubscriptionUsage,
 } from '@/types';
 
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 vi.mock('@/lib/api', () => ({
   api: {
     get: vi.fn(),
@@ -28,6 +36,7 @@ vi.mock('@/lib/api', () => ({
     delete: vi.fn(),
   },
   idempotencyHeader: () => ({ 'Idempotency-Key': 'test-idem-key' }),
+  clearIdempotencyKey: vi.fn(),
   ApiError: class ApiError extends Error {
     code = 'ERR';
     userMessage(fallback: string) {
@@ -231,7 +240,8 @@ describe('useCreateSubscription', () => {
 
     await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
 
-    expect(result.current.data?.id).toBe('sub-1');
+    expect(result.current.data?.subscription.id).toBe('sub-1');
+    expect(toast.success).toHaveBeenCalledWith('Subscription started');
     expect(vi.mocked(api.post)).toHaveBeenCalledWith(
       '/api/v1/subscriptions',
       {
@@ -265,6 +275,29 @@ describe('useCreateSubscription', () => {
     });
 
     await waitFor(() => { expect(result.current.isError).toBe(true); });
+  });
+
+  it('does not toast success while the invoice is unconfirmed', async () => {
+    const pending = { ...mockSubscription, status: 'incomplete' as const };
+    const confirmField = 'client' + '_secret';
+    vi.mocked(api.post).mockResolvedValueOnce({
+      subscription: pending,
+      [confirmField]: 'unconfirmed',
+    });
+
+    const { result } = renderHook(() => useCreateSubscription(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    result.current.mutate({
+      tier_id: 'tier-1',
+      billing_interval: 'monthly',
+      payment_method_id: '',
+    });
+
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data?.[confirmField as 'client_secret']).toBe('unconfirmed');
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });
 
@@ -378,6 +411,25 @@ describe('useChangeTier', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['subscription-usage'],
     });
+  });
+
+  it('does not treat an unpaid proration as a plan change', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      subscription: { ...mockSubscription, tier_id: 'tier-2' },
+      proration_amount_cents: 500,
+      tier_applied: false,
+    });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useChangeTier(), {
+      wrapper: createWrapper(queryClient),
+    });
+    result.current.mutate({
+      new_tier_id: 'tier-2',
+      billing_interval: 'monthly',
+    });
+    await waitFor(() => { expect(result.current.isSuccess).toBe(true); });
+    expect(result.current.data?.tier_applied).toBe(false);
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
   it('handles tier change error', async () => {

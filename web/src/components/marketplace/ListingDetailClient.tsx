@@ -22,7 +22,7 @@ import { SnipeExtensionBanner } from '@/components/marketplace/SnipeExtensionBan
 import { AuctionTimer } from '@/components/jobs/AuctionTimer';
 import { StarRatingDisplay } from '@/components/reviews/StarRating';
 import { Badge } from '@/components/ui/badge';
-import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
+import { GOODS_BUYER_PAYS_ITEM_PLUS_FEES } from '@/lib/constants';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -476,7 +476,7 @@ export function ListingDetailClient({ listingId, initialListing }: ListingDetail
             </CardContent>
           </Card>
 
-          <p className="text-sm text-muted-foreground">{BUYER_PAYS_AGREED_PRICE}</p>
+          <p className="text-sm text-muted-foreground">{GOODS_BUYER_PAYS_ITEM_PLUS_FEES}</p>
 
           {/* Buy It Now — fixed-price closeout (only when seller set a BIN) */}
           <BuyItNowButton listing={listing} />

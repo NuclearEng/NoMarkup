@@ -172,4 +172,31 @@ final class ShareCardTextTests: XCTestCase {
             "share card must not claim no markup without the seller-side fee"
         )
     }
+
+    func testJobSavingsStatesBuyerPriceAndSellerFee() {
+        let payload = ShareCardText.jobSavings(savingsCents: 12_500)
+        XCTAssertTrue(payload.message.contains("$125.00"))
+        XCTAssertTrue(
+            payload.message.localizedCaseInsensitiveContains("buyer pays the agreed price")
+        )
+        XCTAssertTrue(
+            payload.message.localizedCaseInsensitiveContains("platform fee is taken from the seller")
+        )
+        XCTAssertFalse(
+            payload.message.localizedCaseInsensitiveContains("no markup"),
+            "share card must not claim no markup without the seller-side fee"
+        )
+    }
+}
+
+final class OAuthNonceFallbackTests: XCTestCase {
+    func testURLSafeRandomOmitsBase64Padding() {
+        let value = OAuthNonceFallback.urlSafeRandom(byteCount: 32)
+        XCTAssertFalse(value.isEmpty)
+        XCTAssertFalse(value.contains("+"))
+        XCTAssertFalse(value.contains("/"))
+        XCTAssertFalse(value.contains("="))
+        XCTAssertGreaterThanOrEqual(value.count, 43)
+        XCTAssertLessThanOrEqual(value.count, 128)
+    }
 }

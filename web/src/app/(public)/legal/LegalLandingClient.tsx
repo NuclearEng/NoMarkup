@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, Gavel, Scale, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Gavel, Scale } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useId, useMemo, useState } from 'react';
@@ -125,10 +125,6 @@ export function LegalLandingClient({ initialJobs, legalCategoryId }: LegalLandin
             <Link href="#open-cases">Browse open cases</Link>
           </Button>
         </div>
-        <p className="mt-4 flex items-center justify-center gap-1.5 text-sm text-zinc-400">
-          <ShieldCheck className="h-4 w-4 text-emerald-400" aria-hidden="true" />
-          Every attorney&apos;s bar license is verified before they can bid.
-        </p>
       </section>
 
       {/* How it works */}

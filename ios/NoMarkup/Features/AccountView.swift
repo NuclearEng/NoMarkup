@@ -589,7 +589,7 @@ struct AccountView: View {
                     .accessibilityHint("Choose push, email, and in-app channels per notification type")
                     .accessibilityIdentifier("account.row.notificationPreferences")
 
-                    Text("Jobs and local goods use Apple Pay / Stripe escrow (not App Store IAP). The market sets the price — not a platform markup.")
+                    Text("Jobs and local goods use Apple Pay / Stripe escrow (not App Store IAP). For services, the buyer pays the agreed price, and the platform fee is taken from the seller’s payout. For local goods, the buyer pays the item price plus disclosed fees and tax, and the seller receives the item price.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                 } header: {

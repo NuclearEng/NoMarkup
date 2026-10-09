@@ -67,7 +67,9 @@ func Register(s *grpclib.Server, srv *Server) {
 func (s *Server) Register(ctx context.Context, req *userv1.RegisterRequest) (*userv1.RegisterResponse, error) {
 	roles := make([]string, 0, len(req.GetRoles()))
 	for _, r := range req.GetRoles() {
-		if r == commonv1.UserRole_USER_ROLE_UNSPECIFIED {
+		// Unspecified is not a role. Admin is never granted by Register —
+		// mesh callers must not be able to persist it (PRD-AUTH-02).
+		if r == commonv1.UserRole_USER_ROLE_UNSPECIFIED || r == commonv1.UserRole_USER_ROLE_ADMIN {
 			continue
 		}
 		roles = append(roles, protoRoleToString(r))

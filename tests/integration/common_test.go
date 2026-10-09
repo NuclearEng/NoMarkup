@@ -146,7 +146,7 @@ func signWrongKeyJWT(t *testing.T, sub, email string) string {
 	}
 	now := time.Now()
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iss":   "https://auth.nomarkup.com",
+		"iss":   "https://auth.no-markup.com",
 		"sub":   sub,
 		"aud":   "nomarkup-api",
 		"iat":   now.Unix(),
@@ -192,7 +192,7 @@ func signExpiredJWT(t *testing.T, sub, email string) string {
 		t.Skipf("expired-jwt: parse key %s: %v", keyPath, err)
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iss":   "https://auth.nomarkup.com",
+		"iss":   "https://auth.no-markup.com",
 		"sub":   sub,
 		"aud":   "nomarkup-api",
 		"iat":   time.Now().Add(-2 * time.Hour).Unix(),

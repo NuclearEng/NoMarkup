@@ -23,7 +23,7 @@ const (
 	ClaimsContextKey contextKey = "claims"
 
 	// defaultJWTIssuer is the expected `iss` claim when JWT_ISSUER is unset.
-	defaultJWTIssuer = "https://auth.nomarkup.com"
+	defaultJWTIssuer = "https://auth.no-markup.com"
 	// defaultJWTAudience is the expected `aud` claim when JWT_AUDIENCE is unset.
 	defaultJWTAudience = "nomarkup-api"
 )

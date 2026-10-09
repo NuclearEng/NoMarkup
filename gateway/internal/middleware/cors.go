@@ -55,7 +55,12 @@ func CORS(allowedOrigins []string, production bool) func(http.Handler) http.Hand
 		MaxAge:           300,
 	}
 
-	if production || len(allowedOrigins) == 0 {
+	if production && len(allowedOrigins) == 0 {
+		// go-chi treats an empty AllowedOrigins slice as allow-all and emits
+		// Access-Control-Allow-Origin: * together with Allow-Credentials.
+		// An empty production list must reject every origin.
+		opts.AllowOriginFunc = func(_ *http.Request, _ string) bool { return false }
+	} else if production || len(allowedOrigins) == 0 {
 		opts.AllowedOrigins = allowedOrigins
 	} else {
 		// Non-prod: use a dynamic func so we echo the exact Origin the browser sent

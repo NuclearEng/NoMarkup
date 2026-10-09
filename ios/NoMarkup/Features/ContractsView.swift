@@ -43,7 +43,7 @@ struct ContractsView: View {
                 BrandEmptyState(
                     title: "No contracts yet",
                     systemImage: "doc.text",
-                    message: "When a job bid is awarded, the service contract appears here. Accept, start work, complete milestones, and release escrow — no platform markup on the bid."
+                    message: "When a job bid is awarded, the service contract appears here. Accept, start work, complete milestones, and release escrow. The buyer pays the agreed price, and the platform fee is taken from the seller’s payout."
                 )
             } else {
                 List {

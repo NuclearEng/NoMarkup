@@ -550,7 +550,7 @@ struct ProviderDetailView: View {
 
 // MARK: - User report sheet
 
-private enum UserReportReason: String, CaseIterable, Identifiable {
+enum UserReportReason: String, CaseIterable, Identifiable {
     case harassment
     case spam
     case scam
@@ -570,7 +570,7 @@ private enum UserReportReason: String, CaseIterable, Identifiable {
     }
 }
 
-private struct UserReportSheet: View {
+struct UserReportSheet: View {
     let userID: String
     var onDone: () -> Void
 

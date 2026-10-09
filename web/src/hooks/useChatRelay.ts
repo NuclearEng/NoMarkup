@@ -2,7 +2,7 @@
 // Section F (Craigslist-style relay). Wave 5 / Agent P.
 //
 // In dev neither the inbound mail forwarder nor Twilio Proxy is wired up;
-// the gateway returns alias-{nanoid}@relay.nomarkup.com and a NULL phone.
+// the gateway returns alias-{nanoid}@relay.no-markup.com and a NULL phone.
 // The UI hides the "call" affordance when twilio_proxy_phone is null.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

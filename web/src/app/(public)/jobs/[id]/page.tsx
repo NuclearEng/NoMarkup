@@ -23,19 +23,26 @@ const SITE_URL = process.env['NEXT_PUBLIC_SITE_URL'] ?? 'https://no-markup.com';
  * Auctions move fast, so we use a short edge revalidate window (15s) — long
  * enough to absorb crawler/duplicate hits and serve cacheable HTML, short
  * enough that the seeded first paint is never badly stale. The client island
- * refetches live anyway. Returns null on 404 / not-ok / network error so the
- * caller can decide between notFound() and metadata fallbacks.
+ * refetches live anyway. HTTP 404 and a 200 body with no job are missing;
+ * other non-OK statuses and network errors are unavailable (not a 404).
  */
-async function fetchJob(id: string): Promise<JobDetail | null> {
+type JobFetchResult =
+  | { status: 'ok'; job: JobDetail }
+  | { status: 'not_found' }
+  | { status: 'unavailable' };
+
+async function fetchJob(id: string): Promise<JobFetchResult> {
   try {
     const res = await serverFetch(`${API_URL}/api/v1/jobs/${id}`, {
       next: { revalidate: 15 },
     });
-    if (!res.ok) return null;
+    if (res.status === 404) return { status: 'not_found' };
+    if (!res.ok) return { status: 'unavailable' };
     const body = (await res.json()) as { job?: JobDetail | null };
-    return body.job ?? null;
+    if (!body.job) return { status: 'not_found' };
+    return { status: 'ok', job: body.job };
   } catch {
-    return null;
+    return { status: 'unavailable' };
   }
 }
 
@@ -51,15 +58,23 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const job = await fetchJob(id);
+  const result = await fetchJob(id);
 
-  if (!job) {
+  if (result.status === 'not_found') {
     return {
       title: 'Job not found',
       description: 'This job could not be found.',
     };
   }
 
+  if (result.status === 'unavailable') {
+    return {
+      title: 'Job unavailable',
+      description: 'The catalog could not be loaded.',
+    };
+  }
+
+  const job = result.job;
   const description = clampDescription(job.description);
   const canonical = `/jobs/${id}`;
 
@@ -132,12 +147,17 @@ export default async function JobDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const job = await fetchJob(id);
+  const result = await fetchJob(id);
 
-  if (!job) {
+  if (result.status === 'not_found') {
     notFound();
   }
 
+  if (result.status === 'unavailable') {
+    throw new Error('The catalog could not be loaded');
+  }
+
+  const job = result.job;
   const canonicalUrl = `${SITE_URL}/jobs/${id}`;
   const jsonLd = buildJobPostingJsonLd(job, canonicalUrl);
 

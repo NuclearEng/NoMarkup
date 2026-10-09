@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -204,14 +206,40 @@ func (r *PostgresRepository) UpsertPreferences(ctx context.Context, prefs *domai
 	return prefs, nil
 }
 
+// IssueUnsubscribeToken stores a fresh unguessable token for userID.
+// The token is returned to the caller and is not logged.
+func (r *PostgresRepository) IssueUnsubscribeToken(ctx context.Context, userID string) (string, error) {
+	if userID == "" {
+		return "", fmt.Errorf("issue unsubscribe token: user_id is required")
+	}
+
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("issue unsubscribe token: %w", err)
+	}
+	token := base64.RawURLEncoding.EncodeToString(raw)
+
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO email_unsubscribe_tokens (user_id, token)
+		VALUES ($1, $2)`,
+		userID, token,
+	)
+	if err != nil {
+		return "", fmt.Errorf("issue unsubscribe token: %w", err)
+	}
+	return token, nil
+}
+
 func (r *PostgresRepository) DisableEmailByToken(ctx context.Context, token string) (string, error) {
-	// Look up the unsubscribe token to find the user and their email.
+	// A token that already has used_at set still disables email. Only an
+	// unknown token is rejected. used_at is stamped only while it is null,
+	// so a second call does not fail the update.
 	var userID, userEmail string
 	err := r.pool.QueryRow(ctx, `
 		SELECT ut.user_id, COALESCE(u.email, '')
 		FROM email_unsubscribe_tokens ut
 		JOIN users u ON u.id = ut.user_id
-		WHERE ut.token = $1 AND ut.used_at IS NULL`,
+		WHERE ut.token = $1`,
 		token,
 	).Scan(&userID, &userEmail)
 	if err != nil {
@@ -221,9 +249,8 @@ func (r *PostgresRepository) DisableEmailByToken(ctx context.Context, token stri
 		return "", fmt.Errorf("disable email by token lookup: %w", err)
 	}
 
-	// Mark the token as used.
 	_, err = r.pool.Exec(ctx, `
-		UPDATE email_unsubscribe_tokens SET used_at = now() WHERE token = $1`,
+		UPDATE email_unsubscribe_tokens SET used_at = now() WHERE token = $1 AND used_at IS NULL`,
 		token,
 	)
 	if err != nil {

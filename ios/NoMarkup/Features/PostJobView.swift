@@ -247,7 +247,7 @@ struct PostJobView: View {
             Text(
                 useInstantMatch
                     ? "Emergency intake: describe the issue, set an accept-now price on the next step, and we’ll notify available Instant providers. First to accept wins. The buyer pays the agreed price, and the platform fee is taken from the seller’s payout."
-                    : "Describe the work. Providers will compete by bidding down in a reverse auction. The market sets the price — not the markup."
+                    : "Describe the work. Providers will compete by bidding down in a reverse auction. The buyer pays the agreed price, and the platform fee is taken from the seller’s payout."
             )
             .font(.subheadline)
             .foregroundStyle(BrandTheme.textSecondary)

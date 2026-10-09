@@ -106,10 +106,14 @@ describe('PaymentConfirmationDialog', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent('Item price $40.00');
     expect(dialog).not.toHaveTextContent(/plus the platform fee/i);
+    expect(dialog).toHaveTextContent(/for context only/i);
     expect(dialog).toHaveTextContent(/exact total is shown in the payment form/i);
     expect(dialog).toHaveTextContent(/held in escrow until you confirm pickup/i);
-    expect(dialog).toHaveTextContent(/platform fee comes from the seller payout/i);
-    expect(dialog).toHaveTextContent(/sales tax, if any, is added to your total/i);
+    expect(dialog).toHaveTextContent(
+      /you pay the item price plus disclosed fees and tax/i,
+    );
+    expect(dialog).toHaveTextContent(/the seller receives the item price/i);
+    expect(dialog).not.toHaveTextContent(/platform fee comes from the seller payout/i);
   });
 
   it('falls back to neutral copy when neither figure is known', () => {

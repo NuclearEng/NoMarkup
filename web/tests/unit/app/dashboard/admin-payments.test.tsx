@@ -201,7 +201,8 @@ describe('AdminPaymentsPage', () => {
     expect(summary.getByText(/^Disabled$/)).toBeDefined();
     expect(summary.getByText(/Working-capital advance/i)).toBeDefined();
     expect(screen.getByText(/Instant payout/i)).toBeDefined();
-    expect(screen.getByText(/no markup/i)).toBeDefined();
+    expect(screen.getByText(/agreed price/i)).toBeDefined();
+    expect(screen.getByText(/seller receives the item price/i)).toBeDefined();
   });
 
   it('shows an Enabled badge when lead-gen fee is active', () => {

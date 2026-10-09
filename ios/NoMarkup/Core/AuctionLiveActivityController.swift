@@ -239,6 +239,33 @@ enum AuctionLiveActivityController {
         #endif
     }
 
+    /// End every auction Live Activity immediately and drop its widget row.
+    /// Does not call the API or read Keychain. Callers invoke this before
+    /// clearing tokens, then unregister `liveactivity:<id>` with a captured Bearer.
+    /// Returns the auction IDs that were ended. Empty when ActivityKit is absent.
+    static func endAllLocal() -> [String] {
+        #if canImport(ActivityKit)
+        var ids: [String] = []
+        var seen = Set<String>()
+        for activity in Activity<AuctionActivityAttributes>.activities {
+            let auctionID = activity.attributes.auctionID
+            if seen.insert(auctionID).inserted {
+                ids.append(auctionID)
+                WidgetSharedStore.removeAuction(id: auctionID)
+            }
+            let activityID = activity.id
+            Task { @MainActor in
+                let matches = Activity<AuctionActivityAttributes>.activities.filter { $0.id == activityID }
+                guard let live = matches.first else { return }
+                await ActivityUpdateBox(activity: live).endImmediate()
+            }
+        }
+        return ids
+        #else
+        return []
+        #endif
+    }
+
     /// End (dismissal policy `.immediate`) every auction Live Activity whose
     /// content-state `endsAt` is already in the past (IOS-SYS.LA.1). Launch-time
     /// hygiene so dead countdowns never linger on the Lock Screen.

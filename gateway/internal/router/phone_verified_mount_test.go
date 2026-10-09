@@ -32,6 +32,7 @@ func TestRequirePhoneVerifiedMountedOnTransactRoutes(t *testing.T) {
 		"paymentHandler.ProcessPayment",
 		"paymentHandler.ReleasePayment",
 		"listingOrdersHandler.PayOrder",
+		"listingOrdersHandler.CancelUnpaidOrder",
 		"contractTipHandler.Tip",
 		"paymentHandler.InstantPayout",
 		"paymentHandler.RefundPayment",

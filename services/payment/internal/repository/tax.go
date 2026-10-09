@@ -16,6 +16,23 @@ import (
 // through; authenticable ciphertext decrypts; secretbox-shaped bytes no key
 // opens are an error — the raw base64 is never returned to a caller (that is
 // the 1099 leak this helper exists to prevent).
+// encryptTaxFormAddress stores a street address as secretbox ciphertext.
+// The placeholder used when a profile has no address is not PII and stays
+// plaintext. A missing cipher fails closed for a real address.
+func (r *PostgresRepository) encryptTaxFormAddress(addr string) (string, error) {
+	if addr == "" || addr == "Address on file" || crypto.LooksLikeCiphertext(addr) {
+		return addr, nil
+	}
+	if r.cipher == nil {
+		return "", fmt.Errorf("%w: tax form provider_address", crypto.ErrKeyMissing)
+	}
+	enc, err := r.cipher.EncryptString(addr)
+	if err != nil {
+		return "", err
+	}
+	return enc, nil
+}
+
 func (r *PostgresRepository) decryptTaxFormAddress(addr string) (string, error) {
 	if addr == "" {
 		return "", nil
@@ -37,7 +54,11 @@ func (r *PostgresRepository) decryptTaxFormAddress(addr string) (string, error) 
 
 // CreateTaxForm inserts a new tax form record.
 func (r *PostgresRepository) CreateTaxForm(ctx context.Context, tf *domain.TaxForm) error {
-	err := r.pool.QueryRow(ctx, `
+	storedTaxAddress, err := r.encryptTaxFormAddress(tf.ProviderAddress)
+	if err != nil {
+		return fmt.Errorf("create tax form: %w", err)
+	}
+	err = r.pool.QueryRow(ctx, `
 		INSERT INTO tax_forms (
 			id, provider_id, tax_year, form_type,
 			provider_legal_name, provider_tax_id_last4, provider_address,
@@ -59,7 +80,7 @@ func (r *PostgresRepository) CreateTaxForm(ctx context.Context, tf *domain.TaxFo
 			updated_at = now()
 		RETURNING id, created_at, updated_at`,
 		tf.ID, tf.ProviderID, tf.TaxYear, tf.FormType,
-		tf.ProviderLegalName, tf.ProviderTaxIDLast4, tf.ProviderAddress,
+		tf.ProviderLegalName, tf.ProviderTaxIDLast4, storedTaxAddress,
 		tf.TotalCompensationCents, tf.FederalTaxWithheldCents, tf.StateTaxWithheldCents,
 		tf.PlatformEIN, tf.PlatformName, tf.PDFURL, tf.Status,
 	).Scan(&tf.ID, &tf.CreatedAt, &tf.UpdatedAt)
@@ -228,6 +249,24 @@ func (r *PostgresRepository) GetContractForPayment(ctx context.Context, contract
 		return nil, fmt.Errorf("get contract for payment: %w", err)
 	}
 	return c, nil
+}
+
+// GetRecurringInstanceAmount loads the visit price. The payment service
+// rejects any client amount that is not this value.
+func (r *PostgresRepository) GetRecurringInstanceAmount(ctx context.Context, instanceID string) (string, int64, error) {
+	var contractID string
+	var amount int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT contract_id::text, amount_cents
+		FROM recurring_instances
+		WHERE id = $1`, instanceID).Scan(&contractID, &amount)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", 0, fmt.Errorf("recurring instance %s: %w", instanceID, domain.ErrPaymentNotFound)
+		}
+		return "", 0, fmt.Errorf("recurring instance %s: %w", instanceID, err)
+	}
+	return contractID, amount, nil
 }
 
 // SetContractTipIfZero CAS-sets tip_amount_cents only when still 0.

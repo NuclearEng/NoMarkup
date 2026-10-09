@@ -1010,6 +1010,7 @@ jobs:
     # row QA-10. Do not claim dependency audits block merge until that check
     # is required on `main`.
     needs:
+      - migration-sequence
       - web-test
       - e2e-test
       - go-integration-test

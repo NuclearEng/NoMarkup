@@ -50,6 +50,14 @@ export class ApiError extends Error {
   isPhoneNotVerified(): boolean {
     return this.status === 403 && this.code() === 'phone_not_verified';
   }
+
+  isAgeNotVerified(): boolean {
+    return this.status === 403 && this.code() === 'age_not_verified';
+  }
+
+  isTermsNotAccepted(): boolean {
+    return this.status === 403 && this.code() === 'tos_not_accepted';
+  }
 }
 
 /**
@@ -82,8 +90,20 @@ function humanizeMoneyMessage(msg: string): string {
   });
 }
 
-/** FR-1.9: 403 on transact routes is phone OTP, not a role/party error. */
+/** 403 on transact routes may be an account gate (age, current terms, or phone OTP), not a role/party error. */
 export function forbiddenTransactMessage(err: ApiError, partyFallback: string): string {
+  if (typeof err.isAgeNotVerified === 'function' && err.isAgeNotVerified()) {
+    return humanizeMoneyMessage(
+      err.userMessage(
+        'Confirm you are at least 18 years old before continuing. Add your date of birth in Account.',
+      ),
+    );
+  }
+  if (typeof err.isTermsNotAccepted === 'function' && err.isTermsNotAccepted()) {
+    return humanizeMoneyMessage(
+      err.userMessage('Accept the current Terms of Service before continuing.'),
+    );
+  }
   if (typeof err.isPhoneNotVerified === 'function' && err.isPhoneNotVerified()) {
     return humanizeMoneyMessage(
       err.userMessage(

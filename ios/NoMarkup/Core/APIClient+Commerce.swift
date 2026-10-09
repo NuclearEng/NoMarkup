@@ -289,6 +289,7 @@ extension APIClient {
         )
     }
 
+#if DEBUG
     // MARK: Paid listing promotion (Wave 5)
 
     /// POST `/api/v1/listings/{id}/promote` — mint SetupIntent + pending promotion_charges row.
@@ -357,6 +358,7 @@ extension APIClient {
             throw error
         }
     }
+#endif
 
     // MARK: Goods order reviews (FE-14)
 
@@ -447,6 +449,7 @@ private struct ConfirmListingBidBondBody: Encodable {
     let bondId: String
 }
 
+#if DEBUG
 private struct PromoteListingBody: Encodable {
     let durationHours: Int
 }
@@ -454,6 +457,7 @@ private struct PromoteListingBody: Encodable {
 private struct ConfirmPromotionBody: Encodable {
     let chargeId: String
 }
+#endif
 
 // MARK: - Bid bond / retract response models
 
@@ -492,6 +496,7 @@ struct RetractListingBidResponse: Codable, Sendable {
     var listing: ListingDetail?
 }
 
+#if DEBUG
 // MARK: - Paid listing promotion (Wave 5)
 
 /// Canonical promotion pricebook — must match gateway `promotionTiers` and web `PROMOTION_TIERS`.
@@ -579,3 +584,4 @@ struct ConfirmPromotionResponse: Codable, Sendable {
         return CatalogDateFormat.parseISO(raw)
     }
 }
+#endif

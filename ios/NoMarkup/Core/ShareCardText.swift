@@ -41,6 +41,7 @@ enum ShareCardText {
             lines.append("Awarded bid: \(MoneyFormat.usd(cents: awardedCents)).")
         }
         lines.append("Providers bid down — you keep the savings.")
+        lines.append("The buyer pays the agreed price, and the platform fee is taken from the seller’s payout.")
         appendReferralLine(to: &lines, code: referralCode)
         return SharePayload(
             subject: "I saved with NoMarkup",

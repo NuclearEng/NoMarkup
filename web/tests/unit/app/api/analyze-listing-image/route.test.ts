@@ -24,7 +24,7 @@ function signTestToken(
 ): string {
   const nowS = Math.floor(Date.now() / 1000);
   const payload = {
-    iss: 'https://auth.nomarkup.com',
+    iss: 'https://auth.no-markup.com',
     aud: ['nomarkup-api'],
     sub: 'user-123',
     iat: nowS,

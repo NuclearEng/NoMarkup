@@ -133,6 +133,11 @@ service PaymentService {
   // (with optional disputed branch). See docs/operations/marketplace-escrow.md
   // for the state diagram and dispute timeline.
   rpc ChargeListingWinner(ChargeListingWinnerRequest) returns (ChargeListingWinnerResponse);
+  // Buyer (or admin) abandons an unfunded goods order. The payment service
+  // cancels a non-capturable PaymentIntent first, then marks the order
+  // payment_failed and returns the listing to active. A capturable intent
+  // (succeeded, requires_capture, processing) leaves the listing sold.
+  rpc CancelUnpaidListingOrder(CancelUnpaidListingOrderRequest) returns (CancelUnpaidListingOrderResponse);
   rpc ConfirmListingPickup(ConfirmListingPickupRequest) returns (ConfirmListingPickupResponse);
   rpc FileListingDispute(FileListingDisputeRequest) returns (FileListingDisputeResponse);
   rpc ResolveListingDispute(ResolveListingDisputeRequest) returns (ResolveListingDisputeResponse);
@@ -1232,6 +1237,20 @@ message ChargeListingWinnerResponse {
   int64  fee_cents = 4;        // platform fee
   int64  tax_cents = 5;        // sales tax (state-level)
   int64  total_cents = 6;      // total charged to buyer
+}
+
+message CancelUnpaidListingOrderRequest {
+  string order_id = 1;
+  // Caller from the gateway JWT. Must be the order's buyer unless actor_role is admin.
+  string actor_user_id = 2;
+  string actor_role = 3; // "buyer" or "admin"
+}
+
+message CancelUnpaidListingOrderResponse {
+  string order_id = 1;
+  string listing_id = 2;
+  string escrow_status = 3;  // payment_failed
+  string listing_status = 4; // active
 }
 
 message ConfirmListingPickupRequest {

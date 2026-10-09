@@ -88,7 +88,7 @@ struct SavingsView: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel("Lifetime savings \(MoneyFormat.usd(cents: lifetimeCents))")
-                    Text("What you paid versus market median on awarded reverse-auction jobs — not platform markup.")
+                    Text("What you paid versus the market median on awarded reverse-auction jobs. The comparison is the job price. The platform fee is taken from the seller payout.")
                         .font(.caption)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

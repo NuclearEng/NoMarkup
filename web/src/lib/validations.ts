@@ -390,7 +390,6 @@ export const addEmployeeSchema = z.object({
     .regex(/^\d{4}$/, 'Must be exactly 4 digits')
     .optional()
     .or(z.literal('')),
-  backgroundCheckConsent: z.boolean().optional(),
   licenseNumber: z.string().optional().or(z.literal('')),
   licenseState: z.string().optional().or(z.literal('')),
   licenseExpiry: z.string().optional().or(z.literal('')),

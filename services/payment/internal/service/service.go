@@ -32,13 +32,17 @@ type ProviderTrustSource interface {
 // SubscriptionWebhookHandler allows the payment service to delegate subscription
 // webhook events to the subscription service without creating a circular dependency.
 type SubscriptionWebhookHandler interface {
-	HandleSubscriptionWebhook(ctx context.Context, eventType, stripeSubscriptionID string, periodStart, periodEnd *time.Time) error
+	HandleSubscriptionWebhook(ctx context.Context, eventType, stripeSubscriptionID string, periodStart, periodEnd *time.Time, billingReason, stripePriceID string) error
 }
 
 // InstallmentPaymentHandler allows the payment service to delegate installment
 // payment events to the installment service.
 type InstallmentPaymentHandler interface {
 	ConfirmInstallmentPaymentSucceeded(ctx context.Context, planID, installmentID, paymentIntentID string) error
+	// FailProcessingInstallment consumes one attempt only when the row is
+	// still processing. A terminal decline that already incremented attempts
+	// is left unchanged.
+	FailProcessingInstallment(ctx context.Context, planID, installmentID, paymentIntentID string) error
 }
 
 // MarketplacePaymentHandler is the surface PaymentService uses to delegate
@@ -320,6 +324,27 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 	if input.AmountCents > contract.AmountCents {
 		return nil, "", fmt.Errorf("create payment: amount exceeds contract: %w", domain.ErrInvalidAmount)
 	}
+	instanceID := ""
+	if input.RecurringInstanceID != nil {
+		instanceID = strings.TrimSpace(*input.RecurringInstanceID)
+	}
+	instanceScoped := false
+	var instanceAmount int64
+	if instanceID != "" {
+		boundContract, boundAmount, boundErr := s.repo.GetRecurringInstanceAmount(ctx, instanceID)
+		switch {
+		case boundErr == nil:
+			if boundContract != input.ContractID || boundAmount <= 0 || input.AmountCents != boundAmount {
+				return nil, "", fmt.Errorf("create payment: recurring instance amount: %w", domain.ErrInvalidAmount)
+			}
+			instanceScoped = true
+			instanceAmount = boundAmount
+		case errors.Is(boundErr, errRecurringInstanceUnconfigured):
+			// Test doubles that do not model recurring_instances.
+		default:
+			return nil, "", fmt.Errorf("create payment: recurring instance: %w", boundErr)
+		}
+	}
 	// MON-21: cumulative cap. Per-call amount <= contract still allows under-pay
 	// stacks (e.g. $500 × 3 on a $700 job). Sum existing in-flight + funded
 	// payments for this contract and reject when paidSoFar + amount would exceed
@@ -331,11 +356,24 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 	}
 	var paidSoFar int64
 	for _, p := range existing {
-		if paymentCountsTowardContractCap(p.Status) {
-			paidSoFar += p.AmountCents
+		if !paymentCountsTowardContractCap(p.Status) {
+			continue
 		}
+		if instanceScoped {
+			// Each visit is its own charge at the instance price. Visit 1 must
+			// not consume the cap that visit 2 needs.
+			if p.RecurringInstanceID != nil && strings.TrimSpace(*p.RecurringInstanceID) == instanceID {
+				paidSoFar += p.AmountCents
+			}
+			continue
+		}
+		paidSoFar += p.AmountCents
 	}
-	if paidSoFar+input.AmountCents > contract.AmountCents {
+	capCents := contract.AmountCents
+	if instanceScoped {
+		capCents = instanceAmount
+	}
+	if paidSoFar+input.AmountCents > capCents {
 		// Soft-replay of the same idempotency / recurring key must still work:
 		// the prior insert already counts toward paidSoFar, so a naive cap would
 		// reject retries. Only block NEW over-cap creates.
@@ -353,8 +391,8 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 			}
 		}
 		return nil, "", fmt.Errorf(
-			"create payment: cumulative payments %d + amount %d exceed contract %d: %w",
-			paidSoFar, input.AmountCents, contract.AmountCents, domain.ErrInvalidAmount,
+			"create payment: cumulative payments %d + amount %d exceed cap %d: %w",
+			paidSoFar, input.AmountCents, capCents, domain.ErrInvalidAmount,
 		)
 	}
 	// Derive the payee from the contract; never trust the client's provider_id.
@@ -501,6 +539,10 @@ func (s *PaymentService) CreatePayment(ctx context.Context, input domain.CreateP
 
 	return payment, clientSecret, nil
 }
+
+// errRecurringInstanceUnconfigured is returned only by test doubles that do
+// not model recurring_instances. The Postgres repository never returns it.
+var errRecurringInstanceUnconfigured = errors.New("recurring instance amount source unconfigured")
 
 // paymentCountsTowardContractCap reports whether a payment status commits
 // (or still holds) funds against the contract total for MON-21 cumulative cap.
@@ -692,6 +734,9 @@ func (s *PaymentService) softReplayCreatePayment(ctx context.Context, input doma
 	// Ownership: only the original customer may soft-replay (same gate as create).
 	if existing.CustomerID != input.CustomerID {
 		return nil, "", fmt.Errorf("create payment soft-replay: %w", domain.ErrContractNotOwned)
+	}
+	if existing.AmountCents != input.AmountCents {
+		return nil, "", fmt.Errorf("create payment soft-replay: amount mismatch: %w", domain.ErrInvalidAmount)
 	}
 	// Contract must still match — refuse cross-contract replay if a row were
 	// somehow mis-linked (defense in depth; unique is per instance, not contract).
@@ -1738,8 +1783,9 @@ func (s *PaymentService) ChargeContractTip(
 		Status:              "pending",
 	}
 	if err := s.repo.CreatePayment(ctx, payment); err != nil {
-		// Idempotent re-entry: look up by nothing easy without GetByIdempotency —
-		// surface conflict for gateway to map to 409.
+		if errors.Is(err, domain.ErrIdempotencyConflict) {
+			return s.resumeContractTip(ctx, contract, amountCents, rowKey, providerAccountID)
+		}
 		return "", "", 0, "", false, fmt.Errorf("charge contract tip: create payment: %w", err)
 	}
 
@@ -1759,6 +1805,15 @@ func (s *PaymentService) ChargeContractTip(
 		},
 	)
 	if chargeErr != nil {
+		if errors.Is(chargeErr, ErrOffSessionInFlight) && piID != "" {
+			// Keep tip-charge's PaymentIntent. Marking the row failed drops
+			// the id, and a resume would miss a charge that can still capture.
+			if err := s.repo.UpdateStripeFields(ctx, paymentID, piID, "", ""); err != nil {
+				slog.ErrorContext(ctx, "charge contract tip: stamp in-flight PI failed", "payment_id", paymentID, "error", err)
+			}
+			_ = s.repo.UpdatePaymentStatus(ctx, paymentID, "processing")
+			return paymentID, piID, 0, "processing", false, fmt.Errorf("charge contract tip: %w", ErrOffSessionInFlight)
+		}
 		_ = s.repo.UpdatePaymentStatus(ctx, paymentID, "failed")
 		return paymentID, "", 0, "failed", false, fmt.Errorf("charge contract tip: stripe: %w", chargeErr)
 	}
@@ -1766,35 +1821,78 @@ func (s *PaymentService) ChargeContractTip(
 		slog.ErrorContext(ctx, "charge contract tip: stamp PI failed", "payment_id", paymentID, "error", err)
 	}
 
-	// Immediate transfer of full tip to provider (no multi-day escrow).
+	// Immediate transfer of the full tip. The tip is recorded only after the
+	// transfer id exists, so a captured charge with a failed transfer cannot
+	// look paid and cannot be charged a second time on retry.
 	transferKey := "tip-transfer:" + contractID
 	transferID, xferErr := s.stripe.CreateTransfer(ctx, amountCents, "usd", providerAccountID, piID, transferKey)
 	if xferErr != nil {
-		// Funds captured on platform; leave payment in processing for ops — do NOT
-		// set tip_amount until provider is paid (or we accept platform hold as paid tip).
-		// Product choice: still record tip after capture so customer is not re-charged;
-		// transfer failure is ops/reconciliation. Prefer fail-closed on tip stamp only
-		// when charge failed. Mark completed with transfer error logged.
-		slog.ErrorContext(ctx, "charge contract tip: transfer failed after charge — reconciling",
+		slog.ErrorContext(ctx, "charge contract tip: transfer failed after charge",
 			"payment_id", paymentID, "pi_id", piID, "error", xferErr)
-		// Fall through to CAS tip: customer was charged; tip is paid even if Connect lag.
-	} else if err := s.repo.UpdateStripeFields(ctx, paymentID, piID, "", transferID); err != nil {
+		_ = s.repo.UpdatePaymentStatus(ctx, paymentID, "processing")
+		return paymentID, piID, 0, "processing", false, fmt.Errorf("charge contract tip: %w", domain.ErrTipPayoutPending)
+	}
+	if err := s.repo.UpdateStripeFields(ctx, paymentID, piID, "", transferID); err != nil {
 		slog.WarnContext(ctx, "charge contract tip: stamp transfer id failed", "error", err)
 	}
+	return s.finishContractTip(ctx, paymentID, contractID, piID, transferID, amountCents)
+}
 
+// resumeContractTip continues a tip whose payment row already exists.
+// A saved transfer finishes the stamp. A saved charge retries the same
+// transfer key. A row with no charge is not charged again.
+func (s *PaymentService) resumeContractTip(
+	ctx context.Context,
+	contract *domain.ContractForPayment,
+	amountCents int64,
+	rowKey, providerAccountID string,
+) (string, string, int64, string, bool, error) {
+	existing, err := s.repo.GetPaymentByIdempotencyKey(ctx, rowKey)
+	if err != nil {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: resume: %w", err)
+	}
+	if existing.CustomerID != contract.CustomerID || existing.ContractID != contract.ID {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: resume: %w", domain.ErrContractNotOwned)
+	}
+	if existing.AmountCents != amountCents {
+		return "", "", 0, "", false, fmt.Errorf("charge contract tip: resume: %w", domain.ErrInvalidAmount)
+	}
+	if existing.StripeTransferID != "" {
+		return s.finishContractTip(ctx, existing.ID, contract.ID, existing.StripePaymentIntentID, existing.StripeTransferID, amountCents)
+	}
+	if existing.StripePaymentIntentID == "" {
+		return existing.ID, "", 0, existing.Status, false, fmt.Errorf("charge contract tip: resume: %w", domain.ErrPaymentIntentMissing)
+	}
+	transferKey := "tip-transfer:" + contract.ID
+	transferID, xferErr := s.stripe.CreateTransfer(ctx, amountCents, "usd", providerAccountID, existing.StripePaymentIntentID, transferKey)
+	if xferErr != nil {
+		slog.ErrorContext(ctx, "charge contract tip: resume transfer failed",
+			"payment_id", existing.ID, "pi_id", existing.StripePaymentIntentID, "error", xferErr)
+		_ = s.repo.UpdatePaymentStatus(ctx, existing.ID, "processing")
+		return existing.ID, existing.StripePaymentIntentID, 0, "processing", false, fmt.Errorf("charge contract tip: %w", domain.ErrTipPayoutPending)
+	}
+	if err := s.repo.UpdateStripeFields(ctx, existing.ID, existing.StripePaymentIntentID, "", transferID); err != nil {
+		slog.WarnContext(ctx, "charge contract tip: resume stamp transfer id failed", "error", err)
+	}
+	return s.finishContractTip(ctx, existing.ID, contract.ID, existing.StripePaymentIntentID, transferID, amountCents)
+}
+
+// finishContractTip records the tip only after the provider transfer exists.
+func (s *PaymentService) finishContractTip(
+	ctx context.Context,
+	paymentID, contractID, piID, transferID string,
+	amountCents int64,
+) (string, string, int64, string, bool, error) {
 	if err := s.repo.UpdatePaymentStatus(ctx, paymentID, "completed"); err != nil {
 		slog.ErrorContext(ctx, "charge contract tip: mark completed failed", "error", err)
 	}
-
 	won, casErr := s.repo.SetContractTipIfZero(ctx, contractID, amountCents)
 	if casErr != nil {
 		return paymentID, piID, 0, "completed", false, fmt.Errorf("charge contract tip: stamp tip: %w", casErr)
 	}
 	if !won {
-		// Concurrent tip won the CAS; charge already happened — report already recorded.
 		return paymentID, piID, amountCents, "completed", true, fmt.Errorf("charge contract tip: %w", domain.ErrTipAlreadyRecorded)
 	}
-
 	slog.InfoContext(ctx, "contract tip charged",
 		"contract_id", contractID,
 		"payment_id", paymentID,

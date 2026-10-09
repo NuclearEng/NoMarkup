@@ -366,6 +366,14 @@ func (h *PaymentHandler) SetDefaultPaymentMethod(w http.ResponseWriter, r *http.
 	})
 }
 
+// preferIdempotencyKey returns the header when it is non-empty, otherwise the body.
+func preferIdempotencyKey(header, body string) string {
+	if k := strings.TrimSpace(header); k != "" {
+		return k
+	}
+	return strings.TrimSpace(body)
+}
+
 type createPaymentRequest struct {
 	ContractID          string `json:"contract_id"`
 	MilestoneID         string `json:"milestone_id"`
@@ -390,6 +398,14 @@ func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The Idempotency-Key header wins over the JSON body. Clients that send
+	// both must not have the body replace the header. An omitted key is minted
+	// once for this request.
+	idemKey := preferIdempotencyKey(r.Header.Get("Idempotency-Key"), req.IdempotencyKey)
+	if idemKey == "" {
+		idemKey = uuid.New().String()
+	}
+
 	grpcReq := &paymentv1.CreatePaymentRequest{
 		ContractId:          req.ContractID,
 		MilestoneId:         req.MilestoneID,
@@ -397,7 +413,7 @@ func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		CustomerId:          claims.UserID,
 		ProviderId:          req.ProviderID,
 		AmountCents:         req.AmountCents,
-		IdempotencyKey:      req.IdempotencyKey,
+		IdempotencyKey:      idemKey,
 		InstallmentNumber:   req.InstallmentNumber,
 		TotalInstallments:   req.TotalInstallments,
 	}

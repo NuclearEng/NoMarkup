@@ -87,6 +87,27 @@ func NewAuth(repo domain.UserRepository, jwt *JWTManager, verificationSecret str
 	}
 }
 
+// publicSignupRoles keeps customer and provider. Admin and any other role are
+// dropped. An empty result becomes customer so registration still succeeds.
+func publicSignupRoles(roles []string) []string {
+	out := make([]string, 0, len(roles))
+	seen := map[string]struct{}{}
+	for _, role := range roles {
+		switch role {
+		case "customer", "provider":
+			if _, ok := seen[role]; ok {
+				continue
+			}
+			seen[role] = struct{}{}
+			out = append(out, role)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"customer"}
+	}
+	return out
+}
+
 // Register creates a new user account and returns the user ID, token pair, and a
 // verification token that should be sent to the user's email address.
 func (a *Auth) Register(ctx context.Context, input domain.RegisterInput) (string, *domain.TokenPair, string, error) {
@@ -100,9 +121,11 @@ func (a *Auth) Register(ctx context.Context, input domain.RegisterInput) (string
 		EmailVerified: a.skipEmailVerification,
 		PasswordHash:  hash,
 		DisplayName:   input.DisplayName,
-		Roles:         input.Roles,
-		Status:        "active",
-		Timezone:      "America/Los_Angeles",
+		// Self-signup never persists admin, even when a mesh caller sends it.
+		// HTTP parseRoles already drops admin; this is the write boundary.
+		Roles:    publicSignupRoles(input.Roles),
+		Status:   "active",
+		Timezone: "America/Los_Angeles",
 	}
 
 	if err := a.repo.CreateUser(ctx, user); err != nil {

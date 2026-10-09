@@ -85,6 +85,47 @@ describe('ApiError', () => {
       expect(err.isPhoneNotVerified()).toBe(false);
     });
   });
+
+  describe('age_not_verified', () => {
+    it('detects 403 with machine code', () => {
+      const err = new ApiError(
+        403,
+        JSON.stringify({
+          error:
+            'Confirm you are at least 18 years old before continuing. Add your date of birth in Account.',
+          code: 'age_not_verified',
+        }),
+      );
+      expect(err.code()).toBe('age_not_verified');
+      expect(err.isAgeNotVerified()).toBe(true);
+      expect(err.userMessage('fallback')).toContain('at least 18');
+    });
+
+    it('does not treat other 403s as age verification', () => {
+      const err = new ApiError(403, JSON.stringify({ error: 'forbidden' }));
+      expect(err.isAgeNotVerified()).toBe(false);
+    });
+  });
+
+  describe('tos_not_accepted', () => {
+    it('detects 403 with machine code', () => {
+      const err = new ApiError(
+        403,
+        JSON.stringify({
+          error: 'Accept the current Terms of Service before continuing.',
+          code: 'tos_not_accepted',
+        }),
+      );
+      expect(err.code()).toBe('tos_not_accepted');
+      expect(err.isTermsNotAccepted()).toBe(true);
+      expect(err.userMessage('fallback')).toContain('Terms of Service');
+    });
+
+    it('does not treat other 403s as terms acceptance', () => {
+      const err = new ApiError(403, JSON.stringify({ error: 'forbidden' }));
+      expect(err.isTermsNotAccepted()).toBe(false);
+    });
+  });
 });
 
 describe('forbiddenTransactMessage', () => {
@@ -98,6 +139,33 @@ describe('forbiddenTransactMessage', () => {
     );
     expect(forbiddenTransactMessage(err, 'Only providers can place bids.')).toContain(
       'Verify your phone',
+    );
+  });
+
+  it('prefers the age sentence over a party fallback', () => {
+    const err = new ApiError(
+      403,
+      JSON.stringify({
+        error:
+          'Confirm you are at least 18 years old before continuing. Add your date of birth in Account.',
+        code: 'age_not_verified',
+      }),
+    );
+    expect(forbiddenTransactMessage(err, 'Only providers can place bids.')).toBe(
+      'Confirm you are at least 18 years old before continuing. Add your date of birth in Account.',
+    );
+  });
+
+  it('prefers the terms sentence over a party fallback', () => {
+    const err = new ApiError(
+      403,
+      JSON.stringify({
+        error: 'Accept the current Terms of Service before continuing.',
+        code: 'tos_not_accepted',
+      }),
+    );
+    expect(forbiddenTransactMessage(err, 'Only providers can place bids.')).toBe(
+      'Accept the current Terms of Service before continuing.',
     );
   });
 

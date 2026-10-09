@@ -191,7 +191,7 @@ func allStripeCalls() []stripeCallCase {
 			return err
 		}},
 		{"Subscription.Create", func(ctx context.Context, s *StripeService) error {
-			_, _, err := s.CreateStripeSubscription(ctx, "cus_1", "price_1", "pm_1")
+			_, _, err := s.CreateStripeSubscription(ctx, "user_1", "cus_1", "price_1", "pm_1")
 			return err
 		}},
 		{"Subscription.Cancel", func(ctx context.Context, s *StripeService) error {
@@ -201,7 +201,7 @@ func allStripeCalls() []stripeCallCase {
 			return s.CancelStripeSubscription(ctx, "sub_1", false)
 		}},
 		{"Subscription.Get-plus-Update", func(ctx context.Context, s *StripeService) error {
-			_, _, err := s.UpdateStripeSubscription(ctx, "sub_1", "price_2")
+			_, err := s.UpdateStripeSubscription(ctx, "sub_1", "price_2")
 			return err
 		}},
 		{"Invoice.List", func(ctx context.Context, s *StripeService) error {
@@ -384,7 +384,7 @@ func TestStripeMutatingCalls_SendDeterministicIdempotencyKey(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		// A body every resource in this file can decode into. latest_charge is
 		// present so the transfer paths resolve a source transaction.
-		_, _ = w.Write([]byte(`{"id":"obj_1","latest_charge":{"id":"ch_1"},"items":{"data":[{"id":"si_1"}]},"charges_enabled":true,"payouts_enabled":true,"details_submitted":true,"capabilities":{"transfers":"active"}}`))
+		_, _ = w.Write([]byte(`{"id":"obj_1","status":"succeeded","latest_charge":{"id":"ch_1"},"items":{"data":[{"id":"si_1"}]},"charges_enabled":true,"payouts_enabled":true,"details_submitted":true,"capabilities":{"transfers":"active"}}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -467,7 +467,7 @@ func TestStripeMutatingCalls_SendDeterministicIdempotencyKey(t *testing.T) {
 			return s.CancelStripeSubscription(ctx, "sub_1", false)
 		}},
 		{"Subscription.Update-price-change", func(ctx context.Context, s *StripeService) error {
-			_, _, err := s.UpdateStripeSubscription(ctx, "sub_1", "price_2")
+			_, err := s.UpdateStripeSubscription(ctx, "sub_1", "price_2")
 			return err
 		}},
 		{"Customer.Delete-gdpr", func(ctx context.Context, s *StripeService) error {

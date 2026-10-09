@@ -509,8 +509,8 @@ export function RecurringSchedule({
         </div>
         <p className="text-xs text-zinc-400">
           {retryInfo
-            ? 'Payment setup failed previously; the platform retries CreatePayment on a day-3/day-7 schedule (pauses at 3 failures). Pause stops new visits; cancel ends after the next occurrence notice. Money is never invented client-side.'
-            : 'Pause stops new visits; cancel ends the schedule after the next occurrence notice. Approving a visit may open checkout for that visit’s server amount (held escrow). Money is never invented client-side.'}
+            ? 'Payment setup failed previously; the platform retries CreatePayment on a day-3/day-7 schedule (pauses at 3 failures). This schedule continues at the rate and frequency shown until you cancel. Cancel with Cancel schedule on this contract. A visit can charge the saved card for that visit’s server amount, held in escrow, or open checkout if the card is not charged.'
+            : 'This schedule continues at the rate and frequency shown until you cancel. Cancel with Cancel schedule on this contract. Pause stops new visits. Approving a visit can charge the saved card for that visit’s server amount, held in escrow, or open checkout if the card is not charged.'}
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -917,6 +917,12 @@ export function RecurringSchedule({
                       {/* Customer: Pay with existing client_secret from approve/complete */}
                       {showPendingPay && pendingForInstance ? (
                         <div className="space-y-3" data-testid="recurring-pay-form">
+                          <p className="text-xs text-zinc-400">
+                            {amountLabel} for this visit. This schedule continues at the rate and
+                            frequency shown until you cancel. Cancel with Cancel schedule on this
+                            contract. A visit can charge the saved card for that amount, held in
+                            escrow, or open checkout if the card is not charged.
+                          </p>
                           {!isDevClientSecret(pendingForInstance.clientSecret) ? (
                             <PaymentConfirmation
                               clientSecret={pendingForInstance.clientSecret}

@@ -161,9 +161,9 @@ export function BuyItNowButton({ listing, className }: BuyItNowButtonProps) {
           <DialogHeader>
             <DialogTitle>Confirm purchase</DialogTitle>
             <DialogDescription>
-              You will pay <strong>{buyNowDisplay}</strong> and the auction will
-              close immediately. Funds are held in escrow until you confirm
-              pickup of the item.{' '}
+              You will be charged the item price ({buyNowDisplay}) plus disclosed
+              fees and tax, held in escrow until pickup. The payment form shows
+              the server total. The auction will close immediately.{' '}
               {GOODS_BID_AUTHORIZATION_DISCLOSURE}
             </DialogDescription>
           </DialogHeader>

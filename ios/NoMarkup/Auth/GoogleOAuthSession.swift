@@ -1,6 +1,7 @@
 import AuthenticationServices
 import CryptoKit
 import Foundation
+import Security
 import UIKit
 
 /// Google Sign-In via **ASWebAuthenticationSession** + **PKCE** (no Google SDK).
@@ -208,18 +209,31 @@ final class GoogleOAuthSession: NSObject, ASWebAuthenticationPresentationContext
     // MARK: - PKCE helpers
 
     private static func randomURLSafeString(byteCount: Int) -> String {
-        var bytes = [UInt8](repeating: 0, count: byteCount)
-        let status = SecRandomCopyBytes(kSecRandomDefault, byteCount, &bytes)
-        precondition(status == errSecSuccess, "SecRandomCopyBytes failed")
-        return Data(bytes).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+        OAuthNonceFallback.urlSafeRandom(byteCount: byteCount)
     }
 
     private static func sha256Base64URL(_ input: String) -> String {
         let digest = SHA256.hash(data: Data(input.utf8))
         return Data(digest).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+}
+
+/// URL-safe nonce/verifier bytes. A failed `SecRandomCopyBytes` returns two
+/// concatenated UUIDs with dashes removed (64 hex characters, inside the
+/// RFC 7636 43–128 verifier range) instead of crashing the sign-in sheet.
+enum OAuthNonceFallback {
+    static func urlSafeRandom(byteCount: Int) -> String {
+        var bytes = [UInt8](repeating: 0, count: byteCount)
+        let status = SecRandomCopyBytes(kSecRandomDefault, byteCount, &bytes)
+        if status != errSecSuccess {
+            let raw = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+                + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            return raw
+        }
+        return Data(bytes).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")

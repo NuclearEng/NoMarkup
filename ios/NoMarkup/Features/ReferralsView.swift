@@ -108,7 +108,7 @@ struct ReferralsView: View {
                 } header: {
                     Text("Invite friends").brandSectionHeader()
                 } footer: {
-                    Text("You and your friend both earn credit when they sign up with your code. No markup on the market — just referral credit.")
+                    Text("You and your friend both earn referral credit when they sign up with your code.")
                         .foregroundStyle(BrandTheme.textSecondary)
                 }
                 .listRowBackground(BrandTheme.navyElevated)

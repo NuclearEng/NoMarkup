@@ -175,12 +175,16 @@ describe('ListingBrowseClient', () => {
     expect(
       screen.getByText(/the market sets the price, not the markup/i),
     ).toBeDefined();
+    expect(
+      screen.getAllByText(/you pay the item price plus disclosed fees and tax/i).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/the seller receives the item price/i).length).toBeGreaterThan(0);
   });
 
   it('renders skeletons while loading', () => {
     listingsState.isLoading = true;
-    const { container } = renderClient();
-    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+    renderClient();
+    expect(screen.getByRole('status', { name: /Loading auctions/i })).toBeDefined();
   });
 
   it('renders the error empty state on isError', () => {

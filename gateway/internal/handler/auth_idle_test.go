@@ -24,7 +24,7 @@ import (
 // These constants mirror the gateway's default JWT iss/aud (middleware/auth.go)
 // so a token we sign here validates through AuthMiddleware.ValidateToken.
 const (
-	testJWTIssuer   = "https://auth.nomarkup.com"
+	testJWTIssuer   = "https://auth.no-markup.com"
 	testJWTAudience = "nomarkup-api"
 )
 

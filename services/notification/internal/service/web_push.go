@@ -54,7 +54,7 @@ type WebPushDispatcher struct {
 // runs at least exercise the encoding path.
 func NewWebPushDispatcher(pool *pgxpool.Pool, publicKey, privateKey, subject string) *WebPushDispatcher {
 	if subject == "" {
-		subject = "mailto:ops@nomarkup.com"
+		subject = "mailto:ops@no-markup.com"
 	}
 	return &WebPushDispatcher{
 		pool:       pool,

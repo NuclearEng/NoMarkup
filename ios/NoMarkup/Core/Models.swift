@@ -1820,6 +1820,14 @@ struct ListingOrderSummary: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
+/// Response from POST `/api/v1/orders/{id}/cancel-unpaid`.
+struct CancelUnpaidOrderResponse: Codable, Sendable {
+    var orderId: String?
+    var listingId: String?
+    var escrowStatus: String?
+    var listingStatus: String?
+}
+
 /// Response from confirm-pickup / seller-confirm (flexible shape).
 struct OrderEscrowActionResponse: Codable, Sendable {
     var orderId: String?

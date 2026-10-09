@@ -20,12 +20,12 @@ import (
 // --- Mock Repository ---
 
 type mockUserRepo struct {
-	createUserFn            func(ctx context.Context, user *domain.User) error
-	getUserByIDFn           func(ctx context.Context, id string) (*domain.User, error)
-	getUserByEmailFn        func(ctx context.Context, email string) (*domain.User, error)
-	updateLastLoginFn       func(ctx context.Context, userID string, at time.Time) error
-	updateEmailVerifiedFn   func(ctx context.Context, userID string, verified bool) error
-	updatePasswordFn        func(ctx context.Context, userID, passwordHash string) error
+	createUserFn                 func(ctx context.Context, user *domain.User) error
+	getUserByIDFn                func(ctx context.Context, id string) (*domain.User, error)
+	getUserByEmailFn             func(ctx context.Context, email string) (*domain.User, error)
+	updateLastLoginFn            func(ctx context.Context, userID string, at time.Time) error
+	updateEmailVerifiedFn        func(ctx context.Context, userID string, verified bool) error
+	updatePasswordFn             func(ctx context.Context, userID, passwordHash string) error
 	createRefreshTokenFn         func(ctx context.Context, token *domain.RefreshToken) error
 	getRefreshTokenFn            func(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
 	revokeRefreshTokenFn         func(ctx context.Context, tokenHash string) error
@@ -33,29 +33,29 @@ type mockUserRepo struct {
 	revokeRefreshTokenFamilyFn   func(ctx context.Context, familyID string) (int64, error)
 	revokeAllUserTokensFn        func(ctx context.Context, userID string) error
 	getPublicUsersByIDsFn        func(ctx context.Context, ids []string) ([]domain.PublicUser, error)
-	updateUserFn            func(ctx context.Context, userID string, input domain.UpdateUserInput) (*domain.User, error)
-	enableRoleFn            func(ctx context.Context, userID string, role string) (*domain.User, error)
-	createProviderProfileFn func(ctx context.Context, userID string) (*domain.ProviderProfile, error)
-	getProviderProfileFn    func(ctx context.Context, userID string) (*domain.ProviderProfile, error)
-	updateProviderProfileFn func(ctx context.Context, userID string, input domain.UpdateProviderInput) (*domain.ProviderProfile, error)
-	setGlobalTermsFn        func(ctx context.Context, userID string, input domain.GlobalTermsInput) error
-	updateServiceCatsFn     func(ctx context.Context, providerID string, categoryIDs []string) error
-	updatePortfolioFn       func(ctx context.Context, providerID string, images []domain.PortfolioImage) error
-	setInstantAvailFn       func(ctx context.Context, userID string, input domain.AvailabilityInput) error
-	getProviderIDFn         func(ctx context.Context, userID string) (string, error)
-	getServiceCatsFn        func(ctx context.Context, providerID string) ([]domain.ServiceCategory, error)
-	getPortfolioImagesFn    func(ctx context.Context, providerID string) ([]domain.PortfolioImage, error)
-	listServiceCatsFn       func(ctx context.Context, level *int, parentID *string) ([]domain.ServiceCategory, error)
-	getCategoryTreeFn       func(ctx context.Context) ([]domain.ServiceCategory, error)
-	suspendUserFn           func(ctx context.Context, userID, reason, adminID string) error
-	banUserFn               func(ctx context.Context, userID, reason, adminID string) error
-	insertAuditLogFn        func(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
-	adminSearchUsersFn      func(ctx context.Context, query, status, role string, page, pageSize int) ([]domain.User, int, error)
-	createDocumentFn        func(ctx context.Context, doc *domain.Document) error
-	listDocumentsFn         func(ctx context.Context, userID string) ([]domain.Document, error)
-	getDocumentFn           func(ctx context.Context, documentID string) (*domain.Document, error)
-	getDocumentByUserTypeFn func(ctx context.Context, userID string, docType domain.DocumentType) (*domain.Document, error)
-	updateDocumentStatusFn  func(ctx context.Context, documentID string, status domain.DocumentStatus, rejectionReason string) error
+	updateUserFn                 func(ctx context.Context, userID string, input domain.UpdateUserInput) (*domain.User, error)
+	enableRoleFn                 func(ctx context.Context, userID string, role string) (*domain.User, error)
+	createProviderProfileFn      func(ctx context.Context, userID string) (*domain.ProviderProfile, error)
+	getProviderProfileFn         func(ctx context.Context, userID string) (*domain.ProviderProfile, error)
+	updateProviderProfileFn      func(ctx context.Context, userID string, input domain.UpdateProviderInput) (*domain.ProviderProfile, error)
+	setGlobalTermsFn             func(ctx context.Context, userID string, input domain.GlobalTermsInput) error
+	updateServiceCatsFn          func(ctx context.Context, providerID string, categoryIDs []string) error
+	updatePortfolioFn            func(ctx context.Context, providerID string, images []domain.PortfolioImage) error
+	setInstantAvailFn            func(ctx context.Context, userID string, input domain.AvailabilityInput) error
+	getProviderIDFn              func(ctx context.Context, userID string) (string, error)
+	getServiceCatsFn             func(ctx context.Context, providerID string) ([]domain.ServiceCategory, error)
+	getPortfolioImagesFn         func(ctx context.Context, providerID string) ([]domain.PortfolioImage, error)
+	listServiceCatsFn            func(ctx context.Context, level *int, parentID *string) ([]domain.ServiceCategory, error)
+	getCategoryTreeFn            func(ctx context.Context) ([]domain.ServiceCategory, error)
+	suspendUserFn                func(ctx context.Context, userID, reason, adminID string) error
+	banUserFn                    func(ctx context.Context, userID, reason, adminID string) error
+	insertAuditLogFn             func(ctx context.Context, adminID, action, targetType, targetID string, details map[string]any, ipAddress string) error
+	adminSearchUsersFn           func(ctx context.Context, query, status, role string, page, pageSize int) ([]domain.User, int, error)
+	createDocumentFn             func(ctx context.Context, doc *domain.Document) error
+	listDocumentsFn              func(ctx context.Context, userID string) ([]domain.Document, error)
+	getDocumentFn                func(ctx context.Context, documentID string) (*domain.Document, error)
+	getDocumentByUserTypeFn      func(ctx context.Context, userID string, docType domain.DocumentType) (*domain.Document, error)
+	updateDocumentStatusFn       func(ctx context.Context, documentID string, status domain.DocumentStatus, rejectionReason string) error
 }
 
 func (m *mockUserRepo) CreateUser(ctx context.Context, user *domain.User) error {
@@ -394,6 +394,32 @@ func TestAuth_Register(t *testing.T) {
 			assert.NotEmpty(t, verifyToken, "verification token should be returned")
 		})
 	}
+}
+
+func TestAuth_Register_dropsAdminRole(t *testing.T) {
+	t.Parallel()
+
+	var stored []string
+	repo := &mockUserRepo{
+		createUserFn: func(_ context.Context, user *domain.User) error {
+			stored = append([]string(nil), user.Roles...)
+			user.ID = "user-no-admin"
+			return nil
+		},
+		createRefreshTokenFn: func(_ context.Context, _ *domain.RefreshToken) error {
+			return nil
+		},
+	}
+	auth := newTestAuth(t, repo)
+
+	_, _, _, err := auth.Register(context.Background(), domain.RegisterInput{
+		Email:       "admin-try@example.com",
+		Password:    strings.Repeat("p", 16),
+		DisplayName: "Not Admin",
+		Roles:       []string{"admin", "provider", "admin"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"provider"}, stored)
 }
 
 // --- Auth.Login tests ---

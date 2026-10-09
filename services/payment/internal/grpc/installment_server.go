@@ -6,6 +6,7 @@ import (
 
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
 	"github.com/nomarkup/nomarkup/services/payment/internal/domain"
+	"github.com/nomarkup/nomarkup/services/payment/internal/service"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -46,10 +47,23 @@ func (s *Server) CreateInstallmentPlan(ctx context.Context, req *paymentv1.Creat
 	}
 
 	plan, clientSecret, err := s.installmentSvc.CreateInstallmentPlan(ctx, input)
+	return createInstallmentPlanResult(plan, clientSecret, err)
+}
+
+// createInstallmentPlanResult returns the plan and confirmation secret on an
+// in-flight charge. A gRPC status drops the response body, so the buyer could
+// not authenticate while the active plan blocked a second create. Any other
+// error is still a status, with no secret.
+func createInstallmentPlanResult(plan *domain.InstallmentPlan, clientSecret string, err error) (*paymentv1.CreateInstallmentPlanResponse, error) {
 	if err != nil {
+		if errors.Is(err, service.ErrOffSessionInFlight) && clientSecret != "" && plan != nil {
+			return &paymentv1.CreateInstallmentPlanResponse{
+				Plan:                         domainInstallmentPlanToProto(plan),
+				FirstInstallmentClientSecret: clientSecret,
+			}, nil
+		}
 		return nil, mapInstallmentError(err)
 	}
-
 	return &paymentv1.CreateInstallmentPlanResponse{
 		Plan:                         domainInstallmentPlanToProto(plan),
 		FirstInstallmentClientSecret: clientSecret,
@@ -179,6 +193,10 @@ func mapInstallmentError(err error) error {
 		// resource. FailedPrecondition → 422 (consistent with mapAdvanceError),
 		// with a message that doesn't read as "plan not found".
 		return status.Error(codes.FailedPrecondition, "this provider isn't set up to receive installment payments yet")
+	case errors.Is(err, service.ErrOffSessionInFlight):
+		// Secret was empty (or the plan was missing), so the handler could not
+		// return a body. The charge is still open — do not start another one.
+		return status.Error(codes.FailedPrecondition, "the charge is still processing; do not start another charge")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

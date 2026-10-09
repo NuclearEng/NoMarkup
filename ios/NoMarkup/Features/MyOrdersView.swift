@@ -15,6 +15,7 @@ struct MyOrdersView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var payingOrderID: String?
+    @State private var cancelingOrderID: String?
     @State private var actingOrderID: String?
     @State private var statusMessage: String?
     @State private var statusIsError = false
@@ -23,12 +24,13 @@ struct MyOrdersView: View {
     @State private var noShowOrder: ListingOrderSummary?
     @State private var pendingPickupOrder: ListingOrderSummary?
     @State private var pendingSellerConfirmOrder: ListingOrderSummary?
+    @State private var pendingCancelOrder: ListingOrderSummary?
     @State private var reviewOrder: ListingOrderSummary?
     @State private var orderChatChannel: ChatChannelSummary?
     @State private var openingChatOrderID: String?
 
     private var isBusy: Bool {
-        payingOrderID != nil || actingOrderID != nil
+        payingOrderID != nil || actingOrderID != nil || cancelingOrderID != nil
     }
 
     var body: some View {
@@ -151,6 +153,23 @@ struct MyOrdersView: View {
             Text("This tells the seller you’ve received the goods and advances the escrow handshake.")
         }
         .confirmationDialog(
+            "Cancel this unpaid order?",
+            isPresented: Binding(
+                get: { pendingCancelOrder != nil },
+                set: { if !$0 { pendingCancelOrder = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Cancel unpaid order", role: .destructive) {
+                guard let order = pendingCancelOrder else { return }
+                pendingCancelOrder = nil
+                Task { await cancelUnpaid(order) }
+            }
+            Button("Keep order", role: .cancel) { pendingCancelOrder = nil }
+        } message: {
+            Text("This stops payment and puts the listing back on sale. A payment that already went through cannot be canceled here.")
+        }
+        .confirmationDialog(
             "Confirm handoff as seller?",
             isPresented: Binding(
                 get: { pendingSellerConfirmOrder != nil },
@@ -225,6 +244,23 @@ struct MyOrdersView: View {
                     .accessibilityLabel("Pay with Apple Pay")
                     .accessibilityHint("Opens Apple Pay or card checkout for this order")
                     .accessibilityIdentifier("orders.pay")
+                }
+                if cancelingOrderID == order.id {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .accessibilityLabel("Canceling unpaid order")
+                } else {
+                    Button {
+                        pendingCancelOrder = order
+                    } label: {
+                        Label("Cancel unpaid order", systemImage: "xmark.circle")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isBusy)
+                    .accessibilityLabel("Cancel unpaid order and put the listing back on sale")
+                    .accessibilityHint("Stops payment. A payment that already went through cannot be canceled here.")
+                    .accessibilityIdentifier("orders.cancelUnpaid")
                 }
             }
 
@@ -392,6 +428,28 @@ struct MyOrdersView: View {
         } catch let error as RailACheckout.CheckoutError where error.isCanceled {
             statusIsError = false
             statusMessage = "Payment canceled."
+        } catch let error as APIClientError where error.isUnauthorized {
+            statusIsError = true
+            statusMessage = "Sign in required. Your session is missing or expired — please sign in again."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func cancelUnpaid(_ order: ListingOrderSummary) async {
+        statusMessage = nil
+        statusIsError = false
+        cancelingOrderID = order.id
+        defer { cancelingOrderID = nil }
+
+        do {
+            _ = try await APIClient.shared.cancelUnpaidOrder(orderId: order.id)
+            BrandHaptics.success()
+            statusIsError = false
+            statusMessage = "Unpaid order canceled. The listing is for sale again."
+            await load()
         } catch let error as APIClientError where error.isUnauthorized {
             statusIsError = true
             statusMessage = "Sign in required. Your session is missing or expired — please sign in again."

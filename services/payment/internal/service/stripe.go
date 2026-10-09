@@ -147,12 +147,29 @@ type StripeService struct {
 	// tests only — never set in production). Used to prove MON-15: charge
 	// failure must not disburse the provider transfer.
 	testFailOffSession bool
+	// testInFlightOffSessionID, when set, returns that PaymentIntent id with
+	// ErrOffSessionInFlight (unit tests only). The id must be kept so a later
+	// attempt does not create a second charge.
+	testInFlightOffSessionID string
+	// testFailTransfer forces CreateTransfer to error (unit tests only).
+	// A tip charge that captured must not be marked paid when the seller
+	// transfer fails.
+	testFailTransfer bool
 	// testFailRefund, when non-nil, is returned by CreateRefund instead of
 	// calling Stripe / DevStore (unit tests only — never set in production).
 	testFailRefund error
 	// testCreateAccount, when non-nil, replaces Connect account create
 	// (unit tests only — never set in production).
 	testCreateAccount func(ctx context.Context, email, businessName string) (string, error)
+	// testPaymentIntentStatus, when non-empty, is the status
+	// CancelUncapturablePaymentIntent uses instead of calling Stripe.
+	// Checked before devMode and before any network call.
+	testPaymentIntentStatus string
+	// testCancelPaymentIntentErr, when set, is returned for a cancelable test
+	// status instead of recording the id as canceled.
+	testCancelPaymentIntentErr error
+	// testCanceledPaymentIntentIDs records ids canceled through the test seam.
+	testCanceledPaymentIntentIDs []string
 }
 
 // NewStripeService creates a new StripeService for the given deployment
@@ -1005,6 +1022,9 @@ func (s *StripeService) CreateTransfer(ctx context.Context, amountCents int64, c
 	if idempotencyKey == "" {
 		return "", fmt.Errorf("create transfer: idempotency key required")
 	}
+	if s != nil && s.testFailTransfer {
+		return "", fmt.Errorf("create transfer: forced test failure")
+	}
 	if s.devMode {
 		slog.Info("dev mode: stub CreateTransfer", "amountCents", amountCents, "idem", idempotencyKey)
 		return s.DevStore().RecordTransfer(idempotencyKey, destinationAccountID, amountCents), nil
@@ -1598,6 +1618,9 @@ func (s *StripeService) CreateOffSessionPaymentIntent(ctx context.Context, amoun
 	if s != nil && s.testFailOffSession {
 		return "", "", fmt.Errorf("create off-session payment intent: forced test failure")
 	}
+	if s != nil && s.testInFlightOffSessionID != "" {
+		return s.testInFlightOffSessionID, "needs-confirm", fmt.Errorf("create off-session payment intent: status processing: %w", ErrOffSessionInFlight)
+	}
 	if s.devMode {
 		slog.Info("dev mode: stub CreateOffSessionPaymentIntent", "amountCents", amountCents, "customerStripeID", customerStripeID, "idem", idempotencyKey)
 		key := "pi_dev_offsession_" + idempotencyKey
@@ -1624,8 +1647,23 @@ func (s *StripeService) CreateOffSessionPaymentIntent(ctx context.Context, amoun
 	if err != nil {
 		return "", "", fmt.Errorf("create off-session payment intent: %w", err)
 	}
-	return pi.ID, pi.ClientSecret, nil
+	switch pi.Status {
+	case stripe.PaymentIntentStatusSucceeded, stripe.PaymentIntentStatusRequiresCapture:
+		return pi.ID, pi.ClientSecret, nil
+	case stripe.PaymentIntentStatusProcessing, stripe.PaymentIntentStatusRequiresAction, stripe.PaymentIntentStatusRequiresConfirmation:
+		// The PaymentIntent exists and may still capture. Returning the id
+		// with ErrOffSessionInFlight lets the caller keep this idempotency
+		// key. Dropping the id and starting a new attempt charges again.
+		return pi.ID, pi.ClientSecret, fmt.Errorf("create off-session payment intent: status %s: %w", pi.Status, ErrOffSessionInFlight)
+	default:
+		return pi.ID, "", fmt.Errorf("create off-session payment intent: status %s is not captured", pi.Status)
+	}
 }
+
+// ErrOffSessionInFlight means Stripe accepted a PaymentIntent that is not
+// terminal. The id is returned beside this error. A new idempotency key
+// would create a second charge.
+var ErrOffSessionInFlight = errors.New("off-session payment is still processing")
 
 // --- Insurance Stripe methods ---
 
@@ -1664,25 +1702,36 @@ func (s *StripeService) CreateInsurancePaymentIntent(ctx context.Context, amount
 
 // --- Subscription Stripe methods ---
 
-// CreateStripeSubscription creates a Stripe subscription for a customer.
+// CreateStripeSubscription creates a Stripe subscription for a platform user.
+// stripeCustomerID is the Stripe Customer (cus_). Live mode refuses to create
+// a subscription without one — Subscription.Create cannot return a payable
+// invoice otherwise. Dev mode keys the local stub off the platform user id.
 // Returns the Stripe subscription ID and client secret (for SCA confirmation if needed).
-func (s *StripeService) CreateStripeSubscription(ctx context.Context, customerID, stripePriceID, paymentMethodID string) (string, string, error) {
+func (s *StripeService) CreateStripeSubscription(ctx context.Context, platformUserID, stripeCustomerID, stripePriceID, paymentMethodID string) (string, string, error) {
 	if s.devMode {
-		sub := s.DevStore().UpsertSubscription(customerID, stripePriceID, paymentMethodID)
+		sub := s.DevStore().UpsertSubscription(platformUserID, stripePriceID, paymentMethodID)
 		return sub.ID, "", nil
+	}
+	if strings.TrimSpace(stripeCustomerID) == "" {
+		return "", "", fmt.Errorf("create stripe subscription: stripe customer id required")
 	}
 
 	params := &stripe.SubscriptionParams{
+		Customer: stripe.String(stripeCustomerID),
 		Items: []*stripe.SubscriptionItemsParams{
 			{
 				Price: stripe.String(stripePriceID),
 			},
 		},
-		PaymentBehavior:      stripe.String("default_incomplete"),
-		DefaultPaymentMethod: stripe.String(paymentMethodID),
+		PaymentBehavior: stripe.String("default_incomplete"),
 	}
-	params.AddExpand("latest_invoice.payment_intent")
-	params.AddMetadata("platform_customer_id", customerID)
+	// An empty method is not a Stripe id. Omitting it lets the client confirm
+	// the invoice PaymentIntent (Payment Element) instead of failing the create.
+	if strings.TrimSpace(paymentMethodID) != "" {
+		params.DefaultPaymentMethod = stripe.String(paymentMethodID)
+	}
+	params.AddExpand("latest_invoice.confirmation_secret")
+	params.AddMetadata("platform_customer_id", platformUserID)
 
 	// No idempotency key by design: (customerID, priceID, paymentMethodID) does
 	// not identify a unique logical subscription. A customer who cancels and
@@ -1742,15 +1791,26 @@ func (s *StripeService) CancelStripeSubscription(ctx context.Context, stripeSubs
 	return nil
 }
 
+// StripeTierUpdate is the result of changing a subscription price.
+// Applied is false when Stripe is still waiting on the proration invoice.
+// ProrationCents is the signed invoice proration (charge positive, credit
+// negative), never a placeholder zero when Stripe reported an amount.
+type StripeTierUpdate struct {
+	SubscriptionID string
+	ProrationCents int64
+	Applied        bool
+	ClientSecret   string
+}
+
 // UpdateStripeSubscription updates a Stripe subscription to a new price.
-// Returns the updated subscription ID and the proration amount in cents.
-func (s *StripeService) UpdateStripeSubscription(ctx context.Context, stripeSubscriptionID, newStripePriceID string) (string, int64, error) {
+// The local plan may be stored only when Applied is true.
+func (s *StripeService) UpdateStripeSubscription(ctx context.Context, stripeSubscriptionID, newStripePriceID string) (StripeTierUpdate, error) {
 	if s.devMode {
 		// The subscription row may live in the DB from a prior session
 		// (DevStore resets on restart). Tolerate a miss — the DB update is
-		// the source of truth in dev mode.
+		// the source of truth in dev mode. Dev mode does not invoice.
 		s.DevStore().UpdateSubscriptionPrice(stripeSubscriptionID, newStripePriceID)
-		return stripeSubscriptionID, 0, nil
+		return StripeTierUpdate{SubscriptionID: stripeSubscriptionID, Applied: true}, nil
 	}
 
 	// Get current subscription to find the item ID.
@@ -1760,11 +1820,11 @@ func (s *StripeService) UpdateStripeSubscription(ctx context.Context, stripeSubs
 		return stripesub.Get(stripeSubscriptionID, getParams)
 	})
 	if err != nil {
-		return "", 0, fmt.Errorf("get stripe subscription for update: %w", err)
+		return StripeTierUpdate{}, fmt.Errorf("get stripe subscription for update: %w", err)
 	}
 
-	if len(sub.Items.Data) == 0 {
-		return "", 0, fmt.Errorf("update stripe subscription: no items found")
+	if sub.Items == nil || len(sub.Items.Data) == 0 {
+		return StripeTierUpdate{}, fmt.Errorf("update stripe subscription: no items found")
 	}
 
 	itemID := sub.Items.Data[0].ID
@@ -1776,13 +1836,19 @@ func (s *StripeService) UpdateStripeSubscription(ctx context.Context, stripeSubs
 				Price: stripe.String(newStripePriceID),
 			},
 		},
-		ProrationBehavior: stripe.String("create_prorations"),
+		// always_invoice is required with pending_if_incomplete. The price
+		// change stays in pending_update until the proration invoice is paid,
+		// so a failed or unfinished payment cannot grant the new plan.
+		ProrationBehavior: stripe.String("always_invoice"),
+		PaymentBehavior:   stripe.String("pending_if_incomplete"),
 	}
-	// Mutating and money-affecting: ProrationBehavior=create_prorations writes
-	// proration line items. Without a key, a stripe-go network retry after an
-	// ambiguous timeout would prorate the same plan change twice. The
-	// (subscription, item, new price) triple deterministically identifies the
-	// change.
+	params.AddExpand("latest_invoice")
+	params.AddExpand("latest_invoice.confirmation_secret")
+	params.AddExpand("latest_invoice.lines")
+	// Mutating and money-affecting: always_invoice writes a proration invoice.
+	// Without a key, a stripe-go network retry after an ambiguous timeout
+	// would prorate the same plan change twice. The (subscription, item, new
+	// price) triple deterministically identifies the change.
 	params.IdempotencyKey = stripe.String(stripeIdempotencyKey("sub-update", stripeSubscriptionID, itemID, newStripePriceID))
 
 	updated, err := observability.TraceStripeCall(ctx, "Subscription.Update", func(ctx context.Context) (*stripe.Subscription, error) {
@@ -1790,10 +1856,74 @@ func (s *StripeService) UpdateStripeSubscription(ctx context.Context, stripeSubs
 		return stripesub.Update(stripeSubscriptionID, params)
 	})
 	if err != nil {
-		return "", 0, fmt.Errorf("update stripe subscription: %w", err)
+		return StripeTierUpdate{}, fmt.Errorf("update stripe subscription: %w", err)
 	}
 
-	return updated.ID, 0, nil
+	invoiceStatus := ""
+	if updated.LatestInvoice != nil {
+		invoiceStatus = string(updated.LatestInvoice.Status)
+	}
+	applied := stripeTierChangeApplied(updated.PendingUpdate != nil, invoiceStatus)
+	secret := ""
+	if !applied && updated.LatestInvoice != nil && updated.LatestInvoice.ConfirmationSecret != nil {
+		secret = updated.LatestInvoice.ConfirmationSecret.ClientSecret
+	}
+	return StripeTierUpdate{
+		SubscriptionID: updated.ID,
+		ProrationCents: prorationCentsFromInvoice(updated.LatestInvoice),
+		Applied:        applied,
+		ClientSecret:   secret,
+	}, nil
+}
+
+// stripeTierChangeApplied is true only when Stripe has already applied the
+// new price. A pending update, or an invoice that is not paid, keeps the
+// current plan.
+func stripeTierChangeApplied(pendingUpdate bool, invoiceStatus string) bool {
+	if pendingUpdate {
+		return false
+	}
+	return invoiceStatus == string(stripe.InvoiceStatusPaid)
+}
+
+func invoiceLineIsProration(line *stripe.InvoiceLineItem) bool {
+	if line == nil || line.Parent == nil {
+		return false
+	}
+	if line.Parent.InvoiceItemDetails != nil && line.Parent.InvoiceItemDetails.Proration {
+		return true
+	}
+	if line.Parent.SubscriptionItemDetails != nil && line.Parent.SubscriptionItemDetails.Proration {
+		return true
+	}
+	return false
+}
+
+// prorationCentsFromInvoice sums proration lines. Positive is a charge and
+// negative is a credit. When Stripe did not mark lines as prorations, the
+// invoice amount is the charge that always_invoice just created.
+func prorationCentsFromInvoice(inv *stripe.Invoice) int64 {
+	if inv == nil {
+		return 0
+	}
+	if inv.Lines != nil {
+		var sum int64
+		var saw bool
+		for _, line := range inv.Lines.Data {
+			if !invoiceLineIsProration(line) {
+				continue
+			}
+			sum += line.Amount
+			saw = true
+		}
+		if saw {
+			return sum
+		}
+	}
+	if inv.Status == stripe.InvoiceStatusPaid {
+		return inv.AmountPaid
+	}
+	return inv.AmountDue
 }
 
 // ListStripeInvoices lists invoices for a Stripe subscription.
@@ -1851,4 +1981,83 @@ func (s *StripeService) ListStripeInvoices(ctx context.Context, stripeSubscripti
 	observability.EndStripeSpan(span, nil)
 
 	return invoices, nil
+}
+
+// CancelUncapturablePaymentIntent cancels a PaymentIntent that is not yet
+// capturable. succeeded, requires_capture, and processing return
+// ErrPaymentIntentCapturable and do not cancel. An already canceled intent is
+// a no-op. Empty paymentIntentID is a no-op. An empty idempotency key is an
+// error whenever an id is present.
+func (s *StripeService) CancelUncapturablePaymentIntent(ctx context.Context, paymentIntentID, idempotencyKey string) error {
+	if paymentIntentID == "" {
+		return nil
+	}
+	if idempotencyKey == "" {
+		return fmt.Errorf("cancel uncapturable payment intent: idempotency key required")
+	}
+
+	// Test seam wins over devMode and over any Stripe call.
+	status := s.testPaymentIntentStatus
+	if status == "" && s.devMode {
+		// A succeeded intent in the in-memory store must not be treated as
+		// canceled. Unknown ids have nothing to capture, so they stay a no-op.
+		status = s.DevStore().PaymentIntentStatus(paymentIntentID)
+		if status == "" {
+			return nil
+		}
+	}
+	if status == "" {
+		getParams := &stripe.PaymentIntentParams{}
+		pi, err := observability.TraceStripeCall(ctx, "PaymentIntent.Get", func(ctx context.Context) (*stripe.PaymentIntent, error) {
+			getParams.Context = ctx
+			return paymentintent.Get(paymentIntentID, getParams)
+		})
+		if err != nil {
+			return fmt.Errorf("cancel uncapturable payment intent: get: %w", err)
+		}
+		status = string(pi.Status)
+	}
+
+	switch status {
+	case "succeeded", "requires_capture", "processing":
+		return fmt.Errorf("payment intent %s status %s: %w", paymentIntentID, status, ErrPaymentIntentCapturable)
+	case "canceled":
+		return nil
+	case "requires_payment_method", "requires_confirmation", "requires_action":
+		if s.testPaymentIntentStatus != "" {
+			if s.testCancelPaymentIntentErr != nil {
+				return s.testCancelPaymentIntentErr
+			}
+			s.testCanceledPaymentIntentIDs = append(s.testCanceledPaymentIntentIDs, paymentIntentID)
+			return nil
+		}
+		if s.devMode {
+			marked := s.DevStore().MarkPaymentIntentCanceled(paymentIntentID)
+			if marked != "canceled" {
+				return fmt.Errorf("cancel uncapturable payment intent: dev store left status %s", marked)
+			}
+			return nil
+		}
+		params := &stripe.PaymentIntentCancelParams{
+			CancellationReason: stripe.String(string(stripe.PaymentIntentCancellationReasonAbandoned)),
+		}
+		params.IdempotencyKey = stripe.String(idempotencyKey)
+		canceled, err := observability.TraceStripeCall(ctx, "PaymentIntent.Cancel", func(ctx context.Context) (*stripe.PaymentIntent, error) {
+			params.Context = ctx
+			return paymentintent.Cancel(paymentIntentID, params)
+		})
+		if err != nil {
+			return fmt.Errorf("cancel uncapturable payment intent: %w", err)
+		}
+		if canceled == nil || string(canceled.Status) != "canceled" {
+			got := ""
+			if canceled != nil {
+				got = string(canceled.Status)
+			}
+			return fmt.Errorf("cancel uncapturable payment intent: %s status %s after cancel", paymentIntentID, got)
+		}
+		return nil
+	default:
+		return fmt.Errorf("cancel uncapturable payment intent: %s status %s is not cancelable", paymentIntentID, status)
+	}
 }

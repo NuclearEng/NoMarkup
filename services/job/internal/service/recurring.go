@@ -49,8 +49,8 @@ func (s *ContractService) GetRecurringConfigByID(ctx context.Context, recurringI
 }
 
 // UpdateRecurringConfig updates auto_approve and/or rate for future instances.
-// Rate negotiation UI (accept/reject via chat) is residual — either party may
-// update rate/auto_approve on an active or paused config (FR-18.3 / partial 18.4).
+// Only the customer may change the rate or turn auto-approve on. Either party
+// may turn auto-approve off. Rate negotiation UI is residual (FR-18.3 / 18.4).
 func (s *ContractService) UpdateRecurringConfig(
 	ctx context.Context,
 	recurringID, userID string,
@@ -61,7 +61,8 @@ func (s *ContractService) UpdateRecurringConfig(
 	if err != nil {
 		return nil, fmt.Errorf("update recurring config: %w", err)
 	}
-	if _, err := s.requireContractParty(ctx, cfg.ContractID, userID); err != nil {
+	contract, err := s.requireContractParty(ctx, cfg.ContractID, userID)
+	if err != nil {
 		return nil, fmt.Errorf("update recurring config: %w", err)
 	}
 	cfg, err = s.maybeExpirePaused(ctx, cfg)
@@ -73,12 +74,18 @@ func (s *ContractService) UpdateRecurringConfig(
 	}
 
 	if proposedRateCents != nil {
+		if userID != contract.CustomerID {
+			return nil, fmt.Errorf("update recurring config: %w", domain.ErrRecurringCustomerOnly)
+		}
 		if *proposedRateCents <= 0 {
 			return nil, fmt.Errorf("update recurring config: %w", domain.ErrRecurringInvalidRate)
 		}
 		cfg.RateCents = *proposedRateCents
 	}
 	if autoApprove != nil {
+		if *autoApprove && userID != contract.CustomerID {
+			return nil, fmt.Errorf("update recurring config: %w", domain.ErrRecurringCustomerOnly)
+		}
 		cfg.AutoApprove = *autoApprove
 	}
 

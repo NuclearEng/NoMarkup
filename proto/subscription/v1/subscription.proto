@@ -167,6 +167,8 @@ message ChangeSubscriptionTierRequest {
 message ChangeSubscriptionTierResponse {
   Subscription subscription = 1;
   int64 proration_amount_cents = 2;   // positive = charge, negative = credit
+  string client_secret = 3;           // set when the proration invoice still needs confirmation
+  bool tier_applied = 4;               // false keeps the current plan until that invoice is paid
 }
 
 // ============================================================

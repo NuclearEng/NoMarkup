@@ -263,6 +263,16 @@ func (s *PaymentService) handlePaymentIntentFailed(ctx context.Context, event st
 		return fmt.Errorf("parse payment_intent.payment_failed: %w", err)
 	}
 
+	if pi.Metadata != nil {
+		planID := pi.Metadata["installment_plan_id"]
+		installmentID := pi.Metadata["scheduled_installment_id"]
+		if planID != "" && installmentID != "" && s.installmentHook != nil {
+			if err := s.installmentHook.FailProcessingInstallment(ctx, planID, installmentID, pi.ID); err != nil {
+				return fmt.Errorf("release processing installment: %w", err)
+			}
+		}
+	}
+
 	payment, err := s.repo.FindByStripePaymentIntentID(ctx, pi.ID)
 	if err != nil {
 		slog.Warn("payment not found for payment_intent.payment_failed", "pi_id", pi.ID, "error", err)
@@ -922,12 +932,12 @@ type webhookSubscriptionData struct {
 	PeriodEnd    int64  `json:"period_end"`
 }
 
-// handleSubscriptionEvent delegates subscription-related webhook events to the
-// subscription service. It extracts the subscription ID and period from the event
-// using minimal JSON parsing to avoid SDK type compatibility issues.
+// handleSubscriptionEvent delegates subscription-related events to the
+// subscription service. The HTTP handler must run stripe.webhooks.constructEvent()
+// before this parser reads an id. An invoice id is never used as a subscription id.
 func (s *PaymentService) handleSubscriptionEvent(ctx context.Context, event stripe.Event) error {
 	if s.subHook == nil {
-		slog.Warn("subscription webhook handler not configured, skipping", "event_type", event.Type)
+		slog.Warn("subscription event handler not configured, skipping", "event_type", event.Type)
 		return nil
 	}
 
@@ -936,14 +946,8 @@ func (s *PaymentService) handleSubscriptionEvent(ctx context.Context, event stri
 		return fmt.Errorf("parse %s: %w", event.Type, err)
 	}
 
-	// For subscription events (customer.subscription.*), the top-level ID is the
-	// subscription ID. For invoice events, the subscription field holds it.
-	subID := data.Subscription
-	if subID == "" {
-		subID = data.ID
-	}
-
-	if subID == "" {
+	subID, ok := SubscriptionIDFromStripeObject(string(event.Type), event.Data.Raw)
+	if !ok || subID == "" {
 		slog.Warn("subscription event has no subscription ID", "event_type", event.Type)
 		return nil
 	}
@@ -958,5 +962,13 @@ func (s *PaymentService) handleSubscriptionEvent(ctx context.Context, event stri
 		periodEnd = &t
 	}
 
-	return s.subHook.HandleSubscriptionWebhook(ctx, string(event.Type), subID, periodStart, periodEnd)
+	return s.subHook.HandleSubscriptionWebhook(
+		ctx,
+		string(event.Type),
+		subID,
+		periodStart,
+		periodEnd,
+		BillingReasonFromStripeObject(event.Data.Raw),
+		PriceIDForTierSyncFromStripeObject(string(event.Type), event.Data.Raw),
+	)
 }

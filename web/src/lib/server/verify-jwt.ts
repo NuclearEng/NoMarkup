@@ -4,7 +4,7 @@
  * Mirrors the validation the Go user service / gateway performs
  * (`services/user/internal/service/jwt.go`): signature (RS256 only), `exp`,
  * `iss`, and `aud` must all check out. Tokens are issued by the user service
- * with iss=JWT_ISSUER (default https://auth.nomarkup.com) and
+ * with iss=JWT_ISSUER (default https://auth.no-markup.com) and
  * aud=JWT_AUDIENCE (default nomarkup-api).
  *
  * Uses only Node's built-in `crypto` — no new dependencies. The public key is
@@ -19,7 +19,7 @@ import { createPublicKey, verify as cryptoVerify, type KeyObject } from 'node:cr
 import { readFileSync } from 'node:fs';
 
 // Defaults must match services/user/internal/service/jwt.go and the gateway.
-const DEFAULT_JWT_ISSUER = 'https://auth.nomarkup.com';
+const DEFAULT_JWT_ISSUER = 'https://auth.no-markup.com';
 const DEFAULT_JWT_AUDIENCE = 'nomarkup-api';
 
 export interface VerifiedClaims {

@@ -125,3 +125,24 @@ func (s *Server) AutoReleaseListingOrders(ctx context.Context, req *paymentv1.Au
 	}
 	return &paymentv1.AutoReleaseListingOrdersResponse{ReleasedCount: int32(n)}, nil
 }
+
+// CancelUnpaidListingOrder cancels an unpaid goods order and returns the listing to sale.
+func (s *Server) CancelUnpaidListingOrder(ctx context.Context, req *paymentv1.CancelUnpaidListingOrderRequest) (*paymentv1.CancelUnpaidListingOrderResponse, error) {
+	ms, err := s.requireMarketplace()
+	if err != nil {
+		return nil, err
+	}
+	if req.GetOrderId() == "" || req.GetActorUserId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "order_id and actor_user_id are required")
+	}
+	res, err := ms.CancelUnpaidListingOrder(ctx, req.GetOrderId(), req.GetActorUserId(), req.GetActorRole())
+	if err != nil {
+		return nil, mapDomainError(err)
+	}
+	return &paymentv1.CancelUnpaidListingOrderResponse{
+		OrderId:       res.OrderID,
+		ListingId:     res.ListingID,
+		EscrowStatus:  res.EscrowStatus,
+		ListingStatus: res.ListingStatus,
+	}, nil
+}

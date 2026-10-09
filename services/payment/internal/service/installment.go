@@ -219,6 +219,19 @@ func (s *InstallmentService) CreateInstallmentPlan(ctx context.Context, input do
 			"installment_id", firstInstallment.ID,
 			"error", err,
 		)
+		if errors.Is(err, ErrOffSessionInFlight) && piID != "" {
+			// Keep bnpl-first's PaymentIntent. Marking this row failed would
+			// let the due cron create a second charge under attempt-1.
+			// The plan stays active and the provider is not paid. Return the
+			// in-memory plan (installment 1 processing) with the confirmation
+			// secret, still wrapped, so this is not a captured payment.
+			if updateErr := s.repo.UpdateScheduledInstallmentStatus(ctx, firstInstallment.ID, "processing", &piID); updateErr != nil {
+				return nil, "", fmt.Errorf("create installment plan first charge park: %w", updateErr)
+			}
+			installments[0].Status = "processing"
+			plan.Installments = installments
+			return plan, clientSecret, fmt.Errorf("create installment plan first charge: %w", err)
+		}
 		// Clear state: first installment failed, plan active but provider unpaid.
 		_ = s.repo.UpdateScheduledInstallmentStatus(ctx, firstInstallment.ID, "failed", nil)
 		return nil, "", fmt.Errorf("create installment plan first charge: %w", err)
@@ -420,6 +433,17 @@ func (s *InstallmentService) processOneInstallment(ctx context.Context, inst dom
 		metadata,
 	)
 	if err != nil {
+		if errors.Is(err, ErrOffSessionInFlight) && piID != "" {
+			if updateErr := s.repo.UpdateScheduledInstallmentStatus(ctx, inst.ID, "processing", &piID); updateErr != nil {
+				return fmt.Errorf("park in-flight installment %s: %w", inst.ID, updateErr)
+			}
+			slog.InfoContext(ctx, "installment charge still processing; attempt not consumed",
+				"installment_id", inst.ID,
+				"plan_id", inst.PlanID,
+				"pi_id", piID,
+			)
+			return nil
+		}
 		stats.Declined++
 		slog.ErrorContext(ctx, "installment charge failed",
 			"installment_id", inst.ID,
@@ -536,6 +560,33 @@ func (s *InstallmentService) ListInstallmentPlans(ctx context.Context, userID st
 	return s.repo.ListInstallmentPlans(ctx, userID, statusFilter, page, pageSize)
 }
 
+// FailProcessingInstallment records a decline for an installment that was
+// parked while Stripe was still processing. Rows that are not processing are
+// unchanged, so a cron decline is not counted twice.
+func (s *InstallmentService) FailProcessingInstallment(ctx context.Context, planID, installmentID, paymentIntentID string) error {
+	if err := s.repo.UpdateScheduledInstallmentStatus(ctx, installmentID, "processing_failed", nil); err != nil {
+		return fmt.Errorf("fail processing installment: %w", err)
+	}
+	rows, err := s.repo.GetScheduledInstallmentsForPlan(ctx, planID)
+	if err != nil {
+		return fmt.Errorf("fail processing installment read: %w", err)
+	}
+	for _, row := range rows {
+		if row.ID != installmentID || row.Status != "failed" {
+			continue
+		}
+		if err := s.repo.UpdateInstallmentPlanStatus(ctx, planID, "defaulted"); err != nil {
+			return fmt.Errorf("fail processing installment default plan: %w", err)
+		}
+		slog.Warn("installment plan defaulted after processing payment failed",
+			"plan_id", planID,
+			"installment_id", installmentID,
+			"pi_id", paymentIntentID,
+		)
+	}
+	return nil
+}
+
 // ConfirmInstallmentPaymentSucceeded is called from the payment event handler when a
 // payment_intent.succeeded event includes installment metadata. It marks the
 // installment as paid and checks plan completion.
@@ -550,6 +601,52 @@ func (s *InstallmentService) ConfirmInstallmentPaymentSucceeded(ctx context.Cont
 		"pi_id", paymentIntentID,
 	)
 
+	// A first charge that was still processing does not pay the provider
+	// until this capture. The transfer key is the plan id, so a retry
+	// cannot pay the provider twice.
+	if err := s.payProviderIfUnpaidAfterFirstCapture(ctx, planID); err != nil {
+		return err
+	}
+
 	// Check if all installments for this plan are now paid.
 	return s.checkPlanCompletion(ctx, planID)
+}
+
+// payProviderIfUnpaidAfterFirstCapture pays the provider once installment 1
+// has captured. Later installments are customer collections only; the
+// provider was paid in full on the first capture.
+func (s *InstallmentService) payProviderIfUnpaidAfterFirstCapture(ctx context.Context, planID string) error {
+	plan, err := s.repo.GetInstallmentPlan(ctx, planID)
+	if err != nil {
+		return fmt.Errorf("pay provider after first capture: %w", err)
+	}
+	if plan.StripeProviderTransferID != "" || plan.ProviderPaidAt != nil {
+		return nil
+	}
+	rows, err := s.repo.GetScheduledInstallmentsForPlan(ctx, planID)
+	if err != nil {
+		return fmt.Errorf("pay provider after first capture: %w", err)
+	}
+	firstPaid := false
+	for _, row := range rows {
+		if row.InstallmentNumber == 1 && row.Status == "paid" {
+			firstPaid = true
+			break
+		}
+	}
+	if !firstPaid {
+		return nil
+	}
+	accountID, err := s.repo.GetStripeAccountID(ctx, plan.ProviderID)
+	if err != nil {
+		return fmt.Errorf("pay provider after first capture: %w", err)
+	}
+	transferID, err := s.stripe.CreatePlatformTransfer(ctx, plan.TotalAmountCents, "usd", accountID, "installment-provider-payout:"+planID)
+	if err != nil {
+		return fmt.Errorf("pay provider after first capture: %w", err)
+	}
+	if err := s.repo.UpdateInstallmentPlanProviderPaid(ctx, planID, transferID); err != nil {
+		return fmt.Errorf("pay provider after first capture: %w", err)
+	}
+	return nil
 }

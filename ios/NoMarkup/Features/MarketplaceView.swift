@@ -174,7 +174,7 @@ struct MarketplaceView: View {
         } else {
             List {
                 Section {
-                    Text("Local goods · buyers bid up · pickup within 25 mi. Escrow holds funds until pickup. The buyer pays the agreed price, and the platform fee is taken from the seller’s payout.")
+                    Text("Local goods · buyers bid up · pickup within 25 mi. The buyer pays the item price plus disclosed fees and tax, and the seller receives the item price. Escrow holds funds until local pickup.")
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .listRowBackground(BrandTheme.navyElevated)

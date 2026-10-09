@@ -293,7 +293,7 @@ function CurrentFeesSummary({
         )}
 
         <p className="text-xs text-zinc-400">
-          The buyer/customer pays no markup — fees come out of the seller payout.
+          Services: the buyer pays the agreed price and the platform fee comes from the seller payout. Local goods: the buyer pays the item price plus disclosed fees and tax, and the seller receives the item price.
         </p>
       </CardContent>
     </Card>

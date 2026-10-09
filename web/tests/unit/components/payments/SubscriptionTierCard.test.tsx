@@ -37,6 +37,11 @@ describe('SubscriptionTierCard', () => {
 
     expect(screen.getByText('Pro')).toBeDefined();
     expect(screen.getByText('$49.00')).toBeDefined();
+    expect(screen.getByText(/\$49\.00 per month/)).toBeDefined();
+    expect(
+      screen.getByText(/renews at the price and interval shown until you cancel/i),
+    ).toBeDefined();
+    expect(screen.getByText(/Cancel in Settings → Subscription/)).toBeDefined();
   });
 
   it('renders the annual equivalent and total when billed annually', () => {
@@ -50,6 +55,10 @@ describe('SubscriptionTierCard', () => {
 
     // monthly equivalent of $490/year = ~$40.83
     expect(screen.getByText(/billed annually/)).toBeDefined();
+    expect(screen.getByText(/\$490\.00 per year/)).toBeDefined();
+    expect(
+      screen.getByText(/renews at the price and interval shown until you cancel/i),
+    ).toBeDefined();
   });
 
   it('shows feature list including limits and toggles', () => {
@@ -100,5 +109,17 @@ describe('SubscriptionTierCard', () => {
 
     await user.click(screen.getByRole('button', { name: /Upgrade - Pro/ }));
     expect(onSelect).toHaveBeenCalledWith('tier-pro');
+  });
+
+  it('does not describe a free tier as a renewing charge', () => {
+    render(
+      createElement(SubscriptionTierCard, {
+        tier: { ...tier, monthly_price_cents: 0, annual_price_cents: 0 },
+        billingInterval: BILLING_INTERVAL.MONTHLY,
+        onSelect: vi.fn(),
+      }),
+    );
+
+    expect(screen.queryByText(/renews at the price and interval shown/i)).toBeNull();
   });
 });

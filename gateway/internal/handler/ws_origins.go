@@ -28,7 +28,7 @@ func wsOriginPatterns() []string {
 		raw := strings.TrimSpace(os.Getenv("WS_ALLOWED_ORIGINS"))
 		var patterns []string
 		if raw == "" {
-			patterns = []string{"app.nomarkup.com", "nomarkup.com"}
+			patterns = defaultWSOriginPatterns()
 		} else {
 			for _, p := range strings.Split(raw, ",") {
 				p = strings.TrimSpace(p)
@@ -47,6 +47,13 @@ func wsOriginPatterns() []string {
 		slog.Info("websocket origin patterns loaded", "patterns", patterns)
 	})
 	return wsOriginPatternsCache
+}
+
+// defaultWSOriginPatterns is the owned production zone. The unhyphenated
+// nomarkup.com name is not this product's zone. Kept as a pure function so
+// tests do not depend on the sync.Once cache.
+func defaultWSOriginPatterns() []string {
+	return []string{"no-markup.com", "www.no-markup.com", "app.no-markup.com"}
 }
 
 // isDevelopmentEnv is true when either ENVIRONMENT or APP_ENV is "development".

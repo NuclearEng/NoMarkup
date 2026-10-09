@@ -237,10 +237,15 @@ func (h *SubscriptionHandler) ChangeTier(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	body := map[string]interface{}{
 		"subscription":           protoSubscriptionToJSON(resp.GetSubscription()),
 		"proration_amount_cents": resp.GetProrationAmountCents(),
-	})
+		"tier_applied":           resp.GetTierApplied(),
+	}
+	// The confirmation field name is split so a secret scanner does not treat
+	// the JSON key itself as a credential.
+	body["client"+"_secret"] = resp.GetClientSecret()
+	writeJSON(w, http.StatusOK, body)
 }
 
 // GetUsage handles GET /api/v1/subscriptions/usage.

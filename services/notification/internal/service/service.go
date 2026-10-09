@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -14,13 +15,15 @@ import (
 
 // Service implements notification business logic.
 type Service struct {
-	repo       domain.NotificationRepository
-	deviceRepo domain.DeviceTokenRepository
-	ledger     domain.SendLedgerRepository
-	email      *EmailDispatcher
-	push       *PushDispatcher
-	webPush    *WebPushDispatcher
-	sms        *SMSDispatcher
+	repo          domain.NotificationRepository
+	deviceRepo    domain.DeviceTokenRepository
+	ledger        domain.SendLedgerRepository
+	email         *EmailDispatcher
+	push          *PushDispatcher
+	webPush       *WebPushDispatcher
+	sms           *SMSDispatcher
+	publicWebBase string
+	publicAPIBase string
 }
 
 // New creates a new notification service. webPush may be nil — in that
@@ -38,6 +41,36 @@ func New(repo domain.NotificationRepository, deviceRepo domain.DeviceTokenReposi
 		webPush:    webPush,
 		sms:        sms,
 	}
+}
+
+// SetPublicBases records the public web and API origins used in unsubscribe
+// links. Trailing slashes are removed. Empty values are ignored.
+func (s *Service) SetPublicBases(webBase, apiBase string) {
+	if webBase != "" {
+		s.publicWebBase = strings.TrimRight(webBase, "/")
+	}
+	if apiBase != "" {
+		s.publicAPIBase = strings.TrimRight(apiBase, "/")
+	}
+}
+
+func (s *Service) emailPublicBases() (string, string) {
+	web := strings.TrimRight(s.publicWebBase, "/")
+	api := strings.TrimRight(s.publicAPIBase, "/")
+	if web == "" {
+		web = "https://no-markup.com"
+	}
+	if api == "" {
+		api = "https://api.no-markup.com"
+	}
+	return web, api
+}
+
+func unsubscribeTargets(webBase, apiBase, token string) (pageURL, oneClickURL string) {
+	escaped := url.QueryEscape(token)
+	pageURL = webBase + "/unsubscribe?token=" + escaped
+	oneClickURL = apiBase + "/api/v1/notifications/unsubscribe?token=" + escaped
+	return pageURL, oneClickURL
 }
 
 // SendNotification checks user preferences for enabled channels (using defaults if the
@@ -69,8 +102,8 @@ func (s *Service) SendNotification(ctx context.Context, userID, notifType, title
 		//
 		// We only drop a channel the user has explicitly disabled for this
 		// type. Transactional channels with no stored preference pass
-		// through. Promotional push does not: with no preference row and
-		// no stored preference for the type, push is omitted.
+		// through. Promotional push and email do not: with no preference
+		// row and no stored preference for the type, both are omitted.
 		channels = s.filterByExplicitPrefs(ctx, userID, notifType, channels)
 	}
 
@@ -163,10 +196,23 @@ func (s *Service) dispatchEmail(ctx context.Context, userID, notifType, title, b
 		return ChannelDelivery{Channel: "email", Delivered: false, FailureReason: "no email address available"}
 	}
 
-	htmlBody, textBody := renderEmailHTML(notifType, title, body, actionURL)
+	token, err := s.repo.IssueUnsubscribeToken(ctx, userID)
+	if err != nil || token == "" {
+		// Do not log the token or the link. The repository error can echo the
+		// inserted value, so it stays off the log line too.
+		slog.Warn("email dispatch skipped: unsubscribe token unavailable",
+			"user_id", userID,
+			"type", notifType,
+		)
+		return ChannelDelivery{Channel: "email", Delivered: false, FailureReason: "unsubscribe token unavailable"}
+	}
+
+	webBase, apiBase := s.emailPublicBases()
+	pageURL, oneClickURL := unsubscribeTargets(webBase, apiBase, token)
+	htmlBody, textBody := renderEmailHTML(notifType, title, body, actionURL, pageURL)
 
 	subject := title
-	if err := s.email.Send(ctx, email, subject, htmlBody, textBody); err != nil {
+	if err := s.email.SendWithListUnsubscribe(ctx, email, subject, htmlBody, textBody, oneClickURL); err != nil {
 		slog.Warn("email dispatch failed",
 			"user_id", userID,
 			"type", notifType,
@@ -651,11 +697,67 @@ func (s *Service) GetPreferences(ctx context.Context, userID string) (*domain.No
 }
 
 // UpdatePreferences upserts notification preferences for a user.
+//
+// Incoming keys replace stored keys. Keys the caller did not send are kept,
+// so a web save of its category list does not erase an iOS-only type such as
+// price_drop. An empty email digest keeps the stored cadence.
 func (s *Service) UpdatePreferences(ctx context.Context, prefs *domain.NotificationPreferences) (*domain.NotificationPreferences, error) {
+	existing, err := s.repo.GetPreferences(ctx, prefs.UserID)
+	if err != nil && !errors.Is(err, domain.ErrPreferencesNotFound) {
+		return nil, err
+	}
+	merged := make(map[string]domain.ChannelPrefs)
+	if existing != nil {
+		for key, value := range existing.Preferences {
+			merged[key] = value
+		}
+		if prefs.EmailDigest == "" {
+			prefs.EmailDigest = existing.EmailDigest
+		}
+	}
+	for key, value := range prefs.Preferences {
+		if key == "" || key == "unspecified" || strings.HasPrefix(key, "_") {
+			continue
+		}
+		merged[key] = value
+	}
+	storeGlobalSwitch(merged, "_global_push", prefs.GlobalPush)
+	storeGlobalSwitch(merged, "_global_email", prefs.GlobalEmail)
+	storeGlobalSwitch(merged, "_global_sms", prefs.GlobalSMS)
 	if prefs.EmailDigest == "" {
 		prefs.EmailDigest = "daily"
 	}
+	prefs.Preferences = merged
 	return s.repo.UpsertPreferences(ctx, prefs)
+}
+
+func storeGlobalSwitch(prefs map[string]domain.ChannelPrefs, key string, value *bool) {
+	if value == nil {
+		return
+	}
+	prefs[key] = domain.ChannelPrefs{Push: *value}
+}
+
+// globalSwitchAllows reports whether a master switch lets this channel through.
+// A missing switch does not suppress. Critical types ignore the switch.
+func globalSwitchAllows(prefs *domain.NotificationPreferences, channel, notifType string) bool {
+	if prefs == nil || isCriticalNotificationType(notifType) {
+		return true
+	}
+	cp, ok := prefs.Preferences["_global_"+channel]
+	if !ok {
+		return true
+	}
+	return cp.Push
+}
+
+func isCriticalNotificationType(notifType string) bool {
+	switch notifType {
+	case "payment_failed", "account_flag":
+		return true
+	default:
+		return strings.HasPrefix(notifType, "dispute_") || strings.HasPrefix(notifType, "account_flag") || strings.Contains(notifType, "guarantee")
+	}
 }
 
 // RegisterDevice saves a device token for push notifications.
@@ -727,13 +829,13 @@ func (s *Service) resolveChannels(ctx context.Context, userID, notifType string)
 	if cp.InApp {
 		channels = append(channels, "in_app")
 	}
-	if cp.Email {
+	if cp.Email && globalSwitchAllows(prefs, "email", notifType) {
 		channels = append(channels, "email")
 	}
-	if cp.Push {
+	if cp.Push && globalSwitchAllows(prefs, "push", notifType) {
 		channels = append(channels, "push")
 	}
-	if cp.SMS {
+	if cp.SMS && globalSwitchAllows(prefs, "sms", notifType) {
 		channels = append(channels, "sms")
 	}
 
@@ -749,7 +851,7 @@ func (s *Service) resolveChannels(ctx context.Context, userID, notifType string)
 // types present in the JSONB column). A transactional type the user has never
 // configured is left untouched (password reset / verification, sent as
 // `unspecified`, still deliver). A promotional type with no stored preference
-// does not fail open to push.
+// does not fail open to push or email.
 //
 // in_app is never dropped here: SendNotification re-adds it unconditionally
 // downstream, and the in-app record is the durable notification, so dropping it
@@ -759,7 +861,8 @@ func (s *Service) filterByExplicitPrefs(ctx context.Context, userID, notifType s
 	prefs, err := s.repo.GetPreferences(ctx, userID)
 	if err != nil {
 		// No preference row, or a transient read error. Transactional sends
-		// keep the caller's channels. Promotional push does not fail open.
+		// keep the caller's channels. Promotional push and email do not
+		// fail open.
 		if isPromotionalNotifType(notifType) {
 			return dropUnstoredPromoPush(ctx, userID, notifType, requested)
 		}
@@ -778,15 +881,15 @@ func (s *Service) filterByExplicitPrefs(ctx context.Context, userID, notifType s
 	for _, ch := range requested {
 		switch ch {
 		case "email":
-			if cp.Email {
+			if cp.Email && globalSwitchAllows(prefs, "email", notifType) {
 				filtered = append(filtered, ch)
 			}
 		case "push":
-			if cp.Push {
+			if cp.Push && globalSwitchAllows(prefs, "push", notifType) {
 				filtered = append(filtered, ch)
 			}
 		case "sms":
-			if cp.SMS {
+			if cp.SMS && globalSwitchAllows(prefs, "sms", notifType) {
 				filtered = append(filtered, ch)
 			}
 		default:
@@ -798,22 +901,30 @@ func (s *Service) filterByExplicitPrefs(ctx context.Context, userID, notifType s
 	return filtered
 }
 
-// dropUnstoredPromoPush removes push when a promotional type has no stored
-// preference. Other requested channels stay.
+// dropUnstoredPromoPush removes push and email when a promotional type has
+// no stored preference. Marketing email stays off until the user turns that
+// type's email on. In-app and other channels stay.
 func dropUnstoredPromoPush(ctx context.Context, userID, notifType string, requested []string) []string {
 	filtered := make([]string, 0, len(requested))
-	dropped := false
+	droppedPush := false
+	droppedEmail := false
 	for _, ch := range requested {
 		if ch == "push" {
-			dropped = true
+			droppedPush = true
+			continue
+		}
+		if ch == "email" {
+			droppedEmail = true
 			continue
 		}
 		filtered = append(filtered, ch)
 	}
-	if dropped {
-		slog.InfoContext(ctx, "push omitted: promotional type has no stored preference",
+	if droppedPush || droppedEmail {
+		slog.InfoContext(ctx, "promotional channel omitted: no stored preference",
 			"user_id", userID,
 			"type", notifType,
+			"dropped_push", droppedPush,
+			"dropped_email", droppedEmail,
 		)
 	}
 	return filtered
@@ -874,9 +985,7 @@ func defaultChannelPrefs(notifType string) domain.ChannelPrefs {
 		"dispute_opened", "dispute_resolved",
 		"document_approved", "document_rejected", "document_expiring",
 		"tier_upgrade", "tier_downgrade",
-		"completion_approved", "work_completed",
-		// Welcome cadence is email-led; we still gate on user prefs.
-		"welcome_day_1", "welcome_day_3", "welcome_day_7":
+		"completion_approved", "work_completed":
 		cp.Email = true
 	}
 

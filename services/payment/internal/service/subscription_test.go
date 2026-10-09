@@ -16,8 +16,10 @@ import (
 type mockSubRepo struct {
 	listTiersFn              func(ctx context.Context) ([]*domain.SubscriptionTier, error)
 	getTierFn                func(ctx context.Context, tierID string) (*domain.SubscriptionTier, error)
+	getTierByPriceFn         func(ctx context.Context, priceID string) (*domain.SubscriptionTier, string, error)
 	createSubscriptionFn     func(ctx context.Context, sub *domain.Subscription) error
 	getSubscriptionFn        func(ctx context.Context, userID string) (*domain.Subscription, error)
+	getOpenSubscriptionFn    func(ctx context.Context, userID string) (*domain.Subscription, error)
 	getSubByStripeFn         func(ctx context.Context, stripeSubscriptionID string) (*domain.Subscription, error)
 	updateSubStatusFn        func(ctx context.Context, id string, status string) error
 	updateSubTierFn          func(ctx context.Context, id string, tierID string, priceCents int64, billingInterval string, stripeSubID string) error
@@ -34,11 +36,27 @@ func (m *mockSubRepo) ListTiers(ctx context.Context) ([]*domain.SubscriptionTier
 func (m *mockSubRepo) GetTier(ctx context.Context, tierID string) (*domain.SubscriptionTier, error) {
 	return m.getTierFn(ctx, tierID)
 }
+func (m *mockSubRepo) GetTierByStripePriceID(ctx context.Context, priceID string) (*domain.SubscriptionTier, string, error) {
+	if m.getTierByPriceFn != nil {
+		return m.getTierByPriceFn(ctx, priceID)
+	}
+	return nil, "", domain.ErrTierNotFound
+}
 func (m *mockSubRepo) CreateSubscription(ctx context.Context, sub *domain.Subscription) error {
 	return m.createSubscriptionFn(ctx, sub)
 }
 func (m *mockSubRepo) GetSubscription(ctx context.Context, userID string) (*domain.Subscription, error) {
 	return m.getSubscriptionFn(ctx, userID)
+}
+
+func (m *mockSubRepo) GetOpenSubscription(ctx context.Context, userID string) (*domain.Subscription, error) {
+	if m.getOpenSubscriptionFn != nil {
+		return m.getOpenSubscriptionFn(ctx, userID)
+	}
+	if m.getSubscriptionFn != nil {
+		return m.getSubscriptionFn(ctx, userID)
+	}
+	return nil, domain.ErrSubscriptionNotFound
 }
 func (m *mockSubRepo) GetSubscriptionByStripeID(ctx context.Context, stripeSubscriptionID string) (*domain.Subscription, error) {
 	return m.getSubByStripeFn(ctx, stripeSubscriptionID)
@@ -256,6 +274,45 @@ func TestSubscriptionService_CreateSubscription(t *testing.T) {
 	}
 }
 
+func TestSubscriptionCreateStatus(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "active", subscriptionCreateStatus(2999, true, ""))
+	assert.Equal(t, "active", subscriptionCreateStatus(0, false, ""))
+	assert.Equal(t, "incomplete", subscriptionCreateStatus(2999, false, ""))
+	assert.Equal(t, "incomplete", subscriptionCreateStatus(2999, true, "needs-confirm"))
+}
+
+func TestSubscriptionService_CreateSubscription_replaces_incomplete(t *testing.T) {
+	t.Parallel()
+
+	var expiredID string
+	repo := &mockSubRepo{
+		getTierFn: func(_ context.Context, _ string) (*domain.SubscriptionTier, error) {
+			return proTier(), nil
+		},
+		getOpenSubscriptionFn: func(_ context.Context, _ string) (*domain.Subscription, error) {
+			return &domain.Subscription{ID: "old-incomplete", Status: "incomplete", StripeSubscriptionID: "previous-row"}, nil
+		},
+		updateSubStatusFn: func(_ context.Context, id string, status string) error {
+			assert.Equal(t, "expired", status)
+			expiredID = id
+			return nil
+		},
+		createSubscriptionFn: func(_ context.Context, _ *domain.Subscription) error {
+			return nil
+		},
+	}
+	svc := newTestSubService(repo)
+
+	sub, _, err := svc.CreateSubscription(context.Background(), "user-1", "tier-pro", "monthly", "card")
+	require.NoError(t, err)
+	require.NotNil(t, sub)
+	assert.Equal(t, "old-incomplete", expiredID)
+	assert.Equal(t, "active", sub.Status)
+	assert.NotEqual(t, "previous-row", sub.StripeSubscriptionID)
+}
+
 func TestSubscriptionService_CreateSubscription_tier_not_found(t *testing.T) {
 	t.Parallel()
 
@@ -348,7 +405,7 @@ func TestSubscriptionService_ChangeTier(t *testing.T) {
 			}
 			svc := newTestSubService(repo)
 
-			sub, prorationAmount, err := svc.ChangeSubscriptionTier(context.Background(), "user-1", tt.newTierID, tt.newInterval)
+			sub, prorationAmount, clientSecret, applied, err := svc.ChangeSubscriptionTier(context.Background(), "user-1", tt.newTierID, tt.newInterval)
 
 			if tt.wantErr != nil {
 				require.Error(t, err)
@@ -358,7 +415,9 @@ func TestSubscriptionService_ChangeTier(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotNil(t, sub)
-			_ = prorationAmount // dev mode returns 0
+			assert.True(t, applied)
+			assert.Empty(t, clientSecret)
+			assert.Equal(t, int64(0), prorationAmount)
 		})
 	}
 }
@@ -373,7 +432,7 @@ func TestSubscriptionService_ChangeTier_no_active_subscription(t *testing.T) {
 	}
 	svc := newTestSubService(repo)
 
-	_, _, err := svc.ChangeSubscriptionTier(context.Background(), "user-1", "tier-business", "monthly")
+	_, _, _, _, err := svc.ChangeSubscriptionTier(context.Background(), "user-1", "tier-business", "monthly")
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrNoActiveSubscription))
@@ -405,7 +464,7 @@ func TestSubscriptionService_GetUsage(t *testing.T) {
 			activeBids:        5,
 			serviceCategories: 3,
 			portfolioImages:   10,
-			wantMaxBids:       10,  // Pro tier limit
+			wantMaxBids:       10,   // Pro tier limit
 			wantFeePercent:    0.08, // 10% base - 2% discount
 		},
 		{
@@ -414,7 +473,7 @@ func TestSubscriptionService_GetUsage(t *testing.T) {
 			activeBids:        2,
 			serviceCategories: 1,
 			portfolioImages:   3,
-			wantMaxBids:       3,   // Free tier default
+			wantMaxBids:       3,    // Free tier default
 			wantFeePercent:    0.10, // No discount
 		},
 		{
@@ -689,10 +748,24 @@ func TestSubscriptionService_HandleSubscriptionWebhook(t *testing.T) {
 			wantStatus: "past_due",
 		},
 		{
+			name:       "invoice_payment_failed_leaves_incomplete",
+			eventType:  "invoice.payment_failed",
+			subExists:  true,
+			subStatus:  "incomplete",
+			wantStatus: "incomplete",
+		},
+		{
 			name:       "invoice_paid_recovers_past_due",
 			eventType:  "invoice.paid",
 			subExists:  true,
 			subStatus:  "past_due",
+			wantStatus: "active",
+		},
+		{
+			name:       "invoice_paid_activates_incomplete",
+			eventType:  "invoice.paid",
+			subExists:  true,
+			subStatus:  "incomplete",
 			wantStatus: "active",
 		},
 		{
@@ -731,7 +804,7 @@ func TestSubscriptionService_HandleSubscriptionWebhook(t *testing.T) {
 			}
 			svc := newTestSubService(repo)
 
-			err := svc.HandleSubscriptionWebhook(context.Background(), tt.eventType, "sub_stripe_1", &now, &periodEnd)
+			err := svc.HandleSubscriptionWebhook(context.Background(), tt.eventType, "sub_stripe_1", &now, &periodEnd, "", "")
 
 			require.NoError(t, err)
 			if tt.wantStatus != "" {

@@ -133,6 +133,57 @@ func TestRequireContractPartyRejectsEmptyUserID(t *testing.T) {
 	}
 }
 
+func TestUpdateRecurringConfigCustomerOnly(t *testing.T) {
+	t.Parallel()
+	const (
+		customer = "cust-1"
+		provider = "prov-1"
+		contract = "ctr-1"
+		recID    = "rec-1"
+	)
+	repo := &recurringTestRepo{
+		contract: &domain.Contract{
+			ID: contract, CustomerID: customer, ProviderID: provider, Status: "active",
+		},
+		cfg: &domain.RecurringConfig{
+			ID: recID, ContractID: contract, Frequency: "weekly", RateCents: 7500,
+			Status: "active", AutoApprove: false,
+			NextOccurrence: time.Now().UTC().AddDate(0, 0, 7),
+		},
+	}
+	svc := NewContractService(repo, nil)
+	ctx := context.Background()
+
+	rate := int64(5000)
+	_, err := svc.UpdateRecurringConfig(ctx, recID, provider, &rate, nil)
+	if !errors.Is(err, domain.ErrRecurringCustomerOnly) {
+		t.Fatalf("provider rate: want ErrRecurringCustomerOnly, got %v", err)
+	}
+	on := true
+	_, err = svc.UpdateRecurringConfig(ctx, recID, provider, nil, &on)
+	if !errors.Is(err, domain.ErrRecurringCustomerOnly) {
+		t.Fatalf("provider auto-approve on: want ErrRecurringCustomerOnly, got %v", err)
+	}
+	off := false
+	updated, err := svc.UpdateRecurringConfig(ctx, recID, provider, nil, &off)
+	if err != nil {
+		t.Fatalf("provider auto-approve off: %v", err)
+	}
+	if updated.AutoApprove {
+		t.Fatal("provider should be able to turn auto-approve off")
+	}
+	if updated.RateCents != 7500 {
+		t.Fatalf("provider must not change rate, got %d", updated.RateCents)
+	}
+	updated, err = svc.UpdateRecurringConfig(ctx, recID, customer, &rate, &on)
+	if err != nil {
+		t.Fatalf("customer update: %v", err)
+	}
+	if updated.RateCents != 5000 || !updated.AutoApprove {
+		t.Fatalf("customer update: rate %d auto %v", updated.RateCents, updated.AutoApprove)
+	}
+}
+
 func TestPauseResumeRecurring(t *testing.T) {
 	t.Parallel()
 	const (

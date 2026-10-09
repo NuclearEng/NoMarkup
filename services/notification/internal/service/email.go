@@ -26,7 +26,7 @@ type EmailDispatcher struct {
 func NewEmailDispatcher(apiKey, fromEmail, fromName string) *EmailDispatcher {
 	devMode := apiKey == ""
 	if fromEmail == "" {
-		fromEmail = "notifications@nomarkup.com"
+		fromEmail = "notifications@no-markup.com"
 	}
 	if fromName == "" {
 		fromName = "NoMarkup"
@@ -44,6 +44,13 @@ func NewEmailDispatcher(apiKey, fromEmail, fromName string) *EmailDispatcher {
 
 // Send dispatches an email via SendGrid. In dev mode it logs instead.
 func (e *EmailDispatcher) Send(ctx context.Context, to, subject, htmlBody, textBody string) error {
+	return e.SendWithListUnsubscribe(ctx, to, subject, htmlBody, textBody, "")
+}
+
+// SendWithListUnsubscribe dispatches an email via SendGrid. When oneClickURL
+// is non-empty, the payload carries one-click list-unsubscribe headers.
+// Those headers contain the token and are not logged.
+func (e *EmailDispatcher) SendWithListUnsubscribe(ctx context.Context, to, subject, htmlBody, textBody, oneClickURL string) error {
 	if e.devMode {
 		slog.Info("email dispatcher (dev mode): would send email",
 			"to", to,
@@ -62,6 +69,7 @@ func (e *EmailDispatcher) Send(ctx context.Context, to, subject, htmlBody, textB
 			{Type: "text/plain", Value: textBody},
 			{Type: "text/html", Value: htmlBody},
 		},
+		Headers: listUnsubscribeHeaders(oneClickURL),
 	}
 
 	body, err := json.Marshal(payload)
@@ -97,6 +105,17 @@ type sendGridPayload struct {
 	From             sendGridEmail             `json:"from"`
 	Subject          string                    `json:"subject"`
 	Content          []sendGridContent         `json:"content"`
+	Headers          map[string]string         `json:"headers,omitempty"`
+}
+
+func listUnsubscribeHeaders(oneClickURL string) map[string]string {
+	if oneClickURL == "" {
+		return nil
+	}
+	return map[string]string{
+		"List-Unsubscribe":      "<" + oneClickURL + ">",
+		"List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+	}
 }
 
 type sendGridPersonalization struct {
@@ -117,11 +136,12 @@ type sendGridContent struct {
 
 // emailTemplateData holds data passed to the email HTML template.
 type emailTemplateData struct {
-	Title     string
-	Body      string
-	ActionURL string
-	NotifType string
-	Year      int
+	Title              string
+	Body               string
+	ActionURL          string
+	UnsubscribePageURL string
+	NotifType          string
+	Year               int
 }
 
 var emailHTMLTmpl = template.Must(template.New("email").Parse(`<!DOCTYPE html>
@@ -156,33 +176,36 @@ var emailHTMLTmpl = template.Must(template.New("email").Parse(`<!DOCTYPE html>
   </div>
   <div class="footer">
     <p>&copy; {{.Year}} NoMarkup. All rights reserved.</p>
-    <p>You received this email because of your notification preferences. <a href="{{.ActionURL}}">Unsubscribe</a></p>
+    {{if .UnsubscribePageURL}}<p><a href="{{.UnsubscribePageURL}}">Unsubscribe</a></p>{{else}}<p>You received this email because of your notification preferences. To stop marketing email, sign in and turn email off at <a href="https://no-markup.com/settings/notifications">Settings → Notifications</a>.</p>{{end}}
   </div>
 </div>
 </body>
 </html>`))
 
 // renderEmailHTML returns HTML and plain-text versions of a notification email.
-func renderEmailHTML(notifType, title, body, actionURL string) (string, string) {
+// unsubscribePageURL, when set, is the footer opt-out link. It is never the
+// action button href.
+func renderEmailHTML(notifType, title, body, actionURL, unsubscribePageURL string) (string, string) {
 	data := emailTemplateData{
-		Title:     title,
-		Body:      body,
-		ActionURL: actionURL,
-		NotifType: notifType,
-		Year:      time.Now().Year(),
+		Title:              title,
+		Body:               body,
+		ActionURL:          actionURL,
+		UnsubscribePageURL: unsubscribePageURL,
+		NotifType:          notifType,
+		Year:               time.Now().Year(),
 	}
 
 	var htmlBuf bytes.Buffer
 	if err := emailHTMLTmpl.Execute(&htmlBuf, data); err != nil {
 		slog.Error("failed to render email template", "error", err)
 		// Fall back to plain text.
-		return "", buildPlainText(title, body, actionURL)
+		return "", buildPlainText(title, body, actionURL, unsubscribePageURL)
 	}
 
-	return htmlBuf.String(), buildPlainText(title, body, actionURL)
+	return htmlBuf.String(), buildPlainText(title, body, actionURL, unsubscribePageURL)
 }
 
-func buildPlainText(title, body, actionURL string) string {
+func buildPlainText(title, body, actionURL, unsubscribePageURL string) string {
 	var sb strings.Builder
 	sb.WriteString(title)
 	sb.WriteString("\n\n")
@@ -192,5 +215,12 @@ func buildPlainText(title, body, actionURL string) string {
 		sb.WriteString(actionURL)
 	}
 	sb.WriteString("\n\n---\nNoMarkup - You received this email because of your notification preferences.\n")
+	if unsubscribePageURL != "" {
+		sb.WriteString("Unsubscribe: ")
+		sb.WriteString(unsubscribePageURL)
+		sb.WriteString("\n")
+	} else {
+		sb.WriteString("To stop marketing email, sign in and turn email off at https://no-markup.com/settings/notifications\n")
+	}
 	return sb.String()
 }

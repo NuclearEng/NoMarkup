@@ -34,7 +34,7 @@ Env knobs that affect OAuth redirects (server-side, not client):
 | `OAUTH_REDIRECT_BASE` | Apple/Google callback host prefix | `http://localhost:8080` |
 | `FRONTEND_URL` | Post-OAuth browser redirect target | `http://localhost:3000` |
 | `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET` | Apple web Services ID + client secret JWT | required if Apple login enabled |
-| `JWT_ISSUER` / `JWT_AUDIENCE` | Access JWT `iss` / `aud` validation | `https://auth.nomarkup.com` / `nomarkup-api` |
+| `JWT_ISSUER` / `JWT_AUDIENCE` | Access JWT `iss` / `aud` validation | `https://auth.no-markup.com` / `nomarkup-api` |
 
 Sources: `.env.example` (OAuth + frontend block), `gateway/internal/handler/oauth.go` (redirect base / frontend URL), `gateway/internal/middleware/auth.go` (issuer/audience defaults).
 

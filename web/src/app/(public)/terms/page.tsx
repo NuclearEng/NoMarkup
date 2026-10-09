@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { LegalDocument } from '@/components/compliance/LegalDocument';
+import { SUBSCRIPTION_RENEWAL_DISCLOSURE } from '@/lib/constants';
 
 export const metadata: Metadata = {
   title: 'Terms of Service | NoMarkup',
@@ -161,8 +162,10 @@ export default function TermsOfServicePage() {
                   that bypasses platform controls.
                 </li>
                 <li>
-                  Taxes are your responsibility except where the law requires NoMarkup or a payment
-                  partner to collect or report.
+                  On a goods order, sales tax is added only when the pickup state is configured
+                  for collection. The amount comes from NoMarkup’s rate table for that ZIP.
+                  Configuring a state is not a statement that NoMarkup is registered to collect
+                  tax there. Other taxes remain your responsibility.
                 </li>
               </ul>
               {/* tos-2026-08-12-bid-auth — bid-authorization for goods off-session charge */}
@@ -170,8 +173,11 @@ export default function TermsOfServicePage() {
                 Placing a bid or using Buy it now on a goods listing authorizes NoMarkup to charge
                 the payment method saved on your account if you win or complete the purchase, for
                 the winning amount plus disclosed platform fees and applicable tax. If that charge
-                fails, you can complete payment from the order page.
+                fails, you can complete payment from the order page. If payment has not been
+                captured, you can cancel the unpaid order from the order page and the listing goes
+                back on sale. A payment that can still be captured cannot be canceled that way.
               </p>
+              <p>{SUBSCRIPTION_RENEWAL_DISCLOSURE}</p>
               <p>
                 Chargebacks, refunds, and guarantee claims are handled under the policies shown at
                 the time of the transaction and any applicable written guarantee terms.

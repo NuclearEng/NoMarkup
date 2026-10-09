@@ -1192,6 +1192,138 @@ func (h *ListingOrdersHandler) PayOrder(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// cancelUnpaidOrderResponse is the contract for POST /api/v1/orders/{id}/cancel-unpaid.
+// It carries order state only — no payment credentials.
+type cancelUnpaidOrderResponse struct {
+	OrderID       string `json:"order_id"`
+	ListingID     string `json:"listing_id"`
+	EscrowStatus  string `json:"escrow_status"`
+	ListingStatus string `json:"listing_status"`
+}
+
+// unpaidCancelAllowed is the escrow states the gateway will forward to the
+// payment service. payment_failed is included so a retry can finish a relist.
+// Anything else (held, released, disputed) is rejected before the RPC.
+func unpaidCancelAllowed(escrowStatus string) bool {
+	return escrowStatus == "pending_payment" || escrowStatus == "payment_failed"
+}
+
+// mapCancelUnpaidGRPC maps a CancelUnpaidListingOrder error onto an HTTP
+// status. mapped is false when the caller should use writeGRPCError.
+// FailedPrecondition keeps the service message so a capturable payment is
+// not rewritten into a generic conflict (the listing stays sold).
+func mapCancelUnpaidGRPC(err error) (code int, msg string, mapped bool) {
+	st, ok := status.FromError(err)
+	if !ok {
+		return 0, "", false
+	}
+	switch st.Code() {
+	case codes.FailedPrecondition:
+		return http.StatusConflict, st.Message(), true
+	case codes.PermissionDenied:
+		return http.StatusForbidden, st.Message(), true
+	case codes.NotFound:
+		return http.StatusNotFound, st.Message(), true
+	default:
+		return 0, "", false
+	}
+}
+
+// writeCancelUnpaidGRPCError writes the mapped HTTP error. Returns false when
+// the caller must fall through to writeGRPCError.
+func writeCancelUnpaidGRPCError(w http.ResponseWriter, err error) bool {
+	code, msg, mapped := mapCancelUnpaidGRPC(err)
+	if !mapped {
+		return false
+	}
+	writeError(w, code, msg)
+	return true
+}
+
+// CancelUnpaidOrder handles POST /api/v1/orders/{id}/cancel-unpaid.
+//
+// Buyer (or admin) abandons a goods order that is still awaiting payment.
+// The payment service cancels a non-capturable intent, marks the order
+// payment_failed, and returns the listing to active. A capturable intent
+// comes back as FailedPrecondition and is passed through as 409.
+//
+// Status map:
+//
+//	401 missing claims
+//	400 bad id
+//	403 not the buyer (admin override allowed)
+//	404 order missing
+//	409 not awaiting payment, or payment service refused (capturable)
+//	503 payment client or database unwired
+func (h *ListingOrdersHandler) CancelUnpaidOrder(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	orderID := chi.URLParam(r, "id")
+	if !isValidUUID(orderID) {
+		writeError(w, http.StatusBadRequest, "invalid order id")
+		return
+	}
+
+	if h.paymentClient == nil || h.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "payments are temporarily unavailable")
+		return
+	}
+
+	var buyerID, escrowStatus string
+	err := h.db.QueryRow(r.Context(),
+		`SELECT buyer_id::text, escrow_status FROM listing_orders WHERE id = $1`,
+		orderID,
+	).Scan(&buyerID, &escrowStatus)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "order not found")
+			return
+		}
+		slog.ErrorContext(r.Context(), "cancel unpaid order: select", "order_id", orderID, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	if !hasRole(claims, "admin") && buyerID != claims.UserID {
+		writeError(w, http.StatusForbidden, "only the buyer on this order can cancel it")
+		return
+	}
+
+	if !unpaidCancelAllowed(escrowStatus) {
+		writeError(w, http.StatusConflict, "this order is no longer awaiting payment")
+		return
+	}
+
+	actorRole := "buyer"
+	if hasRole(claims, "admin") {
+		actorRole = "admin"
+	}
+
+	resp, err := h.paymentClient.CancelUnpaidListingOrder(r.Context(), &paymentv1.CancelUnpaidListingOrderRequest{
+		OrderId:     orderID,
+		ActorUserId: claims.UserID,
+		ActorRole:   actorRole,
+	})
+	if err != nil {
+		if writeCancelUnpaidGRPCError(w, err) {
+			return
+		}
+		writeGRPCError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, cancelUnpaidOrderResponse{
+		OrderID:       resp.GetOrderId(),
+		ListingID:     resp.GetListingId(),
+		EscrowStatus:  resp.GetEscrowStatus(),
+		ListingStatus: resp.GetListingStatus(),
+	})
+}
+
 // GetOrder handles GET /api/v1/orders/{id}.
 //
 // Returns the full order record (status, amounts, escrow state, timestamps).

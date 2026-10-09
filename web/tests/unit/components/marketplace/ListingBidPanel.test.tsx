@@ -184,6 +184,12 @@ describe('ListingBidPanel', () => {
     const disclosure = screen.getByTestId('bid-auth-disclosure');
     expect(disclosure.textContent).toMatch(/authorizes NoMarkup to charge your saved payment method/i);
     expect(disclosure.textContent).toMatch(/if the charge fails, you can pay from the order page/i);
+    expect(disclosure.textContent).toMatch(
+      /if payment has not been captured, you can cancel the unpaid order from the order page and the listing goes back on sale/i,
+    );
+    expect(disclosure.textContent).toMatch(
+      /a payment that can still be captured cannot be canceled that way/i,
+    );
     const submit = screen.getByRole('button', { name: /Bid \$/ });
     expect(
       disclosure.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING,

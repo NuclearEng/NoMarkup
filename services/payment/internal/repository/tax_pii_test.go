@@ -20,6 +20,35 @@ func testCipher(t *testing.T) *crypto.Cipher {
 // TestDecryptTaxFormAddress covers the 1099 read helper: plaintext passes,
 // authenticable ciphertext decrypts, and unopenable secretbox-shaped values
 // fail closed without emitting the raw base64.
+func TestEncryptTaxFormAddress(t *testing.T) {
+	t.Parallel()
+	c := testCipher(t)
+	r := &PostgresRepository{cipher: c}
+	const street = "456 Service Rd, Austin, TX 78702"
+
+	stored, err := r.encryptTaxFormAddress(street)
+	if err != nil {
+		t.Fatalf("encrypt street: %v", err)
+	}
+	if !crypto.LooksLikeCiphertext(stored) {
+		t.Fatal("street was stored as plaintext")
+	}
+	plain, err := r.decryptTaxFormAddress(stored)
+	if err != nil || plain != street {
+		t.Fatalf("round trip (%q, %v)", plain, err)
+	}
+
+	placeholder, err := r.encryptTaxFormAddress("Address on file")
+	if err != nil || placeholder != "Address on file" {
+		t.Fatalf("placeholder (%q, %v)", placeholder, err)
+	}
+
+	missing := &PostgresRepository{}
+	if _, err := missing.encryptTaxFormAddress(street); !errors.Is(err, crypto.ErrKeyMissing) {
+		t.Fatalf("nil cipher err = %v, want ErrKeyMissing", err)
+	}
+}
+
 func TestDecryptTaxFormAddress(t *testing.T) {
 	t.Parallel()
 

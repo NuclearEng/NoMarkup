@@ -81,6 +81,7 @@ const (
 	PaymentService_GetTaxFormHTML_FullMethodName                 = "/nomarkup.payment.v1.PaymentService/GetTaxFormHTML"
 	PaymentService_GetInvoiceHTML_FullMethodName                 = "/nomarkup.payment.v1.PaymentService/GetInvoiceHTML"
 	PaymentService_ChargeListingWinner_FullMethodName            = "/nomarkup.payment.v1.PaymentService/ChargeListingWinner"
+	PaymentService_CancelUnpaidListingOrder_FullMethodName       = "/nomarkup.payment.v1.PaymentService/CancelUnpaidListingOrder"
 	PaymentService_ConfirmListingPickup_FullMethodName           = "/nomarkup.payment.v1.PaymentService/ConfirmListingPickup"
 	PaymentService_FileListingDispute_FullMethodName             = "/nomarkup.payment.v1.PaymentService/FileListingDispute"
 	PaymentService_ResolveListingDispute_FullMethodName          = "/nomarkup.payment.v1.PaymentService/ResolveListingDispute"
@@ -196,6 +197,11 @@ type PaymentServiceClient interface {
 	// (with optional disputed branch). See docs/operations/marketplace-escrow.md
 	// for the state diagram and dispute timeline.
 	ChargeListingWinner(ctx context.Context, in *ChargeListingWinnerRequest, opts ...grpc.CallOption) (*ChargeListingWinnerResponse, error)
+	// Buyer (or admin) abandons an unfunded goods order. The payment service
+	// cancels a non-capturable PaymentIntent first, then marks the order
+	// payment_failed and returns the listing to active. A capturable intent
+	// (succeeded, requires_capture, processing) leaves the listing sold.
+	CancelUnpaidListingOrder(ctx context.Context, in *CancelUnpaidListingOrderRequest, opts ...grpc.CallOption) (*CancelUnpaidListingOrderResponse, error)
 	ConfirmListingPickup(ctx context.Context, in *ConfirmListingPickupRequest, opts ...grpc.CallOption) (*ConfirmListingPickupResponse, error)
 	FileListingDispute(ctx context.Context, in *FileListingDisputeRequest, opts ...grpc.CallOption) (*FileListingDisputeResponse, error)
 	ResolveListingDispute(ctx context.Context, in *ResolveListingDisputeRequest, opts ...grpc.CallOption) (*ResolveListingDisputeResponse, error)
@@ -835,6 +841,16 @@ func (c *paymentServiceClient) ChargeListingWinner(ctx context.Context, in *Char
 	return out, nil
 }
 
+func (c *paymentServiceClient) CancelUnpaidListingOrder(ctx context.Context, in *CancelUnpaidListingOrderRequest, opts ...grpc.CallOption) (*CancelUnpaidListingOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelUnpaidListingOrderResponse)
+	err := c.cc.Invoke(ctx, PaymentService_CancelUnpaidListingOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *paymentServiceClient) ConfirmListingPickup(ctx context.Context, in *ConfirmListingPickupRequest, opts ...grpc.CallOption) (*ConfirmListingPickupResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ConfirmListingPickupResponse)
@@ -993,6 +1009,11 @@ type PaymentServiceServer interface {
 	// (with optional disputed branch). See docs/operations/marketplace-escrow.md
 	// for the state diagram and dispute timeline.
 	ChargeListingWinner(context.Context, *ChargeListingWinnerRequest) (*ChargeListingWinnerResponse, error)
+	// Buyer (or admin) abandons an unfunded goods order. The payment service
+	// cancels a non-capturable PaymentIntent first, then marks the order
+	// payment_failed and returns the listing to active. A capturable intent
+	// (succeeded, requires_capture, processing) leaves the listing sold.
+	CancelUnpaidListingOrder(context.Context, *CancelUnpaidListingOrderRequest) (*CancelUnpaidListingOrderResponse, error)
 	ConfirmListingPickup(context.Context, *ConfirmListingPickupRequest) (*ConfirmListingPickupResponse, error)
 	FileListingDispute(context.Context, *FileListingDisputeRequest) (*FileListingDisputeResponse, error)
 	ResolveListingDispute(context.Context, *ResolveListingDisputeRequest) (*ResolveListingDisputeResponse, error)
@@ -1197,6 +1218,9 @@ func (UnimplementedPaymentServiceServer) GetInvoiceHTML(context.Context, *GetInv
 }
 func (UnimplementedPaymentServiceServer) ChargeListingWinner(context.Context, *ChargeListingWinnerRequest) (*ChargeListingWinnerResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ChargeListingWinner not implemented")
+}
+func (UnimplementedPaymentServiceServer) CancelUnpaidListingOrder(context.Context, *CancelUnpaidListingOrderRequest) (*CancelUnpaidListingOrderResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelUnpaidListingOrder not implemented")
 }
 func (UnimplementedPaymentServiceServer) ConfirmListingPickup(context.Context, *ConfirmListingPickupRequest) (*ConfirmListingPickupResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ConfirmListingPickup not implemented")
@@ -2350,6 +2374,24 @@ func _PaymentService_ChargeListingWinner_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PaymentService_CancelUnpaidListingOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelUnpaidListingOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PaymentServiceServer).CancelUnpaidListingOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PaymentService_CancelUnpaidListingOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PaymentServiceServer).CancelUnpaidListingOrder(ctx, req.(*CancelUnpaidListingOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PaymentService_ConfirmListingPickup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ConfirmListingPickupRequest)
 	if err := dec(in); err != nil {
@@ -2694,6 +2736,10 @@ var PaymentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ChargeListingWinner",
 			Handler:    _PaymentService_ChargeListingWinner_Handler,
+		},
+		{
+			MethodName: "CancelUnpaidListingOrder",
+			Handler:    _PaymentService_CancelUnpaidListingOrder_Handler,
 		},
 		{
 			MethodName: "ConfirmListingPickup",

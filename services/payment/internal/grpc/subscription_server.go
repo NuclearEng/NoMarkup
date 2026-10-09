@@ -101,7 +101,7 @@ func (s *SubscriptionServer) CancelSubscription(ctx context.Context, req *subscr
 func (s *SubscriptionServer) ChangeSubscriptionTier(ctx context.Context, req *subscriptionv1.ChangeSubscriptionTierRequest) (*subscriptionv1.ChangeSubscriptionTierResponse, error) {
 	interval := billingIntervalToString(req.GetBillingInterval())
 
-	sub, prorationAmount, err := s.svc.ChangeSubscriptionTier(ctx, req.GetUserId(), req.GetNewTierId(), interval)
+	sub, prorationAmount, confirmationSecret, applied, err := s.svc.ChangeSubscriptionTier(ctx, req.GetUserId(), req.GetNewTierId(), interval)
 	if err != nil {
 		return nil, mapSubDomainError(err)
 	}
@@ -109,6 +109,8 @@ func (s *SubscriptionServer) ChangeSubscriptionTier(ctx context.Context, req *su
 	return &subscriptionv1.ChangeSubscriptionTierResponse{
 		Subscription:         domainSubscriptionToProto(sub),
 		ProrationAmountCents: prorationAmount,
+		ClientSecret:         confirmationSecret,
+		TierApplied:          applied,
 	}, nil
 }
 
@@ -185,12 +187,9 @@ func (s *SubscriptionServer) HandleSubscriptionWebhook(ctx context.Context, req 
 		return nil, status.Errorf(codes.InvalidArgument, "invalid webhook payload: %v", err)
 	}
 
-	// Determine the subscription ID: use object.id for subscription events,
-	// object.subscription for invoice events.
-	stripeSubID := event.Data.Object.ID
-	if event.Data.Object.Subscription != "" {
-		stripeSubID = event.Data.Object.Subscription
-	}
+	// Current invoice payloads put the subscription on parent.subscription_details.
+	// An invoice id is never used as the subscription id.
+	stripeSubID := resolvedSubscriptionID(event.Type, []byte(req.GetPayload()), event.Data.Object.ID, event.Data.Object.Subscription)
 
 	var periodStart, periodEnd *time.Time
 	if event.Data.Object.CurrentPeriodStart > 0 {
@@ -202,7 +201,17 @@ func (s *SubscriptionServer) HandleSubscriptionWebhook(ctx context.Context, req 
 		periodEnd = &t
 	}
 
-	err := s.svc.HandleSubscriptionWebhook(ctx, event.Type, stripeSubID, periodStart, periodEnd)
+	// Signature verification above uses the same rule as stripe.webhooks.constructEvent().
+	payload := []byte(req.GetPayload())
+	err := s.svc.HandleSubscriptionWebhook(
+		ctx,
+		event.Type,
+		stripeSubID,
+		periodStart,
+		periodEnd,
+		service.BillingReasonFromStripeEvent(payload),
+		service.PriceIDForTierSyncFromStripeEvent(event.Type, payload),
+	)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "webhook processing failed: %v", err)
 	}

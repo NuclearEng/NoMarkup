@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { GOODS_BUYER_PAYS_ITEM_PLUS_FEES } from '@/lib/constants';
 import { PAYMENT_OUTCOME, type PaymentOutcome } from '@/lib/payment-outcome';
 import { formatCents } from '@/lib/utils';
 
@@ -39,9 +40,9 @@ export interface PaymentConfirmationDialogProps {
    * Server-calculated total being charged, in cents. Omit when the API has
    * not told us the total — we then show a neutral "Pay now" rather than
    * printing an item price as the charge. The exact total is in the payment
-   * form. The platform fee comes from the seller payout; sales tax, when
-   * due, can still be part of the buyer total (see the `total_cents`
-   * gateway gap noted on PaymentIntentEnvelope).
+   * form. Goods: the buyer pays the item price plus disclosed fees and tax,
+   * and the seller receives the item price (see the `total_cents` gateway
+   * gap noted on PaymentIntentEnvelope).
    */
   amountCents?: number;
   /** Item price, shown as context only — never presented as the total. */
@@ -98,7 +99,7 @@ export function PaymentConfirmationDialog({
     amountCents !== undefined
       ? `You're paying ${formatCents(amountCents)}. Funds are held in escrow and only released to the seller once you confirm pickup.`
       : itemPriceCents !== undefined
-        ? `Item price ${formatCents(itemPriceCents)}. Your exact total is shown in the payment form. Funds are held in escrow until you confirm pickup. The platform fee comes from the seller payout. Sales tax, if any, is added to your total.`
+        ? `Item price ${formatCents(itemPriceCents)} is for context only. Your exact total is shown in the payment form. Funds are held in escrow until you confirm pickup. ${GOODS_BUYER_PAYS_ITEM_PLUS_FEES}`
         : 'Your total is shown in the payment form. Funds are held in escrow and only released to the seller once you confirm pickup.';
 
   return (

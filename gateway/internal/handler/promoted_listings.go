@@ -91,17 +91,21 @@ type promoteListingRequest struct {
 }
 
 type promoteListingResponse struct {
-	ChargeID            string `json:"charge_id"`
-	ListingID           string `json:"listing_id"`
-	DurationHours       int    `json:"duration_hours"`
-	AmountCents         int64  `json:"amount_cents"`
-	StripeClientSecret  string `json:"stripe_client_secret"`
+	ChargeID              string `json:"charge_id"`
+	ListingID             string `json:"listing_id"`
+	DurationHours         int    `json:"duration_hours"`
+	AmountCents           int64  `json:"amount_cents"`
+	StripeClientSecret    string `json:"stripe_client_secret"`
 	PromotedUntilEstimate string `json:"promoted_until_estimate"`
-	Status              string `json:"status"`
+	Status                string `json:"status"`
 }
 
 // PromoteListing handles POST /api/v1/listings/{id}/promote.
 func (h *PromotedListingsHandler) PromoteListing(w http.ResponseWriter, r *http.Request) {
+	if iosClient(r) {
+		writeError(w, http.StatusForbidden, "Listing promotion is not available in the iOS app.")
+		return
+	}
 	if h.db == nil {
 		writeError(w, http.StatusServiceUnavailable, "database unavailable")
 		return
@@ -238,6 +242,10 @@ func (h *PromotedListingsHandler) PromoteListing(w http.ResponseWriter, r *http.
 //
 // Route: POST /api/v1/listings/{id}/promote/confirm with body {charge_id}.
 func (h *PromotedListingsHandler) ConfirmPromotion(w http.ResponseWriter, r *http.Request) {
+	if iosClient(r) {
+		writeError(w, http.StatusForbidden, "Listing promotion is not available in the iOS app.")
+		return
+	}
 	if h.db == nil {
 		writeError(w, http.StatusServiceUnavailable, "database unavailable")
 		return

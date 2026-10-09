@@ -222,6 +222,21 @@ struct RegisterView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            Text("By creating an account you agree to NoMarkup’s Terms and acknowledge the Privacy Policy.")
+                .font(.caption)
+                .foregroundStyle(BrandTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 16) {
+                Link("Privacy", destination: AppConfig.privacyURL)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("register.privacy")
+                Link("Terms", destination: AppConfig.termsURL)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("register.terms")
+            }
+            .font(.caption.weight(.medium))
+            .tint(BrandTheme.accent)
+
             Button("Already have an account? Sign in") {
                 dismiss()
             }

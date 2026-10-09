@@ -598,3 +598,139 @@ func (r *MarketplaceRepository) IncrementSellerTaxForm(ctx context.Context, sell
 	}
 	return nil
 }
+
+// ListingSaleState reads listing status, current bidder (empty when null), and
+// auction end. A missing listing is ErrListingNotRelistable.
+func (r *MarketplaceRepository) ListingSaleState(ctx context.Context, listingID string) (string, string, time.Time, error) {
+	const q = `
+		SELECT status, COALESCE(current_bidder_id::text, ''), auction_ends_at
+		  FROM listings
+		 WHERE id = $1`
+	var status, bidder string
+	var ends time.Time
+	if err := r.pool.QueryRow(ctx, q, listingID).Scan(&status, &bidder, &ends); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", "", time.Time{}, fmt.Errorf("listing %s not relistable: %w", listingID, service.ErrListingNotRelistable)
+		}
+		return "", "", time.Time{}, fmt.Errorf("listing sale state: %w", err)
+	}
+	return status, bidder, ends, nil
+}
+
+// AbandonUnpaidListingOrder marks an unpaid order payment_failed and returns
+// its sold listing to active in one transaction. A payment_failed order is a
+// retry. Any other escrow status is ErrInvalidEscrowState. A listing that is
+// not sold, and is not already active with a null bidder and a future end,
+// rolls the order update back and returns ErrListingNotRelistable.
+// payment_attempts is not incremented.
+func (r *MarketplaceRepository) AbandonUnpaidListingOrder(ctx context.Context, orderID, reason string) (*service.UnpaidListingCancelResult, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("abandon unpaid listing order begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	const selOrder = `
+		SELECT id, listing_id, escrow_status
+		  FROM listing_orders
+		 WHERE id = $1
+		 FOR UPDATE`
+	var id, listingID, escrow string
+	if err := tx.QueryRow(ctx, selOrder, orderID).Scan(&id, &listingID, &escrow); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, service.ErrListingOrderNotFound
+		}
+		return nil, fmt.Errorf("abandon unpaid listing order: %w", err)
+	}
+
+	switch escrow {
+	case "pending_payment":
+		const markFailed = `
+			UPDATE listing_orders
+			   SET escrow_status = 'payment_failed',
+			       last_payment_error = $2,
+			       updated_at = now()
+			 WHERE id = $1
+			   AND escrow_status = 'pending_payment'`
+		tag, err := tx.Exec(ctx, markFailed, orderID, reason)
+		if err != nil {
+			return nil, fmt.Errorf("abandon unpaid listing order mark failed: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return nil, fmt.Errorf("abandon unpaid listing order lost race: %w", service.ErrInvalidEscrowState)
+		}
+	case "payment_failed":
+		// Retry or repair. The listing update below still has to run.
+	default:
+		return nil, fmt.Errorf("abandon unpaid listing order status %q: %w", escrow, service.ErrInvalidEscrowState)
+	}
+
+	const selListing = `
+		SELECT status, auction_duration_hours, COALESCE(current_bidder_id::text, ''), auction_ends_at
+		  FROM listings
+		 WHERE id = $1
+		 FOR UPDATE`
+	var status, bidder string
+	var hours int
+	var ends time.Time
+	if err := tx.QueryRow(ctx, selListing, listingID).Scan(&status, &hours, &bidder, &ends); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("abandon unpaid listing order missing listing: %w", service.ErrListingNotRelistable)
+		}
+		return nil, fmt.Errorf("abandon unpaid listing order lock listing: %w", err)
+	}
+
+	if status == "active" && bidder == "" && ends.After(time.Now()) {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("abandon unpaid listing order commit: %w", err)
+		}
+		return &service.UnpaidListingCancelResult{
+			OrderID:       id,
+			ListingID:     listingID,
+			EscrowStatus:  "payment_failed",
+			ListingStatus: "active",
+		}, nil
+	}
+	if status != "sold" {
+		return nil, fmt.Errorf("abandon unpaid listing order listing status %q: %w", status, service.ErrListingNotRelistable)
+	}
+	if hours <= 0 {
+		return nil, fmt.Errorf("abandon unpaid listing order auction duration %d: %w", hours, service.ErrListingNotRelistable)
+	}
+
+	const outbid = `
+		UPDATE listing_bids
+		   SET status = 'outbid'
+		 WHERE listing_id = $1
+		   AND status = 'awarded'`
+	if _, err := tx.Exec(ctx, outbid, listingID); err != nil {
+		return nil, fmt.Errorf("abandon unpaid listing order outbid awarded bids: %w", err)
+	}
+
+	const relist = `
+		UPDATE listings
+		   SET status = 'active',
+		       current_bid_cents = NULL,
+		       current_bidder_id = NULL,
+		       auction_ends_at = now() + (auction_duration_hours * INTERVAL '1 hour'),
+		       updated_at = now()
+		 WHERE id = $1
+		   AND status = 'sold'`
+	tag, err := tx.Exec(ctx, relist, listingID)
+	if err != nil {
+		return nil, fmt.Errorf("abandon unpaid listing order relist: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, fmt.Errorf("abandon unpaid listing order relist lost race: %w", service.ErrListingNotRelistable)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("abandon unpaid listing order commit: %w", err)
+	}
+	return &service.UnpaidListingCancelResult{
+		OrderID:       id,
+		ListingID:     listingID,
+		EscrowStatus:  "payment_failed",
+		ListingStatus: "active",
+	}, nil
+}

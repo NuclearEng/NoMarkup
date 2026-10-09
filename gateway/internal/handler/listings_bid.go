@@ -1045,6 +1045,11 @@ func (h *ListingsHandler) MyListings(w http.ResponseWriter, r *http.Request) {
 		l.Photos = []listingPhotoJSON{}
 		results = append(results, l)
 	}
+	if iosClient(r) {
+		for i := range results {
+			stripPaidPlacement(&results[i])
+		}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"listings":   results,

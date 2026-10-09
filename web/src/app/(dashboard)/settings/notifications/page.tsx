@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -67,6 +67,15 @@ const PREFERENCE_CATEGORIES: CategoryGroup[] = [
     ],
   },
   {
+    label: 'Marketplace',
+    types: [
+      { type: NOTIFICATION_TYPE.PRICE_DROP, label: 'Price drop on a watched listing' },
+      { type: NOTIFICATION_TYPE.SELLER_NEW_LISTING, label: 'New listing from a seller you follow' },
+      { type: NOTIFICATION_TYPE.BID_OUTBID, label: 'Outbid on a listing' },
+      { type: NOTIFICATION_TYPE.WISHLIST_MATCH, label: 'Wishlist match' },
+    ],
+  },
+  {
     label: 'Trust & Safety',
     types: [
       { type: NOTIFICATION_TYPE.DISPUTE_OPENED, label: 'Dispute opened' },
@@ -85,11 +94,31 @@ function buildPreferenceMap(preferences: NotificationPreference[]): Map<Notifica
   return map;
 }
 
+// Matches services/notification defaultChannelPrefs: email only for critical
+// types. Push stays off, including price_drop and seller_new_listing.
+const DEFAULT_EMAIL_TYPES = new Set<string>([
+  'bid_awarded',
+  'contract_created',
+  'contract_accepted',
+  'payment_received',
+  'payment_released',
+  'payment_failed',
+  'dispute_opened',
+  'dispute_resolved',
+  'document_approved',
+  'document_rejected',
+  'document_expiring',
+  'tier_upgrade',
+  'tier_downgrade',
+  'completion_approved',
+  'work_completed',
+]);
+
 function getDefaultPreference(type: NotificationType): NotificationPreference {
   return {
     notification_type: type,
-    push_enabled: true,
-    email_enabled: true,
+    push_enabled: false,
+    email_enabled: DEFAULT_EMAIL_TYPES.has(type),
     sms_enabled: false,
     in_app_enabled: true,
   };
@@ -125,16 +154,20 @@ export default function NotificationPreferencesPage() {
   const [globalEmail, setGlobalEmail] = useState(true);
   const [globalSms, setGlobalSms] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  // Latest dirty flag for the data effect. Not a dependency: clearing it on
+  // save must not re-apply the payload already in state.
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
 
-  // Sync server state into local state
+  // Sync server state into local state. Skip while the form is dirty so a
+  // refetch does not wipe in-progress edits. Save sets isDirty false, and the
+  // next payload can sync.
   useEffect(() => {
-    if (data) {
-      setPreferenceMap(buildPreferenceMap(data.preferences));
-      setGlobalPush(data.global_push_enabled);
-      setGlobalEmail(data.global_email_enabled);
-      setGlobalSms(data.global_sms_enabled);
-      setIsDirty(false);
-    }
+    if (!data || isDirtyRef.current) return;
+    setPreferenceMap(buildPreferenceMap(data.preferences));
+    setGlobalPush(data.global_push_enabled);
+    setGlobalEmail(data.global_email_enabled);
+    setGlobalSms(data.global_sms_enabled);
   }, [data]);
 
   function getPreference(type: NotificationType): NotificationPreference {

@@ -772,18 +772,18 @@ func stringToProtoPaymentTiming(s string) commonv1.PaymentTiming {
 
 func domainDisputeToProto(d *domain.Dispute) *contractv1.Dispute {
 	pb := &contractv1.Dispute{
-		Id:               d.ID,
-		ContractId:       d.ContractID,
-		OpenedBy:         d.OpenedBy,
-		DisputeType:      stringToProtoDisputeType(d.DisputeType),
-		Description:      d.Description,
-		EvidenceUrls:     d.EvidenceURLs,
-		Status:           stringToProtoDisputeStatus(d.Status),
-		ResolutionType:   d.ResolutionType,
-		ResolutionNotes:  d.ResolutionNotes,
+		Id:                d.ID,
+		ContractId:        d.ContractID,
+		OpenedBy:          d.OpenedBy,
+		DisputeType:       stringToProtoDisputeType(d.DisputeType),
+		Description:       d.Description,
+		EvidenceUrls:      d.EvidenceURLs,
+		Status:            stringToProtoDisputeStatus(d.Status),
+		ResolutionType:    d.ResolutionType,
+		ResolutionNotes:   d.ResolutionNotes,
 		RefundAmountCents: d.RefundAmountCents,
-		IsGuaranteeClaim: d.IsGuaranteeClaim,
-		CreatedAt:        timestamppb.New(d.CreatedAt),
+		IsGuaranteeClaim:  d.IsGuaranteeClaim,
+		CreatedAt:         timestamppb.New(d.CreatedAt),
 	}
 
 	if d.ResolvedAt != nil {
@@ -942,6 +942,8 @@ func mapContractDomainError(err error) error {
 		return status.Error(codes.InvalidArgument, "invalid recurring rate")
 	case errors.Is(err, domain.ErrRecurringInstanceState):
 		return status.Error(codes.FailedPrecondition, "invalid recurring instance status transition")
+	case errors.Is(err, domain.ErrRecurringCustomerOnly):
+		return status.Error(codes.PermissionDenied, "only the customer can change the recurring rate or turn on auto-approve")
 	default:
 		slog.Error("unmapped contract error", "error", err)
 		return status.Error(codes.Internal, "internal error")

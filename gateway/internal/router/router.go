@@ -122,6 +122,8 @@ func New(
 	// FR-1.9: phone OTP required before transacting. Attach only to money /
 	// bid-authorization mutations — not browse, profile, or the OTP routes.
 	phoneVerified := middleware.RequirePhoneVerified(dbPool)
+	ageVerified := middleware.RequireAgeVerified(dbPool)
+	termsAccepted := middleware.RequireCurrentTerms(dbPool)
 
 	// Global middleware stack
 	r.Use(middleware.Recovery)
@@ -274,34 +276,34 @@ func New(
 		// Authenticated
 		r.With(authMW.Handler).Get("/mine", jobHandler.ListMine)
 		r.With(authMW.Handler).Get("/drafts", jobHandler.ListDrafts)
-		r.With(authMW.Handler).Post("/", jobHandler.Create)
+		r.With(authMW.Handler, ageVerified, termsAccepted).Post("/", jobHandler.Create)
 		// SEC-09: Update / Delete / Publish are customer-owner only (admin bypass).
-		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
+		r.With(authMW.Handler, ageVerified, termsAccepted, middleware.RequireOwnership(dbPool, jobOwner)).
 			Patch("/{id}", jobHandler.Update)
 		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
 			Delete("/{id}", jobHandler.Delete)
-		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
+		r.With(authMW.Handler, ageVerified, termsAccepted, middleware.RequireOwnership(dbPool, jobOwner)).
 			Post("/{id}/publish", jobHandler.Publish)
 		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
 			Post("/{id}/close", jobHandler.Close)
 		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
 			Post("/{id}/cancel", jobHandler.Cancel)
 		// FR-3.5 / FR-3.10: owner reposts closed/expired/cancelled (or zero-bid closed) jobs.
-		r.With(authMW.Handler, middleware.RequireOwnership(dbPool, jobOwner)).
+		r.With(authMW.Handler, ageVerified, termsAccepted, middleware.RequireOwnership(dbPool, jobOwner)).
 			Post("/{id}/repost", jobHandler.Repost)
 		// MON-06/22: money-adjacent mutation requires Idempotency-Key (parity with listing bids).
 		// FR-1.9: bids authorize later charges — phone verified required.
-		r.With(authMW.Handler, phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
+		r.With(authMW.Handler, ageVerified, termsAccepted, phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 			Post("/{id}/bids", bidHandler.PlaceBid)
-		r.With(authMW.Handler, phoneVerified).Post("/{id}/bids/accept-offer", bidHandler.AcceptOffer)
-		r.With(authMW.Handler, phoneVerified).Post("/{id}/bids/{bidID}/award", bidHandler.AwardBid)
+		r.With(authMW.Handler, ageVerified, termsAccepted, phoneVerified).Post("/{id}/bids/accept-offer", bidHandler.AcceptOffer)
+		r.With(authMW.Handler, ageVerified, termsAccepted, phoneVerified).Post("/{id}/bids/{bidID}/award", bidHandler.AwardBid)
 
 		// Viewer count (ping requires auth, count is public)
 		r.With(authMW.Handler).Post("/{id}/ping-viewer", jobHandler.PingViewer)
 		r.Get("/{id}/viewer-count", jobHandler.GetViewerCount)
 
 		// Instant match
-		r.With(authMW.Handler).Post("/{id}/instant-match", instantMatchHandler.CreateInstantMatch)
+		r.With(authMW.Handler, ageVerified, termsAccepted).Post("/{id}/instant-match", instantMatchHandler.CreateInstantMatch)
 
 		// Live auction endpoints — public (optional auth) so logged-out
 		// visitors can spectate live auctions (drives excitement). The
@@ -317,7 +319,7 @@ func New(
 		// the handler enforces customer-only writes and customer +
 		// bidding-provider reads so the question payload can be quoted
 		// against accurately.
-		r.With(authMW.Handler).Post("/{id}/answers", categoryQuestionsHandler.SubmitAnswers)
+		r.With(authMW.Handler, ageVerified, termsAccepted).Post("/{id}/answers", categoryQuestionsHandler.SubmitAnswers)
 		r.With(authMW.Handler).Get("/{id}/answers", categoryQuestionsHandler.GetAnswers)
 	})
 
@@ -501,6 +503,12 @@ func New(
 		// default. Public catalog reads (writeCachedJSON) are mounted
 		// outside this subtree and keep their `public, s-maxage` policy.
 		r.Use(middleware.PrivateNoStore)
+		// Age + current terms on authenticated mutations. GET/HEAD stay open so the
+		// age and terms screens can load. PUT /me/dob, POST /me/tos-acceptance,
+		// account restore, erasure, and block/report/flag are exempt inside the
+		// middleware. Job writes are outside this group and are wrapped individually.
+		r.Use(ageVerified)
+		r.Use(termsAccepted)
 
 		r.Route("/users", func(r chi.Router) {
 			r.Get("/me", userHandler.GetMe)
@@ -837,6 +845,10 @@ func New(
 			// buyers can fund escrow. See listing_orders.go::PayOrder.
 			r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
 				Post("/{id}/pay", listingOrdersHandler.PayOrder)
+			// Buyer (or admin) abandons an order still awaiting payment.
+			// Same phone + idempotency gate as pay. See CancelUnpaidOrder.
+			r.With(phoneVerified, middleware.RequireIdempotencyKey(cacheClient)).
+				Post("/{id}/cancel-unpaid", listingOrdersHandler.CancelUnpaidOrder)
 			r.Post("/{id}/confirm-pickup", listingOrdersHandler.ConfirmPickup)
 			r.Post("/{id}/file-dispute", listingOrdersHandler.FileListingDispute)
 			// Wave 5 polish — mutual handshake + no-show counters.

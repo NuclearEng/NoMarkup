@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PaymentOutcome } from '@/lib/payment-outcome';
 
@@ -13,8 +13,9 @@ import type { PaymentOutcome } from '@/lib/payment-outcome';
 // NOT PROVEN: that the backend route exists (it does not yet — see the
 // report) or that Stripe accepts the confirmation.
 
-const { post } = vi.hoisted(() => ({
+const { post, clearIdempotencyKey } = vi.hoisted(() => ({
   post: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+  clearIdempotencyKey: vi.fn(),
 }));
 
 class FakeApiError extends Error {
@@ -32,6 +33,12 @@ class FakeApiError extends Error {
 vi.mock('@/lib/api', () => ({
   api: { post },
   idempotencyHeader: () => ({ 'Idempotency-Key': 'test-key' }),
+  clearIdempotencyKey,
+  getApiErrorMessage: (err: unknown, fallback: string) => {
+    if (err instanceof FakeApiError) return err.userMessage(fallback);
+    return fallback;
+  },
+  forbiddenTransactMessage: (_err: unknown, fallback: string) => fallback,
   ApiError: FakeApiError,
 }));
 
@@ -54,6 +61,15 @@ vi.mock('next/link', () => ({
   default: ({ children, href }: { children: ReactNode; href: string }) =>
     createElement('a', { href }, children),
 }));
+
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+  };
+});
 
 const { OrderPaymentPrompt } = await import(
   '@/components/orders/OrderPaymentPrompt'
@@ -220,5 +236,56 @@ describe('OrderPaymentPrompt', () => {
     });
     expect(onPaid).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('order-payment-prompt')).toBeNull();
+  });
+
+  it('cancels an unpaid order only after confirm, with an idempotency header', async () => {
+    post.mockResolvedValue({
+      order_id: 'order-1',
+      listing_id: 'listing-9',
+      escrow_status: 'payment_failed',
+      listing_status: 'active',
+    });
+    const onCanceled = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <OrderPaymentPrompt
+        orderId="order-1"
+        amountCents={4000}
+        platformFeeCents={400}
+        onCanceled={onCanceled}
+      />,
+      { wrapper },
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Cancel unpaid order' }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('order-payment-prompt')).toHaveTextContent(
+      /puts the listing back on sale/i,
+    );
+    expect(screen.getByTestId('order-payment-prompt')).toHaveTextContent(
+      /already went through cannot be canceled/i,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Cancel unpaid order' }));
+    expect(post).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Confirm cancel unpaid order' }),
+    );
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledWith(
+        '/api/v1/orders/order-1/cancel-unpaid',
+        {},
+        expect.objectContaining({ 'Idempotency-Key': 'test-key' }),
+      );
+    });
+    await waitFor(() => {
+      expect(onCanceled).toHaveBeenCalledTimes(1);
+    });
+    expect(clearIdempotencyKey).toHaveBeenCalledWith('order-cancel-unpaid:order-1');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /listing is for sale again/i,
+    );
   });
 });

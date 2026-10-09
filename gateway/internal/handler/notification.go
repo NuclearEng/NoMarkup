@@ -1,14 +1,17 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	commonv1 "github.com/nomarkup/nomarkup/proto/common/v1"
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
-	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 )
 
 // NotificationHandler handles HTTP endpoints for notifications.
@@ -76,7 +79,7 @@ func (h *NotificationHandler) ListNotifications(w http.ResponseWriter, r *http.R
 	if pg := resp.GetPagination(); pg != nil {
 		result["pagination"] = map[string]interface{}{
 			"totalCount": pg.GetTotalCount(),
-			"page":        pg.GetPage(),
+			"page":       pg.GetPage(),
 			"pageSize":   pg.GetPageSize(),
 			"totalPages": pg.GetTotalPages(),
 			"hasNext":    pg.GetHasNext(),
@@ -203,6 +206,10 @@ type updatePreferencesRequest struct {
 		SmsEnabled       bool   `json:"sms_enabled"`
 		InAppEnabled     bool   `json:"in_app_enabled"`
 	} `json:"preferences"`
+	// Pointers so an omitted field does not clear a stored master switch.
+	GlobalPushEnabled  *bool `json:"global_push_enabled"`
+	GlobalEmailEnabled *bool `json:"global_email_enabled"`
+	GlobalSmsEnabled   *bool `json:"global_sms_enabled"`
 }
 
 // isCriticalNotificationType is FR-17.3: payment failures, disputes, guarantee,
@@ -274,8 +281,11 @@ func (h *NotificationHandler) UpdatePreferences(w http.ResponseWriter, r *http.R
 	}
 
 	resp, err := h.notifClient.UpdatePreferences(r.Context(), &notificationv1.UpdatePreferencesRequest{
-		UserId:      claims.UserID,
-		Preferences: protoPrefs,
+		UserId:             claims.UserID,
+		Preferences:        protoPrefs,
+		GlobalPushEnabled:  req.GlobalPushEnabled,
+		GlobalEmailEnabled: req.GlobalEmailEnabled,
+		GlobalSmsEnabled:   req.GlobalSmsEnabled,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -387,20 +397,60 @@ type unsubscribeRequest struct {
 	Token string `json:"token"`
 }
 
+var errUnsubscribeTokenRequired = errors.New("token is required")
+
+// readUnsubscribeToken resolves the unsubscribe token.
+// A non-empty query token wins over the body, including JSON and a one-click
+// POST whose body is List-Unsubscribe=One-Click (RFC 8058). JSON is decoded
+// only when Content-Type contains application/json and the query token is
+// empty. Otherwise the form field "token" is accepted.
+func readUnsubscribeToken(r *http.Request) (string, error) {
+	if token := r.URL.Query().Get("token"); token != "" {
+		return token, nil
+	}
+	if strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
+		if r.Body == nil {
+			return "", errUnsubscribeTokenRequired
+		}
+		var req unsubscribeRequest
+		limited := http.MaxBytesReader(nil, r.Body, maxJSONBodyBytes)
+		if err := json.NewDecoder(limited).Decode(&req); err != nil {
+			return "", err
+		}
+		if req.Token == "" {
+			return "", errUnsubscribeTokenRequired
+		}
+		return req.Token, nil
+	}
+	if err := r.ParseForm(); err != nil {
+		return "", err
+	}
+	if token := r.PostForm.Get("token"); token != "" {
+		return token, nil
+	}
+	return "", errUnsubscribeTokenRequired
+}
+
 // Unsubscribe handles POST /api/v1/notifications/unsubscribe.
 func (h *NotificationHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
-	var req unsubscribeRequest
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-
-	if req.Token == "" {
+	token, err := readUnsubscribeToken(r)
+	if err != nil || token == "" {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge,
+				fmt.Sprintf("request body too large: max %d bytes", maxJSONBodyBytes))
+			return
+		}
+		if err != nil && !errors.Is(err, errUnsubscribeTokenRequired) {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "token is required")
 		return
 	}
 
 	resp, err := h.notifClient.Unsubscribe(r.Context(), &notificationv1.UnsubscribeRequest{
-		Token: req.Token,
+		Token: token,
 	})
 	if err != nil {
 		writeGRPCError(w, err)
@@ -486,6 +536,8 @@ func notificationTypeToString(nt notificationv1.NotificationType) string {
 		return "payment_released"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED:
 		return "payment_failed"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED:
+		return "payment_authentication_required"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT:
 		return "payout_sent"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_NEW_MESSAGE:
@@ -526,6 +578,10 @@ func notificationTypeToString(nt notificationv1.NotificationType) string {
 		return "offer_received"
 	case notificationv1.NotificationType_NOTIFICATION_TYPE_OFFER_COUNTERED:
 		return "offer_countered"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_PRICE_DROP:
+		return "price_drop"
+	case notificationv1.NotificationType_NOTIFICATION_TYPE_SELLER_NEW_LISTING:
+		return "seller_new_listing"
 	default:
 		return "unspecified"
 	}
@@ -567,6 +623,8 @@ func stringToNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_RELEASED
 	case "payment_failed":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_FAILED
+	case "payment_authentication_required":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYMENT_AUTHENTICATION_REQUIRED
 	case "payout_sent":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_PAYOUT_SENT
 	case "new_message":
@@ -607,6 +665,10 @@ func stringToNotificationType(s string) notificationv1.NotificationType {
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_OFFER_RECEIVED
 	case "offer_countered":
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_OFFER_COUNTERED
+	case "price_drop":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_PRICE_DROP
+	case "seller_new_listing":
+		return notificationv1.NotificationType_NOTIFICATION_TYPE_SELLER_NEW_LISTING
 	default:
 		return notificationv1.NotificationType_NOTIFICATION_TYPE_UNSPECIFIED
 	}

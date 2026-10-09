@@ -864,6 +864,10 @@ func mapDomainError(err error) error {
 		return status.Error(codes.PermissionDenied, "only the customer can tip")
 	case errors.Is(err, service.ErrNoPaymentInstrument):
 		return status.Error(codes.FailedPrecondition, "add a payment method before tipping")
+	case errors.Is(err, domain.ErrTipPayoutPending):
+		return status.Error(codes.FailedPrecondition, "the tip was charged and the provider payout is still pending; do not start another charge")
+	case errors.Is(err, service.ErrOffSessionInFlight):
+		return status.Error(codes.FailedPrecondition, "the charge is still processing; do not start another charge")
 	case errors.Is(err, domain.ErrStripeAccountNotFound):
 		return status.Error(codes.FailedPrecondition, "provider is not set up to receive payouts")
 	}
@@ -911,6 +915,10 @@ func mapDomainError(err error) error {
 		return status.Error(codes.FailedPrecondition, "dispute window closed")
 	case errors.Is(err, service.ErrDisputeAlreadyOpen):
 		return status.Error(codes.AlreadyExists, "dispute already open for this order")
+	case errors.Is(err, service.ErrPaymentIntentCapturable):
+		return status.Error(codes.FailedPrecondition, "payment can still be captured; the listing stays sold")
+	case errors.Is(err, service.ErrListingNotRelistable):
+		return status.Error(codes.FailedPrecondition, "listing cannot be returned to sale")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

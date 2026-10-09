@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 import { ListingBrowseClient } from '@/components/marketplace/ListingBrowseClient';
-import { BUYER_PAYS_AGREED_PRICE } from '@/lib/constants';
+import { GOODS_BUYER_PAYS_ITEM_PLUS_FEES } from '@/lib/constants';
 import { serverFetch } from '@/lib/server-fetch';
 import type { Listing, ListingsResponse, SearchListingsParams } from '@/types';
 
@@ -111,7 +111,7 @@ const EMPTY_RESPONSE: ListingsResponse = {
 export const metadata: Metadata = {
   title: 'Marketplace · NoMarkup',
   description:
-    `Local goods auctions with escrow. Bid ascending — the market sets the price, not the markup. ${BUYER_PAYS_AGREED_PRICE} Furniture, electronics, and more for pickup near you.`,
+    `Local goods auctions with escrow. Bid ascending — the market sets the price, not the markup. ${GOODS_BUYER_PAYS_ITEM_PLUS_FEES} Furniture, electronics, and more for pickup near you.`,
   openGraph: {
     title: 'The Live Marketplace · NoMarkup',
     description:

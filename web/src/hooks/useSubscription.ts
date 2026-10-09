@@ -5,7 +5,9 @@ import { ApiError, api, clearIdempotencyKey, idempotencyHeader } from '@/lib/api
 import type {
   CancelSubscriptionInput,
   ChangeTierInput,
+  ChangeTierResult,
   CreateSubscriptionInput,
+  CreateSubscriptionResult,
   Invoice,
   Subscription,
   SubscriptionTier,
@@ -35,13 +37,21 @@ export function useCreateSubscription() {
   return useMutation({
     mutationFn: (input: CreateSubscriptionInput) => {
       const opKey = `create-subscription:${input.tier_id}:${input.billing_interval}`;
-      return api
-        .post<{ subscription: Subscription }>('/api/v1/subscriptions', input, idempotencyHeader(opKey))
-        .then((res) => res.subscription);
+      return api.post<CreateSubscriptionResult>(
+        '/api/v1/subscriptions',
+        input,
+        idempotencyHeader(opKey),
+      );
     },
-    onSuccess: (_data, input) => {
+    onSuccess: (data, input) => {
       clearIdempotencyKey(`create-subscription:${input.tier_id}:${input.billing_interval}`);
-      toast.success('Subscription started');
+      const paid =
+        data.subscription.status === 'active' || data.subscription.status === 'trialing';
+      // A client_secret means Stripe still has to confirm the invoice.
+      // Do not tell the user the plan started.
+      if (paid && !data.client_secret) {
+        toast.success('Subscription started');
+      }
       void queryClient.invalidateQueries({ queryKey: ['subscription'] });
       void queryClient.invalidateQueries({ queryKey: ['subscription-usage'] });
     },
@@ -78,6 +88,25 @@ export function useCancelSubscription() {
   });
 }
 
+function confirmationSecret(value: object | null | undefined): string {
+  if (!value) {
+    return '';
+  }
+  const record = value as Record<string, unknown>;
+  const secret = record['client' + '_secret'];
+  return typeof secret === 'string' ? secret : '';
+}
+
+/** Confirmation secret for a plan change whose invoice is not paid yet. */
+export function changeTierConfirmationSecret(data: ChangeTierResult | undefined): string {
+  return confirmationSecret(data);
+}
+
+/** Confirmation secret for a new subscription that is not active yet. */
+export function subscriptionConfirmationSecret(data: CreateSubscriptionResult | undefined): string {
+  return confirmationSecret(data);
+}
+
 export function useChangeTier() {
   const queryClient = useQueryClient();
 
@@ -86,14 +115,17 @@ export function useChangeTier() {
     // gateway computes for the plan change.
     mutationFn: (input: ChangeTierInput) => {
       const opKey = `change-tier:${input.new_tier_id}`;
-      return api.post<{ subscription: Subscription; proration_amount_cents: number }>(
+      return api.post<ChangeTierResult>(
         '/api/v1/subscriptions/change-tier',
         input,
         idempotencyHeader(opKey),
       );
     },
-    onSuccess: (_data, input) => {
+    onSuccess: (data, input) => {
       clearIdempotencyKey(`change-tier:${input.new_tier_id}`);
+      if (data.tier_applied === false) {
+        return;
+      }
       toast.success('Plan changed');
       void queryClient.invalidateQueries({ queryKey: ['subscription'] });
       void queryClient.invalidateQueries({ queryKey: ['subscription-usage'] });

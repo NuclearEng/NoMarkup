@@ -109,7 +109,7 @@ func TestInstallmentService_CreateInstallmentPlan(t *testing.T) {
 			ContractID:       "c1",
 			CustomerID:       "cust-1",
 			ProviderID:       "prov-attacker", // ignored
-			TotalAmountCents: 999_999_999,      // ignored
+			TotalAmountCents: 999_999_999,     // ignored
 			InstallmentCount: 3,
 			PaymentMethodID:  "pm_1",
 		})
@@ -337,6 +337,123 @@ func TestInstallmentService_CreateInstallmentPlan(t *testing.T) {
 		assert.Equal(t, 0, ss.DevStore().AdvanceCount(), "no provider transfer on charge failure")
 	})
 
+	t.Run("in_flight_first_charge_returns_plan_and_blocks_second_create", func(t *testing.T) {
+		t.Parallel()
+		var providerPaidCalls int
+		var parkedStatus string
+		var parkedPI string
+		var statusUpdates int
+		active := false
+		repo := &mockPaymentRepo{
+			getContractForPaymentFn: func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+				return &domain.ContractForPayment{
+					ID: contractID, CustomerID: "cust-1", ProviderID: "prov-1",
+					AmountCents: 30000, Status: "active",
+				}, nil
+			},
+			getStripeAccountIDFn: func(_ context.Context, _ string) (string, error) {
+				return "acct_dev", nil
+			},
+			hasActiveInstallmentPlanForContractFn: func(_ context.Context, _ string) (bool, error) {
+				return active, nil
+			},
+			createInstallmentPlanFn: func(_ context.Context, p *domain.InstallmentPlan) error {
+				assert.Equal(t, "active", p.Status)
+				active = true
+				return nil
+			},
+			updateInstallmentPlanProviderPaidFn: func(_ context.Context, _, _ string) error {
+				providerPaidCalls++
+				return nil
+			},
+			updateScheduledInstallmentStatusFn: func(_ context.Context, _, status string, piID *string) error {
+				statusUpdates++
+				parkedStatus = status
+				if piID != nil {
+					parkedPI = *piID
+				}
+				return nil
+			},
+		}
+		ss := &StripeService{devMode: true, testInFlightOffSessionID: "pi_first_flight"}
+		svc := NewInstallmentService(repo, ss)
+		input := domain.CreateInstallmentPlanInput{
+			ContractID:       "c1",
+			CustomerID:       "cust-1",
+			ProviderID:       "prov-1",
+			TotalAmountCents: 30000,
+			InstallmentCount: 3,
+			PaymentMethodID:  "pm_1",
+			IdempotencyKey:   "idem-flight",
+		}
+		plan, secret, err := svc.CreateInstallmentPlan(context.Background(), input)
+		require.ErrorIs(t, err, ErrOffSessionInFlight)
+		require.NotNil(t, plan)
+		assert.Equal(t, "needs-confirm", secret)
+		assert.Equal(t, "active", plan.Status)
+		assert.Nil(t, plan.ProviderPaidAt)
+		assert.Empty(t, plan.StripeProviderTransferID)
+		require.NotEmpty(t, plan.Installments)
+		assert.Equal(t, 1, plan.Installments[0].InstallmentNumber)
+		assert.Equal(t, "processing", plan.Installments[0].Status)
+		assert.Equal(t, 0, providerPaidCalls)
+		assert.Equal(t, "processing", parkedStatus)
+		assert.Equal(t, "pi_first_flight", parkedPI)
+		assert.Equal(t, 0, ss.DevStore().AdvanceCount(), "provider is not paid while the charge is in flight")
+
+		_, _, err = svc.CreateInstallmentPlan(context.Background(), input)
+		require.ErrorIs(t, err, domain.ErrInstallmentPlanExists)
+		assert.Equal(t, 0, providerPaidCalls)
+		assert.Equal(t, 1, statusUpdates, "a second create must not start another charge")
+	})
+
+	t.Run("captured_first_charge_marks_paid_once_and_pays_provider", func(t *testing.T) {
+		t.Parallel()
+		var paidUpdates int
+		var providerPaid int
+		repo := &mockPaymentRepo{
+			getContractForPaymentFn: func(_ context.Context, contractID string) (*domain.ContractForPayment, error) {
+				return &domain.ContractForPayment{
+					ID: contractID, CustomerID: "cust-1", ProviderID: "prov-1",
+					AmountCents: 30000, Status: "active",
+				}, nil
+			},
+			updateScheduledInstallmentStatusFn: func(_ context.Context, _, status string, piID *string) error {
+				if status == "paid" {
+					paidUpdates++
+					require.NotNil(t, piID)
+					assert.NotEmpty(t, *piID)
+				}
+				return nil
+			},
+			updateInstallmentPlanProviderPaidFn: func(_ context.Context, _, transferID string) error {
+				providerPaid++
+				assert.NotEmpty(t, transferID)
+				return nil
+			},
+			getInstallmentPlanFn: func(_ context.Context, planID string) (*domain.InstallmentPlan, error) {
+				return &domain.InstallmentPlan{ID: planID, Status: "active"}, nil
+			},
+		}
+		ss := &StripeService{devMode: true}
+		svc := NewInstallmentService(repo, ss)
+		plan, secret, err := svc.CreateInstallmentPlan(context.Background(), domain.CreateInstallmentPlanInput{
+			ContractID:       "c1",
+			CustomerID:       "cust-1",
+			ProviderID:       "prov-1",
+			TotalAmountCents: 30000,
+			InstallmentCount: 3,
+			PaymentMethodID:  "pm_1",
+			IdempotencyKey:   "idem-captured",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, plan)
+		assert.NotEmpty(t, secret)
+		assert.Equal(t, 1, paidUpdates, "captured charge marks the installment paid once")
+		assert.Equal(t, 1, providerPaid)
+		assert.Equal(t, 1, ss.DevStore().AdvanceCount(), "provider is paid after the first charge captures")
+	})
+
 	t.Run("empty_offsession_key_rejected", func(t *testing.T) {
 		t.Parallel()
 		ss := &StripeService{devMode: true}
@@ -355,6 +472,9 @@ func TestInstallmentService_ConfirmInstallmentPaymentSucceeded(t *testing.T) {
 		t.Parallel()
 		var planStatusUpdate string
 		repo := &mockPaymentRepo{
+			getInstallmentPlanFn: func(_ context.Context, planID string) (*domain.InstallmentPlan, error) {
+				return &domain.InstallmentPlan{ID: planID, StripeProviderTransferID: "tr_already"}, nil
+			},
 			updateScheduledInstallmentStatusFn: func(_ context.Context, _, status string, _ *string) error {
 				assert.Equal(t, "paid", status)
 				return nil
@@ -383,6 +503,9 @@ func TestInstallmentService_ConfirmInstallmentPaymentSucceeded(t *testing.T) {
 		t.Parallel()
 		var planStatusUpdated bool
 		repo := &mockPaymentRepo{
+			getInstallmentPlanFn: func(_ context.Context, planID string) (*domain.InstallmentPlan, error) {
+				return &domain.InstallmentPlan{ID: planID, StripeProviderTransferID: "tr_already"}, nil
+			},
 			updateScheduledInstallmentStatusFn: func(_ context.Context, _, _ string, _ *string) error { return nil },
 			getScheduledInstallmentsForPlanFn: func(_ context.Context, _ string) ([]domain.ScheduledInstallment, error) {
 				return []domain.ScheduledInstallment{
@@ -414,6 +537,33 @@ func TestInstallmentService_ConfirmInstallmentPaymentSucceeded(t *testing.T) {
 		err := svc.ConfirmInstallmentPaymentSucceeded(context.Background(), "plan-1", "i1", "pi_x")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "db down")
+	})
+
+	t.Run("pays_provider_when_first_capture_arrives_after_processing", func(t *testing.T) {
+		t.Parallel()
+		var transferMarked string
+		repo := &mockPaymentRepo{
+			getInstallmentPlanFn: func(_ context.Context, planID string) (*domain.InstallmentPlan, error) {
+				return &domain.InstallmentPlan{
+					ID: planID, ProviderID: "prov-1", TotalAmountCents: 30000, Status: "active",
+				}, nil
+			},
+			getScheduledInstallmentsForPlanFn: func(_ context.Context, _ string) ([]domain.ScheduledInstallment, error) {
+				return []domain.ScheduledInstallment{
+					{ID: "i1", InstallmentNumber: 1, Status: "paid"},
+					{ID: "i2", InstallmentNumber: 2, Status: "scheduled"},
+				}, nil
+			},
+			updateInstallmentPlanProviderPaidFn: func(_ context.Context, planID, transferID string) error {
+				transferMarked = planID + ":" + transferID
+				return nil
+			},
+		}
+		svc := newTestInstallmentService(repo)
+		err := svc.ConfirmInstallmentPaymentSucceeded(context.Background(), "plan-1", "i1", "pi_late")
+		require.NoError(t, err)
+		assert.Contains(t, transferMarked, "plan-1:")
+		assert.NotEmpty(t, transferMarked)
 	})
 }
 
@@ -477,6 +627,90 @@ func TestInstallmentService_ProcessDueInstallments(t *testing.T) {
 		_, err := svc.ProcessDueInstallments(context.Background())
 		require.NoError(t, err)
 		assert.Equal(t, 2, paidCount, "both installments should be marked paid")
+	})
+
+	t.Run("in_flight_charge_parks_processing_without_consuming_attempt", func(t *testing.T) {
+		t.Parallel()
+		var gotStatus string
+		var gotPI string
+		var declinedPlan string
+		repo := &mockPaymentRepo{
+			getDueInstallmentsFn: func(_ context.Context, _ time.Time) ([]domain.ScheduledInstallment, error) {
+				return []domain.ScheduledInstallment{{
+					ID: "i-flight", PlanID: "plan-1", AmountCents: 10000, InstallmentNumber: 2, Attempts: 1,
+				}}, nil
+			},
+			getInstallmentPlanFn: func(_ context.Context, planID string) (*domain.InstallmentPlan, error) {
+				return &domain.InstallmentPlan{ID: planID, CustomerID: "cust-1", Status: "active"}, nil
+			},
+			updateScheduledInstallmentStatusFn: func(_ context.Context, _, status string, piID *string) error {
+				gotStatus = status
+				if piID != nil {
+					gotPI = *piID
+				}
+				return nil
+			},
+			updateInstallmentPlanStatusFn: func(_ context.Context, planID, status string) error {
+				if status == "defaulted" {
+					declinedPlan = planID
+				}
+				return nil
+			},
+		}
+		ss := &StripeService{devMode: true, testInFlightOffSessionID: "pi_inflight_1"}
+		svc := NewInstallmentService(repo, ss)
+		stats, err := svc.ProcessDueInstallments(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, "processing", gotStatus)
+		assert.Equal(t, "pi_inflight_1", gotPI)
+		assert.Equal(t, 0, stats.Declined)
+		assert.Equal(t, 0, stats.Charged)
+		assert.Equal(t, 0, stats.PlansDefaulted)
+		assert.Empty(t, declinedPlan)
+	})
+}
+
+func TestInstallmentService_FailProcessingInstallment(t *testing.T) {
+	t.Parallel()
+
+	t.Run("defaults_plan_only_when_the_parked_row_is_now_failed", func(t *testing.T) {
+		t.Parallel()
+		var planStatus string
+		repo := &mockPaymentRepo{
+			updateScheduledInstallmentStatusFn: func(_ context.Context, id, status string, _ *string) error {
+				assert.Equal(t, "i-flight", id)
+				assert.Equal(t, "processing_failed", status)
+				return nil
+			},
+			getScheduledInstallmentsForPlanFn: func(_ context.Context, planID string) ([]domain.ScheduledInstallment, error) {
+				assert.Equal(t, "plan-1", planID)
+				return []domain.ScheduledInstallment{{ID: "i-flight", Status: "failed"}}, nil
+			},
+			updateInstallmentPlanStatusFn: func(_ context.Context, _, status string) error {
+				planStatus = status
+				return nil
+			},
+		}
+		svc := newTestInstallmentService(repo)
+		err := svc.FailProcessingInstallment(context.Background(), "plan-1", "i-flight", "pi_failed")
+		require.NoError(t, err)
+		assert.Equal(t, "defaulted", planStatus)
+	})
+
+	t.Run("leaves_a_retrying_row_alone", func(t *testing.T) {
+		t.Parallel()
+		repo := &mockPaymentRepo{
+			getScheduledInstallmentsForPlanFn: func(_ context.Context, _ string) ([]domain.ScheduledInstallment, error) {
+				return []domain.ScheduledInstallment{{ID: "i-flight", Status: "retrying"}}, nil
+			},
+			updateInstallmentPlanStatusFn: func(_ context.Context, _, _ string) error {
+				t.Fatal("retrying installment must not default the plan")
+				return nil
+			},
+		}
+		svc := newTestInstallmentService(repo)
+		err := svc.FailProcessingInstallment(context.Background(), "plan-1", "i-flight", "pi_failed")
+		require.NoError(t, err)
 	})
 }
 

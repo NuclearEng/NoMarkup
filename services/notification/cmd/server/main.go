@@ -151,6 +151,18 @@ func main() {
 	// (IOS-SYS.NT.1) — all one PostgresRepository.
 	repo := repository.New(pool)
 	svc := service.New(repo, repo, repo, emailDispatcher, pushDispatcher, webPushDispatcher, smsDispatcher)
+	webBase := os.Getenv("FRONTEND_URL")
+	if webBase == "" {
+		webBase = os.Getenv("PUBLIC_WEB_URL")
+	}
+	if webBase == "" {
+		webBase = "https://no-markup.com"
+	}
+	apiBase := os.Getenv("PUBLIC_API_URL")
+	if apiBase == "" {
+		apiBase = "https://api.no-markup.com"
+	}
+	svc.SetPublicBases(webBase, apiBase)
 	srv := notificationgrpc.NewServer(svc)
 
 	// Goods-marketplace retention loop: closing-soon, closing-now, and

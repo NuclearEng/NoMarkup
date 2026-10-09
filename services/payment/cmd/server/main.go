@@ -201,6 +201,7 @@ func main() {
 	// Wire up subscription service (shares same repo and stripe service).
 	// Subscription has its own proto service, so it keeps a separate gRPC server.
 	subscriptionSvc := service.NewSubscriptionService(repo, stripeSvc)
+	subscriptionSvc.SetCustomerProvisioner(customerProvisioner)
 	subscriptionSvc.SetWebhookValidator(service.NewStripeWebhookValidator(webhookSecret))
 	subscriptionGRPCServer := paymentgrpc.NewSubscriptionServer(subscriptionSvc)
 
@@ -330,6 +331,9 @@ func main() {
 	}
 	marketplaceSvc.SetOffSessionCharge(gates.OffSessionCharge)
 	marketplaceSvc.SetExpireUnfunded(gates.ExpireUnfunded)
+	taxStates := taxRegisteredStatesFromEnv()
+	marketplaceSvc.SetTaxRegisteredStates(taxStates)
+	slog.Info("sales tax collection states configured", "count", len(taxStates))
 
 	slog.Info("goods settlement configured",
 		"payment_window", marketplaceCfg.PaymentWindow.String(),
@@ -510,6 +514,31 @@ func loggingStreamInterceptor(srv interface{}, ss grpclib.ServerStream, info *gr
 		)
 	}
 	return err
+}
+
+// taxRegisteredStatesFromEnv reads TAX_REGISTERED_STATES (comma-separated
+// 2-letter codes). Empty means no states, which stops collection. It is not
+// a tax opinion and does not claim the company is registered anywhere.
+func taxRegisteredStatesFromEnv() []string {
+	raw := os.Getenv("TAX_REGISTERED_STATES")
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	seen := make(map[string]struct{}, len(parts))
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		code := strings.ToUpper(strings.TrimSpace(part))
+		if len(code) != 2 || code[0] < 'A' || code[0] > 'Z' || code[1] < 'A' || code[1] > 'Z' {
+			continue
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	return out
 }
 
 // envOrDefault returns the env var value or a fallback when unset/empty.

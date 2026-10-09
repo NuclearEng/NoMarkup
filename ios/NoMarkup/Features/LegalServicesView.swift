@@ -57,7 +57,7 @@ struct LegalServicesView: View {
                     Text("Lawyers compete for your case")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(BrandTheme.textPrimary)
-                    Text("Post the legal help you need. Licensed attorneys place reverse-auction bids — the market sets the rate, not the markup.")
+                    Text("Post the legal help you need. Licensed attorneys place reverse-auction bids. The buyer pays the agreed price, and the platform fee is taken from the seller’s payout.")
                         .font(.subheadline)
                         .foregroundStyle(BrandTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

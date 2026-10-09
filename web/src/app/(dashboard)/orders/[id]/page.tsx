@@ -227,6 +227,9 @@ export default function OrderDetailPage() {
                 onPaid={() => {
                   void refetch();
                 }}
+                onCanceled={() => {
+                  void refetch();
+                }}
               />
             )
           ) : null}
