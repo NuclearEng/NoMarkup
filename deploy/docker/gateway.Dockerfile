@@ -12,6 +12,8 @@ RUN echo "═══════════════════════�
 # Copy the shared proto module first — the gateway's go.mod has:
 #   replace github.com/nomarkup/nomarkup/proto => ../proto/gen/go
 COPY proto/gen/go/ proto/gen/go/
+# Shared local modules: go.mod has replace github.com/nomarkup/nomarkup/pkg/... => ../pkg/...
+COPY pkg/ pkg/
 
 # Copy gateway module files and download dependencies.
 COPY gateway/go.mod gateway/go.sum gateway/
