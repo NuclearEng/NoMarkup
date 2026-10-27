@@ -63,6 +63,8 @@ interface RequestOptions {
   headers?: Record<string, string>;
   contentType?: string | null;
   contentLength?: string | null;
+  /** Attach a valid signed access JWT as Authorization: Bearer. */
+  auth?: boolean;
 }
 
 function buildRequest(opts: RequestOptions = {}): NextRequest {
@@ -78,6 +80,9 @@ function buildRequest(opts: RequestOptions = {}): NextRequest {
       .map(([k, v]) => `${k}=${v}`)
       .join('; ');
     headers.set('cookie', cookieValue);
+  }
+  if (opts.auth) {
+    headers.set('authorization', `Bearer ${signTestToken()}`);
   }
   for (const [k, v] of Object.entries(opts.headers ?? {})) {
     headers.set(k, v);
@@ -97,9 +102,6 @@ const VALID_BODY = JSON.stringify({
   mimeType: 'image/jpeg',
 });
 
-// A verified JWT delivered via the oauth_access_token cookie (the gate's
-// cookie fallback) — keeps the non-auth tests cookie-shaped as before.
-const AUTH_COOKIES = { oauth_access_token: signTestToken() };
 
 function mockSuccessResponse(text: string): void {
   messagesCreate.mockResolvedValueOnce({
@@ -159,14 +161,13 @@ describe('POST /api/analyze-listing-image — auth', () => {
     expect(res.status).toBe(200);
   });
 
-  it('accepts a valid signed JWT via the oauth_access_token cookie', async () => {
-    mockSuccessResponse(VALID_AI_JSON);
+  it('rejects the legacy oauth_access_token cookie (no JS-readable token handoff)', async () => {
     const req = buildRequest({
       body: VALID_BODY,
       cookies: { oauth_access_token: signTestToken() },
     });
     const res = await POST(req);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
   });
 
   it('rejects an opaque (non-JWT) bearer token', async () => {
@@ -267,7 +268,7 @@ describe('POST /api/analyze-listing-image — origin', () => {
   it('returns 403 for a cross-origin Origin header', async () => {
     const req = buildRequest({
       body: VALID_BODY,
-      cookies: AUTH_COOKIES,
+      auth: true,
       headers: { origin: 'https://evil.example.com' },
     });
     const res = await POST(req);
@@ -279,7 +280,7 @@ describe('POST /api/analyze-listing-image — origin', () => {
     mockSuccessResponse(VALID_AI_JSON);
     const req = buildRequest({
       body: VALID_BODY,
-      cookies: AUTH_COOKIES,
+      auth: true,
       headers: { origin: 'http://localhost' },
     });
     const res = await POST(req);
@@ -289,7 +290,7 @@ describe('POST /api/analyze-listing-image — origin', () => {
   it('rejects a cross-origin Referer when no Origin is present', async () => {
     const req = buildRequest({
       body: VALID_BODY,
-      cookies: AUTH_COOKIES,
+      auth: true,
       headers: { referer: 'https://evil.example.com/page' },
     });
     const res = await POST(req);
@@ -302,7 +303,7 @@ describe('POST /api/analyze-listing-image — request guards', () => {
   it('returns 415 when Content-Type is missing', async () => {
     const req = buildRequest({
       body: VALID_BODY,
-      cookies: AUTH_COOKIES,
+      auth: true,
       contentType: null,
     });
     const res = await POST(req);
@@ -312,7 +313,7 @@ describe('POST /api/analyze-listing-image — request guards', () => {
   it('returns 415 when Content-Type is not JSON', async () => {
     const req = buildRequest({
       body: VALID_BODY,
-      cookies: AUTH_COOKIES,
+      auth: true,
       contentType: 'text/plain',
     });
     const res = await POST(req);
@@ -323,7 +324,7 @@ describe('POST /api/analyze-listing-image — request guards', () => {
     mockSuccessResponse(VALID_AI_JSON);
     const req = buildRequest({
       body: VALID_BODY,
-      cookies: AUTH_COOKIES,
+      auth: true,
       contentType: 'Application/JSON; charset=utf-8',
     });
     const res = await POST(req);
@@ -334,7 +335,7 @@ describe('POST /api/analyze-listing-image — request guards', () => {
     const huge = String(50 * 1024 * 1024); // 50 MB
     const req = buildRequest({
       body: VALID_BODY,
-      cookies: AUTH_COOKIES,
+      auth: true,
       contentLength: huge,
     });
     const res = await POST(req);
@@ -346,7 +347,7 @@ describe('POST /api/analyze-listing-image — request guards', () => {
     mockSuccessResponse(VALID_AI_JSON);
     const req = buildRequest({
       body: VALID_BODY,
-      cookies: AUTH_COOKIES,
+      auth: true,
       contentLength: 'not-a-number',
     });
     const res = await POST(req);
@@ -360,7 +361,7 @@ describe('POST /api/analyze-listing-image — env config', () => {
     // AI photo analysis is an enhancement: a missing key must NOT 500. It
     // returns a clean 503 so the sell flow keeps working without AI.
     delete process.env['ANTHROPIC_API_KEY'];
-    const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
+    const req = buildRequest({ body: VALID_BODY, auth: true });
     const res = await POST(req);
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({
@@ -375,7 +376,7 @@ describe('POST /api/analyze-listing-image — body validation', () => {
   it('returns 400 on invalid JSON', async () => {
     const req = buildRequest({
       body: '{not valid json',
-      cookies: AUTH_COOKIES,
+      auth: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -385,7 +386,7 @@ describe('POST /api/analyze-listing-image — body validation', () => {
   it('returns 400 when imageBase64 is missing', async () => {
     const req = buildRequest({
       body: JSON.stringify({ mimeType: 'image/jpeg' }),
-      cookies: AUTH_COOKIES,
+      auth: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -398,7 +399,7 @@ describe('POST /api/analyze-listing-image — body validation', () => {
         mimeType: 'image/jpeg',
         model: 'claude-opus',
       }),
-      cookies: AUTH_COOKIES,
+      auth: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -408,7 +409,7 @@ describe('POST /api/analyze-listing-image — body validation', () => {
     const tooBig = 'A'.repeat(7_000_000);
     const req = buildRequest({
       body: JSON.stringify({ imageBase64: tooBig, mimeType: 'image/jpeg' }),
-      cookies: AUTH_COOKIES,
+      auth: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(413);
@@ -421,7 +422,7 @@ describe('POST /api/analyze-listing-image — body validation', () => {
         imageBase64: VALID_BASE64,
         mimeType: 'image/bmp',
       }),
-      cookies: AUTH_COOKIES,
+      auth: true,
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -432,7 +433,7 @@ describe('POST /api/analyze-listing-image — body validation', () => {
 describe('POST /api/analyze-listing-image — AI call', () => {
   it('returns parsed fields on a successful response', async () => {
     mockSuccessResponse(VALID_AI_JSON);
-    const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
+    const req = buildRequest({ body: VALID_BODY, auth: true });
     const res = await POST(req);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -460,7 +461,7 @@ describe('POST /api/analyze-listing-image — AI call', () => {
 
   it('strips ```json fenced code blocks before parsing', async () => {
     mockSuccessResponse('```json\n' + VALID_AI_JSON + '\n```');
-    const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
+    const req = buildRequest({ body: VALID_BODY, auth: true });
     const res = await POST(req);
     expect(res.status).toBe(200);
   });
@@ -469,7 +470,7 @@ describe('POST /api/analyze-listing-image — AI call', () => {
     // A provider outage / rate limit is a predictable failure for an optional
     // enhancement — degrade gracefully rather than surfacing a hard error.
     messagesCreate.mockRejectedValueOnce(new Error('upstream 500'));
-    const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
+    const req = buildRequest({ body: VALID_BODY, auth: true });
     const res = await POST(req);
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({
@@ -480,7 +481,7 @@ describe('POST /api/analyze-listing-image — AI call', () => {
 
   it('returns 400 when the AI returns non-JSON text', async () => {
     mockSuccessResponse('I cannot help with that.');
-    const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
+    const req = buildRequest({ body: VALID_BODY, auth: true });
     const res = await POST(req);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'AI returned non-JSON response' });
@@ -497,7 +498,7 @@ describe('POST /api/analyze-listing-image — AI call', () => {
         confidence: 'medium',
       }),
     );
-    const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
+    const req = buildRequest({ body: VALID_BODY, auth: true });
     const res = await POST(req);
     expect(res.status).toBe(400);
   });
@@ -513,7 +514,7 @@ describe('POST /api/analyze-listing-image — AI call', () => {
         confidence: 'medium',
       }),
     );
-    const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
+    const req = buildRequest({ body: VALID_BODY, auth: true });
     const res = await POST(req);
     expect(res.status).toBe(400);
   });
@@ -529,7 +530,7 @@ describe('POST /api/analyze-listing-image — AI call', () => {
         confidence: 'medium',
       }),
     );
-    const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
+    const req = buildRequest({ body: VALID_BODY, auth: true });
     const res = await POST(req);
     expect(res.status).toBe(400);
   });
@@ -545,7 +546,7 @@ describe('POST /api/analyze-listing-image — AI call', () => {
         confidence: 'medium',
       }),
     );
-    const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
+    const req = buildRequest({ body: VALID_BODY, auth: true });
     const res = await POST(req);
     expect(res.status).toBe(400);
   });
@@ -561,7 +562,7 @@ describe('POST /api/analyze-listing-image — AI call', () => {
         confidence: 'medium',
       }),
     );
-    const req = buildRequest({ body: VALID_BODY, cookies: AUTH_COOKIES });
+    const req = buildRequest({ body: VALID_BODY, auth: true });
     const res = await POST(req);
     expect(res.status).toBe(400);
   });

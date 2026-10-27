@@ -13,6 +13,11 @@ on:
   # Manual re-run of optional PERF / cross-browser E2E / k6 / CDN TTFB jobs.
   workflow_dispatch:
 
+# Least-privilege default for GITHUB_TOKEN; jobs that need more (e.g. GHCR
+# push) declare job-level permissions explicitly.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

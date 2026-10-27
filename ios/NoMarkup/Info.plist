@@ -75,7 +75,7 @@
 	-->
 	<!-- Stripe publishable key (pk_test_… / pk_live_…). Override with NOMARKUP_STRIPE_PUBLISHABLE_KEY. -->
 	<key>StripePublishableKey</key>
-	<string></string>
+	<string>$(NOMARKUP_STRIPE_PUBLISHABLE_KEY)</string>
 	<!-- Apple Pay merchant ID — register in Apple Developer + Stripe Dashboard. -->
 	<key>ApplePayMerchantId</key>
 	<string>merchant.com.nomarkup.app</string>
@@ -87,14 +87,14 @@
 	  Override: NOMARKUP_GOOGLE_IOS_CLIENT_ID.
 	-->
 	<key>GoogleIosClientID</key>
-	<string></string>
+	<string>$(NOMARKUP_GOOGLE_IOS_CLIENT_ID)</string>
 	<!--
 	  Facebook Login (FR-1.1): Meta App ID (public; same as gateway FACEBOOK_CLIENT_ID).
 	  Register Valid OAuth Redirect URI: nomarkup://oauth2redirect/facebook
 	  Override: NOMARKUP_FACEBOOK_APP_ID. Client secret stays on the gateway only.
 	-->
 	<key>FacebookAppID</key>
-	<string></string>
+	<string>$(NOMARKUP_FACEBOOK_APP_ID)</string>
 	<!--
 	  Location: single When-In-Use key covers market picker + job-site check-in.
 	  Check-in-only draft (inventory): "NoMarkup uses your location to confirm you arrived at the job site. Check-in location is stored with the contract for dispute protection."

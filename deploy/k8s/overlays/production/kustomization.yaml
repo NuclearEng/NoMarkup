@@ -186,3 +186,10 @@ configMapGenerator:
       # externalsecret.sample.yaml) and injected via gateway envFrom secretRef.
       # Never invent a real Google client id/secret in-repo (OPS-08).
       - APPLE_CLIENT_ID=com.nomarkup.app
+      # Gateway CORS allow-list. Without this the gateway fell back to
+      # localhost origins; config.Load() now fails closed if it is unset in production.
+      - ALLOWED_ORIGINS=https://no-markup.com,https://www.no-markup.com,https://app.no-markup.com
+      # APNs production gateway (TestFlight / App Store builds use production tokens).
+      - APNS_PRODUCTION=true
+      - APNS_BUNDLE_ID=com.nomarkup.app
+      - APNS_TEAM_ID=6L6565278C

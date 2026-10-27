@@ -65,7 +65,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // PRESENCE of a session indicator; this verifies the RS256 access JWT
   // (signature, exp, iss, aud) and enforces a sliding-window budget keyed by
   // the token's `sub` — this route spends real money per call.
-  const gate = gateAiRoute(request);
+  const gate = await gateAiRoute(request);
   if (!gate.ok) {
     return gate.response;
   }

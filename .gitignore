@@ -88,3 +88,9 @@ ios/**/xcuserdata/
 *.xcuserstate
 ios/NoMarkupUITests/Credentials.local
 ios/DerivedData*/
+
+# iOS build-setting secrets
+ios/Config/Secrets.xcconfig
+
+# gRPC mesh mTLS material from deploy/prod/gen-mtls-certs.sh (CA key + leaf keys)
+deploy/prod/mtls/

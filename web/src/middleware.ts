@@ -48,7 +48,6 @@ import {
  *   - refresh_token          — HttpOnly, path-scoped to /api/v1/auth; not
  *                              always readable here but worth checking when
  *                              the browser sends it
- *   - oauth_access_token     — short-lived OAuth callback cookie
  *
  * The access JWT itself lives in memory on the client and is sent as a
  * Bearer token on API requests, so we also accept an Authorization header
@@ -104,7 +103,6 @@ async function hasSessionIndicator(req: NextRequest): Promise<boolean> {
   }
 
   if (cookies.get('refresh_token')?.value) return true;
-  if (cookies.get('oauth_access_token')?.value) return true;
 
   const auth = req.headers.get('authorization');
   if (auth && /^Bearer\s+\S+/i.test(auth)) return true;
