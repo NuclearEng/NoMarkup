@@ -181,11 +181,22 @@ configMapGenerator:
       # XFF trust boundary — only requests from these CIDRs may set the
       # X-Forwarded-For header that the rate limiter / audit log trusts.
       - TRUSTED_PROXIES=10.0.0.0/8
-      # Apple OAuth aud (bundle id). Google client ID is NOT in this ConfigMap:
-      # it is provisioned into nomarkup-secrets (see SECRETS.md +
-      # externalsecret.sample.yaml) and injected via gateway envFrom secretRef.
+      # Sign in with Apple. APPLE_CLIENT_ID is the web Services ID (return URL
+      # https://api.no-markup.com/api/v1/auth/callback/apple); the native iOS
+      # id_token aud is the bundle id (APPLE_NATIVE_CLIENT_ID). Team/key ids are
+      # public identifiers; APPLE_PRIVATE_KEY (.p8) is NOT here — it comes from
+      # nomarkup-secrets via the secret store and must never be committed.
+      # With these set, the user service refuses to start without the key.
+      # Google client ID is NOT in this ConfigMap: it is provisioned into
+      # nomarkup-secrets (see SECRETS.md + externalsecret.sample.yaml) and
+      # injected via gateway envFrom secretRef.
       # Never invent a real Google client id/secret in-repo (OPS-08).
-      - APPLE_CLIENT_ID=com.nomarkup.app
+      - APPLE_CLIENT_ID=com.nomarkup.web
+      - APPLE_NATIVE_CLIENT_ID=com.nomarkup.app
+      - APPLE_TEAM_ID=6L6565278C
+      - APPLE_KEY_ID=HMC93GDT7D
+      # OAuth callback base (gateway builds <base>/api/v1/auth/callback/<provider>).
+      - OAUTH_REDIRECT_BASE=https://api.no-markup.com
       # Gateway CORS allow-list. Without this the gateway fell back to
       # localhost origins; config.Load() now fails closed if it is unset in production.
       - ALLOWED_ORIGINS=https://no-markup.com,https://www.no-markup.com,https://app.no-markup.com

@@ -21,6 +21,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/nomarkup/nomarkup/gateway/internal/middleware"
 	"github.com/nomarkup/nomarkup/gateway/internal/sessionflag"
+	"github.com/nomarkup/nomarkup/pkg/appleauth"
 	userv1 "github.com/nomarkup/nomarkup/proto/user/v1"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -157,6 +158,27 @@ func googleOAuthConfig() *oauth2.Config {
 	}
 }
 
+// appleWebClientSecret returns the client_secret for the web (Services ID)
+// code exchange. A static APPLE_CLIENT_SECRET wins for backward
+// compatibility; otherwise a fresh ES256 JWT is minted from APPLE_TEAM_ID,
+// APPLE_KEY_ID and APPLE_PRIVATE_KEY so the secret never expires (Apple caps
+// a client-secret JWT at 6 months). Returns "" when neither is configured.
+func appleWebClientSecret() string {
+	if v := strings.TrimSpace(os.Getenv("APPLE_CLIENT_SECRET")); v != "" {
+		return v
+	}
+	c, err := appleauth.New(appleauth.ConfigFromEnv())
+	if err != nil {
+		return ""
+	}
+	secret, err := c.ClientSecret(strings.TrimSpace(os.Getenv("APPLE_CLIENT_ID")))
+	if err != nil {
+		slog.Error("apple web sign-in: mint client secret failed", "error", err)
+		return ""
+	}
+	return secret
+}
+
 func appleOAuthConfig() *oauth2.Config {
 	redirectBase := os.Getenv("OAUTH_REDIRECT_BASE")
 	if redirectBase == "" {
@@ -164,7 +186,7 @@ func appleOAuthConfig() *oauth2.Config {
 	}
 	return &oauth2.Config{
 		ClientID:     os.Getenv("APPLE_CLIENT_ID"),
-		ClientSecret: os.Getenv("APPLE_CLIENT_SECRET"),
+		ClientSecret: appleWebClientSecret(),
 		RedirectURL:  redirectBase + "/api/v1/auth/callback/apple",
 		Scopes:       []string{"name", "email"},
 		Endpoint: oauth2.Endpoint{
