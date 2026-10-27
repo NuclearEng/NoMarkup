@@ -56,7 +56,7 @@ export function OrderReviewForm({
     );
   }
 
-  const form = useForm<OrderReviewFormValues>({
+  const form = useForm<z.input<typeof orderReviewSchema>, unknown, OrderReviewFormValues>({
     resolver: zodResolver(orderReviewSchema),
     defaultValues: {
       overallRating: 0,
@@ -71,7 +71,7 @@ export function OrderReviewForm({
         orderId,
         input: {
           overall_rating: values.overallRating,
-          comment: values.comment?.trim() ?? '',
+          comment: values.comment.trim(),
         },
       },
       { onSuccess },

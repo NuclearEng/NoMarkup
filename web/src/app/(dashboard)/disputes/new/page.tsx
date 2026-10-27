@@ -55,7 +55,7 @@ type _DisputeReason = (typeof DISPUTE_REASONS)[number]['value'];
 const disputeSchema = z.object({
   contractId: z.string().min(1, 'Please select a contract'),
   reason: z.enum(['quality_issue', 'incomplete_work', 'no_show', 'property_damage', 'other'], {
-    required_error: 'Please select a reason',
+    error: 'Please select a reason',
   }),
   description: z.string().min(50, 'Description must be at least 50 characters').max(5000),
 });
