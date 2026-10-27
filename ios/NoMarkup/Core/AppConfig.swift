@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Runtime configuration for the native client.
 ///
@@ -476,8 +477,9 @@ enum AppConfig {
         didLogInsecureBase = true
         // No secrets in the message — host only when parseable.
         let host = URL(string: value)?.host ?? "(unparseable)"
-        // Use NSLog once so archive diagnostics surface without a logging stack dependency.
-        NSLog("[AppConfig] Ignoring non-HTTPS API base from \(source) (host=\(host)); using production HTTPS.")
+        // Unified logging; host is marked private so it is redacted in release log captures.
+        Logger(subsystem: "com.nomarkup.app", category: "AppConfig")
+            .warning("Ignoring non-HTTPS API base from \(source, privacy: .public) (host=\(host, privacy: .private)); using production HTTPS.")
     }
 
     private static func optionalDouble(envKey: String, plistKey: String) -> Double? {

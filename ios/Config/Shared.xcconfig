@@ -1,0 +1,7 @@
+// NoMarkup app build settings that feed Info.plist ($(VAR) substitution).
+// Real values live in Config/Secrets.xcconfig (gitignored) or CI env-generated file.
+// Publishable/client IDs are not secrets, but are kept out of git per OPS-08.
+NOMARKUP_STRIPE_PUBLISHABLE_KEY =
+NOMARKUP_GOOGLE_IOS_CLIENT_ID =
+NOMARKUP_FACEBOOK_APP_ID =
+#include? "Secrets.xcconfig"

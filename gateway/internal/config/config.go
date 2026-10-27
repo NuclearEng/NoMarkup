@@ -10,21 +10,21 @@ import (
 
 // Config holds all gateway configuration loaded from environment variables.
 type Config struct {
-	Port               int
-	Environment        string // "production", "staging", or "development" (required, validated)
-	DatabaseURL        string
-	DatabaseReadURL    string // replica for reads (search, analytics, profiles, public catalog). Falls back to DatabaseURL.
-	RedisURL           string
-	JWTPublicKeyPath   string
-	UserServiceAddr    string
-	JobServiceAddr     string
-	BidEngineAddr      string
-	PaymentServiceAddr string
-	ChatServiceAddr    string
-	ChatWSAddr         string
-	InternalWSSecret   string // shared secret presented to the chat WS backend
-	FraudEngineAddr    string
-	TrustEngineAddr    string
+	Port                    int
+	Environment             string // "production", "staging", or "development" (required, validated)
+	DatabaseURL             string
+	DatabaseReadURL         string // replica for reads (search, analytics, profiles, public catalog). Falls back to DatabaseURL.
+	RedisURL                string
+	JWTPublicKeyPath        string
+	UserServiceAddr         string
+	JobServiceAddr          string
+	BidEngineAddr           string
+	PaymentServiceAddr      string
+	ChatServiceAddr         string
+	ChatWSAddr              string
+	InternalWSSecret        string // shared secret presented to the chat WS backend
+	FraudEngineAddr         string
+	TrustEngineAddr         string
 	ImagingServiceAddr      string
 	NotificationServiceAddr string
 	AllowedOrigins          []string
@@ -65,22 +65,28 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ENVIRONMENT must be one of development|staging|production, got %q", env)
 	}
 
+	if env == "production" {
+		if missing := missingProductionServiceAddrs(); len(missing) > 0 {
+			return nil, fmt.Errorf("production requires explicit service addresses (no localhost defaults): missing %s", strings.Join(missing, ", "))
+		}
+	}
+
 	cfg := &Config{
-		Port:               port,
-		Environment:        env,
-		DatabaseURL:        getEnv("DATABASE_URL", ""),
-		DatabaseReadURL:    getEnv("DATABASE_URL_REPLICA", getEnv("DATABASE_URL", "")),
-		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379"),
-		JWTPublicKeyPath:   getEnv("JWT_PUBLIC_KEY_PATH", ""),
-		UserServiceAddr:    getEnv("USER_SERVICE_ADDR", "localhost:50051"),
-		JobServiceAddr:     getEnv("JOB_SERVICE_ADDR", "localhost:50052"),
-		BidEngineAddr:      getEnv("BID_ENGINE_ADDR", "localhost:50053"),
-		PaymentServiceAddr: getEnv("PAYMENT_SERVICE_ADDR", "localhost:50054"),
-		ChatServiceAddr:    getEnv("CHAT_SERVICE_ADDR", "localhost:50055"),
-		ChatWSAddr:         getEnv("CHAT_WS_ADDR", "localhost:50065"),
-		InternalWSSecret:   getEnvFirst("", "INTERNAL_WS_SECRET", "GATEWAY_CHAT_SECRET"),
-		FraudEngineAddr:    getEnv("FRAUD_ENGINE_ADDR", "localhost:50056"),
-		TrustEngineAddr:    getEnv("TRUST_ENGINE_ADDR", "localhost:50057"),
+		Port:                    port,
+		Environment:             env,
+		DatabaseURL:             getEnv("DATABASE_URL", ""),
+		DatabaseReadURL:         getEnv("DATABASE_URL_REPLICA", getEnv("DATABASE_URL", "")),
+		RedisURL:                getEnv("REDIS_URL", "redis://localhost:6379"),
+		JWTPublicKeyPath:        getEnv("JWT_PUBLIC_KEY_PATH", ""),
+		UserServiceAddr:         getEnv("USER_SERVICE_ADDR", "localhost:50051"),
+		JobServiceAddr:          getEnv("JOB_SERVICE_ADDR", "localhost:50052"),
+		BidEngineAddr:           getEnv("BID_ENGINE_ADDR", "localhost:50053"),
+		PaymentServiceAddr:      getEnv("PAYMENT_SERVICE_ADDR", "localhost:50054"),
+		ChatServiceAddr:         getEnv("CHAT_SERVICE_ADDR", "localhost:50055"),
+		ChatWSAddr:              getEnv("CHAT_WS_ADDR", "localhost:50065"),
+		InternalWSSecret:        getEnvFirst("", "INTERNAL_WS_SECRET", "GATEWAY_CHAT_SECRET"),
+		FraudEngineAddr:         getEnv("FRAUD_ENGINE_ADDR", "localhost:50056"),
+		TrustEngineAddr:         getEnv("TRUST_ENGINE_ADDR", "localhost:50057"),
 		ImagingServiceAddr:      getEnv("IMAGING_SERVICE_ADDR", "localhost:50058"),
 		NotificationServiceAddr: getEnv("NOTIFICATION_SERVICE_ADDR", "localhost:50059"),
 		AllowedOrigins:          strings.Split(origins, ","),
@@ -155,4 +161,31 @@ func getEnvFirst(fallback string, keys ...string) string {
 		}
 	}
 	return fallback
+}
+
+// productionRequiredAddrVars are upstream addresses that default to localhost
+// in development. In production an unset value would silently point the
+// gateway at localhost, so Load() fails closed instead.
+var productionRequiredAddrVars = []string{
+	"USER_SERVICE_ADDR",
+	"JOB_SERVICE_ADDR",
+	"BID_ENGINE_ADDR",
+	"PAYMENT_SERVICE_ADDR",
+	"CHAT_SERVICE_ADDR",
+	"CHAT_WS_ADDR",
+	"FRAUD_ENGINE_ADDR",
+	"TRUST_ENGINE_ADDR",
+	"IMAGING_SERVICE_ADDR",
+	"NOTIFICATION_SERVICE_ADDR",
+	"ALLOWED_ORIGINS",
+}
+
+func missingProductionServiceAddrs() []string {
+	var missing []string
+	for _, key := range productionRequiredAddrVars {
+		if strings.TrimSpace(os.Getenv(key)) == "" {
+			missing = append(missing, key)
+		}
+	}
+	return missing
 }

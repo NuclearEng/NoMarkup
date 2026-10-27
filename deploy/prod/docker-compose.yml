@@ -101,8 +101,14 @@ services:
       - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       - --maxmemory
       - ${REDIS_MAXMEMORY:-256mb}
+      # volatile-lru: only keys with a TTL (cache entries) are evicted under
+      # memory pressure. allkeys-lru could silently evict rate-limit windows,
+      # idempotency records and session/MFA state. Everything the app writes
+      # for rate limiting/idempotency also carries a TTL, so keep REDIS_MAXMEMORY
+      # generous; if you split Redis, run the rate-limit/idempotency instance
+      # with noeviction instead.
       - --maxmemory-policy
-      - allkeys-lru
+      - ${REDIS_MAXMEMORY_POLICY:-volatile-lru}
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     volumes:
@@ -140,7 +146,7 @@ services:
   # ── Schema (one-shot, blocks app start until green) ─────────
 
   migrate:
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/migrate:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/migrate:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/migrate.Dockerfile
@@ -165,7 +171,7 @@ services:
 
   user:
     <<: *restart
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/user:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/user:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/user.Dockerfile
@@ -184,6 +190,13 @@ services:
       VERIFICATION_SECRET: ${VERIFICATION_SECRET:-}
       BASE_URL: ${BASE_URL:-https://no-markup.com}
       FRONTEND_URL: ${FRONTEND_URL:-https://no-markup.com}
+      # Sign in with Apple token revocation on account deletion. When
+      # APPLE_CLIENT_ID is set the other three are required (startup fails).
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_NATIVE_CLIENT_ID: ${APPLE_NATIVE_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
       # Optional mesh peers (lazy dial; safe if profile not running).
       NOTIFICATION_SERVICE_ADDR: ${NOTIFICATION_SERVICE_ADDR:-notification:50059}
       PAYMENT_SERVICE_ADDR: payment:50054
@@ -211,7 +224,7 @@ services:
 
   job:
     <<: *restart
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/job:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/job:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/job.Dockerfile
@@ -251,7 +264,7 @@ services:
 
   payment:
     <<: *restart
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/payment:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/payment:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/payment.Dockerfile
@@ -294,7 +307,7 @@ services:
 
   gateway:
     <<: *restart
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/gateway:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/gateway:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/gateway.Dockerfile
@@ -348,6 +361,12 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
       APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
+      # Used to exchange the SIWA authorization code for a refresh token
+      # (stored encrypted for revocation on account deletion).
+      APPLE_NATIVE_CLIENT_ID: ${APPLE_NATIVE_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
       JWT_ISSUER: ${JWT_ISSUER:-https://auth.no-markup.com}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-nomarkup-api}
       METRICS_BEARER_TOKEN: ${METRICS_BEARER_TOKEN:-}
@@ -388,7 +407,7 @@ services:
 
   web:
     <<: *restart
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/web:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/web:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/web.Dockerfile
@@ -447,7 +466,7 @@ services:
   chat:
     <<: *restart
     profiles: ["chat"]
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/chat:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/chat:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/chat.Dockerfile
@@ -482,7 +501,7 @@ services:
   notification:
     <<: *restart
     profiles: ["notification"]
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/notification:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/notification:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/notification.Dockerfile
@@ -524,7 +543,7 @@ services:
   bidding:
     <<: *restart
     profiles: ["engines"]
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/bidding:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/bidding:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/engines.Dockerfile
@@ -545,7 +564,7 @@ services:
   fraud:
     <<: *restart
     profiles: ["engines"]
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/fraud:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/fraud:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/engines.Dockerfile
@@ -566,7 +585,7 @@ services:
   trust:
     <<: *restart
     profiles: ["engines"]
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/trust:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/trust:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/engines.Dockerfile
@@ -587,7 +606,7 @@ services:
   imaging:
     <<: *restart
     profiles: ["engines"]
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/imaging:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/imaging:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/engines.Dockerfile
@@ -609,7 +628,7 @@ services:
   underwriting:
     <<: *restart
     profiles: ["engines"]
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/underwriting:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/underwriting:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/engines.Dockerfile
@@ -625,7 +644,7 @@ services:
   pricing:
     <<: *restart
     profiles: ["engines"]
-    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/pricing:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-ghcr.io/nomarkup}/pricing:${IMAGE_TAG:?IMAGE_TAG is required (immutable tag or sha; no :latest)}
     build:
       <<: *build-root
       dockerfile: deploy/docker/engines.Dockerfile

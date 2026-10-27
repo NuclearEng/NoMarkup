@@ -302,6 +302,6 @@ func (a *Auth) CompleteMFALogin(ctx context.Context, challengeToken, totpCode, d
 		return "", nil, fmt.Errorf("complete mfa login: %w", err)
 	}
 
-	slog.Info("user logged in via mfa", "user_id", userID, "email", user.Email)
+	slog.Info("user logged in via mfa", "user_id", userID, "email", RedactEmail(user.Email))
 	return userID, pair, nil
 }

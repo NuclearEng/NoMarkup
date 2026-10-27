@@ -533,7 +533,7 @@ func (h *AuthHandler) ResendVerification(w http.ResponseWriter, r *http.Request)
 	})
 	if err != nil {
 		// Don't reveal whether the email exists.
-		slog.Info("resend verification attempted", "email", req.Email, "error", err)
+		slog.Info("resend verification attempted", "email", redactEmail(req.Email), "error", err)
 	}
 
 	// Always return success to prevent email enumeration.

@@ -154,7 +154,7 @@ func (pv *PhoneVerification) SendPhoneOTP(ctx context.Context, userID, phoneNumb
 	} else {
 		slog.Warn("send phone otp: SMS delivery not configured, OTP generated but not sent",
 			"user_id", smsUserID,
-			"phone", phoneNumber,
+			"phone_last4", RedactPhone(phoneNumber),
 		)
 	}
 

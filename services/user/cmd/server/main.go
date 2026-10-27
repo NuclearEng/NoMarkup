@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/nomarkup/nomarkup/pkg/appleauth"
 	imagingv1 "github.com/nomarkup/nomarkup/proto/imaging/v1"
 	notificationv1 "github.com/nomarkup/nomarkup/proto/notification/v1"
 	paymentv1 "github.com/nomarkup/nomarkup/proto/payment/v1"
@@ -310,7 +311,33 @@ func main() {
 	} else {
 		slog.Warn("notification client unavailable; GDPR lifecycle emails will log Error until NOTIFICATION_SERVICE_ADDR is set")
 	}
-	erasureService := service.NewErasure(repo, stripeDeleter, objectStore, nil, gdprMailer)
+	// Sign in with Apple token revocation on account deletion (App Store
+	// Review Guideline 5.1.1(v)). Needs APPLE_TEAM_ID, APPLE_KEY_ID,
+	// APPLE_PRIVATE_KEY (.p8 PEM) and APPLE_CLIENT_ID. In production with
+	// APPLE_CLIENT_ID set, an incomplete/invalid config is fatal; with SIWA
+	// not configured at all it logs at Error on every boot.
+	var oauthRevoker service.OAuthRevoker
+	appleCfg := appleauth.ConfigFromEnv()
+	if appleClient, aErr := appleauth.New(appleCfg); aErr == nil && appleCfg.ClientID != "" {
+		oauthRevoker = service.NewAppleRevoker(service.PGAppleTokenLister{DB: pool}, cipher, appleClient)
+		slog.Info("sign in with apple revocation enabled for account deletion")
+	} else if !isDevelopmentEnv() && appleCfg.ClientID != "" &&
+		(appleCfg.TeamID != "" || appleCfg.KeyID != "" || appleCfg.PrivateKeyPEM != "" ||
+			strings.EqualFold(strings.TrimSpace(os.Getenv("APPLE_REVOCATION_REQUIRED")), "true")) {
+		// Partially configured (or explicitly required) → misconfiguration:
+		// fail closed instead of silently skipping revocation. Fully absent
+		// keys only log loudly below so a deploy that predates the Apple key
+		// provisioning still boots (APPLE_CLIENT_ID is in the shared ConfigMap).
+		slog.Error("Apple token revocation is misconfigured; refusing to start (App Review 5.1.1(v))",
+			"missing", appleCfg.MissingEnv(), "error", aErr)
+		os.Exit(1)
+	} else if !isDevelopmentEnv() {
+		slog.Error("sign in with apple revocation NOT configured; deleted accounts will keep their Apple grant",
+			"missing", appleCfg.MissingEnv())
+	} else {
+		slog.Warn("sign in with apple revocation disabled (development)", "missing", appleCfg.MissingEnv())
+	}
+	erasureService := service.NewErasure(repo, stripeDeleter, objectStore, oauthRevoker, gdprMailer)
 	srv := grpcserver.NewServer(authService, profileService, adminService, phoneService, verificationService, erasureService, notifClient, baseURL)
 
 	// Start gRPC server.

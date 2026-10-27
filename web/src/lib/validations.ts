@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const emailSchema = z.string().email('Invalid email address');
+export const emailSchema = z.email('Invalid email address');
 
 export const passwordSchema = z
   .string()
@@ -64,7 +64,7 @@ export const profileSchema = z.object({
   displayName: displayNameSchema,
   phone: phoneSchema.optional().or(z.literal('')),
   timezone: timezoneSchema,
-  avatarUrl: z.string().url('Must be a valid URL').optional().or(z.literal('')),
+  avatarUrl: z.url('Must be a valid URL').optional().or(z.literal('')),
 });
 
 export type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -98,7 +98,7 @@ const milestoneSchema = z.object({
 export const globalTermsSchema = z
   .object({
     paymentTiming: z.enum(['upfront', 'milestone', 'completion', 'payment_plan', 'recurring'], {
-      required_error: 'Payment timing is required',
+      error: 'Payment timing is required',
     }),
     milestones: z.array(milestoneSchema).optional(),
     cancellationPolicy: z.string().optional().or(z.literal('')),
@@ -127,7 +127,7 @@ export const jobPostingSchema = z
     description: jobDescriptionSchema,
     scheduleType: z.union(
       [z.literal('specific_date'), z.literal('date_range'), z.literal('flexible')],
-      { required_error: 'Schedule type is required' },
+      { error: 'Schedule type is required' },
     ),
     scheduledDate: z.string().optional(),
     isRecurring: z.boolean(),
@@ -158,7 +158,7 @@ export const jobPostingSchema = z
       .min(24, 'Minimum auction duration is 24 hours')
       .max(168, 'Maximum auction duration is 168 hours (7 days)'),
     auctionType: z.union([z.literal('sealed'), z.literal('live')]).optional(),
-    photoUrls: z.array(z.string().url()).optional(),
+    photoUrls: z.array(z.url()).optional(),
   })
   .refine(
     (data) => {
@@ -208,16 +208,16 @@ export const legalIntakeSchema = z.object({
     .string()
     .min(1, 'Select the state your matter is in')
     .max(2, 'Use the 2-letter state code'),
-  urgency: z.enum(LEGAL_URGENCY, { required_error: 'Choose a timeline' }),
+  urgency: z.enum(LEGAL_URGENCY, { error: 'Choose a timeline' }),
   // Budget is the customer's max — optional, positive whole dollars.
   budgetDollars: z
-    .number({ invalid_type_error: 'Enter a number' })
+    .number({ error: 'Enter a number' })
     .positive('Budget must be greater than $0')
     .max(1_000_000, 'Budget is too large')
     .optional()
     .or(z.literal(0).transform(() => undefined)),
   contactPreference: z.enum(LEGAL_CONTACT_PREFERENCE, {
-    required_error: 'Choose a contact preference',
+    error: 'Choose a contact preference',
   }),
 });
 
@@ -338,7 +338,7 @@ export const listingPostingSchema = z
     title: listingTitleSchema,
     description: listingDescriptionSchema,
     photoUrls: z
-      .array(z.string().url('Each photo must be a valid URL'))
+      .array(z.url('Each photo must be a valid URL'))
       .min(1, 'At least one photo is required')
       .max(10, 'You can upload up to 10 photos'),
     pickupZip: listingZipSchema,
@@ -353,7 +353,7 @@ export const listingPostingSchema = z
       .max(1_000_000, 'Buy now price is too large')
       .optional(),
     auctionDurationHours: z.union([z.literal(24), z.literal(48), z.literal(168)], {
-      required_error: 'Pick an auction duration',
+      error: 'Pick an auction duration',
     }),
     // Condition is optional — empty string = "seller didn't say".
     condition: z
@@ -366,7 +366,7 @@ export const listingPostingSchema = z
     const startCents = Math.round(values.startingPriceDollars * 100);
     if (buyCents < startCents) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['buyNowDollars'],
         message: 'Buy now must be at least the starting price.',
       });
@@ -379,11 +379,11 @@ export type ListingPostingFormValues = z.infer<typeof listingPostingSchema>;
 export const addEmployeeSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(100),
   lastName: z.string().min(1, 'Last name is required').max(100),
-  email: z.string().email('Invalid email').optional().or(z.literal('')),
+  email: z.email('Invalid email').optional().or(z.literal('')),
   phone: z.string().optional().or(z.literal('')),
   dateOfBirth: z.string().optional().or(z.literal('')),
   role: z.enum(['technician', 'lead', 'manager', 'apprentice'], {
-    required_error: 'Role is required',
+    error: 'Role is required',
   }),
   ssnLastFour: z
     .string()
