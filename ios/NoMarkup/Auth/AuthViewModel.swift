@@ -680,8 +680,18 @@ final class AuthViewModel: ObservableObject {
                 }
             }
 
+            // Single-use code; the gateway trades it for an Apple refresh token
+            // (stored encrypted) so account deletion can revoke the SIWA grant.
+            let authorizationCode = credential.authorizationCode
+                .flatMap { String(data: $0, encoding: .utf8) }
+
             Task {
-                await exchangeAppleIdentityToken(identityToken, fullName: fullName, nonce: rawNonce)
+                await exchangeAppleIdentityToken(
+                    identityToken,
+                    fullName: fullName,
+                    nonce: rawNonce,
+                    authorizationCode: authorizationCode
+                )
             }
         case .failure(let error):
             if let authError = error as? ASAuthorizationError, authError.code == .canceled {
@@ -773,7 +783,8 @@ final class AuthViewModel: ObservableObject {
     private func exchangeAppleIdentityToken(
         _ identityToken: String,
         fullName: String?,
-        nonce: String?
+        nonce: String?,
+        authorizationCode: String? = nil
     ) async {
         guard !isBusy else { return }
         isLoading = true
@@ -782,7 +793,8 @@ final class AuthViewModel: ObservableObject {
             let result = try await api.signInWithApple(
                 identityToken: identityToken,
                 fullName: fullName,
-                nonce: nonce
+                nonce: nonce,
+                authorizationCode: authorizationCode
             )
             applyOAuthLoginResult(result, successMessage: "Signed in with Apple.")
         } catch {

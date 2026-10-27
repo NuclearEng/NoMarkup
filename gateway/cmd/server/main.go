@@ -47,6 +47,7 @@ import (
 	"github.com/nomarkup/nomarkup/gateway/internal/observability"
 	"github.com/nomarkup/nomarkup/gateway/internal/router"
 	"github.com/nomarkup/nomarkup/gateway/internal/vault"
+	"github.com/nomarkup/nomarkup/pkg/appleauth"
 	"github.com/nomarkup/nomarkup/pkg/grpmtls"
 )
 
@@ -424,6 +425,18 @@ func main() {
 	installmentHandler := handler.NewInstallmentHandler(paymentClient)
 	oauthHandler := handler.NewOAuthHandler(userClient, secureCookie, sessionSecret)
 	oauthHandler.WithIdleSession(authMW)
+	// Sign in with Apple refresh-token capture (Guideline 5.1.1(v)): lets the
+	// user service revoke the Apple grant on account deletion.
+	if appleCfg := appleauth.ConfigFromEnv(); appleCfg.ClientID != "" {
+		if appleClient, aErr := appleauth.New(appleCfg); aErr != nil {
+			slog.Error("apple sign-in enabled but token revocation is NOT configured; account deletion will not revoke Apple grants (App Review 5.1.1(v))",
+				"missing", appleCfg.MissingEnv(), "error", aErr)
+		} else if dbPool == nil {
+			slog.Error("apple sign-in: DATABASE_URL unset; Apple refresh tokens cannot be stored for revocation")
+		} else {
+			oauthHandler.WithAppleTokenCapture(appleClient, &handler.PGAppleTokenStore{DB: dbPool, Cipher: piiCipher})
+		}
+	}
 	// WebAuthn passkeys (IOS-SEC.2). Fails fast on invalid RP config (§12);
 	// routes are additionally gated behind the `passkeys` feature flag.
 	passkeyHandler, err := handler.NewPasskeyHandler(dbPool, cacheClient, userClient, authHandler)

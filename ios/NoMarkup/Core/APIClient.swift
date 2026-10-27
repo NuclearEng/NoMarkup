@@ -209,10 +209,14 @@ actor APIClient {
     ///   `nonce` claim). REQUIRED by the gateway for native exchanges (absent → 400);
     ///   it re-hashes and verifies `sha256hex(body.nonce) == id_token.nonce`
     ///   (IOS-SEC.1 replay binding).
+    /// - Parameter authorizationCode: single-use `ASAuthorizationAppleIDCredential.authorizationCode`.
+    ///   Optional; the gateway exchanges it server-side for an Apple refresh token so
+    ///   account deletion can revoke the Sign in with Apple grant (Guideline 5.1.1(v)).
     func signInWithApple(
         identityToken: String,
         fullName: String?,
-        nonce: String? = nil
+        nonce: String? = nil,
+        authorizationCode: String? = nil
     ) async throws -> AuthLoginResult {
         let url = AppConfig.apiBaseURL.appending(path: "api/v1/auth/apple/native")
         var request = URLRequest(url: url)
@@ -226,6 +230,9 @@ actor APIClient {
         }
         if let nonce, !nonce.isEmpty {
             body["nonce"] = nonce
+        }
+        if let authorizationCode, !authorizationCode.isEmpty {
+            body["authorization_code"] = authorizationCode
         }
         request.httpBody = try JSONEncoder().encode(body)
 

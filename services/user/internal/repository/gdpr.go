@@ -489,8 +489,10 @@ func (r *PostgresRepository) FinalizeAccountDeletion(ctx context.Context, userID
 		return nil, err
 	}
 
-	// 17. oauth_accounts — DELETE. Provider-side revoke is not possible:
-	//     this table stores provider + provider_id + email only, no tokens.
+	// 17. oauth_accounts — DELETE. Sign in with Apple refresh tokens
+	//     (apple_refresh_token_enc, migration 136) are read and revoked by
+	//     service.AppleRevoker around this cascade (Erasure prepares before,
+	//     revokes after); other providers store no tokens.
 	if err := exec("oauth_accounts", `
 		DELETE FROM oauth_accounts WHERE user_id = $1`, userID); err != nil {
 		return nil, err

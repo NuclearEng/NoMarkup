@@ -66,3 +66,7 @@ replace github.com/nomarkup/nomarkup/proto => ../../proto/gen/go
 require github.com/nomarkup/nomarkup/pkg/grpmtls v0.0.0-00010101000000-000000000000
 
 replace github.com/nomarkup/nomarkup/pkg/grpmtls => ../../pkg/grpmtls
+
+require github.com/nomarkup/nomarkup/pkg/appleauth v0.0.0-00010101000000-000000000000
+
+replace github.com/nomarkup/nomarkup/pkg/appleauth => ../../pkg/appleauth

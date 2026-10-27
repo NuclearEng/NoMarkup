@@ -97,6 +97,11 @@ type OAuthHandler struct {
 	sessionSecret []byte
 	frontendURL   string
 	authMW        *middleware.AuthMiddleware
+
+	// Sign in with Apple refresh-token capture for revocation on account
+	// deletion (see apple_tokens.go). Nil = disabled.
+	appleExchanger  appleCodeExchanger
+	appleTokenSaver AppleRefreshTokenSaver
 }
 
 // NewOAuthHandler creates a new OAuthHandler.
@@ -310,7 +315,7 @@ func (h *OAuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Reques
 	// (cryptographically signed by Google), not via the unauthenticated
 	// userinfo response.
 	if !idClaims.EmailVerified {
-		slog.Warn("google user email not verified", "email", idClaims.Email)
+		slog.Warn("google user email not verified", "email", redactEmail(idClaims.Email))
 		http.Redirect(w, r, h.frontendURL+"/login?error=email_not_verified", http.StatusTemporaryRedirect)
 		return
 	}
@@ -502,6 +507,8 @@ func (h *OAuthHandler) AppleOAuthCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	h.storeAppleWebRefreshToken(r.Context(), result.GetUserId(), claims.Subject, token.RefreshToken)
+
 	h.completeOAuthLogin(w, r, result)
 }
 
@@ -544,34 +551,33 @@ func (h *OAuthHandler) completeOAuthLogin(w http.ResponseWriter, r *http.Request
 	}
 	h.clearOAuthNextCookie(w)
 
-	// Use a short-lived cookie to pass the token to the frontend SPA,
-	// which is safer than putting it in the URL.
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_access_token",
-		Value:    result.GetAccessToken(),
-		Path:     "/",
-		HttpOnly: false, // Must be readable by JavaScript
-		Secure:   h.secureCookie,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   60, // 1 minute — frontend should read and clear immediately
-	})
-
-	expiresAt := ""
-	if result.GetAccessTokenExpiresAt() != nil {
-		expiresAt = result.GetAccessTokenExpiresAt().AsTime().Format(time.RFC3339)
+	// SEC: the access token is NOT handed to the SPA in a JS-readable cookie
+	// any more. The HttpOnly refresh cookie (set above, Path=/api/v1/auth) is
+	// the handoff credential: the web app sees the signed has_session flag and
+	// exchanges the refresh cookie for an access token via POST
+	// /api/v1/auth/refresh (same-origin through the Next rewrite). That keeps
+	// every bearer credential out of reach of page scripts. Clear any legacy
+	// handoff cookies left by older gateway builds.
+	for _, name := range []string{legacyOAuthAccessTokenCookie, legacyOAuthTokenExpiresCookie} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: false,
+			Secure:   h.secureCookie,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   -1,
+		})
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_token_expires",
-		Value:    expiresAt,
-		Path:     "/",
-		HttpOnly: false,
-		Secure:   h.secureCookie,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   60,
-	})
 
 	http.Redirect(w, r, h.frontendURL+redirectPath, http.StatusTemporaryRedirect)
 }
+
+// Legacy JS-readable OAuth handoff cookies (removed; only cleared now).
+const (
+	legacyOAuthAccessTokenCookie  = "oauth_access_token"
+	legacyOAuthTokenExpiresCookie = "oauth_token_expires"
+)
 
 // --- Apple ID token verification ---
 
@@ -717,6 +723,10 @@ type nativeAppleSignInRequest struct {
 	// (IOS-SEC.1): without it a captured Apple id_token could be replayed
 	// against this endpoint from any device.
 	Nonce string `json:"nonce"`
+	// AuthorizationCode is ASAuthorizationAppleIDCredential.authorizationCode.
+	// Optional; exchanged server-side for a refresh token so account deletion
+	// can revoke the Apple grant (Guideline 5.1.1(v)).
+	AuthorizationCode string `json:"authorization_code"`
 }
 
 // NativeAppleSignIn exchanges a Sign in with Apple identity token from a
@@ -782,6 +792,8 @@ func (h *OAuthHandler) NativeAppleSignIn(w http.ResponseWriter, r *http.Request)
 		writeGRPCError(w, err)
 		return
 	}
+
+	h.captureAppleRefreshToken(r.Context(), result.GetUserId(), claims.Subject, nativeAppleClientID(), req.AuthorizationCode)
 
 	// Mobile clients need the refresh token in the JSON body (no cookie jar
 	// reliance). Still set cookies for any hybrid webview callers.
@@ -849,10 +861,23 @@ func (h *OAuthHandler) writeOAuthMFARedirect(w http.ResponseWriter, r *http.Requ
 		return false
 	}
 	// Cookie, not query: the challenge is a bearer secret and must not land in
-	// access logs. Same 60s JS-readable pattern as oauth_access_token.
+	// access logs. HttpOnly + scoped to /api/v1/auth so page scripts and
+	// subresources never see it; the login page redeems it once via
+	// POST /api/v1/auth/oauth/mfa-challenge (ExchangeOAuthMFAChallenge). The
+	// JS-readable oauth_mfa_pending flag carries no secret — it only tells the
+	// login page an exchange is waiting.
 	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_mfa_challenge",
+		Name:     oauthMFAChallengeCookie,
 		Value:    lr.GetMfaChallengeToken(),
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   60,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthMFAPendingCookie,
+		Value:    "1",
 		Path:     "/",
 		HttpOnly: false,
 		Secure:   h.secureCookie,
@@ -865,6 +890,36 @@ func (h *OAuthHandler) writeOAuthMFARedirect(w http.ResponseWriter, r *http.Requ
 	}
 	http.Redirect(w, r, loginURL, http.StatusTemporaryRedirect)
 	return true
+}
+
+const (
+	oauthMFAChallengeCookie = "oauth_mfa_challenge"
+	oauthMFAPendingCookie   = "oauth_mfa_pending"
+)
+
+// ExchangeOAuthMFAChallenge handles POST /api/v1/auth/oauth/mfa-challenge.
+// It redeems the HttpOnly oauth_mfa_challenge cookie set by an MFA-gated
+// OAuth callback exactly once: the token is returned in a no-store JSON body
+// and both the challenge cookie and the pending flag are cleared. The
+// challenge alone cannot sign anyone in — it must be paired with a valid
+// TOTP code at /auth/mfa/verify.
+func (h *OAuthHandler) ExchangeOAuthMFAChallenge(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	for _, c := range []struct {
+		name, path string
+		httpOnly   bool
+	}{{oauthMFAChallengeCookie, "/api/v1/auth", true}, {oauthMFAPendingCookie, "/", false}} {
+		http.SetCookie(w, &http.Cookie{
+			Name: c.name, Value: "", Path: c.path, HttpOnly: c.httpOnly,
+			Secure: h.secureCookie, SameSite: http.SameSiteStrictMode, MaxAge: -1,
+		})
+	}
+	ck, err := r.Cookie(oauthMFAChallengeCookie)
+	if err != nil || strings.TrimSpace(ck.Value) == "" {
+		writeError(w, http.StatusNotFound, "no pending oauth mfa challenge")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"mfa_challenge_token": ck.Value})
 }
 
 // nativeGoogleSignInRequest is the body for POST /api/v1/auth/google/native
@@ -902,7 +957,7 @@ func (h *OAuthHandler) NativeGoogleSignIn(w http.ResponseWriter, r *http.Request
 	}
 
 	if !claims.EmailVerified {
-		slog.Warn("native google sign-in: email not verified", "email", claims.Email)
+		slog.Warn("native google sign-in: email not verified", "email", redactEmail(claims.Email))
 		writeError(w, http.StatusUnauthorized, "google email is not verified")
 		return
 	}
