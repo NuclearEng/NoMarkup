@@ -97,6 +97,15 @@ export function AuctionReplay({ listingId }: AuctionReplayProps) {
     if (isPlaying && data && currentEventIndex >= 0) {
       scheduleNextEvent(currentEventIndex);
     }
+    // Cancel the pending step whenever this effect re-runs (speed change,
+    // pause, scrub). Without it a speed change left the old timer running,
+    // and it still revealed the next event after Pause.
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
   }, [currentEventIndex, isPlaying, data, scheduleNextEvent]);
 
   function handlePlay() {
