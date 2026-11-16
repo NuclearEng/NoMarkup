@@ -8,6 +8,7 @@
 //   • orders/[id]             → OrderReviewForm (react-hook-form + zod)
 //   • profile                 → ProfileForm (react-hook-form + select)
 //   • StripeOnboarding        → ConnectEmbeddedOnboarding (Connect.js)
+//   • ListingBidPanel         → BidBondPrompt (Stripe Elements)
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -156,6 +157,7 @@ const { default: ProfilePage } = await import('@/app/(dashboard)/profile/page');
 const { StripeOnboarding } = await import('@/components/payments/StripeOnboarding');
 const { LazyTerminalGrid, preloadTerminalGrid } =
   await import('@/components/terminal/terminal-grid-lazy');
+const { ListingBidPanel } = await import('@/components/marketplace/ListingBidPanel');
 
 function withQueryClient(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -213,5 +215,26 @@ describe('code-split loading placeholders', () => {
     expect(screen.getByRole('status').textContent).toBe('Loading secure Stripe setup…');
     // The Stripe-hosted fallback stays reachable while the chunk loads.
     expect(screen.getByRole('button', { name: /Open Stripe-hosted setup instead/ })).toBeDefined();
+  });
+
+  it('ListingBidPanel shows the bond prompt\'s own "Preparing bond…" line in its live region', () => {
+    render(
+      createElement(ListingBidPanel, {
+        currentBidCents: 5000,
+        minIncrementCents: 100,
+        isAuthenticated: true,
+        isOwnListing: false,
+        isUserWinning: false,
+        isSubmitting: false,
+        isAuctionExpired: false,
+        onPlaceBid: vi.fn(),
+        listingId: 'l-1',
+        bidBondRequirement: { bond_amount_cents: 500 },
+      }),
+    );
+    const host = screen.getByTestId('bid-bond-prompt-host');
+    expect(host.getAttribute('aria-live')).toBe('polite');
+    expect(host.textContent).toContain('One-time bid bond ($5.00)');
+    expect(host.textContent).toContain('Preparing bond…');
   });
 });
