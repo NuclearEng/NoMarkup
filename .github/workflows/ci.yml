@@ -498,7 +498,13 @@ jobs:
           for i in $(seq 1 90); do
             code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/readyz || true)
             [ "$code" = "200" ] && { echo "gateway /readyz 200 (attempt ${i})"; break; }
-            [ "$i" -eq 90 ] && { echo "::error::gateway /readyz never returned 200 (last=${code})"; exit 1; }
+            if [ "$i" -eq 90 ]; then
+              echo "::error::gateway /readyz never returned 200 (last=${code})"
+              # The body names the failing dependency (postgres / schema /
+              # redis) and the driver error; without it the 503 is opaque.
+              echo "--- /readyz body:"; curl -s http://localhost:8080/readyz || true; echo
+              exit 1
+            fi
             sleep 2
           done
           # 2. The gateway -> user-service gRPC path, which /readyz does NOT
