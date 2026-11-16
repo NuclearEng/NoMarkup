@@ -1,5 +1,4 @@
 {
-  "generated": "2026-08-22",
   "routes": [
     {
       "id": "web.page.forgot-password",
@@ -272,6 +271,11 @@
       "file": "web/src/app/(dashboard)/notifications/page.tsx"
     },
     {
+      "id": "web.page.onboarding",
+      "route": "/onboarding",
+      "file": "web/src/app/(dashboard)/onboarding/page.tsx"
+    },
+    {
       "id": "web.page.orders.[id]",
       "route": "/orders/[id]",
       "file": "web/src/app/(dashboard)/orders/[id]/page.tsx"
@@ -325,6 +329,11 @@
       "id": "web.page.provider.business",
       "route": "/provider/business",
       "file": "web/src/app/(dashboard)/provider/business/page.tsx"
+    },
+    {
+      "id": "web.page.provider.business.quotes",
+      "route": "/provider/business/quotes",
+      "file": "web/src/app/(dashboard)/provider/business/quotes/page.tsx"
     },
     {
       "id": "web.page.provider.business.tax",
@@ -515,6 +524,11 @@
       "id": "web.page.terms",
       "route": "/terms",
       "file": "web/src/app/(public)/terms/page.tsx"
+    },
+    {
+      "id": "web.page.unsubscribe",
+      "route": "/unsubscribe",
+      "file": "web/src/app/(public)/unsubscribe/page.tsx"
     },
     {
       "id": "web.page.auctions.[id].replay",
