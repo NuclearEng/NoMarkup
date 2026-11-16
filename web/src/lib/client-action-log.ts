@@ -21,7 +21,9 @@ export type ClientActionEvent = {
 
 export const CLIENT_ACTION_LOG_CAPACITY = 200;
 
-const events: ClientActionEvent[] = [];
+// Replaced, never mutated: useSyncExternalStore compares snapshots by identity,
+// so the request-log page only re-renders when this is a new array.
+let events: readonly ClientActionEvent[] = [];
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -81,10 +83,7 @@ export function recordClientAction(input: {
     requestId: input.requestId.slice(0, 64),
     outcome: outcomeFor(input.status, kind),
   };
-  events.unshift(event);
-  if (events.length > CLIENT_ACTION_LOG_CAPACITY) {
-    events.length = CLIENT_ACTION_LOG_CAPACITY;
-  }
+  events = [event, ...events].slice(0, CLIENT_ACTION_LOG_CAPACITY);
   emit();
   exposeLogOnWindow();
   return event;
@@ -101,7 +100,7 @@ export function listClientActions(): readonly ClientActionEvent[] {
 }
 
 export function clearClientActions(): void {
-  events.length = 0;
+  events = [];
   emit();
 }
 
@@ -114,6 +113,6 @@ export function subscribeClientActions(listener: () => void): () => void {
 
 /** Test helper. */
 export function __resetClientActionsForTests(): void {
-  events.length = 0;
+  events = [];
   listeners.clear();
 }
