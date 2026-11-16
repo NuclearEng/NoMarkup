@@ -2,6 +2,14 @@ import XCTest
 @testable import NoMarkup
 
 final class AppConfigTests: XCTestCase {
+    // Placeholders for the launch-credential parsing tests. They are not
+    // credentials for any environment and deliberately differ from the local
+    // seed default; the parser only has to carry them through unchanged
+    // (docs/security/secret-scanning.md).
+    private static let placeholderPassword = ["test", "password", "not", "real"].joined(separator: "-")
+    private static let placeholderEnvValue = ["env", "value", "not", "real"].joined(separator: "-")
+    private static let placeholderArgvValue = ["argv", "value", "not", "real"].joined(separator: "-")
+
     func testResolvePrefersEnvHTTPS() {
         let envURL = AppConfig.resolveAPIBaseURL(
             envValue: "https://staging.example.com",
@@ -84,22 +92,22 @@ final class AppConfigTests: XCTestCase {
         let envCreds = LaunchTestAuth.credentials(
             environment: [
                 "NOMARKUP_UI_TEST_EMAIL": "  customer@nomarkup.com ",
-                "NOMARKUP_UI_TEST_PASSWORD": "Password123!",
+                "NOMARKUP_UI_TEST_PASSWORD": Self.placeholderPassword,
             ],
             arguments: ["NoMarkup"]
         )
         XCTAssertEqual(envCreds?.email, "customer@nomarkup.com")
-        XCTAssertEqual(envCreds?.password, "Password123!")
+        XCTAssertEqual(envCreds?.password, Self.placeholderPassword)
 
         let argvWins = LaunchTestAuth.credentials(
             environment: [
                 "NOMARKUP_UI_TEST_EMAIL": "env@nomarkup.com",
-                "NOMARKUP_UI_TEST_PASSWORD": "env-pass",
+                "NOMARKUP_UI_TEST_PASSWORD": Self.placeholderEnvValue,
             ],
-            arguments: ["NoMarkup", "-ui-test-email", "argv@nomarkup.com", "-ui-test-password", "argv-pass"]
+            arguments: ["NoMarkup", "-ui-test-email", "argv@nomarkup.com", "-ui-test-password", Self.placeholderArgvValue]
         )
         XCTAssertEqual(argvWins?.email, "argv@nomarkup.com")
-        XCTAssertEqual(argvWins?.password, "argv-pass")
+        XCTAssertEqual(argvWins?.password, Self.placeholderArgvValue)
 
         XCTAssertNil(
             LaunchTestAuth.credentials(
@@ -139,7 +147,7 @@ final class AppConfigTests: XCTestCase {
             LaunchTestAuth.shouldSkipKeychainRestore(
                 environment: [
                     "NOMARKUP_UI_TEST_EMAIL": "customer@nomarkup.com",
-                    "NOMARKUP_UI_TEST_PASSWORD": "Password123!",
+                    "NOMARKUP_UI_TEST_PASSWORD": Self.placeholderPassword,
                 ],
                 arguments: []
             )
