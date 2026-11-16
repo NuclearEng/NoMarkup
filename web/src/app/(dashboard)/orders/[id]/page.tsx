@@ -42,6 +42,7 @@ import {
   useListingOrderReviewEligibility,
   useListingOrderReviews,
 } from '@/hooks/useOrderReviews';
+import { listingOrderStatusVariant } from '@/lib/status-badge-classes';
 import { formatCents, formatRelativeTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth-store';
 import { LISTING_ORDER_STATUS } from '@/types';
@@ -185,16 +186,7 @@ export default function OrderDetailPage() {
             Order placed {formatRelativeTime(new Date(order.created_at))}
           </p>
         </div>
-        <Badge
-          variant={
-            order.status === LISTING_ORDER_STATUS.COMPLETED
-              ? 'completed'
-              : order.status === LISTING_ORDER_STATUS.DISPUTED
-                ? 'disputed'
-                : 'active'
-          }
-          className="capitalize"
-        >
+        <Badge variant={listingOrderStatusVariant(order.status)} className="capitalize">
           {order.status.replace(/_/g, ' ')}
         </Badge>
       </div>
