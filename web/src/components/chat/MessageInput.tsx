@@ -40,7 +40,12 @@ interface ProposedTerms {
 function formatProposedAmountDisplay(raw: string): string {
   const cleaned = raw.trim().replace(/[$,\s]/g, '');
   const n = Number.parseFloat(cleaned);
-  if (!Number.isFinite(n) || n <= 0) {
+  // A number that is zero or negative is not an amount: money on this platform
+  // must be positive (bids, offers and orders are all rejected at <= 0), so
+  // return nothing and let the caller ask for a valid amount. It used to fall
+  // through to the text branch below and be sent as "$0".
+  if (Number.isFinite(n) && n <= 0) return '';
+  if (!Number.isFinite(n)) {
     // Fall back to user text with a $ prefix when parse fails but non-empty.
     const t = raw.trim();
     if (!t) return '';
