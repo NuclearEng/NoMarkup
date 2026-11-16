@@ -82,7 +82,10 @@ export default function OrderDetailPage() {
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeDescription, setDisputeDescription] = useState('');
 
-  if (isLoading) {
+  // Every action below is chosen by comparing the viewer to the order's buyer
+  // and seller. Until the viewer's identity is known that comparison would
+  // default a seller to the buyer's side (pay, cancel, buyer pickup), so wait.
+  if (isLoading || currentUserId === undefined) {
     return (
       <div
         className="mx-auto max-w-3xl space-y-4 px-4 py-8 sm:px-6 lg:px-8"
@@ -124,7 +127,7 @@ export default function OrderDetailPage() {
   // The seller confirms via /seller-confirm; the buyer via /confirm-pickup
   // (/confirm-pickup is buyer-only and 403s the seller). Escrow releases once
   // both sides have confirmed.
-  const isSeller = currentUserId !== undefined && currentUserId === order.seller_id;
+  const isSeller = currentUserId === order.seller_id;
   // Each party confirms once. Track whether THIS caller has already confirmed
   // their half so we don't show an enabled button that 409s on re-click:
   //   - buyer half  → picked_up_at (set by /confirm-pickup)
