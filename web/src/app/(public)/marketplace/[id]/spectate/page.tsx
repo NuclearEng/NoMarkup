@@ -136,6 +136,10 @@ export default function ListingSpectatePage() {
                 {String(terminal.spectatorCount)} watching
               </span>
             ) : null}
+            {/* From the listing API, so it shows with or without the socket. */}
+            <span className="text-xs text-white/45" data-testid="spectate-bidder-count">
+              {String(terminal.bidderCount)} {terminal.bidderCount === 1 ? 'bidder' : 'bidders'}
+            </span>
           </div>
           <div className="hidden items-center gap-3 text-sm md:flex">
             <h1 className="font-semibold text-white/90">{terminal.jobTitle}</h1>

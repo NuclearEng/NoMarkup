@@ -165,6 +165,24 @@ describe('SpectatePage', () => {
     expect(listingState.refetch).toHaveBeenCalled();
   });
 
+  // The count was on the page until afe7d21a rebuilt it around TerminalGrid.
+  it('shows how many bidders the listing has, even with the socket down', () => {
+    listingState.data = detail;
+    renderPage();
+    expect(screen.getByTestId('spectate-bidder-count').textContent).toBe('4 bidders');
+  });
+
+  it('uses the singular for one bidder and shows zero honestly', () => {
+    listingState.data = { ...detail, bidder_count: 1 };
+    const first = renderPage();
+    expect(screen.getByTestId('spectate-bidder-count').textContent).toBe('1 bidder');
+    first.unmount();
+
+    listingState.data = { ...detail, bidder_count: 0 };
+    renderPage();
+    expect(screen.getByTestId('spectate-bidder-count').textContent).toBe('0 bidders');
+  });
+
   it('renders the SPECTATE badge', () => {
     listingState.data = detail;
     renderPage();
