@@ -19,12 +19,10 @@ tokio.workspace = true
 tonic.workspace = true
 tonic-health.workspace = true
 prost.workspace = true
-thiserror.workspace = true
 tracing.workspace = true
 nomarkup-engine-telemetry.workspace = true
 # Panic boundary for the gRPC stack (CatchPanicLayer) — see src/main.rs.
 http.workspace = true
-tower.workspace = true
 tower-http.workspace = true
 prometheus.workspace = true
 hyper.workspace = true
@@ -44,6 +42,9 @@ tonic-build.workspace = true
 [dev-dependencies]
 criterion = "0.5"
 proptest = "1"
+# Only tests/panic_boundary_test.rs drives a tower Service directly; the
+# binary reaches tower through tonic and tower-http.
+tower.workspace = true
 
 [[bench]]
 name = "fair_price"
