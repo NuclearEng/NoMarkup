@@ -1,21 +1,22 @@
 // What the photo analysis may fill on the Sell form, and what the notice says
-// about it. The wizard runs the analysis at the Photos step, after category,
-// title and description have been validated, so in the normal flow only the
-// starting price is open. The notice used to claim "a title, category, and
-// starting price" regardless.
+// about it. Photos are the first wizard step, so in the normal flow every
+// field is still empty when the analysis returns; a seller who moves ahead
+// and types before it does keeps what they typed.
 import { describe, expect, it } from 'vitest';
 
-import { describeAiAutofill, planAiAutofill } from '@/lib/listing-ai-autofill';
+import { describeAiAutofill, findCategoryBySlug, planAiAutofill } from '@/lib/listing-ai-autofill';
 import type { ListingImageAnalysisResult } from '@/types';
 
 const ANALYSIS: ListingImageAnalysisResult = {
-  categorySlug: 'electronics',
+  categorySlug: 'goods-electronics',
   title: 'Vintage receiver',
   description: 'A well kept stereo receiver from the seventies.',
   suggestedStartingPriceCents: 4500,
   condition: 'good',
   confidence: 'high',
 };
+
+const CATEGORY = { id: 'cat-electronics', name: 'Electronics' };
 
 const FILLED = {
   title: 'My receiver',
@@ -25,8 +26,8 @@ const FILLED = {
 };
 
 describe('planAiAutofill', () => {
-  it('at the Photos step fills only the starting price and reports only that', () => {
-    const { patch, applied } = planAiAutofill(FILLED, ANALYSIS);
+  it('fills only the starting price when the seller entered everything else first', () => {
+    const { patch, applied } = planAiAutofill(FILLED, ANALYSIS, CATEGORY);
     expect(patch).toEqual({ startingPriceDollars: 45 });
     expect(applied).toEqual(['starting price']);
   });
@@ -37,18 +38,19 @@ describe('planAiAutofill', () => {
     expect(applied).toEqual([]);
   });
 
-  it('fills every empty field and lists them in display order', () => {
+  it('fills every empty field and lists them in wizard order', () => {
     const { patch, applied } = planAiAutofill(
       { title: '  ', description: '', categoryId: '', startingPriceDollars: 0 },
       ANALYSIS,
+      CATEGORY,
     );
     expect(patch).toEqual({
       title: 'Vintage receiver',
       description: ANALYSIS.description,
-      categoryId: 'electronics',
+      categoryId: 'cat-electronics',
       startingPriceDollars: 45,
     });
-    expect(applied).toEqual(['title', 'description', 'category', 'starting price']);
+    expect(applied).toEqual(['category', 'title', 'description', 'starting price']);
   });
 
   it('caps a suggested title at 120 characters', () => {
@@ -67,6 +69,26 @@ describe('planAiAutofill', () => {
     expect(applied).toEqual([]);
   });
 
+  it('does not fill a category whose slug did not resolve to a known category', () => {
+    const { patch, applied } = planAiAutofill(
+      { title: '', description: '', categoryId: '', startingPriceDollars: 0 },
+      ANALYSIS,
+      undefined,
+    );
+    expect(patch.categoryId).toBeUndefined();
+    expect(applied).toEqual(['title', 'description', 'starting price']);
+  });
+
+  it('keeps the category the seller already picked', () => {
+    const { patch, applied } = planAiAutofill(
+      { title: '', description: '', categoryId: 'cat-mine', startingPriceDollars: 0 },
+      ANALYSIS,
+      CATEGORY,
+    );
+    expect(patch.categoryId).toBeUndefined();
+    expect(applied).not.toContain('category');
+  });
+
   it('suggests at least $1 when the model returns 0', () => {
     const { patch } = planAiAutofill(FILLED, { ...ANALYSIS, suggestedStartingPriceCents: 0 });
     expect(patch.startingPriceDollars).toBe(1);
@@ -78,12 +100,39 @@ describe('describeAiAutofill', () => {
     [[], ''],
     [['starting price'], 'a starting price'],
     [['title', 'starting price'], 'a title and starting price'],
-    [['title', 'category', 'starting price'], 'a title, category, and starting price'],
+    [['category', 'title', 'starting price'], 'a category, title, and starting price'],
     [
-      ['title', 'description', 'category', 'starting price'],
-      'a title, description, category, and starting price',
+      ['category', 'title', 'description', 'starting price'],
+      'a category, title, description, and starting price',
     ],
   ] as const)('%j → %s', (applied, text) => {
     expect(describeAiAutofill(applied)).toBe(text);
+  });
+});
+
+describe('findCategoryBySlug', () => {
+  interface Node {
+    slug: string;
+    children?: Node[];
+  }
+  const TREE: Node[] = [
+    { slug: 'goods-furniture', children: [] },
+    { slug: 'goods-electronics', children: [{ slug: 'goods-electronics-audio' }] },
+  ];
+
+  it('finds a top-level category', () => {
+    expect(findCategoryBySlug(TREE, 'goods-furniture')).toBe(TREE[0]);
+  });
+
+  it('finds a nested category', () => {
+    expect(findCategoryBySlug(TREE, 'goods-electronics-audio')?.slug).toBe(
+      'goods-electronics-audio',
+    );
+  });
+
+  it('returns undefined for an unknown slug, an empty slug, or a tree that has not loaded', () => {
+    expect(findCategoryBySlug(TREE, 'goods-spaceships')).toBeUndefined();
+    expect(findCategoryBySlug(TREE, '')).toBeUndefined();
+    expect(findCategoryBySlug(undefined, 'goods-furniture')).toBeUndefined();
   });
 });

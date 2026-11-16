@@ -80,10 +80,10 @@ afterEach(() => {
 });
 
 describe('ListingPostingForm', () => {
-  it('starts on step 1 (Category)', () => {
+  it('starts on step 1 (Photos)', () => {
     render(withClient(createElement(ListingPostingForm)));
     expect(screen.getByText(/Step 1 of 6/)).toBeDefined();
-    expect(screen.getAllByText(/Category/i)[0]).toBeDefined();
+    expect(screen.getByText(/Photos — Start with 1–10 photos/)).toBeDefined();
   });
 
   it('shows progress bar with correct aria-label', () => {
@@ -98,21 +98,13 @@ describe('ListingPostingForm', () => {
     expect(back.disabled).toBe(true);
   });
 
-  it('blocks Next when no category is selected', async () => {
+  it('blocks Next when no photo has been added', async () => {
     const user = userEvent.setup();
     render(withClient(createElement(ListingPostingForm)));
     await user.click(screen.getByRole('button', { name: /^Next/i }));
-    // Should still be on step 1
+    expect(await screen.findByText('At least one photo is required')).toBeDefined();
     expect(screen.getByText(/Step 1 of 6/)).toBeDefined();
-  });
-
-  it('does not call publish handler when called without category', async () => {
-    const user = userEvent.setup();
-    render(withClient(createElement(ListingPostingForm)));
-    // Try to click Next without selecting category — should remain on step 1.
-    await user.click(screen.getByRole('button', { name: /^Next/i }));
     expect(mockMutateAsync).not.toHaveBeenCalled();
-    expect(screen.getByText(/Step 1 of 6/)).toBeDefined();
   });
 
   it('renders without throwing when given an onPublishSuccess callback', () => {
@@ -125,23 +117,13 @@ describe('ListingPostingForm', () => {
     expect(onPublishSuccess).not.toHaveBeenCalled();
   });
 
-  it('renders the photo dropzone with accessible region label', () => {
-    // Force step 2 by using the inner wizard manually — instead, just check
-    // that the dropzone region label string is present in the bundled component.
+  it('renders the photo dropzone with an accessible region label on step 1', () => {
     render(withClient(createElement(ListingPostingForm)));
-    // Step 1 is active; Photos step UI is mounted lazily, but the form should
-    // mount without throwing for step 1.
-    expect(screen.getByText(/Step 1 of 6/)).toBeDefined();
-  });
-
-  it('exposes the DB-driven goods category selector on step 1', () => {
-    // The category step was replaced (commit 9f0bdce) with the search-first,
-    // DB-driven GoodsCategorySelector. It is intentionally NOT a Radix <Select>
-    // anymore, so it no longer exposes role="combobox" — that was an
-    // implementation detail of the old picker. Assert the new picker's accessible
-    // surface instead: the labelled category search box plus a rendered category.
-    render(withClient(createElement(ListingPostingForm)));
-    expect(screen.getByLabelText(/Search goods categories/i)).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Furniture' })).toBeDefined();
+    expect(screen.getByRole('region', { name: 'Drag and drop photos here' })).toBeDefined();
+    expect(screen.getByLabelText('Upload listing photos')).toBeDefined();
+    // The promise the wizard makes about the analysis, before any photo.
+    expect(
+      screen.getByText(/suggest a category, title, description, and starting price/),
+    ).toBeDefined();
   });
 });

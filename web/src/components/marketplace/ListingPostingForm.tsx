@@ -1,15 +1,24 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ChevronLeft, ChevronRight, ImagePlus, Info, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImagePlus } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
-import { useCallback, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+} from 'react';
 import { useForm } from 'react-hook-form';
 
 import type { ListingImageAnalysisResult, ServiceCategory } from '@/types';
 
+import { AiSuggestedTag } from '@/components/marketplace/AiSuggestedTag';
 import { GoodsCategorySelector } from '@/components/marketplace/GoodsCategorySelector';
+import { ListingAiNotice, type ListingAiState } from '@/components/marketplace/ListingAiNotice';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -32,15 +41,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
 import { SortablePhotoGrid, type PhotoSlot } from '@/components/ui/SortablePhotoGrid';
 import { Textarea } from '@/components/ui/textarea';
+import { useGoodsCategoryTree } from '@/hooks/useCategories';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import { useCreateListing } from '@/hooks/useListings';
 import { getApiErrorMessage } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import {
-  describeAiAutofill,
+  findCategoryBySlug,
   planAiAutofill,
   type AiAutofillField,
 } from '@/lib/listing-ai-autofill';
@@ -50,22 +59,34 @@ import { listingPostingSchema, type ListingPostingFormValues } from '@/lib/schem
 import { UPLOAD_CONTEXT } from '@/types';
 import type { CreateListingInput, ListingDurationHours } from '@/types';
 
+// Photos come first: the first photo is analyzed and its suggestions prefill
+// the category, title, description and starting price on the steps after it.
 const STEPS = [
+  { title: 'Photos', description: 'Start with 1–10 photos' },
   { title: 'Category', description: 'What are you selling?' },
   { title: 'Details', description: 'Title and description' },
-  { title: 'Photos', description: '1–10 photos' },
   { title: 'Pickup', description: 'Where to pick up' },
   { title: 'Auction', description: 'Starting price + duration' },
   { title: 'Review', description: 'Confirm and publish' },
 ] as const;
 
+const STEP = { PHOTOS: 0, CATEGORY: 1, DETAILS: 2, PICKUP: 3, AUCTION: 4, REVIEW: 5 } as const;
+
+// Steps that show the analysis notice: where the photo is added and where a
+// suggestion can land.
+const AI_NOTICE_STEPS: readonly number[] = [STEP.PHOTOS, STEP.CATEGORY, STEP.DETAILS, STEP.AUCTION];
+
+// The analysis is an optional extra: give up after this long so the notice
+// never spins forever. The seller is not blocked while it runs.
+const AI_ANALYSIS_TIMEOUT_MS = 20_000;
+
 const MAX_PHOTOS = 10;
 const ACCEPTED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 const STEP_FIELDS: Record<number, (keyof ListingPostingFormValues)[]> = {
-  0: ['categoryId'],
-  1: ['title', 'description', 'condition'],
-  2: ['photoUrls'],
+  0: ['photoUrls'],
+  1: ['categoryId'],
+  2: ['title', 'description', 'condition'],
   3: ['pickupZip'],
   4: ['startingPriceDollars', 'buyNowDollars', 'auctionDurationHours'],
   5: [],
@@ -157,15 +178,24 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const slotIdRef = useRef(0);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [aiState, setAiState] = useState<
-    'idle' | 'analyzing' | 'applied' | 'unavailable' | 'error'
-  >('idle');
+  const [aiState, setAiState] = useState<ListingAiState>('idle');
   const [aiSummary, setAiSummary] = useState<ListingImageAnalysisResult | null>(null);
   // Fields the last analysis really filled; the notice names only these.
   const [aiApplied, setAiApplied] = useState<AiAutofillField[]>([]);
+  // Fields still holding an untouched suggestion; each shows an "AI suggested"
+  // tag until the seller edits it.
+  const [aiSuggested, setAiSuggested] = useState<readonly AiAutofillField[]>([]);
+  // The analysis returns a category slug; the form stores ids. Resolve it
+  // against the same DB-driven tree the picker shows. Read through a ref
+  // because the analysis finishes in a callback started renders ago.
+  const { data: goodsTree } = useGoodsCategoryTree();
+  const goodsTreeRef = useRef(goodsTree);
+  useEffect(() => {
+    goodsTreeRef.current = goodsTree;
+  }, [goodsTree]);
   // Display name of the chosen category, captured from the picker's onChange so
   // the Review step can show it without a hardcoded id→name map (categories are
-  // DB-driven now). May be empty if the value came from AI (id only).
+  // DB-driven now).
   const [categoryName, setCategoryName] = useState('');
   const aiTriggeredRef = useRef(false);
 
@@ -244,6 +274,11 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
     }
   }
 
+  /** The seller changed this field: it is theirs now, not a suggestion. */
+  function markEdited(field: AiAutofillField) {
+    setAiSuggested((prev) => (prev.includes(field) ? prev.filter((f) => f !== field) : prev));
+  }
+
   function goPrev() {
     if (step > 0) setStep(step - 1);
   }
@@ -288,6 +323,10 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
     // AI auto-fill is an optional enhancement. Any failure here is non-blocking:
     // the seller can always fill the listing details manually.
     setAiState('analyzing');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, AI_ANALYSIS_TIMEOUT_MS);
     try {
       const imageBase64 = await fileToBase64(file);
       // The route verifies the access JWT server-side (it proxies a paid
@@ -300,6 +339,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
           ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
         body: JSON.stringify({ imageBase64, mimeType: file.type }),
+        signal: controller.signal,
       });
       if (!res.ok) {
         // 503 (or a body flagged `aiUnavailable`) means the AI feature is not
@@ -319,23 +359,32 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
         setAiState('error');
         return;
       }
-      setAiApplied(applyAnalysis(data));
+      const applied = applyAnalysis(data);
+      setAiApplied(applied);
+      setAiSuggested(applied);
       setAiSummary(data);
       setAiState('applied');
     } catch {
-      // Network failure — treat as a soft unavailable notice, never block.
+      // Network failure or timeout — a soft unavailable notice, never a block.
       setAiState('unavailable');
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
   function applyAnalysis(result: ListingImageAnalysisResult): AiAutofillField[] {
+    // Read the form NOW, not when the photo was added: the seller may have
+    // moved on and typed while the analysis ran. Only empty fields are filled.
     const current = form.getValues();
-    // Only empty fields are filled — never clobber what the user already typed.
-    const { patch, applied } = planAiAutofill(current, result);
+    const category = findCategoryBySlug(goodsTreeRef.current, result.categorySlug);
+    const { patch, applied } = planAiAutofill(current, result, category);
     const opts = { shouldValidate: true, shouldDirty: true };
+    if (patch.categoryId !== undefined) {
+      form.setValue('categoryId', patch.categoryId, opts);
+      setCategoryName(category?.name ?? '');
+    }
     if (patch.title !== undefined) form.setValue('title', patch.title, opts);
     if (patch.description !== undefined) form.setValue('description', patch.description, opts);
-    if (patch.categoryId !== undefined) form.setValue('categoryId', patch.categoryId, opts);
     if (patch.startingPriceDollars !== undefined) {
       form.setValue('startingPriceDollars', patch.startingPriceDollars, opts);
     }
@@ -485,186 +534,22 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
             <CardDescription>{currentStep?.description}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* Step 0: Category */}
-            {step === 0 ? (
-              <FormField
-                control={form.control}
-                name="categoryId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel htmlFor="listing-category">Category</FormLabel>
-                    <FormControl>
-                      <GoodsCategorySelector
-                        id="listing-category"
-                        value={field.value}
-                        onChange={(id: string, category: ServiceCategory) => {
-                          field.onChange(id);
-                          setCategoryName(category.name);
-                        }}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Search or browse all categories. Pick the closest match.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            {AI_NOTICE_STEPS.includes(step) ? (
+              <ListingAiNotice
+                state={aiState}
+                applied={aiApplied}
+                suggestedPriceCents={aiSummary?.suggestedStartingPriceCents}
               />
             ) : null}
 
-            {/* Step 1: Details */}
-            {step === 1 ? (
-              <>
-                <FormField
-                  control={form.control}
-                  name="title"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Title</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="IKEA dining table — solid oak, 6-seat"
-                          maxLength={120}
-                          className="min-h-[44px]"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          {...field}
-                          rows={6}
-                          placeholder="Condition, dimensions, why you're selling..."
-                          maxLength={5000}
-                        />
-                      </FormControl>
-                      <FormDescription>Markdown supported. 20–5000 characters.</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="condition"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Condition</FormLabel>
-                      <FormControl>
-                        <Select
-                          value={field.value ? field.value : UNSPECIFIED_CONDITION}
-                          onValueChange={(v) => {
-                            field.onChange(v === UNSPECIFIED_CONDITION ? '' : v);
-                          }}
-                        >
-                          <SelectTrigger className="min-h-[44px]">
-                            <SelectValue placeholder="Pick a condition (optional)" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {CONDITION_OPTIONS.map((c) => (
-                              <SelectItem
-                                key={c.value || UNSPECIFIED_CONDITION}
-                                value={c.value === '' ? UNSPECIFIED_CONDITION : c.value}
-                              >
-                                {c.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </FormControl>
-                      <FormDescription>
-                        StockX-style grade. Leave blank to skip — buyers prefer when it&apos;s set.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </>
-            ) : null}
-
-            {/* Step 2: Photos */}
-            {step === 2 ? (
+            {/* Step 0: Photos */}
+            {step === STEP.PHOTOS ? (
               <FormField
                 control={form.control}
                 name="photoUrls"
                 render={() => (
                   <FormItem>
                     <FormLabel>Photos (1–{MAX_PHOTOS})</FormLabel>
-                    {aiState === 'analyzing' ? (
-                      <div
-                        role="status"
-                        aria-live="polite"
-                        className="mb-3 space-y-2 rounded-md border border-[var(--brand-gold)]/30 bg-[var(--brand-gold)]/5 p-3"
-                      >
-                        <div className="flex items-start gap-2 text-sm text-zinc-200">
-                          <Sparkles
-                            className="mt-0.5 h-4 w-4 shrink-0 animate-pulse text-[var(--brand-gold)]"
-                            aria-hidden="true"
-                          />
-                          <span>Analyzing your photo to suggest a title, category, and price…</span>
-                        </div>
-                        <div className="space-y-2 pl-6">
-                          <Skeleton className="h-3 w-3/4" variant="text" />
-                          <Skeleton className="h-3 w-1/2" variant="text" />
-                          <Skeleton className="h-5 w-24" variant="price" />
-                        </div>
-                      </div>
-                    ) : null}
-                    {aiState === 'applied' && aiSummary ? (
-                      <div
-                        role="status"
-                        aria-live="polite"
-                        className="mb-3 flex items-start gap-2 rounded-md border border-[var(--brand-gold)]/30 bg-[var(--brand-gold)]/5 p-3 text-sm text-zinc-200"
-                      >
-                        <Sparkles
-                          className="mt-0.5 h-4 w-4 shrink-0 text-[var(--brand-gold)]"
-                          aria-hidden="true"
-                        />
-                        <span data-testid="ai-autofill-notice">
-                          {aiApplied.length > 0
-                            ? `AI suggested ${describeAiAutofill(aiApplied)}`
-                            : 'AI suggested nothing new: your own entries were kept'}
-                          {aiApplied.includes('starting price') &&
-                          aiSummary.suggestedStartingPriceCents > 0 ? (
-                            <>
-                              {' '}
-                              (
-                              <MonoPrice
-                                cents={aiSummary.suggestedStartingPriceCents}
-                                className="font-semibold text-zinc-100"
-                              />
-                              )
-                            </>
-                          ) : null}
-                          {' — '}edit anything before publishing.
-                        </span>
-                      </div>
-                    ) : null}
-                    {aiState === 'unavailable' || aiState === 'error' ? (
-                      <div
-                        role="status"
-                        aria-live="polite"
-                        className="mb-3 flex items-start gap-2 rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm text-zinc-300"
-                      >
-                        <Info
-                          className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400"
-                          aria-hidden="true"
-                        />
-                        <span>
-                          Couldn&apos;t auto-analyze the photo — no problem, just fill in the title,
-                          category, and starting price yourself below.
-                        </span>
-                      </div>
-                    ) : null}
-
                     {photoSlots.length === 0 ? (
                       <div
                         onDrop={handleDrop}
@@ -728,7 +613,9 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                     ) : null}
 
                     <p className="mt-2 text-xs text-zinc-500">
-                      Drag tiles to reorder. The first photo is the cover.
+                      Drag tiles to reorder. The first photo is the cover. We look at the first
+                      photo you add and suggest a category, title, description, and starting price
+                      — you can change all of them.
                     </p>
                     <FormMessage />
                   </FormItem>
@@ -736,8 +623,133 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
               />
             ) : null}
 
+            {/* Step 1: Category */}
+            {step === STEP.CATEGORY ? (
+              <FormField
+                control={form.control}
+                name="categoryId"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <FormLabel htmlFor="listing-category">Category</FormLabel>
+                      {aiSuggested.includes('category') ? <AiSuggestedTag /> : null}
+                    </div>
+                    <FormControl>
+                      <GoodsCategorySelector
+                        id="listing-category"
+                        value={field.value}
+                        onChange={(id: string, category: ServiceCategory) => {
+                          field.onChange(id);
+                          setCategoryName(category.name);
+                          markEdited('category');
+                        }}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {aiSuggested.includes('category')
+                        ? 'Suggested from your photo. Pick a different one if it is not the closest match.'
+                        : 'Search or browse all categories. Pick the closest match.'}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
+
+            {/* Step 2: Details */}
+            {step === STEP.DETAILS ? (
+              <>
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <FormLabel>Title</FormLabel>
+                        {aiSuggested.includes('title') ? <AiSuggestedTag /> : null}
+                      </div>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          onChange={(e) => {
+                            field.onChange(e);
+                            markEdited('title');
+                          }}
+                          placeholder="IKEA dining table — solid oak, 6-seat"
+                          maxLength={120}
+                          className="min-h-[44px]"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <FormLabel>Description</FormLabel>
+                        {aiSuggested.includes('description') ? <AiSuggestedTag /> : null}
+                      </div>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          onChange={(e) => {
+                            field.onChange(e);
+                            markEdited('description');
+                          }}
+                          rows={6}
+                          placeholder="Condition, dimensions, why you're selling..."
+                          maxLength={5000}
+                        />
+                      </FormControl>
+                      <FormDescription>Markdown supported. 20–5000 characters.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="condition"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Condition</FormLabel>
+                      <FormControl>
+                        <Select
+                          value={field.value ? field.value : UNSPECIFIED_CONDITION}
+                          onValueChange={(v) => {
+                            field.onChange(v === UNSPECIFIED_CONDITION ? '' : v);
+                          }}
+                        >
+                          <SelectTrigger className="min-h-[44px]">
+                            <SelectValue placeholder="Pick a condition (optional)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CONDITION_OPTIONS.map((c) => (
+                              <SelectItem
+                                key={c.value || UNSPECIFIED_CONDITION}
+                                value={c.value === '' ? UNSPECIFIED_CONDITION : c.value}
+                              >
+                                {c.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormDescription>
+                        StockX-style grade. Leave blank to skip — buyers prefer when it&apos;s set.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            ) : null}
+
             {/* Step 3: Pickup */}
-            {step === 3 ? (
+            {step === STEP.PICKUP ? (
               <>
                 <FormField
                   control={form.control}
@@ -786,14 +798,17 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
             ) : null}
 
             {/* Step 4: Auction */}
-            {step === 4 ? (
+            {step === STEP.AUCTION ? (
               <>
                 <FormField
                   control={form.control}
                   name="startingPriceDollars"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Starting price (USD)</FormLabel>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <FormLabel>Starting price (USD)</FormLabel>
+                        {aiSuggested.includes('starting price') ? <AiSuggestedTag /> : null}
+                      </div>
                       <FormControl>
                         <div className="relative">
                           <span className="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2">
@@ -808,6 +823,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
                             onChange={(e) => {
                               const v = Number(e.target.value);
                               field.onChange(Number.isFinite(v) ? v : 0);
+                              markEdited('starting price');
                             }}
                             placeholder="50.00"
                             className="min-h-[44px] pl-8 font-mono tabular-nums"
@@ -895,7 +911,7 @@ export function ListingPostingForm({ onPublishSuccess }: ListingPostingFormProps
             ) : null}
 
             {/* Step 5: Review */}
-            {step === 5 ? (
+            {step === STEP.REVIEW ? (
               <div className="space-y-4">
                 <ReviewRow label="Category">
                   {categoryName || values.categoryId || '—'}

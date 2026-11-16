@@ -20,8 +20,9 @@ type SupportedMimeType = (typeof supportedMimeTypes)[number];
 const isSupportedMimeType = (mime: string): mime is SupportedMimeType =>
   (supportedMimeTypes as readonly string[]).includes(mime);
 
-// Allowed category slugs — must stay in sync with the goods category list in
-// `web/src/components/marketplace/ListingPostingForm.tsx`.
+// Allowed category slugs — the level-2 goods categories seeded by migration
+// `036_goods_categories`. The Sell wizard resolves the returned slug against
+// the DB-driven category tree and ignores one it cannot find.
 const ALLOWED_CATEGORY_SLUGS = [
   'goods-furniture',
   'goods-electronics',
